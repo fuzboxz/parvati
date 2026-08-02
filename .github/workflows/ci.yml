@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout Parvati
+        uses: actions/checkout@v4
+
+      # Several tests (patch / multi_load / roundtrip / parvati_tests) load the
+      # ORIGINAL Ambika factory files from ambika_reference/ as a bit-exactness
+      # oracle. That tree is git-ignored (it is the GPL-3.0 reference firmware
+      # with its own history), so CI clones it shallowly here. Its data files
+      # live in the main repo, so no submodules are needed.
+      - name: Fetch Ambika reference tree (for oracle tests)
+        run: git clone --depth 1 https://github.com/pichenettes/ambika.git ambika_reference
+
+      - name: Checkout JUCE
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          path: JUCE
+
+      - name: Install JUCE Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev libwebkit2gtk-4.1-dev
+
+      - name: Configure (Debug)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH=${{ github.workspace }}/JUCE
+
+      - name: Build
+        run: cmake --build build --config Debug -j 4
+
+      - name: Run tests
+        run: |
+          set -e
+          status=0
+          for t in build/parvati_*_test; do
+            name=$(basename "$t")
+            if "$t" > "test_$name.log" 2>&1; then
+              echo "::group::$name PASS"
+              echo "$name: PASS"
+            else
+              echo "::group::$name FAIL"
+              echo "$name: FAIL (rc=$?)"
+              status=1
+            fi
+            cat "test_$name.log"
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}
+          path: test_parvati_*.log
+          if-no-files-found: ignore
