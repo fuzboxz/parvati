@@ -40,9 +40,6 @@ public:
 
     void reset() { fractionalTick_ = 0.0; }
 
-    double getBpm() const { return bpm_; }
-    double getSamplesPerTick() const { return samplesPerTick_; }
-
 private:
     void recompute()
     {

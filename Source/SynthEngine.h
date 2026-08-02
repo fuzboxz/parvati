@@ -257,16 +257,6 @@ private:
 
     float bendRangeSemitones_ = 2.f;   // per-voice pitch-bend range (MPE default)
 
-    // GLOBAL continuous-controller mod sources (mod wheel / breath / foot
-    // pedal), faithful to firmware part.cc:367-377 (ControlChange ->
-    // WriteToAllVoices). Stored as the raw 0..127 controller value; written to
-    // voices as value<<1 (0..254) to match the firmware MOD_SRC_* scaling.
-    // (JUCE has no modWheel/breath/foot CC constants, so handleController
-    // matches the literal controller numbers 1/2/4.)
-    uint8_t globalWheel_  = 0;
-    uint8_t globalBreath_ = 0;
-    uint8_t globalFoot_   = 0;
-
     static bool ok (int part) { return part >= 0 && part < kNumParts; }
 
     // First Part whose channel+keyzone accepts (channel,note); -1 if none.

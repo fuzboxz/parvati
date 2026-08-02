@@ -50,8 +50,5 @@ uint8_t parvatiValueToPatchByte (const PatchParamDescriptor& descriptor, float r
 // .PRO patch files (which store the raw struct bytes).
 float parvatiPatchByteToValue (const PatchParamDescriptor& descriptor, uint8_t byte);
 
-// Choice string lists for the arpeggiator parameters.
-const juce::StringArray& getArpModeChoices();
-const juce::StringArray& getArpDirectionChoices();
-const juce::StringArray& getArpResolutionChoices();
-const juce::StringArray& getArpPatternChoices();
+// (The arp choice lists are built inline from makeArp*() in the descriptor
+// table below; no public accessors are needed.)

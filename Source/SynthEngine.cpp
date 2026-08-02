@@ -550,19 +550,16 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
     // this is the ONLY effect of these controllers.
     if (controllerNumber == 1)   // modulation wheel -> MOD_SRC_WHEEL
     {
-        globalWheel_ = static_cast<uint8_t> (controllerValue);
         applyGlobalModSource (ambika::dsp::MOD_SRC_WHEEL,      static_cast<uint8_t> (controllerValue << 1));
         return;
     }
     if (controllerNumber == 2)   // breath controller -> MOD_SRC_WHEEL_2
     {
-        globalBreath_ = static_cast<uint8_t> (controllerValue);
         applyGlobalModSource (ambika::dsp::MOD_SRC_WHEEL_2,    static_cast<uint8_t> (controllerValue << 1));
         return;
     }
     if (controllerNumber == 4)   // foot pedal -> MOD_SRC_EXPRESSION
     {
-        globalFoot_ = static_cast<uint8_t> (controllerValue);
         applyGlobalModSource (ambika::dsp::MOD_SRC_EXPRESSION, static_cast<uint8_t> (controllerValue << 1));
         return;
     }

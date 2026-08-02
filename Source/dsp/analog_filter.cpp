@@ -124,10 +124,6 @@ void AnalogFilter::applyParams()
     const float res      = juce::jlimit (0.0f, 1.0f, resonance_);
     const float safeRes  = juce::jmin (res, kMaxResonance);
 
-    const bool fourPole = (topology_ == FilterTopology::FOUR_POLE_LADDER
-                           || topology_ == FilterTopology::FOUR_POLE_SSM2164);
-    (void) fourPole;
-
     if (topology_ == FilterTopology::FOUR_POLE_LADDER)
     {
         ladder_.setCutoffFrequencyHz (cutoffHz_);

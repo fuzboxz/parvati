@@ -50,7 +50,6 @@ public:
     // K L ; etc.) play notes; Z/X shift the base octave down/up. Pass false to
     // disable (e.g. when a host/component needs the keyboard focus elsewhere).
     void setComputerKeyboardEnabled (bool enabled);
-    void setBaseOctaveNote (int midiNote);
 
     //==========================================================================
     // Re-apply theme colours. Call after addAndMakeVisible (so the inherited

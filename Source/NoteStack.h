@@ -120,7 +120,6 @@ public:
     }
 
     uint8_t size() const { return size_; }
-    uint8_t max_size() const { return capacity; }
 
     const NoteEntry& most_recent_note() const { return pool_[root_ptr_]; }
 

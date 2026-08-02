@@ -125,7 +125,6 @@ class Lfo {
 
     // Current value of S&H.
     uint8_t value_ = 0;
-    uint8_t step_ = 0;
 };
 
 }  // namespace ambika::dsp

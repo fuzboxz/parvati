@@ -221,12 +221,6 @@ void KeyboardView::setComputerKeyboardEnabled (bool enabled)
         releaseHeldComputerNotes();
 }
 
-void KeyboardView::setBaseOctaveNote (int midiNote)
-{
-    // Keep enough headroom below 127 for the top of the 17-note span.
-    octaveBase_ = juce::jlimit (0, 127 - 16, midiNote);
-}
-
 void KeyboardView::releaseHeldComputerNotes()
 {
     for (const auto& kv : heldNotes_)

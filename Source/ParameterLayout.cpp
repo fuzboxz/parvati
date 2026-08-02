@@ -112,11 +112,6 @@ juce::StringArray makeArpPatterns()
     return a;
 }
 
-const juce::StringArray& getArpModeChoices()       { static const auto c = makeArpModes();       return c; }
-const juce::StringArray& getArpDirectionChoices()  { static const auto c = makeArpDirections();  return c; }
-const juce::StringArray& getArpResolutionChoices() { static const auto c = makeArpResolutions(); return c; }
-const juce::StringArray& getArpPatternChoices()    { static const auto c = makeArpPatterns();    return c; }
-
 // ---- The factory init patch (from ambika_reference/controller/part.cc) ----
 // This is the controller-side init_patch (part.cc:39-81) — the actual patch a
 // user sees on power-up / "Init Patch" (Part::InitPatch(DEFAULT)). It is NOT the

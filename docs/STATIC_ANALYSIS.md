@@ -33,11 +33,16 @@ Silicon; Parvati relies on JUCE's `JUCE_LEAK_DETECTOR` for leak checks instead.)
 ### clang-tidy
 The **JUCE-wrapper code** (`Source/PluginProcessor.*`, `SynthEngine.*`,
 `AmbikaVoice.*`, `PluginEditor.*`, `Source/ui/*`, `ParameterLayout.*`,
-`MidiParameterMap.*`, `PatchFile.*`) is **clean** after the audit pass, which
-fixed:
+`MidiParameterMap.*`, `PatchFile.*`) is **clean of bugprone-/cert- defects** after
+the audit pass, which fixed:
 - C-style casts → `static_cast` (`SynthEngine.h`).
 - A `switch` on an `int` without a `default` → explicit `default: break`
   (`ui/ParamHelp.cpp`).
+
+(Residual `modernize-avoid-c-style-cast` findings remain in the `.cpp` files —
+e.g. `SynthEngine.cpp`, `PluginProcessor.cpp`, `ParameterLayout.cpp`. These are
+all correct functional casts and are style-only, not defects; they are left in
+place to keep diffs minimal.)
 
 Documented false positives (NOLINT'd in source with a reason):
 - `bugprone-infinite-loop` — fires on `for (i=1; i<=6; ++i)` and
@@ -68,8 +73,27 @@ enum base types would alter `sizeof(Patch)` and corrupt the patch format.
 
 ## Goal of the user's "unwired / never-used variables" concern
 
-The audit specifically looked for dead/unwired code. **None was found** in the
-active code paths: every public engine/processor method, every APVTS parameter,
-and every GUI control is reachable (the latter two are enforced structurally —
-the GUI is generated from the descriptor table, and `parvati_editor_test`
-asserts every descriptor has a control + attachment).
+A first audit pass reported "no dead/unwired code". An **independent**
+(ASan/UBSan + clang-tidy + cross-TU grep) audit then found and **removed** the
+following confirmed-dead code (each verified to have zero callers across
+`Source/`, `tests/`, `tools/`):
+
+- **Write-only state:** `SynthEngine` members `globalWheel_` / `globalBreath_` /
+  `globalFoot_` (written in `handleController`, never read — the mod write goes
+  through `applyGlobalModSource` on a separate path).
+- **Dead accessors:** `ThemeManager` persistence/index API (`getNumThemes`,
+  `getCurrentIndex`, `selectByIndex`, `toValueTree`, `fromValueTree`,
+  `getCurrentThemeName` — superseded by the processor's `uiThemeName_`);
+  `NoteStack::max_size`; `TransportClock::getBpm`/`getSamplesPerTick`;
+  `KeyboardView::setBaseOctaveNote`; the four `getArp*Choices` wrappers in
+  `ParameterLayout` (the descriptor table builds the lists inline via
+  `makeArp*()`).
+- **Unused field:** `ambika::dsp::Lfo::step_` (never written or read).
+- **Dead computation / unused captures:** the `fourPole` local in
+  `AnalogFilter::applyParams` (computed then discarded) and two unused `[this]`
+  lambda captures in `PluginEditor.cpp`.
+
+Every public engine/processor method, every APVTS parameter, and every GUI
+control is now reachable (the latter two are enforced structurally — the GUI is
+generated from the descriptor table, and `parvati_editor_test` asserts every
+descriptor has a control + attachment).

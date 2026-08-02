@@ -1001,9 +1001,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     settingsPanelHost_ = std::make_unique<juce::SidePanel> (TRANS ("Settings"), 300, false);
     settingsPanel_ = new SettingsPanel (processorRef_, themeManager_,
         [this] (double z) { setZoom (z); repaint(); },
-        [this] (bool b)   { ParamControl::setTooltipsEnabled (b); },
-        [this] (bool b)   { processorRef_.setParameterSmoothing (b); },
-        [this] (int n)    { (void) n; },   // processor.setOversamplingFactor already applied in the panel
+        [] (bool b)         { ParamControl::setTooltipsEnabled (b); },
+        [this] (bool b)     { processorRef_.setParameterSmoothing (b); },
+        [] (int)            {},   // processor.setOversamplingFactor already applied in the panel
         [this] (const juce::String& code) {
             // Language changed: persist it, install the LocalisedStrings, then
             // re-translate every chrome string live.
