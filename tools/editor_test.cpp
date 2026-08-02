@@ -147,6 +147,32 @@ int main()
         check (ed->getWidth() == 980 && ed->getHeight() == 660,
                "default editor size is 980 x 660");
 
+        std::printf ("\n[7] Layout sanity (flexible-width grid: no overlaps, fills width)\n");
+        if (tabs != nullptr)
+        {
+            for (int i = 0; i < numTabs; ++i)
+            {
+                tabs->setCurrentTabIndex (i, false);
+                auto* content = tabs->getTabContentComponent (i);
+                auto* vp = dynamic_cast<juce::Viewport*> (content);
+                ParamPage* page = (vp != nullptr)
+                    ? dynamic_cast<ParamPage*> (vp->getViewedComponent())
+                    : nullptr;
+                if (page == nullptr)
+                    continue;   // Multi page (custom page, no group grid)
+                // Defensive: ensure the page is laid out at the tab width before
+                // validating (JUCE sizes tab content on resize, but this guards
+                // against a not-yet-parented edge case).
+                if (page->getWidth() <= 0)
+                    page->reflowToWidth (juce::jmax (400, vp != nullptr ? vp->getWidth() : 940));
+
+                char m[128];
+                std::snprintf (m, sizeof (m), "tab %d ('%s') group grid is well-formed",
+                               i, tabs->getTabNames()[i].toRawUTF8());
+                check (page->layoutIsSane(), m);
+            }
+        }
+
         processor.editorBeingDeleted (ed);
         delete ed;
     }

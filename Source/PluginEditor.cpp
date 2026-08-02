@@ -349,23 +349,75 @@ void ParamPage::layoutGroups (int targetWidth)
             g.naturalHeight += kDecorationH + kDecorationGap;
     }
 
-    // Greedy left-to-right flow that wraps to a new row when the next panel
-    // would overflow the available width.
+    // Greedy left-to-right flow. A row wraps when the next panel would overflow
+    // the available width OR when the row already holds pageCols_ panels
+    // (PageInfo::cols: a tunable cap on panels-per-row; pageCols_ <= 0 =>
+    // width-only wrap). rowOf[gi] tags each group with its row for the fill pass.
     int x = kMargin, y = topY, rowH = 0;
     const int rowStartX = kMargin;
     const int maxRight = kMargin + juce::jmax (0, availW);
 
-    for (auto& g : groups_)
+    std::vector<int> rowOf (groups_.size(), 0);
+    int currentRow = 0;
+
+    for (int gi = 0; gi < (int) groups_.size(); ++gi)
     {
-        if (x != rowStartX && x + g.naturalWidth > maxRight)
+        auto& g = groups_[(size_t) gi];
+
+        // Panels already placed on THIS row (for the pageCols_ cap). The row is
+        // contiguous in gi, so walk back while the row tag matches.
+        int panelsThisRow = 0;
+        for (int k = gi - 1; k >= 0 && rowOf[(size_t) k] == currentRow; --k)
+            ++panelsThisRow;
+
+        if ((x != rowStartX && (x + g.naturalWidth > maxRight))
+            || (pageCols_ > 0 && panelsThisRow >= pageCols_))
         {
+            ++currentRow;
             x = rowStartX;
             y += rowH + kGroupGap;
             rowH = 0;
         }
+        rowOf[(size_t) gi] = currentRow;
         g.rect.setBounds (x, y, g.naturalWidth, g.naturalHeight);
         x += g.naturalWidth + kGroupGap;
         rowH = juce::jmax (rowH, g.naturalHeight);
+    }
+    const int lastRow = groups_.empty() ? -1 : currentRow;
+
+    // ---- Row-fill justification (flexible-width grid). For each row, grow the
+    // NON-dense panels (stepGrid / singleRow are excluded) so the row fills up
+    // to maxRight, eliminating the ragged right edge. Only the panel WIDTH grows;
+    // height and decoration sizing are untouched, so contentHeight_ (computed
+    // below from the row geometry above) is unchanged. All-dense rows are left
+    // as-is (ragged is fine for sequencer / modifier strips). ----
+    for (int r = 0; r <= lastRow; ++r)
+    {
+        int rowRight = rowStartX;
+        int nonDense = 0;
+        for (int gi = 0; gi < (int) groups_.size(); ++gi)
+            if (rowOf[(size_t) gi] == r)
+            {
+                const auto& g = groups_[(size_t) gi];
+                rowRight = juce::jmax (rowRight, g.rect.getRight());
+                if (! (g.stepGrid || g.singleRow))
+                    ++nonDense;
+            }
+        if (nonDense == 0)
+            continue;   // all-dense row: leave ragged
+        const int slack = maxRight - rowRight;
+        if (slack <= 0)
+            continue;   // row already fills / wraps exactly
+        const int grow = slack / nonDense;
+        if (grow <= 0)
+            continue;
+        for (int gi = 0; gi < (int) groups_.size(); ++gi)
+            if (rowOf[(size_t) gi] == r)
+            {
+                auto& g = groups_[(size_t) gi];
+                if (! (g.stepGrid || g.singleRow))
+                    g.rect.setWidth (g.rect.getWidth() + grow);
+            }
     }
 
     contentWidth_  = juce::jmax (targetWidth, 2 * kMargin + 40);
@@ -387,15 +439,24 @@ void ParamPage::applyLayout()
         inner.removeFromTop (kGroupTitleH);   // room for the panel title text
 
         const int cols = juce::jmax (1, g.internalCols);
+        // Flexible-width cells: a NON-dense panel distributes its cells evenly
+        // across the actual (possibly row-filled) inner width; a DENSE panel
+        // (sequencer step grid / mod-modifier strip) keeps its fixed cell size
+        // and is left-aligned. Column width never shrinks below the natural
+        // cellW, only grows to fill. Row height is always g.cellH.
+        const bool dense = g.stepGrid || g.singleRow;
+        const int colStep = dense ? g.cellW
+                                  : juce::jmax (g.cellW, inner.getWidth() / cols);
+
         for (int idx = 0; idx < (int) g.controlIndices.size(); ++idx)
         {
             const int ci = g.controlIndices[idx];
             if (ci < 0 || ci >= (int) controls_.size()) continue;
             const int col = idx % cols;
             const int row = idx / cols;
-            const juce::Rectangle<int> cell (inner.getX() + col * g.cellW,
+            const juce::Rectangle<int> cell (inner.getX() + col * colStep,
                                              inner.getY() + row * g.cellH,
-                                             g.cellW, g.cellH);
+                                             colStep, g.cellH);
             controls_[ci]->setBounds (cell.reduced (3));
         }
 
@@ -408,6 +469,53 @@ void ParamPage::applyLayout()
                 juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), kDecorationH));
         }
     }
+}
+
+bool ParamPage::layoutIsSane() const
+{
+    // (a) every group panel has positive size.
+    for (const auto& g : groups_)
+        if (g.rect.getWidth() <= 0 || g.rect.getHeight() <= 0)
+            return false;
+
+    // (b) no two group panels overlap (siblings in page coordinate space).
+    for (size_t i = 0; i < groups_.size(); ++i)
+        for (size_t j = i + 1; j < groups_.size(); ++j)
+            if (groups_[i].rect.intersects (groups_[j].rect))
+                return false;
+
+    // (c) every control has positive size and sits inside its group's rect.
+    // (ParamControl is a direct child of ParamPage, so getBoundsInParent() is in
+    // the same page-space coordinates as the group rects.)
+    for (const auto& g : groups_)
+        for (int ci : g.controlIndices)
+        {
+            if (ci < 0 || ci >= (int) controls_.size())
+                return false;
+            const auto b = controls_[(size_t) ci]->getBoundsInParent();
+            if (b.getWidth() <= 0 || b.getHeight() <= 0)
+                return false;
+            if (! g.rect.contains (b))
+                return false;
+        }
+
+    // (d) the page fills its width: at least one NON-dense row reaches the right
+    // margin (within a 2*kGroupGap tolerance for integer rounding), proving the
+    // grid fills the row rather than leaving a ragged edge. Dense-only pages
+    // are exempt.
+    const int maxRight = juce::jmax (0, contentWidth_ - kMargin);
+    bool anyNonDense = false, fillsWidth = false;
+    for (const auto& g : groups_)
+        if (! (g.stepGrid || g.singleRow))
+        {
+            anyNonDense = true;
+            if (g.rect.getRight() >= maxRight - 2 * kGroupGap)
+                fillsWidth = true;
+        }
+    if (anyNonDense && ! fillsWidth)
+        return false;
+
+    return true;
 }
 
 void ParamPage::setGroupDecoration (const juce::String& groupName,
@@ -436,7 +544,10 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
     : themeManager_ (themeManager),
       cellWidth_ (cellWidth), cellHeight_ (cellHeight)
 {
-    juce::ignoreUnused (columns);
+    // Honour the page's declared column count (PageInfo::cols) as a cap on the
+    // number of group panels per row (whichever wraps first: width overflow or
+    // the cap). 0 => width-only wrap (Multi page is not a ParamPage).
+    pageCols_ = juce::jmax (0, columns);
 
     heading_.setText (heading, juce::dontSendNotification);
     heading_.setJustificationType (juce::Justification::centredLeft);

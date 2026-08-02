@@ -129,6 +129,12 @@ public:
     void setGroupDecoration (const juce::String& groupName,
                              std::unique_ptr<juce::Component> decoration);
 
+    // Headless layout sanity check (called by parvati_editor_test): every group
+    // panel has positive size, no two panels overlap, every control sits inside
+    // its group, and at least one non-dense row fills the page width. Returns
+    // true when the flexible-width grid is well-formed.
+    bool layoutIsSane() const;
+
 private:
     // Maps a paramID to its bordered-group display name (e.g. "osc1_*"->"Osc 1",
     // "mod3_*"->"Mod 3"). Derived purely from the param-ID prefixes so the
@@ -157,6 +163,7 @@ private:
 
     ThemeManager& themeManager_;
     int cellWidth_, cellHeight_;
+    int pageCols_ = 0;              // PageInfo::cols: cap on group panels per row (0 => width-only wrap)
     int contentWidth_ = 0, contentHeight_ = 0;
 
     juce::Label heading_;
