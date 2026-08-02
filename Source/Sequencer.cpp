@@ -9,7 +9,7 @@ void Sequencer::clockTick (uint8_t heldNote, bool keyHeld)
 {
     // (A) Modulation sequences SEQ_1 / SEQ_2 — independent of arp mode, like
     // firmware ClockSequencer (only emitted when sequence_length[i] > 0).
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < 2; ++i)  // NOLINT(modernize-loop-convert): faithful port of firmware ClockSequencer
     {
         if (sequenceLength_[i])
         {
@@ -32,7 +32,7 @@ void Sequencer::clockTick (uint8_t heldNote, bool keyHeld)
         const uint8_t un = static_cast<uint8_t> (note);
 
         if (! n.gate)
-        {
+        {  // NOLINT(bugprone-branch-clone): gate / non-legato / legato branches are distinct; clang-tidy FP
             internalNoteOff (previousNote_);
             previousNote_ = 0xff;
         }

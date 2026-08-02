@@ -200,6 +200,7 @@ juce::String getParamHelp (const juce::String& paramID)
                     case 1: return "Sequencer 2 step "  + stepNo + " value (0..127, modulation source).";
                     case 2: return "Note sequence step " + stepNo + ": MIDI note (0..127) | gate flag (bit 7).";
                     case 3: return "Note sequence step " + stepNo + ": velocity (0..127) | legato flag (bit 7).";
+                    default: break;   // unknown kind: fall through to try the next prefix spec
                 }
             }
         }

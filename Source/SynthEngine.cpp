@@ -615,7 +615,7 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     applyTempo (bpm);
 
     if (isPlaying && ! wasPlaying_)
-    {
+    {  // NOLINT(bugprone-branch-clone): the true-branch starts arp+seq, the else stops arp -- different bodies, clang-tidy FP
         for (auto& part : parts_) { part.arp.start(); part.seq.start(); }
     }
     else if (! isPlaying && wasPlaying_)

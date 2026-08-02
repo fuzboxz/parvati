@@ -49,7 +49,7 @@ struct PolyAllocator
     {
         size_   = size;
         cyclic_ = cyclic ? 0 : 0xff;
-        for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;
+        for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;  // NOLINT(modernize-loop-convert): faithful port of ambika::VoiceAllocator (controller/voice_allocator.cc)
         for (uint8_t i = 0; i < kMax; ++i) lru_[i] = (i < size_) ? static_cast<uint8_t> (size_ - 1 - i) : 0;
     }
     uint8_t find (uint8_t note) const
@@ -201,8 +201,8 @@ public:
     uint8_t getPartChannel (int part) const { return ok (part) ? parts_[part].midiChannel.load() : 0; }
 
     // GUI-contract aliases (the multitimbral editor calls these). channel: 0=Omni.
-    void setPartMidiChannel (int part, int ch)             { setPartChannel (part, (uint8_t) ch); }
-    void setPartKeyZone     (int part, int lo, int hi)     { setPartKeyrange (part, (uint8_t) lo, (uint8_t) hi); }
+    void setPartMidiChannel (int part, int ch)             { setPartChannel (part, static_cast<uint8_t> (ch)); }
+    void setPartKeyZone     (int part, int lo, int hi)     { setPartKeyrange (part, static_cast<uint8_t> (lo), static_cast<uint8_t> (hi)); }
     uint8_t getPartKeyrangeLow  (int part) const { return ok (part) ? parts_[part].keyrangeLow.load()  : 0; }
     uint8_t getPartKeyrangeHigh (int part) const { return ok (part) ? parts_[part].keyrangeHigh.load() : 127; }
 

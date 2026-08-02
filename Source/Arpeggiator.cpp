@@ -36,7 +36,7 @@ void Arpeggiator::clockTick()
 void Arpeggiator::startArpeggio()
 {
     // Mirrors Part::StartArpeggio().
-    if (arpDirection_ == 1)
+    if (arpDirection_ == 1)  // NOLINT(bugprone-branch-clone): up resets step to 0; down/random resets to the last step -- distinct, FP
     {
         arpOctave_ = 0;
         arpStep_ = 0;
@@ -69,7 +69,7 @@ void Arpeggiator::clockArpeggiator()
             uint8_t note = arpNote->note;
             uint8_t velocity = arpNote->velocity & 0x7f;
             note += 12 * arpOctave_;
-            while (note > 127)
+            while (note > 127)  // NOLINT(bugprone-infinite-loop): note -= 12 each iter terminates the loop; clang-tidy FP
                 note -= 12;
 
             internalNoteOn (note, velocity);
@@ -163,7 +163,7 @@ void Arpeggiator::stepArpeggio()
 void Arpeggiator::allNotesOff()
 {
     if (previousNote_ != 0xff && direction_ != static_cast<uint8_t> (ArpDirection::Chord))
-    {
+    {  // NOLINT(bugprone-branch-clone): single noteOff vs loop-over-held; distinct bodies, FP
         internalNoteOff (previousNote_);
     }
     else if (previousNote_ != 0xff)
