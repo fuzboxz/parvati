@@ -5,6 +5,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "PatchFile.h"
+#include "ui/FactoryPresetInstaller.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
 
 //==============================================================================
@@ -40,6 +41,11 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
                 p->setValueNotifyingHost (p->convertTo0to1 (denormalized));
         },
         [this] (const char* id) -> float { if (auto v = apvts.getRawParameterValue (id)) return v->load(); return 0.0f; });
+
+    // Extract the embedded GPL-3.0 factory presets into the user app-data dirs
+    // on first run (process-once) so the Patch combo is populated out of the
+    // box. Non-fatal: a failure just leaves the combo empty.
+    parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir());
 }
 
 //==============================================================================

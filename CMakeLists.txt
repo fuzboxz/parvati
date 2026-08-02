@@ -47,6 +47,19 @@ file(GLOB_RECURSE PARVATI_SOURCES CONFIGURE_DEPENDS
 target_sources(Parvati PRIVATE ${PARVATI_SOURCES})
 target_include_directories(Parvati PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
+# ------------------------------------------------------------------------------
+# Factory presets (Ambika "goldencard" GPL-3.0 banks). Curated under presets/ and
+# EMBEDDED into the plugin binary via juce_add_binary_data, then extracted to the
+# user app-data dir on first run (FactoryPresets::ensureInstalled, see
+# Source/ui/FactoryPresets.h) so they show up in the Patch combo out of the box.
+# A separate glob for programs (.PRO) and multis (.MUL) keeps the two banks apart.
+file(GLOB PARVATI_FACTORY_PRO CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/Factory/*.PRO")
+file(GLOB PARVATI_FACTORY_MUL CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FactoryMulti/*.MUL")
+juce_add_binary_data(parvati_factory_presets
+    NAMESPACE FactoryPresets
+    SOURCES ${PARVATI_FACTORY_PRO} ${PARVATI_FACTORY_MUL})
+target_link_libraries(Parvati PRIVATE parvati_factory_presets)
+
 # Hardware-accelerated GUI rendering is ON BY DEFAULT in JUCE 9.0.0 — no define
 # is required (verified against ~/JUCE):
 #   * Windows: HWNDComponentPeer paints via an unconditional Direct2D device
