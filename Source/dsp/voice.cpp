@@ -124,6 +124,21 @@ void Voice::Init() {
     }
     memset(no_sync_, 0, kAudioBlockSize);
     std::memcpy(&patch_, &kInitPatch, sizeof(Patch));
+    // Prime the envelope phase increments from the init patch's A/D/S/R. The
+    // AmbikaVoice active-state gate skips ProcessBlock for idle voices, so an
+    // envelope whose stage_phase_increment_[ATTACK/DECAY/RELEASE] were never set
+    // (they default to 0) would freeze on its first Trigger(ATTACK): Trigger
+    // reads stage_phase_increment_[ATTACK] at trigger time, and 0 means the
+    // attack segment never advances (VCA stuck at 0 => a triggered voice is
+    // silent). Update() is normally called every block in UpdateDestinations();
+    // this just primes the values at construction so a gated idle voice is
+    // trigger-ready. (When a voice later runs ProcessBlock, Update() re-seeds
+    // these from the live patch, so this does not affect byte-faithfulness.)
+    for (uint8_t i = 0; i < kNumEnvelopes; ++i)
+        envelope_[i].Update (patch_.env_lfo[i].attack,
+                             patch_.env_lfo[i].decay,
+                             patch_.env_lfo[i].sustain,
+                             patch_.env_lfo[i].release);
     ResetAllControllers();
     part_.volume = 127;
     part_.portamento_time = 0;

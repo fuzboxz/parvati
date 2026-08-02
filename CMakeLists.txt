@@ -323,6 +323,33 @@ target_link_libraries(parvati_apvts_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Startup rumble regression: the ENV->VCA modulation is multiplicative, so an
+# idle voice with a modulation amount < 63 leaks a sub-audio oscillator tone as
+# a low-frequency rumble at load. This sets mod11 (ENV3->VCA) to 32 to construct
+# the condition, then renders with NO MIDI and asserts near-silence. Built by
+# default. Run with: ./build/parvati_idle_silence_test
+add_executable(parvati_idle_silence_test
+    tests/idle_silence_test.cpp
+)
+target_include_directories(parvati_idle_silence_test PRIVATE Source)
+target_compile_features(parvati_idle_silence_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_idle_silence_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # MIDI CC/NRPN -> parameter mapping verification (spec F.4). Proves incoming
 # CC/NRPN drive the APVTS parameters and reach the engine bytes exactly as the
 # Ambika hardware. Built by default. Run with: ./build/parvati_midi_param_test

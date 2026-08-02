@@ -226,6 +226,13 @@ private:
     std::unique_ptr<juce::dsp::Oversampling<float>> osLatencyProbe_;
     std::atomic<bool> latencyDirty_ { false };
 
+    // Master DC blocker (one IIR high-pass ~15 Hz per main-bus channel). The
+    // engine's analog filter + VCA are DC-coupled, so any sub-audio/DC offset
+    // would otherwise leak as a low-frequency rumble. Applied to the MAIN bus
+    // only, after the voicecard sum; the raw aux voicecard buses are untouched.
+    // 15 Hz is well below the audible band, so it never colours the sound.
+    juce::dsp::IIR::Filter<float> dcBlocker_[2];
+
     // parameterID -> index into getPatchParamDescriptors() for O(1) lookups.
     std::unordered_map<std::string, int> paramIndex_;
 

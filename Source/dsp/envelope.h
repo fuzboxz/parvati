@@ -46,6 +46,14 @@ class Envelope {
     Envelope() = default;
 
     void Init() {
+        // Self-sufficient: an envelope fresh from Init() must Render() as 0
+        // (silent) and be trigger-ready. Park it in DEAD with a zeroed
+        // accumulator/phase. (Voice::Init() also seeds the stage_phase_increment_
+        // via Update() and calls Kill(), but making Init() standalone avoids any
+        // path where an idle voice leaks a non-zero contribution.)
+        stage_ = DEAD;
+        value_ = 0;
+        phase_ = 0;
         stage_target_[ATTACK] = 255;
         stage_target_[RELEASE] = 0;
         stage_target_[DEAD] = 0;

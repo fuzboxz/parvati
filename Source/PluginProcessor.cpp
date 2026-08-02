@@ -52,6 +52,24 @@ void ParvatiAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     // sample rate to timestamp queued messages for the audio block.
     midiCollector_.reset (sampleRate);
 
+    // ---- Master DC blocker (main bus) ----
+    // 15 Hz high-pass per channel: kills any sub-audio/DC leakage from the
+    // DC-coupled filter+VCA path (a latent low-frequency rumble source) without
+    // touching audible content. Prepared + reset each prepareToPlay so a
+    // sample-rate / block-size change does not leave stale filter state.
+    {
+        const auto coeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass (sampleRate, 15.0);
+        const juce::dsp::ProcessSpec spec { sampleRate,
+                                             (juce::uint32) juce::jmax (1, samplesPerBlock),
+                                             1u };
+        for (auto& f : dcBlocker_)
+        {
+            f.prepare (spec);
+            f.coefficients = coeffs;
+            f.reset();
+        }
+    }
+
     // ---- Plugin latency / PDC ----
     // Total latency = Lagrange resampler latency (2 INPUT/internal samples, see
     // the formula below) + active filter-oversampling latency (a few internal
@@ -193,6 +211,18 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             mainBus.addFrom (0, 0, src, numSamples);                       // main L
             if (mainChans > 1)
                 mainBus.addFrom (1, 0, src, numSamples);                   // main R
+        }
+
+        // Master DC blocker (main bus only): the engine's filter+VCA are
+        // DC-coupled, so any sub-audio/DC offset would leak as a low-frequency
+        // rumble. The 15 Hz high-pass removes it without affecting audible
+        // content. Raw aux voicecard buses are left unfiltered.
+        for (int ch = 0; ch < mainChans; ++ch)
+        {
+            auto* data = mainBus.getWritePointer (ch);
+            auto& f = dcBlocker_[(size_t) ch];
+            for (int i = 0; i < numSamples; ++i)
+                data[i] = f.processSample (data[i]);
         }
     }
 

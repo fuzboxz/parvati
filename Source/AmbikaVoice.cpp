@@ -423,6 +423,21 @@ void AmbikaVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer,
     if (hostRate_ <= 0.0 || numSamples <= 0)
         return;
 
+    // Idle-voice self-gate. JUCE's Synthesiser calls renderNextBlock for EVERY
+    // voice every block; an idle voice (no current note, not in a release tail)
+    // must emit silence. Without this, an idle voice runs the full DSP and,
+    // because the multiplicative ENV->VCA modulation only fully closes the VCA
+    // when the amount is exactly 63, any patch with amount < 63 leaves the VCA
+    // open (~126) and the oscillator renders at pitch_value_ == 0 (sub-audio)
+    // => a startup low-frequency rumble. isVoiceActive() is true while a voice
+    // holds a note, INCLUDING during release tail-off until this same function
+    // calls clearCurrentNote(), so release tails are unaffected. This is the
+    // faithful equivalent of the firmware idling an inactive voicecard.
+    // (Voice::Init() primes the envelope increments so a gated idle voice is
+    // trigger-ready — see voice.cpp.)
+    if (! isVoiceActive())
+        return;
+
     int written = 0;
     while (written < numSamples)
     {
