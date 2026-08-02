@@ -150,6 +150,12 @@ public:
     // arp/sequencer settings from each PartData). Shows Part 0 in the editor
     // afterwards. Returns true on success.
     bool loadMultiFile (const juce::File& file);
+    // Save the whole 6-Part state as an Ambika .MUL — the exact inverse of
+    // loadMultiFile. The CURRENT part's Patch/PartData bytes are gathered from
+    // the APVTS (live edits); the other 5 parts are read from engine storage.
+    // MultiData.part_mapping_ is rebuilt from the engine's per-part channel /
+    // keyrange / voice-allocation. A saved file re-loads to the same state.
+    bool saveMultiFile (const juce::File& file);
     static juce::File getFactoryMultiDir();
     // The name of the last loaded program (for the GUI title).
     juce::String getLoadedProgramName() const { return loadedProgramName_; }

@@ -69,3 +69,12 @@ bool parseAmbikaMulti (const void* data, size_t size, AmbikaMulti& out);
 
 // Convenience: parse a .MUL file from disk.
 bool parseAmbikaMultiFile (const juce::File& file, AmbikaMulti& out);
+
+// Write an Ambika .MUL multi file — the byte-exact inverse of parseAmbikaMulti
+// (RIFF "MBKS" header + 16-byte name chunk + a MultiData obj (type prefix
+// 0x04, 56 B) +, for parts 1..6, an interleaved Patch obj (type prefix
+// (i<<8)|0x01, 112 B) and a PartData obj (type prefix (i<<8)|0x05, 84 B)).
+// The MultiData chunk is ALWAYS written (zeroed if !multi.hasMultiData) so the
+// file is well-formed and loadMultiFile() accepts it; a reference .MUL always
+// carries MultiData, so parse->write->parse preserves hasMultiData exactly.
+bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi);

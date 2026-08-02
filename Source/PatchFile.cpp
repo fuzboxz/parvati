@@ -230,3 +230,99 @@ bool parseAmbikaMultiFile (const juce::File& file, AmbikaMulti& out)
         return false;
     return parseAmbikaMulti (mb.getData(), mb.getSize(), out);
 }
+
+//==============================================================================
+bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi)
+{
+    // Layout — byte-exact inverse of parseAmbikaMulti, and a faithful
+    // transcription of the firmware .MUL writer (storage.cc Save() for
+    // STORAGE_OBJECT_MULTI). Verified: a written file re-parses to the identical
+    // multi, and the byte size matches a real factory .MUL (1416-byte RIFF body
+    // / 1424-byte file).
+    //
+    //   "RIFF" + LE32(bodySize) + "MBKS"          RIFF/MBKS header   (12 B)
+    //   "name" + LE32(16) + name[16]              name, space-padded (24 B)
+    //   "obj " + LE32(60)  + LE32(0x00000004) + multiData[56]   MultiData   (68 B)
+    //   for part i = 1..6:
+    //     "obj " + LE32(116) + LE32((i<<8)|0x01) + patch[112]    Patch   (124 B)
+    //     "obj " + LE32(88)  + LE32((i<<8)|0x05) + part[84]      PartData (96 B)
+    //
+    //   bodySize = 4 (MBKS) + 24 + 68 + 6*(124+96) = 1416.
+    //   The 4-byte type prefix encodes (partIndex_1based << 8) | objectType:
+    //   MultiData = part 0, type 0x04; part-i Patch = (i<<8)|0x01; part-i
+    //   PartData = (i<<8)|0x05. parseAmbikaMulti routes by partIdx1 (high byte)
+    //   and identifies Patch/Part by payload length, so this round-trips exactly.
+    //   All chunk sizes are even, so no RIFF word-padding is needed.
+    std::vector<uint8_t> b;
+    b.reserve (1424);
+
+    const auto push4 = [&b] (const char* tag) { b.insert (b.end(), tag, tag + 4); };
+    const auto le32  = [&b] (uint32_t x) {
+        b.push_back (static_cast<uint8_t> (x));
+        b.push_back (static_cast<uint8_t> (x >> 8));
+        b.push_back (static_cast<uint8_t> (x >> 16));
+        b.push_back (static_cast<uint8_t> (x >> 24));
+    };
+
+    // Compute the RIFF body size up front (everything after the 8-byte
+    // "RIFF"+size header): the "MBKS" form type + every chunk (8-byte header +
+    // payload).
+    const uint32_t bodySize = 4u     // "MBKS" form type
+                           + (8u + 16u)                  // name chunk
+                           + (8u + 4u + 56u)             // MultiData obj
+                           + 6u * (8u + 4u + 112u)       // 6 x Patch obj
+                           + 6u * (8u + 4u + 84u);       // 6 x PartData obj
+
+    // RIFF / MBKS header.
+    push4 ("RIFF");
+    le32 (bodySize);
+    push4 ("MBKS");
+
+    // NAME chunk: 16-byte ASCII name, space-padded (matches trimName on parse).
+    push4 ("name");
+    le32 (16u);
+    {
+        char name16[16];
+        std::memset (name16, ' ', 16);
+        const char* const raw = multi.name.toRawUTF8();
+        const size_t len = std::min<size_t> (16, multi.name.getNumBytesAsUTF8());
+        if (len > 0)
+            std::memcpy (name16, raw, len);
+        b.insert (b.end(), name16, name16 + 16);
+    }
+
+    // MultiData object (type prefix 0x00000004, part 0). Always written: a
+    // zeroed MultiData keeps the file well-formed (loadMultiFile needs it) and a
+    // reference .MUL always carries it, so the round-trip is exact.
+    push4 ("obj ");
+    le32 (56u + 4u);
+    le32 (0x00000004u);
+    b.insert (b.end(), multi.multiData.begin(), multi.multiData.end());
+
+    // Six Parts (1-based index in the type prefix), each an interleaved Patch +
+    // PartData object.
+    for (uint32_t i = 1; i <= 6u; ++i)
+    {
+        const auto& p = multi.parts[i - 1u];
+
+        push4 ("obj ");
+        le32 (112u + 4u);
+        le32 ((i << 8) | 0x00000001u);
+        b.insert (b.end(), p.patch.begin(), p.patch.end());
+
+        push4 ("obj ");
+        le32 (84u + 4u);
+        le32 ((i << 8) | 0x00000005u);
+        b.insert (b.end(), p.part.begin(), p.part.end());
+    }
+
+    // Atomic write via a temp file (safe even if the target is open elsewhere).
+    juce::TemporaryFile temp (file);
+    {
+        juce::FileOutputStream out (temp.getFile());
+        if (! out.openedOk() || ! out.write (b.data(), b.size()))
+            return false;
+        out.flush();
+    }
+    return temp.overwriteTargetFileWithTemporary();
+}

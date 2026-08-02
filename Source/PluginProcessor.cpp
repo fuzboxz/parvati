@@ -574,6 +574,86 @@ juce::File ParvatiAudioProcessor::getFactoryMultiDir()
         .getChildFile ("Parvati/FactoryMulti");
 }
 
+bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
+{
+    // The byte-exact inverse of loadMultiFile. Builds an AmbikaMulti from the
+    // live engine + APVTS state: the CURRENT part's Patch/PartData bytes come
+    // from the APVTS (captures uncommitted edits), the other 5 parts come from
+    // engine storage, and MultiData.part_mapping_ is rebuilt from the engine's
+    // per-part channel / keyrange / voice-allocation.
+    AmbikaMulti multi;
+    multi.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Parvati";
+
+    for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+    {
+        auto& mp = multi.parts[i];
+
+        if (i == currentPart_)
+        {
+            // Same byte-bridge as saveProgramFile: iterate every descriptor
+            // (skip arp/option; sequencer special-case) and route each byte into
+            // patch[off<112] / part[off<84]. Captures live APVTS edits.
+            for (const auto& d : getPatchParamDescriptors())
+            {
+                if (d.isArp || d.isOption)
+                    continue;
+
+                const float raw = apvts.getRawParameterValue (d.paramID)->load();
+                const uint8_t byte = d.isSequencer
+                    ? static_cast<uint8_t> (juce::jlimit (d.minValue, d.maxValue, static_cast<int> (raw)))
+                    : parvatiValueToPatchByte (d, raw);
+
+                const int off = d.byteOffset;
+                if (d.isPart || d.isSequencer)
+                {
+                    if (off >= 0 && off < 84) mp.part[(size_t) off] = byte;
+                }
+                else
+                {
+                    if (off >= 0 && off < 112) mp.patch[(size_t) off] = byte;
+                }
+            }
+
+            // Arp settings are stored in the Arpeggiator object (not a patch/
+            // part descriptor byte), so the loop above skips them -- but a .MUL
+            // DOES carry them in PartData offsets 7..11 (the exact inverse of
+            // loadMultiFile's read). Write them from the live Arpeggiator so the
+            // .MUL round-trips arp faithfully (a .MUL is the full-state format).
+            const auto& arp = engine_.getPart (i).arp;
+            mp.part[7]  = static_cast<uint8_t> (arp.getMode());
+            mp.part[8]  = static_cast<uint8_t> (arp.getDirection());
+            mp.part[9]  = static_cast<uint8_t> (arp.getOctave());
+            mp.part[10] = static_cast<uint8_t> (arp.getPattern());
+            mp.part[11] = static_cast<uint8_t> (arp.getResolution());
+        }
+        else
+        {
+            // Non-current parts: read straight from engine storage.
+            mp.patch = engine_.getPart (i).patchBytes;
+            mp.part  = engine_.getPart (i).partBytes;
+        }
+
+        mp.hasPatch = true;
+        mp.hasPart  = true;
+    }
+
+    // MultiData.part_mapping_[i] = { midi_channel, keyrange_low, keyrange_high,
+    // voice_allocation } (4 bytes per part, 6 parts = 24; rest of the 56-byte
+    // MultiData stays zero).
+    for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+    {
+        const int off = i * 4;
+        multi.multiData[(size_t) off + 0] = engine_.getPartChannel (i);
+        multi.multiData[(size_t) off + 1] = engine_.getPartKeyrangeLow (i);
+        multi.multiData[(size_t) off + 2] = engine_.getPartKeyrangeHigh (i);
+        multi.multiData[(size_t) off + 3] = engine_.getPartVoiceAllocation (i);
+    }
+    multi.hasMultiData = true;
+    multi.ok = true;
+
+    return writeAmbikaMultiFile (file, multi);
+}
+
 //==============================================================================
 juce::AudioProcessorEditor* ParvatiAudioProcessor::createEditor()
 {

@@ -184,6 +184,33 @@ target_link_libraries(parvati_multi_load_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Patch SAVE/LOAD round-trip verification: .PRO and .MUL writer == inverse of
+# parser (unit), plus end-to-end load -> save -> load into a 2nd processor
+# (APVTS + per-part routing equality). Built by default.
+# Run with: ./build/parvati_roundtrip_test
+add_executable(parvati_roundtrip_test
+    tests/roundtrip_test.cpp
+)
+target_include_directories(parvati_roundtrip_test PRIVATE Source)
+target_compile_features(parvati_roundtrip_test PRIVATE cxx_std_17)
+target_compile_definitions(parvati_roundtrip_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(parvati_roundtrip_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # Ambika .PRO patch-file support verification. Built by default.
 # Run with: ./build/parvati_patch_test
 add_executable(parvati_patch_test
