@@ -6,6 +6,8 @@
 #include "ui/ParamHelp.h"
 #include "ui/Translations.h"
 
+#include <algorithm>   // std::remove for the ParamControl instance registry
+
 namespace
 {
 // ---- Map a parameter ID to one of the GUI sections --------------------------
@@ -37,6 +39,18 @@ Section sectionForId (const juce::String& id)
 
 //==============================================================================
 bool ParamControl::tooltipsEnabled_ = true;
+
+namespace
+{
+// Live ParamControl instances (message-thread only: built/destroyed by the GUI
+// component tree, toggled from the Settings panel). Function-local static avoids
+// static-initialization-order issues across translation units.
+std::vector<ParamControl*>& paramControlRegistry()
+{
+    static std::vector<ParamControl*> r;
+    return r;
+}
+}  // namespace
 
 //==============================================================================
 ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& d)
@@ -72,6 +86,37 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         // Catch right-clicks on the knob/text-box (same reason as the combo).
         slider_->addMouseListener (this, false);
     }
+
+    // Cache the per-parameter help text and push it onto the interactive
+    // children. The editor-wide TooltipWindow only queries the LEAF component
+    // under the cursor, so the cell's own TooltipClient is insufficient — the
+    // mouse actually hovers the Slider/ComboBox/Label child. Register the
+    // instance so the global on/off toggle (setTooltipsEnabled) can re-apply
+    // the text later without rebuilding the controls.
+    helpText_ = getParamHelp (d.paramID);
+    paramControlRegistry().push_back (this);
+    applyTooltipState();
+}
+
+ParamControl::~ParamControl()
+{
+    auto& r = paramControlRegistry();
+    r.erase (std::remove (r.begin(), r.end(), this), r.end());
+}
+
+void ParamControl::applyTooltipState()
+{
+    const juce::String tip = tooltipsEnabled_ ? helpText_ : juce::String();
+    if (label_    != nullptr) label_->setTooltip (tip);
+    if (slider_   != nullptr) slider_->setTooltip (tip);
+    if (comboBox_ != nullptr) comboBox_->setTooltip (tip);
+}
+
+void ParamControl::setTooltipsEnabled (bool enabled)
+{
+    tooltipsEnabled_ = enabled;
+    for (auto* c : paramControlRegistry())
+        c->applyTooltipState();
 }
 
 juce::String ParamControl::getTooltip()
@@ -787,9 +832,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     tabKeys_.push_back ("Multi");
 
     // ---- Phase 4a: settings button + side panel ----
+    // Click-toggle feedback reflects whether the Settings panel is open (the
+    // "on" colour is the theme accent, via TextButton::buttonOnColourId). The
+    // authoritative sync is the panel's onPanelShowHide callback below, which
+    // fires on any show/hide (button click, dismiss glyph, click-outside).
+    settingsButton_.setClickingTogglesState (true);
     settingsButton_.setButtonText (TRANS ("Settings"));
     settingsButton_.onClick = [this] {
         settingsPanelHost_->showOrHide (! settingsPanelHost_->isPanelShowing());
+        settingsButton_.setToggleState (settingsPanelHost_->isPanelShowing(),
+                                        juce::dontSendNotification);
     };
     addAndMakeVisible (settingsButton_);
 
@@ -831,9 +883,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     });
     addAndMakeVisible (*voiceMeter_);
 
-    // ---- Phase 4a: settings side panel (left side, always-on-top) ----
+    // ---- Phase 4a: settings side panel (right side, always-on-top) ----
     // The SettingsPanel is owned + deleted by the SidePanel.
-    settingsPanelHost_ = std::make_unique<juce::SidePanel> (TRANS ("Settings"), 300, true);
+    // RIGHT-docked so the panel never covers the left-side Settings button
+    // (which the user re-clicks to dismiss it). Was left-docked (true).
+    settingsPanelHost_ = std::make_unique<juce::SidePanel> (TRANS ("Settings"), 300, false);
     settingsPanel_ = new SettingsPanel (processorRef_, themeManager_,
         [this] (double z) { setZoom (z); repaint(); },
         [this] (bool b)   { ParamControl::setTooltipsEnabled (b); },
@@ -847,6 +901,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             applyChromeTranslations();
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
+    // Keep the Settings button's toggle state in sync when the panel is
+    // dismissed by other means (the dismiss glyph / clicking outside / ESC) —
+    // onPanelShowHide fires after the slide animation on any show/hide.
+    settingsPanelHost_->onPanelShowHide = [this] (bool isShown) {
+        settingsButton_.setToggleState (isShown, juce::dontSendNotification);
+    };
     addAndMakeVisible (*settingsPanelHost_);
 
     // Refresh the Multi page (~30 Hz) so it tracks the edited part.

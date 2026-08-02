@@ -73,4 +73,14 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::ToggleButton::textColourId,               t.text);
     setColour (juce::ToggleButton::tickColourId,               t.accent);
     setColour (juce::ToggleButton::tickDisabledColourId,       t.textDim);
+
+    // ---- SidePanel (Settings panel) ----
+    // Without these the chrome falls back to LookAndFeel_V4's hardcoded
+    // dark-grey scheme, so the panel looks alien on non-default themes.
+    setColour (juce::SidePanel::backgroundColour,            t.panelBackground);
+    setColour (juce::SidePanel::titleTextColour,             t.text);
+    setColour (juce::SidePanel::shadowBaseColour,            t.windowBackground.darker());
+    setColour (juce::SidePanel::dismissButtonNormalColour,   t.textDim);
+    setColour (juce::SidePanel::dismissButtonOverColour,    t.accent);
+    setColour (juce::SidePanel::dismissButtonDownColour,    t.accent);
 }

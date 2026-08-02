@@ -40,13 +40,19 @@ public:
 
     void resized() override;
 
-    // juce::TooltipClient — per-parameter help text (ParamHelp.h).
+    ~ParamControl() override;
+
+    // juce::TooltipClient — per-parameter help text (ParamHelp.h). Queried only
+    // for the bare ~2px cell border; the interactive children carry their own
+    // setTooltip() (see applyTooltipState) because JUCE's TooltipWindow only
+    // queries the leaf component under the cursor.
     juce::String getTooltip() override;
 
-    // Suppress/enable tooltips globally (Phase 4a settings panel). When false,
-    // getTooltip() returns an empty String so the editor's TooltipWindow shows
-    // nothing — cleaner than recreating the window or toggling its visibility.
-    static void setTooltipsEnabled (bool enabled) { tooltipsEnabled_ = enabled; }
+    // Suppress/enable tooltips globally (Phase 4a settings panel). Flips the
+    // flag and re-applies the enabled/disabled tooltip text to every live
+    // ParamControl's children via the instance registry. getTooltip() also
+    // honours the flag for the bare-cell hover.
+    static void setTooltipsEnabled (bool enabled);
 
     // Right-click (popup) on this cell — or on its child Slider/ComboBox, which
     // registers `this` as a MouseListener (Component is already a MouseListener,
@@ -59,6 +65,11 @@ private:
     void resetToDefault();
     void randomize();
 
+    // Push the current help text (or empty, when tooltips are disabled) onto
+    // every interactive child (label / slider / combo). Called at construction
+    // and whenever the global toggle flips.
+    void applyTooltipState();
+
     const PatchParamDescriptor& desc_;
     ParvatiAudioProcessor& processor_;   // APVTS access for reset/randomize
     std::unique_ptr<juce::Slider>    slider_;
@@ -67,6 +78,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   sliderAttachment_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboAttachment_;
 
+    juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
     static bool tooltipsEnabled_;   // toggled from the Settings panel
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamControl)
