@@ -1,0 +1,322 @@
+// Copyright (c) 2024 805LABS / Parvati.
+//
+// SynthEngine — a juce::Synthesiser owning 16 AmbikaVoice instances divided
+// among up to kNumParts (6) Parts (multitimbral, hardware-accurate). Each Part
+// has its own Patch + PartData + Arpeggiator + Sequencer + MIDI channel + key
+// zone + a subset of the voices. Only the "current" Part is edited via APVTS
+// (matching the hardware: one editor, part-select). Direct MIDI is routed by
+// channel+keyzone to the matching Part; arpeggiator/sequencer-generated notes
+// trigger a voice WITHIN the generating Part.
+
+#pragma once
+
+#include <array>
+#include <atomic>
+#include <cstdint>
+#include <vector>
+
+#include <juce_audio_basics/juce_audio_basics.h>
+
+#include "AmbikaSound.h"
+#include "AmbikaVoice.h"
+#include "Arpeggiator.h"
+#include "NoteStack.h"
+#include "Sequencer.h"
+#include "TransportClock.h"
+#include "dsp/patch.h"
+
+// Authentic hardware = 6 voicecards => 6 Parts.
+static constexpr int kNumParts  = 6;
+static constexpr int kNumVoices = 16;   // plugin exposes 16 for polyphony headroom
+
+// One multitimbral Part. The Arpeggiator/Sesequencer objects ARE the per-part
+// storage for those settings (edits route to the current Part's objects).
+//
+// Polyphony: faithful port of ambika::VoiceAllocator (controller/
+// voice_allocator.cc) operating over a Part's voiceIndices. PolyphonyMode
+// (firmware part.h:58): MONO=0, POLY=1, UNISON_2X=2, CYCLIC=3, CHAIN=4.
+// pool_[i]: 0 = inactive; 0x80|note = active holding note. cyclic_: 0xff = LRU
+// mode (POLY/UNISON_2X/CHAIN); else a round-robin counter (CYCLIC).
+struct PolyAllocator
+{
+    static constexpr int kMax = 16;
+    uint8_t pool_[kMax] {};
+    uint8_t lru_[kMax]   {};
+    uint8_t size_   = 0;
+    uint8_t cyclic_ = 0xff;
+
+    void init (uint8_t size, bool cyclic)
+    {
+        size_   = size;
+        cyclic_ = cyclic ? 0 : 0xff;
+        for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;
+        for (uint8_t i = 0; i < kMax; ++i) lru_[i] = (i < size_) ? static_cast<uint8_t> (size_ - 1 - i) : 0;
+    }
+    uint8_t find (uint8_t note) const
+    {
+        for (uint8_t i = 0; i < size_; ++i)
+            if ((pool_[i] & 0x7f) == note) return i;
+        return 0xff;
+    }
+    void touch (uint8_t voice)
+    {
+        int8_t s = static_cast<int8_t> (size_) - 1;
+        int8_t d = s;
+        while (s >= 0) { if (lru_[s] != voice) lru_[d--] = lru_[s]; --s; }
+        lru_[0] = voice;
+    }
+    uint8_t noteOn (uint8_t note)
+    {
+        if (size_ == 0) return 0xff;
+        uint8_t voice = 0xff;
+        if (cyclic_ == 0xff)
+        {
+            voice = find (note);
+            if (voice == 0xff) for (uint8_t i = 0; i < size_; ++i) if (lru_[i] < size_ && ! (pool_[lru_[i]] & 0x80)) voice = lru_[i];
+            if (voice == 0xff) for (uint8_t i = 0; i < size_; ++i) if (lru_[i] < size_) voice = lru_[i];
+        }
+        else
+        {
+            cyclic_ = (static_cast<uint8_t> (cyclic_ + 1) >= size_) ? 0 : static_cast<uint8_t> (cyclic_ + 1);
+            voice = cyclic_;
+        }
+        pool_[voice] = static_cast<uint8_t> (0x80 | note);
+        touch (voice);
+        return voice;
+    }
+    uint8_t noteOff (uint8_t note)
+    {
+        uint8_t voice = find (note);
+        if (cyclic_ == 0xff) { if (voice != 0xff) { pool_[voice] &= 0x7f; touch (voice); } }
+        else                { if (voice != 0xff) pool_[voice] = 0xff; }
+        return voice;
+    }
+};
+
+struct Part
+{
+    std::array<uint8_t, 112> patchBytes {};   // sizeof(Patch)
+    std::array<uint8_t, 84>  partBytes {};    // sizeof(PartData)
+    parvati::Arpeggiator arp;
+    parvati::Sequencer   seq;
+    // These three are written on the message thread (Multi page / .MUL load) and
+    // read on the audio thread (findPartForNote, every note) -> atomic to avoid a
+    // data race. (polyphonyMode / voiceAllocation below stay plain: they are
+    // published to the audio thread via the allocationDirty_ release/acquire.)
+    std::atomic<uint8_t> midiChannel  { 0 };   // 0 = Omni (all channels); else 1..16
+    std::atomic<uint8_t> keyrangeLow  { 0 };
+    std::atomic<uint8_t> keyrangeHigh { 127 };
+    uint8_t voiceAllocation = 0;   // 6-bitmask over firmware voicecards (vc0..5)
+    uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
+    PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
+    parvati::NoteStack<12> monoStack;   // MONO note-priority stack
+    std::vector<int> voiceIndices;   // indices into the Synthesiser's voice list
+};
+
+class SynthEngine : public juce::Synthesiser
+{
+public:
+    SynthEngine();
+
+    // Called from the AudioProcessor's prepareToPlay with the HOST rate.
+    void prepare (double sampleRate, int blockSize);
+
+    // ---- APVTS -> voice patch/part byte bridge (CURRENT part only) ----
+    // Writes the byte into the current Part's voices AND stores it in that
+    // Part's patch/part storage (so part swaps are consistent).
+    void applyPatchByte (int offset, uint8_t value);
+    void applyPartByte  (int offset, uint8_t value);
+
+    // Global (all voices): host tempo + VCA curve.
+    void applyTempo (double bpm);
+    void setVcaExponential (bool exponential);
+
+    // Global (all voices): optional per-sample parameter smoothing (knob /
+    // automation zipper-noise reduction). Default OFF keeps the audio path
+    // bit-identical.
+    void setParameterSmoothing (bool smoothing);
+
+    // ---- MPE / per-voice expression ----
+    // Per-voice pitch-bend range in semitones. Default 2 = the MPE standard
+    // per-note bend range. Applied uniformly to every voice (raised for wider
+    // non-MPE bends). The engine's handlePitchWheel converts the host wheel to
+    // semitones with this range before routing per-voice.
+    void setBendRangeSemitones (float semis)
+    {
+        bendRangeSemitones_ = semis;
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->setMpeBendRangeSemitones (semis);
+    }
+    float getBendRangeSemitones() const noexcept { return bendRangeSemitones_; }
+
+    // Global (all voices): optional FILTER oversampling (1/2/4). Default 1 keeps
+    // the audio path bit-identical. Each voice defers the rebuild to its audio
+    // thread (see AmbikaVoice::setOversamplingFactor).
+    void setOversamplingFactor (int factor)
+    {
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->setOversamplingFactor (factor);
+    }
+
+    // GLOBAL filter-card topology (one Ambika unit = one filter card).
+    void setFilterTopology (ambika::dsp::FilterTopology topology)
+    {
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->setFilterTopology (topology);
+    }
+
+    // ---- Arpeggiator / Sequencer config (CURRENT part) ----
+    void setArpMode (uint8_t mode);
+    void setArpDirection (uint8_t dir)  { parts_[currentPart_].arp.setDirection (dir); }
+    void setArpOctave (uint8_t oct)     { parts_[currentPart_].arp.setOctave (oct); }
+    void setArpPattern (uint8_t pat)    { parts_[currentPart_].arp.setPattern (pat); }
+    void setArpResolution (uint8_t res) { parts_[currentPart_].arp.setResolution (res); }
+    void setSequencerMode (uint8_t mode) { parts_[currentPart_].seq.setMode (mode); }
+    void setSequenceLength (int i, uint8_t len) { parts_[currentPart_].seq.setSequenceLength (i, len); }
+    void setSequenceDataByte (int offset, uint8_t value) { parts_[currentPart_].seq.setSequenceDataByte (offset, value); }
+
+    // ---- multitimbral Part management ----
+    static constexpr int getNumParts() { return kNumParts; }
+    void setCurrentPart (int part);
+    int  getCurrentPart() const { return currentPart_; }
+    Part& getPart (int i) { return parts_[i]; }
+
+    // Push a Part's stored patch/part bytes into ALL of that Part's voices
+    // (used when a .MUL loads every Part at once; edits normally go through
+    // applyPatchByte for the current Part only).
+    void pushPartBytesToVoices (int part);
+
+    // Mark that the voice allocation / polyphony / patch data changed on the
+    // message thread; the audio thread services it (rebuild + push) at the top
+    // of the next processTransport so voiceIndices is never mutated under a
+    // concurrent reader. (Message-thread callers must NOT rebuild directly.)
+    void markAllocationDirty() { allocationDirty_.store (true, std::memory_order_release); }
+
+    // Part routing (MIDI channel + key zone). channel: 0=Omni, else 1..16.
+    void setPartChannel  (int part, uint8_t channel) { if (ok (part)) parts_[part].midiChannel.store (channel); }
+    void setPartKeyrange (int part, uint8_t lo, uint8_t hi) { if (ok (part)) { parts_[part].keyrangeLow.store (lo); parts_[part].keyrangeHigh.store (hi); } }
+    uint8_t getPartChannel (int part) const { return ok (part) ? parts_[part].midiChannel.load() : 0; }
+
+    // GUI-contract aliases (the multitimbral editor calls these). channel: 0=Omni.
+    void setPartMidiChannel (int part, int ch)             { setPartChannel (part, (uint8_t) ch); }
+    void setPartKeyZone     (int part, int lo, int hi)     { setPartKeyrange (part, (uint8_t) lo, (uint8_t) hi); }
+    uint8_t getPartKeyrangeLow  (int part) const { return ok (part) ? parts_[part].keyrangeLow.load()  : 0; }
+    uint8_t getPartKeyrangeHigh (int part) const { return ok (part) ? parts_[part].keyrangeHigh.load() : 127; }
+
+    // ---- Voice allocation (firmware 6-voicecard bitmask) ----
+    // Each firmware voicecard maps to a fixed block of Parvati voices
+    // (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13} vc5={14,15}).
+    // A Part owns the union of blocks for the voicecard bits it sets; a voicecard
+    // already claimed by an earlier Part is not reassigned (first-wins, like
+    // firmware Multi::AssignVoices). Default bitmask = 1<<partIndex.
+    void setPartVoiceAllocation (int part, uint8_t bitmask);
+    uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[part].voiceAllocation : 0; }
+
+    // Advance the transport + per-part arp/sequencer for one audio block.
+    void processTransport (juce::MidiBuffer& midi, int numSamples, double bpm, bool isPlaying);
+
+    // Test/internal access.
+    AmbikaVoice* getAmbikaVoice (int i)
+    {
+        if (i >= 0 && i < (int) voices.size())
+            return dynamic_cast<AmbikaVoice*> (voices[(size_t) i]);
+        return nullptr;
+    }
+
+    // ---- Multi-output (Ambika hardware: 6 individual voicecard outputs) ----
+    // Each voice renders into its FIXED voicecard buffer (mono). The processor
+    // sums all six into the main stereo bus (audible-identical to the pre-
+    // multi-out single-buffer mix) and copies each to its optional aux bus.
+    // The buffers are sized in prepare() and cleared/filled per sub-block in the
+    // renderVoices override.
+    const std::array<juce::AudioBuffer<float>, kNumParts>& getVoiceCardBuffers() const noexcept
+    {
+        return voiceCardBuffers_;
+    }
+    // Voicecard (0..5) for a given voice index, via the fixed block mapping
+    // (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13} vc5={14,15}).
+    static int voiceCardForIndex (int voiceIndex);
+    // Back-compat: the current Part's arp/seq.
+    parvati::Arpeggiator& getArp()       { return parts_[currentPart_].arp; }
+    parvati::Sequencer&   getSequencer() { return parts_[currentPart_].seq; }
+
+private:
+    std::array<Part, kNumParts> parts_;
+
+    // One mono buffer per voicecard (6 total). Cleared + filled in renderVoices
+    // for each sub-block range; the processor mixes them into the output buses.
+    std::array<juce::AudioBuffer<float>, kNumParts> voiceCardBuffers_;
+    parvati::TransportClock transport_;
+    int  currentPart_ = 0;
+    bool wasPlaying_ = false;
+    bool partsSeeded_ = false;   // seed Part storage from the init patch once
+    std::atomic<bool> allocationDirty_ { false };   // set by message thread; serviced on the audio thread
+
+    float bendRangeSemitones_ = 2.f;   // per-voice pitch-bend range (MPE default)
+
+    // GLOBAL continuous-controller mod sources (mod wheel / breath / foot
+    // pedal), faithful to firmware part.cc:367-377 (ControlChange ->
+    // WriteToAllVoices). Stored as the raw 0..127 controller value; written to
+    // voices as value<<1 (0..254) to match the firmware MOD_SRC_* scaling.
+    // (JUCE has no modWheel/breath/foot CC constants, so handleController
+    // matches the literal controller numbers 1/2/4.)
+    uint8_t globalWheel_  = 0;
+    uint8_t globalBreath_ = 0;
+    uint8_t globalFoot_   = 0;
+
+    static bool ok (int part) { return part >= 0 && part < kNumParts; }
+
+    // First Part whose channel+keyzone accepts (channel,note); -1 if none.
+    int findPartForNote (int channel, int note) const;
+
+    // Recompute every Part's voiceIndices from its voiceAllocation bitmask
+    // (first-wins across Parts) and re-tag each voice's partIndex.
+    void rebuildVoiceAllocation();
+
+    // (Re)initialise a Part's voice allocator for its current polyphony mode
+    // and voice set (firmware Part::InitializeAllocators, part.cc:240).
+    void initAllocator (Part& p);
+
+    // Voice selection WITHIN a Part (never touches other Parts' voices).
+    // incomingChannel tags the triggered voice with its real MIDI channel so the
+    // per-channel expression routing (handlePitchWheel / ChannelPressure /
+    // Controller) isolates per-note under MPE (Omni Part) and stays channel-wide
+    // under standard single-channel MIDI. For non-Omni Parts incomingChannel ==
+    // the Part's channel (findPartForNote matched), so behaviour is unchanged;
+    // arp/sequencer-generated notes pass the Part's channel.
+    void triggerNoteInPart (int part, int note, float velocity, int incomingChannel);
+    void releaseNoteInPart (int part, int note, int incomingChannel);
+
+    // Push the current SEQ_1/2 values into each Part's own voices.
+    void injectSequencerModulation();
+
+    // juce::Synthesiser routing hooks (noteOn/noteOff are virtual; handleNoteOn
+    // is not, in JUCE 9).
+    void noteOn  (int midiChannel, int midiNoteNumber, float velocity) override;
+    void noteOff (int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) override;
+
+    // juce::Synthesiser expression routing (MPE / pitch-bend fix). Unified
+    // per-channel routing: each handler targets the ACTIVE voices whose MIDI
+    // channel matches (isVoiceActive() && isPlayingChannel()). Under MPE a
+    // note's channel is unique => per-note; under standard MIDI all notes share
+    // one channel => channel-wide. These override the base, whose per-voice
+    // callbacks (pitchWheelMoved / channelPressureChanged / controllerMoved) are
+    // no-ops in AmbikaVoice.
+    void handlePitchWheel      (int midiChannel, int wheelValue) override;
+    void handleChannelPressure (int midiChannel, int channelPressureValue) override;
+    void handleController      (int midiChannel, int controllerNumber, int controllerValue) override;
+
+    // GLOBAL continuous-controller (mod wheel CC1 / breath CC2 / foot CC4)
+    // mod-matrix write — sets the given mod source on EVERY voice (faithful to
+    // firmware Part::WriteToAllVoices over all allocated voicecards). See the
+    // .cpp for why this also gives new notes current-wheel pickup for free.
+    void applyGlobalModSource (int modSrcEnum, uint8_t value0to254);
+
+    // juce::Synthesiser audio hook: route each voice's mono render into its
+    // FIXED voicecard buffer instead of the master buffer. The processor fills
+    // the master (main + aux) from these after renderNextBlock returns.
+    void renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample, int numSamples) override;
+};

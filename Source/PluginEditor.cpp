@@ -1,0 +1,1234 @@
+// Copyright (c) 2024 805LABS / Parvati.  See PluginEditor.h.
+
+#include "PluginEditor.h"
+#include "PatchFile.h"
+#include "ui/EnvelopeDisplay.h"
+#include "ui/ParamHelp.h"
+#include "ui/Translations.h"
+
+namespace
+{
+// ---- Map a parameter ID to one of the GUI sections --------------------------
+// (Derived from the well-defined paramID prefixes in ParameterLayout.cpp, so the
+//  verified APVTS byte-bridge stays untouched.)
+enum class Section { Oscillators, Mixer, Filter, EnvLfo, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi };
+
+Section sectionForId (const juce::String& id)
+{
+    // Global synth options (no Patch/Part byte) live on the dedicated Global
+    // tab. Check these BEFORE the prefix rules so e.g. "filter_card" (a global
+    // option) is not swept into the Filter page by the "filter" prefix.
+    if (id == "filter_card") return Section::Global;
+    if (id == "vca_curve")   return Section::Global;
+    // Order matters: "modif" before "mod", "arp" before others.
+    if (id.startsWith ("arp"))       return Section::Arp;
+    if (id.startsWith ("seq"))       return Section::Sequencer;
+    if (id.startsWith ("osc"))       return Section::Oscillators;
+    if (id.startsWith ("mix"))       return Section::Mixer;
+    if (id.startsWith ("filter"))    return Section::Filter;
+    if (id.startsWith ("modif"))     return Section::Modifiers;
+    if (id.startsWith ("mod"))       return Section::ModMatrix;
+    if (id.startsWith ("env"))       return Section::EnvLfo;
+    if (id.startsWith ("voice_lfo")) return Section::EnvLfo;
+    if (id.startsWith ("part"))      return Section::Global;   // part volume/legato/portamento
+    return Section::Global;
+}
+}  // namespace
+
+//==============================================================================
+bool ParamControl::tooltipsEnabled_ = true;
+
+//==============================================================================
+ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& d)
+    : desc_ (d), processor_ (processor)
+{
+    label_ = std::make_unique<juce::Label> (d.paramID + "_lbl", d.label);
+    label_->setJustificationType (juce::Justification::centred);
+    label_->setFont (juce::FontOptions (12.0f));
+    // Label / combo / slider colours all come from the editor-wide
+    // ParvatiLookAndFeel (inherited through the component tree).
+    addAndMakeVisible (*label_);
+
+    if (d.choices != nullptr)
+    {
+        comboBox_ = std::make_unique<juce::ComboBox> (d.paramID);
+        comboBox_->addItemList (*d.choices, 1);
+        addAndMakeVisible (*comboBox_);
+        comboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            processor.getApvts(), d.paramID, *comboBox_);
+        // Catch right-clicks on the combo (it would otherwise swallow the popup
+        // click before this component sees it). `false` => events for the combo
+        // only (no recursion into its popup children).
+        comboBox_->addMouseListener (this, false);
+    }
+    else
+    {
+        slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
+                                                   juce::Slider::TextBoxBelow);
+        slider_->setTextBoxIsEditable (true);
+        addAndMakeVisible (*slider_);
+        sliderAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            processor.getApvts(), d.paramID, *slider_);
+        // Catch right-clicks on the knob/text-box (same reason as the combo).
+        slider_->addMouseListener (this, false);
+    }
+}
+
+juce::String ParamControl::getTooltip()
+{
+    // When tooltips are disabled (Settings panel toggle), return an empty String
+    // so the editor's TooltipWindow shows nothing. Cleaner than recreating the
+    // window or toggling its visibility.
+    return tooltipsEnabled_ ? getParamHelp (desc_.paramID) : juce::String();
+}
+
+void ParamControl::resized()
+{
+    auto b = getLocalBounds().reduced (2);
+    label_->setBounds (b.removeFromTop (15));
+    b.removeFromTop (3);
+
+    if (slider_)
+    {
+        slider_->setBounds (b);
+    }
+    else if (comboBox_)
+    {
+        comboBox_->setBounds (b.withSizeKeepingCentre (b.getWidth(),
+                                                       juce::jmin (26, b.getHeight())));
+    }
+}
+
+//==========================================================================
+// Phase 4b: right-click context menu (Reset to default / Randomize).
+void ParamControl::mouseDown (const juce::MouseEvent& e)
+{
+    // Only popup (right-click / Ctrl-click) triggers the menu; every other
+    // click falls through to normal slider/combo interaction.
+    if (e.mods.isPopupMenu())
+        showContextMenu();
+}
+
+void ParamControl::showContextMenu()
+{
+    juce::PopupMenu menu;
+    // SafePointer guards against the control being deleted while the async
+    // menu is still open (e.g. editor closed mid-menu).
+    juce::Component::SafePointer<ParamControl> safe (this);
+    menu.addItem ("Reset to default", [safe] { if (safe != nullptr) safe->resetToDefault(); });
+    menu.addItem ("Randomize",        [safe] { if (safe != nullptr) safe->randomize(); });
+    menu.showMenuAsync (juce::PopupMenu::Options());
+}
+
+void ParamControl::resetToDefault()
+{
+    // getParameterAsValue returns a Value bound to the APVTS parameter; assigning
+    // the denormalized value drives the attachment (control moves) AND the
+    // processor's APVTS::Listener (engine byte-bridge) — the same path patch
+    // loading uses. defaultValue is the denormalized value (Int value or Choice
+    // index), matching how the APVTS stores each type. beginNewTransaction()
+    // first so this reset is its own discrete undo step (Phase 4c).
+    processor_.getUndoManager().beginNewTransaction();
+    processor_.getApvts().getParameterAsValue (desc_.paramID) =
+        static_cast<float> (desc_.defaultValue);
+}
+
+void ParamControl::randomize()
+{
+    float value = 0.0f;
+    if (comboBox_ != nullptr && desc_.choices != nullptr)
+    {
+        const int n = desc_.choices->size();
+        if (n <= 0)
+            return;
+        // Random choice index.
+        value = static_cast<float> (juce::Random::getSystemRandom().nextInt (n));
+    }
+    else
+    {
+        const int lo = desc_.minValue;
+        const int hi = desc_.maxValue;
+        if (hi < lo)
+            return;
+        // Random value in the inclusive [minValue, maxValue] range.
+        value = static_cast<float> (lo + juce::Random::getSystemRandom().nextInt (hi - lo + 1));
+    }
+
+    // beginNewTransaction() so each Randomize is a discrete undo step (Phase 4c).
+    processor_.getUndoManager().beginNewTransaction();
+    processor_.getApvts().getParameterAsValue (desc_.paramID) = value;
+}
+
+//==============================================================================
+juce::String ParamPage::groupForId (const juce::String& id)
+{
+    // ---- Mixer splits into three sub-groups (exact ids) ----
+    if (id == "mix_balance" || id == "mix_op" || id == "mix_param")
+        return "Mixer";
+    if (id == "mix_sub_shape" || id == "mix_sub")
+        return "Sub Oscillator";
+    if (id == "mix_noise" || id == "mix_fuzz" || id == "mix_crush")
+        return "Noise / Waveshaper";
+
+    // ---- The two filter modulation amounts share one panel ----
+    if (id == "filter_env" || id == "filter_lfo")
+        return "Filter Mod";
+
+    // ---- Sequencer length slots (exact ids) belong to their step group ----
+    if (id == "seq_length_1") return "Sequencer 1";
+    if (id == "seq_length_2") return "Sequencer 2";
+    if (id == "seq_length_3") return "Note Sequencer";
+
+    // ---- Synth options with no patch byte ----
+    if (id == "vca_curve" || id == "filter_card")
+        return "Global";
+
+    // ---- Sequencer step grids (prefixes) ----
+    if (id.startsWith ("seq1_step")) return "Sequencer 1";
+    if (id.startsWith ("seq2_step")) return "Sequencer 2";
+    if (id.startsWith ("seqnote_"))  return "Note Sequencer";
+
+    // ---- Oscillators / filters ----
+    if (id.startsWith ("osc1_"))    return "Osc 1";
+    if (id.startsWith ("osc2_"))    return "Osc 2";
+    if (id.startsWith ("filter1_")) return "Filter 1";
+    if (id.startsWith ("filter2_")) return "Filter 2";
+
+    // ---- Envelopes / LFOs ----
+    if (id.startsWith ("env1_")) return "Env / LFO 1";
+    if (id.startsWith ("env2_")) return "Env / LFO 2";
+    if (id.startsWith ("env3_")) return "Env / LFO 3";
+    if (id.startsWith ("voice_lfo_")) return "Voice LFO";
+
+    // ---- Modifiers (modifN_*) — checked before the "mod" rule ----
+    if (id.startsWith ("modif") && id.length() > 5 && id[5] >= '0' && id[5] <= '9')
+    {
+        juce::String num;
+        for (int i = 5; i < id.length() && id[i] >= '0' && id[i] <= '9'; ++i) num += id[i];
+        return "Modifier " + num;
+    }
+
+    // ---- Mod matrix (modN_*) ----
+    if (id.startsWith ("mod") && id.length() > 3 && id[3] >= '0' && id[3] <= '9')
+    {
+        juce::String num;
+        for (int i = 3; i < id.length() && id[i] >= '0' && id[i] <= '9'; ++i) num += id[i];
+        return "Mod " + num;
+    }
+
+    // ---- Part / Play + Arp ----
+    if (id.startsWith ("part_")) return "Part / Play";
+    if (id.startsWith ("arp_"))  return "Arp";
+
+    return "Other";
+}
+
+void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& descriptors)
+{
+    // Partition descriptors into named groups, preserving first-appearance
+    // order of the groups and the descriptor order within each group.
+    for (int i = 0; i < (int) descriptors.size(); ++i)
+    {
+        const juce::String gname = groupForId (descriptors[i]->paramID);
+        GroupLayout* g = nullptr;
+        for (auto& existing : groups_)
+            if (existing.name == gname) { g = &existing; break; }
+        if (g == nullptr)
+        {
+            groups_.emplace_back();
+            g = &groups_.back();
+            g->name = gname;
+        }
+        g->controlIndices.push_back (i);
+    }
+}
+
+void ParamPage::configureGroupLayouts()
+{
+    // Internal column count for a generic panel, chosen so the cells stay
+    // roughly square-ish (1->1, 2->2, 3->3, 4->2x2, 5/6->3, 7/8->4).
+    auto generalCols = [] (int n) -> int {
+        if (n <= 1) return 1;
+        if (n == 2) return 2;
+        if (n == 3) return 3;
+        if (n == 4) return 2;
+        if (n <= 6) return 3;
+        return 4;
+    };
+
+    for (auto& g : groups_)
+    {
+        const int n = (int) g.controlIndices.size();
+        g.cellW = cellWidth_;
+        g.cellH = cellHeight_;
+
+        if (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Sequencer")
+        {
+            // Dense step grid: 16 (or 33) small cells laid in 8 columns.
+            g.stepGrid = true;
+            g.internalCols = 8;
+            g.cellW = 60;
+            g.cellH = 50;
+        }
+        else if (g.name.startsWith ("Mod ") || g.name.startsWith ("Modifier "))
+        {
+            // Compact horizontal strip: source / dest / amount (or in1 / in2 / op).
+            g.singleRow = true;
+            g.internalCols = juce::jmax (1, n);
+            g.cellW = 112;
+            g.cellH = 64;
+        }
+        else
+        {
+            g.internalCols = generalCols (n);
+        }
+    }
+}
+
+void ParamPage::layoutGroups (int targetWidth)
+{
+    const int topY = kMargin + kHeadingH + kHeadingGap;
+    const int availW = targetWidth - 2 * kMargin;
+
+    // Natural panel size for each group (independent of placement).
+    for (auto& g : groups_)
+    {
+        const int n = (int) g.controlIndices.size();
+        const int cols = juce::jmax (1, g.internalCols);
+        const int rows = (n + cols - 1) / cols;
+        g.naturalWidth  = cols * g.cellW + 2 * kGroupPad;
+        g.naturalHeight = kGroupTitleH + rows * g.cellH + 2 * kGroupPad;
+        // A group with a decoration (e.g. an ADSR preview) reserves room below
+        // its control cells so the panel height includes it.
+        if (g.decoration != nullptr)
+            g.naturalHeight += kDecorationH + kDecorationGap;
+    }
+
+    // Greedy left-to-right flow that wraps to a new row when the next panel
+    // would overflow the available width.
+    int x = kMargin, y = topY, rowH = 0;
+    const int rowStartX = kMargin;
+    const int maxRight = kMargin + juce::jmax (0, availW);
+
+    for (auto& g : groups_)
+    {
+        if (x != rowStartX && x + g.naturalWidth > maxRight)
+        {
+            x = rowStartX;
+            y += rowH + kGroupGap;
+            rowH = 0;
+        }
+        g.rect.setBounds (x, y, g.naturalWidth, g.naturalHeight);
+        x += g.naturalWidth + kGroupGap;
+        rowH = juce::jmax (rowH, g.naturalHeight);
+    }
+
+    contentWidth_  = juce::jmax (targetWidth, 2 * kMargin + 40);
+    contentHeight_ = groups_.empty() ? (topY + kMargin)
+                                     : (y + rowH + kMargin);
+}
+
+void ParamPage::applyLayout()
+{
+    heading_.setBounds (kMargin, kMargin,
+                        juce::jmax (40, contentWidth_ - 2 * kMargin), kHeadingH);
+
+    for (auto& g : groups_)
+    {
+        if (g.groupComp != nullptr)
+            g.groupComp->setBounds (g.rect);
+
+        auto inner = g.rect.reduced (kGroupPad);
+        inner.removeFromTop (kGroupTitleH);   // room for the panel title text
+
+        const int cols = juce::jmax (1, g.internalCols);
+        for (int idx = 0; idx < (int) g.controlIndices.size(); ++idx)
+        {
+            const int ci = g.controlIndices[idx];
+            if (ci < 0 || ci >= (int) controls_.size()) continue;
+            const int col = idx % cols;
+            const int row = idx / cols;
+            const juce::Rectangle<int> cell (inner.getX() + col * g.cellW,
+                                             inner.getY() + row * g.cellH,
+                                             g.cellW, g.cellH);
+            controls_[ci]->setBounds (cell.reduced (3));
+        }
+
+        // A group's decoration (if any) spans the panel width below the cells.
+        const int rows = ((int) g.controlIndices.size() + cols - 1) / cols;
+        if (g.decoration != nullptr)
+        {
+            const int decY = inner.getY() + rows * g.cellH + kDecorationGap;
+            g.decoration->setBounds (
+                juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), kDecorationH));
+        }
+    }
+}
+
+void ParamPage::setGroupDecoration (const juce::String& groupName,
+                                    std::unique_ptr<juce::Component> decoration)
+{
+    // ParamPage always owns the component (so it never leaks / dangles), even
+    // if @p groupName does not match an existing group.
+    auto* raw = decoration.get();
+    decorations_.push_back (std::move (decoration));
+    addAndMakeVisible (raw);
+    for (auto& g : groups_)
+        if (g.name == groupName)
+            g.decoration = raw;
+
+    // Recompute the layout so contentHeight_ already accounts for the new
+    // decoration when the editor sizes this page immediately afterwards.
+    layoutGroups (juce::jmax (940, getWidth()));
+    applyLayout();
+}
+
+ParamPage::ParamPage (ParvatiAudioProcessor& processor,
+                      ThemeManager& themeManager,
+                      const juce::String& heading,
+                      const std::vector<const PatchParamDescriptor*>& descriptors,
+                      int columns, int cellWidth, int cellHeight)
+    : themeManager_ (themeManager),
+      cellWidth_ (cellWidth), cellHeight_ (cellHeight)
+{
+    juce::ignoreUnused (columns);
+
+    heading_.setText (heading, juce::dontSendNotification);
+    heading_.setJustificationType (juce::Justification::centredLeft);
+    heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
+    // Bright section heading: explicit accent (overrides the L&F's default dim
+    // label text) to preserve the original look.
+    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
+    addAndMakeVisible (heading_);
+
+    buildGroups (descriptors);
+    configureGroupLayouts();
+
+    // Bordered panels first (so they sit behind the control cells), one per group.
+    for (auto& g : groups_)
+    {
+        auto gc = std::make_unique<juce::GroupComponent> (g.name, g.name);
+        gc->setTextLabelPosition (juce::Justification::top | juce::Justification::left);
+        // Outline + title-text colours come from the editor-wide L&F, so a theme
+        // switch refreshes them automatically.
+        addAndMakeVisible (*gc);
+        g.groupComp = gc.get();
+        groupComponents_.push_back (std::move (gc));
+    }
+
+    // Control cells on top of the panel borders.
+    for (auto* d : descriptors)
+    {
+        controls_.emplace_back (std::make_unique<ParamControl> (processor, *d));
+        addAndMakeVisible (*controls_.back());
+    }
+
+    // Seed the content size at a sensible default width; the editor reflows to
+    // the real tab width on the first resized().
+    layoutGroups (940);
+}
+
+void ParamPage::applyThemeColors()
+{
+    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
+    // Group borders / titles are themed via the L&F; force a repaint so a theme
+    // switch refreshes them (and the control cells) immediately.
+    for (auto& gc : groupComponents_) gc->repaint();
+    for (auto& c : controls_)         c->repaint();
+    for (auto& d : decorations_)      d->repaint();   // e.g. ADSR previews read the theme live
+    repaint();
+}
+
+void ParamPage::setHeadingText (const juce::String& text)
+{
+    heading_.setText (text, juce::dontSendNotification);
+}
+
+void ParamPage::paint (juce::Graphics& g)
+{
+    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+}
+
+void ParamPage::resized()
+{
+    layoutGroups (getWidth());
+    applyLayout();
+}
+
+void ParamPage::reflowToWidth (int targetWidth)
+{
+    if (targetWidth <= 0)
+        return;
+    // Lay out for the requested width, then adopt the resulting height so the
+    // parent Viewport scrolls vertically only. setSize() re-triggers resized()
+    // which re-lays-out to the same width (cheap rectangle math).
+    layoutGroups (targetWidth);
+    applyLayout();
+    if (getWidth() != targetWidth || getHeight() != contentHeight_)
+        setSize (targetWidth, contentHeight_);
+}
+
+//==============================================================================
+MultiPage::MultiPage (ParvatiAudioProcessor& p, ThemeManager& themeManager)
+    : proc_ (p), themeManager_ (themeManager)
+{
+    heading_.setText (TRANS ("Multi / Setup"), juce::dontSendNotification);
+    heading_.setJustificationType (juce::Justification::centredLeft);
+    heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
+    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
+    addAndMakeVisible (heading_);
+
+    partLabel_.setFont (juce::FontOptions (14.0f));
+    // partLabel_ text colour from the L&F (dim).
+    addAndMakeVisible (partLabel_);
+
+    auto addCaption = [this] (juce::Label& l, const juce::String& t) {
+        l.setText (t, juce::dontSendNotification);
+        l.setJustificationType (juce::Justification::centred);
+        l.setFont (juce::FontOptions (13.0f));
+        // Caption text colour from the L&F (dim).
+        addAndMakeVisible (l);
+    };
+    addCaption (chLabel_, TRANS ("MIDI Channel"));
+    addCaption (loLabel_, TRANS ("Key Zone Low"));
+    addCaption (hiLabel_, TRANS ("Key Zone High"));
+
+    // MIDI channel: Omni (0) + 1..16.
+    channelCombo_.addItem ("Omni", 1);
+    for (int c = 1; c <= 16; ++c)
+        channelCombo_.addItem (juce::String (c), c + 1);
+    // Combo + popup colours from the L&F.
+    channelCombo_.onChange = [this] {
+        if (refreshing_) return;
+        const int part = proc_.getEngine().getCurrentPart();
+        proc_.getEngine().setPartMidiChannel (part, channelCombo_.getSelectedId() - 1);
+    };
+    addAndMakeVisible (channelCombo_);
+
+    auto setupZoneSlider = [this] (juce::Slider& s) {
+        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 56, 18);
+        s.setRange (0.0, 127.0, 1.0);
+        // Slider colours from the L&F.
+        addAndMakeVisible (s);
+    };
+    setupZoneSlider (loSlider_);
+    setupZoneSlider (hiSlider_);
+    auto onZone = [this] {
+        if (refreshing_) return;
+        const int part = proc_.getEngine().getCurrentPart();
+        proc_.getEngine().setPartKeyZone (part,
+                                          static_cast<int> (loSlider_.getValue()),
+                                          static_cast<int> (hiSlider_.getValue()));
+    };
+    loSlider_.onValueChange = onZone;
+    hiSlider_.onValueChange = onZone;
+
+    // Voice allocation: 6 toggles, one per firmware voicecard (vc1..vc6).
+    addCaption (allocLabel_, TRANS ("Voice Allocation (voicecards)"));
+    auto reapplyAlloc = [this] {
+        if (refreshing_) return;
+        const int part = proc_.getEngine().getCurrentPart();
+        uint8_t mask = 0;
+        for (int b = 0; b < 6; ++b)
+            if (allocBits_[b].getToggleState())
+                mask |= static_cast<uint8_t> (1 << b);
+        proc_.getEngine().setPartVoiceAllocation (part, mask);
+    };
+    for (int b = 0; b < 6; ++b)
+    {
+        allocBits_[b].setButtonText ("VC" + juce::String (b + 1));
+        // Toggle text + tick colours from the L&F.
+        allocBits_[b].onClick = reapplyAlloc;
+        addAndMakeVisible (allocBits_[b]);
+    }
+
+    setSize (640, 320);
+    refresh();
+}
+
+void MultiPage::applyThemeColors()
+{
+    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
+    repaint();
+}
+
+void MultiPage::refreshLanguage()
+{
+    // Re-apply the static chrome captions through the active LocalisedStrings.
+    // The dynamic "Editing Part X of Y" line is rebuilt by refresh().
+    heading_.setText (TRANS ("Multi / Setup"), juce::dontSendNotification);
+    chLabel_.setText (TRANS ("MIDI Channel"), juce::dontSendNotification);
+    loLabel_.setText (TRANS ("Key Zone Low"), juce::dontSendNotification);
+    hiLabel_.setText (TRANS ("Key Zone High"), juce::dontSendNotification);
+    allocLabel_.setText (TRANS ("Voice Allocation (voicecards)"), juce::dontSendNotification);
+    repaint();
+}
+
+void MultiPage::paint (juce::Graphics& g) { g.fillAll (themeManager_.getCurrentTheme().windowBackground); }
+
+void MultiPage::resized()
+{
+    auto area = getLocalBounds().reduced (16);
+    heading_.setBounds (area.removeFromTop (30));
+    area.removeFromTop (8);
+    partLabel_.setBounds (area.removeFromTop (24));
+    area.removeFromTop (20);
+
+    auto row = area.removeFromTop (130);
+    const int colW = juce::jmax (140, row.getWidth() / 3);
+    auto cell = row.removeFromLeft (colW);
+    chLabel_.setBounds (cell.removeFromTop (18));
+    channelCombo_.setBounds (cell.removeFromTop (30).withSizeKeepingCentre (cell.getWidth(), 24));
+    cell = row.removeFromLeft (colW);
+    loLabel_.setBounds (cell.removeFromTop (18));
+    loSlider_.setBounds (cell);
+    cell = row.removeFromLeft (colW);
+    hiLabel_.setBounds (cell.removeFromTop (18));
+    hiSlider_.setBounds (cell);
+
+    area.removeFromTop (12);
+    auto allocRow = area.removeFromTop (56);
+    allocLabel_.setBounds (allocRow.removeFromTop (18));
+    auto bits = allocRow.removeFromTop (34);
+    const int bw = juce::jmax (52, bits.getWidth() / 6);
+    for (int b = 0; b < 6; ++b)
+        allocBits_[b].setBounds (bits.removeFromLeft (bw).reduced (3));
+}
+
+void MultiPage::refresh()
+{
+    refreshing_ = true;
+    const int part = proc_.getEngine().getCurrentPart();
+    const auto& prt = proc_.getEngine().getPart (part);
+    partLabel_.setText ("Editing Part " + juce::String (part + 1) + " of "
+                            + juce::String (SynthEngine::getNumParts()),
+                        juce::dontSendNotification);
+    channelCombo_.setSelectedId (static_cast<int> (prt.midiChannel.load()) + 1);
+    loSlider_.setValue (static_cast<double> (prt.keyrangeLow.load()),  juce::dontSendNotification);
+    hiSlider_.setValue (static_cast<double> (prt.keyrangeHigh.load()), juce::dontSendNotification);
+    const uint8_t alloc = prt.voiceAllocation;
+    for (int b = 0; b < 6; ++b)
+        allocBits_[b].setToggleState ((alloc & (1u << b)) != 0, juce::dontSendNotification);
+    refreshing_ = false;
+    lastPart_ = part;
+}
+
+void MultiPage::refreshIfPartChanged()
+{
+    if (proc_.getEngine().getCurrentPart() != lastPart_)
+        refresh();
+}
+
+//==============================================================================
+ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
+    : juce::AudioProcessorEditor (&p), processorRef_ (p)
+{
+    // Install the persisted chrome language BEFORE building the UI, so every
+    // TRANS() below resolves to the right language at construction. English (and
+    // "auto" on an English locale) clears the mappings => TRANS() is the
+    // identity => the UI is byte-identical to the un-localised build.
+    installLanguage (processorRef_.getUiLanguage());
+
+    // Theme + LookAndFeel: one L&F on the editor, inherited by the whole control
+    // tree, so no per-component palette is needed.
+    lnf_.setTheme (themeManager_.getCurrentTheme());
+    setLookAndFeel (&lnf_);
+    themeManager_.addChangeListener (this);
+
+    // Tooltips: one TooltipWindow parented to (and deleted with) the editor.
+    // ParamControl is a TooltipClient returning its parameter's help text.
+    tooltipWindow_ = std::make_unique<juce::TooltipWindow> (this);
+
+    // Phase 4a: apply persisted UI preferences. The theme selection may differ
+    // from the ThemeManager default (Carbon); selectByName broadcasts a change
+    // (caught by changeListenerCallback) if the selection actually moves.
+    themeManager_.selectByName (processorRef_.getUiTheme());
+    lnf_.setTheme (themeManager_.getCurrentTheme());
+    ParamControl::setTooltipsEnabled (processorRef_.getUiTooltips());
+
+    // Apply the persisted parameter-smoothing preference to the engine (the
+    // SettingsPanel toggle is seeded from getUiSmoothing() when it is built
+    // below; this covers the audio side for hosts that show the editor).
+    processorRef_.setParameterSmoothing (processorRef_.getUiSmoothing());
+
+    // Group every descriptor into its section bucket; Part params (volume,
+    // legato, portamento) and synth options (VCA curve) ride on the Oscillators
+    // page as the "global" footer. `part_select` is intentionally skipped here:
+    // it has a dedicated top-bar ComboBox (partCombo_) bound to the same APVTS
+    // param, so generating a second control for it on a page would be redundant.
+    std::vector<const PatchParamDescriptor*> sec[10];
+    for (const auto& d : getPatchParamDescriptors())
+    {
+        if (d.paramID == "part_select")
+            continue;
+        sec[(int) sectionForId (d.paramID)].push_back (&d);
+    }
+
+    addAndMakeVisible (tabs_);
+
+    const ParvatiTheme& theme = themeManager_.getCurrentTheme();
+
+    // ---- Top patch bar: factory patch list + Load .PRO... + name ----
+    patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
+    // Caption text colour from the L&F (dim).
+    patchCaption_.setFont (juce::FontOptions (13.0f));
+    addAndMakeVisible (patchCaption_);
+
+    // Combo + popup colours from the L&F.
+    patchCombo_.setTextWhenNothingSelected ("(no factory patches installed)");
+    patchCombo_.onChange = [this] {
+        const int id = patchCombo_.getSelectedId();
+        if (id >= 1 && id <= (int) factoryFiles_.size())
+            applyPatchFile (factoryFiles_[(size_t) id - 1]);
+    };
+    addAndMakeVisible (patchCombo_);
+    populateFactoryPatches();
+
+    loadButton_.setButtonText (TRANS ("Load..."));
+    // Button colours from the L&F.
+    loadButton_.onClick = [this] { openLoadDialog(); };
+    addAndMakeVisible (loadButton_);
+
+    saveButton_.setButtonText (TRANS ("Save..."));
+    saveButton_.onClick = [this] { openSaveDialog(); };
+    addAndMakeVisible (saveButton_);
+
+    // Phase 4c: Undo / Redo buttons. The APVTS UndoManager records every
+    // parameter change (knob drags, combo changes, getParameterAsValue writes,
+    // and these actions' own reset/randomize). Disabled/enabled state is
+    // mirrored on the editor timer.
+    undoButton_.setButtonText (TRANS ("Undo"));
+    undoButton_.onClick = [this] { processorRef_.getUndoManager().undo(); };
+    addAndMakeVisible (undoButton_);
+    redoButton_.setButtonText (TRANS ("Redo"));
+    redoButton_.onClick = [this] { processorRef_.getUndoManager().redo(); };
+    addAndMakeVisible (redoButton_);
+
+    patchNameLabel_.setColour (juce::Label::textColourId, theme.accent);
+    patchNameLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    patchNameLabel_.setText (processorRef_.getLoadedProgramName(), juce::dontSendNotification);
+    addAndMakeVisible (patchNameLabel_);
+
+    // ---- Top bar: Part selector (bound to the `part_select` APVTS param) ----
+    partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
+    // Caption text colour from the L&F (dim).
+    partCaption_.setFont (juce::FontOptions (13.0f));
+    addAndMakeVisible (partCaption_);
+
+    for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
+        partCombo_.addItem ("Part " + juce::String (i), i);
+    // Combo colours from the L&F.
+    addAndMakeVisible (partCombo_);
+    partComboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        processorRef_.getApvts(), "part_select", partCombo_);
+
+    tabs_.setTabBarDepth (32);
+    tabs_.setOutline (0);
+    // TabbedComponent / TabbedButtonBar colours from the L&F.
+
+    struct PageInfo { const char* name; Section s; int cols, cellW, cellH; };
+    const PageInfo pages[] = {
+        { "Oscillators",     Section::Oscillators, 4, 214, 106 },
+        { "Mixer",           Section::Mixer,       4, 214, 106 },
+        { "Filter",          Section::Filter,      4, 214, 106 },
+        { "Envelopes / LFO", Section::EnvLfo,      5, 198, 106 },
+        { "Mod Matrix",      Section::ModMatrix,   6, 164, 84 },
+        { "Modifiers",       Section::Modifiers,   3, 300, 64 },
+        { "Arp",             Section::Arp,         3, 214, 106 },
+        { "Sequencer",       Section::Sequencer,   6, 150, 80 },
+        { "Global",          Section::Global,      3, 214, 106 },
+    };
+
+    for (const auto& pg : pages)
+    {
+        auto* page = new ParamPage (processorRef_, themeManager_, TRANS (pg.name), sec[(int) pg.s],
+                                    pg.cols, pg.cellW, pg.cellH);
+
+        // Phase 4c: attach a live ADSR preview to each Env group on the
+        // Env/LFO page. The getters read the APVTS parameter's NORMALIZED value
+        // (getValue() returns 0..1) so the preview tracks the knobs live.
+        if (pg.s == Section::EnvLfo)
+        {
+            auto norm = [this] (const juce::String& id) -> float {
+                auto* p = processorRef_.getApvts().getParameter (id);
+                return p ? p->getValue() : 0.0f;
+            };
+            const juce::String envs[3]      = { "env1", "env2", "env3" };
+            const juce::String grpNames[3]  = { "Env / LFO 1", "Env / LFO 2", "Env / LFO 3" };
+            for (int i = 0; i < 3; ++i)
+            {
+                const juce::String e = envs[i];
+                page->setGroupDecoration (grpNames[i],
+                    std::make_unique<EnvelopeDisplay> (
+                        "Env " + juce::String (i + 1),
+                        [norm, e] { return norm (e + "_attack");  },
+                        [norm, e] { return norm (e + "_decay");   },
+                        [norm, e] { return norm (e + "_sustain"); },
+                        [norm, e] { return norm (e + "_release"); }));
+            }
+        }
+
+        generatedPages_.push_back (page);
+        // Record the English (key) tab name for live language switching.
+        tabKeys_.push_back (pg.name);
+        auto* vp = new juce::Viewport();
+        // Pages fill the tab width, so only vertical scrolling is ever needed.
+        vp->setScrollBarsShown (true, false);
+        vp->setViewedComponent (page, true);  // viewport owns the page
+        pageViewports_.push_back (vp);
+        page->setSize (page->getContentWidth(), page->getContentHeight());
+        tabs_.addTab (TRANS (pg.name), theme.windowBackground, vp, true);  // tabs own the viewport
+    }
+
+    // ---- Multi / Setup tab (custom page, not descriptor-generated) ----
+    multiPage_ = std::make_unique<MultiPage> (processorRef_, themeManager_);
+    tabs_.addTab (TRANS ("Multi"), theme.windowBackground, multiPage_.get(), false);  // editor owns it
+    tabKeys_.push_back ("Multi");
+
+    // ---- Phase 4a: settings button + side panel ----
+    settingsButton_.setButtonText (TRANS ("Settings"));
+    settingsButton_.onClick = [this] {
+        settingsPanelHost_->showOrHide (! settingsPanelHost_->isPanelShowing());
+    };
+    addAndMakeVisible (settingsButton_);
+
+    // ---- Phase 4a: virtual keyboard (bottom strip) ----
+    // Click-to-play routes MIDI into the processor's MidiMessageCollector
+    // (thread-safe); the timer mirrors sounding notes back as latch highlights.
+    keyboardView_ = std::make_unique<KeyboardView>();
+    keyboardView_->setNoteCallback ([this] (int note, bool on, float vel) {
+        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
+        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int status   = on ? (0x90 | ((ch - 1) & 0xf)) : (0x80 | ((ch - 1) & 0xf));
+        const int velocity = on ? juce::jlimit (0, 127, juce::roundToInt (vel * 127.0f)) : 0;
+        processorRef_.addMidiEvent (juce::MidiMessage (status, note, velocity));
+    });
+    addAndMakeVisible (*keyboardView_);
+    keyboardView_->refresh();
+    // Computer-keyboard (musical-typing) play is a STANDALONE-only affordance.
+    // In a plugin host the DAW owns the computer keyboard (e.g. Ableton's
+    // "Computer MIDI Keyboard") and routes it as normal MIDI, so capturing keys
+    // here would double-trigger and steal keystrokes from the host.
+    keyboardView_->setComputerKeyboardEnabled (
+        processorRef_.wrapperType == juce::AudioProcessor::wrapperType_Standalone);
+
+    // ---- Phase 4a: voice meter (status strip below the top bar) ----
+    voiceMeter_ = std::make_unique<VoiceMeter>();
+    voiceMeter_->setStateProvider ([this]() {
+        std::vector<VoiceActivity> v;
+        auto& e = processorRef_.getEngine();
+        v.reserve (static_cast<size_t> (e.getNumVoices()));
+        for (int i = 0; i < e.getNumVoices(); ++i)
+        {
+            // SF-1: read the lock-free atomic snapshot instead of the
+            // non-atomic SynthesiserVoice::currentlyPlayingNote.
+            auto* av = e.getAmbikaVoice (i);
+            v.push_back ({ av != nullptr && av->isDisplayedActive(),
+                           av != nullptr ? av->getDisplayedNote() : -1 });
+        }
+        return v;
+    });
+    addAndMakeVisible (*voiceMeter_);
+
+    // ---- Phase 4a: settings side panel (left side, always-on-top) ----
+    // The SettingsPanel is owned + deleted by the SidePanel.
+    settingsPanelHost_ = std::make_unique<juce::SidePanel> (TRANS ("Settings"), 300, true);
+    settingsPanel_ = new SettingsPanel (processorRef_, themeManager_,
+        [this] (double z) { setZoom (z); repaint(); },
+        [this] (bool b)   { ParamControl::setTooltipsEnabled (b); },
+        [this] (bool b)   { processorRef_.setParameterSmoothing (b); },
+        [this] (int n)    { (void) n; },   // processor.setOversamplingFactor already applied in the panel
+        [this] (const juce::String& code) {
+            // Language changed: persist it, install the LocalisedStrings, then
+            // re-translate every chrome string live.
+            processorRef_.setUiLanguage (code);
+            installLanguage (code);
+            applyChromeTranslations();
+        });
+    settingsPanelHost_->setContent (settingsPanel_, true);
+    addAndMakeVisible (*settingsPanelHost_);
+
+    // Refresh the Multi page (~30 Hz) so it tracks the edited part.
+    startTimerHz (30);
+
+    setSize (980, 660);
+    setResizable (true, true);
+    setResizeLimits (720, 480, 1600, 1100);
+
+    // Apply persisted zoom (global scale; only if non-default to avoid an
+    // unnecessary rescale at startup).
+    if (processorRef_.getUiZoom() != 1.0)
+        setZoom (processorRef_.getUiZoom());
+}
+
+ParvatiEditor::~ParvatiEditor()
+{
+    stopTimer();
+    // Clear callbacks that capture `this` before the owning components are
+    // destroyed during the reverse-order member teardown (defensive: the
+    // components stop their own timers in their destructors, but nulling the
+    // providers avoids any lingering reference).
+    if (voiceMeter_ != nullptr)
+        voiceMeter_->setStateProvider (nullptr);
+    if (keyboardView_ != nullptr)
+        keyboardView_->setNoteCallback (nullptr);
+    // Detach from the theme broadcaster and release the L&F BEFORE the member
+    // objects (themeManager_, lnf_) and the base Component are destroyed, so the
+    // ChangeBroadcaster never calls back into a half-dead editor and no child
+    // component references a destroyed L&F during teardown.
+    themeManager_.removeChangeListener (this);
+    setLookAndFeel (nullptr);
+
+    // SF-2: reset the process-wide global scale factor so a non-default zoom
+    // does not leak to other JUCE windows / plugin instances after this editor
+    // closes. (Global scale is the only zoom path today; per-editor transform
+    // zoom is a documented future enhancement — see the setZoom() comment.)
+    if (zoom_ != 1.0)
+        juce::Desktop::getInstance().setGlobalScaleFactor (1.0f);
+}
+
+void ParvatiEditor::timerCallback()
+{
+    // Mirror the UndoManager's undo/redo availability onto the top-bar buttons
+    // (~30 Hz, same cadence as the Multi-page part-sync below). Cheap O(1)
+    // canUndo/canRedo checks; setEnabled() is a no-op when unchanged.
+    undoButton_.setEnabled (processorRef_.getUndoManager().canUndo());
+    redoButton_.setEnabled (processorRef_.getUndoManager().canRedo());
+
+    // Only re-read the Multi page when the edited part actually changes (plus a
+    // forced refresh after a .MUL load). This avoids re-setting the controls
+    // ~30x/sec and any chance of fighting a user mid-drag.
+    if (multiPage_ != nullptr)
+        multiPage_->refreshIfPartChanged();
+
+    // ---- Keyboard latching: mirror sounding notes across all voices ----
+    if (keyboardView_ == nullptr)
+        return;
+
+    const int curPart = processorRef_.getEngine().getCurrentPart();
+    if (curPart != lastLatchPart_)
+    {
+        // Edited part changed: clear all latched notes to avoid stuck lamps.
+        for (int n = 0; n < 128; ++n)
+            keyboardView_->latchNoteOff (n);
+        latchedNotes_.clear();
+        lastLatchPart_ = curPart;
+        return;
+    }
+
+    // Collect the set of currently-active notes across ALL voices.
+    juce::Array<int> activeNotes;
+    auto& engine = processorRef_.getEngine();
+    for (int i = 0; i < engine.getNumVoices(); ++i)
+    {
+        // SF-1: read the lock-free atomic snapshot instead of the
+        // non-atomic SynthesiserVoice::currentlyPlayingNote.
+        auto* voice = engine.getAmbikaVoice (i);
+        if (voice != nullptr && voice->isDisplayedActive())
+        {
+            const int note = voice->getDisplayedNote();
+            if (note >= 0 && ! activeNotes.contains (note))
+                activeNotes.add (note);
+        }
+    }
+
+    // New notes: latch on.
+    for (int note : activeNotes)
+    {
+        if (! latchedNotes_.contains (note))
+        {
+            keyboardView_->latchNoteOn (note, 1.0f);
+            latchedNotes_.add (note);
+        }
+    }
+
+    // Released notes: latch off.
+    for (int i = latchedNotes_.size() - 1; i >= 0; --i)
+    {
+        if (! activeNotes.contains (latchedNotes_[i]))
+        {
+            keyboardView_->latchNoteOff (latchedNotes_[i]);
+            latchedNotes_.remove (i);
+        }
+    }
+}
+
+void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    // A new theme was selected: re-apply the L&F colours, refresh the few
+    // explicitly-coloured elements, and repaint everything.
+    lnf_.setTheme (themeManager_.getCurrentTheme());
+    for (auto* page : generatedPages_)
+        page->applyThemeColors();
+    if (multiPage_ != nullptr)
+        multiPage_->applyThemeColors();
+    patchNameLabel_.setColour (juce::Label::textColourId,
+                               themeManager_.getCurrentTheme().accent);
+    // Phase 4a: refresh visualization components so they pick up the new colours.
+    if (keyboardView_ != nullptr)
+        keyboardView_->refresh();
+    if (voiceMeter_ != nullptr)
+        voiceMeter_->refresh();
+    repaint();
+}
+
+void ParvatiEditor::setZoom (double zoom)
+{
+    zoom_ = juce::jlimit (0.75, 2.0, zoom);
+    juce::Desktop::getInstance().setGlobalScaleFactor (static_cast<float> (zoom_));
+}
+
+bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
+{
+    // Only Cmd/Ctrl + +/-/0 are zoom shortcuts; everything else passes through
+    // so typing in combos / text boxes is never swallowed.
+    if (! (key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()))
+        return false;
+
+    auto applyZoom = [this] (double z)
+    {
+        setZoom (z);                               // clamps to [0.75, 2.0] + applies global scale
+        processorRef_.setUiZoom (zoom_);           // persist the clamped value
+        if (settingsPanel_ != nullptr)
+            settingsPanel_->setZoomValue (zoom_);   // mirror into the slider (no re-fire)
+    };
+
+    // Accept both '=' (un-shifted) and '+' for zoom-in across keyboard layouts.
+    if (key.getKeyCode() == '+' || key.getKeyCode() == '=')
+    {
+        applyZoom (zoom_ + 0.1);
+        return true;
+    }
+    if (key.getKeyCode() == '-')
+    {
+        applyZoom (zoom_ - 0.1);
+        return true;
+    }
+    if (key.getKeyCode() == '0')
+    {
+        applyZoom (1.0);
+        return true;
+    }
+
+    // Phase 4c: Undo / Redo. Cmd/Ctrl+Z = undo; Cmd/Ctrl+Shift+Z or
+    // Cmd/Ctrl+Y = redo. These carry the Cmd/Ctrl modifier (already required to
+    // reach here), so they never collide with KeyboardView's plain-key musical
+    // typing — that view returns false for modifier-key combos, letting these
+    // keypresses bubble up to the editor. The keyCode is the bare letter on
+    // both shifted and un-shifted presses (JUCE tracks shift in the modifiers),
+    // so check 'z'/'Z' both and decide undo-vs-redo from isShiftDown().
+    const int code = key.getKeyCode();
+    if (code == 'z' || code == 'Z')
+    {
+        if (key.getModifiers().isShiftDown())
+            processorRef_.getUndoManager().redo();
+        else
+            processorRef_.getUndoManager().undo();
+        return true;
+    }
+    if (code == 'y' || code == 'Y')
+    {
+        processorRef_.getUndoManager().redo();
+        return true;
+    }
+
+    return false;
+}
+
+void ParvatiEditor::applyChromeTranslations()
+{
+    // Re-translate every editor-chrome string through the active
+    // LocalisedStrings so a live language switch updates immediately. tabKeys_
+    // holds the English (key) names in tab order; both the tab button and the
+    // matching page heading are re-applied for the generated pages. With no
+    // mappings installed (English) TRANS() is the identity, so this is a no-op
+    // for the byte-identical default.
+    patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
+    partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
+    loadButton_.setButtonText (TRANS ("Load..."));
+    saveButton_.setButtonText (TRANS ("Save..."));
+    undoButton_.setButtonText (TRANS ("Undo"));
+    redoButton_.setButtonText (TRANS ("Redo"));
+    settingsButton_.setButtonText (TRANS ("Settings"));
+
+    for (size_t i = 0; i < tabKeys_.size(); ++i)
+    {
+        const auto translated = TRANS (tabKeys_[i]);
+        tabs_.setTabName (static_cast<int> (i), translated);
+        if (i < generatedPages_.size())
+            generatedPages_[i]->setHeadingText (translated);
+    }
+
+    if (multiPage_ != nullptr)
+        multiPage_->refreshLanguage();
+    if (settingsPanel_ != nullptr)
+        settingsPanel_->refreshLanguage();
+    // NOTE: the SidePanel's own title-bar text ("Settings") has no public setter,
+    // so it updates on the next editor open (set via TRANS at construction) but
+    // not live. The in-panel chrome (Language combo etc.) DOES update live.
+
+    repaint();
+}
+
+void ParvatiEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+}
+
+void ParvatiEditor::resized()
+{
+    auto area = getLocalBounds();
+
+    // ---- Bottom: virtual keyboard (full width) ----
+    if (keyboardView_ != nullptr)
+        keyboardView_->setBounds (area.removeFromBottom (kKeyboardH));
+
+    // ---- Top: patch/part bar + settings button ----
+    auto bar = area.removeFromTop (kBarHeight).reduced (6, 4);
+    patchCaption_.setBounds (bar.removeFromLeft (48));
+    partCaption_.setBounds (bar.removeFromLeft (40));
+    partCombo_.setBounds (bar.removeFromLeft (84));
+    settingsButton_.setBounds (bar.removeFromLeft (80));
+    undoButton_.setBounds (bar.removeFromLeft (54));
+    redoButton_.setBounds (bar.removeFromLeft (54));
+    loadButton_.setBounds (bar.removeFromRight (76));
+    saveButton_.setBounds (bar.removeFromRight (76));
+    patchNameLabel_.setBounds (bar.removeFromRight (180));
+    patchCombo_.setBounds (bar);
+
+    // ---- Status strip: voice meter (between top bar and tabs) ----
+    if (voiceMeter_ != nullptr)
+        voiceMeter_->setBounds (area.removeFromTop (kMeterStripH).reduced (6, 2));
+
+    // ---- Middle: tabs ----
+    tabs_.setBounds (area);
+
+    // Responsive reflow (Phase 2b): every generated page fills its tab's width so
+    // the grouped panels wrap to the window size (vertical-only scrolling). All
+    // tabs share the same content width, so reflow every page to it; a hair is
+    // reserved so the panel borders clear a vertical scrollbar when one appears.
+    const int targetW = juce::jmax (280, tabs_.getWidth() - 16);
+    for (auto* page : generatedPages_)
+        page->reflowToWidth (targetW);
+}
+
+//==========================================================================
+void ParvatiEditor::populateFactoryPatches()
+{
+    factoryFiles_.clear();
+    patchCombo_.clear();
+
+    auto addFiles = [this] (const juce::File& dir, const juce::String& wildcard,
+                             const juce::String& prefix, bool parseName) {
+        if (! dir.isDirectory())
+            return;
+        juce::Array<juce::File> files;
+        dir.findChildFiles (files, juce::File::findFiles, true, wildcard);
+        files.sort();
+        for (const auto& f : files)
+        {
+            juce::String label;
+            if (parseName)
+            {
+                AmbikaProgram prog;
+                label = (parseAmbikaProgramFile (f, prog) && prog.name.isNotEmpty())
+                          ? prog.name
+                          : f.getFileNameWithoutExtension();
+            }
+            else
+            {
+                label = f.getFileNameWithoutExtension();
+            }
+            const int id = static_cast<int> (factoryFiles_.size()) + 1;
+            patchCombo_.addItem (prefix + f.getRelativePathFrom (dir) + "  -  " + label, id);
+            factoryFiles_.push_back (f);
+        }
+    };
+
+    // Single-program patches (.PRO) first, then multitimbral multis (.MUL).
+    addFiles (processorRef_.getFactoryPatchDir(), "*.PRO", "", true);
+    addFiles (processorRef_.getFactoryMultiDir(), "*.MUL", "[Multi] ", false);
+}
+
+void ParvatiEditor::openLoadDialog()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser> ("Load Ambika Patch / Multi (.PRO / .MUL)",
+                                                       juce::File(), "*.PRO;*.MUL");
+    const auto flags = juce::FileBrowserComponent::openMode
+                     | juce::FileBrowserComponent::canSelectFiles;
+    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
+        if (fc.getResults().size() > 0)
+            applyPatchFile (fc.getResult());
+        fileChooser_ = nullptr;
+    });
+}
+
+void ParvatiEditor::openSaveDialog()
+{
+    // Default name = the current patch name (or "Parvati"), in the user's
+    // Documents folder. The chooser enforces the .PRO extension and warns on
+    // overwrite. Reuses the editor's single fileChooser_ slot (mutually
+    // exclusive with Load, which is fine for a modal-ish save).
+    auto defaultName = processorRef_.getLoadedProgramName();
+    if (defaultName.isEmpty())
+        defaultName = "Parvati";
+    const juce::File defaultFile (juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                                    .getChildFile (defaultName + ".PRO"));
+    fileChooser_ = std::make_unique<juce::FileChooser> ("Save Parvati Patch (.PRO)",
+                                                       defaultFile, "*.PRO");
+    const auto flags = juce::FileBrowserComponent::saveMode
+                     | juce::FileBrowserComponent::canSelectFiles
+                     | juce::FileBrowserComponent::warnAboutOverwriting;
+    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
+        if (fc.getResults().size() > 0)
+        {
+            const auto f = fc.getResult().withFileExtension (".PRO");
+            if (processorRef_.saveProgramFile (f))
+            {
+                patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
+                                         juce::dontSendNotification);
+            }
+        }
+        fileChooser_ = nullptr;
+    });
+}
+
+void ParvatiEditor::applyPatchFile (const juce::File& f)
+{
+    // .MUL -> multitimbral multi (all 6 Parts); .PRO -> single program.
+    const bool isMulti = f.hasFileExtension (".mul");
+    const bool ok = isMulti ? processorRef_.loadMultiFile (f)
+                            : processorRef_.loadProgramFile (f);
+    if (ok)
+    {
+        patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
+                                 juce::dontSendNotification);
+        // A .MUL rewrites every part's channel / key zone / voice allocation,
+        // so force the Multi page to re-read even though the edited part is
+        // unchanged.
+        if (isMulti && multiPage_ != nullptr)
+            multiPage_->forceRefresh();
+    }
+}
+
+bool ParvatiEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& fn : files)
+        if (fn.endsWithIgnoreCase (".pro") || fn.endsWithIgnoreCase (".mul"))
+            return true;
+    return false;
+}
+
+void ParvatiEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    for (const auto& fn : files)
+    {
+        juce::File f (fn);
+        if (f.hasFileExtension (".pro") || f.hasFileExtension (".mul"))
+        {
+            applyPatchFile (f);
+            break;
+        }
+    }
+}

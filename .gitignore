@@ -1,0 +1,58 @@
+# --------------------------------------------------------------------------- #
+# Parvati — .gitignore
+# --------------------------------------------------------------------------- #
+
+# --- macOS ---
+.DS_Store
+._*
+
+# --- IDEs / editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+
+# --- Build artefacts (CMake / JUCE / Projucer) ---
+build/
+build_*/
+Builds/
+JuceLibraryCode/
+cmake-build-*/
+out/
+[Cc]ache/
+
+# --- Compiled objects / archives ---
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# --- Plugin binaries (never track built plug-ins) ---
+*.vst3
+*.component
+*.app
+*.vst
+*.aulib
+
+# --- Vendored reference trees (have their own history / licensing) ---
+ambika_reference/
+
+# --- Pi subagent scratch / artefacts ---
+.pi-subagents/
+
+# --- Coverage / profiling / sanitizer output ---
+*.gcda
+*.gcno
+*.gcov
+*.prof
+coverage/
+asio_profiler_output/
+
+# --- Temporary test artefacts ---
+*.tmp
+*.bak
