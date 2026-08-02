@@ -1,0 +1,83 @@
+# Parvati / JUCE coding style.
+#
+# Best-effort match for the existing (JUCE-style) code: 4-space indent, Allman
+# braces, a space before the opening paren (`foo (x)`, `if (x)`), `type*` bound
+# left, 100-column limit.
+#
+# NOTE: the tree PREDATES this file and is NOT auto-formatted wholesale (a
+# tree-wide reformat would be a noisy, risky diff). Treat this as the style
+# guide for NEW files and targeted touch-ups: `clang-format -i <new-file.cpp>`.
+# It is intentionally not enforced in CI. The faithful firmware-port files
+# under Source/dsp/ use their own compact style and are exempt.
+#
+# Limitation: JUCE puts a space before the paren ONLY for non-empty calls
+# (`foo (x)` but `foo()`), which clang-format cannot express; `Always` is the
+# closest option and is used here (it adds a space to empty-arg calls too).
+
+BasedOnStyle: LLVM
+
+Language: Cpp
+Standard: c++17
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Allman braces: opening brace on its own line.
+BreakBeforeBraces: Allman
+
+# JUCE idiom: a space before the opening paren of every call / control statement.
+SpaceBeforeParens: Always
+SpacesInParentheses: false
+
+# Pointer/reference alignment matches JUCE: the `*` binds to the TYPE on
+# the left (`int* p`, `const uint8_t* p`).
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: true
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: false
+
+AlwaysBreakTemplateDeclarations: Yes
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+Cpp11BracedListStyle: false
+FixNamespaceComments: true
+IndentCaseLabels: true
+IndentPPDirectives: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: None
+ReflowComments: true
+SortIncludes: Never
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: true
+SpacesInSquareBrackets: false

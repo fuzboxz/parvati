@@ -1,0 +1,31 @@
+# Git attributes for Parvati.
+
+# Default: text with LF line endings, normalized on checkin/checkout.
+* text=auto eol=lf
+
+# Source / docs / build scripts are text.
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.cmake text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.json  text eol=lf
+CMakeLists.txt text eol=lf
+
+# Factory preset banks are binary blobs (Ambika RIFF containers). Mark as binary
+# so git never line-ending-normalize or merge-conflict them.
+*.PRO binary
+*.MUL binary
+
+# Generated artifacts that may be committed should use LF.
+*.svg  text eol=lf
+
+# Linguist: classify so GitHub's language stats are accurate.
+Source/*           linguist-language=C++
+tests/*.cpp        linguist-language=C++
+CMakeLists.txt     linguist-language=CMake
+*.cmake            linguist-language=CMake
+ambika_reference/* linguist-vendored=true

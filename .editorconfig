@@ -1,0 +1,32 @@
+# EditorConfig — https://editorconfig.org
+# Keeps indentation / line endings consistent across editors. Matches the
+# Parvati / JUCE style (see .clang-format).
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.{c,cc,cpp,cxx,h,hh,hpp,hxx}]
+indent_size = 4
+
+[*.{cmake,txt,md,yml,yaml,json}]
+indent_size = 4
+
+# CMakeLists.txt uses 4-space indentation.
+[CMakeLists.txt]
+indent_size = 4
+
+# Tab-indented formats.
+[Makefile]
+indent_style = tab
+
+# Binary factory presets — never normalize line endings or diff as text.
+[*.{PRO,MUL}]
+end_of_line = unset

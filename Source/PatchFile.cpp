@@ -301,7 +301,7 @@ bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi)
 
     // Six Parts (1-based index in the type prefix), each an interleaved Patch +
     // PartData object.
-    for (uint32_t i = 1; i <= 6u; ++i)
+    for (uint32_t i = 1; i <= 6u; ++i)  // NOLINT(bugprone-infinite-loop): ++i terminates it; clang-tidy FP on the uint counter
     {
         const auto& p = multi.parts[i - 1u];
 

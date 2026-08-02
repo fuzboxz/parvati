@@ -1,0 +1,55 @@
+# Parvati clang-tidy configuration.
+#
+# A pragmatic, bug-focused starting point for static analysis. Emphasises
+# real-defect detection (bugprone-*, cert-*, performance-*, a few modernize
+# portability checks) over style churn, so it is useful on the EXISTING tree
+# rather than only new code. The strict DSP integer math and JUCE macro
+# patterns generate expected noise on a few files — narrow with line-level
+# NOLINT where a finding is a false positive.
+#
+# Run (from a configured build dir that has compile_commands.json):
+#   /opt/homebrew/opt/llvm/bin/clang-tidy -p build <source-file>
+#   /opt/homebrew/opt/llvm/bin/run-clang-tidy -p build Source/*.cpp
+#
+# Notes:
+#   * bugprone-narrowing-conversions / bugprone-signed-char-misuse are OFF — the
+#     faithful Ambika DSP uses extensive int<->uint8 arithmetic by design.
+#   * modernize-use-trailing-return-type / use-nodiscard / readability-* are OFF
+#     to avoid a style-only flood; .clang-format owns formatting.
+#   * cppcoreguidelines-* are OFF (too noisy for a JUCE/component codebase).
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-narrowing-conversions,
+  -bugprone-signed-char-misuse,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  -cert-err34-c,
+  -cert-err58-cpp,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-avoid-c-arrays,
+  performance-*,
+  readability-else-after-return,
+  readability-simplify-boolean-expr,
+  readability-container-size-empty,
+  readability-delete-null-pointer,
+  readability-non-const-parameter,
+  readability-qualified-auto,
+  readability-redundant-*,
+  readability-string-compare,
+  readability-use-anyofallof
+
+WarningsAsErrors: ''
+
+CheckOptions:
+  - key:   readability-identifier-naming.VariableCase
+    value: lower_case
+  - key:   readability-braces-around-statements.ShortStatementLines
+    value: '0'
+
+HeaderFilterRegex: 'Source/.*'
+
+FormatStyle: file

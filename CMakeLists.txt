@@ -9,6 +9,43 @@ project(Parvati
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Emit compile_commands.json (consumed by clang-tidy / IDE tooling). No-op when
+# the generator cannot write it (e.g. Xcode).
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ------------------------------------------------------------------------------
+# Developer tooling options (all OFF by default; opt-in). Enable as needed:
+#   -DPARVATI_ENABLE_ASAN=ON   -DPARVATI_ENABLE_UBSAN=ON
+#   -DPARVATI_ENABLE_TSAN=ON   -DPARVATI_WARNINGS_AS_ERRORS=ON
+# Sanitizers apply to the whole build (JUCE + Parvati + tests) so they catch
+# bugs across the full call graph; reconfigure from a clean build dir when
+# toggling them. (AddressSanitizer and ThreadSanitizer are mutually exclusive.)
+# ------------------------------------------------------------------------------
+option(PARVATI_ENABLE_ASAN            "Enable AddressSanitizer"            OFF)
+option(PARVATI_ENABLE_UBSAN           "Enable UndefinedBehaviorSanitizer"  OFF)
+option(PARVATI_ENABLE_TSAN            "Enable ThreadSanitizer"             OFF)
+option(PARVATI_WARNINGS_AS_ERRORS     "Treat compiler warnings as errors"  OFF)
+
+set(_parvati_sanitizers "")
+if(PARVATI_ENABLE_ASAN)
+    list(APPEND _parvati_sanitizers address)
+endif()
+if(PARVATI_ENABLE_UBSAN)
+    list(APPEND _parvati_sanitizers undefined)
+endif()
+if(PARVATI_ENABLE_TSAN)
+    list(APPEND _parvati_sanitizers thread)
+endif()
+if(_parvati_sanitizers)
+    list(JOIN _parvati_sanitizers "," _parvati_sanitizer_flags)
+    message(STATUS "Parvati: sanitizers enabled (${_parvati_sanitizer_flags})")
+    add_compile_options(-fsanitize=${_parvati_sanitizer_flags} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${_parvati_sanitizer_flags})
+endif()
+if(PARVATI_WARNINGS_AS_ERRORS)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror> $<$<COMPILE_LANGUAGE:C>:-Werror>)
+endif()
+
 # JUCE is a global checkout at ~/JUCE (no installed JUCEConfig.cmake), so we
 # consume it via add_subdirectory. Override with -DJUCE_GLOBAL_PATH=/path if
 # JUCE lives elsewhere. JUCE requires the C language to be enabled.
