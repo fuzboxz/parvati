@@ -213,6 +213,28 @@ int main()
                         + tabs->getTabNames()[i].replaceCharacters (" /", "__");
                     dump (ed, nm);
                 }
+
+                // Extra shot: the Envelopes/LFO tab with all 3 slots switched to
+                // LFO view (shows the LFO-waveform previews), then restored to ENV.
+                const auto names = tabs->getTabNames();
+                int envTab = -1;
+                for (int i = 0; i < names.size(); ++i)
+                    if (names[i].containsIgnoreCase ("Envelopes")) { envTab = i; break; }
+                if (envTab >= 0)
+                {
+                    tabs->setCurrentTabIndex (envTab, false);
+                    ParamPage* envPage = nullptr;
+                    if (auto* content = tabs->getTabContentComponent (envTab))
+                        if (auto* vp = dynamic_cast<juce::Viewport*> (content))
+                            envPage = dynamic_cast<ParamPage*> (vp->getViewedComponent());
+                    if (envPage != nullptr)
+                    {
+                        envPage->reflowToWidth (juce::jmax (400, 940));
+                        envPage->setAllEnvLfoModesForDump (1);   // LFO view
+                        dump (ed, "4b_Envelopes_LFO_LFOmode");
+                        envPage->setAllEnvLfoModesForDump (0);   // restore ENV view
+                    }
+                }
             }
         }
 

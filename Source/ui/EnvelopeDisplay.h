@@ -27,14 +27,21 @@ public:
     /** Construct an ADSR preview for one envelope unit.
         Each getter must return a NORMALIZED value in 0.0..1.0 (the editor
         normalizes the raw 0..127 parameter range before calling). Any getter
-        may be omitted; it then reads as 0. */
+        may be omitted; it then reads as 0.
+        @param getShape  optional NORMALIZED 0..1 value of the slot's LFO shape
+                         (Triangle/Square/S&H/Ramp), used when previewMode()==1. */
     EnvelopeDisplay (juce::String title,
                      std::function<float()> getAttack,
                      std::function<float()> getDecay,
                      std::function<float()> getSustain,
-                     std::function<float()> getRelease);
+                     std::function<float()> getRelease,
+                     std::function<float()> getShape = {});
 
     ~EnvelopeDisplay() override;
+
+    /** Preview mode: 0 = ADSR envelope shape, 1 = LFO waveform shape. */
+    void setPreviewMode (int mode) { previewMode_ = mode; repaint(); }
+    int  getPreviewMode() const noexcept { return previewMode_; }
 
     /** Relabel the unit (e.g. "Env 1"). */
     void setTitle (const juce::String& title) { title_ = title; juce::Component::setTitle (title); repaint(); }
@@ -51,10 +58,13 @@ private:
     float fetch (const std::function<float()>& f) const;
 
     juce::String title_;
-    std::function<float()> getAttack_, getDecay_, getSustain_, getRelease_;
+    std::function<float()> getAttack_, getDecay_, getSustain_, getRelease_, getShape_;
+
+    // 0 = ADSR envelope, 1 = LFO waveform.
+    int previewMode_ = 0;
 
     // Last drawn values (initialized to -1 so the first timer tick repaints).
-    float lastA_ = -1.0f, lastD_ = -1.0f, lastS_ = -1.0f, lastR_ = -1.0f;
+    float lastA_ = -1.0f, lastD_ = -1.0f, lastS_ = -1.0f, lastR_ = -1.0f, lastShape_ = -1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EnvelopeDisplay)
 };

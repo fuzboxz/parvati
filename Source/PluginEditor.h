@@ -131,10 +131,13 @@ public:
                              std::unique_ptr<juce::Component> decoration);
 
     // Headless layout sanity check (called by parvati_editor_test): every group
-    // panel has positive size, no two panels overlap, every control sits inside
-    // its group, and at least one non-dense row fills the page width. Returns
-    // true when the flexible-width grid is well-formed.
+    // panel has positive size, no two panels overlap, every (active) control
+    // sits inside its group, and at least one non-dense row fills the page width.
+    // Returns true when the flexible-width grid is well-formed.
     bool layoutIsSane() const;
+
+    // DEV-ONLY (snapshot helper): set every Env/LFO slot's view mode and reflow.
+    void setAllEnvLfoModesForDump (int mode);
 
 private:
     // Maps a paramID to its bordered-group display name (e.g. "osc1_*"->"Osc 1",
@@ -153,6 +156,10 @@ private:
         int cellW = 0, cellH = 0;         // per-control cell size for this group
         bool singleRow = false;           // mod/modifier 3-wide horizontal strip
         bool stepGrid  = false;           // sequencer step grid
+        bool envLfoSlot = false;          // an Env/LFO unit: ENV/LFO view toggle
+        int  envLfoMode = 0;              // 0 = ENV (A/D/S/R), 1 = LFO (shape/rate)
+        std::vector<int> envCtrlIdx, lfoCtrlIdx;   // active-mode partition of controlIndices
+        juce::Component* envLfoToggle = nullptr;   // the ENV/LFO segmented toggle (owned by ParamPage)
         int naturalWidth = 0, naturalHeight = 0;
         juce::Rectangle<int> rect;
     };
@@ -161,6 +168,12 @@ private:
     void configureGroupLayouts();        // internal cols + per-group cell sizes
     void layoutGroups (int targetWidth); // compute group rects + content size
     void applyLayout();                  // push computed rects to the components
+    // Lay out one Env/LFO slot: the ENV/LFO toggle, the ACTIVE mode's controls
+    // (the inactive set is hidden), and the (mode-matched) decoration below.
+    void applyEnvLfoLayout (GroupLayout& g, juce::Rectangle<int> inner);
+    // Apply a new ENV/LFO view mode to @p groupIndex: update the toggle + preview
+    // mode, recompute the slot's layout, and reflow the page.
+    void refreshEnvLfoGroup (int groupIndex);
 
     ThemeManager& themeManager_;
     int cellWidth_, cellHeight_;
@@ -172,6 +185,7 @@ private:
     std::vector<std::unique_ptr<juce::GroupComponent>> groupComponents_;
     std::vector<GroupLayout> groups_;
     std::vector<std::unique_ptr<juce::Component>> decorations_;   // owned group decorations
+    std::vector<std::unique_ptr<juce::Component>> envLfoToggles_; // owned ENV/LFO segmented toggles
 
     // Layout constants (pixels).
     static constexpr int kMargin      = 16;  // page edge padding
@@ -182,6 +196,8 @@ private:
     static constexpr int kGroupTitleH = 18;  // room reserved for the group title
     static constexpr int kDecorationH   = 100; // reserved height for a group decoration
     static constexpr int kDecorationGap = 8;   // gap between control cells and a decoration
+    static constexpr int kEnvLfoToggleH   = 24; // ENV/LFO view-toggle row height
+    static constexpr int kEnvLfoToggleGap = 6;  // gap below the ENV/LFO toggle
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamPage)
 };

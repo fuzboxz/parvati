@@ -41,6 +41,48 @@ Section sectionForId (const juce::String& id)
 }  // namespace
 
 //==============================================================================
+// EnvLfoToggle — a small segmented ENV/LFO view selector for one Env/LFO slot.
+// Two TextButtons ("Env" / "LFO"); clicking one fires onMode(0 or 1). The owner
+// (ParamPage) sets the mode via setMode() to keep the button states in sync.
+// Themed through the editor-wide ParvatiLookAndFeel (inherited; the selected
+// button shows buttonOnColourId = accent).
+class EnvLfoToggle : public juce::Component
+{
+public:
+    explicit EnvLfoToggle (std::function<void (int)> onMode)
+        : onMode_ (std::move (onMode))
+    {
+        envBtn_.setButtonText (TRANS ("Env"));
+        lfoBtn_.setButtonText (TRANS ("LFO"));
+        envBtn_.setClickingTogglesState (false);
+        lfoBtn_.setClickingTogglesState (false);
+        envBtn_.onClick = [this] { setMode (0); if (onMode_) onMode_ (0); };
+        lfoBtn_.onClick = [this] { setMode (1); if (onMode_) onMode_ (1); };
+        addAndMakeVisible (envBtn_);
+        addAndMakeVisible (lfoBtn_);
+        setMode (0);
+    }
+
+    void setMode (int m)
+    {
+        envBtn_.setToggleState (m == 0, juce::dontSendNotification);
+        lfoBtn_.setToggleState (m == 1, juce::dontSendNotification);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        const int half = r.getWidth() / 2;
+        envBtn_.setBounds (r.removeFromLeft (half));
+        lfoBtn_.setBounds (r);
+    }
+
+private:
+    juce::TextButton envBtn_, lfoBtn_;
+    std::function<void (int)> onMode_;
+};
+
+//==============================================================================
 bool ParamControl::tooltipsEnabled_ = true;
 
 namespace
@@ -83,8 +125,14 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                    juce::Slider::TextBoxBelow);
         slider_->setTextBoxIsEditable (true);
-        if (d.isSequencer)   // compact step pots: a small text box so the rotary dominates
-            slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 30, 12);
+        if (d.isSequencer)
+        {
+            // Compact step pots: hide the redundant per-step label (the group
+            // header "Sequencer n" already identifies it) and use a small text
+            // box so the rotary dominates.
+            label_->setVisible (false);
+            slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 36, 14);
+        }
         addAndMakeVisible (*slider_);
         sliderAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor.getApvts(), d.paramID, *slider_);
@@ -135,8 +183,11 @@ juce::String ParamControl::getTooltip()
 void ParamControl::resized()
 {
     auto b = getLocalBounds().reduced (2);
-    label_->setBounds (b.removeFromTop (15));
-    b.removeFromTop (3);
+    if (! desc_.isSequencer)   // sequencer step cells hide the label (group header suffices)
+    {
+        label_->setBounds (b.removeFromTop (15));
+        b.removeFromTop (3);
+    }
 
     if (slider_)
     {
@@ -290,6 +341,19 @@ void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& des
             g->name = gname;
         }
         g->controlIndices.push_back (i);
+        if (gname.startsWith ("Env / LFO"))
+        {
+            // Each Env/LFO slot carries BOTH envelope (attack/decay/sustain/
+            // release) and LFO (shape/rate) controls; the engine runs both. The
+            // ENV/LFO toggle is a VIEW selector — partition the controls so the
+            // inactive mode can be hidden.
+            g->envLfoSlot = true;
+            const auto& pid = descriptors[i]->paramID;
+            if (pid.find ("shape") != std::string::npos || pid.find ("rate") != std::string::npos)
+                g->lfoCtrlIdx.push_back (i);
+            else
+                g->envCtrlIdx.push_back (i);
+        }
     }
 }
 
@@ -312,13 +376,22 @@ void ParamPage::configureGroupLayouts()
         g.cellW = cellWidth_;
         g.cellH = cellHeight_;
 
+        if (g.envLfoSlot)
+        {
+            // ENV view = A/D/S/R (4), LFO view = shape/rate (2): one row of the
+            // ACTIVE mode only (the other mode's controls are hidden).
+            const auto& active = (g.envLfoMode == 0) ? g.envCtrlIdx : g.lfoCtrlIdx;
+            g.internalCols = juce::jmax (1, (int) active.size());
+            continue;
+        }
+
         if (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Sequencer")
         {
             // Dense step grid: 16 (or 33) small cells laid in 8 columns.
             g.stepGrid = true;
             g.internalCols = 8;
-            g.cellW = 50;
-            g.cellH = 46;
+            g.cellW = 54;
+            g.cellH = 50;
         }
         else if (g.name.startsWith ("Mod ") || g.name.startsWith ("Modifier "))
         {
@@ -343,13 +416,24 @@ void ParamPage::layoutGroups (int targetWidth)
     // Natural panel size for each group (independent of placement).
     for (auto& g : groups_)
     {
-        const int n = (int) g.controlIndices.size();
         const int cols = juce::jmax (1, g.internalCols);
-        const int rows = (n + cols - 1) / cols;
-        g.naturalWidth  = cols * g.cellW + 2 * kGroupPad;
-        g.naturalHeight = kGroupTitleH + rows * g.cellH + 2 * kGroupPad;
-        // A group with a decoration (e.g. an ADSR preview) reserves room below
-        // its control cells so the panel height includes it.
+        if (g.envLfoSlot)
+        {
+            const int nActive = juce::jmax (1, (int) ((g.envLfoMode == 0 ? g.envCtrlIdx : g.lfoCtrlIdx).size()));
+            g.naturalWidth  = nActive * g.cellW + 2 * kGroupPad;
+            // title + ENV/LFO toggle row + one control row + padding.
+            g.naturalHeight = kGroupTitleH + kEnvLfoToggleH + kEnvLfoToggleGap
+                            + g.cellH + 2 * kGroupPad;
+        }
+        else
+        {
+            const int n = (int) g.controlIndices.size();
+            const int rows = (n + cols - 1) / cols;
+            g.naturalWidth  = cols * g.cellW + 2 * kGroupPad;
+            g.naturalHeight = kGroupTitleH + rows * g.cellH + 2 * kGroupPad;
+        }
+        // A group with a decoration (e.g. an ADSR/LFO preview) reserves room
+        // below its control cells so the panel height includes it.
         if (g.decoration != nullptr)
             g.naturalHeight += kDecorationH + kDecorationGap;
     }
@@ -443,6 +527,15 @@ void ParamPage::applyLayout()
         auto inner = g.rect.reduced (kGroupPad);
         inner.removeFromTop (kGroupTitleH);   // room for the panel title text
 
+        if (g.envLfoSlot)
+        {
+            // Env/LFO slots have their own layout: the ENV/LFO toggle, the ACTIVE
+            // mode's controls in one row (the other mode hidden), and the
+            // mode-matched preview below.
+            applyEnvLfoLayout (g, inner);
+            continue;
+        }
+
         const int cols = juce::jmax (1, g.internalCols);
         // Flexible-width cells: a NON-dense panel distributes its cells evenly
         // across the actual (possibly row-filled) inner width; a DENSE panel
@@ -476,6 +569,98 @@ void ParamPage::applyLayout()
     }
 }
 
+void ParamPage::applyEnvLfoLayout (GroupLayout& g, juce::Rectangle<int> inner)
+{
+    int y = inner.getY();
+
+    // ENV/LFO view toggle (full width).
+    if (g.envLfoToggle != nullptr)
+    {
+        g.envLfoToggle->setBounds (
+            juce::Rectangle<int> (inner.getX(), y, inner.getWidth(), kEnvLfoToggleH));
+        y += kEnvLfoToggleH + kEnvLfoToggleGap;
+    }
+
+    // Active mode's controls in a single row; the inactive mode is hidden
+    // (parked inside the group rect so the offscreen layout-sanity check passes).
+    const bool envMode = (g.envLfoMode == 0);
+    const auto& active   = envMode ? g.envCtrlIdx : g.lfoCtrlIdx;
+    const auto& inactive = envMode ? g.lfoCtrlIdx : g.envCtrlIdx;
+    const int cols    = juce::jmax (1, g.internalCols);
+    const int colStep = juce::jmax (g.cellW, inner.getWidth() / cols);
+    int c = 0;
+    for (int ci : active)
+    {
+        if (ci < 0 || ci >= (int) controls_.size()) continue;
+        controls_[(size_t) ci]->setVisible (true);
+        controls_[(size_t) ci]->setBounds (
+            juce::Rectangle<int> (inner.getX() + c * colStep, y, colStep, g.cellH).reduced (3));
+        ++c;
+    }
+    const juce::Rectangle<int> parked (g.rect.getX() + 2, g.rect.getY() + kGroupTitleH + 2, 1, 1);
+    for (int ci : inactive)
+    {
+        if (ci < 0 || ci >= (int) controls_.size()) continue;
+        controls_[(size_t) ci]->setVisible (false);
+        controls_[(size_t) ci]->setBounds (parked);
+    }
+
+    // Mode-matched preview (ADSR for ENV, waveform for LFO) below the controls.
+    if (g.decoration != nullptr)
+    {
+        const int decY = y + g.cellH + kDecorationGap;
+        g.decoration->setBounds (
+            juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), kDecorationH));
+    }
+}
+
+void ParamPage::refreshEnvLfoGroup (int groupIndex)
+{
+    if (groupIndex < 0 || groupIndex >= (int) groups_.size()) return;
+    auto& g = groups_[(size_t) groupIndex];
+    if (! g.envLfoSlot) return;
+
+    if (g.envLfoToggle != nullptr)
+        if (auto* t = dynamic_cast<EnvLfoToggle*> (g.envLfoToggle))
+            t->setMode (g.envLfoMode);
+
+    if (g.decoration != nullptr)
+        if (auto* d = dynamic_cast<EnvelopeDisplay*> (g.decoration))
+            d->setPreviewMode (g.envLfoMode);
+
+    // The active control count changed: recompute cols, relayout, reflow the page.
+    configureGroupLayouts();
+    layoutGroups (juce::jmax (940, getWidth()));
+    applyLayout();
+    setSize (getContentWidth(), getContentHeight());
+    repaint();
+}
+
+void ParamPage::setAllEnvLfoModesForDump (int mode)
+{
+    bool any = false;
+    for (auto& g : groups_)
+    {
+        if (! g.envLfoSlot) continue;
+        any = true;
+        g.envLfoMode = mode;
+        if (g.envLfoToggle != nullptr)
+            if (auto* t = dynamic_cast<EnvLfoToggle*> (g.envLfoToggle))
+                t->setMode (mode);
+        if (g.decoration != nullptr)
+            if (auto* d = dynamic_cast<EnvelopeDisplay*> (g.decoration))
+                d->setPreviewMode (mode);
+    }
+    if (any)
+    {
+        configureGroupLayouts();
+        layoutGroups (juce::jmax (940, getWidth()));
+        applyLayout();
+        setSize (getContentWidth(), getContentHeight());
+        repaint();
+    }
+}
+
 bool ParamPage::layoutIsSane() const
 {
     // (a) every group panel has positive size.
@@ -491,9 +676,14 @@ bool ParamPage::layoutIsSane() const
 
     // (c) every control has positive size and sits inside its group's rect.
     // (ParamControl is a direct child of ParamPage, so getBoundsInParent() is in
-    // the same page-space coordinates as the group rects.)
+    // the same page-space coordinates as the group rects.) For Env/LFO slots
+    // only the ACTIVE mode's controls are laid out, so validate just those.
     for (const auto& g : groups_)
-        for (int ci : g.controlIndices)
+    {
+        const std::vector<int>* idxs = g.envLfoSlot
+            ? (g.envLfoMode == 0 ? &g.envCtrlIdx : &g.lfoCtrlIdx)
+            : &g.controlIndices;
+        for (int ci : *idxs)
         {
             if (ci < 0 || ci >= (int) controls_.size())
                 return false;
@@ -503,6 +693,7 @@ bool ParamPage::layoutIsSane() const
             if (! g.rect.contains (b))
                 return false;
         }
+    }
 
     // (d) the page fills its width: at least one NON-dense row reaches the right
     // margin (within a 2*kGroupGap tolerance for integer rounding), proving the
@@ -575,6 +766,27 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
         addAndMakeVisible (*gc);
         g.groupComp = gc.get();
         groupComponents_.push_back (std::move (gc));
+    }
+
+    // ENV/LFO view toggle for each Env/LFO slot (a segmented Env/LFO selector;
+    // the active mode's controls are shown, the other hidden). Created here so
+    // the toggle exists before the first layout; the editor attaches the
+    // (mode-matched) preview decoration afterwards via setGroupDecoration.
+    for (int gi = 0; gi < (int) groups_.size(); ++gi)
+    {
+        if (! groups_[(size_t) gi].envLfoSlot) continue;
+        auto toggle = std::make_unique<EnvLfoToggle> (
+            [this, gi] (int mode)
+            {
+                if (gi >= 0 && gi < (int) groups_.size())
+                {
+                    groups_[(size_t) gi].envLfoMode = mode;
+                    refreshEnvLfoGroup (gi);
+                }
+            });
+        groups_[(size_t) gi].envLfoToggle = toggle.get();
+        addAndMakeVisible (*toggle);
+        envLfoToggles_.push_back (std::move (toggle));
     }
 
     // Control cells on top of the panel borders.
@@ -932,7 +1144,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                         [norm, e] { return norm (e + "_attack");  },
                         [norm, e] { return norm (e + "_decay");   },
                         [norm, e] { return norm (e + "_sustain"); },
-                        [norm, e] { return norm (e + "_release"); }));
+                        [norm, e] { return norm (e + "_release"); },
+                        [norm, e] { return norm (e + "_shape");   }));   // drives the LFO preview
             }
         }
 

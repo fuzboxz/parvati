@@ -6,15 +6,17 @@
 
 //==============================================================================
 EnvelopeDisplay::EnvelopeDisplay (juce::String title,
-                                  std::function<float()> getAttack,
-                                  std::function<float()> getDecay,
-                                  std::function<float()> getSustain,
-                                  std::function<float()> getRelease)
+                                 std::function<float()> getAttack,
+                                 std::function<float()> getDecay,
+                                 std::function<float()> getSustain,
+                                 std::function<float()> getRelease,
+                                 std::function<float()> getShape)
     : title_ (std::move (title)),
       getAttack_   (std::move (getAttack)),
       getDecay_    (std::move (getDecay)),
       getSustain_  (std::move (getSustain)),
-      getRelease_  (std::move (getRelease))
+      getRelease_  (std::move (getRelease)),
+      getShape_    (std::move (getShape))
 {
     // A getter that was not supplied reads as 0 (so a default-constructed /
     // partially-bound display still renders a sane shape).
@@ -22,11 +24,12 @@ EnvelopeDisplay::EnvelopeDisplay (juce::String title,
     if (! getDecay_)   getDecay_   = [] { return 0.0f; };
     if (! getSustain_) getSustain_ = [] { return 0.0f; };
     if (! getRelease_) getRelease_ = [] { return 0.0f; };
+    if (! getShape_)   getShape_   = [] { return 0.0f; };
 
     // Accessibility name/description (read by the default handler). The title is
     // also mirrored onto the Component so screen readers announce e.g. "Env 1".
     juce::Component::setTitle (title_);
-    setDescription ("ADSR envelope preview");
+    setDescription ("ADSR envelope / LFO waveform preview");
 
     startTimerHz (30);
 }
@@ -49,12 +52,14 @@ void EnvelopeDisplay::timerCallback()
     const float d = fetch (getDecay_);
     const float s = fetch (getSustain_);
     const float r = fetch (getRelease_);
+    const float sh = fetch (getShape_);
 
     constexpr float eps = 1.0f / 512.0f;   // ~0.002: ignore sub-knob jitter
     if (std::fabs (a - lastA_) > eps || std::fabs (d - lastD_) > eps
-        || std::fabs (s - lastS_) > eps || std::fabs (r - lastR_) > eps)
+        || std::fabs (s - lastS_) > eps || std::fabs (r - lastR_) > eps
+        || std::fabs (sh - lastShape_) > eps)
     {
-        lastA_ = a; lastD_ = d; lastS_ = s; lastR_ = r;
+        lastA_ = a; lastD_ = d; lastS_ = s; lastR_ = r; lastShape_ = sh;
         repaint();
     }
 }
@@ -106,6 +111,76 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     {
         const float y = top + H * (static_cast<float> (i) / 4.0f);
         g.drawHorizontalLine (juce::roundToInt (y), left, left + W);
+    }
+
+    // ---- LFO waveform preview (previewMode_ == 1) ----
+    if (previewMode_ == 1)
+    {
+        const float sh = lastShape_ >= 0.0f ? lastShape_ : fetch (getShape_);
+        const int shapeIdx = juce::jlimit (0, 3, juce::roundToInt (sh * 3.0f));   // 0..3: Tri/Sq/S&H/Ramp
+
+        const float midY = (top + bottom) * 0.5f;
+        const float amp = H * 0.42f;
+        const int cycles = 2;
+        const float period = W / static_cast<float> (cycles);
+
+        // Stable S&H staircase: 8 blocks/cycle, precomputed with a fixed seed so
+        // the random steps do not flicker between repaints.
+        constexpr int kBlocksPerCycle = 8;
+        float shLevels[16] = {};
+        if (shapeIdx == 2)
+        {
+            uint32_t lcg = 0x9e3779b9u;
+            for (int i = 0; i < cycles * kBlocksPerCycle; ++i)
+            {
+                lcg = lcg * 1664525u + 1013904223u;
+                shLevels[i] = (lcg >> 8) * (1.0f / 16777216.0f) * 2.0f - 1.0f;
+            }
+        }
+
+        auto levelFor = [&] (float xRel) -> float
+        {
+            const float ph = xRel / period;                 // 0..cycles
+            const float f = ph - std::floor (ph);           // fractional position in cycle
+            switch (shapeIdx)
+            {
+                case 0:  return (f < 0.5f) ? (4.0f * f - 1.0f) : (3.0f - 4.0f * f);   // triangle
+                case 1:  return (f < 0.5f) ? 1.0f : -1.0f;                            // square
+                case 2:                                                                  // sample & hold
+                {
+                    const int cycle = juce::jlimit (0, cycles - 1, static_cast<int> (ph));
+                    const int block = juce::jlimit (0, kBlocksPerCycle - 1, static_cast<int> (f * kBlocksPerCycle));
+                    return shLevels[cycle * kBlocksPerCycle + block];
+                }
+                default: return 2.0f * f - 1.0f;                                       // ramp / saw
+            }
+        };
+
+        juce::Path curve;
+        const int N = juce::jmax (64, juce::roundToInt (W));
+        for (int i = 0; i <= N; ++i)
+        {
+            const float xRel = static_cast<float> (i) * W / static_cast<float> (N);
+            const float y = midY - levelFor (xRel) * amp;
+            if (i == 0) curve.startNewSubPath (left + xRel, y);
+            else        curve.lineTo (left + xRel, y);
+        }
+
+        juce::Path fill (curve);
+        fill.lineTo (left + W, midY);
+        fill.lineTo (left, midY);
+        fill.closeSubPath();
+        g.setColour (accent.withAlpha (0.16f));
+        g.fillPath (fill);
+        g.setColour (accent);
+        g.strokePath (curve, juce::PathStrokeType (1.8f));
+
+        g.setColour (textDim);
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText ("(LFO)",
+                    bounds.reduced (9.0f, 4.0f).removeFromTop (16).removeFromRight (50),
+                    juce::Justification::topRight);
+        return;
     }
 
     const float a = lastA_ >= 0.0f ? lastA_ : fetch (getAttack_);
