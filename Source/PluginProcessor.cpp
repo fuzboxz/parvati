@@ -44,8 +44,9 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
 
     // Extract the embedded GPL-3.0 factory presets into the user app-data dirs
     // on first run (process-once) so the Patch combo is populated out of the
-    // box. Non-fatal: a failure just leaves the combo empty.
-    parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir());
+    // box. Also ensures the USER save area exists. Non-fatal: a failure just
+    // leaves the combo empty.
+    parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getUserPatchDir());
 }
 
 //==============================================================================
@@ -508,10 +509,10 @@ bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
 juce::File ParvatiAudioProcessor::getFactoryPatchDir()
 {
     // Per-user app-data location (user-writable on macOS, unlike
-    // ~/Library/Audio/Presets which is often root-owned). ~/Library/Application
-    // Support/Parvati/Factory.
+    // ~/Library/Audio/Presets which is often root-owned). The factory banks are
+    // extracted here as subfolders: <appdata>/Parvati/FACTORY/{A,B,F,S}/.
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-        .getChildFile ("Parvati/Factory");
+        .getChildFile ("Parvati/FACTORY");
 }
 
 //==========================================================================
@@ -577,7 +578,15 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
 juce::File ParvatiAudioProcessor::getFactoryMultiDir()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-        .getChildFile ("Parvati/FactoryMulti");
+        .getChildFile ("Parvati/FACTORY_MULTI");
+}
+
+juce::File ParvatiAudioProcessor::getUserPatchDir()
+{
+    // User-writable area for the user's own saved patches/multis. Created on
+    // first run by the factory installer. <appdata>/Parvati/USER/.
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+        .getChildFile ("Parvati/USER");
 }
 
 bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)

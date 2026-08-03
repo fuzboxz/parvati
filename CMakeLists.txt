@@ -107,20 +107,46 @@ target_sources(Parvati PRIVATE ${PARVATI_SOURCES})
 target_include_directories(Parvati PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
 # ------------------------------------------------------------------------------
-# Factory presets (Ambika "goldencard" GPL-3.0 banks). Curated under presets/ and
-# EMBEDDED into the plugin binary via juce_add_binary_data, then extracted to the
-# user app-data dir on first run (FactoryPresets::ensureInstalled, see
-# Source/ui/FactoryPresets.h) so they show up in the Patch combo out of the box.
-# A separate glob for programs (.PRO) and multis (.MUL) keeps the two banks apart.
-file(GLOB PARVATI_FACTORY_PRO CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/Factory/*.PRO")
-file(GLOB PARVATI_FACTORY_MUL CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FactoryMulti/*.MUL")
+# Factory presets (Ambika "goldencard" GPL-3.0 banks), organized under presets/
+# as FACTORY/<bank>/ (A/B/F/S) + FACTORY_MULTI/. EMBEDDED into the plugin binary
+# via juce_add_binary_data, then extracted to the user app-data dir on first run
+# (parvati::ensureFactoryPresetsInstalled, see Source/ui/FactoryPresetInstaller.h)
+# so they show up in the Patch combo out of the box.
+#
+# The four program banks share filenames (each has 000.PRO, 001.PRO ...), so they
+# cannot be embedded by their raw names. Stage them into a build dir with
+# bank-unique names first: <BANK>__<file> (A__000.PRO) and MULTI__<file>. The
+# installer parses the "__" delimiter to reconstruct FACTORY/<bank>/<file>.
+set(_parvati_preset_stage "${CMAKE_BINARY_DIR}/parvati_preset_stage")
+file(REMOVE_RECURSE "${_parvati_preset_stage}")
+file(MAKE_DIRECTORY "${_parvati_preset_stage}")
+# Re-stage when the source presets change (CONFIGURE_DEPENDS -> reconfigure).
+file(GLOB _cfgdep_pro CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY/*/*.PRO")
+file(GLOB _cfgdep_mul CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY_MULTI/*.MUL")
+set(_staged_sources "")
+foreach(_bank A B F S)
+    file(GLOB _files "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY/${_bank}/*.PRO")
+    foreach(_f ${_files})
+        get_filename_component(_n "${_f}" NAME)
+        set(_out "${_parvati_preset_stage}/${_bank}__${_n}")
+        configure_file("${_f}" "${_out}" COPYONLY)
+        list(APPEND _staged_sources "${_out}")
+    endforeach()
+endforeach()
+file(GLOB _mulfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY_MULTI/*.MUL")
+foreach(_f ${_mulfiles})
+    get_filename_component(_n "${_f}" NAME)
+    set(_out "${_parvati_preset_stage}/MULTI__${_n}")
+    configure_file("${_f}" "${_out}" COPYONLY)
+    list(APPEND _staged_sources "${_out}")
+endforeach()
 # Guard: juce_add_binary_data errors on an empty SOURCES list. The factory banks
 # are always checked in, so this only matters for a hypothetical empty-presets
 # checkout (configure stays valid; the installer simply has nothing to extract).
-if(PARVATI_FACTORY_PRO OR PARVATI_FACTORY_MUL)
+if(_staged_sources)
     juce_add_binary_data(parvati_factory_presets
         NAMESPACE FactoryPresets
-        SOURCES ${PARVATI_FACTORY_PRO} ${PARVATI_FACTORY_MUL})
+        SOURCES ${_staged_sources})
     target_link_libraries(Parvati PRIVATE parvati_factory_presets)
 endif()
 

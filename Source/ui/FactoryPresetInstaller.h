@@ -18,10 +18,12 @@
 
 namespace parvati
 {
-// Extract every embedded factory preset into @p factoryDir (*.PRO) and
-// @p factoryMultiDir (*.MUL) if either directory is missing or empty. No-op
-// once the directories already contain presets. Returns the number of files
-// written (0 on a no-op run).
+// Extract every embedded factory preset into @p factoryDir (*.PRO, organized as
+// FACTORY/<bank>/) and @p factoryMultiDir (*.MUL, FACTORY_MULTI/) if either is
+// missing or empty, and ensure @p userDir (USER/) exists for user saves. No-op
+// once the factory directories already contain presets. Returns the number of
+// files written (0 on a no-op run).
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
-                                   const juce::File& factoryMultiDir);
+                                   const juce::File& factoryMultiDir,
+                                   const juce::File& userDir);
 }  // namespace parvati

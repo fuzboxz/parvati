@@ -1312,7 +1312,9 @@ void ParvatiEditor::populateFactoryPatches()
                 label = f.getFileNameWithoutExtension();
             }
             const int id = static_cast<int> (factoryFiles_.size()) + 1;
-            patchCombo_.addItem (prefix + f.getRelativePathFrom (dir) + "  -  " + label, id);
+            // Normalize the relative-path label to forward slashes (the banks
+            // show as "A/000" etc.) so it reads the same on every OS.
+            patchCombo_.addItem (prefix + f.getRelativePathFrom (dir).replace ("\\", "/") + "  -  " + label, id);
             factoryFiles_.push_back (f);
         }
     };
@@ -1320,6 +1322,14 @@ void ParvatiEditor::populateFactoryPatches()
     // Single-program patches (.PRO) first, then multitimbral multis (.MUL).
     addFiles (processorRef_.getFactoryPatchDir(), "*.PRO", "", true);
     addFiles (processorRef_.getFactoryMultiDir(), "*.MUL", "[Multi] ", false);
+
+    // User-saved presets (USER/): created on first run by the factory installer.
+    // Ensured here too so the (empty) user area shows gracefully on a fresh
+    // install. Appended after the factory banks.
+    const auto userDir = processorRef_.getUserPatchDir();
+    userDir.createDirectory();
+    addFiles (userDir, "*.PRO", "[User] ", true);
+    addFiles (userDir, "*.MUL", "[User Multi] ", false);
 }
 
 void ParvatiEditor::openLoadDialog()
@@ -1337,15 +1347,17 @@ void ParvatiEditor::openLoadDialog()
 
 void ParvatiEditor::openSaveDialog()
 {
-    // Default name = the current patch name (or "Parvati"), in the user's
-    // Documents folder. The chooser enforces the .PRO extension and warns on
-    // overwrite. Reuses the editor's single fileChooser_ slot (mutually
-    // exclusive with Load, which is fine for a modal-ish save).
+    // Default name = the current patch name (or "Parvati"), in the user's preset
+    // area (USER/) so saved patches show up in the Patch combo under [User].
+    // The chooser enforces the .PRO extension and warns on overwrite. Reuses the
+    // editor's single fileChooser_ slot (mutually exclusive with Load, which is
+    // fine for a modal-ish save).
     auto defaultName = processorRef_.getLoadedProgramName();
     if (defaultName.isEmpty())
         defaultName = "Parvati";
-    const juce::File defaultFile (juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                                    .getChildFile (defaultName + ".PRO"));
+    const juce::File defaultDir = processorRef_.getUserPatchDir();
+    defaultDir.createDirectory();   // ensure USER/ exists
+    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".PRO"));
     fileChooser_ = std::make_unique<juce::FileChooser> ("Save Parvati Patch (.PRO)",
                                                        defaultFile, "*.PRO");
     const auto flags = juce::FileBrowserComponent::saveMode

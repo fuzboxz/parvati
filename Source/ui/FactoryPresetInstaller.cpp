@@ -46,7 +46,8 @@ bool dirHasPresets (const juce::File& dir, const char* wildcard)
 }  // namespace
 
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
-                                   const juce::File& factoryMultiDir)
+                                   const juce::File& factoryMultiDir,
+                                   const juce::File& userDir)
 {
     // Process-once: run the directory scan / extraction at most once. After the
     // first call this is a single relaxed atomic load (free for the many
@@ -57,7 +58,29 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
     int written = 0;
     std::call_once (g_installOnceFlag, [&]
     {
-        // If BOTH directories already carry presets, there is nothing to do.
+        // Always provide a USER area for the user's own saved presets.
+        userDir.createDirectory();
+
+        // Legacy cleanup (pre-release): the previous flat layout extracted to
+        // Parvati/Factory and Parvati/FactoryMulti. Those are superseded by
+        // FACTORY/<bank>/ and FACTORY_MULTI/, so remove the old flat dirs once.
+        // Only the two known legacy names are touched. On a CASE-INSENSITIVE FS
+        // (default macOS APFS) "Factory" and "FACTORY" are the same directory,
+        // so compare the paths case-insensitively and never delete a dir that is
+        // (case-insensitively) the live factory/multi dir.
+        const auto sameDirCI = [] (const juce::File& a, const juce::File& b)
+        {
+            return a.getFullPathName().toLowerCase() == b.getFullPathName().toLowerCase();
+        };
+        const juce::File base = factoryDir.getParentDirectory();
+        const juce::File legacyFactory = base.getChildFile ("Factory");
+        const juce::File legacyMulti   = base.getChildFile ("FactoryMulti");
+        if (! sameDirCI (legacyFactory, factoryDir))
+            legacyFactory.deleteRecursively (false);
+        if (! sameDirCI (legacyMulti, factoryMultiDir))
+            legacyMulti.deleteRecursively (false);
+
+        // If BOTH new directories already carry presets, there is nothing to do.
         const bool proPresent = dirHasPresets (factoryDir,     "*.PRO");
         const bool mulPresent = dirHasPresets (factoryMultiDir, "*.MUL");
         if (proPresent && mulPresent)
@@ -77,10 +100,29 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                 continue;
 
             const juce::String name (originalName);
-            // Route by extension: .PRO -> Factory, .MUL -> FactoryMulti.
-            const juce::File targetDir = name.endsWithIgnoreCase (".MUL") ? factoryMultiDir
-                                                                          : factoryDir;
-            if (writeIfMissing (targetDir.getChildFile (name), data, size))
+            // The staged name encodes the bank: "A__000.PRO" (bank A),
+            // "MULTI__000.MUL" (a multi). Split at the first "__": token before,
+            // filename after. token == MULTI -> FACTORY_MULTI/<file>; else the
+            // token is a bank (A/B/F/S) -> FACTORY/<bank>/<file>.
+            const int sep = name.indexOf ("__");
+            juce::File target;
+            if (sep > 0 && sep < name.length() - 2)
+            {
+                const juce::String token = name.substring (0, sep);
+                const juce::String fname = name.substring (sep + 2);
+                if (token == "MULTI")
+                    target = factoryMultiDir.getChildFile (fname);
+                else
+                    target = factoryDir.getChildFile (token).getChildFile (fname);
+            }
+            else
+            {
+                // Fallback (un-prefixed name): route by extension as before.
+                target = name.endsWithIgnoreCase (".MUL") ? factoryMultiDir
+                                                          : factoryDir;
+                target = target.getChildFile (name);
+            }
+            if (writeIfMissing (target, data, size))
                 ++written;
         }
     });
