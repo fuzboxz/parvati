@@ -540,6 +540,31 @@ target_link_libraries(parvati_idle_silence_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Real-time / buffer-robustness smoke test. Renders a dense chord at
+# 32..1024-sample buffers in Hardware(6) and Extended(16) modes; asserts finite
+# + audible + no crash. Built by default. Run with: ./build/parvati_realtime_test
+add_executable(parvati_realtime_test
+    tests/realtime_test.cpp
+)
+target_include_directories(parvati_realtime_test PRIVATE Source)
+target_compile_features(parvati_realtime_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_realtime_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # MIDI CC/NRPN -> parameter mapping verification (spec F.4). Proves incoming
 # CC/NRPN drive the APVTS parameters and reach the engine bytes exactly as the
 # Ambika hardware. Built by default. Run with: ./build/parvati_midi_param_test
@@ -597,6 +622,21 @@ add_executable(parvati_polyphony_test
 target_include_directories(parvati_polyphony_test PRIVATE Source)
 target_compile_features(parvati_polyphony_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_polyphony_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_gui_basics
+)
+
+add_executable(parvati_voice_modes_test
+    tests/voice_modes_test.cpp
+)
+target_include_directories(parvati_voice_modes_test PRIVATE Source)
+target_compile_features(parvati_voice_modes_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_voice_modes_test PRIVATE
     Parvati
     juce::juce_audio_basics
     juce::juce_audio_processors
