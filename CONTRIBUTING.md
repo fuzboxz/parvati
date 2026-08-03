@@ -7,12 +7,18 @@ and contribute.
 
 Parvati uses **CMake** as its only build system (the legacy Projucer `.jucer`
 has been removed). You need CMake ≥ 3.22, a C++17 compiler, and a JUCE checkout
-(default `$HOME/JUCE`, override with `-DJUCE_GLOBAL_PATH=...`).
+(default `$HOME/JUCE`, `%USERPROFILE%\JUCE` on native Windows, override with
+`-DJUCE_GLOBAL_PATH=...`).
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j 8
 ```
+
+On **Windows** use the Visual Studio 17 2022 generator (Developer PowerShell):
+`cmake -S . -B build -G "Visual Studio 17 2022" -A x64` then `cmake --build
+build --config Debug -j 8`. The sanitizer/`-Werror` CMake options are
+GCC/Clang-only and no-op under MSVC.`
 
 We develop and test against **Debug builds only**. Do not rely on a Release
 build for verification.
@@ -23,8 +29,11 @@ All tests are built by default:
 
 ```bash
 cmake --build build -j 8
-for t in build/parvati_*_test; do "$t"; done
+for t in build/parvati_tests build/parvati_*_test; do [ -e "$t" ] && "$t"; done
 ```
+
+(`parvati_tests` does not match the `parvati_*_test` glob — list it explicitly
+or it is silently skipped.)
 
 If you add a feature, add or extend a test under `tests/` and mirror an existing
 CMake target. The editor coverage test (`tools/editor_test.cpp`) and the layout

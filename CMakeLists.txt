@@ -26,6 +26,12 @@ option(PARVATI_ENABLE_UBSAN           "Enable UndefinedBehaviorSanitizer"  OFF)
 option(PARVATI_ENABLE_TSAN            "Enable ThreadSanitizer"             OFF)
 option(PARVATI_WARNINGS_AS_ERRORS     "Treat compiler warnings as errors"  OFF)
 
+# AddressSanitizer and ThreadSanitizer cannot be combined (both hijack the
+# memory allocator). Fail fast at configure time rather than at link/run.
+if(PARVATI_ENABLE_ASAN AND PARVATI_ENABLE_TSAN)
+    message(FATAL_ERROR "PARVATI_ENABLE_ASAN and PARVATI_ENABLE_TSAN are mutually exclusive (ASan+TSan cannot be combined).")
+endif()
+
 set(_parvati_sanitizers "")
 if(PARVATI_ENABLE_ASAN)
     list(APPEND _parvati_sanitizers address)
@@ -39,18 +45,34 @@ endif()
 if(_parvati_sanitizers)
     list(JOIN _parvati_sanitizers "," _parvati_sanitizer_flags)
     message(STATUS "Parvati: sanitizers enabled (${_parvati_sanitizer_flags})")
-    add_compile_options(-fsanitize=${_parvati_sanitizer_flags} -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=${_parvati_sanitizer_flags})
+    # -fsanitize is GCC/Clang-only. MSVC AddressSanitizer (/fsanitize=address)
+    # is a different mechanism and is intentionally not wired here.
+    if(NOT MSVC)
+        add_compile_options(-fsanitize=${_parvati_sanitizer_flags} -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=${_parvati_sanitizer_flags})
+    else()
+        message(WARNING "Parvati: -fsanitize is GCC/Clang-only; not applied under MSVC.")
+    endif()
 endif()
 if(PARVATI_WARNINGS_AS_ERRORS)
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror> $<$<COMPILE_LANGUAGE:C>:-Werror>)
+    # GCC/Clang use -Werror; MSVC uses /WX.
+    if(NOT MSVC)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror> $<$<COMPILE_LANGUAGE:C>:-Werror>)
+    else()
+        add_compile_options(/WX)
+    endif()
 endif()
 
 # JUCE is a global checkout at ~/JUCE (no installed JUCEConfig.cmake), so we
 # consume it via add_subdirectory. Override with -DJUCE_GLOBAL_PATH=/path if
 # JUCE lives elsewhere. JUCE requires the C language to be enabled.
 if(NOT DEFINED JUCE_GLOBAL_PATH)
-    set(JUCE_GLOBAL_PATH "$ENV{HOME}/JUCE")
+    # $ENV{HOME} is unset on native Windows shells; fall back to USERPROFILE.
+    if(WIN32 AND (NOT DEFINED ENV{HOME} OR "$ENV{HOME}" STREQUAL ""))
+        set(JUCE_GLOBAL_PATH "$ENV{USERPROFILE}/JUCE")
+    else()
+        set(JUCE_GLOBAL_PATH "$ENV{HOME}/JUCE")
+    endif()
 endif()
 
 if(NOT EXISTS "${JUCE_GLOBAL_PATH}/CMakeLists.txt")
@@ -92,10 +114,15 @@ target_include_directories(Parvati PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 # A separate glob for programs (.PRO) and multis (.MUL) keeps the two banks apart.
 file(GLOB PARVATI_FACTORY_PRO CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/Factory/*.PRO")
 file(GLOB PARVATI_FACTORY_MUL CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FactoryMulti/*.MUL")
-juce_add_binary_data(parvati_factory_presets
-    NAMESPACE FactoryPresets
-    SOURCES ${PARVATI_FACTORY_PRO} ${PARVATI_FACTORY_MUL})
-target_link_libraries(Parvati PRIVATE parvati_factory_presets)
+# Guard: juce_add_binary_data errors on an empty SOURCES list. The factory banks
+# are always checked in, so this only matters for a hypothetical empty-presets
+# checkout (configure stays valid; the installer simply has nothing to extract).
+if(PARVATI_FACTORY_PRO OR PARVATI_FACTORY_MUL)
+    juce_add_binary_data(parvati_factory_presets
+        NAMESPACE FactoryPresets
+        SOURCES ${PARVATI_FACTORY_PRO} ${PARVATI_FACTORY_MUL})
+    target_link_libraries(Parvati PRIVATE parvati_factory_presets)
+endif()
 
 # Hardware-accelerated GUI rendering is ON BY DEFAULT in JUCE 9.0.0 — no define
 # is required (verified against ~/JUCE):

@@ -19,7 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # AU is macOS-only; on Windows/Linux JUCE builds Standalone + VST3.
+        os: [macos-latest, ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout Parvati
@@ -37,6 +38,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: juce-framework/JUCE
+          # Pin to a stable release tag (matches the locally-developed version).
+          # Bump deliberately — never use the moving default branch in CI.
+          ref: 9.0.0
           path: JUCE
 
       - name: Install JUCE Linux build dependencies
@@ -55,10 +59,16 @@ jobs:
         run: cmake --build build --config Debug -j 4
 
       - name: Run tests
+        shell: bash
         run: |
-          set -e
           status=0
-          for t in build/parvati_*_test; do
+          # Match the test binaries on every OS: unix has no extension, Windows
+          # appends .exe. Iterate both patterns and skip anything that doesn't
+          # exist. NOTE: 'parvati_tests' does NOT match 'parvati_*_test', so it is
+          # listed explicitly (a bare 'parvati_*_test' glob silently skips it).
+          for t in build/parvati_tests build/parvati_tests.exe \
+                   build/parvati_*_test build/parvati_*_test.exe; do
+            [ -e "$t" ] || continue
             name=$(basename "$t")
             if "$t" > "test_$name.log" 2>&1; then
               echo "::group::$name PASS"

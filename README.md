@@ -39,8 +39,8 @@ covered by a headless test suite (17 executables). Treat it as a work in progres
 
 - **CMake** ≥ 3.22
 - A C++17 compiler (clang ≥ 14 / gcc ≥ 11 / MSVC 2022 recommended)
-- **JUCE** 8 or 9 (default lookup: `$HOME/JUCE`; override with
-  `-DJUCE_GLOBAL_PATH=/path/to/JUCE`)
+- **JUCE** 8 or 9 (default lookup: `$HOME/JUCE`, or `%USERPROFILE%\JUCE`
+  on native Windows; override with `-DJUCE_GLOBAL_PATH=/path/to/JUCE`)
 
 ## Building
 
@@ -54,6 +54,22 @@ cmake --build build -j 8
 The plugin artefacts land in `build/Parvati_artefacts/Debug/`
 (`Parvati.vst3`, `Parvati.component`, `Parvati.app`). The headless test
 executables land in `build/`.
+
+> The **AU** format is macOS-only. On Windows and Linux, JUCE builds the
+> **Standalone** app and **VST3** only (no `.component`).
+
+### Windows
+
+The same CMake commands work with Visual Studio 2022 (Developer PowerShell or
+the *x64 Native Tools* prompt). The default JUCE lookup falls back to
+`%USERPROFILE%\JUCE` when `HOME` is unset:
+
+```bash
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_GLOBAL_PATH=C:/path/to/JUCE
+cmake --build build --config Debug -j 8
+```
+
+(The sanitizer and `-Werror` options are GCC/Clang-only; they no-op under MSVC.)
 
 ## Running the tests
 
