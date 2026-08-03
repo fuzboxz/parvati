@@ -118,6 +118,12 @@ struct Part
     // arp/seq-generated voices. stopNote() mutates voice state the audio thread
     // renders, so it must not run on the message thread.
     std::atomic<bool> killGeneratedNotes_ { false };
+    // Message thread -> audio thread: a live APVTS edit (applyPatchByte/
+    // applyPartByte) wrote this Part's patch/part storage; the audio thread pushes
+    // the full frame to this Part's voices (pushPartBytesToVoices) so the
+    // voice_.patch_/part_ write never races the renderer. Mirrors the firmware
+    // "ship a patch frame to the voicecard". <=1 block latency.
+    std::atomic<bool> frameDirty_ { false };
     uint8_t voiceAllocation = 0;   // 6-bitmask over firmware voicecards (vc0..5)
     uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator

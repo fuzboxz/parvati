@@ -142,13 +142,12 @@ void SynthEngine::applyPatchByte (int offset, uint8_t value)
 {
     auto& part = parts_[currentPart_];
     if (offset >= 0 && offset < 112) part.patchBytes[(size_t) offset] = value;
-    // Message-thread path: target the current Part's voices via the Synthesiser's
-    // stable `voices` array filtered by partIndex (NOT voiceIndices, which is
-    // audio-thread-only — iterating it here would race the audio thread).
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            if (av->getPartIndex() == currentPart_)
-                av->setPatchByte (offset, value);
+    // DEFER the voice write to the audio thread: setPatchByte mutates voice_.patch_
+    // which the renderer reads every block, so writing it here (message thread)
+    // was a torn read. Stage it in Part storage (above) + flag frameDirty_; the
+    // audio thread pushes the full frame (pushPartBytesToVoices) at the block top.
+    // (release publishes the byte write to the audio-thread acquire.)
+    part.frameDirty_.store (true, std::memory_order_release);
 }
 
 void SynthEngine::applyPartByte (int offset, uint8_t value)
@@ -170,12 +169,10 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
             markAllocationDirty();
         return;
     }
-    // Message-thread path: target the current Part's voices via the stable
-    // `voices` array filtered by partIndex (NOT voiceIndices).
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            if (av->getPartIndex() == currentPart_)
-                av->setPartByte (offset, value);
+    // DEFER the voice write to the audio thread (same fence as applyPatchByte):
+    // setPartByte mutates voice_.part_ which the renderer reads; writing it on the
+    // message thread was a torn read. Stage in Part storage + frameDirty_.
+    part.frameDirty_.store (true, std::memory_order_release);
 }
 
 void SynthEngine::applyTempo (double bpm)
@@ -656,6 +653,16 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         for (auto* v : voices)
             if (auto* av = dynamic_cast<AmbikaVoice*> (v))
                 av->stopNote (0.0f, false);
+
+    // Service deferred live-edit frame writes ON THE AUDIO THREAD: a knob edit
+    // (applyPatchByte/applyPartByte) staged a Part's patch/part bytes + flagged
+    // frameDirty_; push the full frame to that Part's voices now (audio-thread-
+    // only pushPartBytesToVoices). Replaces the message-thread voice write that
+    // raced the renderer (torn read). Order vs allocationDirty_ is irrelevant
+    // (a Part dirtied by both is pushed twice, idempotently).
+    for (int p = 0; p < kNumParts; ++p)
+        if (parts_[p].frameDirty_.exchange (false, std::memory_order_acq_rel))
+            pushPartBytesToVoices (p);
 
     // Service deferred voice-allocation / polyphony / patch changes ON THE AUDIO
     // THREAD. The message thread (Multi page edits, polyphony param, .MUL load)

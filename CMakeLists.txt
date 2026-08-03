@@ -564,6 +564,27 @@ target_link_libraries(parvati_realtime_test PRIVATE
     juce::juce_gui_extra
 )
 
+add_executable(parvati_concurrency_test
+    tests/concurrency_test.cpp
+)
+target_include_directories(parvati_concurrency_test PRIVATE Source)
+target_compile_features(parvati_concurrency_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_concurrency_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
 # ------------------------------------------------------------------------------
 # MIDI CC/NRPN -> parameter mapping verification (spec F.4). Proves incoming
 # CC/NRPN drive the APVTS parameters and reach the engine bytes exactly as the
