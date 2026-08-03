@@ -542,6 +542,11 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
             }
             out << "\n";
         }
+
+    // Voice Mode is a global UI pref (NOT an APVTS param), so emit it explicitly
+    // under options: so a multi can select Hardware (6 voices) vs Extended (16).
+    out << "  voice_mode: " << (int) proc.getUiVoiceMode()
+        << "            # 0 = Hardware (6 voices), 1 = Extended (16 voices)\n";
     return out;
 }
 
@@ -620,13 +625,28 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
     // is set to 0 below; options are global so the part doesn't matter).
     const var options = tree["options"];
     if (auto* oobj = options.getDynamicObject())
+    {
+        // Voice Mode is a global UI pref (NOT an APVTS param): handle it
+        // explicitly (0 = Hardware / 6 voices, 1 = Extended / 16 voices). Absent
+        // in older files => leave the current mode untouched (forward-compat).
+        if (oobj->hasProperty ("voice_mode"))
+        {
+            const int vm = (int) oobj->getProperty ("voice_mode");
+            proc.setUiVoiceMode (vm == 1 ? 1 : 0);
+        }
         for (const auto& p : oobj->getProperties())
-            if (auto* param = proc.getApvts().getParameter (p.name.toString()))
-                param->setValueNotifyingHost (param->convertTo0to1 ((float) p.value));
+            if (p.name.toString() != "voice_mode")
+                if (auto* param = proc.getApvts().getParameter (p.name.toString()))
+                    param->setValueNotifyingHost (param->convertTo0to1 ((float) p.value));
+    }
 
-    // Show Part 0 in the editor and re-apply (mirrors loadMultiFile).
+    // Show Part 0 in the editor and re-apply (mirrors loadMultiFile). The part_select
+    // listener no-ops when already on Part 0, so explicitly refresh the APVTS from
+    // Part 0's just-loaded engine storage BEFORE the sync — otherwise the sync
+    // would clobber Part 0's loaded params (e.g. part_polyphony) with stale values.
     proc.getApvts().getParameter ("part_select")->setValueNotifyingHost (
         proc.getApvts().getParameter ("part_select")->convertTo0to1 (1.0f));
+    proc.refreshApvtsFromCurrentPart();
     proc.syncAllParamsToEngine();
     return true;
 }

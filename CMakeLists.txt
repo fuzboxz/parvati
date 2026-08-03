@@ -123,6 +123,7 @@ file(MAKE_DIRECTORY "${_parvati_preset_stage}")
 # Re-stage when the source presets change (CONFIGURE_DEPENDS -> reconfigure).
 file(GLOB _cfgdep_pro CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY/*/*.PRO")
 file(GLOB _cfgdep_mul CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY_MULTI/*.MUL")
+file(GLOB _cfgdep_tpl CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/TEMPLATES/*.parvati")
 set(_staged_sources "")
 foreach(_bank A B F S)
     file(GLOB _files "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY/${_bank}/*.PRO")
@@ -137,6 +138,14 @@ file(GLOB _mulfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY_MULTI/*.MUL")
 foreach(_f ${_mulfiles})
     get_filename_component(_n "${_f}" NAME)
     set(_out "${_parvati_preset_stage}/MULTI__${_n}")
+    configure_file("${_f}" "${_out}" COPYONLY)
+    list(APPEND _staged_sources "${_out}")
+endforeach()
+# Stock init templates (full-fidelity .parvati multis) — staged as TEMPLATE__<file>.
+file(GLOB _tplfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/TEMPLATES/*.parvati")
+foreach(_f ${_tplfiles})
+    get_filename_component(_n "${_f}" NAME)
+    set(_out "${_parvati_preset_stage}/TEMPLATE__${_n}")
     configure_file("${_f}" "${_out}" COPYONLY)
     list(APPEND _staged_sources "${_out}")
 endforeach()
@@ -649,4 +658,23 @@ target_link_libraries(parvati_editor_test PRIVATE
     juce::juce_graphics
     juce::juce_gui_basics
     juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
+# Template-bank generator (dev tool, EXCLUDE_FROM_ALL). Produces the 5 stock init
+# templates as full-fidelity .parvati multis into presets/TEMPLATES/, which are
+# then embedded into the plugin binary. Run from the repo root:
+#   cmake --build build --target parvati_gen_templates && ./build/parvati_gen_templates
+add_executable(parvati_gen_templates EXCLUDE_FROM_ALL
+    tools/gen_templates.cpp
+)
+target_include_directories(parvati_gen_templates PRIVATE Source)
+target_compile_features(parvati_gen_templates PRIVATE cxx_std_17)
+target_link_libraries(parvati_gen_templates PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
 )
