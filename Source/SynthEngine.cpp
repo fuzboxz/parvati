@@ -209,10 +209,13 @@ void SynthEngine::setArpMode (uint8_t mode)
     if (wasActive && ! isActive)
     {
         part.arp.stop();
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                if (av->getPartIndex() == currentPart_)
-                    av->stopNote (0.0f, false);   // kill this Part's generated notes
+        // Defer the note-kill to the audio thread: stopNote() runs voice_.Kill()
+        // + clearCurrentNote() + FIFO clear on a voice the audio thread may be
+        // mid-rendering. Flagged here, serviced at the top of processTransport().
+        // (The single-byte arp/seq object setters below are benign de-facto-atomic
+        // writes, pervasive in JUCE, and are NOT deferred — only this voice
+        // mutation is.)
+        part.killGeneratedNotes_.store (true, std::memory_order_release);
     }
 }
 
@@ -632,6 +635,21 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
             pushPartBytesToVoices (p);
     }
 
+    // Service deferred arp/seq note-kills ON THE AUDIO THREAD. setArpMode
+    // (message thread) flags a Part when its arp/seq is turned off; kill that
+    // Part's generated voices here so stopNote() never touches a voice the audio
+    // thread is mid-rendering (one-block latency, inaudible).
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        if (parts_[p].killGeneratedNotes_.exchange (false, std::memory_order_acq_rel))
+        {
+            for (auto* v : voices)
+                if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                    if (av->getPartIndex() == p)
+                        av->stopNote (0.0f, false);
+        }
+    }
+
     transport_.setTempo (bpm);
     applyTempo (bpm);
 
@@ -648,7 +666,7 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     // Per-Part: route note on/off into a Part's held-key stack when that Part's
     // arp/sequencer is active (strip them so renderNextBlock doesn't also play
     // the raw held key). Non-arp Parts pass through to handleNoteOn/Off.
-    juce::MidiBuffer processed;
+    processedMidi_.clear();
     for (const auto meta : midi)
     {
         const auto msg = meta.getMessage();
@@ -661,7 +679,7 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
             if (p >= 0 && parts_[p].arp.isActive())
                 parts_[p].arp.noteOn (note, msg.getVelocity());   // held key (stripped)
             else
-                processed.addEvent (msg, meta.samplePosition);
+                processedMidi_.addEvent (msg, meta.samplePosition);
         }
         else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
         {
@@ -669,14 +687,14 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
             if (p >= 0 && parts_[p].arp.isActive())
                 parts_[p].arp.noteOff (note);   // stripped
             else
-                processed.addEvent (msg, meta.samplePosition);
+                processedMidi_.addEvent (msg, meta.samplePosition);
         }
         else
         {
-            processed.addEvent (msg, meta.samplePosition);
+            processedMidi_.addEvent (msg, meta.samplePosition);
         }
     }
-    midi.swapWith (processed);
+    midi.swapWith (processedMidi_);
 
     // Advance the shared 24-PPQN clock; each Part's arp self-prescales (own
     // clockCounter_/resolution) and drives its own arp + sequencer. Run the

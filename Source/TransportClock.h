@@ -21,6 +21,11 @@ public:
 
     void setTempo (double bpm)
     {
+        // Clamp the upper bound: an absurd host BPM would drive samplesPerTick_
+        // toward 0 and make advance() loop millions of times per block (xrun).
+        // bpm <= 0 is intentionally left to recompute() as "no update".
+        if (bpm > 999.0)
+            bpm = 999.0;
         bpm_ = bpm;
         recompute();
     }
@@ -45,7 +50,13 @@ private:
     {
         // 24 PPQN: samplesPerTick = sampleRate * 60 / (bpm * 24)
         if (bpm_ > 0.0)
+        {
             samplesPerTick_ = sampleRate_ * 60.0 / (bpm_ * 24.0);
+            // Floor: even for a pathological BPM, never let advance() spin
+            // (bounded to <= numSamples ticks per call).
+            if (samplesPerTick_ < 1.0)
+                samplesPerTick_ = 1.0;
+        }
     }
 
     double sampleRate_     = 48000.0;

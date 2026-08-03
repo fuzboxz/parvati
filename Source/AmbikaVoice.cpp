@@ -49,7 +49,14 @@ void AmbikaVoice::prepare (double hostSampleRate, int /*blockSize*/)
 
     interp_.reset();
     fifo_.clear();
-    fifo_.reserve (1024);
+    // Reserve the worst-case FIFO demand so the first block never reallocates
+    // on the audio thread. At low host sample rates speedRatio_ (internal/host)
+    // is large, so inputNeeded = ceil(kMaxChunk*speedRatio_) + kLookahead can
+    // exceed 1024 (the old fixed bound) -> a push_back realloc on the audio
+    // thread. Reserve from the actual ratio (+ one block + slack).
+    fifo_.reserve (static_cast<size_t> (std::ceil (kMaxChunk * speedRatio_))
+                   + static_cast<size_t> (kLookahead)
+                   + static_cast<size_t> (ambika::dsp::kAudioBlockSize) + 16);
 
     // Optional parameter smoothing operates at the internal rate (the filter /
     // VCA run on the 39216 Hz engine signal), so the ramp length is sized from
@@ -211,6 +218,19 @@ void AmbikaVoice::fillInternalBlock()
             osFactor_ = pendingOsFactor_;
             recreateOversampling();
         }
+    }
+
+    // Service a pending filter-card topology change ON THE AUDIO THREAD (mirrors
+    // the osFactor_ staging above). filter_.setTopology + prepareFilterAtOsRate
+    // mutate float filter state; applying them here keeps them off the concurrent
+    // processSample reader. prepareFilterAtOsRate() -> filter_.prepare() resets
+    // the filter state, so the switch is click-free.
+    if (topologyDirty_.load (std::memory_order_acquire))
+    {
+        topologyDirty_.store (false, std::memory_order_release);
+        filter_.setTopology (pendingTopology_);
+        prepareFilterAtOsRate();
+        filter_.commit();
     }
 
     voice_.ProcessBlock();   // renders exactly kAudioBlockSize (40) uint8 samples

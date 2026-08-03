@@ -106,6 +106,11 @@ struct Part
     std::atomic<uint8_t> midiChannel  { 0 };   // 0 = Omni (all channels); else 1..16
     std::atomic<uint8_t> keyrangeLow  { 0 };
     std::atomic<uint8_t> keyrangeHigh { 127 };
+    // Flagged by setArpMode (message thread) when the arp/seq is turned OFF;
+    // serviced at the top of processTransport (audio thread) to kill this Part's
+    // arp/seq-generated voices. stopNote() mutates voice state the audio thread
+    // renders, so it must not run on the message thread.
+    std::atomic<bool> killGeneratedNotes_ { false };
     uint8_t voiceAllocation = 0;   // 6-bitmask over firmware voicecards (vc0..5)
     uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
@@ -250,6 +255,9 @@ private:
     // for each sub-block range; the processor mixes them into the output buses.
     std::array<juce::AudioBuffer<float>, kNumParts> voiceCardBuffers_;
     parvati::TransportClock transport_;
+    // Reused per-block scratch MidiBuffer (avoids an audio-thread allocation in
+    // processTransport's note-routing pass; clear() each block keeps capacity).
+    juce::MidiBuffer processedMidi_;
     int  currentPart_ = 0;
     bool wasPlaying_ = false;
     bool partsSeeded_ = false;   // seed Part storage from the init patch once
