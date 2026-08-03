@@ -216,13 +216,13 @@ int main()
         SynthEngine& e = p.getEngine();
         const juce::File tdir = ParvatiAudioProcessor::getTemplatesDir();
 
-        struct Tpl { const char* file; int vm; int p0Alloc; int p0Poly; int p1Alloc; };
+        struct Tpl { const char* file; int vm; int p0Alloc; int p0Poly; int p1Alloc; int p0Legato; };
         const Tpl tpl[] = {
-            { "Mono.parvati",        0, 0x3f, 0, 0    },
-            { "Poly 6.parvati",      0, 0x3f, 1, 0    },
-            { "Poly 16.parvati",     1, 0x3f, 1, 0    },
-            { "Unison.parvati",      1, 0x3f, 2, 0    },
-            { "Multitimbral.parvati", 0, 0x15, 1, 0x2a },
+            { "Mono.parvati",        0, 0x01, 0, 0,    1 },
+            { "Poly 6.parvati",      0, 0x3f, 1, 0,    0 },
+            { "Poly 16.parvati",     1, 0x3f, 1, 0,    0 },
+            { "Unison.parvati",      1, 0x3f, 2, 0,    0 },
+            { "Multitimbral.parvati", 0, 0x15, 1, 0x2a, 0 },
         };
         for (const auto& t : tpl)
         {
@@ -237,6 +237,7 @@ int main()
             const int  p0Alloc  = e.getPartVoiceAllocation (0);
             const int  p1Alloc  = e.getPartVoiceAllocation (1);
             const int  p0Poly   = e.getPart (0).partBytes[15];
+            const int  p0Legato = e.getPart (0).partBytes[5];   // PartData legato byte
             char m[128];
             std::snprintf (m, sizeof (m),
                 "%s: vm=%d(exp %d) p0alloc=0x%02x(exp 0x%02x) p0poly=%d(exp %d) p1alloc=0x%02x(exp 0x%02x)",
@@ -245,6 +246,7 @@ int main()
             check (vm == t.vm,      (std::string (t.file) + ": voice mode").c_str());
             check (p0Alloc == t.p0Alloc, (std::string (t.file) + ": Part 0 voice_allocation").c_str());
             check (p0Poly == t.p0Poly,   (std::string (t.file) + ": Part 0 polyphony").c_str());
+            check (p0Legato == t.p0Legato, (std::string (t.file) + ": Part 0 legato").c_str());
             check (p1Alloc == t.p1Alloc, (std::string (t.file) + ": Part 1 voice_allocation").c_str());
         }
     }

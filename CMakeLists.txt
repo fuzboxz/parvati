@@ -646,6 +646,21 @@ target_link_libraries(parvati_voice_modes_test PRIVATE
     juce::juce_gui_basics
 )
 
+add_executable(parvati_patch_load_test
+    tests/patch_load_test.cpp
+)
+target_include_directories(parvati_patch_load_test PRIVATE Source)
+target_compile_features(parvati_patch_load_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_patch_load_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_gui_basics
+)
+
 # ------------------------------------------------------------------------------
 # Controller-modulation verification (mod wheel CC1 / breath CC2 / foot CC4 /
 # channel pressure): proves the global controllers + MPE per-voice expression are
