@@ -131,10 +131,19 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
 {
     ensureInitialized();
 
+    // Capture the legato hint BEFORE it is consumed below: a legato retrigger
+    // continues the sounding voice (firmware legato = no oscillator/envelope
+    // restart), so it must NOT get the de-click ramp (that would punch a gap).
+    const bool legato = legatoNext_;
+
     // Drop any tail from a previous note so it doesn't bleed into this attack.
     fifo_.clear();
     interp_.reset();
     isReleasing_ = false;
+
+    // De-click: arm the one-shot startup gain ramp ONLY on a fresh trigger.
+    if (legato) { startupGain_ = 1.0f; startupRampRemaining_ = 0; }
+    else        { startupGain_ = 0.0f; startupRampRemaining_ = kDeClickRamp; }
 
     // Part volume is NOT set here: it is applied once via the APVTS
     // `part_volume` parameter through SynthEngine::applyPartByte ->
@@ -148,7 +157,7 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     const int note14  = juce::jlimit (0, static_cast<int> (ambika::dsp::kHighestNote),
                                      baseNote * 128 + partTuning_ + spreadDrift14_);
     const int velInt = juce::jlimit (0, 255, static_cast<int> (velocity * 255.0f));
-    voice_.Trigger (note14, static_cast<uint8_t> (velInt & 0xFF), legatoNext_ ? 1 : 0);
+    voice_.Trigger (note14, static_cast<uint8_t> (velInt & 0xFF), legato ? 1 : 0);
     legatoNext_ = false;   // one-shot hint, consumed
     spreadDrift14_ = 0;    // one-shot hint, consumed (default trigger => no drift)
 
@@ -478,6 +487,20 @@ void AmbikaVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer,
                                               chunk,
                                               static_cast<int> (fifo_.size()),
                                               0 /*no wrap*/);
+
+        // De-click: scale this chunk by the one-shot startup gain ramp (active
+        // only for ~1 ms after a fresh, non-legato note start). Legato and
+        // sustained notes are unchanged (gain == 1.0). State persists across
+        // chunks, so a ramp may straddle the kMaxChunk boundary.
+        if (startupRampRemaining_ > 0)
+        {
+            for (int i = 0; i < chunk; ++i)
+            {
+                tmpOut[i] *= startupGain_;
+                if (--startupRampRemaining_ == 0) { startupGain_ = 1.0f; break; }
+                startupGain_ += kDeClickInc;
+            }
+        }
 
         // Add the per-voice mono signal to channel 0 of the TARGET buffer. The
         // engine's renderVoices override passes this voice's FIXED voicecard

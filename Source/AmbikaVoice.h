@@ -262,4 +262,13 @@ private:
     // read position (Lagrange is a short polynomial filter).
     static constexpr int kMaxChunk  = 256;
     static constexpr int kLookahead = 16;
+
+    // De-click: a one-shot per-voice gain ramp (0 -> 1) applied over the first
+    // ~1 ms of a FRESH (non-legato) note start, so the oscillator/envelope
+    // restart doesn't produce a click. Runs only while startupRampRemaining_ >
+    // 0 (host-rate samples); sustained + legato notes pass through at gain 1.0.
+    static constexpr int   kDeClickRamp = 48;                 // ~1 ms @ 48 kHz
+    static constexpr float kDeClickInc  = 1.0f / kDeClickRamp;
+    float startupGain_          { 1.0f };
+    int   startupRampRemaining_ { 0 };
 };
