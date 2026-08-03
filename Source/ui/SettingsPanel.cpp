@@ -14,14 +14,16 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
                               std::function<void (bool)> onTooltipsChanged,
                               std::function<void (bool)> onSmoothingChanged,
                               std::function<void (int)> onOversamplingChanged,
-                              std::function<void (const juce::String&)> onLanguageChanged)
+                              std::function<void (const juce::String&)> onLanguageChanged,
+                              std::function<void (int)> onVoiceModeChanged)
     : proc_ (proc),
       themeManager_ (themeManager),
       onZoomChanged_ (std::move (onZoomChanged)),
       onTooltipsChanged_ (std::move (onTooltipsChanged)),
       onSmoothingChanged_ (std::move (onSmoothingChanged)),
       onOversamplingChanged_ (std::move (onOversamplingChanged)),
-      onLanguageChanged_ (std::move (onLanguageChanged))
+      onLanguageChanged_ (std::move (onLanguageChanged)),
+      onVoiceModeChanged_ (std::move (onVoiceModeChanged))
 {
     // ---- Theme ----
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
@@ -134,6 +136,34 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
             onLanguageChanged_ (code);
     };
     addAndMakeVisible (langCombo_);
+
+    // ---- Voice Mode (polyphony capacity) ----
+    // Hardware (6 voices) = faithful Ambika (one voice per voicecard);
+    // Extended (16 voices) = the full per-voicecard block for polyphony headroom.
+    // Item IDs 1/2 are stable; the stored value is 0/1 (ID - 1). Default Hardware.
+    voiceModeLabel_.setText (TRANS ("Voice Mode"), juce::dontSendNotification);
+    voiceModeLabel_.setFont (juce::FontOptions (14.0f));
+    voiceModeLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (voiceModeLabel_);
+
+    populateVoiceModeCombo();
+    voiceModeCombo_.setSelectedId (proc_.getUiVoiceMode() + 1, juce::dontSendNotification);
+    // Persistence + engine + meter view are owned by the editor's
+    // onVoiceModeChanged callback (single source of truth); the panel only fires it.
+    voiceModeCombo_.onChange = [this] {
+        if (onVoiceModeChanged_)
+            onVoiceModeChanged_ (voiceModeCombo_.getSelectedId() - 1);   // 1/2 -> 0/1
+    };
+    // Clarify the audible trade-off: Hardware caps polyphony at the 6 voicecards
+    // (faithful to the Ambika); Extended raises it to 16 for headroom and is what
+    // lets UNISON_2X/CHAIN double beyond the 6-voicecard limit.
+    const juce::String vmTip = TRANS (
+        "Hardware = faithful 6-voice Ambika (default). "
+        "Extended = 16 voices for polyphony headroom; needed for Unison/Chain "
+        "doubling beyond the 6 voicecards.");
+    voiceModeCombo_.setTooltip (vmTip);
+    voiceModeLabel_.setTooltip (vmTip);
+    addAndMakeVisible (voiceModeCombo_);
 }
 
 void SettingsPanel::setZoomValue (double zoom)
@@ -154,6 +184,13 @@ void SettingsPanel::populateOversamplingCombo()
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Standard (1\xc3\x97)")), 1);   // 1x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("High (2\xc3\x97)")),     2);   // 2x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Maximum (4\xc3\x97)")),  4);   // 4x
+}
+
+void SettingsPanel::populateVoiceModeCombo()
+{
+    voiceModeCombo_.clear();
+    voiceModeCombo_.addItem (TRANS ("Hardware (6 voices)"),  1);   // 0
+    voiceModeCombo_.addItem (TRANS ("Extended (16 voices)"), 2);   // 1
 }
 
 int SettingsPanel::languageIndexFromCode (const juce::String& code) const
@@ -184,12 +221,24 @@ void SettingsPanel::refreshLanguage()
     smoothingToggle_.setButtonText (TRANS ("Parameter Smoothing"));
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
+    voiceModeLabel_.setText (TRANS ("Voice Mode"), juce::dontSendNotification);
 
     const int osId = osCombo_.getSelectedId();
     populateOversamplingCombo();
     osCombo_.setSelectedId (osId, juce::dontSendNotification);
 
+    const int vmId = voiceModeCombo_.getSelectedId();
+    populateVoiceModeCombo();
+    voiceModeCombo_.setSelectedId (vmId, juce::dontSendNotification);
+
     repaint();
+}
+
+void SettingsPanel::refreshVoiceModeCombo()
+{
+    // A .parvati multi load can change the global Voice Mode under the panel;
+    // re-seed the combo from the processor's current pref without firing onChange.
+    voiceModeCombo_.setSelectedId (proc_.getUiVoiceMode() + 1, juce::dontSendNotification);
 }
 
 void SettingsPanel::paint (juce::Graphics& g)
@@ -237,4 +286,10 @@ void SettingsPanel::resized()
     langLabel_.setBounds (area.removeFromTop (18));
     area.removeFromTop (2);
     langCombo_.setBounds (area.removeFromTop (rowH));
+    area.removeFromTop (gap + 8);
+
+    // Voice Mode row.
+    voiceModeLabel_.setBounds (area.removeFromTop (18));
+    area.removeFromTop (2);
+    voiceModeCombo_.setBounds (area.removeFromTop (rowH));
 }

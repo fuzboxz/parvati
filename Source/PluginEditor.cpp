@@ -15,7 +15,7 @@ namespace
 // ---- Map a parameter ID to one of the GUI sections --------------------------
 // (Derived from the well-defined paramID prefixes in ParameterLayout.cpp, so the
 //  verified APVTS byte-bridge stays untouched.)
-enum class Section { Oscillators, Mixer, Filter, EnvLfo, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi };
+enum class Section { Oscillators, Mixer, Filter, Envelopes, Lfos, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi };
 
 Section sectionForId (const juce::String& id)
 {
@@ -33,55 +33,18 @@ Section sectionForId (const juce::String& id)
     if (id.startsWith ("filter"))    return Section::Filter;
     if (id.startsWith ("modif"))     return Section::Modifiers;
     if (id.startsWith ("mod"))       return Section::ModMatrix;
-    if (id.startsWith ("env"))       return Section::EnvLfo;
-    if (id.startsWith ("voice_lfo")) return Section::EnvLfo;
+    // Each firmware env_lfo unit is BOTH an envelope (A/D/S/R) and an LFO
+    // (shape/rate); they are independent modulation sources, so the two halves
+    // route to separate Envelopes / LFOs tabs (the struct sharing is a firmware
+    // memory-layout detail only). voice_lfo_* is the per-voice LFO (MOD_SRC_LFO_4).
+    if (id.startsWith ("voice_lfo")) return Section::Lfos;
+    if (id.startsWith ("env"))       return id.contains ("_lfo_") ? Section::Lfos : Section::Envelopes;
     if (id.startsWith ("part"))      return Section::Global;   // part volume/legato/portamento
     return Section::Global;
 }
 }  // namespace
 
 //==============================================================================
-// EnvLfoToggle — a small segmented ENV/LFO view selector for one Env/LFO slot.
-// Two TextButtons ("Env" / "LFO"); clicking one fires onMode(0 or 1). The owner
-// (ParamPage) sets the mode via setMode() to keep the button states in sync.
-// Themed through the editor-wide ParvatiLookAndFeel (inherited; the selected
-// button shows buttonOnColourId = accent).
-class EnvLfoToggle : public juce::Component
-{
-public:
-    explicit EnvLfoToggle (std::function<void (int)> onMode)
-        : onMode_ (std::move (onMode))
-    {
-        envBtn_.setButtonText (TRANS ("Env"));
-        lfoBtn_.setButtonText (TRANS ("LFO"));
-        envBtn_.setClickingTogglesState (false);
-        lfoBtn_.setClickingTogglesState (false);
-        envBtn_.onClick = [this] { setMode (0); if (onMode_) onMode_ (0); };
-        lfoBtn_.onClick = [this] { setMode (1); if (onMode_) onMode_ (1); };
-        addAndMakeVisible (envBtn_);
-        addAndMakeVisible (lfoBtn_);
-        setMode (0);
-    }
-
-    void setMode (int m)
-    {
-        envBtn_.setToggleState (m == 0, juce::dontSendNotification);
-        lfoBtn_.setToggleState (m == 1, juce::dontSendNotification);
-    }
-
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        const int half = r.getWidth() / 2;
-        envBtn_.setBounds (r.removeFromLeft (half));
-        lfoBtn_.setBounds (r);
-    }
-
-private:
-    juce::TextButton envBtn_, lfoBtn_;
-    std::function<void (int)> onMode_;
-};
-
 //==============================================================================
 bool ParamControl::tooltipsEnabled_ = true;
 
@@ -99,7 +62,7 @@ std::vector<ParamControl*>& paramControlRegistry()
 
 //==============================================================================
 ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& d)
-    : desc_ (d), processor_ (processor)
+    : desc_ (d), processor_ (processor), paramIDStr_ (d.paramID)
 {
     label_ = std::make_unique<juce::Label> (d.paramID + "_lbl", d.label);
     label_->setJustificationType (juce::Justification::centred);
@@ -127,11 +90,25 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         slider_->setTextBoxIsEditable (true);
         if (d.isSequencer)
         {
-            // Compact step pots: hide the redundant per-step label (the group
-            // header "Sequencer n" already identifies it) and use a small text
-            // box so the rotary dominates.
-            label_->setVisible (false);
-            slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 36, 14);
+            // The length control is marked ("Length" label + accent arc) so it
+            // reads as the sequence length, not just another step pot. The step
+            // cells stay compact (label hidden; the group header "Sequencer n"
+            // identifies them) and are dimmed when past the active length
+            // (see refreshStepEnabled, wired below).
+            if (paramIDStr_.startsWith ("seq_length_"))
+            {
+                label_->setText (TRANS ("Length"), juce::dontSendNotification);
+                label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
+                slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 16);
+                if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+                    if (auto* theme = lnf->getTheme())
+                        slider_->setColour (juce::Slider::rotarySliderFillColourId, theme->accent);
+            }
+            else
+            {
+                label_->setVisible (false);
+                slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 36, 14);
+            }
         }
         addAndMakeVisible (*slider_);
         sliderAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -149,12 +126,70 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     helpText_ = getParamHelp (d.paramID);
     paramControlRegistry().push_back (this);
     applyTooltipState();
+
+    // Sequencer steps subscribe to their sibling length param so they dim/enable
+    // live as the length changes. Seeded once here from the current value.
+    lengthParamID_ = siblingLengthParamFor (paramIDStr_);
+    if (lengthParamID_.isNotEmpty())
+    {
+        processor_.getApvts().addParameterListener (lengthParamID_, this);
+        refreshStepEnabled();
+    }
 }
 
 ParamControl::~ParamControl()
 {
+    if (lengthParamID_.isNotEmpty())
+        processor_.getApvts().removeParameterListener (lengthParamID_, this);
     auto& r = paramControlRegistry();
     r.erase (std::remove (r.begin(), r.end(), this), r.end());
+}
+
+//==========================================================================
+// Sequencer step dimming: map a step paramID to its sibling sequence length
+// param, parse the step index, and enable/disable the step's slider so steps
+// past the active length read as inactive (the LookAndFeel omits the knob's
+// fill arc when a slider is disabled).
+juce::String ParamControl::siblingLengthParamFor (const juce::String& id)
+{
+    if (id.startsWith ("seq1_step")) return "seq_length_1";
+    if (id.startsWith ("seq2_step")) return "seq_length_2";
+    if (id.startsWith ("seqnote_step") || id.startsWith ("seqnote_vel")) return "seq_length_3";
+    return {};
+}
+
+int ParamControl::parseStepIndex (const juce::String& id)
+{
+    // Extract the trailing digit run (e.g. "seq1_step7" -> 7,
+    // "seqnote_vel11" -> 11). Steps are the only params with a non-empty
+    // lengthParamID_, so a stray number elsewhere is harmless.
+    int lastDigit = id.length() - 1;
+    while (lastDigit >= 0 && id[lastDigit] >= '0' && id[lastDigit] <= '9')
+        --lastDigit;
+    if (lastDigit + 1 < id.length())
+        return id.substring (lastDigit + 1).getIntValue();
+    return -1;
+}
+
+void ParamControl::parameterChanged (const juce::String&, float)
+{
+    refreshStepEnabled();
+}
+
+void ParamControl::refreshStepEnabled()
+{
+    if (lengthParamID_.isEmpty() || slider_ == nullptr)
+        return;
+    if (auto* raw = processor_.getApvts().getRawParameterValue (lengthParamID_))
+    {
+        // The length param's verified range is 1..32 (ParameterLayout.cpp), but
+        // only 16 step cells exist, so cap the comparison at 16.
+        const int len = juce::jlimit (1, 16, juce::roundToInt (raw->load()));
+        const int idx = parseStepIndex (paramIDStr_);
+        const bool on = (idx < 0) || (idx < len);
+        slider_->setEnabled (on);
+        repaint();
+    }
 }
 
 void ParamControl::applyTooltipState()
@@ -183,7 +218,9 @@ juce::String ParamControl::getTooltip()
 void ParamControl::resized()
 {
     auto b = getLocalBounds().reduced (2);
-    if (! desc_.isSequencer)   // sequencer step cells hide the label (group header suffices)
+    // Reserve the label band for non-sequencer controls AND for the marked
+    // length control (which shows "Length"); plain step cells hide the label.
+    if (! desc_.isSequencer || paramIDStr_.startsWith ("seq_length_"))
     {
         label_->setBounds (b.removeFromTop (15));
         b.removeFromTop (3);
@@ -295,10 +332,13 @@ juce::String ParamPage::groupForId (const juce::String& id)
     if (id.startsWith ("filter1_")) return "Filter 1";
     if (id.startsWith ("filter2_")) return "Filter 2";
 
-    // ---- Envelopes / LFOs ----
-    if (id.startsWith ("env1_")) return "Env / LFO 1";
-    if (id.startsWith ("env2_")) return "Env / LFO 2";
-    if (id.startsWith ("env3_")) return "Env / LFO 3";
+    // ---- Envelopes / LFOs (now on separate tabs) ----
+    // env{N}_attack/decay/sustain/release -> "Env N"; env{N}_lfo_* -> "LFO N".
+    if (id.startsWith ("env") && id.length() > 3 && id[3] >= '1' && id[3] <= '3')
+    {
+        const juce::String n = juce::String::charToString (id[3]);
+        return id.contains ("_lfo_") ? ("LFO " + n) : ("Env " + n);
+    }
     if (id.startsWith ("voice_lfo_")) return "Voice LFO";
 
     // ---- Modifiers (modifN_*) — checked before the "mod" rule ----
@@ -341,19 +381,6 @@ void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& des
             g->name = gname;
         }
         g->controlIndices.push_back (i);
-        if (gname.startsWith ("Env / LFO"))
-        {
-            // Each Env/LFO slot carries BOTH envelope (attack/decay/sustain/
-            // release) and LFO (shape/rate) controls; the engine runs both. The
-            // ENV/LFO toggle is a VIEW selector — partition the controls so the
-            // inactive mode can be hidden.
-            g->envLfoSlot = true;
-            const auto& pid = descriptors[i]->paramID;
-            if (pid.find ("shape") != std::string::npos || pid.find ("rate") != std::string::npos)
-                g->lfoCtrlIdx.push_back (i);
-            else
-                g->envCtrlIdx.push_back (i);
-        }
     }
 }
 
@@ -376,22 +403,13 @@ void ParamPage::configureGroupLayouts()
         g.cellW = cellWidth_;
         g.cellH = cellHeight_;
 
-        if (g.envLfoSlot)
-        {
-            // ENV view = A/D/S/R (4), LFO view = shape/rate (2): one row of the
-            // ACTIVE mode only (the other mode's controls are hidden).
-            const auto& active = (g.envLfoMode == 0) ? g.envCtrlIdx : g.lfoCtrlIdx;
-            g.internalCols = juce::jmax (1, (int) active.size());
-            continue;
-        }
-
         if (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Sequencer")
         {
             // Dense step grid: 16 (or 33) small cells laid in 8 columns.
             g.stepGrid = true;
             g.internalCols = 8;
-            g.cellW = 54;
-            g.cellH = 50;
+            g.cellW = 88;      // was 54 (~1.6x wider)
+            g.cellH = 72;      // was 50 (~1.4x taller)
         }
         else if (g.name.startsWith ("Mod ") || g.name.startsWith ("Modifier "))
         {
@@ -400,6 +418,13 @@ void ParamPage::configureGroupLayouts()
             g.internalCols = juce::jmax (1, n);
             g.cellW = 112;
             g.cellH = 64;
+        }
+        else if (g.name.startsWith ("Env ") || g.name.startsWith ("LFO ") || g.name == "Voice LFO")
+        {
+            // Env / LFO groups: one row of knobs (a wide panel). Keeps each
+            // group to a single panel per page row so the row-fill pass never
+            // grows two small panels into an overlap.
+            g.internalCols = juce::jmax (1, n);
         }
         else
         {
@@ -417,15 +442,6 @@ void ParamPage::layoutGroups (int targetWidth)
     for (auto& g : groups_)
     {
         const int cols = juce::jmax (1, g.internalCols);
-        if (g.envLfoSlot)
-        {
-            const int nActive = juce::jmax (1, (int) ((g.envLfoMode == 0 ? g.envCtrlIdx : g.lfoCtrlIdx).size()));
-            g.naturalWidth  = nActive * g.cellW + 2 * kGroupPad;
-            // title + ENV/LFO toggle row + one control row + padding.
-            g.naturalHeight = kGroupTitleH + kEnvLfoToggleH + kEnvLfoToggleGap
-                            + g.cellH + 2 * kGroupPad;
-        }
-        else
         {
             const int n = (int) g.controlIndices.size();
             const int rows = (n + cols - 1) / cols;
@@ -482,31 +498,45 @@ void ParamPage::layoutGroups (int targetWidth)
     // as-is (ragged is fine for sequencer / modifier strips). ----
     for (int r = 0; r <= lastRow; ++r)
     {
-        int rowRight = rowStartX;
+        // Gather this row's panel indices in left-to-right (gi) order.
+        std::vector<int> rowPanels;
         int nonDense = 0;
+        int rowRight = rowStartX;
         for (int gi = 0; gi < (int) groups_.size(); ++gi)
             if (rowOf[(size_t) gi] == r)
             {
-                const auto& g = groups_[(size_t) gi];
-                rowRight = juce::jmax (rowRight, g.rect.getRight());
-                if (! (g.stepGrid || g.singleRow))
+                rowPanels.push_back (gi);
+                rowRight = juce::jmax (rowRight, groups_[(size_t) gi].rect.getRight());
+                if (! (groups_[(size_t) gi].stepGrid || groups_[(size_t) gi].singleRow))
                     ++nonDense;
             }
-        if (nonDense == 0)
-            continue;   // all-dense row: leave ragged
+        if (rowPanels.empty() || nonDense == 0)
+            continue;   // all-dense row: leave ragged (no grow, no re-tile)
+
         const int slack = maxRight - rowRight;
-        if (slack <= 0)
-            continue;   // row already fills / wraps exactly
-        const int grow = slack / nonDense;
-        if (grow <= 0)
-            continue;
-        for (int gi = 0; gi < (int) groups_.size(); ++gi)
-            if (rowOf[(size_t) gi] == r)
-            {
-                auto& g = groups_[(size_t) gi];
-                if (! (g.stepGrid || g.singleRow))
-                    g.rect.setWidth (g.rect.getWidth() + grow);
-            }
+        if (slack > 0)
+        {
+            const int grow = slack / nonDense;
+            if (grow > 0)
+                for (int gi : rowPanels)
+                {
+                    auto& g = groups_[(size_t) gi];
+                    if (! (g.stepGrid || g.singleRow))
+                        g.rect.setWidth (g.rect.getWidth() + grow);
+                }
+        }
+
+        // RE-TILE the row left-to-right from the (now-grown) widths so panels
+        // never overlap — the in-place width grow above left each panel's X at
+        // its natural position, which overlaps its neighbour when 2+ non-dense
+        // panels share a row (e.g. Osc 1/2, Mixer + Sub Oscillator). Y is kept.
+        int x = rowStartX;
+        for (int gi : rowPanels)
+        {
+            auto& g = groups_[(size_t) gi];
+            g.rect.setX (x);
+            x = g.rect.getRight() + kGroupGap;
+        }
     }
 
     contentWidth_  = juce::jmax (targetWidth, 2 * kMargin + 40);
@@ -526,15 +556,6 @@ void ParamPage::applyLayout()
 
         auto inner = g.rect.reduced (kGroupPad);
         inner.removeFromTop (kGroupTitleH);   // room for the panel title text
-
-        if (g.envLfoSlot)
-        {
-            // Env/LFO slots have their own layout: the ENV/LFO toggle, the ACTIVE
-            // mode's controls in one row (the other mode hidden), and the
-            // mode-matched preview below.
-            applyEnvLfoLayout (g, inner);
-            continue;
-        }
 
         const int cols = juce::jmax (1, g.internalCols);
         // Flexible-width cells: a NON-dense panel distributes its cells evenly
@@ -569,98 +590,6 @@ void ParamPage::applyLayout()
     }
 }
 
-void ParamPage::applyEnvLfoLayout (GroupLayout& g, juce::Rectangle<int> inner)
-{
-    int y = inner.getY();
-
-    // ENV/LFO view toggle (full width).
-    if (g.envLfoToggle != nullptr)
-    {
-        g.envLfoToggle->setBounds (
-            juce::Rectangle<int> (inner.getX(), y, inner.getWidth(), kEnvLfoToggleH));
-        y += kEnvLfoToggleH + kEnvLfoToggleGap;
-    }
-
-    // Active mode's controls in a single row; the inactive mode is hidden
-    // (parked inside the group rect so the offscreen layout-sanity check passes).
-    const bool envMode = (g.envLfoMode == 0);
-    const auto& active   = envMode ? g.envCtrlIdx : g.lfoCtrlIdx;
-    const auto& inactive = envMode ? g.lfoCtrlIdx : g.envCtrlIdx;
-    const int cols    = juce::jmax (1, g.internalCols);
-    const int colStep = juce::jmax (g.cellW, inner.getWidth() / cols);
-    int c = 0;
-    for (int ci : active)
-    {
-        if (ci < 0 || ci >= (int) controls_.size()) continue;
-        controls_[(size_t) ci]->setVisible (true);
-        controls_[(size_t) ci]->setBounds (
-            juce::Rectangle<int> (inner.getX() + c * colStep, y, colStep, g.cellH).reduced (3));
-        ++c;
-    }
-    const juce::Rectangle<int> parked (g.rect.getX() + 2, g.rect.getY() + kGroupTitleH + 2, 1, 1);
-    for (int ci : inactive)
-    {
-        if (ci < 0 || ci >= (int) controls_.size()) continue;
-        controls_[(size_t) ci]->setVisible (false);
-        controls_[(size_t) ci]->setBounds (parked);
-    }
-
-    // Mode-matched preview (ADSR for ENV, waveform for LFO) below the controls.
-    if (g.decoration != nullptr)
-    {
-        const int decY = y + g.cellH + kDecorationGap;
-        g.decoration->setBounds (
-            juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), kDecorationH));
-    }
-}
-
-void ParamPage::refreshEnvLfoGroup (int groupIndex)
-{
-    if (groupIndex < 0 || groupIndex >= (int) groups_.size()) return;
-    auto& g = groups_[(size_t) groupIndex];
-    if (! g.envLfoSlot) return;
-
-    if (g.envLfoToggle != nullptr)
-        if (auto* t = dynamic_cast<EnvLfoToggle*> (g.envLfoToggle))
-            t->setMode (g.envLfoMode);
-
-    if (g.decoration != nullptr)
-        if (auto* d = dynamic_cast<EnvelopeDisplay*> (g.decoration))
-            d->setPreviewMode (g.envLfoMode);
-
-    // The active control count changed: recompute cols, relayout, reflow the page.
-    configureGroupLayouts();
-    layoutGroups (juce::jmax (940, getWidth()));
-    applyLayout();
-    setSize (getContentWidth(), getContentHeight());
-    repaint();
-}
-
-void ParamPage::setAllEnvLfoModesForDump (int mode)
-{
-    bool any = false;
-    for (auto& g : groups_)
-    {
-        if (! g.envLfoSlot) continue;
-        any = true;
-        g.envLfoMode = mode;
-        if (g.envLfoToggle != nullptr)
-            if (auto* t = dynamic_cast<EnvLfoToggle*> (g.envLfoToggle))
-                t->setMode (mode);
-        if (g.decoration != nullptr)
-            if (auto* d = dynamic_cast<EnvelopeDisplay*> (g.decoration))
-                d->setPreviewMode (mode);
-    }
-    if (any)
-    {
-        configureGroupLayouts();
-        layoutGroups (juce::jmax (940, getWidth()));
-        applyLayout();
-        setSize (getContentWidth(), getContentHeight());
-        repaint();
-    }
-}
-
 bool ParamPage::layoutIsSane() const
 {
     // (a) every group panel has positive size.
@@ -680,10 +609,7 @@ bool ParamPage::layoutIsSane() const
     // only the ACTIVE mode's controls are laid out, so validate just those.
     for (const auto& g : groups_)
     {
-        const std::vector<int>* idxs = g.envLfoSlot
-            ? (g.envLfoMode == 0 ? &g.envCtrlIdx : &g.lfoCtrlIdx)
-            : &g.controlIndices;
-        for (int ci : *idxs)
+        for (int ci : g.controlIndices)
         {
             if (ci < 0 || ci >= (int) controls_.size())
                 return false;
@@ -766,27 +692,6 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
         addAndMakeVisible (*gc);
         g.groupComp = gc.get();
         groupComponents_.push_back (std::move (gc));
-    }
-
-    // ENV/LFO view toggle for each Env/LFO slot (a segmented Env/LFO selector;
-    // the active mode's controls are shown, the other hidden). Created here so
-    // the toggle exists before the first layout; the editor attaches the
-    // (mode-matched) preview decoration afterwards via setGroupDecoration.
-    for (int gi = 0; gi < (int) groups_.size(); ++gi)
-    {
-        if (! groups_[(size_t) gi].envLfoSlot) continue;
-        auto toggle = std::make_unique<EnvLfoToggle> (
-            [this, gi] (int mode)
-            {
-                if (gi >= 0 && gi < (int) groups_.size())
-                {
-                    groups_[(size_t) gi].envLfoMode = mode;
-                    refreshEnvLfoGroup (gi);
-                }
-            });
-        groups_[(size_t) gi].envLfoToggle = toggle.get();
-        addAndMakeVisible (*toggle);
-        envLfoToggles_.push_back (std::move (toggle));
     }
 
     // Control cells on top of the panel borders.
@@ -1048,46 +953,46 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     patchCaption_.setFont (juce::FontOptions (13.0f));
     addAndMakeVisible (patchCaption_);
 
-    // Combo + popup colours from the L&F.
-    patchCombo_.setTextWhenNothingSelected ("(no factory patches installed)");
-    patchCombo_.onChange = [this] {
-        const int id = patchCombo_.getSelectedId();
-        if (id >= 1 && id <= (int) factoryFiles_.size())
-            applyPatchFile (factoryFiles_[(size_t) id - 1]);
-    };
-    addAndMakeVisible (patchCombo_);
-    populateFactoryPatches();
+    // Cascading patch menu (Templates / User / Factory banks / Multi). The
+    // browser scans the dirs live on each open, so there is no pre-populate.
+    presetBrowser_ = std::make_unique<PresetBrowser> (
+        processorRef_.getTemplatesDir(), processorRef_.getUserPatchDir(),
+        processorRef_.getFactoryPatchDir(), processorRef_.getFactoryMultiDir(),
+        [this] (const juce::File& f) { applyPatchFile (f); });
+    presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+    addAndMakeVisible (*presetBrowser_);
 
     loadButton_.setButtonText (TRANS ("Load..."));
     // Button colours from the L&F.
     loadButton_.onClick = [this] { openLoadDialog(); };
     addAndMakeVisible (loadButton_);
 
+    // Save: a single button whose popup menu picks the format. "Ambika Patch
+    // (.PRO)" writes the byte-faithful hardware-shareable patch; "Parvati Patch
+    // (.parvati)" writes the full-fidelity YAML (carries vca_curve / filter_card
+    // / arp that the .PRO byte format drops).
     saveButton_.setButtonText (TRANS ("Save..."));
-    saveButton_.onClick = [this] { openSaveDialog(); };
+    saveButton_.onClick = [this] {
+        juce::PopupMenu m;
+        m.addItem (1, TRANS ("Ambika Patch (.PRO)"));
+        m.addItem (2, TRANS ("Parvati Patch (.parvati)"));
+        m.showMenuAsync (juce::PopupMenu::Options(), [this] (int result) {
+            if (result == 1)      openSaveDialog();
+            else if (result == 2) openSaveParvatiDialog();
+        });
+    };
     addAndMakeVisible (saveButton_);
 
-    // "Save Parvati": full-fidelity .parvati (YAML) — carries vca_curve /
-    // filter_card / arp that the Ambika .PRO byte format drops.
-    saveParvatiButton_.setButtonText (TRANS ("Save Parvati"));
-    saveParvatiButton_.onClick = [this] { openSaveParvatiDialog(); };
-    addAndMakeVisible (saveParvatiButton_);
-
-    // Phase 4c: Undo / Redo buttons. The APVTS UndoManager records every
-    // parameter change (knob drags, combo changes, getParameterAsValue writes,
-    // and these actions' own reset/randomize). Disabled/enabled state is
-    // mirrored on the editor timer.
-    undoButton_.setButtonText (TRANS ("Undo"));
+    // Phase 4c: Undo / Redo are Path-drawn IconButtons (curved arrows) — no
+    // unicode glyph (the font stack renders U+21B6/21B7 as "..."). The APVTS
+    // UndoManager records every parameter change; enable/disable is mirrored on
+    // the editor timer.
+    undoButton_.setTooltip (TRANS ("Undo"));
     undoButton_.onClick = [this] { processorRef_.getUndoManager().undo(); };
     addAndMakeVisible (undoButton_);
-    redoButton_.setButtonText (TRANS ("Redo"));
+    redoButton_.setTooltip (TRANS ("Redo"));
     redoButton_.onClick = [this] { processorRef_.getUndoManager().redo(); };
     addAndMakeVisible (redoButton_);
-
-    patchNameLabel_.setColour (juce::Label::textColourId, theme.accent);
-    patchNameLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
-    patchNameLabel_.setText (processorRef_.getLoadedProgramName(), juce::dontSendNotification);
-    addAndMakeVisible (patchNameLabel_);
 
     // ---- Top bar: Part selector (bound to the `part_select` APVTS param) ----
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
@@ -1111,7 +1016,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         { "Oscillators",     Section::Oscillators, 4, 214, 106 },
         { "Mixer",           Section::Mixer,       4, 214, 106 },
         { "Filter",          Section::Filter,      4, 214, 106 },
-        { "Envelopes / LFO", Section::EnvLfo,      5, 198, 106 },
+        { "Envelopes",       Section::Envelopes,   3, 198, 106 },
+        { "LFOs",            Section::Lfos,        4, 198, 106 },
         { "Mod Matrix",      Section::ModMatrix,   6, 164, 84 },
         { "Modifiers",       Section::Modifiers,   3, 300, 64 },
         { "Arp",             Section::Arp,         3, 214, 106 },
@@ -1124,31 +1030,58 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         auto* page = new ParamPage (processorRef_, themeManager_, TRANS (pg.name), sec[(int) pg.s],
                                     pg.cols, pg.cellW, pg.cellH);
 
-        // Phase 4c: attach a live ADSR preview to each Env group on the
-        // Env/LFO page. The getters read the APVTS parameter's NORMALIZED value
-        // (getValue() returns 0..1) so the preview tracks the knobs live.
-        if (pg.s == Section::EnvLfo)
+        // Live previews: an ADSR curve under each Env group (Envelopes tab) and
+        // an LFO waveform under each LFO group (LFOs tab). The getters read the
+        // APVTS parameter's NORMALIZED value (getValue() returns 0..1) so the
+        // preview tracks the knobs live. (Each env_lfo unit runs BOTH its
+        // envelope and its LFO; splitting the halves onto two tabs matches that.)
+        auto norm = [this] (const juce::String& id) -> float {
+            auto* p = processorRef_.getApvts().getParameter (id);
+            return p ? p->getValue() : 0.0f;
+        };
+        if (pg.s == Section::Envelopes)
         {
-            auto norm = [this] (const juce::String& id) -> float {
-                auto* p = processorRef_.getApvts().getParameter (id);
-                return p ? p->getValue() : 0.0f;
-            };
-            const juce::String envs[3]      = { "env1", "env2", "env3" };
-            const juce::String grpNames[3]  = { "Env / LFO 1", "Env / LFO 2", "Env / LFO 3" };
+            const juce::String envs[3] = { "env1", "env2", "env3" };
             for (int i = 0; i < 3; ++i)
             {
                 const juce::String e = envs[i];
-                page->setGroupDecoration (grpNames[i],
-                    std::make_unique<EnvelopeDisplay> (
-                        "Env " + juce::String (i + 1),
-                        [norm, e] { return norm (e + "_attack");  },
-                        [norm, e] { return norm (e + "_decay");   },
-                        [norm, e] { return norm (e + "_sustain"); },
-                        [norm, e] { return norm (e + "_release"); },
-                        [norm, e] { return norm (e + "_shape");   }));   // drives the LFO preview
+                auto disp = std::make_unique<EnvelopeDisplay> (
+                    "Env " + juce::String (i + 1),
+                    [norm, e] { return norm (e + "_attack");  },
+                    [norm, e] { return norm (e + "_decay");   },
+                    [norm, e] { return norm (e + "_sustain"); },
+                    [norm, e] { return norm (e + "_release"); });
+                disp->setPreviewMode (0);   // ADSR curve
+                page->setGroupDecoration ("Env " + juce::String (i + 1), std::move (disp));
             }
         }
+        else if (pg.s == Section::Lfos)
+        {
+            // LFO 1/2/3: the LFO half of env_lfo[0..2] (shape drives the preview).
+            const juce::String lfos[3] = { "env1", "env2", "env3" };
+            for (int i = 0; i < 3; ++i)
+            {
+                const juce::String e = lfos[i];
+                auto disp = std::make_unique<EnvelopeDisplay> (
+                    "LFO " + juce::String (i + 1),
+                    std::function<float()> {}, std::function<float()> {},
+                    std::function<float()> {}, std::function<float()> {},
+                    [norm, e] { return norm (e + "_lfo_shape"); });
+                disp->setPreviewMode (1);   // LFO waveform
+                page->setGroupDecoration ("LFO " + juce::String (i + 1), std::move (disp));
+            }
+            // Voice LFO (MOD_SRC_LFO_4).
+            auto vdisp = std::make_unique<EnvelopeDisplay> (
+                "Voice LFO",
+                std::function<float()> {}, std::function<float()> {},
+                std::function<float()> {}, std::function<float()> {},
+                [norm] { return norm ("voice_lfo_shape"); });
+            vdisp->setPreviewMode (1);
+            page->setGroupDecoration ("Voice LFO", std::move (vdisp));
+        }
 
+        if (pg.s == Section::Global)
+            globalPage_ = page;   // voice-activity cells attach here as a decoration
         generatedPages_.push_back (page);
         // Record the English (key) tab name for live language switching.
         tabKeys_.push_back (pg.name);
@@ -1172,7 +1105,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // authoritative sync is the panel's onPanelShowHide callback below, which
     // fires on any show/hide (button click, dismiss glyph, click-outside).
     settingsButton_.setClickingTogglesState (true);
-    settingsButton_.setButtonText (TRANS ("Settings"));
+    settingsButton_.setTooltip (TRANS ("Settings"));
     settingsButton_.onClick = [this] {
         settingsPanelHost_->showOrHide (! settingsPanelHost_->isPanelShowing());
         settingsButton_.setToggleState (settingsPanelHost_->isPanelShowing(),
@@ -1216,23 +1149,45 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     keyboardView_->setComputerKeyboardEnabled (
         processorRef_.wrapperType == juce::AudioProcessor::wrapperType_Standalone);
 
-    // ---- Phase 4a: voice meter (status strip below the top bar) ----
-    voiceMeter_ = std::make_unique<VoiceMeter>();
-    voiceMeter_->setStateProvider ([this]() {
-        std::vector<VoiceActivity> v;
-        auto& e = processorRef_.getEngine();
-        v.reserve (static_cast<size_t> (e.getNumVoices()));
-        for (int i = 0; i < e.getNumVoices(); ++i)
-        {
-            // SF-1: read the lock-free atomic snapshot instead of the
-            // non-atomic SynthesiserVoice::currentlyPlayingNote.
-            auto* av = e.getAmbikaVoice (i);
-            v.push_back ({ av != nullptr && av->isDisplayedActive(),
-                           av != nullptr ? av->getDisplayedNote() : -1 });
-        }
-        return v;
-    });
-    addAndMakeVisible (*voiceMeter_);
+    // ---- Voice activity cells live on the Global page; the bottom strip shows
+    // only the active-count + a hover-tooltip bar (cells + "Voices" word were
+    // removed per request). Build the cells meter, wire it, and attach it to the
+    // Global page's "Global" group as a decoration (owned by the page). ----
+    {
+        auto vm = std::make_unique<VoiceMeter>();
+        vm->setViewMode (processorRef_.getUiVoiceMode() == 1
+                         ? VoiceMeter::ViewMode::Extended
+                         : VoiceMeter::ViewMode::Voicecard);
+        vm->setStateProvider ([this]() {
+            std::vector<VoiceActivity> v;
+            auto& e = processorRef_.getEngine();
+            v.reserve (static_cast<size_t> (e.getNumVoices()));
+            for (int i = 0; i < e.getNumVoices(); ++i)
+            {
+                // SF-1: read the lock-free atomic snapshot instead of the
+                // non-atomic SynthesiserVoice::currentlyPlayingNote.
+                auto* av = e.getAmbikaVoice (i);
+                v.push_back ({ av != nullptr && av->isDisplayedActive(),
+                               av != nullptr ? av->getDisplayedNote() : -1 });
+            }
+            return v;
+        });
+        globalVoiceMeter_ = vm.get();
+        if (globalPage_ != nullptr)
+            globalPage_->setGroupDecoration ("Global", std::move (vm));
+    }
+
+    // ---- Bottom status strip: compact active-voice count + tooltip bar ----
+    statusCountLabel_.setJustificationType (juce::Justification::centred);
+    statusCountLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    statusCountLabel_.setColour (juce::Label::textColourId, theme.accent);
+    statusCountLabel_.setText ("0/" + juce::String (processorRef_.getUiVoiceMode() == 1 ? 16 : 6),
+                               juce::dontSendNotification);
+    addAndMakeVisible (statusCountLabel_);
+    statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
+    statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
+    statusTooltipLabel_.setColour (juce::Label::textColourId, theme.textDim);
+    addAndMakeVisible (statusTooltipLabel_);
 
     // ---- Phase 4a: settings side panel (right side, always-on-top) ----
     // The SettingsPanel is owned + deleted by the SidePanel.
@@ -1250,6 +1205,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             processorRef_.setUiLanguage (code);
             installLanguage (code);
             applyChromeTranslations();
+        },
+        [this] (int mode) {
+            // Voice mode changed: persist + apply to the engine (deferred
+            // rebuild) and switch the meter view to match.
+            processorRef_.setUiVoiceMode (mode);
+            if (globalVoiceMeter_ != nullptr)
+                globalVoiceMeter_->setViewMode (mode == 1 ? VoiceMeter::ViewMode::Extended
+                                                           : VoiceMeter::ViewMode::Voicecard);
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
     // Keep the Settings button's toggle state in sync when the panel is
@@ -1280,8 +1243,8 @@ ParvatiEditor::~ParvatiEditor()
     // destroyed during the reverse-order member teardown (defensive: the
     // components stop their own timers in their destructors, but nulling the
     // providers avoids any lingering reference).
-    if (voiceMeter_ != nullptr)
-        voiceMeter_->setStateProvider (nullptr);
+    if (globalVoiceMeter_ != nullptr)
+        globalVoiceMeter_->setStateProvider (nullptr);
     if (keyboardView_ != nullptr)
         keyboardView_->setNoteCallback (nullptr);
     // Detach from the theme broadcaster and release the L&F BEFORE the member
@@ -1306,6 +1269,37 @@ void ParvatiEditor::timerCallback()
     // canUndo/canRedo checks; setEnabled() is a no-op when unchanged.
     undoButton_.setEnabled (processorRef_.getUndoManager().canUndo());
     redoButton_.setEnabled (processorRef_.getUndoManager().canRedo());
+
+    // ---- Bottom status strip: active-voice count + hover tooltip (~30 Hz) ----
+    {
+        auto& engine = processorRef_.getEngine();
+        int active = 0;
+        for (int i = 0; i < engine.getNumVoices(); ++i)
+            if (auto* av = engine.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
+                ++active;
+        const int denom = processorRef_.getUiVoiceMode() == 1 ? 16 : 6;
+        const juce::String countText = juce::String (active) + "/" + juce::String (denom);
+        if (statusCountLabel_.getText() != countText)
+            statusCountLabel_.setText (countText, juce::dontSendNotification);
+
+        // Tooltip bar: the help text of the control under the mouse (walks up
+        // to the first ancestor carrying a tooltip). Empty when tooltips are
+        // disabled in Settings or the mouse is over dead space.
+        juce::String tip;
+        if (ParamControl::tooltipsEnabled())
+        {
+            const auto rel = getMouseXYRelative();
+            if (getLocalBounds().contains (rel))
+                for (auto* c = getComponentAt (rel); c != nullptr; c = c->getParentComponent())
+                {
+                    const juce::String t = (dynamic_cast<juce::TooltipClient*> (c) != nullptr)
+                        ? dynamic_cast<juce::TooltipClient*> (c)->getTooltip() : juce::String();
+                    if (t.isNotEmpty()) { tip = t; break; }
+                }
+        }
+        if (statusTooltipLabel_.getText() != tip)
+            statusTooltipLabel_.setText (tip, juce::dontSendNotification);
+    }
 
     // Only re-read the Multi page when the edited part actually changes (plus a
     // forced refresh after a .MUL load). This avoids re-setting the controls
@@ -1374,13 +1368,15 @@ void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
         page->applyThemeColors();
     if (multiPage_ != nullptr)
         multiPage_->applyThemeColors();
-    patchNameLabel_.setColour (juce::Label::textColourId,
-                               themeManager_.getCurrentTheme().accent);
+    statusCountLabel_.setColour (juce::Label::textColourId,
+                                 themeManager_.getCurrentTheme().accent);
+    statusTooltipLabel_.setColour (juce::Label::textColourId,
+                                   themeManager_.getCurrentTheme().textDim);
     // Phase 4a: refresh visualization components so they pick up the new colours.
     if (keyboardView_ != nullptr)
         keyboardView_->refresh();
-    if (voiceMeter_ != nullptr)
-        voiceMeter_->refresh();
+    if (globalVoiceMeter_ != nullptr)
+        globalVoiceMeter_->refresh();
     repaint();
 }
 
@@ -1459,10 +1455,9 @@ void ParvatiEditor::applyChromeTranslations()
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load..."));
     saveButton_.setButtonText (TRANS ("Save..."));
-    saveParvatiButton_.setButtonText (TRANS ("Save Parvati"));
-    undoButton_.setButtonText (TRANS ("Undo"));
-    redoButton_.setButtonText (TRANS ("Redo"));
-    settingsButton_.setButtonText (TRANS ("Settings"));
+    undoButton_.setTooltip (TRANS ("Undo"));
+    redoButton_.setTooltip (TRANS ("Redo"));
+    settingsButton_.setTooltip (TRANS ("Settings"));
 
     for (size_t i = 0; i < tabKeys_.size(); ++i)
     {
@@ -1492,7 +1487,14 @@ void ParvatiEditor::resized()
 {
     auto area = getLocalBounds();
 
-    // ---- Bottom: pitch/mod wheels (left) + virtual keyboard (fills width) ----
+    // ---- Bottom status strip = LOWEST band: [n/denom] + tooltip bar ----
+    {
+        auto strip = area.removeFromBottom (kVoiceStripH).reduced (6, 1);
+        statusCountLabel_.setBounds (strip.removeFromLeft (48));
+        statusTooltipLabel_.setBounds (strip);
+    }
+
+    // ---- Keyboard strip directly above the status strip ----
     constexpr int kWheelsW = 76;
     if (keyboardView_ != nullptr)
     {
@@ -1502,25 +1504,23 @@ void ParvatiEditor::resized()
         keyboardView_->setBounds (bottomStrip);
     }
 
-    // ---- Top: patch/part bar + settings button ----
+    // ---- Top bar: Patch:[browser]  Part:[part▾]   …   [Load][Save][↶][↷][⚙] ----
     auto bar = area.removeFromTop (kBarHeight).reduced (6, 4);
+    // Right cluster first (removeFromRight => the first item ends up rightmost).
+    settingsButton_.setBounds (bar.removeFromRight (30));   // gear, top-right corner
+    redoButton_.setBounds (bar.removeFromRight (30));
+    undoButton_.setBounds (bar.removeFromRight (30));
+    saveButton_.setBounds (bar.removeFromRight (96));   // carries the format popup menu
+    loadButton_.setBounds (bar.removeFromRight (76));
+    // Left cluster.
     patchCaption_.setBounds (bar.removeFromLeft (48));
+    if (presetBrowser_ != nullptr)
+        presetBrowser_->setBounds (bar.removeFromLeft (220));
     partCaption_.setBounds (bar.removeFromLeft (40));
     partCombo_.setBounds (bar.removeFromLeft (84));
-    settingsButton_.setBounds (bar.removeFromLeft (80));
-    undoButton_.setBounds (bar.removeFromLeft (54));
-    redoButton_.setBounds (bar.removeFromLeft (54));
-    loadButton_.setBounds (bar.removeFromRight (76));
-    saveButton_.setBounds (bar.removeFromRight (76));
-    saveParvatiButton_.setBounds (bar.removeFromRight (110));
-    patchNameLabel_.setBounds (bar.removeFromRight (180));
-    patchCombo_.setBounds (bar);
+    // (remaining middle space is flexible / empty)
 
-    // ---- Status strip: voice meter (between top bar and tabs) ----
-    if (voiceMeter_ != nullptr)
-        voiceMeter_->setBounds (area.removeFromTop (kMeterStripH).reduced (6, 2));
-
-    // ---- Middle: tabs ----
+    // ---- Middle: tabs (gains the old kMeterStripH band, loses kVoiceStripH) ----
     tabs_.setBounds (area);
 
     // Responsive reflow (Phase 2b): every generated page fills its tab's width so
@@ -1533,54 +1533,6 @@ void ParvatiEditor::resized()
 }
 
 //==========================================================================
-void ParvatiEditor::populateFactoryPatches()
-{
-    factoryFiles_.clear();
-    patchCombo_.clear();
-
-    auto addFiles = [this] (const juce::File& dir, const juce::String& wildcard,
-                             const juce::String& prefix, bool parseName) {
-        if (! dir.isDirectory())
-            return;
-        juce::Array<juce::File> files;
-        dir.findChildFiles (files, juce::File::findFiles, true, wildcard);
-        files.sort();
-        for (const auto& f : files)
-        {
-            juce::String label;
-            if (parseName)
-            {
-                AmbikaProgram prog;
-                label = (parseAmbikaProgramFile (f, prog) && prog.name.isNotEmpty())
-                          ? prog.name
-                          : f.getFileNameWithoutExtension();
-            }
-            else
-            {
-                label = f.getFileNameWithoutExtension();
-            }
-            const int id = static_cast<int> (factoryFiles_.size()) + 1;
-            // Normalize the relative-path label to forward slashes (the banks
-            // show as "A/000" etc.) so it reads the same on every OS.
-            patchCombo_.addItem (prefix + f.getRelativePathFrom (dir).replace ("\\", "/") + "  -  " + label, id);
-            factoryFiles_.push_back (f);
-        }
-    };
-
-    // Single-program patches (.PRO) first, then multitimbral multis (.MUL).
-    addFiles (processorRef_.getFactoryPatchDir(), "*.PRO", "", true);
-    addFiles (processorRef_.getFactoryMultiDir(), "*.MUL", "[Multi] ", false);
-
-    // User-saved presets (USER/): created on first run by the factory installer.
-    // Ensured here too so the (empty) user area shows gracefully on a fresh
-    // install. Appended after the factory banks.
-    const auto userDir = processorRef_.getUserPatchDir();
-    userDir.createDirectory();
-    addFiles (userDir, "*.PRO", "[User] ", true);
-    addFiles (userDir, "*.MUL", "[User Multi] ", false);
-    addFiles (userDir, "*.parvati", "[Parvati] ", false);
-}
-
 void ParvatiEditor::openLoadDialog()
 {
     fileChooser_ = std::make_unique<juce::FileChooser> ("Load Patch / Multi (.PRO / .MUL / .parvati)",
@@ -1616,9 +1568,8 @@ void ParvatiEditor::openSaveDialog()
             const auto f = fc.getResult().withFileExtension (".PRO");
             if (processorRef_.saveProgramFile (f))
             {
-                patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
-                                         juce::dontSendNotification);
-                populateFactoryPatches();
+                if (presetBrowser_ != nullptr)
+                    presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
             }
         }
         fileChooser_ = nullptr;
@@ -1647,9 +1598,8 @@ void ParvatiEditor::openSaveParvatiDialog()
             const auto f = fc.getResult().withFileExtension (".parvati");
             if (processorRef_.saveParvatiPatchFile (f))
             {
-                patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
-                                         juce::dontSendNotification);
-                populateFactoryPatches();
+                if (presetBrowser_ != nullptr)
+                    presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
             }
         }
         fileChooser_ = nullptr;
@@ -1688,13 +1638,23 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
 
     if (ok)
     {
-        patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
-                                 juce::dontSendNotification);
+        if (presetBrowser_ != nullptr)
+            presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
         // A multi rewrites every part's channel / key zone / voice allocation,
         // so force the Multi page to re-read even though the edited part is
         // unchanged.
         if (isMulti && multiPage_ != nullptr)
             multiPage_->forceRefresh();
+
+        // A .parvati multi can change the global Voice Mode (Hardware/Extended);
+        // keep the voice-meter view + the Settings voice-mode combo in sync with
+        // the engine so the UI matches what the patch selected.
+        if (globalVoiceMeter_ != nullptr)
+            globalVoiceMeter_->setViewMode (processorRef_.getUiVoiceMode() == 1
+                                            ? VoiceMeter::ViewMode::Extended
+                                            : VoiceMeter::ViewMode::Voicecard);
+        if (settingsPanel_ != nullptr)
+            settingsPanel_->refreshVoiceModeCombo();
     }
 }
 

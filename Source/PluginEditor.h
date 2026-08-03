@@ -25,6 +25,8 @@
 #include "ui/SettingsPanel.h"
 #include "ui/ThemeManager.h"
 #include "ui/VoiceMeter.h"
+#include "ui/IconButton.h"
+#include "ui/PresetBrowser.h"
 
 class MultiPage;
 
@@ -34,7 +36,8 @@ class MultiPage;
 // from the editor-wide ParvatiLookAndFeel (inherited via the component tree),
 // and the cell exposes its parameter's help text as a tooltip.
 class ParamControl : public juce::Component,
-                     public juce::TooltipClient
+                     public juce::TooltipClient,
+                     public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
@@ -53,13 +56,29 @@ public:
     // flag and re-applies the enabled/disabled tooltip text to every live
     // ParamControl's children via the instance registry. getTooltip() also
     // honours the flag for the bare-cell hover.
-    static void setTooltipsEnabled (bool enabled);
+    static void   setTooltipsEnabled (bool enabled);
+    static bool   tooltipsEnabled() noexcept { return tooltipsEnabled_; }  // for the status-bar tooltip gate
 
     // Right-click (popup) on this cell — or on its child Slider/ComboBox, which
     // registers `this` as a MouseListener (Component is already a MouseListener,
     // so no extra base is needed) — shows a context menu (Reset to default /
     // Randomize). Non-popup clicks fall through to normal interaction.
     void mouseDown (const juce::MouseEvent& e) override;
+
+    // ---- Sequencer step-grid introspection (UI + the editor_test) ----
+    // paramID of the bound APVTS parameter (e.g. "seq1_step7", "seq_length_2").
+    const juce::String& getParamID() const noexcept { return paramIDStr_; }
+    // True for the Seq1/2/3 length controls (marked "Length").
+    bool isLengthControl() const noexcept { return paramIDStr_.startsWith ("seq_length_"); }
+    // 0-based step index for a seq*_step* / seqnote_* control, else -1.
+    int  stepIndex() const noexcept { return parseStepIndex (paramIDStr_); }
+    // Whether the step's slider is currently interactive (false => dimmed: step
+    // index >= its sequence length). True for non-step controls.
+    bool isStepEnabled() const noexcept { return slider_ ? slider_->isEnabled() : true; }
+    // Whether this control shows a visible (Length) label — used by the test.
+    // Reflects the ACTUAL label component so the editor_test gets an independent
+    // signal that the Length label renders (not just the paramID prefix).
+    bool isLengthLabelVisible() const noexcept { return label_ != nullptr && label_->isVisible(); }
 
 private:
     void showContextMenu();
@@ -71,6 +90,20 @@ private:
     // and whenever the global toggle flips.
     void applyTooltipState();
 
+    // ---- Sequencer step dimming ----
+    // APVTS::Listener callback: the sibling seq_length_* param changed, so
+    // re-evaluate whether this step's slider should be enabled/dimmed.
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    // Re-enable/dim this step based on its sibling sequence length (steps at
+    // index >= length are disabled => the LookAndFeel omits the fill arc).
+    void refreshStepEnabled();
+    // Map a step paramID (seq1_step* / seq2_step* / seqnote_step*|vel*) to its
+    // sibling length param (seq_length_1/2/3); empty for non-steps.
+    static juce::String siblingLengthParamFor (const juce::String& stepID);
+    // Parse the trailing integer of a step paramID ("seq1_step7" -> 7); -1 if not
+    // a step.
+    static int parseStepIndex (const juce::String& id);
+
     const PatchParamDescriptor& desc_;
     ParvatiAudioProcessor& processor_;   // APVTS access for reset/randomize
     std::unique_ptr<juce::Slider>    slider_;
@@ -81,6 +114,9 @@ private:
 
     juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
     static bool tooltipsEnabled_;   // toggled from the Settings panel
+
+    juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
+    juce::String lengthParamID_;     // sibling length param; empty for non-steps
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamControl)
 };
@@ -136,9 +172,6 @@ public:
     // Returns true when the flexible-width grid is well-formed.
     bool layoutIsSane() const;
 
-    // DEV-ONLY (snapshot helper): set every Env/LFO slot's view mode and reflow.
-    void setAllEnvLfoModesForDump (int mode);
-
 private:
     // Maps a paramID to its bordered-group display name (e.g. "osc1_*"->"Osc 1",
     // "mod3_*"->"Mod 3"). Derived purely from the param-ID prefixes so the
@@ -156,10 +189,6 @@ private:
         int cellW = 0, cellH = 0;         // per-control cell size for this group
         bool singleRow = false;           // mod/modifier 3-wide horizontal strip
         bool stepGrid  = false;           // sequencer step grid
-        bool envLfoSlot = false;          // an Env/LFO unit: ENV/LFO view toggle
-        int  envLfoMode = 0;              // 0 = ENV (A/D/S/R), 1 = LFO (shape/rate)
-        std::vector<int> envCtrlIdx, lfoCtrlIdx;   // active-mode partition of controlIndices
-        juce::Component* envLfoToggle = nullptr;   // the ENV/LFO segmented toggle (owned by ParamPage)
         int naturalWidth = 0, naturalHeight = 0;
         juce::Rectangle<int> rect;
     };
@@ -168,12 +197,6 @@ private:
     void configureGroupLayouts();        // internal cols + per-group cell sizes
     void layoutGroups (int targetWidth); // compute group rects + content size
     void applyLayout();                  // push computed rects to the components
-    // Lay out one Env/LFO slot: the ENV/LFO toggle, the ACTIVE mode's controls
-    // (the inactive set is hidden), and the (mode-matched) decoration below.
-    void applyEnvLfoLayout (GroupLayout& g, juce::Rectangle<int> inner);
-    // Apply a new ENV/LFO view mode to @p groupIndex: update the toggle + preview
-    // mode, recompute the slot's layout, and reflow the page.
-    void refreshEnvLfoGroup (int groupIndex);
 
     ThemeManager& themeManager_;
     int cellWidth_, cellHeight_;
@@ -185,7 +208,6 @@ private:
     std::vector<std::unique_ptr<juce::GroupComponent>> groupComponents_;
     std::vector<GroupLayout> groups_;
     std::vector<std::unique_ptr<juce::Component>> decorations_;   // owned group decorations
-    std::vector<std::unique_ptr<juce::Component>> envLfoToggles_; // owned ENV/LFO segmented toggles
 
     // Layout constants (pixels).
     static constexpr int kMargin      = 16;  // page edge padding
@@ -196,8 +218,6 @@ private:
     static constexpr int kGroupTitleH = 18;  // room reserved for the group title
     static constexpr int kDecorationH   = 100; // reserved height for a group decoration
     static constexpr int kDecorationGap = 8;   // gap between control cells and a decoration
-    static constexpr int kEnvLfoToggleH   = 24; // ENV/LFO view-toggle row height
-    static constexpr int kEnvLfoToggleGap = 6;  // gap below the ENV/LFO toggle
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamPage)
 };
@@ -285,7 +305,6 @@ private:
     // ThemeManager selection moves.
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
-    void populateFactoryPatches();
     void openLoadDialog();
     void openSaveDialog();
     void openSaveParvatiDialog();
@@ -321,16 +340,14 @@ private:
     std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
     double zoom_ = 1.0;
 
-    // Top patch bar.
+    // Top patch bar. The patch selector is a cascading PresetBrowser (replaces
+    // the flat patchCombo_); undo/redo are Path-drawn IconButtons (no font glyph).
     juce::Label      patchCaption_;
-    juce::ComboBox   patchCombo_;
+    std::unique_ptr<PresetBrowser> presetBrowser_;
     juce::TextButton loadButton_  { "Load .PRO..." };
     juce::TextButton saveButton_  { "Save..." };
-    juce::TextButton saveParvatiButton_ { "Save Parvati" };   // full-fidelity .parvati (YAML)
-    juce::TextButton undoButton_  { "Undo" };   // top-bar Undo (Cmd/Ctrl+Z)
-    juce::TextButton redoButton_  { "Redo" };   // top-bar Redo (Cmd/Ctrl+Shift+Z / Y)
-    juce::Label      patchNameLabel_;
-    std::vector<juce::File> factoryFiles_;
+    IconButton       undoButton_  { IconButton::Icon::Undo };   // top-bar Undo (Cmd/Ctrl+Z)
+    IconButton       redoButton_  { IconButton::Icon::Redo };   // top-bar Redo (Cmd/Ctrl+Shift+Z / Y)
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Top bar: Part selector (bound to the `part_select` APVTS param).
@@ -340,18 +357,25 @@ private:
 
     static constexpr int kBarHeight   = 34;
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
-    static constexpr int kMeterStripH = 52;   // voice-meter strip below the top bar
+    static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
+    static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
 
     // ---- Phase 4a: visualization + settings integration ----
     // Settings side panel (owned here; content owned by the SidePanel).
     std::unique_ptr<juce::SidePanel> settingsPanelHost_;
     SettingsPanel* settingsPanel_ { nullptr };
-    juce::TextButton settingsButton_ { "Settings" };
+    IconButton       settingsButton_ { IconButton::Icon::Gear };   // gear icon, top-right
 
-    // Virtual keyboard (bottom strip) + voice meter (status strip).
+    // Virtual keyboard (bottom strip) + status bar (count + tooltip). The voice
+    // ACTIVITY cells live on the Global page (globalVoiceMeter_, owned by that
+    // page as a decoration); the bottom strip shows only the active-count + a
+    // hover-tooltip bar (the cells + "Voices" word were removed per request).
     std::unique_ptr<KeyboardView>    keyboardView_;
     std::unique_ptr<WheelsComponent> wheels_;   // pitch + mod wheels (left of keyboard)
-    std::unique_ptr<VoiceMeter>   voiceMeter_;
+    VoiceMeter* globalVoiceMeter_ { nullptr };  // cells display; owned by the Global ParamPage
+    ParamPage*  globalPage_ { nullptr };        // Global tab (owns the meter as a decoration)
+    juce::Label statusCountLabel_;              // bottom-left "n/denom" active-voice count
+    juce::Label statusTooltipLabel_;            // bottom hover-tooltip bar (fills the rest)
 
     // Keyboard latching state: notes currently lit on the virtual keyboard so
     // we only fire latchNoteOn/Off on actual transitions (avoids stuck lamps).
