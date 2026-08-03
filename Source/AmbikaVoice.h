@@ -65,6 +65,24 @@ public:
     {
         voice_.set_patch_data (static_cast<uint8_t> (offset), value);
     }
+    // Re-prime the envelope phase increments from the CURRENT patch bytes. The
+    // increments default to 0 and are (re)seeded by Voice::Init() and by
+    // Envelope::Update() each ProcessBlock for ACTIVE voices — but an IDLE voice
+    // is gated out of renderNextBlock, so after a bulk patch-byte push (a
+    // voice-mode / allocation rebuild, or a .MUL/.parvati load) its increments are
+    // stale and the next Trigger(ATTACK) reads a 0 attack increment => the voice
+    // renders SILENT (VCA never opens). This was the standalone "goes dead after
+    // a voice-mode / template switch" glitch. Call right after a bulk push.
+    void reprimeEnvelopes()
+    {
+        const auto& p = voice_.patch();
+        for (uint8_t i = 0; i < ambika::dsp::kNumEnvelopes; ++i)
+            voice_.mutable_envelope (i)->Update (p.env_lfo[i].attack,
+                                                 p.env_lfo[i].decay,
+                                                 p.env_lfo[i].sustain,
+                                                 p.env_lfo[i].release);
+    }
+
     void setPartByte (int offset, uint8_t value)
     {
         voice_.set_part_data (static_cast<uint8_t> (offset), value);

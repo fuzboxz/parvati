@@ -323,6 +323,11 @@ void SynthEngine::pushPartBytesToVoices (int part)
             av->setPatchByte (o, p.patchBytes[(size_t) o]);
         for (int o = 0; o < 84; ++o)
             av->setPartByte (o, p.partBytes[(size_t) o]);
+        // Re-prime the envelope increments from the just-pushed patch: an idle
+        // voice is gated out of renderNextBlock, so without this the pushed A/D/S/R
+        // bytes leave its attack increment stale/0 and the next note is SILENT
+        // (the standalone "dead after a voice-mode / template switch" glitch).
+        av->reprimeEnvelopes();
     }
 }
 
@@ -636,22 +641,24 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     // rebuildVoiceAllocation() directly, but they run before audio starts.)
     if (allocationDirty_.exchange (false, std::memory_order_acq_rel))
     {
-        // Graceful engine switch: drop any sounding voices BEFORE reassigning
-        // slots. A voice slot may move to a different Part (or shrink away in
-        // VoiceMode::Hardware), so a live voice could otherwise end up orphaned
-        // or re-tagged to the wrong Part (stuck note / wrong patch / level
-        // glitch). stopNote(.,false) is a hard kill (Kill + clearCurrentNote +
-        // FIFO clear) — the clean drop requested for voice-mode / allocation /
-        // polyphony changes.
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->stopNote (0.0f, false);
+        // NOTE: we deliberately do NOT stop/kill voices here. A hard kill
+        // (stopNote(.,false) => Voice::Kill + clearCurrentNote) zeroes the
+        // envelope state that only Voice::Init() re-primes, so a voice killed
+        // while IDLE would render SILENT on its next note -- heard as the
+        // standalone going dead after a voice-mode / template switch (the
+        // reported glitch). Instead let any sounding voice ring out naturally:
+        // rebuildVoiceAllocation re-tags still-allocated voices to their
+        // (possibly new) Part and pushPartBytesToVoices re-applies that Part's
+        // patch, so a held note picks up the new Part's sound; a voice whose
+        // slot is no longer allocated (e.g. Extended->Hardware) plays out its
+        // release and frees itself. No permanent stuck notes, no dead-voice
+        // glitch.
 
         for (int p = 0; p < kNumParts; ++p)
             parts_[p].polyphonyMode = static_cast<uint8_t> (juce::jlimit (0, 4, (int) parts_[p].partBytes[15]));
         rebuildVoiceAllocation();
         for (int p = 0; p < kNumParts; ++p)
-            pushPartBytesToVoices (p);
+            pushPartBytesToVoices (p);   // also re-primes envelope increments
     }
 
     // Service deferred arp/seq note-kills ON THE AUDIO THREAD. setArpMode
