@@ -333,11 +333,18 @@ juce::String ParamPage::groupForId (const juce::String& id)
     if (id.startsWith ("filter2_")) return "Filter 2";
 
     // ---- Envelopes / LFOs (now on separate tabs) ----
-    // env{N}_attack/decay/sustain/release -> "Env N"; env{N}_lfo_* -> "LFO N".
+    // env{N}_attack/decay/sustain/release -> "Env N (role)"; env{N}_lfo_* -> "LFO N".
+    // Role verified from the dsp routing: ENV3 -> VCA (mod-matrix default,
+    // amount 63) = Amp; ENV2 -> filter cutoff (hardcoded filter_env) = Filter;
+    // ENV1 -> free mod parameters = Mod.
     if (id.startsWith ("env") && id.length() > 3 && id[3] >= '1' && id[3] <= '3')
     {
         const juce::String n = juce::String::charToString (id[3]);
-        return id.contains ("_lfo_") ? ("LFO " + n) : ("Env " + n);
+        if (id.contains ("_lfo_"))
+            return "LFO " + n;
+        if (n == "1") return "Env 1 (Mod)";
+        if (n == "2") return "Env 2 (Filter)";
+        return "Env 3 (Amp)";
     }
     if (id.startsWith ("voice_lfo_")) return "Voice LFO";
 
@@ -381,6 +388,18 @@ void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& des
             g->name = gname;
         }
         g->controlIndices.push_back (i);
+    }
+
+    // For sequencer step-grid groups, the Length control should be the LAST cell
+    // (user edits steps first, then sets the length). The descriptor order has
+    // seq_length_* before the step params, so reorder via stable_partition.
+    for (auto& g : groups_)
+    {
+        if (! (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Sequencer"))
+            continue;
+        std::stable_partition (g.controlIndices.begin(), g.controlIndices.end(),
+            [&descriptors] (int idx)
+            { return descriptors[(size_t) idx]->paramID.find ("seq_length") == std::string::npos; });
     }
 }
 
@@ -1042,17 +1061,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         if (pg.s == Section::Envelopes)
         {
             const juce::String envs[3] = { "env1", "env2", "env3" };
+            const juce::String envLabels[3] = { "Env 1 (Mod)", "Env 2 (Filter)", "Env 3 (Amp)" };
             for (int i = 0; i < 3; ++i)
             {
                 const juce::String e = envs[i];
                 auto disp = std::make_unique<EnvelopeDisplay> (
-                    "Env " + juce::String (i + 1),
+                    envLabels[i],
                     [norm, e] { return norm (e + "_attack");  },
                     [norm, e] { return norm (e + "_decay");   },
                     [norm, e] { return norm (e + "_sustain"); },
                     [norm, e] { return norm (e + "_release"); });
                 disp->setPreviewMode (0);   // ADSR curve
-                page->setGroupDecoration ("Env " + juce::String (i + 1), std::move (disp));
+                page->setGroupDecoration (envLabels[i], std::move (disp));
             }
         }
         else if (pg.s == Section::Lfos)
@@ -1181,7 +1201,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     statusCountLabel_.setJustificationType (juce::Justification::centred);
     statusCountLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     statusCountLabel_.setColour (juce::Label::textColourId, theme.accent);
-    statusCountLabel_.setText ("0/" + juce::String (processorRef_.getUiVoiceMode() == 1 ? 16 : 6),
+    statusCountLabel_.setText ("0/" + juce::String (
+        static_cast<int> (processorRef_.getEngine()
+            .getPart (processorRef_.getEngine().getCurrentPart()).voiceIndices.size())),
                                juce::dontSendNotification);
     addAndMakeVisible (statusCountLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
@@ -1277,7 +1299,8 @@ void ParvatiEditor::timerCallback()
         for (int i = 0; i < engine.getNumVoices(); ++i)
             if (auto* av = engine.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
                 ++active;
-        const int denom = processorRef_.getUiVoiceMode() == 1 ? 16 : 6;
+        const int denom = static_cast<int> (processorRef_.getEngine()
+            .getPart (processorRef_.getEngine().getCurrentPart()).voiceIndices.size());
         const juce::String countText = juce::String (active) + "/" + juce::String (denom);
         if (statusCountLabel_.getText() != countText)
             statusCountLabel_.setText (countText, juce::dontSendNotification);

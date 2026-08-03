@@ -452,6 +452,10 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     if (patch112 == nullptr || part84 == nullptr)
         return false;
 
+    // Clean slate: kill every sounding voice so a patch switch during editing
+    // never leaves stuck / orphaned voices carrying stale Part / patch state.
+    engine_.resetAllVoices();
+
     // Push every patch/part byte back into the APVTS via the inverse mapping;
     // the GUI reads from the APVTS so it updates too.
     for (const auto& d : getPatchParamDescriptors())
@@ -553,6 +557,10 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     AmbikaMulti multi;
     if (! parseAmbikaMultiFile (file, multi) || ! multi.ok)
         return false;
+
+    // Clean slate: kill every sounding voice before the new multi configures
+    // all 6 Parts (avoids stuck notes from the previous multi's routing).
+    engine_.resetAllVoices();
 
     // Load every Part's patch + PartData bytes, plus its MIDI channel, key
     // zone, and voice allocation (from MultiData.part_mapping_[i]:
@@ -743,6 +751,8 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
     }
+    // Clean slate before applying the new Parvati-native patch.
+    engine_.resetAllVoices();
     if (! parvati::preset::applyParvatiPatch (*this, text))
         return false;
     // Derive a display name from the file (the in-document name is applied via
@@ -772,6 +782,8 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
     }
+    // Clean slate before applying the new Parvati-native multi.
+    engine_.resetAllVoices();
     if (! parvati::preset::applyParvatiMulti (*this, text))
         return false;
     loadedProgramName_ = file.getFileNameWithoutExtension();
