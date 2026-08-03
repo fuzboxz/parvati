@@ -161,11 +161,15 @@ void KeyboardView::applyThemeColours()
 
     if (t != nullptr)
     {
-        // Piano keys always read as light/dark regardless of theme polarity; the
-        // theme accent colours the pressed keys so activity is visible on every
-        // theme.
-        white  = t->isDark ? juce::Colour (0xffdcdce4) : juce::Colours::white;
-        black  = t->isDark ? t->panelBackground2      : juce::Colour (0xff2a2a30);
+        // Thematic keys: white/black derive from the theme palette instead of a
+        // fixed piano light/dark, so the keyboard recolours on every theme. The
+        // accent still colours pressed keys (the down overlay) so activity reads
+        // on every theme. Dark themes lift the panel toward a light key; the
+        // light Paper theme uses the warm panel header / a deepened window fill.
+        white  = t->isDark ? t->panelBackground2.brighter (1.6f)
+                           : t->panelHeader;
+        black  = t->isDark ? t->windowBackground
+                           : t->windowBackground.darker (0.25f);
         down   = t->accent;
         over   = t->accent2.withAlpha (0.45f);
         line   = t->outline;
@@ -174,10 +178,10 @@ void KeyboardView::applyThemeColours()
     }
     else
     {
-        // Fallbacks = the Carbon palette (in case the component is shown before
-        // it inherits the editor's ParvatiLookAndFeel).
+        // Fallbacks = Carbon-derived values (in case the component is shown
+        // before it inherits the editor's ParvatiLookAndFeel).
         white  = juce::Colour (0xffdcdce4);
-        black  = juce::Colour (0xff2e2e3a);
+        black  = juce::Colour (0xff141419);
         down   = juce::Colour (0xffe8b84b);
         over   = juce::Colour (0xff5b8db8).withAlpha (0.45f);
         line   = juce::Colour (0xff3c3c4a);

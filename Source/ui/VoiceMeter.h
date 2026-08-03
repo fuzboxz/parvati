@@ -45,10 +45,19 @@ public:
         to clear the provider. */
     void setStateProvider (std::function<std::vector<VoiceActivity>()> provider);
 
+    /** Display mode: Voicecard shows the 6 hardware voicecards (the faithful
+        Ambika view, default); Extended shows all 16 voice slots. The meter
+        follows the engine's voice-capacity mode (passed in by the editor) and
+        owns no toggle of its own. */
+    enum class ViewMode { Voicecard, Extended };
+    void     setViewMode (ViewMode m);
+    ViewMode getViewMode() const noexcept { return viewMode_; }
+
     /** Force a repaint (e.g. after a theme switch). */
     void refresh() { repaint(); }
 
-    /** Number of voices currently active (0..16), for display/accessibility. */
+    /** Number of voices currently active (0..6 in Voicecard view, 0..16 in
+        Extended), for display/accessibility. */
     int getActiveVoiceCount() const noexcept;
 
     void paint (juce::Graphics&) override;
@@ -66,12 +75,33 @@ private:
     // MIDI note number (0..127) -> "C4" style name (60 == C4). Empty if invalid.
     static juce::String midiNoteName (int note);
 
+    // Paint one voice/card cell (active => accent fill + note name; free =>
+    // outline + dim centre dot). Shared by the Voicecard (6) and Extended (16)
+    // views so both look identical apart from the cell count.
+    static void drawCell (juce::Graphics& g, juce::Rectangle<float> r, bool active, int note,
+                          float corner, juce::Colour accent, juce::Colour outline,
+                          juce::Colour textValue, juce::Colour textDim);
+
     // Firmware voicecard layout: vc0={0,1,2} vc1={3,4,5} vc2={6,7,8}
     // vc3={9,10,11} vc4={12,13} vc5={14,15}. True when a wider gap should
     // follow @p voiceIndex (i.e. it is the last voice of its voicecard block).
     static bool isVoicecardBoundary (int voiceIndex);
 
     static constexpr int kNumVoices = 16;
+    static constexpr int kNumVoicecards = 6;   // the 6 firmware voicecards
+
+    ViewMode viewMode_ { ViewMode::Voicecard };
+
+    // Voicecard view: a card is active if any of its voice slots is sounding.
+    struct CardState { bool active = false; int note = -1; };
+    std::array<CardState, kNumVoicecards> cardState_ {};
+    std::array<juce::Rectangle<int>, kNumVoicecards> cardRects_ {};
+    // Card -> voice-slot block mirror of SynthEngine's fixed table. Duplicated
+    // here so VoiceMeter does not depend on SynthEngine.h (stays decoupled /
+    // headless-testable). vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11}
+    // vc4={12,13} vc5={14,15}.
+    static constexpr int kVcBlockStart[kNumVoicecards] = { 0, 3, 6, 9, 12, 14 };
+    static constexpr int kVcBlockSize[kNumVoicecards]  = { 3, 3, 3, 3, 2, 2 };
 
     // Accessibility: exposes the live active-voice count as a read-only value
     // so screen readers announce e.g. "5 of 16".
