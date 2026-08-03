@@ -8,6 +8,20 @@
 #include "AmbikaSound.h"
 #include "dsp/patch.h"   // WAVEFORM_SAW
 
+namespace
+{
+// Exponential VCA gain (60 dB OTA taper) with a makeup factor so its average
+// over the 0..1 CV range ~matches the linear curve (linear avg = 0.5; raw exp
+// avg ≈ 0.145 => makeup ≈ 3.5x). Clamped at 1.0 so a full-VCA note never clips
+// the makeup. Keeps the exponential SHAPE while preventing the drastic level
+// drop vs linear.
+constexpr float kExpVcaMakeup = 3.5f;
+inline float exponentialVcaGain (float n) noexcept
+{
+    return juce::jmin (1.0f, kExpVcaMakeup * std::pow (10.0f, (n - 1.0f) * 3.0f));
+}
+}  // namespace
+
 bool AmbikaVoice::canPlaySound (juce::SynthesiserSound* sound)
 {
     return dynamic_cast<AmbikaSound*> (sound) != nullptr;
@@ -246,6 +260,26 @@ void AmbikaVoice::fillInternalBlock()
 
     const uint8_t* out = voice_.output();
 
+    // Crush (sample-and-hold decimator): the firmware voicecard DAC updates its
+    // output only every voice_.crush() internal samples (voicecard.cc:74). Apply
+    // the same zero-order-hold here, at the 8-bit internal rate, BEFORE the
+    // filter+VCA (the hardware crush is pre-analog-VCF). crush()==1 => no hold.
+    const uint8_t crush = voice_.crush();
+    if (crush > 1)
+    {
+        uint8_t crushed[ambika::dsp::kAudioBlockSize];
+        for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
+        {
+            if (++crushSampleCounter_ >= static_cast<int> (crush))
+            {
+                crushSampleCounter_ = 0;
+                crushHeldSample_ = out[i];
+            }
+            crushed[i] = crushHeldSample_;
+        }
+        out = crushed;   // shadow: all downstream paths read the held samples
+    }
+
     // ---- 1x path (default): bit-identical to the un-oversampled engine ----
     if (osFactor_ == 1)
     {
@@ -276,7 +310,7 @@ void AmbikaVoice::fillInternalBlock()
         if (vcaExponential_)
         {
             const float n = static_cast<float> (voice_.vca()) / 255.0f;
-            vcaGain = std::pow (10.0f, (n - 1.0f) * 3.0f);  // 60 dB
+            vcaGain = exponentialVcaGain (n);  // 60 dB OTA taper, makeup-compensated
         }
         else
         {
@@ -303,7 +337,7 @@ void AmbikaVoice::fillInternalBlock()
     const float targetReso   = static_cast<float> (voice_.resonance()) / 255.0f;
     const float vcaNorm      = static_cast<float> (voice_.vca()) / 255.0f;
     const float targetGain   = vcaExponential_
-        ? std::pow (10.0f, (vcaNorm - 1.0f) * 3.0f)   // ~60 dB OTA taper
+        ? exponentialVcaGain (vcaNorm)   // ~60 dB OTA taper, makeup-compensated
         : vcaNorm;
 
     // 4-pole cards are lowpass-only (hardware); the SVF honours LP/BP/HP/NOTCH.
@@ -392,7 +426,7 @@ void AmbikaVoice::fillInternalBlock()
             const float targetReso   = static_cast<float> (voice_.resonance()) / 255.0f;
             const float vcaNorm      = static_cast<float> (voice_.vca()) / 255.0f;
             const float targetGain   = vcaExponential_
-                ? std::pow (10.0f, (vcaNorm - 1.0f) * 3.0f)
+                ? exponentialVcaGain (vcaNorm)
                 : vcaNorm;
 
             if (! smoothingActive_)
@@ -433,7 +467,7 @@ void AmbikaVoice::fillInternalBlock()
         {
             const float vcaNorm = static_cast<float> (voice_.vca()) / 255.0f;
             const float vcaGain = vcaExponential_
-                ? std::pow (10.0f, (vcaNorm - 1.0f) * 3.0f)
+                ? exponentialVcaGain (vcaNorm)
                 : vcaNorm;
             for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
                 fifo_.push_back (raw[i] * vcaGain);

@@ -8,7 +8,7 @@ parts:
   - channel: 1
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 63
+    voice_allocation: 1
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -112,7 +112,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
-      part_legato: 0            # Off
+      part_legato: 1            # On
       part_portamento: 0
       part_polyphony: 0            # Mono
       seq_length_1: 16

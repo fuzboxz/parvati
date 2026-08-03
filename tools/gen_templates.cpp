@@ -35,6 +35,7 @@ struct TemplateSpec
     uint8_t part0Alloc;
     uint8_t part1Alloc;
     int     voiceMode;
+    int     part0Legato;   // PartData legato byte (1 = mono plays legato: no env re-attack on overlapping notes)
 };
 
 // Build one template from a freshly-prepared processor and write it to
@@ -47,6 +48,7 @@ bool writeTemplate (const TemplateSpec& s, const juce::File& outDir)
     // Edit Part 0's polyphony mode (PartData byte 15 via the APVTS bridge).
     proc.getApvts().getParameterAsValue ("part_select")     = 1.0f;
     proc.getApvts().getParameterAsValue ("part_polyphony")  = static_cast<float> (s.part0Poly);
+    proc.getApvts().getParameterAsValue ("part_legato")     = static_cast<float> (s.part0Legato);
 
     // Per-part voice allocation. Single-part templates own all 6 voicecards on
     // Part 0 (0x3f); the Multitimbral template splits them 3+3 (0x15 / 0x2a).
@@ -110,11 +112,11 @@ int main()
     }
 
     const std::vector<TemplateSpec> specs = {
-        { "Mono.parvati",         "Monotimbral Mono",   0, 0x3f, 0x00, 0 },
-        { "Poly 6.parvati",       "Poly 6 (Hardware)",  1, 0x3f, 0x00, 0 },
-        { "Poly 16.parvati",      "Poly 16 (Extended)", 1, 0x3f, 0x00, 1 },
-        { "Unison.parvati",       "Unison 2x",          2, 0x3f, 0x00, 1 },
-        { "Multitimbral.parvati", "Multitimbral (3+3)", 1, 0x15, 0x2a, 0 },
+        { "Mono.parvati",         "Monotimbral Mono",   0, 0x01, 0x00, 0, 1 },
+        { "Poly 6.parvati",       "Poly 6 (Hardware)",  1, 0x3f, 0x00, 0, 0 },
+        { "Poly 16.parvati",      "Poly 16 (Extended)", 1, 0x3f, 0x00, 1, 0 },
+        { "Unison.parvati",       "Unison 2x",          2, 0x3f, 0x00, 1, 0 },
+        { "Multitimbral.parvati", "Multitimbral (3+3)", 1, 0x15, 0x2a, 0, 0 },
     };
 
     std::printf ("Generating %zu templates -> %s\n", specs.size(), outDir.getFullPathName().toRawUTF8());

@@ -289,4 +289,12 @@ private:
     static constexpr float kDeClickInc  = 1.0f / kDeClickRamp;
     float startupGain_          { 1.0f };
     int   startupRampRemaining_ { 0 };
+
+    // Crush (sample-and-hold / decimator): mirrors the firmware voicecard DAC
+    // which only updates its output every `crush()` internal samples (voice.h).
+    // crushHeldSample_ holds the last "updated" 8-bit sample; crushSampleCounter_
+    // counts internal samples between updates. Persist across blocks so the hold
+    // is continuous. crush()==1 => every sample updates (no effect).
+    uint8_t crushHeldSample_     { 128 };
+    int     crushSampleCounter_  { 0 };
 };
