@@ -9,6 +9,18 @@
 #include "ui/FactoryPresetInstaller.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
 
+namespace
+{
+// Main-bus mix headroom. The processor sums ALL six voicecard buffers into the
+// main stereo bus; at unity gain several loud voices (and especially Extended
+// 16-voice / Unison stacks) clip. Internal mixing is 32-bit float
+// (voiceCardBuffers_ are AudioBuffer<float>; addFrom accumulates in float), so
+// there is no INTERNAL clipping — this trim only buys headroom on the summed
+// MAIN output. -6 dB (0.5x) is a reasoned default for a 6-voicecard sum; the
+// raw per-voicecard AUX buses are left un-trimmed. Tune up/down if needed.
+constexpr float kMainMixHeadroomGain = 0.5f;   // -6 dB
+}  // namespace
+
 //==============================================================================
 ParvatiAudioProcessor::ParvatiAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
@@ -47,7 +59,7 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // on first run (process-once) so the Patch combo is populated out of the
     // box. Also ensures the USER save area exists. Non-fatal: a failure just
     // leaves the combo empty.
-    parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getUserPatchDir());
+    parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getTemplatesDir(), getUserPatchDir());
 }
 
 //==============================================================================
@@ -216,9 +228,9 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         for (int vc = 0; vc < SynthEngine::getNumParts(); ++vc)
         {
             const float* src = vcBuffers[(size_t) vc].getReadPointer (0);
-            mainBus.addFrom (0, 0, src, numSamples);                       // main L
+            mainBus.addFrom (0, 0, src, numSamples, kMainMixHeadroomGain); // main L (-6 dB headroom)
             if (mainChans > 1)
-                mainBus.addFrom (1, 0, src, numSamples);                   // main R
+                mainBus.addFrom (1, 0, src, numSamples, kMainMixHeadroomGain); // main R
         }
 
         // Master DC blocker (main bus only): the engine's filter+VCA are
@@ -457,6 +469,15 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     return true;
 }
 
+void ParvatiAudioProcessor::refreshApvtsFromCurrentPart()
+{
+    // The inverse of syncAllParamsToEngine for the CURRENT part: pull the part's
+    // engine storage into the APVTS. Called after a .parvati multi load (which
+    // writes all parts directly to engine storage) so the following
+    // syncAllParamsToEngine does not clobber Part 0 with stale APVTS values.
+    loadPartIntoApvts (currentPart_);
+}
+
 bool ParvatiAudioProcessor::loadProgramFile (const juce::File& file)
 {
     AmbikaProgram prog;
@@ -589,6 +610,15 @@ juce::File ParvatiAudioProcessor::getFactoryMultiDir()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
         .getChildFile ("Parvati/FACTORY_MULTI");
+}
+
+juce::File ParvatiAudioProcessor::getTemplatesDir()
+{
+    // Stock init templates (full-fidelity .parvati multis): Mono / Poly 6 /
+    // Poly 16 / Unison / Multitimbral. Created on first run by the factory
+    // installer. <appdata>/Parvati/TEMPLATES/.
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+        .getChildFile ("Parvati/TEMPLATES");
 }
 
 juce::File ParvatiAudioProcessor::getUserPatchDir()
@@ -768,6 +798,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_smoothing", uiSmoothing_, nullptr);
     tree.setProperty ("ui_oversampling", uiOversampling_, nullptr);
     tree.setProperty ("ui_language", uiLanguage_, nullptr);
+    tree.setProperty ("ui_voice_mode", uiVoiceMode_, nullptr);
     if (auto xml = tree.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -791,6 +822,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             uiSmoothing_ = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
             uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 1));
             uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
+            uiVoiceMode_ = static_cast<int> (tree.getProperty ("ui_voice_mode", 0));
             apvts.replaceState (tree);
         }
         syncAllParamsToEngine();
@@ -801,6 +833,11 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
         // latency probe + voices; the next prepareToPlay / processBlock reports
         // the matching latency).
         setOversamplingFactor (uiOversampling_);
+        // Restore the voice-capacity mode (Hardware=6 / Extended=16): re-applies
+        // it to the engine so a saved Extended state (or the default Hardware)
+        // is honoured after restore (covers headless / no-editor hosts).
+        engine_.setVoiceMode (uiVoiceMode_ == 1 ? VoiceMode::Extended
+                                                 : VoiceMode::Hardware);
     }
 }
 
@@ -809,6 +846,18 @@ void ParvatiAudioProcessor::setParameterSmoothing (bool smoothing)
 {
     uiSmoothing_ = smoothing;          // persist
     engine_.setParameterSmoothing (smoothing);
+}
+
+void ParvatiAudioProcessor::setUiVoiceMode (int mode)
+{
+    // Persist the voice-capacity mode and propagate it to the engine. The
+    // engine's setVoiceMode() flags a deferred voice-allocation rebuild (same
+    // release/acquire path as setPartVoiceAllocation), so Hardware (1 voice per
+    // voicecard => 6 total) / Extended (full block per voicecard => 16) take
+    // effect on the next processed block.
+    uiVoiceMode_ = mode;
+    engine_.setVoiceMode (mode == 1 ? VoiceMode::Extended
+                                    : VoiceMode::Hardware);
 }
 
 //==========================================================================

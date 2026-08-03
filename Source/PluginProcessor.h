@@ -102,6 +102,12 @@ public:
     void setUiOversampling (int n)      { uiOversampling_ = n; }
     void setUiLanguage (juce::String code) { uiLanguage_ = std::move (code); }
 
+    // Voice capacity mode: 0 = Hardware (6 voices), 1 = Extended (16 voices).
+    // Propagates to the engine (a deferred voice-allocation rebuild) + persists
+    // the pref. Default 0 (Hardware = faithful Ambika 6-voice polyphony).
+    int  getUiVoiceMode() const noexcept { return uiVoiceMode_; }
+    void setUiVoiceMode (int mode);
+
     // Enable/disable optional per-sample parameter smoothing (knob / automation
     // zipper-noise reduction). Propagates to all voices + persists the pref.
     void setParameterSmoothing (bool smoothing);
@@ -168,8 +174,20 @@ public:
     // keyrange / voice-allocation. A saved file re-loads to the same state.
     bool saveMultiFile (const juce::File& file);
     static juce::File getFactoryMultiDir();
+    // Stock init templates (Mono / Poly 6 / Poly 16 / Unison / Multitimbral) —
+    // full-fidelity .parvati multis. <appdata>/Parvati/TEMPLATES/.
+    static juce::File getTemplatesDir();
     // The name of the last loaded program (for the GUI title).
     juce::String getLoadedProgramName() const { return loadedProgramName_; }
+    // Set the loaded-program name (used by the template generator so each stock
+    // template's .parvati `name:` field matches its label).
+    void setLoadedProgramName (const juce::String& n) { loadedProgramName_ = n; }
+    // Re-load the CURRENT part's engine storage into the APVTS (the inverse of
+    // syncAllParamsToEngine). Used after a .parvati multi load, which writes all
+    // parts directly to engine storage: without this the subsequent
+    // syncAllParamsToEngine would clobber Part 0's loaded values with the stale
+    // APVTS (the part_select listener no-ops when already on Part 0).
+    void refreshApvtsFromCurrentPart();
 
 private:
     // ---- APVTS::Listener: a parameter changed (host / GUI / automation). ----
@@ -223,6 +241,7 @@ private:
     bool         uiTooltips_ { true };
     bool         uiSmoothing_ { false };   // default OFF -> bit-identical audio
     int          uiOversampling_ { 1 };    // 1 / 2 / 4; default 1 -> bit-identical
+    int          uiVoiceMode_ { 0 };       // 0=Hardware(6), 1=Extended(16); default 0
     juce::String uiLanguage_ { "auto" };   // editor chrome language (auto/en/fr)
 
     // Offline-render flag (host bounce). Updated by setNonRealtime() and kept

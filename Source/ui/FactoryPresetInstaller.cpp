@@ -47,6 +47,7 @@ bool dirHasPresets (const juce::File& dir, const char* wildcard)
 
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                                    const juce::File& factoryMultiDir,
+                                   const juce::File& templatesDir,
                                    const juce::File& userDir)
 {
     // Process-once: run the directory scan / extraction at most once. After the
@@ -60,6 +61,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
     {
         // Always provide a USER area for the user's own saved presets.
         userDir.createDirectory();
+        templatesDir.createDirectory();
 
         // Legacy cleanup (pre-release): the previous flat layout extracted to
         // Parvati/Factory and Parvati/FactoryMulti. Those are superseded by
@@ -83,7 +85,8 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // If BOTH new directories already carry presets, there is nothing to do.
         const bool proPresent = dirHasPresets (factoryDir,     "*.PRO");
         const bool mulPresent = dirHasPresets (factoryMultiDir, "*.MUL");
-        if (proPresent && mulPresent)
+        const bool tplPresent = dirHasPresets (templatesDir,   "*.parvati");
+        if (proPresent && mulPresent && tplPresent)
             return;
 
         for (int i = 0; i < FactoryPresets::namedResourceListSize; ++i)
@@ -112,6 +115,8 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                 const juce::String fname = name.substring (sep + 2);
                 if (token == "MULTI")
                     target = factoryMultiDir.getChildFile (fname);
+                else if (token == "TEMPLATE")
+                    target = templatesDir.getChildFile (fname);
                 else
                     target = factoryDir.getChildFile (token).getChildFile (fname);
             }
