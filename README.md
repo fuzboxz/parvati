@@ -100,6 +100,9 @@ Other CMake options: `PARVATI_ENABLE_TSAN`, `PARVATI_WARNINGS_AS_ERRORS`.
 
 ## Documentation
 
+- [`docs/VOICE_DESIGN.md`](docs/VOICE_DESIGN.md) — *The Design of the Ambika Digital Voice*: a deep,
+  illustrated walkthrough of the hybrid voice architecture (in the spirit of
+  *The Design of the Juno DCO*)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — codebase map & developer guide
 - [`docs/DSP_PORT_SPEC.md`](docs/DSP_PORT_SPEC.md) — the firmware→JUCE port spec
 - [`docs/UI_MODERNIZATION_PLAN.md`](docs/UI_MODERNIZATION_PLAN.md) — UI design notes
