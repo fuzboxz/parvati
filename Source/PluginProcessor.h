@@ -146,6 +146,15 @@ public:
     static juce::File getFactoryPatchDir();
     static juce::File getUserPatchDir();
 
+    // ---- Parvati-native preset format (.parvati, human-editable YAML) ----
+    // A full-fidelity format that carries Parvati-only settings (vca_curve,
+    // filter_card) and arp/seq that the Ambika .PRO/.MUL byte format drops.
+    // Coexists with .PRO/.MUL (kept for Ambika interop).
+    bool saveParvatiPatchFile (const juce::File& file);   // current part
+    bool loadParvatiPatchFile (const juce::File& file);
+    bool saveParvatiMultiFile (const juce::File& file);   // all 6 parts
+    bool loadParvatiMultiFile (const juce::File& file);
+
     // ---- Ambika .MUL (multi) support ----
     // Load a .MUL: configures all 6 Parts (patches + PartData + MIDI channel +
     // key zone + voice allocation from MultiData.part_mapping_[], and per-part

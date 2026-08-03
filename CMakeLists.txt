@@ -314,6 +314,31 @@ target_link_libraries(parvati_roundtrip_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Parvati-native YAML preset format verification. Proves the .parvati format
+# carries Parvati-only options (vca_curve/filter_card) + arp that .PRO drops.
+# Built by default. Run with: ./build/parvati_preset_test
+add_executable(parvati_preset_test
+    tests/parvati_preset_test.cpp
+)
+target_include_directories(parvati_preset_test PRIVATE Source)
+target_compile_features(parvati_preset_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_preset_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # Ambika .PRO patch-file support verification. Built by default.
 # Run with: ./build/parvati_patch_test
 add_executable(parvati_patch_test

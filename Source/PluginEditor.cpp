@@ -2,6 +2,7 @@
 
 #include "PluginEditor.h"
 #include "PatchFile.h"
+#include "ParvatiPreset.h"
 #include "ui/EnvelopeDisplay.h"
 #include "ui/ParamHelp.h"
 #include "ui/Translations.h"
@@ -850,6 +851,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     saveButton_.onClick = [this] { openSaveDialog(); };
     addAndMakeVisible (saveButton_);
 
+    // "Save Parvati": full-fidelity .parvati (YAML) — carries vca_curve /
+    // filter_card / arp that the Ambika .PRO byte format drops.
+    saveParvatiButton_.setButtonText (TRANS ("Save Parvati"));
+    saveParvatiButton_.onClick = [this] { openSaveParvatiDialog(); };
+    addAndMakeVisible (saveParvatiButton_);
+
     // Phase 4c: Undo / Redo buttons. The APVTS UndoManager records every
     // parameter change (knob drags, combo changes, getParameterAsValue writes,
     // and these actions' own reset/randomize). Disabled/enabled state is
@@ -1219,6 +1226,7 @@ void ParvatiEditor::applyChromeTranslations()
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load..."));
     saveButton_.setButtonText (TRANS ("Save..."));
+    saveParvatiButton_.setButtonText (TRANS ("Save Parvati"));
     undoButton_.setButtonText (TRANS ("Undo"));
     redoButton_.setButtonText (TRANS ("Redo"));
     settingsButton_.setButtonText (TRANS ("Settings"));
@@ -1265,6 +1273,7 @@ void ParvatiEditor::resized()
     redoButton_.setBounds (bar.removeFromLeft (54));
     loadButton_.setBounds (bar.removeFromRight (76));
     saveButton_.setBounds (bar.removeFromRight (76));
+    saveParvatiButton_.setBounds (bar.removeFromRight (110));
     patchNameLabel_.setBounds (bar.removeFromRight (180));
     patchCombo_.setBounds (bar);
 
@@ -1330,12 +1339,13 @@ void ParvatiEditor::populateFactoryPatches()
     userDir.createDirectory();
     addFiles (userDir, "*.PRO", "[User] ", true);
     addFiles (userDir, "*.MUL", "[User Multi] ", false);
+    addFiles (userDir, "*.parvati", "[Parvati] ", false);
 }
 
 void ParvatiEditor::openLoadDialog()
 {
-    fileChooser_ = std::make_unique<juce::FileChooser> ("Load Ambika Patch / Multi (.PRO / .MUL)",
-                                                       juce::File(), "*.PRO;*.MUL");
+    fileChooser_ = std::make_unique<juce::FileChooser> ("Load Patch / Multi (.PRO / .MUL / .parvati)",
+                                                       juce::File(), "*.PRO;*.MUL;*.parvati");
     const auto flags = juce::FileBrowserComponent::openMode
                      | juce::FileBrowserComponent::canSelectFiles;
     fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
@@ -1347,18 +1357,16 @@ void ParvatiEditor::openLoadDialog()
 
 void ParvatiEditor::openSaveDialog()
 {
-    // Default name = the current patch name (or "Parvati"), in the user's preset
-    // area (USER/) so saved patches show up in the Patch combo under [User].
-    // The chooser enforces the .PRO extension and warns on overwrite. Reuses the
-    // editor's single fileChooser_ slot (mutually exclusive with Load, which is
-    // fine for a modal-ish save).
+    // Save the CURRENT part as an Ambika .PRO (byte-faithful; shareable with
+    // Ambika hardware). For a full-fidelity Parvati patch (incl. vca_curve /
+    // filter_card), use "Save Parvati". Defaults to the user's preset area.
     auto defaultName = processorRef_.getLoadedProgramName();
     if (defaultName.isEmpty())
         defaultName = "Parvati";
     const juce::File defaultDir = processorRef_.getUserPatchDir();
     defaultDir.createDirectory();   // ensure USER/ exists
     const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".PRO"));
-    fileChooser_ = std::make_unique<juce::FileChooser> ("Save Parvati Patch (.PRO)",
+    fileChooser_ = std::make_unique<juce::FileChooser> ("Save Ambika Patch (.PRO)",
                                                        defaultFile, "*.PRO");
     const auto flags = juce::FileBrowserComponent::saveMode
                      | juce::FileBrowserComponent::canSelectFiles
@@ -1371,6 +1379,38 @@ void ParvatiEditor::openSaveDialog()
             {
                 patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
                                          juce::dontSendNotification);
+                populateFactoryPatches();
+            }
+        }
+        fileChooser_ = nullptr;
+    });
+}
+
+void ParvatiEditor::openSaveParvatiDialog()
+{
+    // Save a full-fidelity Parvati-native patch (.parvati, YAML) that carries
+    // EVERYTHING — including vca_curve / filter_card / arp, which the Ambika
+    // .PRO byte format drops. Defaults to the user's preset area.
+    auto defaultName = processorRef_.getLoadedProgramName();
+    if (defaultName.isEmpty())
+        defaultName = "Parvati";
+    const juce::File defaultDir = processorRef_.getUserPatchDir();
+    defaultDir.createDirectory();
+    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".parvati"));
+    fileChooser_ = std::make_unique<juce::FileChooser> ("Save Parvati Patch (.parvati)",
+                                                       defaultFile, "*.parvati");
+    const auto flags = juce::FileBrowserComponent::saveMode
+                     | juce::FileBrowserComponent::canSelectFiles
+                     | juce::FileBrowserComponent::warnAboutOverwriting;
+    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
+        if (fc.getResults().size() > 0)
+        {
+            const auto f = fc.getResult().withFileExtension (".parvati");
+            if (processorRef_.saveParvatiPatchFile (f))
+            {
+                patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
+                                         juce::dontSendNotification);
+                populateFactoryPatches();
             }
         }
         fileChooser_ = nullptr;
@@ -1379,15 +1419,39 @@ void ParvatiEditor::openSaveDialog()
 
 void ParvatiEditor::applyPatchFile (const juce::File& f)
 {
-    // .MUL -> multitimbral multi (all 6 Parts); .PRO -> single program.
-    const bool isMulti = f.hasFileExtension (".mul");
-    const bool ok = isMulti ? processorRef_.loadMultiFile (f)
-                            : processorRef_.loadProgramFile (f);
+    // .MUL -> multitimbral multi (all 6 Parts); .PRO -> single program;
+    // .parvati -> Parvati-native YAML (patch or multi, sniffed by format:).
+    bool ok = false;
+    bool isMulti = false;
+
+    if (f.hasFileExtension (".parvati"))
+    {
+        juce::String text;
+        if (juce::FileInputStream in (f); in.openedOk())
+            text = in.readEntireStreamAsString();
+        const juce::String fmt = parvati::preset::detectParvatiFormat (text);
+        if (fmt == parvati::preset::kFormatMulti)
+        {
+            isMulti = true;
+            ok = processorRef_.loadParvatiMultiFile (f);
+        }
+        else
+        {
+            ok = processorRef_.loadParvatiPatchFile (f);
+        }
+    }
+    else
+    {
+        isMulti = f.hasFileExtension (".mul");
+        ok = isMulti ? processorRef_.loadMultiFile (f)
+                     : processorRef_.loadProgramFile (f);
+    }
+
     if (ok)
     {
         patchNameLabel_.setText (processorRef_.getLoadedProgramName(),
                                  juce::dontSendNotification);
-        // A .MUL rewrites every part's channel / key zone / voice allocation,
+        // A multi rewrites every part's channel / key zone / voice allocation,
         // so force the Multi page to re-read even though the edited part is
         // unchanged.
         if (isMulti && multiPage_ != nullptr)
@@ -1398,7 +1462,7 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
 bool ParvatiEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
     for (const auto& fn : files)
-        if (fn.endsWithIgnoreCase (".pro") || fn.endsWithIgnoreCase (".mul"))
+        if (fn.endsWithIgnoreCase (".pro") || fn.endsWithIgnoreCase (".mul") || fn.endsWithIgnoreCase (".parvati"))
             return true;
     return false;
 }
@@ -1408,7 +1472,7 @@ void ParvatiEditor::filesDropped (const juce::StringArray& files, int, int)
     for (const auto& fn : files)
     {
         juce::File f (fn);
-        if (f.hasFileExtension (".pro") || f.hasFileExtension (".mul"))
+        if (f.hasFileExtension (".pro") || f.hasFileExtension (".mul") || f.hasFileExtension (".parvati"))
         {
             applyPatchFile (f);
             break;

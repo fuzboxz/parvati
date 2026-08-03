@@ -4,6 +4,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "ParvatiPreset.h"
 #include "PatchFile.h"
 #include "ui/FactoryPresetInstaller.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
@@ -678,6 +679,64 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
     multi.ok = true;
 
     return writeAmbikaMultiFile (file, multi);
+}
+
+//==========================================================================
+// Parvati-native preset format (.parvati) — full-fidelity YAML.
+bool ParvatiAudioProcessor::saveParvatiPatchFile (const juce::File& file)
+{
+    const juce::String text = parvati::preset::serializeParvatiPatch (*this);
+    juce::TemporaryFile temp (file);
+    {
+        juce::FileOutputStream out (temp.getFile());
+        if (! out.openedOk() || ! out.writeText (text, false, false, "\n"))
+            return false;
+        out.flush();
+    }
+    return temp.overwriteTargetFileWithTemporary();
+}
+
+bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
+{
+    juce::String text;
+    {
+        juce::FileInputStream in (file);
+        if (! in.openedOk()) return false;
+        text = in.readEntireStreamAsString();
+    }
+    if (! parvati::preset::applyParvatiPatch (*this, text))
+        return false;
+    // Derive a display name from the file (the in-document name is applied via
+    // the loaded-program title separately by the editor).
+    loadedProgramName_ = file.getFileNameWithoutExtension();
+    return true;
+}
+
+bool ParvatiAudioProcessor::saveParvatiMultiFile (const juce::File& file)
+{
+    const juce::String text = parvati::preset::serializeParvatiMulti (*this);
+    juce::TemporaryFile temp (file);
+    {
+        juce::FileOutputStream out (temp.getFile());
+        if (! out.openedOk() || ! out.writeText (text, false, false, "\n"))
+            return false;
+        out.flush();
+    }
+    return temp.overwriteTargetFileWithTemporary();
+}
+
+bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
+{
+    juce::String text;
+    {
+        juce::FileInputStream in (file);
+        if (! in.openedOk()) return false;
+        text = in.readEntireStreamAsString();
+    }
+    if (! parvati::preset::applyParvatiMulti (*this, text))
+        return false;
+    loadedProgramName_ = file.getFileNameWithoutExtension();
+    return true;
 }
 
 //==============================================================================

@@ -271,6 +271,7 @@ private:
     void populateFactoryPatches();
     void openLoadDialog();
     void openSaveDialog();
+    void openSaveParvatiDialog();
     void applyPatchFile (const juce::File&);
 
     // Re-apply every editor-chrome string through TRANS() (buttons, captions,
@@ -308,6 +309,7 @@ private:
     juce::ComboBox   patchCombo_;
     juce::TextButton loadButton_  { "Load .PRO..." };
     juce::TextButton saveButton_  { "Save..." };
+    juce::TextButton saveParvatiButton_ { "Save Parvati" };   // full-fidelity .parvati (YAML)
     juce::TextButton undoButton_  { "Undo" };   // top-bar Undo (Cmd/Ctrl+Z)
     juce::TextButton redoButton_  { "Redo" };   // top-bar Redo (Cmd/Ctrl+Shift+Z / Y)
     juce::Label      patchNameLabel_;
