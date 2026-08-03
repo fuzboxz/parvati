@@ -29,6 +29,13 @@
 static constexpr int kNumParts  = 6;
 static constexpr int kNumVoices = 16;   // plugin exposes 16 for polyphony headroom
 
+// Voice capacity mode. Hardware = each of the 6 voicecards contributes ONE
+// voice (faithful to the Ambika: 6-note max polyphony total across Parts).
+// Extended = each voicecard contributes its full block of Parvati voice slots
+// (vc0={0,1,2}..vc5={14,15} => up to 16 voices) for polyphony headroom.
+// Default = Hardware (6); the user opts into Extended (16) explicitly.
+enum class VoiceMode { Hardware = 0, Extended = 1 };
+
 // One multitimbral Part. The Arpeggiator/Sesequencer objects ARE the per-part
 // storage for those settings (edits route to the current Part's objects).
 //
@@ -220,6 +227,14 @@ public:
     void setPartVoiceAllocation (int part, uint8_t bitmask);
     uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[part].voiceAllocation : 0; }
 
+    // Voice capacity mode (Hardware=6 / Extended=16). Sets the mode + flags a
+    // deferred voice-allocation rebuild (same release/acquire path as
+    // setPartVoiceAllocation). Plain (non-atomic): published to the audio thread
+    // via the allocationDirty_ fence, exactly like polyphonyMode/voiceAllocation.
+    void setVoiceMode (VoiceMode m) { voiceMode_ = static_cast<int> (m); markAllocationDirty(); }
+    VoiceMode getVoiceMode() const noexcept { return static_cast<VoiceMode> (voiceMode_); }
+    int       getVoiceModeInt() const noexcept { return voiceMode_; }
+
     // Advance the transport + per-part arp/sequencer for one audio block.
     void processTransport (juce::MidiBuffer& midi, int numSamples, double bpm, bool isPlaying);
 
@@ -262,6 +277,11 @@ private:
     bool wasPlaying_ = false;
     bool partsSeeded_ = false;   // seed Part storage from the init patch once
     std::atomic<bool> allocationDirty_ { false };   // set by message thread; serviced on the audio thread
+
+    // Voice capacity mode: 0 = Hardware (6 voices, 1 per voicecard),
+    // 1 = Extended (16 voices, full block per voicecard). Published to the audio
+    // thread through allocationDirty_ (same fence as polyphonyMode/voiceAllocation).
+    int voiceMode_ { static_cast<int> (VoiceMode::Hardware) };
 
     float bendRangeSemitones_ = 2.f;   // per-voice pitch-bend range (MPE default)
 

@@ -20,15 +20,16 @@ SynthEngine::SynthEngine()
     addSound (new AmbikaSound());
     setNoteStealingEnabled (true);  // we steal within a Part anyway
 
-    // Default voice allocation: the firmware factory multi
-    // (controller/multi.cc init_settings) ships with only 2 active Parts —
-    // Part0 = 0x15 (voicecards 0,2,4) and Part1 = 0x2a (voicecards 1,3,5);
-    // Parts 2-5 = 0 (no voices). rebuildVoiceAllocation() maps each voicecard
-    // to a Parvati voice block (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8}
-    // vc3={9,10,11} vc4={12,13} vc5={14,15}) with first-wins across Parts.
-    // Channels 3-6 are therefore silent until the user assigns voicecards
-    // (opt-in, via the Multi page) — matching the hardware default.
-    constexpr uint8_t kInitVoiceAllocation[kNumParts] = { 0x15, 0x2a, 0, 0, 0, 0 };
+    // Default voice allocation: SINGLE-PART — all 6 voicecards on Part 0, so a
+    // player on MIDI channel 1 gets the full hardware polyphony out of the box
+    // (6 voices in VoiceMode::Hardware, 16 in Extended). This differs from the
+    // firmware factory multi (controller/multi.cc: Part0=0x15, Part1=0x2a, a
+    // 3+3 multitimbral split), which remains available by loading a factory
+    // .MUL or assigning voicecards per Part via the Multi page.
+    // rebuildVoiceAllocation() maps each voicecard to a Parvati voice block
+    // (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13}
+    // vc5={14,15}) with first-wins across Parts.
+    constexpr uint8_t kInitVoiceAllocation[kNumParts] = { 0x3f, 0, 0, 0, 0, 0 };
     for (int p = 0; p < kNumParts; ++p)
     {
         auto& part = parts_[p];
@@ -236,6 +237,13 @@ namespace
 
 void SynthEngine::rebuildVoiceAllocation()
 {
+    // Hardware mode = 1 voice per voicecard (faithful Ambika: 6-note max total);
+    // Extended mode = the full block per voicecard (vc0={0,1,2}.. => up to 16).
+    const bool extended = (voiceMode_ == static_cast<int> (VoiceMode::Extended));
+    const auto slotsPerCard = [extended] (int vc)
+    {
+        return extended ? kVcBlockSize[vc] : 1;
+    };
     bool claimed[kNumParts] = {};   // voicecard already taken by an earlier Part
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -248,7 +256,7 @@ void SynthEngine::rebuildVoiceAllocation()
             if (claimed[vc])          // first-wins (firmware AssignVoices)
                 continue;
             claimed[vc] = true;
-            for (int k = 0; k < kVcBlockSize[vc]; ++k)
+            for (int k = 0; k < slotsPerCard (vc); ++k)
                 part.voiceIndices.push_back (kVcBlockStart[vc] + k);
         }
     }
@@ -268,9 +276,9 @@ void SynthEngine::rebuildVoiceAllocation()
         {
             if (claimed[vc]) continue;          // only truly free blocks
             claimed[vc] = true;
-            for (int k = 0; k < kVcBlockSize[vc]; ++k)
+            for (int k = 0; k < slotsPerCard (vc); ++k)
                 parts_[p].voiceIndices.push_back (kVcBlockStart[vc] + k);
-            partnerVoices += kVcBlockSize[vc];
+            partnerVoices += slotsPerCard (vc);
         }
     }
     // Re-tag each voice with its (possibly changed) Part.
@@ -628,6 +636,17 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     // rebuildVoiceAllocation() directly, but they run before audio starts.)
     if (allocationDirty_.exchange (false, std::memory_order_acq_rel))
     {
+        // Graceful engine switch: drop any sounding voices BEFORE reassigning
+        // slots. A voice slot may move to a different Part (or shrink away in
+        // VoiceMode::Hardware), so a live voice could otherwise end up orphaned
+        // or re-tagged to the wrong Part (stuck note / wrong patch / level
+        // glitch). stopNote(.,false) is a hard kill (Kill + clearCurrentNote +
+        // FIFO clear) — the clean drop requested for voice-mode / allocation /
+        // polyphony changes.
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->stopNote (0.0f, false);
+
         for (int p = 0; p < kNumParts; ++p)
             parts_[p].polyphonyMode = static_cast<uint8_t> (juce::jlimit (0, 4, (int) parts_[p].partBytes[15]));
         rebuildVoiceAllocation();
