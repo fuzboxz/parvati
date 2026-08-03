@@ -173,6 +173,49 @@ int main()
             }
         }
 
+        // ----------------------------------------------------------------------
+        // [8] Snapshot dump (dev visual sanity check). Gated on the
+        // PARVATI_DUMP_SHOTS env var (a directory path); off by default so a
+        // normal run writes nothing. Renders the editor + each tab offscreen via
+        // paintEntireComponent (no display / no Screen-Recording permission).
+        // ----------------------------------------------------------------------
+        if (const char* dirEnv = std::getenv ("PARVATI_DUMP_SHOTS"))
+        {
+            const juce::File dir { juce::String { dirEnv } };
+            dir.createDirectory();
+            const auto dump = [&dir] (juce::Component* c, const juce::String& name)
+            {
+                juce::Image img (juce::Image::RGB, c->getWidth(), c->getHeight(), true);
+                {
+                    juce::Graphics g (img);
+                    g.fillAll (juce::Colour (0xff202020));
+                    c->paintEntireComponent (g, false);
+                }
+                juce::FileOutputStream os (dir.getChildFile (name + ".png"));
+                juce::PNGImageFormat().writeImageToStream (img, os);
+                os.flush();
+                std::printf ("  shot: %s.png  (%dx%d)\n", name.toRawUTF8(), c->getWidth(), c->getHeight());
+            };
+            std::printf ("\n[8] Snapshot dump -> %s\n", dir.getFullPathName().toRawUTF8());
+            dump (ed, "00_overview");
+            if (tabs != nullptr)
+            {
+                for (int i = 0; i < numTabs; ++i)
+                {
+                    tabs->setCurrentTabIndex (i, false);
+                    // Force the tab's page to lay out at the tab width before painting
+                    // (headless: JUCE may defer the resize otherwise).
+                    if (auto* content = tabs->getTabContentComponent (i))
+                        if (auto* vp = dynamic_cast<juce::Viewport*> (content))
+                            if (auto* page = dynamic_cast<ParamPage*> (vp->getViewedComponent()))
+                                page->reflowToWidth (juce::jmax (400, vp->getWidth() > 0 ? vp->getWidth() : 940));
+                    const juce::String nm = juce::String (i + 1) + "_"
+                        + tabs->getTabNames()[i].replaceCharacters (" /", "__");
+                    dump (ed, nm);
+                }
+            }
+        }
+
         processor.editorBeingDeleted (ed);
         delete ed;
     }
