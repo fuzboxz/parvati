@@ -130,6 +130,20 @@ void KeyboardView::paint (juce::Graphics& g)
 
 void KeyboardView::resized()
 {
+    // Span the full width: size one white key so the fixed range [36,96]
+    // fills the component. Without this the MidiKeyboardComponent left-aligns
+    // the keys at its default width and leaves an empty block on the right.
+    const int lo = 36, hi = 96;
+    int whiteKeys = 0;
+    for (int n = lo; n <= hi; ++n)
+    {
+        const int d = n % 12;
+        if (d == 0 || d == 2 || d == 4 || d == 5 || d == 7 || d == 9 || d == 11)
+            ++whiteKeys;
+    }
+    if (whiteKeys > 0 && getWidth() > 0)
+        keyboard_->setKeyWidth (static_cast<float> (getWidth()) / static_cast<float> (whiteKeys));
+    keyboard_->setScrollButtonsVisible (false);   // keys fill the width: nothing to scroll
     keyboard_->setBounds (getLocalBounds());
 }
 

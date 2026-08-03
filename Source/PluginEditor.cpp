@@ -5,6 +5,7 @@
 #include "ParvatiPreset.h"
 #include "ui/EnvelopeDisplay.h"
 #include "ui/ParamHelp.h"
+#include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
@@ -82,6 +83,8 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                    juce::Slider::TextBoxBelow);
         slider_->setTextBoxIsEditable (true);
+        if (d.isSequencer)   // compact step pots: a small text box so the rotary dominates
+            slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 30, 12);
         addAndMakeVisible (*slider_);
         sliderAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor.getApvts(), d.paramID, *slider_);
@@ -314,8 +317,8 @@ void ParamPage::configureGroupLayouts()
             // Dense step grid: 16 (or 33) small cells laid in 8 columns.
             g.stepGrid = true;
             g.internalCols = 8;
-            g.cellW = 60;
-            g.cellH = 50;
+            g.cellW = 50;
+            g.cellH = 46;
         }
         else if (g.name.startsWith ("Mod ") || g.name.startsWith ("Modifier "))
         {
@@ -977,6 +980,22 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     });
     addAndMakeVisible (*keyboardView_);
     keyboardView_->refresh();
+
+    // ---- Pitch + Mod wheels (left of the keyboard) ----
+    wheels_ = std::make_unique<WheelsComponent>();
+    wheels_->onPitch = [this] (float v) {
+        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
+        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int pv = juce::jlimit (0, 16383, juce::roundToInt ((v * 0.5f + 0.5f) * 16383.0f));
+        processorRef_.addMidiEvent (juce::MidiMessage::pitchWheel (ch, pv));
+    };
+    wheels_->onMod = [this] (float v) {
+        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
+        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int mv = juce::jlimit (0, 127, juce::roundToInt (v * 127.0f));
+        processorRef_.addMidiEvent (juce::MidiMessage::controllerEvent (ch, 1, mv));   // CC1 = mod wheel
+    };
+    addAndMakeVisible (*wheels_);
     // Computer-keyboard (musical-typing) play is a STANDALONE-only affordance.
     // In a plugin host the DAW owns the computer keyboard (e.g. Ableton's
     // "Computer MIDI Keyboard") and routes it as normal MIDI, so capturing keys
@@ -1260,9 +1279,15 @@ void ParvatiEditor::resized()
 {
     auto area = getLocalBounds();
 
-    // ---- Bottom: virtual keyboard (full width) ----
+    // ---- Bottom: pitch/mod wheels (left) + virtual keyboard (fills width) ----
+    constexpr int kWheelsW = 76;
     if (keyboardView_ != nullptr)
-        keyboardView_->setBounds (area.removeFromBottom (kKeyboardH));
+    {
+        auto bottomStrip = area.removeFromBottom (kKeyboardH);
+        if (wheels_ != nullptr)
+            wheels_->setBounds (bottomStrip.removeFromLeft (kWheelsW));
+        keyboardView_->setBounds (bottomStrip);
+    }
 
     // ---- Top: patch/part bar + settings button ----
     auto bar = area.removeFromTop (kBarHeight).reduced (6, 4);

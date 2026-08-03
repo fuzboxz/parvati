@@ -20,6 +20,7 @@
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
 #include "ui/KeyboardView.h"
+#include "ui/WheelsComponent.h"
 #include "ui/ParvatiLookAndFeel.h"
 #include "ui/SettingsPanel.h"
 #include "ui/ThemeManager.h"
@@ -332,7 +333,8 @@ private:
     juce::TextButton settingsButton_ { "Settings" };
 
     // Virtual keyboard (bottom strip) + voice meter (status strip).
-    std::unique_ptr<KeyboardView> keyboardView_;
+    std::unique_ptr<KeyboardView>    keyboardView_;
+    std::unique_ptr<WheelsComponent> wheels_;   // pitch + mod wheels (left of keyboard)
     std::unique_ptr<VoiceMeter>   voiceMeter_;
 
     // Keyboard latching state: notes currently lit on the virtual keyboard so
