@@ -547,6 +547,33 @@ target_link_libraries(parvati_polyphony_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Controller-modulation verification (mod wheel CC1 / breath CC2 / foot CC4 /
+# channel pressure): proves the global controllers + MPE per-voice expression are
+# wired to their mod-matrix sources and are AUDIBLE when routed to cutoff.
+# Replaces the prior throwaway mod-wheel/MPE smoke binaries. Built by default.
+# Run with: ./build/parvati_controller_mod_test
+add_executable(parvati_controller_mod_test
+    tests/controller_mod_test.cpp
+)
+target_include_directories(parvati_controller_mod_test PRIVATE Source)
+target_compile_features(parvati_controller_mod_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_controller_mod_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # Phase-4 verification (not shipped): headless editor instantiation + coverage.
 # Confirms createEditor() is non-null, every one of the 104 descriptors has a
 # control + attachment, there are exactly 6 tab pages, the default size is
