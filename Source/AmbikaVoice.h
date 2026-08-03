@@ -147,7 +147,6 @@ public:
     // (MOD_SRC_PITCH_BEND / AFTERTOUCH / EXPRESSION) so user routings
     // (Pitch Bend -> osc, Aftertouch -> cutoff, ...) work per-voice. CC74
     // (MPE "slide") maps to MOD_SRC_EXPRESSION.
-    void setMpeBendRangeSemitones (float semis) { mpeBendRangeSemitones_ = semis; applyMpeToVoice(); }
     void setMpePitchBendSemitones (float semis) { mpePitchBendSemitones_ = semis; applyMpeToVoice(); }
     void setMpePressure           (float p01)   { mpePressure_ = p01;            applyMpeToVoice(); }
     void setMpeSlide              (float s01)   { mpeSlide_ = s01;               applyMpeToVoice(); }
@@ -162,11 +161,6 @@ public:
     // the matching optional aux bus (and sums into the main stereo mix).
     int  getVoiceCard() const noexcept { return voiceCard_; }
     void setVoiceCard (int vc) noexcept { voiceCard_ = vc; }
-
-    // Engine-only: force the one-time init (loads the init patch) + read its
-    // 112 patch bytes (used to seed each Part's default patch storage).
-    void forceInit() { ensureInitialized(); }
-    void copyPatchBytes (uint8_t* dst) { ensureInitialized(); std::memcpy (dst, voice_.mutable_patch_data(), 112); }
 
 private:
     // One-time engine init (loads the faithful init patch). The audible

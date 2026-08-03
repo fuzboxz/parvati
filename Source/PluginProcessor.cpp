@@ -508,7 +508,7 @@ bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
 juce::File ParvatiAudioProcessor::getFactoryPatchDir()
 {
     // Per-user app-data location (user-writable on macOS, unlike
-    // ~/Library/Audio/Presets which is often root-owned). ~//Library/Application
+    // ~/Library/Audio/Presets which is often root-owned). ~/Library/Application
     // Support/Parvati/Factory.
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
         .getChildFile ("Parvati/Factory");

@@ -142,18 +142,10 @@ public:
     void setParameterSmoothing (bool smoothing);
 
     // ---- MPE / per-voice expression ----
-    // Per-voice pitch-bend range in semitones. Default 2 = the MPE standard
-    // per-note bend range. Applied uniformly to every voice (raised for wider
-    // non-MPE bends). The engine's handlePitchWheel converts the host wheel to
-    // semitones with this range before routing per-voice.
-    void setBendRangeSemitones (float semis)
-    {
-        bendRangeSemitones_ = semis;
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->setMpeBendRangeSemitones (semis);
-    }
-    float getBendRangeSemitones() const noexcept { return bendRangeSemitones_; }
+    // Per-voice pitch-bend range in semitones, fixed at 2 = the MPE standard
+    // per-note bend range (AmbikaVoice::mpeBendRangeSemitones_ default). Not
+    // exposed as a parameter; handlePitchWheel uses it to convert the host wheel
+    // to semitones before routing per-voice.
 
     // Global (all voices): optional FILTER oversampling (1/2/4). Default 1 keeps
     // the audio path bit-identical. Each voice defers the rebuild to its audio
@@ -179,7 +171,6 @@ public:
     void setArpOctave (uint8_t oct)     { parts_[currentPart_].arp.setOctave (oct); }
     void setArpPattern (uint8_t pat)    { parts_[currentPart_].arp.setPattern (pat); }
     void setArpResolution (uint8_t res) { parts_[currentPart_].arp.setResolution (res); }
-    void setSequencerMode (uint8_t mode) { parts_[currentPart_].seq.setMode (mode); }
     void setSequenceLength (int i, uint8_t len) { parts_[currentPart_].seq.setSequenceLength (i, len); }
     void setSequenceDataByte (int offset, uint8_t value) { parts_[currentPart_].seq.setSequenceDataByte (offset, value); }
 
