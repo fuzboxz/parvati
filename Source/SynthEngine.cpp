@@ -2,6 +2,8 @@
 
 #include "SynthEngine.h"
 
+#include "ParameterLayout.h"   // getControllerInitPatchBytes (audible init patch)
+
 SynthEngine::SynthEngine()
 {
     for (int i = 0; i < kNumVoices; ++i)
@@ -90,18 +92,40 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
 
     if (! partsSeeded_)
     {
-        if (auto* v0 = getAmbikaVoice (0))
+        // Seed EVERY Part with the CONTROLLER init patch (Part::InitPatch(DEFAULT):
+        // osc1=Saw, audible) + the firmware init_part PartData (volume 120; arp
+        // octave 1 / resolution 10; seq length 16; POLY), and mirror those arp/seq
+        // values into the live per-part Arpeggiator/Sequencer OBJECTS so
+        // loadPartIntoApvts (which reads arp/seq from the objects) sees consistent
+        // state. Previously this seeded the VOICECARD silence fallback
+        // (osc1=None, inaudible) for Parts 1..5 and only set Part 0 via the APVTS
+        // sync, so a freshly-loaded plugin left Parts 1..5 silent until visited --
+        // incorrect vs the firmware (init_part, part.cc:83-100).
+        const uint8_t* const initPatch = getControllerInitPatchBytes();
+        for (int p = 0; p < kNumParts; ++p)
         {
-            v0->forceInit();
-            uint8_t initPatch[112];
-            v0->copyPatchBytes (initPatch);
-            for (int p = 0; p < kNumParts; ++p)
-            {
-                std::memcpy (parts_[p].patchBytes.data(), initPatch, 112);
-                std::fill (parts_[p].partBytes.begin(), parts_[p].partBytes.end(), 0);
-                parts_[p].partBytes[0]  = 120;   // init PartData volume (controller init_part, part.cc:85)
-                parts_[p].partBytes[15] = 1;     // polyphony_mode = POLY (firmware init_part; matches the Part field default so pushPartBytesToVoices' mode-sync stays consistent)
-            }
+            std::memcpy (parts_[p].patchBytes.data(), initPatch, 112);
+            std::fill (parts_[p].partBytes.begin(), parts_[p].partBytes.end(), 0);
+            parts_[p].partBytes[0]  = 120;   // volume (init_part)
+            parts_[p].partBytes[7]  = 0;     // arp / sequencer mode
+            parts_[p].partBytes[8]  = 0;     // arp direction
+            parts_[p].partBytes[9]  = 1;     // arp octave range (init_part)
+            parts_[p].partBytes[10] = 0;     // arp pattern
+            parts_[p].partBytes[11] = 10;    // arp resolution / divider (init_part => 1/16)
+            parts_[p].partBytes[12] = 16;    // sequence length 1
+            parts_[p].partBytes[13] = 16;    // sequence length 2
+            parts_[p].partBytes[14] = 16;    // sequence length 3
+            parts_[p].partBytes[15] = 1;     // polyphony_mode = POLY
+            // Mirror into the live objects (the authoritative arp/seq state read
+            // by loadPartIntoApvts / saveMultiFile).
+            parts_[p].arp.setMode (0);              parts_[p].seq.setMode (0);
+            parts_[p].arp.setDirection (0);
+            parts_[p].arp.setOctave (1);
+            parts_[p].arp.setPattern (0);
+            parts_[p].arp.setResolution (10);
+            parts_[p].seq.setSequenceLength (0, 16);
+            parts_[p].seq.setSequenceLength (1, 16);
+            parts_[p].seq.setSequenceLength (2, 16);
         }
         partsSeeded_ = true;
     }

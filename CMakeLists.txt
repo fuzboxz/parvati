@@ -352,6 +352,32 @@ target_link_libraries(parvati_patch_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Part-state fidelity: arp/sequencer data-loss regression (.MUL save from a
+# non-current part) + all-parts-audible-init. Built by default.
+# Run with: ./build/parvati_partstate_test
+add_executable(parvati_partstate_test
+    tests/partstate_test.cpp
+)
+target_include_directories(parvati_partstate_test PRIVATE Source)
+target_compile_features(parvati_partstate_test PRIVATE cxx_std_17)
+target_compile_definitions(parvati_partstate_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(parvati_partstate_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # Step-sequencer verification. Built by default.
 # Run with: ./build/parvati_sequencer_test
 add_executable(parvati_sequencer_test

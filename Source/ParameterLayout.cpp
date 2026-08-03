@@ -188,6 +188,11 @@ uint8_t initPartByte (int offset)
 }
 }  // namespace
 
+// External linkage (outside the anonymous namespace above) so the engine and
+// processor can link it. InitPatch::bytes lives in the anonymous namespace but
+// is reachable from anywhere in this TU.
+const uint8_t* getControllerInitPatchBytes() { return InitPatch::bytes; }
+
 const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
 {
     static const auto kOscShapes      = makeOscShapes();

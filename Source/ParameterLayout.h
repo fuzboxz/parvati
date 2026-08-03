@@ -41,6 +41,12 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors();
 // Build the APVTS ParameterLayout from the descriptor table.
 juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout();
 
+// The controller-side init patch (Part::InitPatch(DEFAULT)) as raw Patch bytes
+// (112). Used to seed every Part to the audible factory patch on prepare so a
+// freshly-loaded plugin does not leave Parts 1..5 on the silent voicecard
+// fallback. Pointer storage is static constexpr (valid for the program lifetime).
+const uint8_t* getControllerInitPatchBytes();
+
 // Convert an APVTS raw (float) value to the faithful Patch/Part byte for a
 // given descriptor (clamped to range; signed values cast to int8).
 uint8_t parvatiValueToPatchByte (const PatchParamDescriptor& descriptor, float rawValue);

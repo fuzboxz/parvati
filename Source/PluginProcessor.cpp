@@ -620,23 +620,34 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
                 }
             }
 
-            // Arp settings are stored in the Arpeggiator object (not a patch/
-            // part descriptor byte), so the loop above skips them -- but a .MUL
-            // DOES carry them in PartData offsets 7..11 (the exact inverse of
-            // loadMultiFile's read). Write them from the live Arpeggiator so the
-            // .MUL round-trips arp faithfully (a .MUL is the full-state format).
-            const auto& arp = engine_.getPart (i).arp;
-            mp.part[7]  = static_cast<uint8_t> (arp.getMode());
-            mp.part[8]  = static_cast<uint8_t> (arp.getDirection());
-            mp.part[9]  = static_cast<uint8_t> (arp.getOctave());
-            mp.part[10] = static_cast<uint8_t> (arp.getPattern());
-            mp.part[11] = static_cast<uint8_t> (arp.getResolution());
         }
         else
         {
             // Non-current parts: read straight from engine storage.
             mp.patch = engine_.getPart (i).patchBytes;
             mp.part  = engine_.getPart (i).partBytes;
+        }
+
+        // Arp (PartData 7..11) and sequencer (12..14 lengths, 16..79 step
+        // bytes) live in the per-part Arpeggiator/Sequencer OBJECTS -- the
+        // engine setters do not mirror them into partBytes, and the descriptor
+        // loop above skips isArp. Serialize them from the live objects for EVERY
+        // part (the exact inverse of loadMultiFile's read at ~483-495), making
+        // saveMultiFile authoritative regardless of how the patch/part bytes
+        // above were sourced. Without this, non-current parts' arp/seq edits
+        // were lost on save.
+        {
+            const auto& p = engine_.getPart (i);
+            mp.part[7]  = p.arp.getMode();
+            mp.part[8]  = p.arp.getDirection();
+            mp.part[9]  = p.arp.getOctave();
+            mp.part[10] = p.arp.getPattern();
+            mp.part[11] = p.arp.getResolution();
+            mp.part[12] = p.seq.getSequenceLength (0);
+            mp.part[13] = p.seq.getSequenceLength (1);
+            mp.part[14] = p.seq.getSequenceLength (2);
+            for (int o = 0; o < 64; ++o)
+                mp.part[(size_t) (16 + o)] = p.seq.getSequenceDataByte (o);
         }
 
         mp.hasPatch = true;
