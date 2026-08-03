@@ -65,6 +65,15 @@ int main()
     auto& eng = proc.getEngine();
     auto setParam = [&] (const char* id, float v) { proc.getApvts().getParameterAsValue (id) = v; };
 
+    // This test exercises MULTITIMBRAL routing (ch1->Part0, ch2->Part1) over the
+    // factory 3+3 voicecard split. The plugin's out-of-box default is now
+    // single-part (all voicecards on Part 0), so set the 3+3 split + Extended
+    // mode explicitly and flush the deferred rebuild before the assertions.
+    eng.setVoiceMode (VoiceMode::Extended);
+    eng.setPartVoiceAllocation (0, 0x15);
+    eng.setPartVoiceAllocation (1, 0x2a);
+    { juce::AudioBuffer<float> flushBuf (2, 256); flushBuf.clear(); juce::MidiBuffer emptyMidi; proc.processBlock (flushBuf, emptyMidi); }
+
     std::printf ("[1] Each Part holds its own patch (Part 0 = SAW, Part 1 = SQUARE)\n");
     {
         setParam ("part_select", 1.0f);                 // edit Part 0

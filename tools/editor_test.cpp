@@ -51,6 +51,27 @@ juce::TabbedComponent* findTabs (juce::Component* c)
             return t;
     return nullptr;
 }
+
+// First component of type T in the subtree (depth-first).
+template <typename T>
+T* findFirst (juce::Component* c)
+{
+    if (auto* t = dynamic_cast<T*> (c))
+        return t;
+    for (auto* child : c->getChildren())
+        if (auto* t = findFirst<T> (child))
+            return t;
+    return nullptr;
+}
+
+// Collect every ParamControl in the subtree.
+void collectParamControls (juce::Component* c, std::vector<ParamControl*>& out)
+{
+    if (auto* p = dynamic_cast<ParamControl*> (c))
+        out.push_back (p);
+    for (auto* child : c->getChildren())
+        collectParamControls (child, out);
+}
 }  // namespace
 
 int main()
@@ -109,7 +130,7 @@ int main()
 
         std::printf ("\n[2] Tab pages (expected 10: 9 ParamPages + Multi)\n");
         std::printf ("     tab pages = %d\n", numTabs);
-        check (numTabs == 10, "exactly 10 tab pages");
+        check (numTabs == 11, "exactly 11 tab pages (Env/LFO split into Envelopes + LFOs)");
 
         std::printf ("\n[3] ParamControl coverage\n");
         std::printf ("     descriptors = %zu, expected ParamControl cells = %d, found = %d\n",
@@ -173,6 +194,80 @@ int main()
             }
         }
 
+        // ------------------------------------------------------------------
+        // [9] Sequencer: marked Length knob + dimmed inactive steps
+        // ------------------------------------------------------------------
+        {
+            std::printf ("\n[9] Sequencer length marking + step dimming\n");
+            const int seqTab = tabIndex ("Sequencer");
+            check (seqTab >= 0, "Sequencer tab exists");
+            if (seqTab >= 0)
+            {
+                tabs->setCurrentTabIndex (seqTab, false);
+                std::vector<ParamControl*> seq;
+                collectParamControls (ed, seq);
+
+                int lengthCount = 0;
+                for (auto* p : seq)
+                    if (p->isLengthControl())
+                        ++lengthCount;
+                std::printf ("     Length controls = %d (expect 3)\n", lengthCount);
+                check (lengthCount == 3, "exactly 3 marked Length controls (Seq1/2/Note)");
+                for (auto* p : seq)
+                    if (p->isLengthControl())
+                        check (p->isLengthLabelVisible(), "length control reports a visible label");
+
+                // Dim: Seq1 length=4 => seq1_step4..15 disabled, Seq2 untouched.
+                // getParameterAsValue fires the APVTS listeners synchronously
+                // (setNewState -> setDenormalisedValue -> parameter listeners).
+                auto& apvts = processor.getApvts();
+                apvts.getParameterAsValue ("seq_length_1") = 4.0f;
+                int seq1EnabledBefore = 0, seq1DisabledPast = 0, seq2AllEnabled = 1;
+                for (auto* p : seq)
+                {
+                    if (p->getParamID().startsWith ("seq1_step"))
+                    {
+                        if (p->stepIndex() < 4) { if (p->isStepEnabled()) ++seq1EnabledBefore; }
+                        else                    { if (! p->isStepEnabled()) ++seq1DisabledPast; }
+                    }
+                    else if (p->getParamID().startsWith ("seq2_step"))
+                    {
+                        if (! p->isStepEnabled()) seq2AllEnabled = 0;
+                    }
+                }
+                std::printf ("     seq1 enabled<4=%d dimmed>=4=%d seq2-all-enabled=%d\n",
+                             seq1EnabledBefore, seq1DisabledPast, seq2AllEnabled);
+                check (seq1EnabledBefore == 4, "Seq1 steps 0..3 enabled after length=4");
+                check (seq1DisabledPast == 12, "Seq1 steps 4..15 dimmed after length=4");
+                check (seq2AllEnabled == 1, "Seq2 steps unaffected by Seq1 length");
+                apvts.getParameterAsValue ("seq_length_1") = 16.0f;   // restore
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // [10] Voice activity CELLS now live on the Global page (a decoration);
+        // the bottom strip is a status bar (count + tooltip), not a VoiceMeter.
+        // ------------------------------------------------------------------
+        {
+            std::printf ("\n[10] Voice meter (cells) on the Global page\n");
+            // JUCE only parents the CURRENT tab's content, so switch to Global so
+            // the page (and its VoiceMeter decoration) is in the component tree.
+            if (tabs != nullptr)
+            {
+                const auto names = tabs->getTabNames();
+                int glb = -1;
+                for (int i = 0; i < names.size(); ++i)
+                    if (names[i] == "Global") { glb = i; break; }
+                if (glb >= 0)
+                    tabs->setCurrentTabIndex (glb, false);
+            }
+            auto* meter = findFirst<VoiceMeter> (ed);
+            check (meter != nullptr, "voice meter (cells) exists on the Global page");
+            if (meter != nullptr)
+                check (meter->getViewMode() == VoiceMeter::ViewMode::Voicecard,
+                       "fresh editor meter is in Voicecard (6) view");
+        }
+
         // ----------------------------------------------------------------------
         // [8] Snapshot dump (dev visual sanity check). Gated on the
         // PARVATI_DUMP_SHOTS env var (a directory path); off by default so a
@@ -212,28 +307,6 @@ int main()
                     const juce::String nm = juce::String (i + 1) + "_"
                         + tabs->getTabNames()[i].replaceCharacters (" /", "__");
                     dump (ed, nm);
-                }
-
-                // Extra shot: the Envelopes/LFO tab with all 3 slots switched to
-                // LFO view (shows the LFO-waveform previews), then restored to ENV.
-                const auto names = tabs->getTabNames();
-                int envTab = -1;
-                for (int i = 0; i < names.size(); ++i)
-                    if (names[i].containsIgnoreCase ("Envelopes")) { envTab = i; break; }
-                if (envTab >= 0)
-                {
-                    tabs->setCurrentTabIndex (envTab, false);
-                    ParamPage* envPage = nullptr;
-                    if (auto* content = tabs->getTabContentComponent (envTab))
-                        if (auto* vp = dynamic_cast<juce::Viewport*> (content))
-                            envPage = dynamic_cast<ParamPage*> (vp->getViewedComponent());
-                    if (envPage != nullptr)
-                    {
-                        envPage->reflowToWidth (juce::jmax (400, 940));
-                        envPage->setAllEnvLfoModesForDump (1);   // LFO view
-                        dump (ed, "4b_Envelopes_LFO_LFOmode");
-                        envPage->setAllEnvLfoModesForDump (0);   // restore ENV view
-                    }
                 }
             }
         }

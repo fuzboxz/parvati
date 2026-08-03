@@ -116,6 +116,22 @@ int main()
 
     SynthEngine& engine = processor.getEngine();
 
+    // ---- (0) Hardware default = 6 voices (faithful Ambika) ----
+    // The engine defaults to VoiceMode::Hardware (1 voice per voicecard); the
+    // single-part default allocation {0x3f,0,...} puts all 6 voicecards on
+    // Part 0 => 6 voices total.
+    {
+        int total = 0;
+        for (int p = 0; p < kNumParts; ++p)
+            total += static_cast<int> (engine.getPart (p).voiceIndices.size());
+        std::printf ("[0] Hardware default voice count = %d (expect 6)\n", total);
+        check (total == 6, "default (Hardware) engine exposes 6 voices across parts");
+    }
+
+    // The remainder of this test exercises the Extended (16-slot) allocator
+    // (UNISON_2X / CYCLIC / CHAIN, multi-slot-per-voicecard), so opt into it.
+    engine.setVoiceMode (VoiceMode::Extended);
+
     // Part 0 owns voicecard 0 only -> voices {0,1,2} (3 voices), predictable.
     engine.setPartVoiceAllocation (0, 0x01);
     renderIdle (processor, 2);

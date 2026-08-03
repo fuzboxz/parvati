@@ -84,6 +84,10 @@ int main()
         renderOnce (proc);   // service the deferred rebuild/push from the load
 
         auto& engine = proc.getEngine();
+        // This block asserts the full Extended (block-per-voicecard) allocation
+        // the .MUL bitmasks describe, so opt in and re-render.
+        engine.setVoiceMode (VoiceMode::Extended);
+        renderOnce (proc);
 
         // At least two parts must now have DIFFERENT osc1.shape bytes (the
         // multi loaded distinct patches per part, not a single patch broadcast).
@@ -178,6 +182,8 @@ int main()
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         auto& engine = proc.getEngine();
+        // This block asserts the Extended (full-block-per-voicecard) mapping.
+        engine.setVoiceMode (VoiceMode::Extended);
 
         auto voicesAsSet = [&] (int part) {
             std::vector<int> v = engine.getPart (part).voiceIndices;
