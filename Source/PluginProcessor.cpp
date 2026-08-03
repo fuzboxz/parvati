@@ -349,6 +349,15 @@ void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d,
                                : FT::FOUR_POLE_LADDER;
         engine_.setFilterTopology (t);   // global: every voice, every part
     }
+    else if (d.paramID == "filter_drive")
+    {
+        // Choice index -> actual drive amount. Entry 1 ("1.2") is the
+        // juce::dsp::LadderFilter ctor default, so the default reproduces the
+        // pre-control sound. Ladder card only.
+        static const float kDriveValues[] = { 1.0f, 1.2f, 1.5f, 2.0f, 3.0f, 5.0f, 8.0f, 12.0f };
+        const int idx = juce::jlimit (0, 7, static_cast<int> (rawValue));
+        engine_.setFilterDrive (kDriveValues[idx]);
+    }
 }
 
 void ParvatiAudioProcessor::applySequencerParameter (const PatchParamDescriptor& d, float rawValue)

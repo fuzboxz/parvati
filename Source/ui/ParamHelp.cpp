@@ -154,6 +154,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["vca_curve"]   = "VCA response curve: Linearized or Exponential.";
     m["part_select"] = "Selects which Part (1..6) the editor edits.";
     m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, or SVF.";
+    m["filter_drive"] = "Ladder filter saturation drive (1.2 = JUCE default). Higher = more OTA-style tanh saturation and bass-drop at high resonance. Only affects the Ladder filter card.";
 
     return m;
 }

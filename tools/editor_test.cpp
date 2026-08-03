@@ -120,13 +120,13 @@ int main()
         std::printf ("\n[3b] Global-tab placement (no global clutter on Oscillators)\n");
         const int oscTab = tabIndex ("Oscillators");
         const int glbTab = tabIndex ("Global");
-        std::printf ("     Oscillators tab controls = %d (expect 8), Global tab controls = %d (expect 9)\n",
+        std::printf ("     Oscillators tab controls = %d (expect 8), Global tab controls = %d (expect 10)\n",
                      oscTab >= 0 ? perTab[(size_t) oscTab] : -1,
                      glbTab >= 0 ? perTab[(size_t) glbTab] : -1);
         check (oscTab >= 0 && perTab[(size_t) oscTab] == 8,
                "Oscillators page has exactly 8 controls (no global/part clutter)");
-        check (glbTab >= 0 && perTab[(size_t) glbTab] == 9,
-               "Global page has 9 controls (volume/octave/tuning/spread/legato/portamento/polyphony/VCA/filter card)");
+        check (glbTab >= 0 && perTab[(size_t) glbTab] == 10,
+               "Global page has 10 controls (volume/octave/tuning/spread/legato/portamento/polyphony/VCA/filter card/filter drive)");
 
         std::printf ("\n[4] Top-bar Part selector is wired to the engine\n");
         processor.getApvts().getParameterAsValue ("part_select") = 3.0f;   // 1-based part 3

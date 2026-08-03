@@ -30,7 +30,14 @@ void AnalogFilter::prepare (double sampleRate, int blockSize)
     ladder_.prepare (spec);
     ladder_.setMode (juce::dsp::LadderFilterMode::LPF24);
 
-    ssm_.prepare (sampleRate_);   // custom SSM2164 4-stage cascade
+    // 4-pole "4P": two series lowpass TPT SVFs (cutoff+resonance linked in
+    // applyParams()).
+    svf4p_[0].prepare (spec);
+    svf4p_[1].prepare (spec);
+    svf4p_[0].setType (juce::dsp::StateVariableTPTFilterType::lowpass);
+    svf4p_[1].setType (juce::dsp::StateVariableTPTFilterType::lowpass);
+    svf4p_[0].reset (0.0f);
+    svf4p_[1].reset (0.0f);
 
     svf_.prepare (spec);
     svfNotch_.prepare (spec);
@@ -101,7 +108,10 @@ void AnalogFilter::commit()
         // topology does not produce a click.
         switch (topology_)
         {
-            case FilterTopology::FOUR_POLE_SSM2164: ssm_.reset(); break;
+            case FilterTopology::FOUR_POLE_SSM2164:
+                svf4p_[0].reset (0.0f);
+                svf4p_[1].reset (0.0f);
+                break;
             case FilterTopology::TWO_POLE_SVF:
                 svf_.reset (0.0f);
                 svfNotch_.reset (0.0f);
@@ -128,12 +138,17 @@ void AnalogFilter::applyParams()
     {
         ladder_.setCutoffFrequencyHz (cutoffHz_);
         ladder_.setResonance (safeRes);
+        ladder_.setDrive (drive_);   // tanh saturation drive (default 1.2 == JUCE default)
     }
     else if (topology_ == FilterTopology::FOUR_POLE_SSM2164)
     {
-        // Custom cascade: always lowpass, smoother resonance than the ladder.
-        ssm_.setCutoff (cutoffHz_);
-        ssm_.setResonance01 (res);
+        // "4P": two series lowpass TPT SVFs, cutoff + resonance LINKED.
+        const float svfRes = juce::jlimit (0.05f, kMaxResonance, res);
+        for (int i = 0; i < 2; ++i)
+        {
+            svf4p_[i].setCutoffFrequency (cutoffHz_);
+            svf4p_[i].setResonance (svfRes);
+        }
     }
     else // TWO_POLE_SVF
     {
@@ -173,7 +188,11 @@ float AnalogFilter::processSample (float inputValue)
         return inputValue;
 
     if (topology_ == FilterTopology::FOUR_POLE_SSM2164)
-        return ssm_.process (inputValue);
+    {
+        // Cascade: stage 0 then stage 1 (both lowpass). 24 dB/oct, linear.
+        const float a = svf4p_[0].processSample (0, inputValue);
+        return svf4p_[1].processSample (0, a);
+    }
 
     if (topology_ == FilterTopology::TWO_POLE_SVF)
     {

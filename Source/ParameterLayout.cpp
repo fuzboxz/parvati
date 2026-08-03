@@ -411,6 +411,26 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             d.push_back (std::move (f));
         }
 
+        // ---- Ladder saturation drive (Parvati-only; no Ambika patch byte) ----
+        // Scales the juce::dsp::LadderFilter tanh saturator. The default entry
+        // "1.2" is the JUCE LadderFilter ctor default, so an untouched control
+        // reproduces the pre-control sound exactly. Only affects the Ladder
+        // card; carried by .parvati (isOption), dropped by .PRO/.MUL (correct:
+        // there is no Ambika byte for it).
+        {
+            static const auto kFilterDrives = juce::StringArray {
+                "1.0", "1.2", "1.5", "2.0", "3.0", "5.0", "8.0", "12.0"
+            };
+            PatchParamDescriptor fd;
+            fd.paramID = "filter_drive";
+            fd.label   = "Filter Drive";
+            fd.byteOffset = -1;
+            fd.isOption = true;
+            fd.choices = &kFilterDrives;
+            fd.defaultValue = 1;   // "1.2" == juce::dsp::LadderFilter default
+            d.push_back (std::move (fd));
+        }
+
         return d;
     }();
 

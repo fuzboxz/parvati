@@ -1,9 +1,11 @@
 // Filter-card topology verification for Parvati.
 // Renders a sustained saw through the full processor for each of the 3
-// selectable filter cards (4-pole LM13700 ladder / 4-pole SSM2164 cascade /
-// 2-pole SVF) and asserts all three are DISTINCT filters: their output LEVELS
-// differ and their sample-by-sample output differs pairwise (proving three
-// different filter implementations, not one shared code path).
+// selectable filter cards (4-pole LM13700 ladder / 4-pole "4P" = two series
+// StateVariableTPTFilter lowpass / 2-pole SVF) and asserts all three are
+// DISTINCT filters: their output LEVELS differ and their sample-by-sample
+// output differs pairwise (proving three different filter implementations,
+// not one shared code path). Also verifies the Ladder "Filter Drive" control is
+// wired (its output changes with drive).
 
 #include <algorithm>
 #include <cmath>
@@ -80,6 +82,46 @@ double renderCard (ParvatiAudioProcessor& proc, int card, std::vector<float>& ca
     }
     return rms (capture);
 }
+// Render the LADDER card at a given Filter Drive choice index (0="1.0"..7="12.0")
+// with HIGH resonance (to exercise the tanh saturator) and return the RMS of the
+// sustained output. Used to prove Filter Drive is actually wired.
+double renderLadderDrive (ParvatiAudioProcessor& proc, int driveIndex, std::vector<float>& capture)
+{
+    auto& apvts = proc.getApvts();
+    apvts.getParameterAsValue ("osc1_shape")      = 1.0f;     // SAW
+    apvts.getParameterAsValue ("filter1_cutoff")  = 1500.0f;  // signal passes + resonance peaks
+    apvts.getParameterAsValue ("filter1_reso")    = 0.8f;     // high Q -> drives the saturator
+    apvts.getParameterAsValue ("filter1_mode")    = 0.0f;     // LP
+    apvts.getParameterAsValue ("filter_card")     = 0.0f;     // Ladder
+    apvts.getParameterAsValue ("filter_drive")    = static_cast<float> (driveIndex);
+    proc.syncAllParamsToEngine();
+
+    const int kBlocks = 220;
+    const int kBlock  = 256;
+
+    proc.getEngine().allNotesOff (1, true);
+    {
+        juce::AudioBuffer<float> flush (2, kBlock);
+        juce::MidiBuffer empty;
+        flush.clear();
+        proc.processBlock (flush, empty);
+    }
+
+    juce::AudioBuffer<float> audio (2, kBlock);
+    capture.clear();
+
+    bool noteSent = false;
+    for (int b = 0; b < kBlocks; ++b)
+    {
+        juce::MidiBuffer midi;
+        if (! noteSent) { midi.addEvent (juce::MidiMessage::noteOn (1, 60, 0.8f), 0); noteSent = true; }
+        audio.clear();
+        proc.processBlock (audio, midi);
+        const float* d = audio.getReadPointer (0);
+        for (int i = 0; i < kBlock; ++i) capture.push_back (d[i]);
+    }
+    return rms (capture);
+}
 }  // namespace
 
 int main()
@@ -109,12 +151,31 @@ int main()
         const double dSV = diffRms (ssm,    svf);
         std::printf ("     diff RMS  Ladder-SSM2164=%.5f  Ladder-SVF=%.5f  SSM2164-SVF=%.5f\n", dLS, dLV, dSV);
         char msg[160];
-        std::snprintf (msg, sizeof (msg), "ladder != cascade (custom SSM2164): diff %.5f > 1e-3", dLS);
+        std::snprintf (msg, sizeof (msg), "ladder != 4P (2xSVF cascade): diff %.5f > 1e-3", dLS);
         check (dLS > 1e-3, msg);
         std::snprintf (msg, sizeof (msg), "ladder != SVF (4-pole vs 2-pole): diff %.5f > 1e-3", dLV);
         check (dLV > 1e-3, msg);
-        std::snprintf (msg, sizeof (msg), "cascade != SVF: diff %.5f > 1e-3", dSV);
+        std::snprintf (msg, sizeof (msg), "4P (2xSVF) != SVF: diff %.5f > 1e-3", dSV);
         check (dSV > 1e-3, msg);
+    }
+
+    std::printf ("\n[3] Ladder Filter Drive is wired (output changes with drive)\n");
+    {
+        // drive index 0 = "1.0", index 7 = "12.0". JUCE's LadderFilter scales both
+        // the tanh input and its derived gain by drive, so a wired control must
+        // change the output. If setDrive were never called (control not wired)
+        // both renders would be identical (ladder at its 1.2 default) -> the
+        // diff would be ~0 and this check would FAIL (that is the teeth).
+        std::vector<float> lo, hi;
+        const double rLo = renderLadderDrive (proc, 0, lo);   // drive 1.0
+        const double rHi = renderLadderDrive (proc, 7, hi);   // drive 12.0
+        const double dDH = diffRms (lo, hi);
+        std::printf ("     Ladder RMS  drive1.0=%.5f  drive12.0=%.5f  diffRMS=%.5f\n", rLo, rHi, dDH);
+        char msg[160];
+        std::snprintf (msg, sizeof (msg), "Filter Drive changes the ladder output (diff %.5f > 1e-3)", dDH);
+        check (dDH > 1e-3, msg);
+        // Sanity: the drive levels themselves should differ (gain scales with drive).
+        check (std::fabs (rLo - rHi) > 1e-3, "Ladder RMS differs between drive 1.0 and 12.0");
     }
 
     std::printf ("\n%s (%d failures)\n",

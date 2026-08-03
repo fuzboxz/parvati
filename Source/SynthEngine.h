@@ -165,6 +165,15 @@ public:
                 av->setFilterTopology (topology);
     }
 
+    // GLOBAL Ladder saturation drive (one Ambika unit). Ladder card only; cached
+    // in each voice's AnalogFilter and applied on its next control-rate commit.
+    void setFilterDrive (float drive)
+    {
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->setFilterDrive (drive);
+    }
+
     // ---- Arpeggiator / Sequencer config (CURRENT part) ----
     void setArpMode (uint8_t mode);
     void setArpDirection (uint8_t dir)  { parts_[currentPart_].arp.setDirection (dir); }

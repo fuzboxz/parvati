@@ -117,6 +117,11 @@ public:
     // VCA response curve: false = linearized (gain=vca/255), true = exponential OTA taper.
     void setVcaExponential (bool e) { vcaExponential_ = e; }
 
+    // Ladder saturation drive (caches into the AnalogFilter; applied on its next
+    // control-rate commit on the audio thread — same benign cross-thread float
+    // pattern as setVcaExponential). Ladder card only.
+    void setFilterDrive (float d) { filter_.setDrive (d); }
+
     // Optional parameter smoothing (default OFF). When enabled, cutoff /
     // resonance / VCA gain are ramped per-sample (20 ms linear) instead of
     // applied once per 40-sample control block, reducing zipper noise on knob

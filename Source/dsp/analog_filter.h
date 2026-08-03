@@ -7,9 +7,13 @@
 // emulates that analog filter in software using juce::dsp, fresh-written.
 //
 // Three voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
-//   * 4-pole LM13700 (SMR4)        -> juce::dsp::LadderFilter, LPF24
-//   * 4-pole SSM2164 cascade       -> juce::dsp::LadderFilter, LPF24  (v1: identical to LM13700)
-//   * 2-pole SVF (SSM2164)         -> juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high)
+//   * 4-pole LM13700 (Ladder)     -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
+//                                   controllable Drive scales the saturator -> bass-drop at high Q).
+//   * 4-pole SSM2164 ("4P")       -> TWO juce::dsp::StateVariableTPTFilter (lowpass) IN SERIES,
+//                                   cutoff+resonance linked — a linear 24 dB/oct baseline (NOT the
+//                                   discrete OTA cascade). SMR4/Polivoks OTA cards are out of scope:
+//                                   their saturation profiles are not natively modeled by JUCE.
+//   * 2-pole SVF (SSM2164)        -> juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high)
 
 #pragma once
 
@@ -19,8 +23,8 @@ namespace ambika::dsp {
 
 // Selectable voicecard filter topology.
 enum class FilterTopology {
-    FOUR_POLE_LADDER,   // SMR4 / LM13700.  juce::dsp::LadderFilter LPF24 (aggressive, self-oscillating).
-    FOUR_POLE_SSM2164,  // 4-pole SSM2164 cascade.  Custom 4-stage one-pole cascade + feedback (smoother / 'politer'). Always LP.
+    FOUR_POLE_LADDER,   // LM13700 Ladder.  juce::dsp::LadderFilter LPF24 (tanh saturation; Drive control). Self-oscillating.
+    FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, cutoff+resonance linked. Linear baseline. Always LP.
     TWO_POLE_SVF        // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
 };
 
@@ -88,6 +92,10 @@ public:
     // Resonance in 0..1. Capped internally at kMaxResonance for stability.
     void setResonance (float newResonance);
 
+    // Ladder saturation drive (scales the tanh saturator). 1.2 == the JUCE
+    // LadderFilter default. Cached; applied on the next commit(). Ladder only.
+    void setDrive (float newDrive) { drive_ = newDrive; dirty_ = true; }
+
     // Pushes cached cutoff/resonance/mode/topology into the active juce::dsp
     // filter(s). Call ONCE per 40-sample control block.
     void commit();
@@ -121,49 +129,21 @@ private:
     AnalogFilterMode  mode_      = AnalogFilterMode::Lowpass;
     float             cutoffHz_  = 1000.0f;
     float             resonance_ = 0.0f;
+    // Ladder saturation drive. Default 1.2 == the juce::dsp::LadderFilter ctor
+    // default, so the pre-control sound is preserved when Drive is untouched.
+    float             drive_     = 1.2f;
 
     // Param / topology dirtiness tracking for the control-rate commit() contract.
     bool dirty_            = true;
     bool topologyChanged_  = true;
 
-    // 4-pole LM13700 -> the JUCE ladder (LPF24, aggressive / self-oscillating).
+    // 4-pole LM13700 -> the JUCE ladder (LPF24, tanh saturation + Drive).
     juce::dsp::LadderFilter<float> ladder_;
 
-    // 4-pole SSM2164 -> a CUSTOM 4-stage cascaded one-pole lowpass with global
-    // resonance feedback. This is a genuinely different topology from the JUCE
-    // ladder (linear stages, no per-stage saturation -> smoother / 'politer'
-    // resonance), matching the SSM2164 4-pole voicecard character. Always LP.
-    struct Ssm2164Cascade
-    {
-        double sampleRate = 44100.0;
-        float  coeff      = 0.0f;   // per-stage one-pole RC coefficient
-        float  s0 = 0.0f, s1 = 0.0f, s2 = 0.0f, s3 = 0.0f;  // stage states
-        float  fbGain     = 0.0f;   // resonance feedback amount
-        float  cutoff     = 1000.0f;
-
-        void prepare (double sr) { sampleRate = sr; reset(); updateCoeff(); }
-        void reset() { s0 = s1 = s2 = s3 = 0.0f; }
-        void setCutoff (float hz) { cutoff = hz; updateCoeff(); }
-        void setResonance01 (float r01) { fbGain = juce::jlimit (0.0f, 3.3f, r01 * 3.3f); }
-        void updateCoeff()
-        {
-            // One-pole RC TPT coefficient: a = 1 - exp(-2*pi*fc/fs). Stable, in (0,1).
-            const double wc = 6.283185307179586 * cutoff / sampleRate;
-            coeff = static_cast<float> (1.0 - std::exp (-wc));
-        }
-        float process (float in)
-        {
-            const float u = in - fbGain * s3;   // global resonance feedback
-            s0 += coeff * (u  - s0);
-            s1 += coeff * (s0 - s1);
-            s2 += coeff * (s1 - s2);
-            s3 += coeff * (s2 - s3);
-            // Guard against runaway at extreme resonance (the linear cascade can
-            // approach self-oscillation; clamp rather than NaN).
-            if (! std::isfinite (s3)) { s0 = s1 = s2 = s3 = 0.0f; }
-            return s3;
-        }
-    } ssm_;
+    // 4-pole ("4P") -> TWO series StateVariableTPTFilter (both lowpass), cutoff+
+    // resonance LINKED (per the modeling spec: a linear 24 dB/oct baseline). The
+    // cascade is lowpass-only (the voice forces mode 0 for 4-pole cards).
+    juce::dsp::StateVariableTPTFilter<float> svf4p_[2];
 
     // 2-pole SVF. The JUCE TPT filter exposes a single output tap, so:
     //   * LP/BP/HP use svf_ (its type switched to lowpass/bandpass/highpass).

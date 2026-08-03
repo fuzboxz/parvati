@@ -21,8 +21,9 @@ Section sectionForId (const juce::String& id)
     // Global synth options (no Patch/Part byte) live on the dedicated Global
     // tab. Check these BEFORE the prefix rules so e.g. "filter_card" (a global
     // option) is not swept into the Filter page by the "filter" prefix.
-    if (id == "filter_card") return Section::Global;
-    if (id == "vca_curve")   return Section::Global;
+    if (id == "filter_card")  return Section::Global;
+    if (id == "vca_curve")    return Section::Global;
+    if (id == "filter_drive") return Section::Global;   // Ladder drive: a global option, like filter_card
     // Order matters: "modif" before "mod", "arp" before others.
     if (id.startsWith ("arp"))       return Section::Arp;
     if (id.startsWith ("seq"))       return Section::Sequencer;
@@ -226,7 +227,7 @@ juce::String ParamPage::groupForId (const juce::String& id)
     if (id == "seq_length_3") return "Note Sequencer";
 
     // ---- Synth options with no patch byte ----
-    if (id == "vca_curve" || id == "filter_card")
+    if (id == "vca_curve" || id == "filter_card" || id == "filter_drive")
         return "Global";
 
     // ---- Sequencer step grids (prefixes) ----
