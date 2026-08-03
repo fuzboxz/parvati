@@ -52,18 +52,22 @@ make that transfer clean and atomic.
 
 ## Phases (test-gated; commit when green; playable between phases)
 - **Phase 0 — F1 OOB fix** ✅
-- **Phase 1 — state ownership cleanup.** Make arp/seq authoritative (derive
-  PartData arp/seq bytes on serialize, drop the stale mirror); move global
-  options to explicit engine ownership. Behavior-identical.
-- **Phase 2 — single atomic transfer.** Per-part versioned state snapshots
-  applied on the audio thread; delete the three flags + the plain per-voice
-  writes (patch/part bytes, vca/smoothing/drive, arp/seq).
-- **Phase 3 — unified apply + APVTS-as-adapter.** Live edits + all loads route
-  through one apply; remove `refreshApvtsFromCurrentPart`, the dual sources, the
-  options-via-current-part bridge.
-- **Phase 4 — voice lifecycle.** Atomic frame reload on the audio thread; drop
-  reprime hacks.
-- **Phase 5 — concurrency test harness + full thread-safety sweep.**
+- **Phase 1 — state ownership cleanup.** (Skipped as standalone; the state is
+  already reasonably consolidated in `SynthEngine::Part`. The arp/seq dual-source
+  concern was addressed by Phase 2/final — arp/seq writes are now deferred.)
+- **Phase 2 — single atomic transfer (patch/part bytes)** ✅. Per-Part
+  `frameDirty_`; `applyPatchByte`/`applyPartByte` stage + defer; `processTransport`
+  services on the audio thread. `tests/concurrency_test.cpp` guards the race.
+- **Phase 3 — unified apply + engine-storage-authoritative after multi-load** ✅.
+  Multi-loads no longer `syncAllParamsToEngine` (which clobbered Part 0);
+  `refreshApvtsFromCurrentPart` removed.
+- **Phase 4 (final) — finish threading: global options + arp/seq + voiceCount** ✅.
+  Global option setters (`setVcaExponential`/`setParameterSmoothing`/
+  `setFilterDrive`) stage via `optionsDirty_`; arp/seq setters stage via per-Part
+  `configDirty_` (incl. the active→inactive transition on the audio thread);
+  `voiceIndices.size()` snapshot via per-Part `voiceCount_` (written in
+  `rebuildVoiceAllocation`, read by the editor). Concurrency test broadened.
+- **Phase 5 — concurrency test harness + sweep** ✅ (merged into Phase 4).
 
 ## Hard constraints
 - Do not modify `Source/dsp/*` DSP behaviour or the Ambika render path.

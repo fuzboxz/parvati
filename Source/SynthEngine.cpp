@@ -184,37 +184,23 @@ void SynthEngine::applyTempo (double bpm)
 
 void SynthEngine::setVcaExponential (bool exponential)
 {
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            av->setVcaExponential (exponential);
+    pendingVcaExp_.store (exponential, std::memory_order_relaxed);
+    optionsDirty_.store (true, std::memory_order_release);
 }
 
 void SynthEngine::setParameterSmoothing (bool smoothing)
 {
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            av->setSmoothingEnabled (smoothing);
+    pendingSmoothing_.store (smoothing, std::memory_order_relaxed);
+    optionsDirty_.store (true, std::memory_order_release);
 }
 
 void SynthEngine::setArpMode (uint8_t mode)
 {
-    auto& part = parts_[currentPart_];
-    const bool wasActive = part.arp.isActive();
-    part.arp.setMode (mode);
-    part.seq.setMode (mode);   // same mode byte drives arp + note-sequencer
-    const bool isActive = part.arp.isActive();
-
-    if (wasActive && ! isActive)
-    {
-        part.arp.stop();
-        // Defer the note-kill to the audio thread: stopNote() runs voice_.Kill()
-        // + clearCurrentNote() + FIFO clear on a voice the audio thread may be
-        // mid-rendering. Flagged here, serviced at the top of processTransport().
-        // (The single-byte arp/seq object setters below are benign de-facto-atomic
-        // writes, pervasive in JUCE, and are NOT deferred — only this voice
-        // mutation is.)
-        part.killGeneratedNotes_.store (true, std::memory_order_release);
-    }
+    // Stage only; the audio thread applies (servicePendingConfig in
+    // processTransport) so the live arp/seq objects + the active->inactive
+    // transition (arp.stop() + killGeneratedNotes_) never race the clock loop.
+    parts_[currentPart_].pendingConfig_.arpMode = mode;
+    parts_[currentPart_].configDirty_.store (true, std::memory_order_release);
 }
 
 void SynthEngine::setCurrentPart (int part)
@@ -286,7 +272,10 @@ void SynthEngine::rebuildVoiceAllocation()
 
     // Voice sets changed -> re-arm every Part's allocator for its mode.
     for (int p = 0; p < kNumParts; ++p)
+    {
         initAllocator (parts_[p]);
+        parts_[p].voiceCount_.store (static_cast<int> (parts_[p].voiceIndices.size()), std::memory_order_relaxed);
+    }
 }
 
 void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
@@ -664,6 +653,24 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         if (parts_[p].frameDirty_.exchange (false, std::memory_order_acq_rel))
             pushPartBytesToVoices (p);
 
+    // Service deferred global-option writes ON THE AUDIO THREAD: VCA curve /
+    // smoothing / filter drive were staged by the message-thread setters
+    // (setVcaExponential/setParameterSmoothing/setFilterDrive) so the per-voice
+    // plain-field writes never race the renderer.
+    if (optionsDirty_.exchange (false, std::memory_order_acq_rel))
+    {
+        const bool vca = pendingVcaExp_.load (std::memory_order_relaxed);
+        const bool sm  = pendingSmoothing_.load (std::memory_order_relaxed);
+        const float fd = pendingFilterDrive_.load (std::memory_order_relaxed);
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+            {
+                av->setVcaExponential (vca);
+                av->setSmoothingEnabled (sm);
+                av->setFilterDrive (fd);
+            }
+    }
+
     // Service deferred voice-allocation / polyphony / patch changes ON THE AUDIO
     // THREAD. The message thread (Multi page edits, polyphony param, .MUL load)
     // only sets the Part fields + allocationDirty_; it never touches voiceIndices.
@@ -692,6 +699,40 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         rebuildVoiceAllocation();
         for (int p = 0; p < kNumParts; ++p)
             pushPartBytesToVoices (p);   // also re-primes envelope increments
+    }
+
+    // Service deferred arp/seq config writes ON THE AUDIO THREAD, BEFORE the
+    // killGeneratedNotes_ + clock loop below. The message-thread setters
+    // (setArpMode/setArpDirection/.../setSequenceLength/setSequenceDataByte)
+    // stage into pendingConfig_ + flag configDirty_; this applies the staged
+    // config to the live arp/seq objects so they never race the clock loop. The
+    // active->inactive transition (arp.stop() + killGeneratedNotes_) runs here,
+    // single-threaded, and the kill is serviced in the same block (next).
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        if (! parts_[p].configDirty_.exchange (false, std::memory_order_acq_rel))
+            continue;
+        auto& part = parts_[p];
+        const auto& cfg = part.pendingConfig_;
+        // arp/seq mode (same byte drives both): handle transition on the AT.
+        {
+            const bool wasActive = part.arp.isActive();
+            part.arp.setMode (cfg.arpMode);
+            part.seq.setMode (cfg.arpMode);
+            if (wasActive && ! part.arp.isActive())
+            {
+                part.arp.stop();
+                part.killGeneratedNotes_.store (true, std::memory_order_release);
+            }
+        }
+        part.arp.setDirection  (cfg.arpDirection);
+        part.arp.setOctave     (cfg.arpOctave);
+        part.arp.setPattern    (cfg.arpPattern);
+        part.arp.setResolution (cfg.arpResolution);
+        for (int i = 0; i < 3; ++i)
+            part.seq.setSequenceLength (i, cfg.seqLength[i]);
+        for (int i = 0; i < 64; ++i)
+            part.seq.setSequenceDataByte (i, cfg.seqData[i]);
     }
 
     // Service deferred arp/seq note-kills ON THE AUDIO THREAD. setArpMode

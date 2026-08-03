@@ -115,6 +115,24 @@ int main()
         setAny (proc, id, static_cast<float> (rng.nextInt (128)));
         if ((i % 8) == 0)
             setAny (proc, "part_polyphony", static_cast<float> (rng.nextInt (5)));   // Mono..Chain
+        // Flip global options under contention (vca_curve / filter_card /
+        // smoothing / filter_drive -> deferred to the audio thread now).
+        if ((i % 7) == 0)
+        {
+            setAny (proc, "vca_curve",    static_cast<float> (rng.nextInt (2)));
+            setAny (proc, "smoothing",    static_cast<float> (rng.nextInt (2)));
+            setAny (proc, "filter_card",  static_cast<float> (rng.nextInt (3)));
+            setAny (proc, "filter_drive", static_cast<float> (rng.nextInt (8)));
+        }
+        // arp/seq config under contention (arp mode/direction + seq length/step
+        // -> deferred to the audio thread via configDirty_ now).
+        if ((i % 5) == 0)
+        {
+            setAny (proc, "arp_mode",      static_cast<float> (rng.nextInt (3)));
+            setAny (proc, "arp_direction", static_cast<float> (rng.nextInt (4)));
+            setAny (proc, "seq_length_1",  static_cast<float> (1 + rng.nextInt (16)));
+            setAny (proc, "seq1_step0",    static_cast<float> (rng.nextInt (128)));
+        }
         // Mid-run preset switch (writes storage + resetAllVoices + options).
         if (i == 30)
         {
@@ -132,6 +150,10 @@ int main()
     check (lastPeak.load() >= 0.0, "audio thread produced a finite peak (no NaN/Inf seen)");
 
     // ---- Post-run sanity: finite output + the engine still responds to a note ----
+    // Reset arp/seq to Off so the note goes directly to a voice (an active arp
+    // with no transport would swallow it -- correct behaviour, not a bug).
+    setAny (proc, "arp_mode", 0.0f);
+    proc.syncAllParamsToEngine();
     juce::AudioBuffer<float> buf (2, 256); buf.clear();
     juce::MidiBuffer empty;
     proc.processBlock (buf, empty);

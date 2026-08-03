@@ -1202,8 +1202,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     statusCountLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     statusCountLabel_.setColour (juce::Label::textColourId, theme.accent);
     statusCountLabel_.setText ("0/" + juce::String (
-        static_cast<int> (processorRef_.getEngine()
-            .getPart (processorRef_.getEngine().getCurrentPart()).voiceIndices.size())),
+        processorRef_.getEngine()
+            .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
                                juce::dontSendNotification);
     addAndMakeVisible (statusCountLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
@@ -1299,8 +1299,8 @@ void ParvatiEditor::timerCallback()
         for (int i = 0; i < engine.getNumVoices(); ++i)
             if (auto* av = engine.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
                 ++active;
-        const int denom = static_cast<int> (processorRef_.getEngine()
-            .getPart (processorRef_.getEngine().getCurrentPart()).voiceIndices.size());
+        const int denom = processorRef_.getEngine()
+            .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load();
         const juce::String countText = juce::String (active) + "/" + juce::String (denom);
         if (statusCountLabel_.getText() != countText)
             statusCountLabel_.setText (countText, juce::dontSendNotification);

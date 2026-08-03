@@ -124,6 +124,22 @@ struct Part
     // voice_.patch_/part_ write never races the renderer. Mirrors the firmware
     // "ship a patch frame to the voicecard". <=1 block latency.
     std::atomic<bool> frameDirty_ { false };
+
+    // Arp/seq config staging (message thread writes, audio thread applies via
+    // configDirty_ release/acquire). Preserves the live objects' runtime state
+    // (pressedKeys_, step counters) — only the CONFIG is re-applied.
+    struct PendingConfig {
+        uint8_t arpMode = 0, arpDirection = 0, arpOctave = 1, arpPattern = 0, arpResolution = 0;
+        uint8_t seqLength[3] = { 0, 0, 0 };
+        uint8_t seqData[64]  = {};
+    };
+    PendingConfig pendingConfig_;
+    std::atomic<bool> configDirty_ { false };
+
+    // AT-written snapshot of voiceIndices.size() (rebuildVoiceAllocation) so the
+    // message thread (editor status strip) never reads voiceIndices directly.
+    std::atomic<int> voiceCount_ { 0 };
+
     uint8_t voiceAllocation = 0;   // 6-bitmask over firmware voicecards (vc0..5)
     uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
@@ -180,21 +196,24 @@ public:
 
     // GLOBAL Ladder saturation drive (one Ambika unit). Ladder card only; cached
     // in each voice's AnalogFilter and applied on its next control-rate commit.
+    // Staged + deferred to the audio thread (optionsDirty_) so the per-voice
+    // filter_.drive_ write never races the renderer.
     void setFilterDrive (float drive)
     {
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->setFilterDrive (drive);
+        pendingFilterDrive_.store (drive, std::memory_order_relaxed);
+        optionsDirty_.store (true, std::memory_order_release);
     }
 
     // ---- Arpeggiator / Sequencer config (CURRENT part) ----
+    // All staged in pendingConfig_ + configDirty_; applied on the audio thread
+    // in processTransport before the clock loop (see servicePendingConfig).
     void setArpMode (uint8_t mode);
-    void setArpDirection (uint8_t dir)  { parts_[currentPart_].arp.setDirection (dir); }
-    void setArpOctave (uint8_t oct)     { parts_[currentPart_].arp.setOctave (oct); }
-    void setArpPattern (uint8_t pat)    { parts_[currentPart_].arp.setPattern (pat); }
-    void setArpResolution (uint8_t res) { parts_[currentPart_].arp.setResolution (res); }
-    void setSequenceLength (int i, uint8_t len) { parts_[currentPart_].seq.setSequenceLength (i, len); }
-    void setSequenceDataByte (int offset, uint8_t value) { parts_[currentPart_].seq.setSequenceDataByte (offset, value); }
+    void setArpDirection (uint8_t dir)  { parts_[currentPart_].pendingConfig_.arpDirection = dir; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpOctave (uint8_t oct)     { parts_[currentPart_].pendingConfig_.arpOctave = oct;    parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpPattern (uint8_t pat)    { parts_[currentPart_].pendingConfig_.arpPattern = pat;   parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpResolution (uint8_t res) { parts_[currentPart_].pendingConfig_.arpResolution = res; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setSequenceLength (int i, uint8_t len) { if (i>=0&&i<3) { parts_[currentPart_].pendingConfig_.seqLength[i] = len; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
+    void setSequenceDataByte (int offset, uint8_t value) { if (offset>=0&&offset<64) { parts_[currentPart_].pendingConfig_.seqData[offset] = value; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
 
     // ---- multitimbral Part management ----
     static constexpr int getNumParts() { return kNumParts; }
@@ -291,6 +310,15 @@ private:
     bool partsSeeded_ = false;   // seed Part storage from the init patch once
     std::atomic<bool> allocationDirty_ { false };   // set by message thread; serviced on the audio thread
     std::atomic<bool> resetAllVoicesPending_ { false };   // message thread -> audio thread: kill every voice on a patch switch
+
+    // Global option staging (message thread writes, audio thread applies via
+    // optionsDirty_ release/acquire). Replaces the message-thread voice iteration
+    // in setVcaExponential/setParameterSmoothing/setFilterDrive that wrote plain
+    // per-voice fields the audio thread reads in fillInternalBlock.
+    std::atomic<bool> optionsDirty_ { false };
+    std::atomic<bool> pendingVcaExp_ { false };
+    std::atomic<bool> pendingSmoothing_ { false };
+    std::atomic<float> pendingFilterDrive_ { 1.0f };
 
     // Voice capacity mode: 0 = Hardware (6 voices, 1 per voicecard),
     // 1 = Extended (16 voices, full block per voicecard). Published to the audio
