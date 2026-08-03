@@ -426,7 +426,7 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
 // Ambika .PRO patch loading.
 bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const uint8_t* part84)
 {
-    if (patch112 == nullptr)
+    if (patch112 == nullptr || part84 == nullptr)
         return false;
 
     // Push every patch/part byte back into the APVTS via the inverse mapping;

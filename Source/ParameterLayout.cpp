@@ -253,9 +253,10 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         add ("filter1_cutoff", "Filter 1 Cutoff",     16, false, false, nullptr,       0, 127);
         add ("filter1_reso",   "Filter 1 Resonance",  17, false, false, nullptr,       0, 63);
         add ("filter1_mode",   "Filter 1 Mode",       18, false, false, &kFilterModes, 0, 0);
-        add ("filter2_cutoff", "Filter 2 Cutoff",     19, false, false, nullptr,       0, 127);
-        add ("filter2_reso",   "Filter 2 Resonance",  20, false, false, nullptr,       0, 63);
-        add ("filter2_mode",   "Filter 2 Mode",       21, false, false, &kFilterModes, 0, 0);
+        // NOTE: filter[1] (patch bytes 19..21) is a reserved/unused slot — the
+        // engine only ever reads patch_.filter[0] (voice.cpp cutoff/resonance +
+        // voice.h mode()). Exposing it here would show 3 inert "Filter 2"
+        // widgets, so it is intentionally NOT added to the APVTS bridge.
         add ("filter_env",     "Filter Env Amount",   22, false, false, nullptr,       0, 63);
         add ("filter_lfo",     "Filter LFO Amount",   23, false, false, nullptr,       0, 63);
 

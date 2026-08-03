@@ -288,6 +288,47 @@ int main()
         check (back == 3, "POLY releases the CHAIN partner (back to 3 voices)");
     }
 
+    // ---- (h) released voice frees even with NO ENV->VCA routing (envelopesDead) ----
+    // The init patch's only ENV->VCA routing is mod11 (ENV2->VCA, amount 32).
+    // Setting its amount to 0 makes the multiplicative VCA hold ~253 forever
+    // (vca() never collapses below 2), so WITHOUT the envelopesDead() guard a
+    // released voice would linger active (stuck meter / reduced polyphony)
+    // until JUCE stole it. The guard in AmbikaVoice::renderNextBlock frees the
+    // voice once ALL three envelopes reach DEAD.
+    std::printf ("\n[h] released voice frees with no ENV->VCA routing (envelopesDead)\n");
+    {
+        ParvatiAudioProcessor p;
+        p.prepareToPlay (48000.0, 256);
+        p.syncAllParamsToEngine();
+        SynthEngine& e = p.getEngine();
+        e.setPartVoiceAllocation (0, 0x01);   // Part 0 = vc0 only (3 voices)
+        renderIdle (p, 2);
+
+        // Disable the only ENV->VCA routing so the VCA never closes (< 2).
+        p.getApvts().getParameterAsValue ("mod11_amount") = 0.0f;
+        p.syncAllParamsToEngine();
+        renderIdle (p, 1);
+
+        // Trigger -> must be active (VCA ~253, audible).
+        noteEvent (p, juce::MidiMessage::noteOn (1, 60, (uint8_t) 100));
+        renderIdle (p, 4);
+        {
+            std::set<int> pitches;
+            const int activeBefore = activeVoices (e, 0, pitches);
+            std::printf ("     note-on: active=%d (expect >= 1)\n", activeBefore);
+            check (activeBefore >= 1, "note 60 is active before release");
+        }
+        // Release + render well past every envelope's release segment.
+        noteEvent (p, juce::MidiMessage::noteOff (1, 60, (uint8_t) 100));
+        renderIdle (p, 500);   // ~2.7 s at 48 kHz / 256 -> release -> DEAD
+        {
+            std::set<int> pitches;
+            const int activeAfter = activeVoices (e, 0, pitches);
+            std::printf ("     after release+idle: active=%d (expect 0)\n", activeAfter);
+            check (activeAfter == 0, "released voice freed via envelopesDead() (no ENV->VCA routing)");
+        }
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "POLYPHONY TEST: FAILURES" : "POLYPHONY TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

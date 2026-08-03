@@ -82,6 +82,16 @@ class Voice {
     // filter[0].mode selects the analog filter output (LP/BP/HP/NOTCH).
     inline uint8_t mode() const { return patch_.filter[0].mode; }
 
+    // True when ALL three envelopes have reached DEAD (the release tail is
+    // done). A robust voice-free condition independent of the VCA routing: even
+    // a patch with no ENV->VCA modulation (so vca() never collapses to <2)
+    // reaches DEAD after Release() (every segment advances — attack/decay/
+    // release increments are always >=1, so a released voice always finishes).
+    bool envelopesDead() const {
+        return envelope_[0].stage() == DEAD && envelope_[1].stage() == DEAD
+            && envelope_[2].stage() == DEAD;
+    }
+
     // The last rendered 40-sample 8-bit block (centred at 128).
     const uint8_t* output() const { return output_; }
 

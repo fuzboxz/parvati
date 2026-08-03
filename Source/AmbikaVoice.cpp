@@ -473,10 +473,14 @@ void AmbikaVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer,
         fifo_.erase (fifo_.begin(), fifo_.begin() + toRemove);
     }
 
-    // Release tail-off: once the engine's VCA has converged (envelope DEAD =>
-    // essentially silent), free the voice. (The few ms of FIFO tail below the
-    // noise floor are inaudible.)
-    if (isReleasing_ && voice_.vca() < 2)
+    // Release tail-off: free the voice once the engine's VCA has converged
+    // (envelope DEAD => essentially silent) OR once ALL three envelopes have
+    // reached DEAD (Voice::envelopesDead). The second condition is robust to a
+    // patch with no ENV->VCA modulation routing, where the multiplicative VCA
+    // never collapses below 2 and the voice would otherwise linger active
+    // (stuck meter / reduced polyphony) until JUCE steals it. (The few ms of
+    // FIFO tail below the noise floor are inaudible.)
+    if (isReleasing_ && (voice_.vca() < 2 || voice_.envelopesDead()))
     {
         clearCurrentNote();
         // SF-1: release tail finished — clear the staged snapshot.
