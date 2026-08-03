@@ -473,15 +473,6 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     return true;
 }
 
-void ParvatiAudioProcessor::refreshApvtsFromCurrentPart()
-{
-    // The inverse of syncAllParamsToEngine for the CURRENT part: pull the part's
-    // engine storage into the APVTS. Called after a .parvati multi load (which
-    // writes all parts directly to engine storage) so the following
-    // syncAllParamsToEngine does not clobber Part 0 with stale APVTS values.
-    loadPartIntoApvts (currentPart_);
-}
-
 bool ParvatiAudioProcessor::loadProgramFile (const juce::File& file)
 {
     AmbikaProgram prog;
@@ -606,8 +597,10 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     // Show Part 0 in the editor and re-apply its parameters.
     currentPart_ = 0;
     engine_.setCurrentPart (0);
-    loadPartIntoApvts (0);
-    syncAllParamsToEngine();
+    loadPartIntoApvts (0);   // engine→APVTS one-way display refresh (Part 0 authoritative)
+    // NOTE: NO syncAllParamsToEngine() — engine storage is authoritative after
+    // a multi-load; pushing the (Part-0-only) APVTS back would clobber the
+    // just-loaded bytes with stale values.
 
     loadedProgramName_ = multi.name.isNotEmpty() ? multi.name
                                                  : file.getFileNameWithoutExtension();

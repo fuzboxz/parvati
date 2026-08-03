@@ -179,6 +179,28 @@ int main()
         check (mp.getEngine().getPartChannel (1) == 2, "template: Part 1 on MIDI ch 2");
     }
 
+    // ---------------------------------------------------------------------
+    std::printf ("\n[B9] Multi-load does not clobber Part 0 (engine authoritative)\n");
+    {
+        ParvatiAudioProcessor mp;
+        mp.prepareToPlay (48000.0, 256);
+        // Pre-load: init patch has osc1_shape = 0 (NONE). The Mono template
+        // carries osc1_shape = 1 (Saw). A clobber (syncAllParamsToEngine pushing
+        // stale APVTS back into engine) would leave engine patchBytes[0] at 0.
+        const auto tdir = ParvatiAudioProcessor::getTemplatesDir();
+        const juce::File mono = tdir.getChildFile ("Mono.parvati");
+        check (mono.existsAsFile() && mp.loadParvatiMultiFile (mono), "Mono template loaded");
+        renderIdle (mp, 2);
+
+        const uint8_t engineByte = mp.getEngine().getPart (0).patchBytes[0];
+        check (engineByte == 1, "Part 0 osc1_shape in engine storage = 1 (Saw, not clobbered)");
+
+        const float apvtsVal = *mp.getApvts().getRawParameterValue ("osc1_shape");
+        char m[96];
+        std::snprintf (m, sizeof (m), "APVTS osc1_shape reflects engine (%.0f, expect 1)", apvtsVal);
+        check (juce::roundToInt (apvtsVal) == 1, m);
+    }
+
     proc.getEngine().resetAllVoices();
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "PATCH-LOAD TEST: FAILURES" : "PATCH-LOAD TEST: ALL CHECKS PASSED",

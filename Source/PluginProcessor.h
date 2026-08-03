@@ -182,12 +182,11 @@ public:
     // Set the loaded-program name (used by the template generator so each stock
     // template's .parvati `name:` field matches its label).
     void setLoadedProgramName (const juce::String& n) { loadedProgramName_ = n; }
-    // Re-load the CURRENT part's engine storage into the APVTS (the inverse of
-    // syncAllParamsToEngine). Used after a .parvati multi load, which writes all
-    // parts directly to engine storage: without this the subsequent
-    // syncAllParamsToEngine would clobber Part 0's loaded values with the stale
-    // APVTS (the part_select listener no-ops when already on Part 0).
-    void refreshApvtsFromCurrentPart();
+
+    // Re-read a Part's engine storage into the APVTS (engine→APVTS display
+    // refresh). Public so the .parvati/.MUL multi-load epilogue can refresh the
+    // editor after making engine storage authoritative.
+    void loadPartIntoApvts (int part);
 
 private:
     // ---- APVTS::Listener: a parameter changed (host / GUI / automation). ----
@@ -217,7 +216,6 @@ private:
     // Multitimbral: switch the Part being edited. Loads the new Part's stored
     // patch/part/arp/seq into the APVTS (GUI reflects it) + the engine.
     void onPartSelect (int newPart1Based);
-    void loadPartIntoApvts (int part);
 
     // Route a step-sequencer parameter to the engine Sequencer.
     void applySequencerParameter (const PatchParamDescriptor& descriptor, float rawValue);

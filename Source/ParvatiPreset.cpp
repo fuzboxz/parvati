@@ -640,14 +640,13 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                     param->setValueNotifyingHost (param->convertTo0to1 ((float) p.value));
     }
 
-    // Show Part 0 in the editor and re-apply (mirrors loadMultiFile). The part_select
-    // listener no-ops when already on Part 0, so explicitly refresh the APVTS from
-    // Part 0's just-loaded engine storage BEFORE the sync — otherwise the sync
-    // would clobber Part 0's loaded params (e.g. part_polyphony) with stale values.
+    // Show Part 0 in the editor. Engine storage is authoritative after the
+    // multi-load; refresh the APVTS one-way (engine→APVTS display only). NO
+    // syncAllParamsToEngine() — pushing the (Part-0-only) APVTS back would
+    // clobber Part 0's loaded bytes with stale values.
     proc.getApvts().getParameter ("part_select")->setValueNotifyingHost (
         proc.getApvts().getParameter ("part_select")->convertTo0to1 (1.0f));
-    proc.refreshApvtsFromCurrentPart();
-    proc.syncAllParamsToEngine();
+    proc.loadPartIntoApvts (0);
     return true;
 }
 
