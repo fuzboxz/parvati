@@ -321,7 +321,12 @@ void SynthEngine::pushPartBytesToVoices (int part)
             continue;
         for (int o = 0; o < 112; ++o)
             av->setPatchByte (o, p.patchBytes[(size_t) o]);
-        for (int o = 0; o < 84; ++o)
+        // Only the 7-byte dsp::Part is voicecard-relevant (volume/octave/tuning/
+        // spread/_/legato/portamento at offsets 0..6); the rest of PartData is
+        // controller-side (arp/seq/polyphony) and MUST NOT be pushed -- pushing
+        // offsets 7..83 was an out-of-bounds write that clobbered the Voice's
+        // envelopes/LFOs/oscillators on every patch/mode switch.
+        for (int o = 0; o < static_cast<int>(sizeof (ambika::dsp::Part)); ++o)
             av->setPartByte (o, p.partBytes[(size_t) o]);
         // Re-prime the envelope increments from the just-pushed patch: an idle
         // voice is gated out of renderNextBlock, so without this the pushed A/D/S/R
@@ -329,6 +334,18 @@ void SynthEngine::pushPartBytesToVoices (int part)
         // (the standalone "dead after a voice-mode / template switch" glitch).
         av->reprimeEnvelopes();
     }
+}
+
+void SynthEngine::resetAllVoices()
+{
+    // DEFER the kill to the audio thread. stopNote(.,false) runs Voice::Kill +
+    // clearCurrentNote + FIFO clear on a voice the audio thread may be
+    // mid-rendering -- calling it here (message thread) raced the audio thread
+    // and crashed in hosts (e.g. Ableton). The kill is serviced at the top of
+    // the next processTransport() block; the caller has already pushed the new
+    // patch bytes + flagged allocationDirty_, whose service rebuilds and
+    // re-primes (pushPartBytesToVoices) every voice.
+    resetAllVoicesPending_.store (true, std::memory_order_release);
 }
 
 //==========================================================================
@@ -631,6 +648,15 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
 void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
                                     double bpm, bool isPlaying)
 {
+    // Service a deferred full voice reset (patch switch) ON THE AUDIO THREAD --
+    // stopNote(.,false) must not run on the message thread while a voice is
+    // mid-render (it Kill()s + clearCurrentNote() + clears the FIFO). Runs before
+    // the allocationDirty service below, which rebuilds + re-primes the voices.
+    if (resetAllVoicesPending_.exchange (false, std::memory_order_acq_rel))
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->stopNote (0.0f, false);
+
     // Service deferred voice-allocation / polyphony / patch changes ON THE AUDIO
     // THREAD. The message thread (Multi page edits, polyphony param, .MUL load)
     // only sets the Part fields + allocationDirty_; it never touches voiceIndices.

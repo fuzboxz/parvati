@@ -68,6 +68,12 @@ static constexpr uint8_t midi_clock_tick_per_step[kNumSyncedLfoRates] = {
 static_assert(sizeof(Patch) == 112,
               "Ambika Patch struct must be exactly 112 bytes to match firmware.");
 
+// The voicecard Part is a 7-byte subset (volume + padding[4] + legato +
+// portamento_time); controller-side PartData (arp/seq/polyphony/octave/...) is
+// NOT pushed here. Guard against regressions that would write past it.
+static_assert(sizeof(Part) == 7,
+              "Ambika voicecard Part struct must be exactly 7 bytes.");
+
 // Modulation sources/destinations are used as array indices sized by these
 // enum tails; sanity-check the counts match the enum cardinalities.
 static_assert(kNumModulationSources == 31, "MOD_SRC_LAST must be 31");

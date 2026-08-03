@@ -201,6 +201,13 @@ public:
     // applyPatchByte for the current Part only).
     void pushPartBytesToVoices (int part);
 
+    // Hard-reset EVERY voice: stopNote(.,false) (Kill + clearCurrentNote) +
+    // reprimeEnvelopes, so a patch switch starts from silence with no stuck /
+    // orphaned voices carrying stale Part/patch state. Called on the message
+    // thread before new patch bytes are pushed (the audio thread services the
+    // subsequent rebuild). Mirrors firmware Part::AllSoundOff + re-init.
+    void resetAllVoices();
+
     // Mark that the voice allocation / polyphony / patch data changed on the
     // message thread; the audio thread services it (rebuild + push) at the top
     // of the next processTransport so voiceIndices is never mutated under a
@@ -277,6 +284,7 @@ private:
     bool wasPlaying_ = false;
     bool partsSeeded_ = false;   // seed Part storage from the init patch once
     std::atomic<bool> allocationDirty_ { false };   // set by message thread; serviced on the audio thread
+    std::atomic<bool> resetAllVoicesPending_ { false };   // message thread -> audio thread: kill every voice on a patch switch
 
     // Voice capacity mode: 0 = Hardware (6 voices, 1 per voicecard),
     // 1 = Extended (16 voices, full block per voicecard). Published to the audio

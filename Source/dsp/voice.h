@@ -115,7 +115,8 @@ class Voice {
         reinterpret_cast<uint8_t*>(&patch_)[address] = value;
     }
     void set_part_data(uint8_t address, uint8_t value) {
-        reinterpret_cast<uint8_t*>(&part_)[address] = value;
+        if (address < sizeof(part_))   // Part is 7 bytes; reject controller-side offsets (arp/seq/polyphony) that would write OOB.
+            reinterpret_cast<uint8_t*>(&part_)[address] = value;
     }
     uint8_t* mutable_patch_data() { return reinterpret_cast<uint8_t*>(&patch_); }
     const Patch& patch() const { return patch_; }
