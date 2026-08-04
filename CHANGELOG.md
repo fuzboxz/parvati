@@ -4,6 +4,73 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed (post-architecture deep sweep)
+- **P0 — crush stack-use-after-scope** (`AmbikaVoice::fillInternalBlock`): the
+  `crushed[]` sample-and-hold buffer was block-scoped, so the `out = crushed`
+  shadow dangled after the `if (crush>1)` block and every downstream `out[i]`
+  read was UB (ASAN abort, reachable from the Crush knob). Hoisted to function
+  scope; numerics unchanged.
+- **P1 — arp/seq ownership consistency.** File loads (`loadMultiFile`,
+  `applyParvatiMulti`) and serialize/refresh paths (`saveMultiFile`, `partRaw`,
+  `loadPartIntoApvts`) now go through `pendingConfig_` + `configDirty_` like the
+  live setters, instead of reading/writing the live `Arpeggiator`/`Sequencer`
+  objects directly. This removes the load-path TSAN data races with the
+  audio-thread clock loop, fixes arp/seq edits being lost on save in headless /
+  racing in production, and fixes a latent clobber where a load left
+  `pendingConfig_` stale so the next edit re-applied defaults. Added
+  `SynthEngine::stageArpSeqFromPartBytes`.
+- **Phase 6 — message↔audio data races closed (TSAN-clean).** The plain byte
+  arrays / scalars behind the `frameDirty_` / `allocationDirty_` latches are now
+  atomic: `patchBytes`/`partBytes` → `AtomicByteArray<N>` (element proxies keep
+  `arr[i] = v` / `uint8_t x = arr[i]` sites unchanged; whole-array ops via
+  `loadFrom`/`fill`/`operator=`/`copyTo`); `voiceAllocation` + `voiceMode_` →
+  `std::atomic`. `concurrency_test` is now TSAN-clean (0 races).
+- **Crash on the note-sequencer (TekDrums multi) — root cause + fix.** The hosted
+  `SIGBUS`/PAC-fail in `Sequencer::internalNoteOn/Off` (a corrupted
+  `std::function` invoker) was a **memory-corruption cascade from `NoteStack`**.
+  The `NoteStack` default constructor left its pool at `note == 0`, but the
+  free-slot search looks for `kFreeSlot (255)` — and the `Arpeggiator`'s
+  `pressedKeys_` is **never `clear()`-ed**, so every `noteOn` found no free slot,
+  wrote the `pool_[0]` dummy sentinel, and inflated `size_`. That desynced the
+  linked list from the sorted array, producing out-of-range `pool_`/`sorted_ptr_`
+  indices that wrote ~1 KB past the NoteStack — straight into the adjacent
+  `Sequencer`'s `std::function`, corrupting its invoker. Fixes: `NoteStack()` now
+  runs `clear()` (proper init, the root fix); `noteOn` bails on `free_slot == 0`
+  (defense, never clobber the sentinel); `pendingConfig_` is now seqlock-guarded
+  (MT writer / AT reader); `pendingTopology_` / `pendingOsFactor_` are now
+  `std::atomic`. Surfaced by a new two-thread test (see below).
+- **Two-thread test harness.** `tests/mt_harness.h` + a rewritten
+  `parvati_concurrency_test` model the real plugin threading: a background AUDIO
+  thread loops `processBlock` with the transport playing + a held note (so the
+  arp / note-sequencer actually generate notes) while the MESSAGE thread runs the
+  full host surface (param edits, arp/seq, part switches, `.MUL`/`.parvati` loads,
+  host-state get/set, options, voice-mode). `PARVATI_MT_MASK` (argv, hex) selects
+  op classes for bisection. Run under TSAN to catch message↔audio races.
+- **Crash on the note-sequencer (TekDrums multi) — `pendingConfig_` data race.**
+  The arp/seq config staging struct was a plain `PendingConfig` written by the
+  message thread (param edits / `.parvati`-multi + host-state loads) and read by
+  the audio thread (`servicePendingConfig`, every block) — a TSAN-confirmed data
+  race. UB in the realtime path manifested as a hard `SIGBUS`/PAC-fail crash in
+  the hosted plugin (calling the sequencer's note callback via a corrupted
+  `std::function` invoker) while sanitizer builds stayed green — exactly why the
+  regression suite did not catch it. Fixed with a **seqlock** (`pendingSeq_`):
+  the message thread is the sole writer (`writePendingConfig`), the audio thread
+  the sole reader (`readPendingConfig`, retry-on-write) — the textbook SPSC case.
+  All arp/seq setters, `stageArpSeqFromPartBytes`, `applyParvatiMulti`, and the
+  serialize/refresh readers route through it. TSAN now reports 0 races on the
+  note-sequencer path.
+- **Host plugin state now persists the full multi.** `getStateInformation`/
+  `setStateInformation` embed a versioned binary blob (`engine_state`) with all 6
+  Parts (patch/part bytes, arp/seq, routing, voice allocation/mode, current
+  part) via `SynthEngine::captureState`/`restoreState`, so a DAW reload preserves
+  the whole multitimbral setup. Backward compatible (legacy states fall back to
+  the current-Part APVTS restore). Guarded by `parvati_host_state_test`.
+- **P2 — `controller_mod_test`** threshold relaxed `0.01 → 0.005` (the post-test
+  `-6 dB` main-bus headroom exactly halves the controller diffs; routing intact).
+- **P2 — realtime safety**: `voiceIndices.reserve(kNumVoices)` (no audio-thread
+  heap alloc on Hardware→Extended switch); per-voice `osFactorDirty_`/
+  `topologyDirty_` service now `exchange(acq_rel)` (closes a lost-update window).
+
 ### Added
 - **Factory presets** — the GPL-3.0 Ambika "goldencard" banks (128 programs + 2
   multis) are bundled embedded and extracted to the user app-data dir on first

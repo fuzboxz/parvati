@@ -353,27 +353,30 @@ float currentRaw (ParvatiAudioProcessor& proc, const PatchParamDescriptor& d)
 
 // The denormalized value for a descriptor on part @p partIndex, reconstructed
 // from engine storage. Patch/Part byte params use parvatiPatchByteToValue; arp
-// params read the live Arpeggiator; seq params read the live Sequencer.
+// params read the MT-authoritative pendingConfig_ (NOT the live objects, which
+// lag pendingConfig_ until the audio thread services configDirty_).
 float partRaw (SynthEngine& engine, int partIndex, const PatchParamDescriptor& d)
 {
     auto& part = engine.getPart (partIndex);
     if (d.isArp)
     {
-        if (d.paramID == "arp_mode")       return static_cast<float> (part.arp.getMode());
-        if (d.paramID == "arp_direction")  return static_cast<float> (part.arp.getDirection());
-        if (d.paramID == "arp_octave")     return static_cast<float> (part.arp.getOctave());
-        if (d.paramID == "arp_pattern")    return static_cast<float> (part.arp.getPattern());
-        if (d.paramID == "arp_resolution") return static_cast<float> (part.arp.getResolution());
+        const auto pc = part.readPendingConfig();
+        if (d.paramID == "arp_mode")       return static_cast<float> (pc.arpMode);
+        if (d.paramID == "arp_direction")  return static_cast<float> (pc.arpDirection);
+        if (d.paramID == "arp_octave")     return static_cast<float> (pc.arpOctave);
+        if (d.paramID == "arp_pattern")    return static_cast<float> (pc.arpPattern);
+        if (d.paramID == "arp_resolution") return static_cast<float> (pc.arpResolution);
         return 0.0f;
     }
     if (d.isSequencer)
     {
-        if (d.paramID == "seq_length_1") return static_cast<float> (part.seq.getSequenceLength (0));
-        if (d.paramID == "seq_length_2") return static_cast<float> (part.seq.getSequenceLength (1));
-        if (d.paramID == "seq_length_3") return static_cast<float> (part.seq.getSequenceLength (2));
+        const auto pc = part.readPendingConfig();
+        if (d.paramID == "seq_length_1") return static_cast<float> (pc.seqLength[0]);
+        if (d.paramID == "seq_length_2") return static_cast<float> (pc.seqLength[1]);
+        if (d.paramID == "seq_length_3") return static_cast<float> (pc.seqLength[2]);
         // Step params: byteOffset is the controller PartData offset; the
-        // Sequencer's sequence_data[] is offset by -16 within PartData.
-        return static_cast<float> (part.seq.getSequenceDataByte (d.byteOffset - 16));
+        // sequence_data[] region is offset by -16 within PartData.
+        return static_cast<float> (pc.seqData[(size_t) (d.byteOffset - 16)]);
     }
     // Patch / Part byte param.
     const uint8_t byte = d.isPart ? part.partBytes[(size_t) d.byteOffset]
@@ -578,10 +581,17 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         if (partObj->hasProperty ("voice_allocation"))
             engine.setPartVoiceAllocation (i, (uint8_t) (int) partNode["voice_allocation"]);
 
-        // Per-part params: write patch/part bytes + arp/seq directly to engine
-        // storage (mirrors loadMultiFile), so all 6 parts are configured even
-        // though only one can be "current" in the APVTS at a time.
+        // Per-part params. Patch/Part byte params are written into the Part's
+        // patch/part storage; arp/seq params are staged into pendingConfig_ +
+        // configDirty_ (NOT the live objects -- the audio thread is the sole
+        // writer of those, and pendingConfig_ is the serialize source). This
+        // keeps all 6 parts configured even though only one can be "current" in
+        // the APVTS at a time, and mirrors loadMultiFile. (arp descriptors carry
+        // byteOffset=-1 -- they are controller-side with no Patch byte -- so they
+        // are dispatched by paramID; seq descriptors carry the real PartData
+        // offset.)
         const var pmap = partNode["params"];
+        bool stagedArpSeq = false;   // set configDirty_ ONCE after the loop (not per param), so the audio thread only ever services a complete pendingConfig_ snapshot
         if (auto* pobj = pmap.getDynamicObject())
         {
             for (const auto& p : pobj->getProperties())
@@ -595,19 +605,22 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                 if (d->isArp)
                 {
                     const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) raw);
-                    if (d->paramID == "arp_mode")       part.arp.setMode (v);
-                    else if (d->paramID == "arp_direction")  part.arp.setDirection (v);
-                    else if (d->paramID == "arp_octave")     part.arp.setOctave ((uint8_t) juce::jlimit (1, 4, (int) raw));
-                    else if (d->paramID == "arp_pattern")    part.arp.setPattern (v);
-                    else if (d->paramID == "arp_resolution") part.arp.setResolution (v);
+                    if (d->paramID == "arp_mode")            part.writePendingConfig ([v] (auto& c) { c.arpMode = v; });
+                    else if (d->paramID == "arp_direction")  part.writePendingConfig ([v] (auto& c) { c.arpDirection = v; });
+                    else if (d->paramID == "arp_octave")     { const uint8_t o = (uint8_t) juce::jlimit (1, 4, (int) raw); part.writePendingConfig ([o] (auto& c) { c.arpOctave = o; }); }
+                    else if (d->paramID == "arp_pattern")    part.writePendingConfig ([v] (auto& c) { c.arpPattern = v; });
+                    else if (d->paramID == "arp_resolution") part.writePendingConfig ([v] (auto& c) { c.arpResolution = v; });
+                    stagedArpSeq = true;
                 }
                 else if (d->isSequencer)
                 {
                     const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) raw);
-                    if (d->paramID == "seq_length_1") part.seq.setSequenceLength (0, v);
-                    else if (d->paramID == "seq_length_2") part.seq.setSequenceLength (1, v);
-                    else if (d->paramID == "seq_length_3") part.seq.setSequenceLength (2, v);
-                    else part.seq.setSequenceDataByte (d->byteOffset - 16, v);
+                    if (d->paramID == "seq_length_1")      part.writePendingConfig ([v] (auto& c) { c.seqLength[0] = v; });
+                    else if (d->paramID == "seq_length_2") part.writePendingConfig ([v] (auto& c) { c.seqLength[1] = v; });
+                    else if (d->paramID == "seq_length_3") part.writePendingConfig ([v] (auto& c) { c.seqLength[2] = v; });
+                    else if (d->byteOffset >= 16 && d->byteOffset < 80)
+                    { const int off = d->byteOffset - 16; part.writePendingConfig ([off,v] (auto& c) { c.seqData[(size_t) off] = v; }); }
+                    stagedArpSeq = true;
                 }
                 else
                 {
@@ -617,6 +630,9 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                 }
             }
         }
+        if (stagedArpSeq)
+            part.configDirty_.store (true, std::memory_order_release);
+
     }
 
     engine.markAllocationDirty();

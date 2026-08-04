@@ -157,21 +157,21 @@ int main()
     // CC1 mod wheel  -> MOD_SRC_WHEEL      (handleController -> applyGlobalModSource)
     controllerAudible (0, 17 /*MOD_SRC_WHEEL*/,
                        [] (int v) { return juce::MidiMessage::controllerEvent (1, 1, v); },
-                       "mod wheel (CC1) -> Cutoff", 0.01);
+                       "mod wheel (CC1) -> Cutoff", 0.005);
     // CC2 breath     -> MOD_SRC_WHEEL_2
     controllerAudible (1, 18 /*MOD_SRC_WHEEL_2*/,
                        [] (int v) { return juce::MidiMessage::controllerEvent (1, 2, v); },
-                       "breath (CC2) -> Cutoff", 0.01);
+                       "breath (CC2) -> Cutoff", 0.005);
     // CC4 foot pedal -> MOD_SRC_EXPRESSION
     controllerAudible (2, 19 /*MOD_SRC_EXPRESSION*/,
                        [] (int v) { return juce::MidiMessage::controllerEvent (1, 4, v); },
-                       "foot pedal (CC4) -> Cutoff", 0.01);
+                       "foot pedal (CC4) -> Cutoff", 0.005);
 
     std::printf ("\n[2] Per-voice channel pressure (MPE expression)\n");
     // Channel pressure -> MOD_SRC_AFTERTOUCH (per-voice, only the active voice).
     controllerAudible (3, 15 /*MOD_SRC_AFTERTOUCH*/,
                        [] (int v) { return juce::MidiMessage::channelPressureChange (1, v); },
-                       "channel pressure -> Cutoff (MPE)", 0.01);
+                       "channel pressure -> Cutoff (MPE)", 0.005);
 
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "CONTROLLER MOD TEST: FAILURES" : "CONTROLLER MOD TEST: ALL PASSED",

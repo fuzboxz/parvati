@@ -70,10 +70,12 @@ int main()
         setParam (procA, "arp_octave",  kArpOctave);
         setParam (procA, "seq1_step0", kSeqStep0);
 
-        // Confirm the live Part 0 object carries the edits.
-        check (procA.getEngine().getPart (0).arp.getOctave() == (uint8_t) kArpOctave,
+        // Confirm the authoritative Part 0 config carries the edits. (Read
+        // pendingConfig_, the message-thread-authoritative arp/seq config: the
+        // live objects lag it until the audio thread services configDirty_.)
+        check (procA.getEngine().getPart (0).pendingConfig_.arpOctave == (uint8_t) kArpOctave,
                "Part 0 arp octave updated in the live object");
-        check (procA.getEngine().getPart (0).seq.getSequenceDataByte (0) == (uint8_t) kSeqStep0,
+        check (procA.getEngine().getPart (0).pendingConfig_.seqData[0] == (uint8_t) kSeqStep0,
                "Part 0 seq step 0 updated in the live object");
 
         // Switch to Part 1 (part_select is 1-based: value 2 => Part 1). This
@@ -93,9 +95,9 @@ int main()
         // Part 0's arp/seq edits must have survived: they were made on Part 0
         // while it was current, then the .MUL was saved from Part 1. Before the
         // fix these reverted to the .MUL-load values (stale partBytes).
-        check (procB.getEngine().getPart (0).arp.getOctave() == (uint8_t) kArpOctave,
+        check (procB.getEngine().getPart (0).pendingConfig_.arpOctave == (uint8_t) kArpOctave,
                "Part 0 arp_octave preserved across part-switch + .MUL save");
-        check (procB.getEngine().getPart (0).seq.getSequenceDataByte (0) == (uint8_t) kSeqStep0,
+        check (procB.getEngine().getPart (0).pendingConfig_.seqData[0] == (uint8_t) kSeqStep0,
                "Part 0 seq1_step0 preserved across part-switch + .MUL save");
 
         tmp.deleteFile();
@@ -118,14 +120,14 @@ int main()
         check (allSaw, "all 6 parts seed osc1 = WAVEFORM_SAW (audible init patch)");
 
         // The firmware arp/seq init values (octave 1, resolution 10, seq length
-        // 16) must also land in the live objects so loadPartIntoApvts / saveMultiFile
-        // see consistent state.
+        // 16) must also land in pendingConfig_ (the authoritative config read by
+        // serialize / loadPartIntoApvts) for every part.
         bool arpSeqInit = true;
         for (int p = 0; p < SynthEngine::getNumParts(); ++p)
         {
             const auto& part = proc.getEngine().getPart (p);
-            if (part.arp.getOctave() != 1 || part.arp.getResolution() != 10
-                || part.seq.getSequenceLength (0) != 16)
+            if (part.pendingConfig_.arpOctave != 1 || part.pendingConfig_.arpResolution != 10
+                || part.pendingConfig_.seqLength[0] != 16)
                 arpSeqInit = false;
         }
         check (arpSeqInit, "all 6 parts carry firmware arp/seq init (octave 1 / res 10 / len 16)");

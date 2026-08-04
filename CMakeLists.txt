@@ -569,6 +569,7 @@ add_executable(parvati_concurrency_test
 )
 target_include_directories(parvati_concurrency_test PRIVATE Source)
 target_compile_features(parvati_concurrency_test PRIVATE cxx_std_17)
+target_compile_definitions(parvati_concurrency_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_concurrency_test PRIVATE
     Parvati
     juce::juce_audio_basics
@@ -710,6 +711,30 @@ target_link_libraries(parvati_controller_mod_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Host plugin-state persistence verification. Built by default.
+# Run with: ./build/parvati_host_state_test
+add_executable(parvati_host_state_test
+    tests/host_state_test.cpp
+)
+target_include_directories(parvati_host_state_test PRIVATE Source)
+target_compile_features(parvati_host_state_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_host_state_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_dsp
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+# ------------------------------------------------------------------------------
 # Phase-4 verification (not shipped): headless editor instantiation + coverage.
 # Confirms createEditor() is non-null, every one of the 104 descriptors has a
 # control + attachment, there are exactly 6 tab pages, the default size is
@@ -754,3 +779,4 @@ target_link_libraries(parvati_gen_templates PRIVATE
     juce::juce_data_structures
     juce::juce_events
 )
+

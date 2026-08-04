@@ -69,6 +69,65 @@ make that transfer clean and atomic.
   `rebuildVoiceAllocation`, read by the editor). Concurrency test broadened.
 - **Phase 5 — concurrency test harness + sweep** ✅ (merged into Phase 4).
 
+## Post-sweep hardening (after the arch series)
+A read-only 5-agent sweep (GUI / patches / OS-threading / DSP / integration)
+against `813bd85` found and fixed:
+- **P0 — crush stack-use-after-scope** (`AmbikaVoice::fillInternalBlock`): the
+  `crushed[]` hold buffer was declared inside the `if (crush>1)` block, so the
+  `out = crushed` shadow dangled after the block and every downstream `out[i]`
+  read (1x default/smoothing + the oversampled raw fill) was UB — an ASAN abort
+  (shadow byte `f8`) reachable from the Crush knob / `mix_crush`. Hoisted the
+  buffer to function scope; numerics unchanged (bit-identical).
+- **P1 — arp/seq ownership made consistent.** Phase 4 deferred *live* arp/seq
+  edits to `pendingConfig_` + `configDirty_`, but the **load paths**
+  (`loadMultiFile`, `applyParvatiMulti`) still wrote the live `Arpeggiator`/
+  `Sequencer` objects directly (TSAN data races vs the audio-thread clock loop),
+  and the **serialize paths** (`saveMultiFile`, `partRaw`, `loadPartIntoApvts`)
+  read the live objects — which lag `pendingConfig_` until the audio thread
+  services `configDirty_`, so edits were lost in headless / raced in production.
+  There was also a latent clobber: a load left `pendingConfig_` stale, so the
+  next live edit re-applied stale defaults. Fix: `pendingConfig_` is now the
+  **MT-authoritative** arp/seq config — loads stage through it
+  (`stageArpSeqFromPartBytes`), the constructor seeds it, serialize/refresh
+  read it, and the audio thread remains the sole writer of the live objects
+  (`servicePendingConfig`). `configDirty_` is set **once after a load** (not per
+  param) so the audio thread only ever services a complete snapshot.
+- **P2 — `controller_mod_test` threshold** was halved by the post-test `-6 dB`
+  main-bus headroom (`kMainMixHeadroomGain`); the routing is intact, threshold
+  relaxed `0.01 → 0.005`.
+- **P2 — realtime-safety hardening**: `voiceIndices.reserve(kNumVoices)` (no
+  heap alloc on the audio thread at a Hardware→Extended switch); the per-voice
+  `osFactorDirty_`/`topologyDirty_` service now uses `exchange(acq_rel)` (closes
+  a lost-update window vs `load()`+`store(false)`).
+
+## Phase 6 — close the last message↔audio data races (TSAN-clean)
+The plain-payload-behind-a-dirty-flag pattern (Phase 2/4) left the byte arrays
+and a couple of scalars as plain `uint8_t`/`int` behind `frameDirty_` /
+`allocationDirty_`, which TSAN flagged under rapid automation / mid-run loads.
+Closed by making every cross-thread state atomic:
+- **`patchBytes`/`partBytes`** → `AtomicByteArray<N>` (a fixed-size array of
+  `std::atomic<uint8_t>` with read/write element proxies, so existing
+  `arr[i] = v` / `uint8_t x = arr[i]` sites compile unchanged; whole-array ops
+  use `loadFrom`/`fill`/`operator=`/`copyTo`). Per-byte relaxed atomics; the
+  per-Part `frameDirty_` release/acquire still orders a whole frame's publish.
+- **`voiceAllocation`** and **`voiceMode_`** → `std::atomic` (both are
+  message-thread-written, audio-thread-read behind `allocationDirty_`).
+Result: `tests/concurrency_test.cpp` (a background audio thread hammering
+  patch/part/arp/seq/polyphony + a mid-run preset load) is now **TSAN-clean**
+  (0 races over repeated runs); `polyphonyMode` stays plain (audio-thread-only).
+
+## Host plugin state (full 6-Part persistence)
+`getStateInformation`/`setStateInformation` previously persisted only the APVTS
+(current Part) + UI prefs, so a DAW project reload lost Parts 1-5 (patch/part/
+arp/seq/routing). They now also embed a versioned, base64 binary blob
+(`engine_state`) capturing every Part's patch bytes, PartData (arp/seq overlaid
+from the authoritative `pendingConfig_`), MIDI routing, voice allocation,
+polyphony, the voice-capacity mode and the current Part. `SynthEngine::
+captureState`/`restoreState` own the format (magic `PVST`, byte-oriented →
+endian-independent). Backward compatible: a state without `engine_state` (or a
+short/foreign blob) falls back to the legacy current-Part APVTS restore.
+`tests/host_state_test.cpp` guards the round-trip + the legacy fallback.
+
 ## Hard constraints
 - Do not modify `Source/dsp/*` DSP behaviour or the Ambika render path.
 - Do not change the APVTS parameter IDs / byte offsets (`ParameterLayout.cpp`

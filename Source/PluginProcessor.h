@@ -259,6 +259,12 @@ private:
     // re-reports the latency from processBlock (prepareToPlay also reports it).
     std::unique_ptr<juce::dsp::Oversampling<float>> osLatencyProbe_;
     std::atomic<bool> latencyDirty_ { false };
+    // Filter-OS latency in INPUT (internal) samples, computed on the message
+    // thread by rebuildOsLatencyProbe() (the sole reader of osLatencyProbe_) and
+    // read by computePluginLatency() on the audio thread. Staging an int avoids
+    // the audio thread dereferencing the probe's unique_ptr while the message
+    // thread rebuilds it (a data race).
+    std::atomic<int> stagedOsLatencyInputSamples_ { 0 };
 
     // Master DC blocker (one IIR high-pass ~15 Hz per main-bus channel). The
     // engine's analog filter + VCA are DC-coupled, so any sub-audio/DC offset

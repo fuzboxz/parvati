@@ -421,18 +421,22 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
         float value = 0.0f;
         if (d.isArp)
         {
-            if (d.paramID == "arp_mode")            value = (float) p.arp.getMode();
-            else if (d.paramID == "arp_direction")  value = (float) p.arp.getDirection();
-            else if (d.paramID == "arp_octave")     value = (float) p.arp.getOctave();
-            else if (d.paramID == "arp_pattern")    value = (float) p.arp.getPattern();
-            else if (d.paramID == "arp_resolution") value = (float) p.arp.getResolution();
+            // Read the MT-authoritative arp config from pendingConfig_ (seqlock
+            // snapshot; the live object lags it until the AT services configDirty_).
+            const auto pc = p.readPendingConfig();
+            if (d.paramID == "arp_mode")            value = (float) pc.arpMode;
+            else if (d.paramID == "arp_direction")  value = (float) pc.arpDirection;
+            else if (d.paramID == "arp_octave")     value = (float) pc.arpOctave;
+            else if (d.paramID == "arp_pattern")    value = (float) pc.arpPattern;
+            else if (d.paramID == "arp_resolution") value = (float) pc.arpResolution;
         }
         else if (d.isSequencer)
         {
-            if (d.paramID == "seq_length_1")      value = (float) p.seq.getSequenceLength (0);
-            else if (d.paramID == "seq_length_2") value = (float) p.seq.getSequenceLength (1);
-            else if (d.paramID == "seq_length_3") value = (float) p.seq.getSequenceLength (2);
-            else                                   value = (float) p.seq.getSequenceDataByte (d.byteOffset - 16);
+            const auto pc = p.readPendingConfig();
+            if (d.paramID == "seq_length_1")      value = (float) pc.seqLength[0];
+            else if (d.paramID == "seq_length_2") value = (float) pc.seqLength[1];
+            else if (d.paramID == "seq_length_3") value = (float) pc.seqLength[2];
+            else                                   value = (float) pc.seqData[(size_t) (d.byteOffset - 16)];
         }
         else
         {
@@ -574,16 +578,13 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
 
         if (multi.parts[i].hasPart)
         {
-            const uint8_t* pb = part.partBytes.data();
-            // arp_sequencer_mode@7 drives both the arp and the note-sequencer.
-            part.arp.setMode (pb[7]);              part.seq.setMode (pb[7]);
-            part.arp.setDirection (pb[8]);         part.arp.setOctave  (pb[9]);
-            part.arp.setPattern  (pb[10]);         part.arp.setResolution (pb[11]);
-            part.seq.setSequenceLength (0, pb[12]);
-            part.seq.setSequenceLength (1, pb[13]);
-            part.seq.setSequenceLength (2, pb[14]);
-            for (int o = 0; o < 64; ++o)
-                part.seq.setSequenceDataByte (o, pb[16 + o]);
+            // Stage this Part's arp/seq config (PartData 7..14 + 16..79) through
+            // pendingConfig_ + configDirty_ -- NOT the live objects -- so the
+            // audio thread stays the sole writer of the Arpeggiator/Sequencer
+            // objects (a direct write here raced the audio-thread clock loop),
+            // and pendingConfig_ (the serialize source) stays in sync with the
+            // loaded values. arp_sequencer_mode@7 drives arp + note-sequencer.
+            engine_.stageArpSeqFromPartBytes (i);
         }
     }
 
@@ -674,30 +675,27 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
         else
         {
             // Non-current parts: read straight from engine storage.
-            mp.patch = engine_.getPart (i).patchBytes;
-            mp.part  = engine_.getPart (i).partBytes;
+            engine_.getPart (i).patchBytes.copyTo (mp.patch);
+            engine_.getPart (i).partBytes.copyTo (mp.part);
         }
 
-        // Arp (PartData 7..11) and sequencer (12..14 lengths, 16..79 step
-        // bytes) live in the per-part Arpeggiator/Sequencer OBJECTS -- the
-        // engine setters do not mirror them into partBytes, and the descriptor
-        // loop above skips isArp. Serialize them from the live objects for EVERY
-        // part (the exact inverse of loadMultiFile's read at ~483-495), making
-        // saveMultiFile authoritative regardless of how the patch/part bytes
-        // above were sourced. Without this, non-current parts' arp/seq edits
-        // were lost on save.
+        // Serialize the arp/seq config from pendingConfig_ (the message-thread-
+        // authoritative source) rather than the live objects, which lag
+        // pendingConfig_ until the audio thread services configDirty_. Both
+        // pendingConfig_ and configDirty_ are written only on the message thread,
+        // so this read is race-free. (PartData 7..14 + 16..79.)
         {
-            const auto& p = engine_.getPart (i);
-            mp.part[7]  = p.arp.getMode();
-            mp.part[8]  = p.arp.getDirection();
-            mp.part[9]  = p.arp.getOctave();
-            mp.part[10] = p.arp.getPattern();
-            mp.part[11] = p.arp.getResolution();
-            mp.part[12] = p.seq.getSequenceLength (0);
-            mp.part[13] = p.seq.getSequenceLength (1);
-            mp.part[14] = p.seq.getSequenceLength (2);
+            const auto pc = engine_.getPart (i).readPendingConfig();
+            mp.part[7]  = pc.arpMode;
+            mp.part[8]  = pc.arpDirection;
+            mp.part[9]  = pc.arpOctave;
+            mp.part[10] = pc.arpPattern;
+            mp.part[11] = pc.arpResolution;
+            mp.part[12] = pc.seqLength[0];
+            mp.part[13] = pc.seqLength[1];
+            mp.part[14] = pc.seqLength[2];
             for (int o = 0; o < 64; ++o)
-                mp.part[(size_t) (16 + o)] = p.seq.getSequenceDataByte (o);
+                mp.part[(size_t) (16 + o)] = pc.seqData[o];
         }
 
         mp.hasPatch = true;
@@ -804,6 +802,12 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_oversampling", uiOversampling_, nullptr);
     tree.setProperty ("ui_language", uiLanguage_, nullptr);
     tree.setProperty ("ui_voice_mode", uiVoiceMode_, nullptr);
+    // Full 6-Part multitimbral engine state (all parts' patch/part bytes, arp/seq
+    // config, routing, voice allocation/mode). Base64 so it rides inside the XML
+    // state tree; absent on pre-persistence states (backward compatible).
+    juce::MemoryBlock engineBlob;
+    engine_.captureState (engineBlob);
+    tree.setProperty ("engine_state", engineBlob.toBase64Encoding(), nullptr);
     if (auto xml = tree.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -829,10 +833,29 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
             uiVoiceMode_ = static_cast<int> (tree.getProperty ("ui_voice_mode", 0));
             apvts.replaceState (tree);
+
+            // Restore the full 6-Part engine state if the blob is present; else
+            // (legacy pre-persistence state) fall back to pushing the current-
+            // part APVTS into the engine (Parts 1..5 revert to init, as before).
+            const bool restored = [&]()
+            {
+                if (! tree.hasProperty ("engine_state"))
+                    return false;
+                juce::MemoryBlock blob;
+                if (! blob.fromBase64Encoding (tree.getProperty ("engine_state").toString()))
+                    return false;
+                if (! engine_.restoreState (blob.getData(), blob.getSize()))
+                    return false;
+                // Engine is authoritative for all 6 parts; refresh the APVTS
+                // display for the restored current part (replaceState restored
+                // host automation values but fires no parameterChanged, so the
+                // part-switch handler is not re-driven).
+                loadPartIntoApvts (engine_.getCurrentPart());
+                return true;
+            }();
+            if (! restored)
+                syncAllParamsToEngine();
         }
-        syncAllParamsToEngine();
-        // Restore the audio-side smoothing pref (covers headless / no-editor
-        // hosts; the editor re-applies it on construction for GUI hosts).
         engine_.setParameterSmoothing (uiSmoothing_);
         // Restore + propagate the filter-oversampling factor (rebuilds the
         // latency probe + voices; the next prepareToPlay / processBlock reports
@@ -880,10 +903,17 @@ void ParvatiAudioProcessor::rebuildOsLatencyProbe()
             factorExp,
             juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR,
             true, true);
+        // Stage the OS latency (input samples) for the audio thread to read --
+        // it must not dereference osLatencyProbe_ (rebuilt here on the message
+        // thread) from processBlock. acquire/release pair with computePluginLatency.
+        stagedOsLatencyInputSamples_.store (
+            static_cast<int> (osLatencyProbe_->getLatencyInSamples()),
+            std::memory_order_release);
     }
     else
     {
         osLatencyProbe_.reset();
+        stagedOsLatencyInputSamples_.store (0, std::memory_order_release);
     }
 }
 
@@ -894,14 +924,13 @@ int ParvatiAudioProcessor::computePluginLatency (double hostSampleRate) const
     int latencySamples = juce::roundToInt (2.0 * hostSampleRate
                                            / ambika::dsp::kInternalSampleRate);
 
-    // Filter oversampling: getLatencyInSamples() is in INPUT (internal) samples;
-    // convert to host samples with the same ratio as the resampler latency.
-    if (osLatencyProbe_)
-    {
-        const double osInputSamples = osLatencyProbe_->getLatencyInSamples();
-        latencySamples += juce::roundToInt (osInputSamples * hostSampleRate
-                                            / ambika::dsp::kInternalSampleRate);
-    }
+    // Filter oversampling: the OS latency in INPUT samples is staged on the
+    // message thread by rebuildOsLatencyProbe() (the probe's unique_ptr is
+    // rebuilt there, so it must not be dereferenced from this audio-thread
+    // call). Convert the staged value to host samples with the same ratio.
+    const int osInputSamples = stagedOsLatencyInputSamples_.load (std::memory_order_acquire);
+    latencySamples += juce::roundToInt (osInputSamples * hostSampleRate
+                                        / ambika::dsp::kInternalSampleRate);
 
     return juce::jlimit (0, 4096, latencySamples);
 }

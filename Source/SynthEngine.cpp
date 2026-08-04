@@ -33,7 +33,7 @@ SynthEngine::SynthEngine()
     for (int p = 0; p < kNumParts; ++p)
     {
         auto& part = parts_[p];
-        part.voiceAllocation = kInitVoiceAllocation[p];
+        part.voiceAllocation.store (kInitVoiceAllocation[p]);
         // Default: part i -> MIDI channel i+1 (so channel 1 -> Part 0).
         part.midiChannel.store  (static_cast<uint8_t> (p + 1));
         part.keyrangeLow.store  (0);
@@ -105,8 +105,8 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
         const uint8_t* const initPatch = getControllerInitPatchBytes();
         for (int p = 0; p < kNumParts; ++p)
         {
-            std::memcpy (parts_[p].patchBytes.data(), initPatch, 112);
-            std::fill (parts_[p].partBytes.begin(), parts_[p].partBytes.end(), 0);
+            parts_[p].patchBytes.loadFrom (initPatch);
+            parts_[p].partBytes.fill (0);
             parts_[p].partBytes[0]  = 120;   // volume (init_part)
             parts_[p].partBytes[7]  = 0;     // arp / sequencer mode
             parts_[p].partBytes[8]  = 0;     // arp direction
@@ -117,8 +117,13 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
             parts_[p].partBytes[13] = 16;    // sequence length 2
             parts_[p].partBytes[14] = 16;    // sequence length 3
             parts_[p].partBytes[15] = 1;     // polyphony_mode = POLY
-            // Mirror into the live objects (the authoritative arp/seq state read
-            // by loadPartIntoApvts / saveMultiFile).
+            // Mirror the init arp/seq config into BOTH the live objects AND
+            // pendingConfig_ (the message-thread-authoritative config the audio
+            // thread applies via servicePendingConfig, and that serialize /
+            // loadPartIntoApvts read). Seeding pendingConfig_ here keeps it in
+            // sync with the live objects, so a later live edit (which stages only
+            // its own field into pendingConfig_ + flags configDirty_) does not
+            // re-apply stale defaults and clobber these init values.
             parts_[p].arp.setMode (0);              parts_[p].seq.setMode (0);
             parts_[p].arp.setDirection (0);
             parts_[p].arp.setOctave (1);
@@ -127,6 +132,17 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
             parts_[p].seq.setSequenceLength (0, 16);
             parts_[p].seq.setSequenceLength (1, 16);
             parts_[p].seq.setSequenceLength (2, 16);
+            auto& pc = parts_[p].pendingConfig_;
+            pc.arpMode = 0;  pc.arpDirection = 0;  pc.arpOctave = 1;
+            pc.arpPattern = 0;  pc.arpResolution = 10;
+            pc.seqLength[0] = 16;  pc.seqLength[1] = 16;  pc.seqLength[2] = 16;
+            // seqData stays 0 (matches the init zero-fill); configDirty_ stays
+            // false: pendingConfig_ == live objects, nothing for the AT to apply.
+
+            // Pre-size the per-Part voice-index vector to the max voice count so a
+            // Hardware(6)->Extended(16) switch (rebuildVoiceAllocation, audio
+            // thread) never triggers a heap reallocation on the audio thread.
+            parts_[p].voiceIndices.reserve (kNumVoices);
         }
         partsSeeded_ = true;
     }
@@ -199,8 +215,106 @@ void SynthEngine::setArpMode (uint8_t mode)
     // Stage only; the audio thread applies (servicePendingConfig in
     // processTransport) so the live arp/seq objects + the active->inactive
     // transition (arp.stop() + killGeneratedNotes_) never race the clock loop.
-    parts_[currentPart_].pendingConfig_.arpMode = mode;
+    parts_[currentPart_].writePendingConfig ([mode] (auto& c) { c.arpMode = mode; });
     parts_[currentPart_].configDirty_.store (true, std::memory_order_release);
+}
+
+void SynthEngine::stageArpSeqFromPartBytes (int part)
+{
+    // Message-thread entry point for FILE LOADS (.MUL / .parvati multi): stage
+    // the full arp/seq config from a Part's PartData into pendingConfig_ + flag
+    // configDirty_, exactly like the live setters do. The audio thread is the
+    // sole writer of the live Arpeggiator/Sequencer objects (it services
+    // configDirty_), so writing them here would race the clock loop; staging
+    // keeps pendingConfig_ (the serialize / loadPartIntoApvts source) in sync
+    // with the loaded values too. Reads parts_[part].partBytes (atomic).
+    if (! ok (part))
+        return;
+    auto& p  = parts_[part];
+    // Stage under the pendingConfig_ seqlock so the audio-thread reader
+    // (servicePendingConfig) never sees a torn snapshot.
+    p.writePendingConfig ([&] (Part::PendingConfig& pc) {
+        pc.arpMode       = p.partBytes[7];
+        pc.arpDirection  = p.partBytes[8];
+        pc.arpOctave     = p.partBytes[9];
+        pc.arpPattern    = p.partBytes[10];
+        pc.arpResolution = p.partBytes[11];
+        pc.seqLength[0]  = p.partBytes[12];
+        pc.seqLength[1]  = p.partBytes[13];
+        pc.seqLength[2]  = p.partBytes[14];
+        for (int i = 0; i < 64; ++i)
+            pc.seqData[i] = p.partBytes[16 + i];
+    });
+    p.configDirty_.store (true, std::memory_order_release);
+}
+
+//==========================================================================
+// Host plugin-state capture/restore (full 6-Part multitimbral persistence).
+static const char kEngineStateMagic[4] = { 'P','V','S','T' };
+
+void SynthEngine::captureState (juce::MemoryBlock& dest) const
+{
+    // Byte-oriented payload (endian-independent): magic + version + voice mode
+    // + current part, then per Part: patch[112], part[84] (with the arp/seq
+    // region overlaid from the authoritative pendingConfig_), midi channel /
+    // keyzone / voice allocation. polyphony rides in partBytes[15]; arp/seq lives
+    // in pendingConfig_ (overlaid here) and is re-staged on restore.
+    juce::MemoryOutputStream out (dest, false);
+    out.write (kEngineStateMagic, 4);
+    out.writeByte (1);                                                       // version
+    out.writeByte ((char) voiceMode_.load (std::memory_order_relaxed));
+    out.writeByte ((char) currentPart_);
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        const auto& part = parts_[p];
+        std::array<uint8_t, 112> patch {};   part.patchBytes.copyTo (patch);  out.write (patch.data(), 112);
+        std::array<uint8_t, 84>  pb   {};   part.partBytes.copyTo (pb);
+        const auto pc = part.readPendingConfig();   // overlay authoritative arp/seq (seqlock-protected read)
+        pb[7]  = pc.arpMode;  pb[8]  = pc.arpDirection;  pb[9]  = pc.arpOctave;
+        pb[10] = pc.arpPattern; pb[11] = pc.arpResolution;
+        pb[12] = pc.seqLength[0]; pb[13] = pc.seqLength[1]; pb[14] = pc.seqLength[2];
+        for (int i = 0; i < 64; ++i) pb[(size_t) (16 + i)] = pc.seqData[i];
+        out.write (pb.data(), 84);
+        out.writeByte ((char) part.midiChannel.load (std::memory_order_relaxed));
+        out.writeByte ((char) part.keyrangeLow.load (std::memory_order_relaxed));
+        out.writeByte ((char) part.keyrangeHigh.load (std::memory_order_relaxed));
+        out.writeByte ((char) part.voiceAllocation.load (std::memory_order_relaxed));
+    }
+    out.flush ();
+}
+
+bool SynthEngine::restoreState (const void* data, size_t size)
+{
+    if (data == nullptr || size < 7)   // magic(4)+version(1)+voicemode(1)+currentpart(1)
+        return false;
+    juce::MemoryInputStream in (data, size, false);
+    char magic[4];
+    if (in.read (magic, 4) != 4 || std::memcmp (magic, kEngineStateMagic, 4) != 0)
+        return false;
+    if (in.readByte() != 1)   // version
+        return false;
+    const int vm           = in.readByte();
+    const int savedCurrent = in.readByte();
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        auto& part = parts_[p];
+        std::array<uint8_t, 112> patch {};
+        if (in.read (patch.data(), 112) != 112) return false;
+        part.patchBytes.loadFrom (patch.data());
+        std::array<uint8_t, 84> pb {};
+        if (in.read (pb.data(), 84) != 84) return false;
+        part.partBytes.loadFrom (pb.data());
+        stageArpSeqFromPartBytes (p);   // re-stage arp/seq from the restored PartData
+        part.midiChannel.store  ((uint8_t) in.readByte());
+        part.keyrangeLow.store  ((uint8_t) in.readByte());
+        part.keyrangeHigh.store ((uint8_t) in.readByte());
+        part.voiceAllocation.store ((uint8_t) in.readByte());
+    }
+    voiceMode_.store (vm, std::memory_order_relaxed);
+    setCurrentPart (juce::jlimit (0, kNumParts - 1, savedCurrent));
+    resetAllVoices();        // clean slate for the restored config (deferred to AT)
+    markAllocationDirty();   // AT rebuilds voiceIndices + pushes every Part's frame
+    return true;
 }
 
 void SynthEngine::setCurrentPart (int part)
@@ -222,7 +336,7 @@ void SynthEngine::rebuildVoiceAllocation()
 {
     // Hardware mode = 1 voice per voicecard (faithful Ambika: 6-note max total);
     // Extended mode = the full block per voicecard (vc0={0,1,2}.. => up to 16).
-    const bool extended = (voiceMode_ == static_cast<int> (VoiceMode::Extended));
+    const bool extended = (voiceMode_.load (std::memory_order_relaxed) == static_cast<int> (VoiceMode::Extended));
     const auto slotsPerCard = [extended] (int vc)
     {
         return extended ? kVcBlockSize[vc] : 1;
@@ -232,9 +346,10 @@ void SynthEngine::rebuildVoiceAllocation()
     {
         auto& part = parts_[p];
         part.voiceIndices.clear();
+        const uint8_t voiceAllocation = part.voiceAllocation.load (std::memory_order_relaxed);
         for (int vc = 0; vc < kNumParts; ++vc)
         {
-            if ((part.voiceAllocation & (1u << vc)) == 0)
+            if ((voiceAllocation & (1u << vc)) == 0)
                 continue;
             if (claimed[vc])          // first-wins (firmware AssignVoices)
                 continue;
@@ -282,9 +397,9 @@ void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
 {
     if (! ok (part))
         return;
-    if (parts_[part].voiceAllocation != bitmask)   // only defer on a real change
+    if (parts_[part].voiceAllocation.load (std::memory_order_relaxed) != bitmask)   // only defer on a real change
     {
-        parts_[part].voiceAllocation = bitmask;
+        parts_[part].voiceAllocation.store (bitmask, std::memory_order_relaxed);
         markAllocationDirty();   // defer the rebuild to the audio thread (next block)
     }
 }
@@ -713,7 +828,9 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         if (! parts_[p].configDirty_.exchange (false, std::memory_order_acq_rel))
             continue;
         auto& part = parts_[p];
-        const auto& cfg = part.pendingConfig_;
+        // Snapshot the MT-authoritative arp/seq config under the seqlock (never a
+        // torn read of pendingConfig_ while the message thread stages a new edit).
+        const auto cfg = part.readPendingConfig();
         // arp/seq mode (same byte drives both): handle transition on the AT.
         {
             const bool wasActive = part.arp.isActive();

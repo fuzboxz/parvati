@@ -904,7 +904,7 @@ void MultiPage::refresh()
     channelCombo_.setSelectedId (static_cast<int> (prt.midiChannel.load()) + 1);
     loSlider_.setValue (static_cast<double> (prt.keyrangeLow.load()),  juce::dontSendNotification);
     hiSlider_.setValue (static_cast<double> (prt.keyrangeHigh.load()), juce::dontSendNotification);
-    const uint8_t alloc = prt.voiceAllocation;
+    const uint8_t alloc = prt.voiceAllocation.load (std::memory_order_relaxed);
     for (int b = 0; b < 6; ++b)
         allocBits_[b].setToggleState ((alloc & (1u << b)) != 0, juce::dontSendNotification);
     refreshing_ = false;

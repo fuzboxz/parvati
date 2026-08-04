@@ -49,7 +49,7 @@ void AmbikaVoice::prepare (double hostSampleRate, int /*blockSize*/)
     // Pick up any pending oversampling factor change before arming the filter.
     // prepare() runs in host setup (non-concurrent with processBlock), so a
     // direct assignment of osFactor_ here is race-free.
-    osFactor_ = pendingOsFactor_;
+    osFactor_ = pendingOsFactor_.load (std::memory_order_relaxed);
     osFactorDirty_.store (false, std::memory_order_relaxed);
 
     // The analog filter operates on the internal-rate (or oversampled) signal
@@ -94,7 +94,7 @@ void AmbikaVoice::setOversamplingFactor (int factor)
     // (audio thread), so we defer: osFactorDirty_ is serviced at the top of the
     // next fillInternalBlock(), which rebuilds the filter + Oversampling on the
     // owning thread. A silent voice rebuilds on its next note (no stale audio).
-    pendingOsFactor_ = factor;
+    pendingOsFactor_.store (factor, std::memory_order_relaxed);
     osFactorDirty_.store (true, std::memory_order_release);
 }
 
@@ -233,12 +233,15 @@ void AmbikaVoice::fillInternalBlock()
     // here so the per-voice Oversampling object is never freed under a
     // concurrent processSamplesUp/Down. AnalogFilter::prepare resets the filter
     // state, so the switch is click-free (just a rare quality toggle).
-    if (osFactorDirty_.load (std::memory_order_acquire))
+    // exchange (acq_rel) check-and-clear: a plain load()+store(false) would
+    // drop a change staged by the message thread between the two ops (a lost
+    // update on a rapid double-toggle). exchange makes the clear atomic with the
+    // check, matching the frame/options/config dirty-flag pattern.
+    if (osFactorDirty_.exchange (false, std::memory_order_acq_rel))
     {
-        osFactorDirty_.store (false, std::memory_order_release);
-        if (osFactor_ != pendingOsFactor_)
+        if (osFactor_ != pendingOsFactor_.load (std::memory_order_relaxed))
         {
-            osFactor_ = pendingOsFactor_;
+            osFactor_ = pendingOsFactor_.load (std::memory_order_relaxed);
             recreateOversampling();
         }
     }
@@ -248,10 +251,9 @@ void AmbikaVoice::fillInternalBlock()
     // mutate float filter state; applying them here keeps them off the concurrent
     // processSample reader. prepareFilterAtOsRate() -> filter_.prepare() resets
     // the filter state, so the switch is click-free.
-    if (topologyDirty_.load (std::memory_order_acquire))
+    if (topologyDirty_.exchange (false, std::memory_order_acq_rel))
     {
-        topologyDirty_.store (false, std::memory_order_release);
-        filter_.setTopology (pendingTopology_);
+        filter_.setTopology (pendingTopology_.load (std::memory_order_relaxed));
         prepareFilterAtOsRate();
         filter_.commit();
     }
@@ -265,9 +267,13 @@ void AmbikaVoice::fillInternalBlock()
     // the same zero-order-hold here, at the 8-bit internal rate, BEFORE the
     // filter+VCA (the hardware crush is pre-analog-VCF). crush()==1 => no hold.
     const uint8_t crush = voice_.crush();
+    // Declared at FUNCTION scope (not inside the `if` below) so the `out = crushed`
+    // shadow stays valid for every downstream read (1x default + smoothing paths,
+    // and the oversampled raw fill). Previously block-scoped, `out` dangled after
+    // the `if` closed -> stack-use-after-scope (ASAN abort at the read below).
+    uint8_t crushed[ambika::dsp::kAudioBlockSize];
     if (crush > 1)
     {
-        uint8_t crushed[ambika::dsp::kAudioBlockSize];
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
         {
             if (++crushSampleCounter_ >= static_cast<int> (crush))

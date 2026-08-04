@@ -179,11 +179,16 @@ int main()
         b.prepareToPlay (48000.0, 512);
 
         // Customize a couple of parts' routing + arp directly on the engine.
+        // (Write pendingConfig_ + flag configDirty_ -- the authoritative arp/seq
+        // config; the live objects lag it until the audio thread services
+        // configDirty_, and serializeParvatiMulti reads pendingConfig_.)
+        a.getEngine().getPart (1).pendingConfig_.arpOctave = 3;
+        a.getEngine().getPart (1).configDirty_.store (true);
         a.getEngine().setPartChannel (1, 3);
         a.getEngine().setPartKeyrange (1, 36, 60);
-        a.getEngine().getPart (1).arp.setOctave (3);
+        a.getEngine().getPart (2).pendingConfig_.arpResolution = 6;
+        a.getEngine().getPart (2).configDirty_.store (true);
         a.getEngine().setPartChannel (2, 5);
-        a.getEngine().getPart (2).arp.setResolution (6);
         // And a global option.
         setParam (a, "filter_card", 1);   // SSM2164
         a.syncAllParamsToEngine();
@@ -203,9 +208,9 @@ int main()
         std::printf ("     per-part routing mismatches = %d\n", routeMism);
         check (routeMism == 0, "all 6 parts' channel/keyrange/alloc match");
 
-        check (a.getEngine().getPart (1).arp.getOctave() == b.getEngine().getPart (1).arp.getOctave(),
+        check (a.getEngine().getPart (1).pendingConfig_.arpOctave == b.getEngine().getPart (1).pendingConfig_.arpOctave,
                "Part 1 arp_octave preserved");
-        check (a.getEngine().getPart (2).arp.getResolution() == b.getEngine().getPart (2).arp.getResolution(),
+        check (a.getEngine().getPart (2).pendingConfig_.arpResolution == b.getEngine().getPart (2).pendingConfig_.arpResolution,
                "Part 2 arp_resolution preserved");
         check (rawEqual (a.getApvts().getRawParameterValue ("filter_card")->load(),
                          b.getApvts().getRawParameterValue ("filter_card")->load()),

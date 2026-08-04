@@ -39,6 +39,28 @@ If you add a feature, add or extend a test under `tests/` and mirror an existing
 CMake target. The editor coverage test (`tools/editor_test.cpp`) and the layout
 sanity check are especially good guards for UI work.
 
+### Threading / concurrency
+
+Most tests are single-threaded and **cannot** surface message↔audio data races
+(the kind that crash the hosted plugin but stay green under ASAN). The
+`parvati_concurrency_test` is the exception: it spins a real background AUDIO
+thread (transport playing + a held note, so the arp / note-sequencer generate
+notes) while the MESSAGE thread runs the full host surface (param edits, arp/seq,
+part switches, `.MUL`/`.parvati` loads, host-state get/set, options, voice-mode).
+Reuse `tests/mt_harness.h` (`parvati_test::runConcurrent`) to add two-thread
+coverage to other tests.
+
+**Always run it under ThreadSanitizer** — that is how these races are caught:
+
+```bash
+cmake -S . -B build_tsan -DPARVATI_ENABLE_TSAN=ON
+cmake --build build_tsan -j 8 --target parvati_concurrency_test
+for i in $(seq 5); do ./build_tsan/parvati_concurrency_test || echo RACE; done   # races are timing-dependent
+```
+
+`PARVATI_MT_MASK` (argv[1], hex) selects which message-thread op classes run, for
+bisection (`./build_tsan/parvati_concurrency_test 0x2` = arp/seq only, etc.).
+
 ## Memory safety & static analysis
 
 Before a non-trivial change, run the sanitizer suite and a clang-tidy pass:

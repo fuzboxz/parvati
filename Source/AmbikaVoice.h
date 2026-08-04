@@ -107,7 +107,7 @@ public:
         // that fillInternalBlock() reads every block, so applying them on the
         // message thread would race the processSample reader. Serviced at the top
         // of fillInternalBlock().
-        pendingTopology_ = t;
+        pendingTopology_.store (t, std::memory_order_relaxed);
         topologyDirty_.store (true, std::memory_order_release);
     }
 
@@ -245,14 +245,14 @@ private:
     // audio thread (which owns the Oversampling object). filterOS_ is null when
     // osFactor_==1 (no oversampling -> bit-identical path).
     int osFactor_ { 1 };
-    int pendingOsFactor_ { 1 };
+    std::atomic<int> pendingOsFactor_ { 1 };
     std::atomic<bool> osFactorDirty_ { false };
 
     // Filter-card topology staging (message-thread -> audio-thread). The active
     // topology is applied in fillInternalBlock() so the filter is never
     // re-prepared under a concurrent processSample. Defaults to the topology
     // prepare() initialises (four-pole ladder).
-    ambika::dsp::FilterTopology pendingTopology_ { ambika::dsp::FilterTopology::FOUR_POLE_LADDER };
+    std::atomic<ambika::dsp::FilterTopology> pendingTopology_ { ambika::dsp::FilterTopology::FOUR_POLE_LADDER };
     std::atomic<bool> topologyDirty_ { false };
     std::unique_ptr<juce::dsp::Oversampling<float>> filterOS_;
 

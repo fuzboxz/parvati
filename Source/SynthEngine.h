@@ -100,16 +100,52 @@ struct PolyAllocator
     }
 };
 
+// Fixed-size array of atomically-accessed bytes. The message thread writes
+// (apply*/loads/seed) and the audio thread reads (pushPartBytesToVoices, spread,
+// polyphony) the same patch/part byte storage; per-byte atomic access removes
+// the data race a plain std::array would have under concurrent re-dirtying (the
+// per-Part frameDirty_ release/acquire still orders a whole frame's publish, but
+// the individual byte reads/writes must themselves be atomic to satisfy the C++
+// memory model / TSAN). Element proxies keep the existing `arr[i] = v` and
+// `uint8_t x = arr[i]` call sites working unchanged; whole-array ops use the
+// loadFrom / fill / assignFrom / copyTo helpers.
+template <size_t N>
+struct AtomicByteArray
+{
+    AtomicByteArray() { for (auto& x : a) x.store (0, std::memory_order_relaxed); }
+
+    struct Ref {            // proxy for `arr[i] = v` AND read-through on a non-const Part
+        std::atomic<uint8_t>& r;
+        uint8_t operator= (uint8_t v) const { r.store (v, std::memory_order_relaxed); return v; }
+        operator uint8_t() const { return r.load (std::memory_order_relaxed); }
+    };
+    struct ConstRef {       // proxy for `uint8_t x = arr[i]` on a const Part
+        const std::atomic<uint8_t>& r;
+        operator uint8_t() const { return r.load (std::memory_order_relaxed); }
+    };
+    Ref      operator[] (size_t i)       { return { a[i] }; }
+    ConstRef operator[] (size_t i) const { return { a[i] }; }
+
+    void loadFrom (const uint8_t* src)                 { for (size_t i = 0; i < N; ++i) a[i].store (src[i], std::memory_order_relaxed); }
+    void fill (uint8_t v)                              { for (auto& x : a) x.store (v, std::memory_order_relaxed); }
+    AtomicByteArray& operator= (const std::array<uint8_t, N>& src) { for (size_t i = 0; i < N; ++i) a[i].store (src[i], std::memory_order_relaxed); return *this; }
+    void copyTo (std::array<uint8_t, N>& dst) const    { for (size_t i = 0; i < N; ++i) dst[i] = a[i].load (std::memory_order_relaxed); }
+
+    std::array<std::atomic<uint8_t>, N> a;
+};
+
 struct Part
 {
-    std::array<uint8_t, 112> patchBytes {};   // sizeof(Patch)
-    std::array<uint8_t, 84>  partBytes {};    // sizeof(PartData)
+    AtomicByteArray<112> patchBytes {};   // sizeof(Patch) — MT writes, AT reads
+    AtomicByteArray<84>  partBytes  {};   // sizeof(PartData) — MT writes, AT reads
     parvati::Arpeggiator arp;
     parvati::Sequencer   seq;
     // These three are written on the message thread (Multi page / .MUL load) and
-    // read on the audio thread (findPartForNote, every note) -> atomic to avoid a
-    // data race. (polyphonyMode / voiceAllocation below stay plain: they are
-    // published to the audio thread via the allocationDirty_ release/acquire.)
+    // read on the audio thread (findPartForNote, every note) and (like the
+    // routing fields) voiceAllocation is written on the message thread and read
+    // on the audio thread (rebuildVoiceAllocation) -> atomic to avoid a data
+    // race. (polyphonyMode below stays plain: it is published to the audio
+    // thread via the allocationDirty_ release/acquire.)
     std::atomic<uint8_t> midiChannel  { 0 };   // 0 = Omni (all channels); else 1..16
     std::atomic<uint8_t> keyrangeLow  { 0 };
     std::atomic<uint8_t> keyrangeHigh { 127 };
@@ -128,19 +164,55 @@ struct Part
     // Arp/seq config staging (message thread writes, audio thread applies via
     // configDirty_ release/acquire). Preserves the live objects' runtime state
     // (pressedKeys_, step counters) — only the CONFIG is re-applied.
+    //
+    // pendingConfig_ is a plain struct accessed by TWO threads: the message
+    // thread (setters / stageArpSeqFromPartBytes / file loads) WRITES it, and the
+    // audio thread (servicePendingConfig) READS it. configDirty_ release/acquire
+    // orders a single edit, but a second MT write landing while the AT reads it
+    // is a data race (UB; TSAN-flagged; manifested as a host crash on the
+    // note-sequencer path). Guarded by a seqlock (pendingSeq_): the MT is the
+    // sole writer, the AT the sole reader — the textbook SPSC case.
     struct PendingConfig {
         uint8_t arpMode = 0, arpDirection = 0, arpOctave = 1, arpPattern = 0, arpResolution = 0;
         uint8_t seqLength[3] = { 0, 0, 0 };
         uint8_t seqData[64]  = {};
     };
     PendingConfig pendingConfig_;
+    std::atomic<uint32_t> pendingSeq_ { 0 };   // seqlock: even = stable, odd = writer mid-update
+
+    // Message-thread writer: wrap a field mutation so the audio-thread reader
+    // never sees a torn pendingConfig_. (Single message thread => sole writer.)
+    template <typename Fn>
+    void writePendingConfig (Fn&& fn)
+    {
+        pendingSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
+        std::atomic_thread_fence (std::memory_order_release);
+        fn (pendingConfig_);
+        std::atomic_thread_fence (std::memory_order_release);
+        pendingSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes data)
+    }
+    // Audio-thread reader: copy out a consistent snapshot (retry on a concurrent
+    // write). Bounded retries: the writer is non-realtime and quick.
+    PendingConfig readPendingConfig() const
+    {
+        for (;;)
+        {
+            const uint32_t s1 = pendingSeq_.load (std::memory_order_acquire);
+            if (s1 & 1u) continue;                              // writer in progress
+            PendingConfig copy = pendingConfig_;
+            std::atomic_thread_fence (std::memory_order_acquire);
+            if (pendingSeq_.load (std::memory_order_acquire) == s1)
+                return copy;
+        }
+    }
+
     std::atomic<bool> configDirty_ { false };
 
     // AT-written snapshot of voiceIndices.size() (rebuildVoiceAllocation) so the
     // message thread (editor status strip) never reads voiceIndices directly.
     std::atomic<int> voiceCount_ { 0 };
 
-    uint8_t voiceAllocation = 0;   // 6-bitmask over firmware voicecards (vc0..5)
+    std::atomic<uint8_t> voiceAllocation { 0 };   // 6-bitmask over firmware voicecards (vc0..5)
     uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
     parvati::NoteStack<12> monoStack;   // MONO note-priority stack
@@ -208,12 +280,12 @@ public:
     // All staged in pendingConfig_ + configDirty_; applied on the audio thread
     // in processTransport before the clock loop (see servicePendingConfig).
     void setArpMode (uint8_t mode);
-    void setArpDirection (uint8_t dir)  { parts_[currentPart_].pendingConfig_.arpDirection = dir; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setArpOctave (uint8_t oct)     { parts_[currentPart_].pendingConfig_.arpOctave = oct;    parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setArpPattern (uint8_t pat)    { parts_[currentPart_].pendingConfig_.arpPattern = pat;   parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setArpResolution (uint8_t res) { parts_[currentPart_].pendingConfig_.arpResolution = res; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setSequenceLength (int i, uint8_t len) { if (i>=0&&i<3) { parts_[currentPart_].pendingConfig_.seqLength[i] = len; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
-    void setSequenceDataByte (int offset, uint8_t value) { if (offset>=0&&offset<64) { parts_[currentPart_].pendingConfig_.seqData[offset] = value; parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
+    void setArpDirection (uint8_t dir)  { parts_[currentPart_].writePendingConfig ([dir] (auto& c)  { c.arpDirection = dir;  }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpOctave (uint8_t oct)     { parts_[currentPart_].writePendingConfig ([oct] (auto& c) { c.arpOctave = oct;     }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpPattern (uint8_t pat)    { parts_[currentPart_].writePendingConfig ([pat] (auto& c) { c.arpPattern = pat;    }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpResolution (uint8_t res) { parts_[currentPart_].writePendingConfig ([res] (auto& c) { c.arpResolution = res; }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setSequenceLength (int i, uint8_t len) { if (i>=0&&i<3)  { parts_[currentPart_].writePendingConfig ([i,len] (auto& c) { c.seqLength[i] = len;  }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
+    void setSequenceDataByte (int offset, uint8_t value) { if (offset>=0&&offset<64) { parts_[currentPart_].writePendingConfig ([offset,value] (auto& c) { c.seqData[offset] = value; }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
 
     // ---- multitimbral Part management ----
     static constexpr int getNumParts() { return kNumParts; }
@@ -221,10 +293,32 @@ public:
     int  getCurrentPart() const { return currentPart_; }
     Part& getPart (int i) { return parts_[i]; }
 
+    // Full 6-Part controller-state capture/restore for host plugin-state
+    // persistence (getStateInformation / setStateInformation). Captures every
+    // Part's patch/part bytes, arp/seq config (pendingConfig_), MIDI routing,
+    // voice allocation, polyphony (via partBytes[15]), the voice-capacity mode
+    // and the current part — so a DAW project reload preserves the full
+    // multitimbral setup, not just the current Part. restoreState returns false
+    // for an absent/short/foreign blob so the caller can fall back to the legacy
+    // current-part APVTS restore (backward compatible with pre-persistence
+    // states). Byte-oriented payload (endian-independent).
+    void captureState (juce::MemoryBlock& dest) const;
+    bool restoreState (const void* data, size_t size);
+
     // Push a Part's stored patch/part bytes into ALL of that Part's voices
     // (used when a .MUL loads every Part at once; edits normally go through
     // applyPatchByte for the current Part only).
     void pushPartBytesToVoices (int part);
+
+    // Stage a Part's arp/sequencer config from its 84-byte PartData (message
+    // thread). Routes the arp/seq bytes (PartData 7..14 + 16..79) into
+    // pendingConfig_ + flags configDirty_ instead of writing the live
+    // Arpeggiator/Sequencer objects directly -- the audio thread is the sole
+    // writer of those (it services configDirty_ in processTransport), which
+    // removes the data race between a file load and the audio-thread clock
+    // loop, and keeps pendingConfig_ (the serialize source) in sync with the
+    // loaded values. Used by the .MUL and .parvati multi-load paths.
+    void stageArpSeqFromPartBytes (int part);   // reads parts_[part].partBytes (atomic)
 
     // Hard-reset EVERY voice: stopNote(.,false) (Kill + clearCurrentNote) +
     // reprimeEnvelopes, so a patch switch starts from silence with no stuck /
@@ -257,15 +351,15 @@ public:
     // already claimed by an earlier Part is not reassigned (first-wins, like
     // firmware Multi::AssignVoices). Default bitmask = 1<<partIndex.
     void setPartVoiceAllocation (int part, uint8_t bitmask);
-    uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[part].voiceAllocation : 0; }
+    uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[part].voiceAllocation.load (std::memory_order_relaxed) : 0; }
 
     // Voice capacity mode (Hardware=6 / Extended=16). Sets the mode + flags a
     // deferred voice-allocation rebuild (same release/acquire path as
     // setPartVoiceAllocation). Plain (non-atomic): published to the audio thread
     // via the allocationDirty_ fence, exactly like polyphonyMode/voiceAllocation.
-    void setVoiceMode (VoiceMode m) { voiceMode_ = static_cast<int> (m); markAllocationDirty(); }
-    VoiceMode getVoiceMode() const noexcept { return static_cast<VoiceMode> (voiceMode_); }
-    int       getVoiceModeInt() const noexcept { return voiceMode_; }
+    void setVoiceMode (VoiceMode m) { voiceMode_.store (static_cast<int> (m), std::memory_order_relaxed); markAllocationDirty(); }
+    VoiceMode getVoiceMode() const noexcept { return static_cast<VoiceMode> (voiceMode_.load (std::memory_order_relaxed)); }
+    int       getVoiceModeInt() const noexcept { return voiceMode_.load (std::memory_order_relaxed); }
 
     // Advance the transport + per-part arp/sequencer for one audio block.
     void processTransport (juce::MidiBuffer& midi, int numSamples, double bpm, bool isPlaying);
@@ -322,8 +416,9 @@ private:
 
     // Voice capacity mode: 0 = Hardware (6 voices, 1 per voicecard),
     // 1 = Extended (16 voices, full block per voicecard). Published to the audio
-    // thread through allocationDirty_ (same fence as polyphonyMode/voiceAllocation).
-    int voiceMode_ { static_cast<int> (VoiceMode::Hardware) };
+    // thread through allocationDirty_ AND atomic (written by setVoiceMode on the
+    // message thread, read by rebuildVoiceAllocation on the audio thread).
+    std::atomic<int> voiceMode_ { static_cast<int> (VoiceMode::Hardware) };
 
     float bendRangeSemitones_ = 2.f;   // per-voice pitch-bend range (MPE default)
 

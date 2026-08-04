@@ -335,11 +335,15 @@ void Oscillator::RenderVowel(uint8_t* buffer) {
         }
 
         // Interpolate formant amplitudes.
-        // formant_amplitude[3] is an alias of noise_modulation.
+        // formant_amplitude[3] aliases noise_modulation in the firmware (they are
+        // adjacent struct bytes there); the C++ port keeps them as separate fields,
+        // so route the 4th write explicitly to avoid an out-of-bounds write.
         for (uint8_t i = 0; i < 4; ++i) {
             uint8_t amplitude_a = wav_res_vowel_data[offset_1 + 3 + i];
             uint8_t amplitude_b = wav_res_vowel_data[offset_2 + 3 + i];
-            data_.vw.formant_amplitude[i] = U8U4MixU8(amplitude_a, amplitude_b, balance);
+            const uint8_t v = U8U4MixU8(amplitude_a, amplitude_b, balance);
+            if (i < 3) data_.vw.formant_amplitude[i] = v;
+            else       data_.vw.noise_modulation    = v;
         }
     }
 
@@ -473,7 +477,15 @@ void Oscillator::RenderInterpolatedWavetable(uint8_t* buffer) {
 // Wavequence (single wave, position from parameter)
 // ---------------------------------------------------------------------------
 void Oscillator::RenderWavequence(uint8_t* buffer) {
-    const uint8_t* wave = wav_res_waves + U8U8Mul(parameter_, 129);
+    // wav_res_waves holds 80 single-cycle waves (WAV_RES_WAVES_SIZE = 80*129).
+    // The firmware indexes it directly with parameter_ (0..127) and reads
+    // adjacent PROGMEM past wave 79; in C++ that is an out-of-bounds read, so
+    // clamp the index to the table.
+    constexpr int kNumWaves = static_cast<int> (WAV_RES_WAVES_SIZE) / 129;
+    const uint8_t wave_index = (parameter_ < kNumWaves)
+        ? parameter_
+        : static_cast<uint8_t> (kNumWaves - 1);
+    const uint8_t* wave = wav_res_waves + U8U8Mul(wave_index, 129);
     BEGIN_SAMPLE_LOOP
         UPDATE_PHASE
         *buffer++ = InterpolateSample(wave, phase.integral >> 1);
