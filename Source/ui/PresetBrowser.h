@@ -47,10 +47,7 @@ private:
     void showMenu()
     {
         juce::PopupMenu menu;
-        // Order: Templates, User, Factory (banks), Multi.
-        addSubIfAny (menu, "Templates", buildFlatSub (templatesDir_, "*.parvati", false));
-        menu.addSubMenu (TRANS ("User"), buildRecursiveSub (userDir_));
-
+        // Order: Factory (banks), User, Templates, Multi.
         juce::PopupMenu factorySub;
         static const char* const kBanks[] = { "A", "B", "F", "S" };   // actual Ambika bank dirs
         for (const char* bank : kBanks)
@@ -60,6 +57,10 @@ private:
                 factorySub.addSubMenu (bank, bankSub);
         }
         menu.addSubMenu (TRANS ("Factory"), factorySub);
+
+        menu.addSubMenu (TRANS ("User"), buildRecursiveSub (userDir_));
+
+        addSubIfAny (menu, "Templates", buildFlatSub (templatesDir_, "*.parvati", false));
 
         addSubIfAny (menu, "Multi", buildFlatSub (factoryMultiDir_, "*.MUL", false));
 
