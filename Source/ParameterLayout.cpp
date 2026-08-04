@@ -69,7 +69,7 @@ juce::StringArray makeModSources()
 {
     return {
         "Env 1", "Env 2", "Env 3",
-        "LFO 1", "LFO 2", "LFO 3", "LFO 4",
+        "LFO 1", "LFO 2", "LFO 3", "Voice LFO",
         "Op 1", "Op 2", "Op 3", "Op 4",
         "Seq 1", "Seq 2", "Arp Step",
         "Velocity", "Aftertouch", "Pitch Bend", "Wheel", "Wheel 2", "Expression",
@@ -82,10 +82,10 @@ juce::StringArray makeModSources()
 juce::StringArray makeModDests()
 {
     return {
-        "Parameter 1", "Parameter 2", "Osc 1", "Osc 2", "Osc 1+2 Coarse", "Osc 1+2 Fine",
+        "Osc Param 1", "Osc Param 2", "Osc 1", "Osc 2", "Osc 1+2 Coarse", "Osc 1+2 Fine",
         "Mix Balance", "Mix Param", "Mix Noise", "Mix Sub Osc", "Mix Fuzz", "Mix Crush",
         "Filter Cutoff", "Filter Resonance",
-        "Attack", "Decay", "Release", "LFO 4", "VCA"
+        "Attack", "Decay", "Release", "Voice LFO", "VCA"
     };
 }
 
