@@ -140,7 +140,6 @@ class ParamPage : public juce::Component
 public:
     ParamPage (ParvatiAudioProcessor& processor,
                ThemeManager& themeManager,
-               const juce::String& heading,
                const std::vector<const PatchParamDescriptor*>& descriptors,
                int columns, int cellWidth, int cellHeight);
 
@@ -150,14 +149,10 @@ public:
     int getContentWidth()  const noexcept { return contentWidth_; }
     int getContentHeight() const noexcept { return contentHeight_; }
 
-    // Re-apply the theme-derived colours (page fill is read at paint time, the
-    // heading accent is explicit) and repaint. Called by the editor when the
-    // active theme changes. Group borders are themed via the LookAndFeel.
+    // Re-apply the theme-derived colours and repaint. Called by the editor when
+    // the active theme changes (page fill is read at paint time; group borders /
+    // titles are themed via the LookAndFeel).
     void applyThemeColors();
-
-    // Re-set the page heading text (called by the editor after a live language
-    // switch so the heading matches the translated tab name).
-    void setHeadingText (const juce::String& text);
 
     // Re-flow the grouped layout to @p targetWidth (called by the editor when
     // the tab / window resizes, so the group panels wrap to the available
@@ -211,7 +206,6 @@ private:
     int pageCols_ = 0;              // PageInfo::cols: cap on group panels per row (0 => width-only wrap)
     int contentWidth_ = 0, contentHeight_ = 0;
 
-    juce::Label heading_;
     std::vector<std::unique_ptr<ParamControl>> controls_;
     std::vector<std::unique_ptr<juce::GroupComponent>> groupComponents_;
     std::vector<GroupLayout> groups_;
@@ -219,8 +213,6 @@ private:
 
     // Layout constants (pixels).
     static constexpr int kMargin      = 16;  // page edge padding
-    static constexpr int kHeadingH    = 30;  // page heading height
-    static constexpr int kHeadingGap  = 8;   // gap below the heading
     static constexpr int kGroupGap    = 12;  // gap between group panels (h + v)
     static constexpr int kGroupPad    = 12;  // inset inside a group border
     static constexpr int kGroupTitleH = 18;  // room reserved for the group title

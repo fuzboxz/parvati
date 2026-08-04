@@ -61,7 +61,7 @@ private:
     // (Re)build the Filter Quality combo from TRANS() labels. The item IDs
     // (1/2/4) are stable across languages, so the selection survives a rebuild.
     void populateOversamplingCombo();
-    // (Re)build the Font combo (Traditional / Console). IDs 1/2 are stable.
+    // (Re)build the Font combo (Console / Serif / Sans Serif). IDs 1/2/3 are stable.
     void populateFontCombo();
     // Index <-> persisted-code helpers for the Language combo (which uses
     // index+1 as its item ID). An unknown code maps to index 0 ("auto").

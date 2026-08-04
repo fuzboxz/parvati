@@ -60,6 +60,11 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Re-apply the theme colours whenever this component inherits a new
+    // LookAndFeel (e.g. when added to the editor tree), so the keys are never
+    // briefly shown in the fallback palette.
+    void lookAndFeelChanged() override;
+
     //==========================================================================
     // Computer-keyboard play + accessibility.
     bool keyPressed (const juce::KeyPress&) override;

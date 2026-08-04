@@ -90,7 +90,8 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
 
     // Title (top-left).
     g.setColour (textDim);
-    g.setFont (juce::FontOptions (13.0f));
+    g.setFont (lnf ? lnf->appFont (13.0f, juce::Font::plain)
+                   : juce::Font (juce::FontOptions (13.0f)));
     g.drawText (title_,
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
                 juce::Justification::topLeft);
@@ -176,7 +177,8 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         g.strokePath (curve, juce::PathStrokeType (1.8f));
 
         g.setColour (textDim);
-        g.setFont (juce::FontOptions (11.0f));
+        g.setFont (lnf ? lnf->appFont (11.0f, juce::Font::plain)
+                       : juce::Font (juce::FontOptions (11.0f)));
         g.drawText ("(LFO)",
                     bounds.reduced (9.0f, 4.0f).removeFromTop (16).removeFromRight (50),
                     juce::Justification::topRight);

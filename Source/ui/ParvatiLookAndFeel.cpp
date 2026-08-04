@@ -134,9 +134,24 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
 
 juce::Font ParvatiLookAndFeel::appFont (float height, int styleFlags) const
 {
-    if (fontMode_ == 1 && unifontTypeface_ != nullptr)
-        return juce::Font (juce::FontOptions (unifontTypeface_).withHeight (height).withStyleFlags (styleFlags));
-    return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(), height, styleFlags));
+    switch (fontMode_)
+    {
+        case fontSerif:   // system default serif
+            return juce::Font (juce::FontOptions (juce::Font::getDefaultSerifFontName(),
+                                                  height, styleFlags));
+        case fontSansSerif:   // system default sans-serif
+            return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
+                                                  height, styleFlags));
+        case fontConsole:
+        default:
+            // Console (default): embedded GNU Unifont (DOS/retro). Fall back to
+            // the system monospace family if the embedded typeface failed to load.
+            if (unifontTypeface_ != nullptr)
+                return juce::Font (juce::FontOptions (unifontTypeface_)
+                                       .withHeight (height).withStyleFlags (styleFlags));
+            return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                  height, styleFlags));
+    }
 }
 
 juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
@@ -147,4 +162,192 @@ juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
 juce::Font ParvatiLookAndFeel::getTextButtonFont (juce::TextButton&, int)
 {
     return appFont (14.0f, juce::Font::plain);
+}
+
+juce::Font ParvatiLookAndFeel::getPopupMenuFont()
+{
+    // The drop-down list of every ComboBox (and the Save format menu). Without
+    // this override, PopupMenu would always render in the default sans, so the
+    // family would NOT follow a font-mode switch.
+    return appFont (15.0f, juce::Font::plain);
+}
+
+juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
+{
+    // Preserve each label's own height/style and only swap the family, so the
+    // mode follows live even for labels the editor does not re-apply manually.
+    const auto f = label.getFont();
+    return appFont (f.getHeight(), f.getStyleFlags());
+}
+
+juce::Font ParvatiLookAndFeel::getTabButtonFont (juce::TabBarButton&, float height)
+{
+    // Same sizing as the V4 default (height * 0.6); only the family follows the
+    // mode, so tab widths / bar depth are unchanged.
+    return appFont (height * 0.6f, juce::Font::plain);
+}
+
+int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int tabDepth)
+{
+    // Measure the label with the SAME family that drawTabButton renders it in
+    // (appFont), otherwise a wide font like Unifont would render wider than the
+    // measured slot and clip. Matches LookAndFeel_V2 otherwise.
+    const juce::Font font = getTabButtonFont (button, (float) tabDepth);
+    int width = juce::GlyphArrangement::getStringWidthInt (font, button.getButtonText().trim())
+              + getTabButtonOverlap (tabDepth) * 2;
+
+    if (auto* extraComponent = button.getExtraComponent())
+        width += button.getTabbedButtonBar().isVertical() ? extraComponent->getHeight()
+                                                          : extraComponent->getWidth();
+
+    return juce::jlimit (tabDepth * 2, tabDepth * 8, width);
+}
+
+void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphics& g,
+                                        bool isMouseOver, bool isMouseDown)
+{
+    // Faithful copy of LookAndFeel_V3::drawTabButton (V4 inherits it), with ONE
+    // change: the label text layout is built through appFont() instead of V3's
+    // hardcoded default-sans createTabTextLayout(), so the tab label family
+    // follows the active font mode.
+    const juce::Rectangle<int> activeArea (button.getActiveArea());
+    const juce::TabbedButtonBar::Orientation o = button.getTabbedButtonBar().getOrientation();
+    const juce::Colour bkg (button.getTabBackgroundColour());
+
+    if (button.getToggleState())
+    {
+        g.setColour (bkg);
+    }
+    else
+    {
+        juce::Point<int> p1, p2;
+        switch (o)
+        {
+            case juce::TabbedButtonBar::TabsAtBottom:   p1 = activeArea.getBottomLeft(); p2 = activeArea.getTopLeft();    break;
+            case juce::TabbedButtonBar::TabsAtTop:      p1 = activeArea.getTopLeft();    p2 = activeArea.getBottomLeft(); break;
+            case juce::TabbedButtonBar::TabsAtRight:    p1 = activeArea.getTopRight();   p2 = activeArea.getTopLeft();    break;
+            case juce::TabbedButtonBar::TabsAtLeft:     p1 = activeArea.getTopLeft();    p2 = activeArea.getTopRight();   break;
+            default:                                    jassertfalse; break;
+        }
+        g.setGradientFill (juce::ColourGradient (bkg.brighter (0.2f), p1.toFloat(),
+                                                 bkg.darker (0.1f),   p2.toFloat(), false));
+    }
+    g.fillRect (activeArea);
+
+    g.setColour (button.findColour (juce::TabbedButtonBar::tabOutlineColourId));
+    juce::Rectangle<int> r (activeArea);
+    if (o != juce::TabbedButtonBar::TabsAtBottom)   g.fillRect (r.removeFromTop (1));
+    if (o != juce::TabbedButtonBar::TabsAtTop)      g.fillRect (r.removeFromBottom (1));
+    if (o != juce::TabbedButtonBar::TabsAtRight)    g.fillRect (r.removeFromLeft (1));
+    if (o != juce::TabbedButtonBar::TabsAtLeft)     g.fillRect (r.removeFromRight (1));
+
+    const float alpha = button.isEnabled() ? ((isMouseOver || isMouseDown) ? 1.0f : 0.8f) : 0.3f;
+    juce::Colour col (bkg.contrasting().withMultipliedAlpha (alpha));
+
+    if (auto* bar = button.findParentComponentOfClass<juce::TabbedButtonBar>())
+    {
+        const juce::TabbedButtonBar::ColourIds colID = button.isFrontTab() ? juce::TabbedButtonBar::frontTextColourId
+                                                                            : juce::TabbedButtonBar::tabTextColourId;
+        if (bar->isColourSpecified (colID))
+            col = bar->findColour (colID);
+        else if (isColourSpecified (colID))
+            col = findColour (colID);
+    }
+
+    const juce::Rectangle<float> area (button.getTextArea().toFloat());
+    float length = area.getWidth();
+    float depth  = area.getHeight();
+    if (button.getTabbedButtonBar().isVertical())
+        std::swap (length, depth);
+
+    // *** the only deviation from V3: route the label through appFont(). ***
+    juce::Font font (getTabButtonFont (button, depth));
+    font.setUnderline (button.hasKeyboardFocus (false));
+    juce::AttributedString s;
+    s.setJustification (juce::Justification::centred);
+    s.append (button.getButtonText().trim(), font, col);
+    juce::TextLayout textLayout;
+    textLayout.createLayout (s, length);
+
+    juce::AffineTransform t;
+    switch (o)
+    {
+        case juce::TabbedButtonBar::TabsAtLeft:   t = t.rotated (juce::MathConstants<float>::pi * -0.5f).translated (area.getX(), area.getBottom()); break;
+        case juce::TabbedButtonBar::TabsAtRight:  t = t.rotated (juce::MathConstants<float>::pi *  0.5f).translated (area.getRight(), area.getY()); break;
+        case juce::TabbedButtonBar::TabsAtTop:
+        case juce::TabbedButtonBar::TabsAtBottom: t = t.translated (area.getX(), area.getY()); break;
+        default:                                  jassertfalse; break;
+    }
+    g.addTransform (t);
+    textLayout.draw (g, juce::Rectangle<float> (length, depth));
+}
+
+void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width, int height,
+                                                     const juce::String& text,
+                                                     const juce::Justification& position,
+                                                     juce::GroupComponent& group)
+{
+    // Mirrors LookAndFeel_V2::drawGroupComponentOutline, but the title font is
+    // resolved through appFont() so panel headings ("Osc 1", "Mixer", ...) follow
+    // the active font mode. The outline colour is transparent (borderless), so
+    // only the title text is visible.
+    const float textH = 15.0f;
+    const float indent = 3.0f;
+    const float textEdgeGap = 4.0f;
+    auto cs = 5.0f;
+
+    const juce::Font f = appFont (textH, juce::Font::plain);
+
+    juce::Path p;
+    auto x = indent;
+    auto y = f.getAscent() - 3.0f;
+    auto w = juce::jmax (0.0f, (float) width - x * 2.0f);
+    auto h = juce::jmax (0.0f, (float) height - y - indent);
+    cs = juce::jmin (cs, w * 0.5f, h * 0.5f);
+    auto cs2 = 2.0f * cs;
+
+    auto textW = text.isEmpty() ? 0.0f
+                                : juce::jlimit (0.0f,
+                                                juce::jmax (0.0f, w - cs2 - textEdgeGap * 2),
+                                                (float) juce::GlyphArrangement::getStringWidthInt (f, text)
+                                                    + textEdgeGap * 2.0f);
+    auto textX = cs + textEdgeGap;
+
+    if (position.testFlags (juce::Justification::horizontallyCentred))
+        textX = cs + (w - cs2 - textW) * 0.5f;
+    else if (position.testFlags (juce::Justification::right))
+        textX = w - cs - textW - textEdgeGap;
+
+    p.startNewSubPath (x + textX + textW, y);
+    p.lineTo (x + w - cs, y);
+
+    p.addArc (x + w - cs2, y, cs2, cs2, 0, juce::MathConstants<float>::halfPi);
+    p.lineTo (x + w, y + h - cs);
+
+    p.addArc (x + w - cs2, y + h - cs2, cs2, cs2,
+              juce::MathConstants<float>::halfPi, juce::MathConstants<float>::pi);
+    p.lineTo (x + cs, y + h);
+
+    p.addArc (x, y + h - cs2, cs2, cs2,
+              juce::MathConstants<float>::pi, juce::MathConstants<float>::pi * 1.5f);
+    p.lineTo (x, y + cs);
+
+    p.addArc (x, y, cs2, cs2,
+              juce::MathConstants<float>::pi * 1.5f, juce::MathConstants<float>::twoPi);
+    p.lineTo (x + textX, y);
+
+    const auto alpha = group.isEnabled() ? 1.0f : 0.5f;
+
+    g.setColour (group.findColour (juce::GroupComponent::outlineColourId)
+                    .withMultipliedAlpha (alpha));
+    g.strokePath (p, juce::PathStrokeType (2.0f));
+
+    g.setColour (group.findColour (juce::GroupComponent::textColourId)
+                    .withMultipliedAlpha (alpha));
+    g.setFont (f);
+    g.drawText (text,
+                juce::roundToInt (x + textX), 0,
+                juce::roundToInt (textW),
+                juce::roundToInt (textH),
+                juce::Justification::centred, true);
 }

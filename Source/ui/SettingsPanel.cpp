@@ -137,8 +137,8 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     };
     addAndMakeVisible (langCombo_);
 
-    // ---- Font (Traditional / Console) ----
-    // Item IDs 1/2 are stable; the stored value is 0/1 (ID - 1).
+    // ---- Font (Console / Serif / Sans Serif) ----
+    // Item IDs 1/2/3 are stable; the stored value is 0/1/2 (ID - 1).
     fontLabel_.setText (TRANS ("Font"), juce::dontSendNotification);
     fontLabel_.setFont (juce::FontOptions (14.0f));
     fontLabel_.setJustificationType (juce::Justification::centredLeft);
@@ -178,8 +178,9 @@ void SettingsPanel::populateOversamplingCombo()
 void SettingsPanel::populateFontCombo()
 {
     fontCombo_.clear();
-    fontCombo_.addItem (TRANS ("Traditional"), 1);   // 0
-    fontCombo_.addItem (TRANS ("Console"),     2);   // 1
+    fontCombo_.addItem (TRANS ("Console"),    1);   // 0  (default — embedded GNU Unifont)
+    fontCombo_.addItem (TRANS ("Serif"),      2);   // 1  (system default serif)
+    fontCombo_.addItem (TRANS ("Sans Serif"), 3);   // 2  (system default sans-serif)
 }
 
 int SettingsPanel::languageIndexFromCode (const juce::String& code) const

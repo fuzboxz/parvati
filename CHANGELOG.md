@@ -5,6 +5,13 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
+- **Font: Console by default + Serif / Sans Serif options + live switching.**
+  The Settings "Font" combo now defaults to **Console** (embedded GNU Unifont)
+  and adds system-default **Serif** and **Sans Serif** choices. Switching the
+  font now updates *every* text surface live — combo drop-down lists, tab labels,
+  and group-component panel titles previously stayed in the old font; all stock
+  text now resolves through the LookAndFeel font getters. The PARVATI header
+  logotype is also slightly smaller.
 - **License: AGPL-3.0.** Parvati's own code is now licensed under the GNU
   Affero General Public License v3.0 (was GPL-3.0). The Ambika-derived DSP under
   `Source/dsp/` and the factory preset banks retain their GPL-3.0 license

@@ -17,7 +17,7 @@
 #endif
 
 // Monospace "console" font height for the ASCII-art logo.
-constexpr float kLogoFontHeight = 6.0f;
+constexpr float kLogoFontHeight = 5.0f;
 
 // ASCII-art "PARVATI" logo (drawn small in the header). Leading spaces
 // are part of the art (per-line 3D indent) so they MUST be preserved; trailing
@@ -509,7 +509,7 @@ void ParamPage::configureGroupLayouts()
 
 void ParamPage::layoutGroups (int targetWidth)
 {
-    const int topY = kMargin + kHeadingH + kHeadingGap;
+    const int topY = kMargin;   // no page-heading row: the tab bar already names the page
     const int availW = targetWidth - 2 * kMargin;
 
     // Natural panel size for each group (independent of placement).
@@ -620,9 +620,6 @@ void ParamPage::layoutGroups (int targetWidth)
 
 void ParamPage::applyLayout()
 {
-    heading_.setBounds (kMargin, kMargin,
-                        juce::jmax (40, contentWidth_ - 2 * kMargin), kHeadingH);
-
     for (auto& g : groups_)
     {
         if (g.groupComp != nullptr)
@@ -734,7 +731,6 @@ void ParamPage::setGroupDecoration (const juce::String& groupName,
 
 ParamPage::ParamPage (ParvatiAudioProcessor& processor,
                       ThemeManager& themeManager,
-                      const juce::String& heading,
                       const std::vector<const PatchParamDescriptor*>& descriptors,
                       int columns, int cellWidth, int cellHeight)
     : themeManager_ (themeManager),
@@ -744,14 +740,6 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
     // number of group panels per row (whichever wraps first: width overflow or
     // the cap). 0 => width-only wrap (Multi page is not a ParamPage).
     pageCols_ = juce::jmax (0, columns);
-
-    heading_.setText (heading, juce::dontSendNotification);
-    heading_.setJustificationType (juce::Justification::centredLeft);
-    heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    // Bright section heading: explicit accent (overrides the L&F's default dim
-    // label text) to preserve the original look.
-    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
-    addAndMakeVisible (heading_);
 
     buildGroups (descriptors);
     configureGroupLayouts();
@@ -782,18 +770,12 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
 
 void ParamPage::applyThemeColors()
 {
-    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
     // Group borders / titles are themed via the L&F; force a repaint so a theme
     // switch refreshes them (and the control cells) immediately.
     for (auto& gc : groupComponents_) gc->repaint();
     for (auto& c : controls_)         c->repaint();
     for (auto& d : decorations_)      d->repaint();   // e.g. ADSR previews read the theme live
     repaint();
-}
-
-void ParamPage::setHeadingText (const juce::String& text)
-{
-    heading_.setText (text, juce::dontSendNotification);
 }
 
 void ParamPage::paint (juce::Graphics& g)
@@ -1104,7 +1086,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     for (const auto& pg : pages)
     {
-        auto* page = new ParamPage (processorRef_, themeManager_, TRANS (pg.name), sec[(int) pg.s],
+        auto* page = new ParamPage (processorRef_, themeManager_, sec[(int) pg.s],
                                     pg.cols, pg.cellW, pg.cellH);
 
         // Live previews: an ADSR curve under each Env group (Envelopes tab) and
@@ -1307,8 +1289,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             applyChromeTranslations();
         },
         [this] (int mode) {
-            // Font mode changed: apply to the L&F (combo/button getters) and
-            // re-apply every cached Label font to the chosen family, then repaint.
+            // Font mode changed: apply to the L&F (all per-widget font getters:
+            // combo/button/tab/popup/label/group) and re-apply every cached
+            // Label font to the chosen family, then repaint the whole editor.
             if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
                 lnf->setFontMode (mode);
             refreshFontsIn (this, * dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()));
@@ -1327,7 +1310,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     startTimerHz (30);
 
     // Apply the UI font family to every cached Label now that all widgets exist
-    // (console mode -> <Monospaced>). Combos/buttons follow via the L&F getters.
+    // (console mode -> embedded Unifont; serif/sans -> system defaults). Combos,
+    // buttons, tabs, popups and group titles follow via the L&F font getters.
     refreshFontsIn (this, lnf_);
 
     setSize (980, 660 + kHeaderH - kBarHeight);   // merged header replaces the old patch bar
@@ -1469,6 +1453,13 @@ void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     // A new theme was selected: re-apply the L&F colours, refresh the few
     // explicitly-coloured elements, and repaint everything.
     lnf_.setTheme (themeManager_.getCurrentTheme());
+    // Force every descendant to re-run lookAndFeelChanged(): ComboBox only
+    // re-syncs its internal label's text colour (ComboBox::textColourId) in
+    // colourChanged()/lookAndFeelChanged(), which a plain L&F colour change
+    // does NOT trigger — so a combo themed under a dark theme would otherwise
+    // keep near-white label text after switching to the light Paper theme.
+    // This also re-applies the per-widget fonts (combo/button/tab/popup).
+    sendLookAndFeelChange();
     for (auto* page : generatedPages_)
         page->applyThemeColors();
     if (multiPage_ != nullptr)
@@ -1552,10 +1543,10 @@ void ParvatiEditor::applyChromeTranslations()
 {
     // Re-translate every editor-chrome string through the active
     // LocalisedStrings so a live language switch updates immediately. tabKeys_
-    // holds the English (key) names in tab order; both the tab button and the
-    // matching page heading are re-applied for the generated pages. With no
-    // mappings installed (English) TRANS() is the identity, so this is a no-op
-    // for the byte-identical default.
+    // holds the English (key) names in tab order; each tab button is re-applied
+    // (the generated pages no longer carry their own heading — the tab names
+    // them). With no mappings installed (English) TRANS() is the identity, so
+    // this is a no-op for the byte-identical default.
     patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load..."));
@@ -1570,8 +1561,6 @@ void ParvatiEditor::applyChromeTranslations()
     {
         const auto translated = TRANS (tabKeys_[i]);
         tabs_.setTabName (static_cast<int> (i), translated);
-        if (i < generatedPages_.size())
-            generatedPages_[i]->setHeadingText (translated);
     }
 
     if (multiPage_ != nullptr)

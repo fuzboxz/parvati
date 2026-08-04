@@ -119,6 +119,15 @@ void KeyboardView::refresh()
     repaint();
 }
 
+void KeyboardView::lookAndFeelChanged()
+{
+    // The keyboard reads its colours from the inherited ParvatiLookAndFeel; re-
+    // apply them the instant a new L&F is set on this component (e.g. when it is
+    // added to the editor tree) so the keys are shown themed right away, with no
+    // reliance on an external refresh() call.
+    applyThemeColours();
+}
+
 void KeyboardView::paint (juce::Graphics& g)
 {
     const ParvatiTheme* t = nullptr;
@@ -161,31 +170,29 @@ void KeyboardView::applyThemeColours()
 
     if (t != nullptr)
     {
-        // Thematic keys: white/black derive from the theme palette instead of a
-        // fixed piano light/dark, so the keyboard recolours on every theme. The
-        // accent still colours pressed keys (the down overlay) so activity reads
-        // on every theme. Dark themes lift the panel toward a light key; the
-        // light Paper theme uses the warm panel header / a deepened window fill.
-        white  = t->isDark ? t->panelBackground2.brighter (1.6f)
-                           : t->panelHeader;
-        black  = t->isDark ? t->windowBackground
-                           : t->windowBackground.darker (0.25f);
-        down   = t->accent;
+        // Keys follow the theme: natural keys = the PRIMARY accent, sharps = the
+        // page background (the "dark" keys). The pressed/sounding + hover
+        // overlays use the SECONDARY accent, which contrasts with both the
+        // accent naturals and the background-dark sharps, so activity always
+        // reads regardless of theme.
+        white  = t->accent;
+        black  = t->windowBackground;
+        down   = t->accent2;
         over   = t->accent2.withAlpha (0.45f);
         line   = t->outline;
-        text   = t->textDim;
+        text   = t->windowBackground;   // contrasts with the accent-coloured naturals
         shadow = t->divider;
     }
     else
     {
-        // Fallbacks = Carbon-derived values (in case the component is shown
-        // before it inherits the editor's ParvatiLookAndFeel).
-        white  = juce::Colour (0xffdcdce4);
-        black  = juce::Colour (0xff141419);
-        down   = juce::Colour (0xffe8b84b);
+        // Carbon-derived fallback (shown only before the editor's
+        // ParvatiLookAndFeel is inherited).
+        white  = juce::Colour (0xffe8b84b);                 // accent (gold)
+        black  = juce::Colour (0xff141419);                 // windowBackground
+        down   = juce::Colour (0xff5b8db8);                 // accent2 (steel)
         over   = juce::Colour (0xff5b8db8).withAlpha (0.45f);
         line   = juce::Colour (0xff3c3c4a);
-        text   = juce::Colour (0xff9a9aa8);
+        text   = juce::Colour (0xff141419);
         shadow = juce::Colour (0xff24242e);
     }
 

@@ -33,20 +33,49 @@ public:
     /** The active theme, or nullptr if setTheme() has never been called. */
     const ParvatiTheme* getTheme() const noexcept { return theme_; }
 
-    /** Font mode: 0 = traditional (default sans), 1 = console (system
-        monospace, DOS-like). Applied via per-widget font getters + a recursive
-        Label re-apply (see refreshFontsIn) using the family-name placeholder. */
+    // App-wide font mode (mirrors PluginProcessor::uiFontMode_). Every stock
+    // text surface resolves its font through appFont(), so switching the mode
+    // updates combos, buttons, tab labels, popup menus, labels AND group-
+    // component headings live (see the getters below + refreshFontsIn).
+    enum AppFontMode : int
+    {
+        fontConsole  = 0,   // embedded GNU Unifont (DOS/retro) — DEFAULT
+        fontSerif    = 1,   // system default serif
+        fontSansSerif = 2,  // system default sans-serif
+    };
+
     void setFontMode (int mode) { fontMode_ = mode; }
     int  getFontMode() const noexcept { return fontMode_; }
 
-    // Per-widget font getters (virtual): route combo/button text through the
-    // chosen family placeholder (<Sans-Serif> vs <Monospaced>).
-    juce::Font getComboBoxFont (juce::ComboBox&) override;
+    // Per-widget font getters (virtual): EVERY text-drawing stock component is
+    // routed through appFont(), so a font-mode switch reaches combos, buttons,
+    // tab labels, popup-menu items, labels and group titles alike (previously
+    // only combos/buttons + manually-refreshed labels updated).
+    juce::Font getComboBoxFont   (juce::ComboBox&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+    juce::Font getPopupMenuFont  () override;
+    juce::Font getLabelFont      (juce::Label&) override;
+    juce::Font getTabButtonFont  (juce::TabBarButton&, float height) override;
+
+    // V4 inherits V3's tab drawing, whose createTabTextLayout() builds the tab
+    // label with a HARDCODED font and never consults getTabButtonFont() — so the
+    // tab labels stayed in the default font regardless of the mode. Override the
+    // whole drawTabButton (and the width measurement) to route the tab text
+    // through appFont(), matching V3's background / outline exactly otherwise.
+    void drawTabButton (juce::TabBarButton&, juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
+    int  getTabButtonBestWidth (juce::TabBarButton&, int tabDepth) override;
+
+    // Group-component panel titles are drawn by the L&F with a hardcoded font;
+    // overridden so the title family follows the active mode. Borderless: the
+    // outline colour is transparent, so only the text is visible.
+    void drawGroupComponentOutline (juce::Graphics&, int width, int height,
+                                    const juce::String& text,
+                                    const juce::Justification& position,
+                                    juce::GroupComponent&) override;
 
     // A Font for the active mode at @p height/style: console -> embedded GNU
-    // Unifont typeface (DOS/retro); traditional -> default sans. Public so the
-    // editor can re-apply every cached Label font on a mode switch.
+    // Unifont typeface (DOS/retro); serif/sansSerif -> the system default family.
+    // Public so the editor can re-apply every cached Label font on a mode switch.
     juce::Font appFont (float height, int styleFlags) const;
 
     // Wider, rounded, brighter scrollbar thumb than the V4 default (which draws
@@ -57,7 +86,7 @@ public:
 
 private:
     const ParvatiTheme* theme_ = nullptr;
-    int fontMode_ = 0;   // 0 = traditional sans, 1 = console (Unifont)
+    int fontMode_ = fontConsole;   // 0 = Console (Unifont), 1 = Serif, 2 = Sans Serif
     juce::Typeface::Ptr unifontTypeface_;   // embedded GNU Unifont (console mode)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiLookAndFeel)

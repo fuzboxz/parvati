@@ -44,10 +44,9 @@ void WheelsComponent::paint (juce::Graphics& g)
 {
     // Read the active theme through the inherited ParvatiLookAndFeel (same
     // pattern as KeyboardView). Re-applied each paint so a live theme switch
-    // recolours the wheels.
-    const ParvatiTheme* t = nullptr;
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        t = lnf->getTheme();
+    // recolours the wheels, and the label font follows the font mode.
+    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+    const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
 
     const juce::Colour bg    = (t != nullptr) ? t->windowBackground : juce::Colour (0xff141419);
     const juce::Colour track = (t != nullptr) ? t->outline          : juce::Colour (0xff3a3a44);
@@ -64,7 +63,8 @@ void WheelsComponent::paint (juce::Graphics& g)
     }
 
     g.setColour (dim);
-    g.setFont (juce::FontOptions (9.0f));
+    g.setFont (lnf != nullptr ? lnf->appFont (9.0f, juce::Font::plain)
+                              : juce::Font (juce::FontOptions (9.0f)));
     const int halfW = getWidth() / 2;
     g.drawText ("PITCH", juce::Rectangle<int> (0, getHeight() - 13, halfW, 12),
                 juce::Justification::centredTop);
