@@ -33,6 +33,17 @@ public:
     /** The active theme, or nullptr if setTheme() has never been called. */
     const ParvatiTheme* getTheme() const noexcept { return theme_; }
 
+    /** Font mode: 0 = traditional (default sans), 1 = console (system
+        monospace, DOS-like). Applied globally via getTypefaceForFont, so every
+        text-bearing widget follows. */
+    void setFontMode (int mode) { fontMode_ = mode; }
+    int  getFontMode() const noexcept { return fontMode_; }
+
+    // Master font hook: in console mode every requested typeface resolves to
+    // the cached system-monospace typeface, so ALL text (labels, combos,
+    // buttons, tabs, menus) becomes monospace.
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
+
     // Wider, rounded, brighter scrollbar thumb than the V4 default (which draws
     // a faint 1px-ish thumb that is hard to grab on the long param pages).
     void drawScrollbar (juce::Graphics&, juce::ScrollBar&, int x, int y, int width, int height,
@@ -41,6 +52,8 @@ public:
 
 private:
     const ParvatiTheme* theme_ = nullptr;
+    int fontMode_ = 0;   // 0 = traditional sans, 1 = console monospace
+    juce::Typeface::Ptr monoTypeface_;   // resolved once (system monospace) for console mode
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiLookAndFeel)
 };

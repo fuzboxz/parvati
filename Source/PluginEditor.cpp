@@ -968,6 +968,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Theme + LookAndFeel: one L&F on the editor, inherited by the whole control
     // tree, so no per-component palette is needed.
     lnf_.setTheme (themeManager_.getCurrentTheme());
+    // Apply the saved UI font mode BEFORE building any widgets, so every label /
+    // combo / tab picks up the chosen family (traditional vs console) at creation.
+    lnf_.setFontMode (processorRef_.getUiFontMode());
     setLookAndFeel (&lnf_);
     themeManager_.addChangeListener (this);
 
@@ -1285,6 +1288,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             processorRef_.setUiLanguage (code);
             installLanguage (code);
             applyChromeTranslations();
+        },
+        [this] (int mode) {
+            // Font mode changed: apply to the editor-wide L&F. Labels/tabs that
+            // cached their font at construction pick it up on the next open.
+            if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+                lnf->setFontMode (mode);
+            repaint();
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
     // Keep the Settings button's toggle state in sync when the panel is
@@ -1556,11 +1566,9 @@ void ParvatiEditor::applyChromeTranslations()
 void ParvatiEditor::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
-    // Header background is the SAME as everywhere (windowBackground) — no tinted
-    // band. A thin divider under the header separates it from the tab area.
+    // The whole UI (header included) is one flat windowBackground — no tinted
+    // band, no grey divider lines (borderless aesthetic).
     g.fillAll (theme.windowBackground);
-    g.setColour (theme.outline);
-    g.drawHorizontalLine ((float) kHeaderH, 0.0f, (float) getWidth());
 
     // ASCII-art "PARVATI" logo inside the reserved logo block (left), small
     // monospace (console) in the accent colour, with a 3px padding inset.

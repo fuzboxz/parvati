@@ -14,14 +14,16 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
                               std::function<void (bool)> onTooltipsChanged,
                               std::function<void (bool)> onSmoothingChanged,
                               std::function<void (int)> onOversamplingChanged,
-                              std::function<void (const juce::String&)> onLanguageChanged)
+                              std::function<void (const juce::String&)> onLanguageChanged,
+                              std::function<void (int)>    onFontModeChanged)
     : proc_ (proc),
       themeManager_ (themeManager),
       onZoomChanged_ (std::move (onZoomChanged)),
       onTooltipsChanged_ (std::move (onTooltipsChanged)),
       onSmoothingChanged_ (std::move (onSmoothingChanged)),
       onOversamplingChanged_ (std::move (onOversamplingChanged)),
-      onLanguageChanged_ (std::move (onLanguageChanged))
+      onLanguageChanged_ (std::move (onLanguageChanged)),
+      onFontModeChanged_ (std::move (onFontModeChanged))
 {
     // ---- Theme ----
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
@@ -134,6 +136,23 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
             onLanguageChanged_ (code);
     };
     addAndMakeVisible (langCombo_);
+
+    // ---- Font (Traditional / Console) ----
+    // Item IDs 1/2 are stable; the stored value is 0/1 (ID - 1).
+    fontLabel_.setText (TRANS ("Font"), juce::dontSendNotification);
+    fontLabel_.setFont (juce::FontOptions (14.0f));
+    fontLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (fontLabel_);
+
+    populateFontCombo();
+    fontCombo_.setSelectedId (proc_.getUiFontMode() + 1, juce::dontSendNotification);
+    fontCombo_.onChange = [this] {
+        const int mode = fontCombo_.getSelectedId() - 1;   // 1/2 -> 0/1
+        proc_.setUiFontMode (mode);
+        if (onFontModeChanged_)
+            onFontModeChanged_ (mode);
+    };
+    addAndMakeVisible (fontCombo_);
 }
 
 void SettingsPanel::setZoomValue (double zoom)
@@ -154,6 +173,13 @@ void SettingsPanel::populateOversamplingCombo()
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Standard (1\xc3\x97)")), 1);   // 1x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("High (2\xc3\x97)")),     2);   // 2x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Maximum (4\xc3\x97)")),  4);   // 4x
+}
+
+void SettingsPanel::populateFontCombo()
+{
+    fontCombo_.clear();
+    fontCombo_.addItem (TRANS ("Traditional"), 1);   // 0
+    fontCombo_.addItem (TRANS ("Console"),     2);   // 1
 }
 
 int SettingsPanel::languageIndexFromCode (const juce::String& code) const
@@ -184,10 +210,15 @@ void SettingsPanel::refreshLanguage()
     smoothingToggle_.setButtonText (TRANS ("Parameter Smoothing"));
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
+    fontLabel_.setText (TRANS ("Font"), juce::dontSendNotification);
 
     const int osId = osCombo_.getSelectedId();
     populateOversamplingCombo();
     osCombo_.setSelectedId (osId, juce::dontSendNotification);
+
+    const int fontId = fontCombo_.getSelectedId();
+    populateFontCombo();
+    fontCombo_.setSelectedId (fontId, juce::dontSendNotification);
 
     repaint();
 }
@@ -237,4 +268,10 @@ void SettingsPanel::resized()
     langLabel_.setBounds (area.removeFromTop (18));
     area.removeFromTop (2);
     langCombo_.setBounds (area.removeFromTop (rowH));
+    area.removeFromTop (gap + 8);
+
+    // Font row.
+    fontLabel_.setBounds (area.removeFromTop (18));
+    area.removeFromTop (2);
+    fontCombo_.setBounds (area.removeFromTop (rowH));
 }

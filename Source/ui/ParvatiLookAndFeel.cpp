@@ -8,6 +8,12 @@ ParvatiLookAndFeel::ParvatiLookAndFeel()
     // before any component reads it. ParvatiEditor overrides this immediately
     // via setTheme(themeManager_.getCurrentTheme()).
     setTheme (carbonTheme());
+
+    // Resolve the system monospace typeface ONCE, while still in traditional
+    // mode, so the base-class resolution does not recurse through our
+    // getTypefaceForFont override. Cached for console mode.
+    monoTypeface_ = juce::Font (juce::Font::getDefaultMonospacedFontName(),
+                                12.0f, juce::Font::plain).getTypefacePtr();
 }
 
 void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
@@ -20,12 +26,12 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::Slider::thumbColourId,                    t.accent);
     setColour (juce::Slider::textBoxTextColourId,              t.text);
     setColour (juce::Slider::textBoxBackgroundColourId,        t.panelBackground);
-    setColour (juce::Slider::textBoxOutlineColourId,           t.outline);
+    setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
     setColour (juce::Slider::textBoxHighlightColourId,         t.accent2);
 
     // ---- ComboBox ----
     setColour (juce::ComboBox::backgroundColourId,             t.panelBackground);
-    setColour (juce::ComboBox::outlineColourId,                t.outline);
+    setColour (juce::ComboBox::outlineColourId,                juce::Colour (0x00000000)); // borderless combo
     setColour (juce::ComboBox::textColourId,                   t.text);
     setColour (juce::ComboBox::arrowColourId,                  t.accent);
     setColour (juce::ComboBox::buttonColourId,                 t.accent);
@@ -39,12 +45,12 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::PopupMenu::highlightedTextColourId,       t.text);
 
     // ---- Label ----
-    // Default label text is the dim caption colour (the dominant label usage:
-    // the small control-name labels under each knob / combo). Bright headings
-    // override this per-component with theme.accent.
-    setColour (juce::Label::textColourId,                      t.textDim);
+    // Control-name labels (knob/combo captions, section captions) render in the
+    // accent colour, not dim grey. Per-component overrides (e.g. the version
+    // label) can still set a specific colour.
+    setColour (juce::Label::textColourId,                      t.accent);
     setColour (juce::Label::backgroundColourId,                juce::Colour (0x00000000)); // transparent (preserve default)
-    setColour (juce::Label::outlineColourId,                   t.outline);
+    setColour (juce::Label::outlineColourId,                   juce::Colour (0x00000000)); // borderless
 
     // ---- ScrollBar (page Viewports) ----
     setColour (juce::ScrollBar::backgroundColourId,            t.windowBackground);
@@ -59,15 +65,15 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
 
     // ---- TabbedComponent / TabbedButtonBar ----
     setColour (juce::TabbedComponent::backgroundColourId,      t.windowBackground);
-    setColour (juce::TabbedComponent::outlineColourId,         t.outline);
+    setColour (juce::TabbedComponent::outlineColourId,         juce::Colour (0x00000000)); // borderless
     setColour (juce::TabbedButtonBar::tabTextColourId,         t.textDim);
     setColour (juce::TabbedButtonBar::frontTextColourId,       t.accent);
     setColour (juce::TabbedButtonBar::tabOutlineColourId,      t.outline);
     setColour (juce::TabbedButtonBar::frontOutlineColourId,    t.accent);
 
-    // ---- GroupComponent (bordered panel headings, used from Phase 2b on) ----
+    // ---- GroupComponent (panel headings only — no border box) ----
     setColour (juce::GroupComponent::textColourId,             t.accent);
-    setColour (juce::GroupComponent::outlineColourId,          t.outline);
+    setColour (juce::GroupComponent::outlineColourId,          juce::Colour (0x00000000)); // no grey border around panels
 
     // ---- ToggleButton (Multi page voice-allocation bits) ----
     setColour (juce::ToggleButton::textColourId,               t.text);
@@ -124,4 +130,13 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
     }
     g.setColour (thumb);
     g.fillRoundedRectangle (r.reduced (0.5f), corner);
+}
+
+juce::Typeface::Ptr ParvatiLookAndFeel::getTypefaceForFont (const juce::Font& font)
+{
+    // Console mode: every requested typeface resolves to the cached system
+    // monospace typeface (DOS-like). Traditional mode: defer to the base.
+    if (fontMode_ == 1 && monoTypeface_ != nullptr)
+        return monoTypeface_;
+    return juce::LookAndFeel_V4::getTypefaceForFont (font);
 }

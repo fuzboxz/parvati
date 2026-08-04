@@ -800,6 +800,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_tooltips", uiTooltips_, nullptr);
     tree.setProperty ("ui_smoothing", uiSmoothing_, nullptr);
     tree.setProperty ("ui_oversampling", uiOversampling_, nullptr);
+    tree.setProperty ("ui_font_mode", uiFontMode_, nullptr);
     tree.setProperty ("ui_language", uiLanguage_, nullptr);
     // Full 6-Part multitimbral engine state (all parts' patch/part bytes, arp/seq
     // config, routing, voice allocation/mode). Base64 so it rides inside the XML
@@ -829,6 +830,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             uiTooltips_ = static_cast<bool> (tree.getProperty ("ui_tooltips", true));
             uiSmoothing_ = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
             uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 1));
+            uiFontMode_ = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
             uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
             apvts.replaceState (tree);
 

@@ -102,6 +102,10 @@ public:
     void setUiOversampling (int n)      { uiOversampling_ = n; }
     void setUiLanguage (juce::String code) { uiLanguage_ = std::move (code); }
 
+    // UI font mode: 0 = traditional (sans), 1 = console (system monospace).
+    int  getUiFontMode() const noexcept { return uiFontMode_; }
+    void setUiFontMode (int mode)       { uiFontMode_ = mode; }
+
     // Enable/disable optional per-sample parameter smoothing (knob / automation
     // zipper-noise reduction). Propagates to all voices + persists the pref.
     void setParameterSmoothing (bool smoothing);
@@ -233,6 +237,7 @@ private:
     bool         uiTooltips_ { true };
     bool         uiSmoothing_ { false };   // default OFF -> bit-identical audio
     int          uiOversampling_ { 1 };    // 1 / 2 / 4; default 1 -> bit-identical
+    int          uiFontMode_ { 0 };        // 0 = traditional sans, 1 = console mono
     juce::String uiLanguage_ { "auto" };   // editor chrome language (auto/en/fr)
 
     // Offline-render flag (host bounce). Updated by setNonRealtime() and kept
