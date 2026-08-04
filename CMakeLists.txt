@@ -220,6 +220,18 @@ target_link_libraries(Parvati
 )
 
 # ------------------------------------------------------------------------------
+# JUCE 9 ad-hoc-signs the VST3 bundle, THEN generates Contents/Resources/
+# moduleinfo.json (the VST3 manifest), which invalidates the signature seal.
+# Hosts then refuse to load it ("a sealed resource is missing or invalid") and
+# cache the failure. Re-sign AFTER JUCE's own post-build steps so moduleinfo.json
+# is sealed. (The AU has no such file and loads fine without this.) macOS-only.
+if(APPLE)
+    add_custom_command(TARGET Parvati_VST3 POST_BUILD
+        COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:Parvati_VST3>"
+        COMMENT "Re-sign Parvati.vst3 (seal moduleinfo.json)")
+endif()
+
+# ------------------------------------------------------------------------------
 # Headless Layer-3a verification (not shipped): instantiate the processor,
 # push a NoteOn, assert non-silent audio. Build with:
 #   cmake --build build --target parvati_headless_test && ./build/parvati_headless_test
