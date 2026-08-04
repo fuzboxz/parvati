@@ -65,6 +65,7 @@ echo ""
 echo "--- configuring + building ASan+UBSan (build_san_asan) ---"
 cmake -S "$SRC" -B "$SRC/build_san_asan" -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
+    -DCMAKE_OSX_ARCHITECTURES=arm64 \
     -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON > /tmp/parvati_cmake_asan.log 2>&1 || { tail -20 /tmp/parvati_cmake_asan.log; exit 2; }
 cmake --build "$SRC/build_san_asan" -j "$JOBS" > /tmp/parvati_build_asan.log 2>&1 || { tail -30 /tmp/parvati_build_asan.log; exit 2; }
 echo "  running suite under ASan+UBSan..."
@@ -78,6 +79,7 @@ if [ "${SKIP_TSAN:-0}" != "1" ]; then
     echo "--- configuring + building TSan (build_san_tsan) ---"
     cmake -S "$SRC" -B "$SRC/build_san_tsan" -G "Unix Makefiles" \
         -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 \
         -DPARVATI_ENABLE_TSAN=ON > /tmp/parvati_cmake_tsan.log 2>&1 || { tail -20 /tmp/parvati_cmake_tsan.log; exit 2; }
     cmake --build "$SRC/build_san_tsan" -j "$JOBS" > /tmp/parvati_build_tsan.log 2>&1 || { tail -30 /tmp/parvati_build_tsan.log; exit 2; }
 

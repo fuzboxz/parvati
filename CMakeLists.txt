@@ -9,6 +9,28 @@ project(Parvati
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Build UNIVERSAL macOS binaries (arm64 + x86_64) so the plugin loads in both
+# native Apple-Silicon hosts and Intel/Rosetta hosts. An arm64-only build is a
+# common cause of a locally-built VST3/AU showing as "unavailable" (and of MIDI
+# not reaching it) in a host running under Rosetta (e.g. Ableton Live). No-op off
+# Apple; pass -DCMAKE_OSX_ARCHITECTURES=arm64 to force a single (faster) arch
+# (e.g. for sanitizer builds).
+if(APPLE)
+    # A normal (non-cache) var so it always applies unless overridden by -D, and
+    # so it survives a reconfigure even if an empty value got cached earlier
+    # (a plain CACHE set won't overwrite an existing empty cache entry).
+    if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    endif()
+endif()
+
+# Default to a Debug build (the config this project is developed/tested with);
+# artefacts then land in build/Parvati_artefacts/Debug/. Override with
+# -DCMAKE_BUILD_TYPE=Release for an optimized build.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
 # Emit compile_commands.json (consumed by clang-tidy / IDE tooling). No-op when
 # the generator cannot write it (e.g. Xcode).
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
