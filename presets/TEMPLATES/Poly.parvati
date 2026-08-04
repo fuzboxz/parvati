@@ -2,7 +2,7 @@
 format: parvati-multi
 version: 1
 parvati_version: 0.1.0
-name: "Poly 6 (Hardware)"
+name: "Poly"
 author: ""
 parts:
   - channel: 1
@@ -1101,4 +1101,3 @@ options:
   vca_curve: 0            # Linearized
   filter_card: 0            # 4-pole LM13700 (Ladder)
   filter_drive: 1            # 1.2
-  voice_mode: 0            # 0 = Hardware (6 voices), 1 = Extended (16 voices)

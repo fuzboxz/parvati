@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// SynthEngine — a juce::Synthesiser owning 16 AmbikaVoice instances divided
-// among up to kNumParts (6) Parts (multitimbral, hardware-accurate). Each Part
+// SynthEngine — a juce::Synthesiser owning 6 AmbikaVoice instances (one per
+// firmware voicecard), divided among up to kNumParts (6) Parts (multitimbral,
+// hardware-accurate). Each Part
 // has its own Patch + PartData + Arpeggiator + Sequencer + MIDI channel + key
 // zone + a subset of the voices. Only the "current" Part is edited via APVTS
 // (matching the hardware: one editor, part-select). Direct MIDI is routed by
@@ -27,14 +28,9 @@
 
 // Authentic hardware = 6 voicecards => 6 Parts.
 static constexpr int kNumParts  = 6;
-static constexpr int kNumVoices = 16;   // plugin exposes 16 for polyphony headroom
-
-// Voice capacity mode. Hardware = each of the 6 voicecards contributes ONE
-// voice (faithful to the Ambika: 6-note max polyphony total across Parts).
-// Extended = each voicecard contributes its full block of Parvati voice slots
-// (vc0={0,1,2}..vc5={14,15} => up to 16 voices) for polyphony headroom.
-// Default = Hardware (6); the user opts into Extended (16) explicitly.
-enum class VoiceMode { Hardware = 0, Extended = 1 };
+// Authentic hardware = 6 voicecards => 6 voices (one voice per voicecard) =>
+// 6-note max polyphony total across Parts.
+static constexpr int kNumVoices = 6;
 
 // One multitimbral Part. The Arpeggiator/Sesequencer objects ARE the per-part
 // storage for those settings (edits route to the current Part's objects).
@@ -296,8 +292,8 @@ public:
     // Full 6-Part controller-state capture/restore for host plugin-state
     // persistence (getStateInformation / setStateInformation). Captures every
     // Part's patch/part bytes, arp/seq config (pendingConfig_), MIDI routing,
-    // voice allocation, polyphony (via partBytes[15]), the voice-capacity mode
-    // and the current part — so a DAW project reload preserves the full
+    // voice allocation, polyphony (via partBytes[15]) and the current part — so
+    // a DAW project reload preserves the full
     // multitimbral setup, not just the current Part. restoreState returns false
     // for an absent/short/foreign blob so the caller can fall back to the legacy
     // current-part APVTS restore (backward compatible with pre-persistence
@@ -345,21 +341,14 @@ public:
     uint8_t getPartKeyrangeHigh (int part) const { return ok (part) ? parts_[part].keyrangeHigh.load() : 127; }
 
     // ---- Voice allocation (firmware 6-voicecard bitmask) ----
-    // Each firmware voicecard maps to a fixed block of Parvati voices
-    // (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13} vc5={14,15}).
-    // A Part owns the union of blocks for the voicecard bits it sets; a voicecard
+    // Each firmware voicecard maps to exactly one Parvati voice (voice i ==
+    // voicecard i). A Part owns the voicecards whose bits it sets; a voicecard
     // already claimed by an earlier Part is not reassigned (first-wins, like
-    // firmware Multi::AssignVoices). Default bitmask = 1<<partIndex.
+    // firmware Multi::AssignVoices), and setPartVoiceAllocation additionally
+    // enforces EXCLUSIVE ownership (a card newly claimed by a Part is removed
+    // from every other Part). Default bitmask = 1<<partIndex.
     void setPartVoiceAllocation (int part, uint8_t bitmask);
     uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[part].voiceAllocation.load (std::memory_order_relaxed) : 0; }
-
-    // Voice capacity mode (Hardware=6 / Extended=16). Sets the mode + flags a
-    // deferred voice-allocation rebuild (same release/acquire path as
-    // setPartVoiceAllocation). Plain (non-atomic): published to the audio thread
-    // via the allocationDirty_ fence, exactly like polyphonyMode/voiceAllocation.
-    void setVoiceMode (VoiceMode m) { voiceMode_.store (static_cast<int> (m), std::memory_order_relaxed); markAllocationDirty(); }
-    VoiceMode getVoiceMode() const noexcept { return static_cast<VoiceMode> (voiceMode_.load (std::memory_order_relaxed)); }
-    int       getVoiceModeInt() const noexcept { return voiceMode_.load (std::memory_order_relaxed); }
 
     // Advance the transport + per-part arp/sequencer for one audio block.
     void processTransport (juce::MidiBuffer& midi, int numSamples, double bpm, bool isPlaying);
@@ -382,8 +371,8 @@ public:
     {
         return voiceCardBuffers_;
     }
-    // Voicecard (0..5) for a given voice index, via the fixed block mapping
-    // (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13} vc5={14,15}).
+    // Voicecard (0..5) for a given voice index. Voice i == voicecard i (one
+    // voice per voicecard), so this is the identity clamped to the 6 cards.
     static int voiceCardForIndex (int voiceIndex);
     // Back-compat: the current Part's arp/seq.
     parvati::Arpeggiator& getArp()       { return parts_[currentPart_].arp; }
@@ -413,12 +402,6 @@ private:
     std::atomic<bool> pendingVcaExp_ { false };
     std::atomic<bool> pendingSmoothing_ { false };
     std::atomic<float> pendingFilterDrive_ { 1.0f };
-
-    // Voice capacity mode: 0 = Hardware (6 voices, 1 per voicecard),
-    // 1 = Extended (16 voices, full block per voicecard). Published to the audio
-    // thread through allocationDirty_ AND atomic (written by setVoiceMode on the
-    // message thread, read by rebuildVoiceAllocation on the audio thread).
-    std::atomic<int> voiceMode_ { static_cast<int> (VoiceMode::Hardware) };
 
     float bendRangeSemitones_ = 2.f;   // per-voice pitch-bend range (MPE default)
 

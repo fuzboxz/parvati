@@ -2,11 +2,11 @@
 //
 // Generates the 5 stock init templates as full-fidelity .parvati multis into
 // presets/TEMPLATES/. Each template is produced by configuring a FRESH
-// processor's init state (polyphony mode / per-part voice allocation / global
-// Voice Mode), flushing the deferred allocation rebuild, then
-// parvati::preset::serializeParvatiMulti(). Run from the repo root via the
-// `parvati_gen_templates` CMake target whenever the init state or the set of
-// templates changes; the output is embedded into the plugin binary at build time.
+// processor's init state (polyphony mode / per-part voice allocation), flushing
+// the deferred allocation rebuild, then parvati::preset::serializeParvatiMulti().
+// Run from the repo root via the `parvati_gen_templates` CMake target whenever
+// the init state or the set of templates changes; the output is embedded into
+// the plugin binary at build time.
 //
 //   cmake --build build --target parvati_gen_templates && ./build/parvati_gen_templates
 
@@ -25,8 +25,7 @@
 namespace
 {
 // One stock init template. part0Poly is the `part_polyphony` value
-// (0 = MONO, 1 = POLY, 2 = UNISON_2X). voiceMode is 0 = Hardware (6 voices),
-// 1 = Extended (16 voices).
+// (0 = MONO, 1 = POLY, 2 = UNISON_2X).
 struct TemplateSpec
 {
     const char* file;
@@ -34,7 +33,6 @@ struct TemplateSpec
     int     part0Poly;
     uint8_t part0Alloc;
     uint8_t part1Alloc;
-    int     voiceMode;
     int     part0Legato;   // PartData legato byte (1 = mono plays legato: no env re-attack on overlapping notes)
 };
 
@@ -57,8 +55,6 @@ bool writeTemplate (const TemplateSpec& s, const juce::File& outDir)
     for (int p = 2; p < SynthEngine::getNumParts(); ++p)
         proc.getEngine().setPartVoiceAllocation (p, 0);
 
-    // Global Voice Mode (Hardware 6 / Extended 16) — carried under .parvati options:.
-    proc.setUiVoiceMode (s.voiceMode);
     proc.setLoadedProgramName (s.name);
     proc.syncAllParamsToEngine();
 
@@ -91,9 +87,9 @@ bool writeTemplate (const TemplateSpec& s, const juce::File& outDir)
         return false;
     }
 
-    std::printf ("  wrote %-22s  (%d bytes, voice_mode=%d, alloc0=0x%02x alloc1=0x%02x, poly0=%d)\n",
+    std::printf ("  wrote %-22s  (%d bytes, alloc0=0x%02x alloc1=0x%02x, poly0=%d)\n",
                  out.getFileName().toRawUTF8(), (int) yaml.length(),
-                 s.voiceMode, (unsigned) s.part0Alloc, (unsigned) s.part1Alloc, s.part0Poly);
+                 (unsigned) s.part0Alloc, (unsigned) s.part1Alloc, s.part0Poly);
     return true;
 }
 }  // namespace
@@ -112,11 +108,10 @@ int main()
     }
 
     const std::vector<TemplateSpec> specs = {
-        { "Mono.parvati",         "Monotimbral Mono",   0, 0x01, 0x00, 0, 1 },
-        { "Poly 6.parvati",       "Poly 6 (Hardware)",  1, 0x3f, 0x00, 0, 0 },
-        { "Poly 16.parvati",      "Poly 16 (Extended)", 1, 0x3f, 0x00, 1, 0 },
-        { "Unison.parvati",       "Unison 2x",          2, 0x3f, 0x00, 1, 0 },
-        { "Multitimbral.parvati", "Multitimbral (3+3)", 1, 0x15, 0x2a, 0, 0 },
+        { "Mono.parvati",         "Monotimbral Mono",   0, 0x01, 0x00, 1 },
+        { "Poly.parvati",         "Poly",               1, 0x3f, 0x00, 0 },
+        { "Unison.parvati",       "Unison 2x",          2, 0x3f, 0x00, 0 },
+        { "Multitimbral.parvati", "Multitimbral (3+3)", 1, 0x15, 0x2a, 0 },
     };
 
     std::printf ("Generating %zu templates -> %s\n", specs.size(), outDir.getFullPathName().toRawUTF8());
@@ -145,15 +140,14 @@ int main()
         // partBytes[15]) before reading it back — loadParvatiMultiFile marks it
         // dirty but does not run the audio thread itself.
         { juce::AudioBuffer<float> b (2, 256); b.clear(); juce::MidiBuffer m; chk.processBlock (b, m); }
-        const int vm      = chk.getUiVoiceMode();
         // Polyphony lives in PartData byte 15 (synced into Part.polyphonyMode by
         // the rebuild above); read it from the engine's Part 0 storage.
         chk.getApvts().getParameterAsValue ("part_select") = 1.0f;
         chk.syncAllParamsToEngine();
         const int poly0   = chk.getEngine().getPart (0).polyphonyMode;
-        const bool pass   = loaded && vm == s.voiceMode && poly0 == s.part0Poly;
-        std::printf ("  %-22s load=%d pb15pre=%d apvtsPoly=%.2f voice_mode=%d (exp %d) poly0=%d (exp %d)  %s\n",
-                     s.file, (int) loaded, pb15pre, (double) apvtsPoly, vm, s.voiceMode, poly0, s.part0Poly,
+        const bool pass   = loaded && poly0 == s.part0Poly;
+        std::printf ("  %-22s load=%d pb15pre=%d apvtsPoly=%.2f poly0=%d (exp %d)  %s\n",
+                     s.file, (int) loaded, pb15pre, (double) apvtsPoly, poly0, s.part0Poly,
                      pass ? "OK" : "FAIL");
         if (pass) ++verified;
     }

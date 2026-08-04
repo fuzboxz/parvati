@@ -21,14 +21,13 @@ SynthEngine::SynthEngine()
     setNoteStealingEnabled (true);  // we steal within a Part anyway
 
     // Default voice allocation: SINGLE-PART — all 6 voicecards on Part 0, so a
-    // player on MIDI channel 1 gets the full hardware polyphony out of the box
-    // (6 voices in VoiceMode::Hardware, 16 in Extended). This differs from the
-    // firmware factory multi (controller/multi.cc: Part0=0x15, Part1=0x2a, a
-    // 3+3 multitimbral split), which remains available by loading a factory
-    // .MUL or assigning voicecards per Part via the Multi page.
-    // rebuildVoiceAllocation() maps each voicecard to a Parvati voice block
-    // (vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13}
-    // vc5={14,15}) with first-wins across Parts.
+    // player on MIDI channel 1 gets the full hardware polyphony (6 voices) out
+    // of the box. This differs from the firmware factory multi
+    // (controller/multi.cc: Part0=0x15, Part1=0x2a, a 3+3 multitimbral split),
+    // which remains available by loading a factory .MUL or assigning voicecards
+    // per Part via the Multi page. rebuildVoiceAllocation() maps each voicecard
+    // to its single Parvati voice (voice i == voicecard i) with first-wins
+    // across Parts.
     constexpr uint8_t kInitVoiceAllocation[kNumParts] = { 0x3f, 0, 0, 0, 0, 0 };
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -139,9 +138,9 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
             // seqData stays 0 (matches the init zero-fill); configDirty_ stays
             // false: pendingConfig_ == live objects, nothing for the AT to apply.
 
-            // Pre-size the per-Part voice-index vector to the max voice count so a
-            // Hardware(6)->Extended(16) switch (rebuildVoiceAllocation, audio
-            // thread) never triggers a heap reallocation on the audio thread.
+            // Pre-size the per-Part voice-index vector to the voice count so a
+            // rebuild (rebuildVoiceAllocation, audio thread) never triggers a
+            // heap reallocation on the audio thread.
             parts_[p].voiceIndices.reserve (kNumVoices);
         }
         partsSeeded_ = true;
@@ -254,15 +253,14 @@ static const char kEngineStateMagic[4] = { 'P','V','S','T' };
 
 void SynthEngine::captureState (juce::MemoryBlock& dest) const
 {
-    // Byte-oriented payload (endian-independent): magic + version + voice mode
-    // + current part, then per Part: patch[112], part[84] (with the arp/seq
-    // region overlaid from the authoritative pendingConfig_), midi channel /
-    // keyzone / voice allocation. polyphony rides in partBytes[15]; arp/seq lives
-    // in pendingConfig_ (overlaid here) and is re-staged on restore.
+    // Byte-oriented payload (endian-independent): magic + version + current
+    // part, then per Part: patch[112], part[84] (with the arp/seq region overlaid
+    // from the authoritative pendingConfig_), midi channel / keyzone / voice
+    // allocation. polyphony rides in partBytes[15]; arp/seq lives in
+    // pendingConfig_ (overlaid here) and is re-staged on restore.
     juce::MemoryOutputStream out (dest, false);
     out.write (kEngineStateMagic, 4);
     out.writeByte (1);                                                       // version
-    out.writeByte ((char) voiceMode_.load (std::memory_order_relaxed));
     out.writeByte ((char) currentPart_);
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -285,7 +283,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
 
 bool SynthEngine::restoreState (const void* data, size_t size)
 {
-    if (data == nullptr || size < 7)   // magic(4)+version(1)+voicemode(1)+currentpart(1)
+    if (data == nullptr || size < 6)   // magic(4)+version(1)+currentpart(1)
         return false;
     juce::MemoryInputStream in (data, size, false);
     char magic[4];
@@ -293,7 +291,6 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         return false;
     if (in.readByte() != 1)   // version
         return false;
-    const int vm           = in.readByte();
     const int savedCurrent = in.readByte();
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -310,7 +307,6 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         part.keyrangeHigh.store ((uint8_t) in.readByte());
         part.voiceAllocation.store ((uint8_t) in.readByte());
     }
-    voiceMode_.store (vm, std::memory_order_relaxed);
     setCurrentPart (juce::jlimit (0, kNumParts - 1, savedCurrent));
     resetAllVoices();        // clean slate for the restored config (deferred to AT)
     markAllocationDirty();   // AT rebuilds voiceIndices + pushes every Part's frame
@@ -325,22 +321,10 @@ void SynthEngine::setCurrentPart (int part)
 
 //==========================================================================
 // Voice allocation from the firmware 6-voicecard bitmask.
-namespace
-{
-    // Fixed mapping: firmware voicecard -> Parvati voice block.
-    constexpr int kVcBlockStart[kNumParts] = { 0, 3, 6, 9, 12, 14 };
-    constexpr int kVcBlockSize[kNumParts]  = { 3, 3, 3, 3, 2, 2 };
-}
-
 void SynthEngine::rebuildVoiceAllocation()
 {
-    // Hardware mode = 1 voice per voicecard (faithful Ambika: 6-note max total);
-    // Extended mode = the full block per voicecard (vc0={0,1,2}.. => up to 16).
-    const bool extended = (voiceMode_.load (std::memory_order_relaxed) == static_cast<int> (VoiceMode::Extended));
-    const auto slotsPerCard = [extended] (int vc)
-    {
-        return extended ? kVcBlockSize[vc] : 1;
-    };
+    // 1 voice per voicecard (voice i == voicecard i); faithful Ambika 6-note
+    // max polyphony total across Parts.
     bool claimed[kNumParts] = {};   // voicecard already taken by an earlier Part
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -354,16 +338,15 @@ void SynthEngine::rebuildVoiceAllocation()
             if (claimed[vc])          // first-wins (firmware AssignVoices)
                 continue;
             claimed[vc] = true;
-            for (int k = 0; k < slotsPerCard (vc); ++k)
-                part.voiceIndices.push_back (kVcBlockStart[vc] + k);
+            part.voiceIndices.push_back (vc);   // voice i == voicecard i
         }
     }
     // CHAIN (Option A): each CHAIN Part doubles its voice set by claiming FREE
-    // voicecard blocks as an internal "chain partner" — the plugin equivalent of
-    // the firmware's 2-unit chain (2N voices via midi_dispatcher.ForwardNote,
+    // voicecards as an internal "chain partner" — the plugin equivalent of the
+    // firmware's 2-unit chain (2N voices via midi_dispatcher.ForwardNote,
     // midi_dispatcher.h:228) but fully internal (no MIDI output). Base claims
-    // (above) are honoured first, so a CHAIN Part only takes blocks no other Part
-    // uses; if free blocks run out it gets a partial chain (graceful).
+    // (above) are honoured first, so a CHAIN Part only takes voicecards no other
+    // Part uses; if free cards run out it gets a partial chain (graceful).
     for (int p = 0; p < kNumParts; ++p)
     {
         if (parts_[p].polyphonyMode != 4 /*CHAIN*/) continue;
@@ -372,11 +355,10 @@ void SynthEngine::rebuildVoiceAllocation()
         size_t partnerVoices = 0;
         for (int vc = 0; vc < kNumParts && partnerVoices < baseN; ++vc)
         {
-            if (claimed[vc]) continue;          // only truly free blocks
+            if (claimed[vc]) continue;          // only truly free cards
             claimed[vc] = true;
-            for (int k = 0; k < slotsPerCard (vc); ++k)
-                parts_[p].voiceIndices.push_back (kVcBlockStart[vc] + k);
-            partnerVoices += slotsPerCard (vc);
+            parts_[p].voiceIndices.push_back (vc);
+            ++partnerVoices;
         }
     }
     // Re-tag each voice with its (possibly changed) Part.
@@ -397,11 +379,31 @@ void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
 {
     if (! ok (part))
         return;
-    if (parts_[part].voiceAllocation.load (std::memory_order_relaxed) != bitmask)   // only defer on a real change
-    {
-        parts_[part].voiceAllocation.store (bitmask, std::memory_order_relaxed);
-        markAllocationDirty();   // defer the rebuild to the audio thread (next block)
-    }
+
+    const uint8_t old = parts_[part].voiceAllocation.load (std::memory_order_relaxed);
+    if (old == bitmask)
+        return;   // no change -> nothing to defer
+
+    parts_[part].voiceAllocation.store (bitmask, std::memory_order_relaxed);
+
+    // Exclusive voicecard ownership: a card newly claimed by `part` (added) is
+    // removed from every OTHER Part, so a voicecard belongs to AT MOST one Part.
+    // (The default Part0=0x3f would otherwise silently starve any Part that later
+    // claims vc0..5.) rebuildVoiceAllocation's first-wins claimed[] stays as a
+    // safety net, but this keeps the stored bitmasks themselves consistent so
+    // getPartVoiceAllocation reflects the exclusive split immediately.
+    const uint8_t added = static_cast<uint8_t> (bitmask & static_cast<uint8_t> (~old));
+    if (added)
+        for (int q = 0; q < kNumParts; ++q)
+            if (q != part)
+            {
+                const uint8_t qa = parts_[q].voiceAllocation.load (std::memory_order_relaxed);
+                if (qa & added)
+                    parts_[q].voiceAllocation.store (static_cast<uint8_t> (qa & static_cast<uint8_t> (~added)),
+                                                     std::memory_order_relaxed);
+            }
+
+    markAllocationDirty();   // defer the rebuild to the audio thread (next block)
 }
 
 void SynthEngine::pushPartBytesToVoices (int part)
@@ -818,9 +820,8 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         // rebuildVoiceAllocation re-tags still-allocated voices to their
         // (possibly new) Part and pushPartBytesToVoices re-applies that Part's
         // patch, so a held note picks up the new Part's sound; a voice whose
-        // slot is no longer allocated (e.g. Extended->Hardware) plays out its
-        // release and frees itself. No permanent stuck notes, no dead-voice
-        // glitch.
+        // voicecard is no longer allocated plays out its release and frees
+        // itself. No permanent stuck notes, no dead-voice glitch.
 
         for (int p = 0; p < kNumParts; ++p)
             parts_[p].polyphonyMode = static_cast<uint8_t> (juce::jlimit (0, 4, (int) parts_[p].partBytes[15]));
@@ -987,12 +988,9 @@ void SynthEngine::injectSequencerModulation()
 // Multi-output routing.
 int SynthEngine::voiceCardForIndex (int voiceIndex)
 {
-    // Fixed block mapping (matches rebuildVoiceAllocation's kVcBlockStart/Size):
-    //   vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13} vc5={14,15}
-    for (int vc = 0; vc < kNumParts; ++vc)
-        if (voiceIndex >= kVcBlockStart[vc] && voiceIndex < kVcBlockStart[vc] + kVcBlockSize[vc])
-            return vc;
-    return 0;   // defensive clamp (out-of-range never occurs for kNumVoices=16)
+    // Voice i == voicecard i (one voice per voicecard), so the voicecard IS the
+    // (clamped) voice index.
+    return juce::jlimit (0, kNumParts - 1, voiceIndex);
 }
 
 void SynthEngine::renderVoices (juce::AudioBuffer<float>& outputAudio,

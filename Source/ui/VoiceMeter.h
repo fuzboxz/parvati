@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// VoiceMeter — a compact 16-voice activity indicator for the Parvati UI. Each of
-// the 16 engine voices (6 firmware voicecards) is shown as a cell that lights up
+// VoiceMeter — a compact 6-voicecard activity indicator for the Parvati UI. Each
+// of the 6 firmware voicecards (one voice each) is shown as a cell that lights up
 // in the theme accent when the voice is active, dimming to an outline dot when
 // free; active cells display the MIDI note name (e.g. "C4"). A header strip
-// shows "Voices" + the active-count ("5/16"). The meter is fed per-frame by the
+// shows "Voices" + the active-count ("5/6"). The meter is fed per-frame by the
 // editor (Phase 4) via a state-provider callback and owns nothing from the
 // engine directly, so it stays decoupled and headless-testable. Phase 3 of
 // docs/UI_MODERNIZATION_PLAN.md (gap D14).
@@ -39,25 +39,16 @@ public:
     VoiceMeter();
     ~VoiceMeter() override;
 
-    /** Set the callback the meter polls at ~30 Hz to refresh its 16 cells.
-        The callback must return exactly 16 entries (one per voice); fewer are
+    /** Set the callback the meter polls at ~30 Hz to refresh its 6 cells.
+        The callback must return exactly 6 entries (one per voicecard); fewer are
         ignored (the last good frame is kept), more are truncated. Pass nullptr
         to clear the provider. */
     void setStateProvider (std::function<std::vector<VoiceActivity>()> provider);
 
-    /** Display mode: Voicecard shows the 6 hardware voicecards (the faithful
-        Ambika view, default); Extended shows all 16 voice slots. The meter
-        follows the engine's voice-capacity mode (passed in by the editor) and
-        owns no toggle of its own. */
-    enum class ViewMode { Voicecard, Extended };
-    void     setViewMode (ViewMode m);
-    ViewMode getViewMode() const noexcept { return viewMode_; }
-
     /** Force a repaint (e.g. after a theme switch). */
     void refresh() { repaint(); }
 
-    /** Number of voices currently active (0..6 in Voicecard view, 0..16 in
-        Extended), for display/accessibility. */
+    /** Number of voices currently active (0..6), for display/accessibility. */
     int getActiveVoiceCount() const noexcept;
 
     void paint (juce::Graphics&) override;
@@ -75,44 +66,26 @@ private:
     // MIDI note number (0..127) -> "C4" style name (60 == C4). Empty if invalid.
     static juce::String midiNoteName (int note);
 
-    // Paint one voice/card cell (active => accent fill + note name; free =>
-    // outline + dim centre dot). Shared by the Voicecard (6) and Extended (16)
-    // views so both look identical apart from the cell count.
+    // Paint one voice cell (active => accent fill + note name; free => outline +
+    // dim centre dot).
     static void drawCell (juce::Graphics& g, juce::Rectangle<float> r, bool active, int note,
                           float corner, juce::Colour accent, juce::Colour outline,
                           juce::Colour textValue, juce::Colour textDim);
 
-    // Firmware voicecard layout: vc0={0,1,2} vc1={3,4,5} vc2={6,7,8}
-    // vc3={9,10,11} vc4={12,13} vc5={14,15}. True when a wider gap should
-    // follow @p voiceIndex (i.e. it is the last voice of its voicecard block).
-    static bool isVoicecardBoundary (int voiceIndex);
+    static constexpr int kNumVoicecards = 6;   // the 6 firmware voicecards (1 voice each)
 
-    static constexpr int kNumVoices = 16;
-    static constexpr int kNumVoicecards = 6;   // the 6 firmware voicecards
-
-    ViewMode viewMode_ { ViewMode::Voicecard };
-
-    // Voicecard view: a card is active if any of its voice slots is sounding.
-    struct CardState { bool active = false; int note = -1; };
-    std::array<CardState, kNumVoicecards> cardState_ {};
-    std::array<juce::Rectangle<int>, kNumVoicecards> cardRects_ {};
-    // Card -> voice-slot block mirror of SynthEngine's fixed table. Duplicated
-    // here so VoiceMeter does not depend on SynthEngine.h (stays decoupled /
-    // headless-testable). vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11}
-    // vc4={12,13} vc5={14,15}.
-    static constexpr int kVcBlockStart[kNumVoicecards] = { 0, 3, 6, 9, 12, 14 };
-    static constexpr int kVcBlockSize[kNumVoicecards]  = { 3, 3, 3, 3, 2, 2 };
+    struct CellState { bool active = false; int note = -1; };
+    std::array<CellState, kNumVoicecards> state_ {};
+    std::array<juce::Rectangle<int>, kNumVoicecards> cellRects_ {};
 
     // Accessibility: exposes the live active-voice count as a read-only value
-    // so screen readers announce e.g. "5 of 16".
+    // so screen readers announce e.g. "5 of 6".
     struct VoiceCountInterface;
     friend struct VoiceCountInterface;
     int lastAnnouncedCount_ = -1;
 
     std::function<std::vector<VoiceActivity>()> provider_;
-    std::vector<VoiceActivity> state_;                 // size kNumVoices
     juce::Rectangle<int> labelArea_;                   // "Voices" / count strip
-    std::array<juce::Rectangle<int>, kNumVoices> cellRects_ {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VoiceMeter)
 };

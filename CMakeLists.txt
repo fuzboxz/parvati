@@ -704,21 +704,6 @@ target_link_libraries(parvati_polyphony_test PRIVATE
     juce::juce_gui_basics
 )
 
-add_executable(parvati_voice_modes_test
-    tests/voice_modes_test.cpp
-)
-target_include_directories(parvati_voice_modes_test PRIVATE Source)
-target_compile_features(parvati_voice_modes_test PRIVATE cxx_std_17)
-target_link_libraries(parvati_voice_modes_test PRIVATE
-    Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
-)
-
 add_executable(parvati_patch_load_test
     tests/patch_load_test.cpp
 )

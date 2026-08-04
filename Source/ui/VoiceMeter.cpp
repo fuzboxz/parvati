@@ -15,7 +15,7 @@ const char* const kNoteNames[12] = {
 
 VoiceMeter::VoiceMeter()
 {
-    state_.assign (static_cast<size_t> (kNumVoices), VoiceActivity {});
+    state_.fill (CellState {});
     startTimerHz (30);
 
     // Accessibility name/description (read by the default handler).
@@ -33,37 +33,18 @@ void VoiceMeter::setStateProvider (std::function<std::vector<VoiceActivity>()> p
     provider_ = std::move (provider);
 }
 
-void VoiceMeter::setViewMode (ViewMode m)
-{
-    if (viewMode_ == m)
-        return;
-    viewMode_ = m;
-    resized();
-    repaint();
-}
-
 int VoiceMeter::getActiveVoiceCount() const noexcept
 {
-    // Voicecard view counts active cards (0..6); Extended counts active voice
-    // slots (0..16). Both denominators are reported via the accessibility value.
-    if (viewMode_ == ViewMode::Voicecard)
-    {
-        int n = 0;
-        for (const auto& c : cardState_)
-            if (c.active)
-                ++n;
-        return n;
-    }
     int n = 0;
-    for (const auto& v : state_)
-        if (v.active)
+    for (const auto& c : state_)
+        if (c.active)
             ++n;
     return n;
 }
 
 //==========================================================================
 // Accessibility: expose the live active-voice count as a read-only text value
-// ("N of 16") so screen readers announce the meter state.
+// ("N of 6") so screen readers announce the meter state.
 struct VoiceMeter::VoiceCountInterface : public juce::AccessibilityTextValueInterface
 {
     explicit VoiceCountInterface (VoiceMeter& o) : owner (o) {}
@@ -72,9 +53,7 @@ struct VoiceMeter::VoiceCountInterface : public juce::AccessibilityTextValueInte
 
     juce::String getCurrentValueAsString() const override
     {
-        // Denominator tracks the view: "N of 6" (Voicecard) / "N of 16" (Extended).
-        const int denom = owner.viewMode_ == ViewMode::Voicecard ? kNumVoicecards : kNumVoices;
-        return juce::String (owner.getActiveVoiceCount()) + " of " + juce::String (denom);
+        return juce::String (owner.getActiveVoiceCount()) + " of " + juce::String (kNumVoicecards);
     }
 
     void setValueAsString (const juce::String&) override {}   // read-only
@@ -137,58 +116,24 @@ void VoiceMeter::drawCell (juce::Graphics& g, juce::Rectangle<float> r, bool act
     }
 }
 
-bool VoiceMeter::isVoicecardBoundary (int voiceIndex)
-{
-    switch (voiceIndex)
-    {
-        // Last voice of each firmware voicecard block:
-        // vc0={0,1,2} vc1={3,4,5} vc2={6,7,8} vc3={9,10,11} vc4={12,13} vc5={14,15}
-        case 2: case 5: case 8: case 11: case 13:
-            return true;
-        default:
-            return false;
-    }
-}
-
 void VoiceMeter::timerCallback()
 {
     if (! provider_)
         return;
 
     const auto next = provider_();
-    const size_t n = static_cast<size_t> (kNumVoices);
-    if (next.size() < n)
+    if (next.size() < static_cast<size_t> (kNumVoicecards))
         return;   // malformed frame; keep the last good state
 
     bool changed = false;
-    for (size_t i = 0; i < n; ++i)
-    {
-        if (state_[i].active != next[i].active || state_[i].note != next[i].note)
-        {
-            state_[i] = next[i];
-            changed = true;
-        }
-    }
-
-    // Voicecard view: aggregate the 16 slot states into the 6 voicecards. A card
-    // is active iff any slot in its block is sounding; its shown note is the
-    // first active slot's note. Compared so the card view repaints on change.
     for (int c = 0; c < kNumVoicecards; ++c)
     {
-        CardState cs { false, -1 };
-        for (int k = 0; k < kVcBlockSize[c]; ++k)
+        // Voice i == voicecard i (one voice per card), so cell c is fed directly
+        // by provider slot c.
+        const auto& slot = next[static_cast<size_t> (c)];
+        if (state_[(size_t) c].active != slot.active || state_[(size_t) c].note != slot.note)
         {
-            const auto& slot = state_[static_cast<size_t> (kVcBlockStart[c] + k)];
-            if (slot.active)
-            {
-                cs.active = true;
-                if (cs.note < 0)
-                    cs.note = slot.note;
-            }
-        }
-        if (cardState_[(size_t) c].active != cs.active || cardState_[(size_t) c].note != cs.note)
-        {
-            cardState_[(size_t) c] = cs;
+            state_[(size_t) c] = { slot.active, slot.note };
             changed = true;
         }
     }
@@ -198,7 +143,7 @@ void VoiceMeter::timerCallback()
         repaint();
 
         // Announce the active-voice count to accessibility clients when it
-        // changes (screen readers read the value interface, e.g. "5 of 16").
+        // changes (screen readers read the value interface, e.g. "5 of 6").
         const int count = getActiveVoiceCount();
         if (count != lastAnnouncedCount_)
         {
@@ -226,9 +171,8 @@ void VoiceMeter::paint (juce::Graphics& g)
     g.setColour (outlineC);
     g.drawRoundedRectangle (bounds, corner, 1.0f);
 
-    // ---- Left header: "Voices" + active count (denominator tracks the view) ----
+    // ---- Left header: "Voices" + active count ----
     const int active = getActiveVoiceCount();
-    const int denom  = (viewMode_ == ViewMode::Voicecard) ? kNumVoicecards : kNumVoices;
 
     if (! labelArea_.isEmpty())
     {
@@ -239,30 +183,17 @@ void VoiceMeter::paint (juce::Graphics& g)
                     label.removeFromTop (label.getHeight() / 2),
                     juce::Justification::centred, false);
         g.setColour (accent);
-        g.drawText (juce::String (active) + "/" + juce::String (denom),
+        g.drawText (juce::String (active) + "/" + juce::String (kNumVoicecards),
                     label, juce::Justification::centred, false);
     }
 
     const float cellCorner = 2.5f;
 
-    // ---- Voicecard view: 6 hardware-voicecard cells ----
-    if (viewMode_ == ViewMode::Voicecard)
+    // ---- 6 hardware-voicecard cells ----
+    for (int c = 0; c < kNumVoicecards; ++c)
     {
-        for (int c = 0; c < kNumVoicecards; ++c)
-        {
-            const auto r = cardRects_[(size_t) c].toFloat();
-            drawCell (g, r, cardState_[(size_t) c].active, cardState_[(size_t) c].note,
-                      cellCorner, accent, outlineC, textValue, textDim);
-        }
-        return;
-    }
-
-    // ---- Extended view: 16 voice-slot cells ----
-    const size_t n = static_cast<size_t> (kNumVoices);
-    for (size_t i = 0; i < n; ++i)
-    {
-        const auto r = cellRects_[i].toFloat();
-        drawCell (g, r, state_[i].active, state_[i].note,
+        const auto r = cellRects_[(size_t) c].toFloat();
+        drawCell (g, r, state_[(size_t) c].active, state_[(size_t) c].note,
                   cellCorner, accent, outlineC, textValue, textDim);
     }
 }
@@ -277,37 +208,15 @@ void VoiceMeter::resized()
 
     const int cellH = area.getHeight();
 
-    // ---- Voicecard view: 6 even cells (one per hardware voicecard) ----
-    if (viewMode_ == ViewMode::Voicecard)
-    {
-        const int gap = 4;
-        const int totalGap = (kNumVoicecards - 1) * gap;
-        const int cellW = juce::jmax (6, (area.getWidth() - totalGap) / kNumVoicecards);
-        int x = area.getX();
-        const int y = area.getY();
-        for (int c = 0; c < kNumVoicecards; ++c)
-        {
-            cardRects_[(size_t) c] = juce::Rectangle<int> (x, y, cellW, cellH);
-            x += cellW + gap;
-        }
-        return;
-    }
-
-    // ---- Extended view: 16 voice-slot cells with voicecard-group gaps ----
-    // Distribute the 16 cells across the remaining width with voicecard-group
-    // gaps. Boundary voices (2,5,8,11,13) get the wider group gap.
-    const int innerGap = 2;
-    const int groupGap = 6;
-    const int totalGap = 10 * innerGap + 5 * groupGap;   // 10 inner + 5 group
-    const int avail    = area.getWidth() - totalGap;
-    const int cellW    = juce::jmax (4, avail / kNumVoices);
+    // ---- 6 even cells (one per hardware voicecard) ----
+    const int gap = 4;
+    const int totalGap = (kNumVoicecards - 1) * gap;
+    const int cellW = juce::jmax (6, (area.getWidth() - totalGap) / kNumVoicecards);
     int x = area.getX();
     const int y = area.getY();
-
-    for (int i = 0; i < kNumVoices; ++i)
+    for (int c = 0; c < kNumVoicecards; ++c)
     {
-        cellRects_[static_cast<size_t> (i)] =
-            juce::Rectangle<int> (x, y, cellW, cellH);
-        x += cellW + (isVoicecardBoundary (i) ? groupGap : innerGap);
+        cellRects_[(size_t) c] = juce::Rectangle<int> (x, y, cellW, cellH);
+        x += cellW + gap;
     }
 }

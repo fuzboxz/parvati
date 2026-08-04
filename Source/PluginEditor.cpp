@@ -1175,9 +1175,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Global page's "Global" group as a decoration (owned by the page). ----
     {
         auto vm = std::make_unique<VoiceMeter>();
-        vm->setViewMode (processorRef_.getUiVoiceMode() == 1
-                         ? VoiceMeter::ViewMode::Extended
-                         : VoiceMeter::ViewMode::Voicecard);
         vm->setStateProvider ([this]() {
             std::vector<VoiceActivity> v;
             auto& e = processorRef_.getEngine();
@@ -1227,14 +1224,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             processorRef_.setUiLanguage (code);
             installLanguage (code);
             applyChromeTranslations();
-        },
-        [this] (int mode) {
-            // Voice mode changed: persist + apply to the engine (deferred
-            // rebuild) and switch the meter view to match.
-            processorRef_.setUiVoiceMode (mode);
-            if (globalVoiceMeter_ != nullptr)
-                globalVoiceMeter_->setViewMode (mode == 1 ? VoiceMeter::ViewMode::Extended
-                                                           : VoiceMeter::ViewMode::Voicecard);
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
     // Keep the Settings button's toggle state in sync when the panel is
@@ -1668,16 +1657,6 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
         // unchanged.
         if (isMulti && multiPage_ != nullptr)
             multiPage_->forceRefresh();
-
-        // A .parvati multi can change the global Voice Mode (Hardware/Extended);
-        // keep the voice-meter view + the Settings voice-mode combo in sync with
-        // the engine so the UI matches what the patch selected.
-        if (globalVoiceMeter_ != nullptr)
-            globalVoiceMeter_->setViewMode (processorRef_.getUiVoiceMode() == 1
-                                            ? VoiceMeter::ViewMode::Extended
-                                            : VoiceMeter::ViewMode::Voicecard);
-        if (settingsPanel_ != nullptr)
-            settingsPanel_->refreshVoiceModeCombo();
     }
 }
 

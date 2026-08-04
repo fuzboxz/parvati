@@ -1,8 +1,7 @@
 // Real-time / buffer-robustness smoke test for the Parvati engine.
 //
 // Renders a DENSE sustained chord for ~0.5 s at several host buffer sizes
-// (32 .. 1024) in BOTH VoiceMode::Hardware (6 voices) and VoiceMode::Extended
-// (16 voices), and asserts the audio thread:
+// (32 .. 1024) with the full 6-voice polyphony, and asserts the audio thread:
 //   * produces FINITE output (no NaN / Inf),
 //   * is AUDIBLE when notes are held (peak > floor),
 //   * COMPLETES without crashing / hanging.
@@ -58,15 +57,11 @@ bool allFinite (const juce::AudioBuffer<float>& buf)
 // main-bus peak and whether the render completed.
 struct RenderOutcome { double peak = 0.0; bool completed = false; };
 
-RenderOutcome renderDenseChord (int bufferSize, int voiceMode, int numNotes, double sampleRate = 48000.0)
+RenderOutcome renderDenseChord (int bufferSize, int numNotes, double sampleRate = 48000.0)
 {
     RenderOutcome out;
     ParvatiAudioProcessor proc;
     proc.prepareToPlay (sampleRate, bufferSize);
-
-    // Apply the voice mode (0 = Hardware / 6, 1 = Extended / 16). The first
-    // processBlock services the deferred allocation rebuild.
-    proc.setUiVoiceMode (voiceMode);
 
     // The APVTS default osc1_shape is NONE (silent); give Part 0 an audible
     // source (Saw) via the byte-bridge (NOT a full syncAllParamsToEngine, which
@@ -115,7 +110,7 @@ RenderOutcome renderDenseChord (int bufferSize, int voiceMode, int numNotes, dou
     const double renderSec = std::chrono::duration<double> (t1 - t0).count();
     const double audioSec  = static_cast<double> (numBlocks * bufferSize) / sampleRate;
     std::printf ("     [%s, buf=%4d] peak=%.4f  cpu-ratio=%.2fx (render %.1fms / audio %.1fms)\n",
-                 voiceMode == 1 ? "Ext 16 " : "Hw 6   ",
+                 "Hw 6   ",
                  bufferSize, out.peak, audioSec > 0.0 ? renderSec / audioSec : 0.0,
                  renderSec * 1e3, audioSec * 1e3);
     return out;
@@ -130,38 +125,26 @@ int main()
 
     static const int kBuffers[] = { 32, 64, 128, 256, 512, 1024 };
 
-    std::printf ("\n[1] Hardware mode (6 voices): finite + audible + completes, every buffer size\n");
+    std::printf ("\n[1] 6-voice render: finite + audible + completes, every buffer size\n");
     for (int bufSize : kBuffers)
     {
-        const auto r = renderDenseChord (bufSize, /*Hardware*/ 0, 6);
+        const auto r = renderDenseChord (bufSize, 6);
         char msg[96];
-        std::snprintf (msg, sizeof (msg), "Hardware buf=%d renders finite audio", bufSize);
+        std::snprintf (msg, sizeof (msg), "buf=%d renders finite audio", bufSize);
         check (r.completed && r.peak > 0.0, msg);
-        std::snprintf (msg, sizeof (msg), "Hardware buf=%d output is audible (peak>floor)", bufSize);
+        std::snprintf (msg, sizeof (msg), "buf=%d output is audible (peak>floor)", bufSize);
         check (r.completed && r.peak > 1.0e-4, msg);
     }
 
-    std::printf ("\n[2] Extended mode (16 voices): finite + audible + completes, every buffer size\n");
-    for (int bufSize : kBuffers)
-    {
-        const auto r = renderDenseChord (bufSize, /*Extended*/ 1, 16);
-        char msg[96];
-        std::snprintf (msg, sizeof (msg), "Extended buf=%d renders finite audio", bufSize);
-        check (r.completed && r.peak > 0.0, msg);
-        std::snprintf (msg, sizeof (msg), "Extended buf=%d output is audible (peak>floor)", bufSize);
-        check (r.completed && r.peak > 1.0e-4, msg);
-    }
-
-    std::printf ("\n[3] Tiny buffers (32/64) must not crash or produce non-finite audio\n");
+    std::printf ("\n[2] Tiny buffers (32/64) must not crash or produce non-finite audio\n");
     {
         bool ok = true;
         for (int bufSize : { 32, 64 })
         {
-            const auto rH = renderDenseChord (bufSize, 0, 6);
-            const auto rE = renderDenseChord (bufSize, 1, 16);
-            ok = ok && rH.completed && rE.completed && rH.peak > 0.0 && rE.peak > 0.0;
+            const auto r = renderDenseChord (bufSize, 6);
+            ok = ok && r.completed && r.peak > 0.0;
         }
-        check (ok, "buffers 32/64 render finite, audible audio in both modes");
+        check (ok, "buffers 32/64 render finite, audible audio");
     }
 
     std::printf ("\n%s (%d failures)\n",

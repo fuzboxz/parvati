@@ -85,7 +85,7 @@ int main()
             juce::AudioBuffer<float> buf (2, kBlock); buf.clear();
             juce::MidiBuffer empty;
             processor.processBlock (buf, empty);
-            for (int i = 0; i < 16; ++i)
+            for (int i = 0; i < kNumVoices; ++i)
                 if (auto* v = processor.getEngine().getAmbikaVoice (i))
                     if (v->getCurrentlyPlayingNote() >= 0)
                         seqNotes.insert (v->getCurrentlyPlayingNote());

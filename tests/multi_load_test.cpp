@@ -84,9 +84,7 @@ int main()
         renderOnce (proc);   // service the deferred rebuild/push from the load
 
         auto& engine = proc.getEngine();
-        // This block asserts the full Extended (block-per-voicecard) allocation
-        // the .MUL bitmasks describe, so opt in and re-render.
-        engine.setVoiceMode (VoiceMode::Extended);
+        // Flush the deferred rebuild/push from the load (1 voice per voicecard).
         renderOnce (proc);
 
         // At least two parts must now have DIFFERENT osc1.shape bytes (the
@@ -120,46 +118,54 @@ int main()
         //      and per-part arp/seq settings are pushed into every Part. ----
         std::printf ("\n[3] .MUL voice allocation + per-part arp/seq\n");
         {
-            // Reconstruct expected first-wins ownership from the 6 bitmasks
-            // (same voicecard->block mapping as SynthEngine::rebuildVoiceAllocation).
-            static const int vcStart[6] = { 0, 3, 6, 9, 12, 14 };
-            static const int vcSize[6]  = { 3, 3, 3, 3, 2, 2 };
             auto popcount = [] (uint8_t v) { int c = 0; while (v) { c += v & 1; v >>= 1; } return c; };
+            (void) popcount;
 
-            bool claimed[6] = {};
+            // The engine applies EXCLUSIVE voicecard ownership on load
+            // (setPartVoiceAllocation removes a card from every other Part), so
+            // the engine's STORED bitmask per Part is the source of truth. With 1
+            // voice per voicecard (voice i == card i), expected[i] = the cards in
+            // the stored bitmask.
             std::vector<int> expected[6];
             int totalExpected = 0, totalActual = 0;
+            uint8_t exclusiveUnion = 0;
+            bool exclusiveOk = true;
             for (int i = 0; i < 6; ++i)
             {
-                const uint8_t mask = m.hasMultiData ? m.multiData[(size_t) (i * 4 + 3)]
-                                                     : (uint8_t) (1 << i);
+                const uint8_t mask = engine.getPartVoiceAllocation (i);
+                if (exclusiveUnion & mask) exclusiveOk = false;   // card on >1 Part
+                exclusiveUnion |= mask;
                 for (int vc = 0; vc < 6; ++vc)
-                    if ((mask & (1u << vc)) && ! claimed[vc])
-                    {
-                        claimed[vc] = true;
-                        for (int k = 0; k < vcSize[vc]; ++k)
-                            expected[i].push_back (vcStart[vc] + k);
-                    }
+                    if (mask & (1u << vc))
+                        expected[i].push_back (vc);
                 std::sort (expected[i].begin(), expected[i].end());
             }
+            check (exclusiveOk, "exclusive: no voicecard owned by more than one Part");
 
-            bool allocOk = true; bool sawMultiBlock = false;
+            // No card is LOST vs the raw .MUL bitmasks (the load reached every
+            // Part; exclusivity only redistributes ownership, never drops a card).
+            uint8_t mulUnion = 0;
+            for (int i = 0; i < 6; ++i)
+                mulUnion |= m.hasMultiData ? m.multiData[(size_t) (i * 4 + 3)]
+                                           : (uint8_t) (1 << i);
+            check (exclusiveUnion == mulUnion, "no voicecard lost between .MUL and the engine");
+
+            bool allocOk = true; bool sawMultiCard = false;
             for (int i = 0; i < 6; ++i)
             {
-                const uint8_t mask = m.hasMultiData ? m.multiData[(size_t) (i * 4 + 3)] : 0;
                 auto got = engine.getPart (i).voiceIndices;
                 std::sort (got.begin(), got.end());
                 totalExpected += (int) expected[i].size();
                 totalActual   += (int) got.size();
                 if (got != expected[i]) allocOk = false;
-                if (popcount (mask) >= 2 && (int) got.size() >= 4) sawMultiBlock = true;
+                if ((int) got.size() >= 2) sawMultiCard = true;
             }
             char msg[160];
-            std::snprintf (msg, sizeof (msg), "voice allocation matches .MUL bitmasks (voices %d expected / %d actual)",
+            std::snprintf (msg, sizeof (msg), "voice allocation matches stored bitmasks (voices %d expected / %d actual)",
                            totalExpected, totalActual);
             check (allocOk, msg);
-            if (sawMultiBlock)
-                check (true, "a part claiming >=2 voicecards owns >=4 Parvati voices");
+            if (sawMultiCard)
+                check (true, "a part claiming >=2 voicecards owns >=2 Parvati voices");
             else
                 std::printf ("     (note: 000.MUL has no multi-voicecard part to stress-test)\n");
 
@@ -182,8 +188,7 @@ int main()
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         auto& engine = proc.getEngine();
-        // This block asserts the Extended (full-block-per-voicecard) mapping.
-        engine.setVoiceMode (VoiceMode::Extended);
+        // This block asserts the 1-voice-per-voicecard (voice i == card i) mapping.
 
         auto voicesAsSet = [&] (int part) {
             std::vector<int> v = engine.getPart (part).voiceIndices;
@@ -191,29 +196,30 @@ int main()
             return v;
         };
 
-        // part0 -> vc0,1 (bits 0,1) => voices {0,1,2,3,4,5}
+        // part0 -> vc0,1 (bits 0,1) => voices {0,1}
         engine.setPartVoiceAllocation (0, 0b000011);
-        // part1 -> vc2 (bit 2) => {6,7,8}
+        // part1 -> vc2 (bit 2) => {2}
         engine.setPartVoiceAllocation (1, 0b000100);
-        // part2 -> vc4,5 (bits 4,5) => {12,13,14,15}
+        // part2 -> vc4,5 (bits 4,5) => {4,5}
         engine.setPartVoiceAllocation (2, 0b110000);
         engine.setPartVoiceAllocation (3, 0);
         engine.setPartVoiceAllocation (4, 0);
         engine.setPartVoiceAllocation (5, 0);
         renderOnce (proc);   // service the deferred rebuild before inspecting voiceIndices
 
-        check (voicesAsSet (0) == std::vector<int> ({ 0,1,2,3,4,5 }), "part0(vc0,1) owns {0..5}");
-        check (voicesAsSet (1) == std::vector<int> ({ 6,7,8 }),       "part1(vc2) owns {6,7,8}");
-        check (voicesAsSet (2) == std::vector<int> ({ 12,13,14,15 }), "part2(vc4,5) owns {12,13,14,15}");
+        check (voicesAsSet (0) == std::vector<int> ({ 0,1 }), "part0(vc0,1) owns {0,1}");
+        check (voicesAsSet (1) == std::vector<int> ({ 2 }),    "part1(vc2) owns {2}");
+        check (voicesAsSet (2) == std::vector<int> ({ 4,5 }),  "part2(vc4,5) owns {4,5}");
         check (voicesAsSet (3).empty() && voicesAsSet (4).empty() && voicesAsSet (5).empty(),
                "parts 3-5 (no bits) own no voices");
 
-        // First-wins: re-claim vc0 on part1 after part0 owns it -> part1 must
-        // NOT gain {0,1,2}; part0 keeps them.
-        engine.setPartVoiceAllocation (1, 0b000001);  // vc0 only, already claimed
+        // Exclusive: re-claim vc0 on part1 -> part1 TAKES vc0 (removed from
+        // part0 by setPartVoiceAllocation's exclusivity). This replaces the old
+        // first-wins behaviour where part1 could not steal a claimed card.
+        engine.setPartVoiceAllocation (1, 0b000001);  // vc0, previously part0's
         renderOnce (proc);   // service the deferred rebuild
-        check (voicesAsSet (1).empty(), "first-wins: part1 cannot steal part0's vc0");
-        check (voicesAsSet (0) == std::vector<int> ({ 0,1,2,3,4,5 }), "part0 keeps its voices");
+        check (voicesAsSet (1) == std::vector<int> ({ 0 }), "exclusive: part1 takes vc0");
+        check (voicesAsSet (0) == std::vector<int> ({ 1 }), "exclusive: part0 keeps only vc1");
     }
 
     std::printf ("\n%s (%d failures)\n",

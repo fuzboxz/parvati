@@ -48,7 +48,7 @@ int countActiveVoices (ParvatiAudioProcessor& proc)
 {
     auto& e = proc.getEngine();
     int c = 0;
-    for (int i = 0; i < 16; ++i)
+    for (int i = 0; i < kNumVoices; ++i)
         if (auto* v = e.getAmbikaVoice (i); v && v->getCurrentlyPlayingNote() >= 0)
             ++c;
     return c;
@@ -58,7 +58,7 @@ int countActiveInPart (ParvatiAudioProcessor& proc, int part)
 {
     auto& e = proc.getEngine();
     int c = 0;
-    for (int i = 0; i < 16; ++i)
+    for (int i = 0; i < kNumVoices; ++i)
         if (auto* v = e.getAmbikaVoice (i); v && v->getCurrentlyPlayingNote() >= 0 && v->getPartIndex() == part)
             ++c;
     return c;

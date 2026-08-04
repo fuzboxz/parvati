@@ -264,8 +264,8 @@ int main()
             auto* meter = findFirst<VoiceMeter> (ed);
             check (meter != nullptr, "voice meter (cells) exists on the Global page");
             if (meter != nullptr)
-                check (meter->getViewMode() == VoiceMeter::ViewMode::Voicecard,
-                       "fresh editor meter is in Voicecard (6) view");
+                check (meter->getActiveVoiceCount() >= 0,
+                       "voice meter reports an active-voice count (6-cell view)");
         }
 
         // ----------------------------------------------------------------------

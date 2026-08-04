@@ -546,10 +546,6 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
             out << "\n";
         }
 
-    // Voice Mode is a global UI pref (NOT an APVTS param), so emit it explicitly
-    // under options: so a multi can select Hardware (6 voices) vs Extended (16).
-    out << "  voice_mode: " << (int) proc.getUiVoiceMode()
-        << "            # 0 = Hardware (6 voices), 1 = Extended (16 voices)\n";
     return out;
 }
 
@@ -642,13 +638,14 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
     const var options = tree["options"];
     if (auto* oobj = options.getDynamicObject())
     {
-        // Voice Mode is a global UI pref (NOT an APVTS param): handle it
-        // explicitly (0 = Hardware / 6 voices, 1 = Extended / 16 voices). Absent
-        // in older files => leave the current mode untouched (forward-compat).
+        // voice_mode is a legacy global pref for the removed Extended (16-voice)
+        // capacity mode. Keep PARSING it so older .parvati files still load, but
+        // ignore the value (the engine is now always Hardware = 6 voices).
         if (oobj->hasProperty ("voice_mode"))
         {
-            const int vm = (int) oobj->getProperty ("voice_mode");
-            proc.setUiVoiceMode (vm == 1 ? 1 : 0);
+            // Legacy Extended-capacity pref (now removed); parsed + ignored so
+            // older .parvati multis still load. Do NOT call setUiVoiceMode.
+            (void) (int) oobj->getProperty ("voice_mode");
         }
         for (const auto& p : oobj->getProperties())
             if (p.name.toString() != "voice_mode")

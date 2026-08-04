@@ -10,8 +10,8 @@
 //     the APVTS listener (the exact host-knob path) so each hits its faithful
 //     engine method, including the full 14-slot mod matrix, 4 modifiers, all 64
 //     sequencer bytes, and every oscillator shape.
-//   * engine modes: voice capacity (Hardware/Extended), polyphony (Mono..Chain
-//     on every Part), filter oversampling (1/2/4), parameter smoothing, VCA curve.
+//   * engine modes: polyphony (Mono..Chain on every Part), filter oversampling
+//     (1/2/4), parameter smoothing, VCA curve.
 //   * multitimbrality: per-Part MIDI channel, key zone, voice-card allocation.
 //   * patch / multi / template loads (.PRO / .MUL / .parvati).
 //   * host-state get/set cycling (DAW autosave + scene restore).
@@ -229,10 +229,9 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
                       parvati_test::setParamRaw (proc, "part_select", (float) sel); } break;
             case 5: { juce::MemoryBlock b; proc.getStateInformation (b); } break;                    // host autosave
             case 6: if (savedState != nullptr) proc.setStateInformation (savedState->getData(), (int) savedState->getSize()); break;  // host restore
-            case 7: switch (rng.nextInt (3)) {                                                        // engine modes
-                        case 0: proc.setUiVoiceMode (rng.nextInt (2)); break;                        // Hardware/Extended
-                        case 1: proc.setOversamplingFactor (rng.nextInt (2) ? 2 : 4); break;         // OS 2/4 (1 left for default)
-                        case 2: proc.setParameterSmoothing (rng.nextBool()); break;
+            case 7: switch (rng.nextInt (2)) {                                                        // engine modes
+                        case 0: proc.setOversamplingFactor (rng.nextInt (2) ? 2 : 4); break;         // OS 2/4 (1 left for default)
+                        case 1: proc.setParameterSmoothing (rng.nextBool()); break;
                     } break;
             case 8: { const int p = rng.nextInt (SynthEngine::getNumParts());                        // multitimbral routing
                       engine.setPartMidiChannel (p, rng.nextInt (17));                               // 0=Omni, 1..16
@@ -321,12 +320,11 @@ int main (int argc, char** argv)
     }
 
     // -------------------------------------------------------------------------
-    // [3] Polyphony x voice-mode stress: cycle every polyphony mode on every
-    //     Part and flip Hardware/Extended while notes play -- exercises the
-    //     voice-allocation rebuild path under contention (the deferred
-    //     allocationDirty_ release/acquire).
+    // [3] Polyphony stress: cycle every polyphony mode on every Part while notes
+    //     play -- exercises the voice-allocation rebuild path under contention
+    //     (the deferred allocationDirty_ release/acquire).
     // -------------------------------------------------------------------------
-    std::printf ("\n[3] polyphony x voice-mode stress vs audio\n");
+    std::printf ("\n[3] polyphony stress vs audio\n");
     {
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
@@ -337,7 +335,6 @@ int main (int argc, char** argv)
             {
                 for (int round = 0; round < 12; ++round)
                 {
-                    proc.setUiVoiceMode (round & 1);   // Extended (16) <-> Hardware (6)
                     for (int p = 0; p < SynthEngine::getNumParts(); ++p)
                     {
                         parvati_test::setParamRaw (proc, "part_select", (float) (p + 1));
@@ -347,8 +344,8 @@ int main (int argc, char** argv)
                 }
             },
             1 << 30, /*heldNote*/ 48);
-        check (! out.audioThrew, "poly/voicemode: audio thread did not throw");
-        check (out.allFinite, "poly/voicemode: output stayed finite");
+        check (! out.audioThrew, "polyphony: audio thread did not throw");
+        check (out.allFinite, "polyphony: output stayed finite");
     }
 
     // -------------------------------------------------------------------------

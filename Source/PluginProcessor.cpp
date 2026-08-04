@@ -12,8 +12,8 @@
 namespace
 {
 // Main-bus mix headroom. The processor sums ALL six voicecard buffers into the
-// main stereo bus; at unity gain several loud voices (and especially Extended
-// 16-voice / Unison stacks) clip. Internal mixing is 32-bit float
+// main stereo bus; at unity gain several loud voices (and especially Unison
+// stacks) clip. Internal mixing is 32-bit float
 // (voiceCardBuffers_ are AudioBuffer<float>; addFrom accumulates in float), so
 // there is no INTERNAL clipping — this trim only buys headroom on the summed
 // MAIN output. -6 dB (0.5x) is a reasoned default for a 6-voicecard sum; the
@@ -616,9 +616,9 @@ juce::File ParvatiAudioProcessor::getFactoryMultiDir()
 
 juce::File ParvatiAudioProcessor::getTemplatesDir()
 {
-    // Stock init templates (full-fidelity .parvati multis): Mono / Poly 6 /
-    // Poly 16 / Unison / Multitimbral. Created on first run by the factory
-    // installer. <appdata>/Parvati/TEMPLATES/.
+    // Stock init templates (full-fidelity .parvati multis): Mono / Poly /
+    // Unison / Multitimbral. Created on first run by the factory installer.
+    // <appdata>/Parvati/TEMPLATES/.
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
         .getChildFile ("Parvati/TEMPLATES");
 }
@@ -801,7 +801,6 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_smoothing", uiSmoothing_, nullptr);
     tree.setProperty ("ui_oversampling", uiOversampling_, nullptr);
     tree.setProperty ("ui_language", uiLanguage_, nullptr);
-    tree.setProperty ("ui_voice_mode", uiVoiceMode_, nullptr);
     // Full 6-Part multitimbral engine state (all parts' patch/part bytes, arp/seq
     // config, routing, voice allocation/mode). Base64 so it rides inside the XML
     // state tree; absent on pre-persistence states (backward compatible).
@@ -831,7 +830,6 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             uiSmoothing_ = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
             uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 1));
             uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
-            uiVoiceMode_ = static_cast<int> (tree.getProperty ("ui_voice_mode", 0));
             apvts.replaceState (tree);
 
             // Restore the full 6-Part engine state if the blob is present; else
@@ -861,11 +859,6 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
         // latency probe + voices; the next prepareToPlay / processBlock reports
         // the matching latency).
         setOversamplingFactor (uiOversampling_);
-        // Restore the voice-capacity mode (Hardware=6 / Extended=16): re-applies
-        // it to the engine so a saved Extended state (or the default Hardware)
-        // is honoured after restore (covers headless / no-editor hosts).
-        engine_.setVoiceMode (uiVoiceMode_ == 1 ? VoiceMode::Extended
-                                                 : VoiceMode::Hardware);
     }
 }
 
@@ -874,18 +867,6 @@ void ParvatiAudioProcessor::setParameterSmoothing (bool smoothing)
 {
     uiSmoothing_ = smoothing;          // persist
     engine_.setParameterSmoothing (smoothing);
-}
-
-void ParvatiAudioProcessor::setUiVoiceMode (int mode)
-{
-    // Persist the voice-capacity mode and propagate it to the engine. The
-    // engine's setVoiceMode() flags a deferred voice-allocation rebuild (same
-    // release/acquire path as setPartVoiceAllocation), so Hardware (1 voice per
-    // voicecard => 6 total) / Extended (full block per voicecard => 16) take
-    // effect on the next processed block.
-    uiVoiceMode_ = mode;
-    engine_.setVoiceMode (mode == 1 ? VoiceMode::Extended
-                                    : VoiceMode::Hardware);
 }
 
 //==========================================================================
