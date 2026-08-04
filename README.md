@@ -67,5 +67,6 @@ xattr -cr ~/Library/Audio/Plug-Ins/Components/Parvati.component
 
 ---
 
-Parvati is a GPL-3.0 derivative work of the Ambika firmware. See
-[`LICENSE`](LICENSE) and [`NOTICES.md`](NOTICES.md).
+Parvati is licensed under the **AGPL-3.0** (own code) and is a derivative work
+of the GPL-3.0 Ambika firmware (the DSP under `Source/dsp/` retains GPL-3.0).
+See [`LICENSE`](LICENSE) and [`NOTICES.md`](NOTICES.md).

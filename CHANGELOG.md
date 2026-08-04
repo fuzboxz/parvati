@@ -4,11 +4,17 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Changed
+- **License: AGPL-3.0.** Parvati's own code is now licensed under the GNU
+  Affero General Public License v3.0 (was GPL-3.0). The Ambika-derived DSP under
+  `Source/dsp/` and the factory preset banks retain their GPL-3.0 license
+  (upstream-derived, compatible with AGPL-3.0). See `LICENSE` and `NOTICES.md`.
+
 ### Added
 - **GNU Unifont "Console" font mode.** The Settings "Font" combo's Console
-  mode now uses an embedded subset of GNU Unifont (ASCII + Latin-1, ~18 KB of
-  the full ~12 MB face) for a true DOS/retro look, instead of the system
-  monospace. (GPL+ with font exception.)
+  mode now uses an embedded subset of GNU Unifont (ASCII + Latin-1, ~18 KB) for
+  a true DOS/retro look, instead of the system monospace. (GPL+ with font
+  exception, AGPL-3.0-compatible.)
 
 ### Fixed (post-architecture deep sweep)
 - **P0 — crush stack-use-after-scope** (`AmbikaVoice::fillInternalBlock`): the
