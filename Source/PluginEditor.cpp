@@ -182,8 +182,7 @@ void ParamControl::refreshStepEnabled()
         return;
     if (auto* raw = processor_.getApvts().getRawParameterValue (lengthParamID_))
     {
-        // The length param's verified range is 1..32 (ParameterLayout.cpp), but
-        // only 16 step cells exist, so cap the comparison at 16.
+        // The length param's range is 1..16 (one cell per step); cap defensively.
         const int len = juce::jlimit (1, 16, juce::roundToInt (raw->load()));
         const int idx = parseStepIndex (paramIDStr_);
         const bool on = (idx < 0) || (idx < len);
@@ -430,9 +429,21 @@ void ParamPage::configureGroupLayouts()
             g.cellW = 88;      // was 54 (~1.6x wider)
             g.cellH = 72;      // was 50 (~1.4x taller)
         }
-        else if (g.name.startsWith ("Mod ") || g.name.startsWith ("Modifier "))
+        else if (g.name.startsWith ("Mod "))
         {
-            // Compact horizontal strip: source / dest / amount (or in1 / in2 / op).
+            // Mod row: source / dest / amount. The amount is a bipolar rotary
+            // knob; give the row enough height that the knob reads as a real
+            // control ABOVE its text box (a 64px row leaves only ~24px for the
+            // knob, which looks like a bare text field). The knob is the amount
+            // control; the text box below shows/edits its value.
+            g.singleRow = true;
+            g.internalCols = juce::jmax (1, n);
+            g.cellW = 112;
+            g.cellH = 84;
+        }
+        else if (g.name.startsWith ("Modifier "))
+        {
+            // Compact horizontal strip: in1 / in2 / op (all combo boxes).
             g.singleRow = true;
             g.internalCols = juce::jmax (1, n);
             g.cellW = 112;

@@ -324,9 +324,9 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             p.defaultValue = defVal;
             d.push_back (std::move (p));
         };
-        addSeq ("seq_length_1", "Seq 1 Length", 12, 1, 32, 16);   // firmware UNIT_UINT8 1..32, default 16
-        addSeq ("seq_length_2", "Seq 2 Length", 13, 1, 32, 16);
-        addSeq ("seq_length_3", "Seq 3 Length", 14, 1, 32, 16);
+        addSeq ("seq_length_1", "Seq 1 Length", 12, 1, 16, 16);   // Parvati has 16 step cells/seq (firmware byte allows 1..32)
+        addSeq ("seq_length_2", "Seq 2 Length", 13, 1, 16, 16);
+        addSeq ("seq_length_3", "Seq 3 Length", 14, 1, 16, 16);
         for (int s = 0; s < 16; ++s)
             addSeq ("seq1_step"  + std::to_string (s), "Seq1 Step "  + std::to_string (s + 1), 16 + s,    0, 127);
         for (int s = 0; s < 16; ++s)
