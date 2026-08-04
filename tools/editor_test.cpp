@@ -9,7 +9,7 @@
 //   - the top-bar Part selector is wired: setting `part_select` switches the
 //     engine's current part
 //   - the Multi page's per-part MIDI-channel editing round-trips to the engine
-//   - default editor size is 980 x 660
+//   - default editor size is 980 x 712 (660 + 52px title strip)
 //   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
 //
 // Build: cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
@@ -130,7 +130,7 @@ int main()
 
         std::printf ("\n[2] Tab pages (expected 10: 9 ParamPages + Multi)\n");
         std::printf ("     tab pages = %d\n", numTabs);
-        check (numTabs == 11, "exactly 11 tab pages (Env/LFO split into Envelopes + LFOs)");
+        check (numTabs == 10, "exactly 10 synth tab pages (Multi/Setup is now a header button, not a tab)");
 
         std::printf ("\n[3] ParamControl coverage\n");
         std::printf ("     descriptors = %zu, expected ParamControl cells = %d, found = %d\n",
@@ -165,8 +165,8 @@ int main()
 
         std::printf ("\n[6] Default editor size\n");
         std::printf ("     %d x %d\n", ed->getWidth(), ed->getHeight());
-        check (ed->getWidth() == 980 && ed->getHeight() == 660,
-               "default editor size is 980 x 660");
+        check (ed->getWidth() == 980 && ed->getHeight() == 712,
+               "default editor size is 980 x 712 (660 + 52 title strip)");
 
         std::printf ("\n[7] Layout sanity (flexible-width grid: no overlaps, fills width)\n");
         if (tabs != nullptr)

@@ -353,9 +353,14 @@ private:
     // Top bar: Part selector (bound to the `part_select` APVTS param).
     juce::Label    partCaption_;
     juce::ComboBox partCombo_;
+    juce::TextButton multiButton_ { "Multi" };   // header button -> Multi/Setup overlay (not a patch param)
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
+    // Topmost title strip: ASCII-art logo (painted) + version label (right).
+    juce::Label versionLabel_;
+
     static constexpr int kBarHeight   = 34;
+    static constexpr int kTitleBarH   = 52;  // top title strip (ASCII logo + version) above the patch bar
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
     static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom

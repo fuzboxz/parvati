@@ -33,6 +33,12 @@ public:
     /** The active theme, or nullptr if setTheme() has never been called. */
     const ParvatiTheme* getTheme() const noexcept { return theme_; }
 
+    // Wider, rounded, brighter scrollbar thumb than the V4 default (which draws
+    // a faint 1px-ish thumb that is hard to grab on the long param pages).
+    void drawScrollbar (juce::Graphics&, juce::ScrollBar&, int x, int y, int width, int height,
+                        bool isVertical, int thumbStartPosition, int thumbSize,
+                        bool isMouseOver, bool isMouseDown) override;
+
 private:
     const ParvatiTheme* theme_ = nullptr;
 

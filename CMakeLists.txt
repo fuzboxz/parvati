@@ -197,6 +197,7 @@ target_compile_definitions(Parvati PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
+    PARVATI_VERSION="${CMAKE_PROJECT_VERSION}"
 )
 
 target_link_libraries(Parvati

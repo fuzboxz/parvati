@@ -48,8 +48,8 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
 
     // ---- ScrollBar (page Viewports) ----
     setColour (juce::ScrollBar::backgroundColourId,            t.windowBackground);
-    setColour (juce::ScrollBar::thumbColourId,                 t.outline);
-    setColour (juce::ScrollBar::trackColourId,                 t.panelBackground);
+    setColour (juce::ScrollBar::thumbColourId,                 t.textDim);   // brighter than outline so the thumb reads
+    setColour (juce::ScrollBar::trackColourId,                 t.panelBackground2);
 
     // ---- TextButton ----
     setColour (juce::TextButton::buttonColourId,               t.panelBackground);
@@ -83,4 +83,45 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::SidePanel::dismissButtonNormalColour,   t.textDim);
     setColour (juce::SidePanel::dismissButtonOverColour,    t.accent);
     setColour (juce::SidePanel::dismissButtonDownColour,    t.accent);
+}
+
+void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scrollbar,
+                                        int x, int y, int width, int height,
+                                        bool isVertical,
+                                        int thumbStartPosition, int thumbSize,
+                                        bool isMouseOver, bool isMouseDown)
+{
+    juce::ignoreUnused (isMouseDown);
+    // Faint track behind the thumb.
+    g.setColour (scrollbar.findColour (juce::ScrollBar::trackColourId));
+    g.fillRect (x, y, width, height);
+
+    if (thumbSize <= 0)
+        return;
+
+    // A wide, rounded thumb centred in the bar — far easier to grab than the
+    // V4 default thin thumb. Brightens toward the accent on hover.
+    auto thumb = scrollbar.findColour (juce::ScrollBar::thumbColourId);
+    if (isMouseOver)
+        thumb = thumb.overlaidWith (scrollbar.findColour (juce::Slider::thumbColourId)
+                                        .withAlpha (0.5f));
+
+    const float corner = juce::jmin (4.0f, (float) width * 0.5f, (float) height * 0.5f);
+    juce::Rectangle<float> r;
+    if (isVertical)
+    {
+        const float tw = juce::jmin ((float) width * 0.7f, 12.0f);
+        r = juce::Rectangle<float> ((float) x + (width - tw) * 0.5f,
+                                    (float) thumbStartPosition,
+                                    tw, (float) thumbSize);
+    }
+    else
+    {
+        const float th = juce::jmin ((float) height * 0.7f, 12.0f);
+        r = juce::Rectangle<float> ((float) thumbStartPosition,
+                                    (float) y + (height - th) * 0.5f,
+                                    (float) thumbSize, th);
+    }
+    g.setColour (thumb);
+    g.fillRoundedRectangle (r.reduced (0.5f), corner);
 }

@@ -10,6 +10,25 @@
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
 
+// Version string from CMake (Parvati target compile def). Fallback for any
+// translation unit that does not get the define.
+#ifndef PARVATI_VERSION
+#define PARVATI_VERSION "0.0.0"
+#endif
+
+// ASCII-art "PARVATI" logo (drawn small in the title strip). Leading spaces
+// are part of the art (per-line 3D indent) so they MUST be preserved; trailing
+// spaces are trimmed at draw time.
+namespace {
+const char* const kAsciiParvatiLogo = R"( ______   ________   ______    __   __   ________   _________  ________    
+/_____/\ /_______/\ /_____/\  /_/\ /_/\ /_______/\ /________/\/_______/\   
+\:::_ \ \\::: _  \ \\:::_ \ \ \:\ \\ \\ \\::: _  \ \\__.::.__\/\__.::._\/   
+ \:(_) \ \\::(_)  \ \\:(_) ) )_\:\ \\ \\ \\::(_)  \ \  \::\ \     \::\ \    
+  \: ___\/ \:: __  \ \\: __ `\ \\:\_/.:\ \\:: __  \ \  \::\ \    _\::\ \__ 
+   \ \ \    \:.\ \  \ \\ \ `\ \ \\ ..::/ / \:.\ \  \ \  \::\ \  /__\::\__/\
+    \_\/     \__\/\__\/ \_\/ \_\/ \___/_(   \__\/\__\/   \__\/  \________\/)";
+}
+
 namespace
 {
 // ---- Map a parameter ID to one of the GUI sections --------------------------
@@ -88,6 +107,11 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                    juce::Slider::TextBoxBelow);
         slider_->setTextBoxIsEditable (true);
+        // Mod-matrix amount: a compact text box so the rotary knob dominates the
+        // cell (the amount is the primary control of a mod row). Other knobs keep
+        // the default text box.
+        if (paramIDStr_.endsWith ("_amount"))
+            slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 14);
         if (d.isSequencer)
         {
             // The length control is marked ("Length" label + accent arc) so it
@@ -1125,10 +1149,33 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         tabs_.addTab (TRANS (pg.name), theme.windowBackground, vp, true);  // tabs own the viewport
     }
 
-    // ---- Multi / Setup tab (custom page, not descriptor-generated) ----
+    // ---- Multi / Setup overlay (custom page, not descriptor-generated) ----
+    // Multi/Setup is the multitimbral routing config — NOT part of the patch —
+    // so it is NOT a synth tab; a header "Multi" button (next to the Part
+    // dropdown) toggles this page as an overlay over the tab area.
     multiPage_ = std::make_unique<MultiPage> (processorRef_, themeManager_);
-    tabs_.addTab (TRANS ("Multi"), theme.windowBackground, multiPage_.get(), false);  // editor owns it
-    tabKeys_.push_back ("Multi");
+    addChildComponent (multiPage_.get());   // owned here; invisible until toggled
+    multiPage_->setVisible (false);
+
+    multiButton_.setTooltip (TRANS ("Multi / Setup"));
+    multiButton_.setClickingTogglesState (true);
+    multiButton_.onClick = [this] {
+        const bool on = multiButton_.getToggleState();
+        if (multiPage_ != nullptr)
+        {
+            multiPage_->setVisible (on);
+            if (on)
+                multiPage_->toFront (true);   // bounds are kept in sync by resized()
+        }
+    };
+    addAndMakeVisible (multiButton_);
+
+    // ---- Topmost title strip: ASCII-art logo (painted) + version (right) ----
+    versionLabel_.setText ("v" PARVATI_VERSION, juce::dontSendNotification);
+    versionLabel_.setFont (juce::FontOptions (11.0f));
+    versionLabel_.setColour (juce::Label::textColourId, theme.textDim);
+    versionLabel_.setJustificationType (juce::Justification::topRight);
+    addAndMakeVisible (versionLabel_);
 
     // ---- Phase 4a: settings button + side panel ----
     // Click-toggle feedback reflects whether the Settings panel is open (the
@@ -1248,7 +1295,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Refresh the Multi page (~30 Hz) so it tracks the edited part.
     startTimerHz (30);
 
-    setSize (980, 660);
+    setSize (980, 660 + kTitleBarH);   // +title strip; tabs keep their space
     setResizable (true, true);
     setResizeLimits (720, 480, 1600, 1100);
 
@@ -1481,6 +1528,8 @@ void ParvatiEditor::applyChromeTranslations()
     undoButton_.setTooltip (TRANS ("Undo"));
     redoButton_.setTooltip (TRANS ("Redo"));
     settingsButton_.setTooltip (TRANS ("Settings"));
+    multiButton_.setButtonText (TRANS ("Multi"));
+    multiButton_.setTooltip (TRANS ("Multi / Setup"));
 
     for (size_t i = 0; i < tabKeys_.size(); ++i)
     {
@@ -1503,7 +1552,32 @@ void ParvatiEditor::applyChromeTranslations()
 
 void ParvatiEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+    const auto& theme = themeManager_.getCurrentTheme();
+    g.fillAll (theme.windowBackground);
+
+    // Title strip (topmost): shaded band + divider.
+    const auto tb = getLocalBounds().removeFromTop (kTitleBarH);
+    g.setColour (theme.panelHeader);
+    g.fillRect (tb);
+    g.setColour (theme.outline);
+    g.drawHorizontalLine ((float) tb.getBottom(), 0.0f, (float) getWidth());
+
+    // ASCII-art "PARVATI" logo (left), small monospace in the accent colour.
+    // Leading spaces are preserved (per-line indent); trailing spaces trimmed.
+    {
+        constexpr float fh = 7.0f;
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                   fh, juce::Font::plain)));
+        g.setColour (theme.accent);
+        const juce::StringArray lines = juce::StringArray::fromLines (kAsciiParvatiLogo);
+        const int x = 10;
+        int baselineY = juce::roundToInt ((float) tb.getY() + fh + 1.0f);
+        for (const auto& line : lines)
+        {
+            g.drawSingleLineText (line.trimEnd(), x, baselineY);
+            baselineY += juce::roundToInt (fh);
+        }
+    }
 }
 
 void ParvatiEditor::resized()
@@ -1527,7 +1601,13 @@ void ParvatiEditor::resized()
         keyboardView_->setBounds (bottomStrip);
     }
 
-    // ---- Top bar: Patch:[browser]  Part:[part▾]   …   [Load][Save][↶][↷][⚙] ----
+    // ---- Title strip (topmost): ASCII logo (painted) + version (right) ----
+    {
+        auto titleBand = area.removeFromTop (kTitleBarH);
+        versionLabel_.setBounds (titleBand.withTrimmedRight (10).withTrimmedTop (3));
+    }
+
+    // ---- Top bar: Patch:[browser]  Part:[part▾] [Multi]   …   [Load][Save][↶][↷][⚙] ----
     auto bar = area.removeFromTop (kBarHeight).reduced (6, 4);
     // Right cluster first (removeFromRight => the first item ends up rightmost).
     settingsButton_.setBounds (bar.removeFromRight (30));   // gear, top-right corner
@@ -1541,10 +1621,14 @@ void ParvatiEditor::resized()
         presetBrowser_->setBounds (bar.removeFromLeft (220));
     partCaption_.setBounds (bar.removeFromLeft (40));
     partCombo_.setBounds (bar.removeFromLeft (84));
+    multiButton_.setBounds (bar.removeFromLeft (60));   // Multi/Setup overlay toggle
     // (remaining middle space is flexible / empty)
 
     // ---- Middle: tabs (gains the old kMeterStripH band, loses kVoiceStripH) ----
     tabs_.setBounds (area);
+    // The Multi/Setup overlay covers exactly the tab area when toggled on.
+    if (multiPage_ != nullptr)
+        multiPage_->setBounds (area);
 
     // Responsive reflow (Phase 2b): every generated page fills its tab's width so
     // the grouped panels wrap to the window size (vertical-only scrolling). All
