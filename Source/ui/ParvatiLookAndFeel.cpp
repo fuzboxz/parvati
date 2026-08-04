@@ -8,12 +8,6 @@ ParvatiLookAndFeel::ParvatiLookAndFeel()
     // before any component reads it. ParvatiEditor overrides this immediately
     // via setTheme(themeManager_.getCurrentTheme()).
     setTheme (carbonTheme());
-
-    // Resolve the system monospace typeface ONCE, while still in traditional
-    // mode, so the base-class resolution does not recurse through our
-    // getTypefaceForFont override. Cached for console mode.
-    monoTypeface_ = juce::Font (juce::Font::getDefaultMonospacedFontName(),
-                                12.0f, juce::Font::plain).getTypefacePtr();
 }
 
 void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
@@ -132,11 +126,20 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
     g.fillRoundedRectangle (r.reduced (0.5f), corner);
 }
 
-juce::Typeface::Ptr ParvatiLookAndFeel::getTypefaceForFont (const juce::Font& font)
+juce::String ParvatiLookAndFeel::appFontFamily() const
 {
-    // Console mode: every requested typeface resolves to the cached system
-    // monospace typeface (DOS-like). Traditional mode: defer to the base.
-    if (fontMode_ == 1 && monoTypeface_ != nullptr)
-        return monoTypeface_;
-    return juce::LookAndFeel_V4::getTypefaceForFont (font);
+    // JUCE family-name placeholders resolve to the platform's default sans /
+    // monospace, so switching the placeholder switches the resolved typeface.
+    return fontMode_ == 1 ? juce::Font::getDefaultMonospacedFontName()
+                         : juce::Font::getDefaultSansSerifFontName();
+}
+
+juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
+{
+    return juce::Font (juce::FontOptions (appFontFamily(), 14.0f, juce::Font::plain));
+}
+
+juce::Font ParvatiLookAndFeel::getTextButtonFont (juce::TextButton&, int)
+{
+    return juce::Font (juce::FontOptions (appFontFamily(), 14.0f, juce::Font::plain));
 }

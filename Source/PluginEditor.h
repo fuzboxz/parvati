@@ -22,6 +22,16 @@
 #include "ui/KeyboardView.h"
 #include "ui/WheelsComponent.h"
 #include "ui/ParvatiLookAndFeel.h"
+
+class ParvatiAudioProcessor;
+
+// Re-apply every Label font in the component tree to @p familyName (a JUCE
+// family placeholder like <Sans-Serif> / <Monospaced>), preserving height/style.
+// juce::Label caches its font, so repaint alone is not enough on a font switch.
+void refreshFontsIn (juce::Component* root, const juce::String& familyName);
+
+// JUCE family-name placeholder for a UI font mode (0 = <Sans-Serif>, 1 = <Monospaced>).
+juce::String uiFontFamily (int mode);
 #include "ui/SettingsPanel.h"
 #include "ui/ThemeManager.h"
 #include "ui/VoiceMeter.h"

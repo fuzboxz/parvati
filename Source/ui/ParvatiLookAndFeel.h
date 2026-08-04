@@ -34,15 +34,15 @@ public:
     const ParvatiTheme* getTheme() const noexcept { return theme_; }
 
     /** Font mode: 0 = traditional (default sans), 1 = console (system
-        monospace, DOS-like). Applied globally via getTypefaceForFont, so every
-        text-bearing widget follows. */
+        monospace, DOS-like). Applied via per-widget font getters + a recursive
+        Label re-apply (see refreshFontsIn) using the family-name placeholder. */
     void setFontMode (int mode) { fontMode_ = mode; }
     int  getFontMode() const noexcept { return fontMode_; }
 
-    // Master font hook: in console mode every requested typeface resolves to
-    // the cached system-monospace typeface, so ALL text (labels, combos,
-    // buttons, tabs, menus) becomes monospace.
-    juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
+    // Per-widget font getters (virtual): route combo/button text through the
+    // chosen family placeholder (<Sans-Serif> vs <Monospaced>).
+    juce::Font getComboBoxFont (juce::ComboBox&) override;
+    juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
 
     // Wider, rounded, brighter scrollbar thumb than the V4 default (which draws
     // a faint 1px-ish thumb that is hard to grab on the long param pages).
@@ -51,9 +51,11 @@ public:
                         bool isMouseOver, bool isMouseDown) override;
 
 private:
+    // Family-name placeholder for the active mode (<Sans-Serif> / <Monospaced>).
+    juce::String appFontFamily() const;
+
     const ParvatiTheme* theme_ = nullptr;
     int fontMode_ = 0;   // 0 = traditional sans, 1 = console monospace
-    juce::Typeface::Ptr monoTypeface_;   // resolved once (system monospace) for console mode
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiLookAndFeel)
 };

@@ -32,6 +32,29 @@ const char* const kAsciiParvatiLogo = R"( ______   ________   ______    __   __ 
     \_\/     \__\/\__\/ \_\/ \_\/ \___/_(   \__\/\__\/   \__\/  \________\/)";
 }
 
+// Re-apply each Label's font in the component tree (same height/style, default
+// family) so each re-resolves its typeface through the active L&F after a
+// font-mode switch (juce::Label caches its font, so a plain repaint would NOT
+// pick up the new family).
+void refreshFontsIn (juce::Component* c, const juce::String& familyName)
+{
+    if (c == nullptr)
+        return;
+    if (auto* l = dynamic_cast<juce::Label*> (c))
+    {
+        const auto f = l->getFont();
+        l->setFont (juce::Font (juce::FontOptions (familyName, f.getHeight(), f.getStyleFlags())));
+    }
+    for (auto* child : c->getChildren())
+        refreshFontsIn (child, familyName);
+}
+
+juce::String uiFontFamily (int mode)
+{
+    return mode == 1 ? juce::Font::getDefaultMonospacedFontName()
+                     : juce::Font::getDefaultSansSerifFontName();
+}
+
 namespace
 {
 // ---- Map a parameter ID to one of the GUI sections --------------------------
@@ -1290,10 +1313,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             applyChromeTranslations();
         },
         [this] (int mode) {
-            // Font mode changed: apply to the editor-wide L&F. Labels/tabs that
-            // cached their font at construction pick it up on the next open.
+            // Font mode changed: apply to the L&F (combo/button getters) and
+            // re-apply every cached Label font to the chosen family, then repaint.
             if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
                 lnf->setFontMode (mode);
+            refreshFontsIn (this, uiFontFamily (mode));
             repaint();
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
@@ -1307,6 +1331,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // Refresh the Multi page (~30 Hz) so it tracks the edited part.
     startTimerHz (30);
+
+    // Apply the UI font family to every cached Label now that all widgets exist
+    // (console mode -> <Monospaced>). Combos/buttons follow via the L&F getters.
+    refreshFontsIn (this, uiFontFamily (processorRef_.getUiFontMode()));
 
     setSize (980, 660 + kHeaderH - kBarHeight);   // merged header replaces the old patch bar
     setResizable (true, true);
