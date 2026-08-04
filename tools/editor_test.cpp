@@ -9,7 +9,7 @@
 //   - the top-bar Part selector is wired: setting `part_select` switches the
 //     engine's current part
 //   - the Multi page's per-part MIDI-channel editing round-trips to the engine
-//   - default editor size is 980 x 712 (660 + 52px title strip)
+//   - default editor size is 980 x 682 (merged header)
 //   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
 //
 // Build: cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
@@ -165,8 +165,8 @@ int main()
 
         std::printf ("\n[6] Default editor size\n");
         std::printf ("     %d x %d\n", ed->getWidth(), ed->getHeight());
-        check (ed->getWidth() == 980 && ed->getHeight() == 712,
-               "default editor size is 980 x 712 (660 + 52 title strip)");
+        check (ed->getWidth() == 980 && ed->getHeight() == 682,
+               "default editor size is 980 x 682 (merged header)");
 
         std::printf ("\n[7] Layout sanity (flexible-width grid: no overlaps, fills width)\n");
         if (tabs != nullptr)

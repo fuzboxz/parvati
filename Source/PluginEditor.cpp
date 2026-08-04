@@ -16,7 +16,10 @@
 #define PARVATI_VERSION "0.0.0"
 #endif
 
-// ASCII-art "PARVATI" logo (drawn small in the title strip). Leading spaces
+// Monospace "console" font height for the ASCII-art logo.
+constexpr float kLogoFontHeight = 6.0f;
+
+// ASCII-art "PARVATI" logo (drawn small in the header). Leading spaces
 // are part of the art (per-line 3D indent) so they MUST be preserved; trailing
 // spaces are trimmed at draw time.
 namespace {
@@ -1170,11 +1173,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (multiButton_);
 
-    // ---- Topmost title strip: ASCII-art logo (painted) + version (right) ----
+    // ---- Header: ASCII-art logo (painted, left) + version (under it) ----
     versionLabel_.setText ("v" PARVATI_VERSION, juce::dontSendNotification);
-    versionLabel_.setFont (juce::FontOptions (11.0f));
+    versionLabel_.setFont (juce::FontOptions (10.0f));
     versionLabel_.setColour (juce::Label::textColourId, theme.textDim);
-    versionLabel_.setJustificationType (juce::Justification::topRight);
+    versionLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (versionLabel_);
 
     // ---- Phase 4a: settings button + side panel ----
@@ -1295,7 +1298,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Refresh the Multi page (~30 Hz) so it tracks the edited part.
     startTimerHz (30);
 
-    setSize (980, 660 + kTitleBarH);   // +title strip; tabs keep their space
+    setSize (980, 660 + kHeaderH - kBarHeight);   // merged header replaces the old patch bar
     setResizable (true, true);
     setResizeLimits (720, 480, 1600, 1100);
 
@@ -1553,29 +1556,26 @@ void ParvatiEditor::applyChromeTranslations()
 void ParvatiEditor::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
+    // Header background is the SAME as everywhere (windowBackground) — no tinted
+    // band. A thin divider under the header separates it from the tab area.
     g.fillAll (theme.windowBackground);
-
-    // Title strip (topmost): shaded band + divider.
-    const auto tb = getLocalBounds().removeFromTop (kTitleBarH);
-    g.setColour (theme.panelHeader);
-    g.fillRect (tb);
     g.setColour (theme.outline);
-    g.drawHorizontalLine ((float) tb.getBottom(), 0.0f, (float) getWidth());
+    g.drawHorizontalLine ((float) kHeaderH, 0.0f, (float) getWidth());
 
-    // ASCII-art "PARVATI" logo (left), small monospace in the accent colour.
-    // Leading spaces are preserved (per-line indent); trailing spaces trimmed.
+    // ASCII-art "PARVATI" logo inside the reserved logo block (left), small
+    // monospace (console) in the accent colour, with a 3px padding inset.
+    if (! logoArea_.isEmpty())
     {
-        constexpr float fh = 7.0f;
         g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                   fh, juce::Font::plain)));
+                                                   kLogoFontHeight, juce::Font::plain)));
         g.setColour (theme.accent);
         const juce::StringArray lines = juce::StringArray::fromLines (kAsciiParvatiLogo);
-        const int x = 10;
-        int baselineY = juce::roundToInt ((float) tb.getY() + fh + 1.0f);
+        const int x = logoArea_.getX() + 3;
+        int baselineY = logoArea_.getY() + 3 + juce::roundToInt (kLogoFontHeight);
         for (const auto& line : lines)
         {
             g.drawSingleLineText (line.trimEnd(), x, baselineY);
-            baselineY += juce::roundToInt (fh);
+            baselineY += juce::roundToInt (kLogoFontHeight);
         }
     }
 }
@@ -1601,21 +1601,36 @@ void ParvatiEditor::resized()
         keyboardView_->setBounds (bottomStrip);
     }
 
-    // ---- Title strip (topmost): ASCII logo (painted) + version (right) ----
+    // ---- Header (one row): [logo+version] | Patch:[browser] Part:[▾] [Multi] … [Load][Save][↶][↷][⚙] ----
+    auto header = area.removeFromTop (kHeaderH);
+    // Logo block (left): the ASCII logo is painted here (paint()); the version
+    // sits UNDER it. Size the block to the logo's measured width + 3px padding.
     {
-        auto titleBand = area.removeFromTop (kTitleBarH);
-        versionLabel_.setBounds (titleBand.withTrimmedRight (10).withTrimmedTop (3));
+        const juce::Font logoFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                      kLogoFontHeight, juce::Font::plain));
+        int logoW = 0;
+        for (const auto& line : juce::StringArray::fromLines (kAsciiParvatiLogo))
+        {
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (logoFont, line.trimEnd(), 0.0f, 0.0f);
+            logoW = juce::jmax (logoW, juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth()));
+        }
+        logoW += 6;   // 3px padding each side
+        logoArea_ = header.removeFromLeft (logoW);
+        auto versionArea = logoArea_;
+        versionLabel_.setBounds (versionArea.removeFromBottom (14).withTrimmedLeft (3));
     }
-
-    // ---- Top bar: Patch:[browser]  Part:[part▾] [Multi]   …   [Load][Save][↶][↷][⚙] ----
-    auto bar = area.removeFromTop (kBarHeight).reduced (6, 4);
+    // Menu controls fill a kBarHeight-tall strip centred vertically in the header.
+    auto bar = header.withTrimmedTop ((kHeaderH - kBarHeight) / 2)
+                     .withTrimmedBottom ((kHeaderH - kBarHeight) / 2)
+                     .reduced (6, 0);
     // Right cluster first (removeFromRight => the first item ends up rightmost).
     settingsButton_.setBounds (bar.removeFromRight (30));   // gear, top-right corner
     redoButton_.setBounds (bar.removeFromRight (30));
     undoButton_.setBounds (bar.removeFromRight (30));
     saveButton_.setBounds (bar.removeFromRight (96));   // carries the format popup menu
     loadButton_.setBounds (bar.removeFromRight (76));
-    // Left cluster.
+    // Left cluster (right of the logo).
     patchCaption_.setBounds (bar.removeFromLeft (48));
     if (presetBrowser_ != nullptr)
         presetBrowser_->setBounds (bar.removeFromLeft (220));

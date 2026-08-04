@@ -356,11 +356,12 @@ private:
     juce::TextButton multiButton_ { "Multi" };   // header button -> Multi/Setup overlay (not a patch param)
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
-    // Topmost title strip: ASCII-art logo (painted) + version label (right).
+    // Top header: ASCII-art logo (painted, left) + version label (under it).
     juce::Label versionLabel_;
+    juce::Rectangle<int> logoArea_;   // set in resized(); paint() draws the logo here
 
     static constexpr int kBarHeight   = 34;
-    static constexpr int kTitleBarH   = 52;  // top title strip (ASCII logo + version) above the patch bar
+    static constexpr int kHeaderH     = 56;  // merged top header: ASCII logo + version (left) + menu buttons (right)
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
     static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
