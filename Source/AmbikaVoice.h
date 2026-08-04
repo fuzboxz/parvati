@@ -151,6 +151,16 @@ public:
     // legato = mono_stack.size() > 1). Consumed (reset) by startNote().
     void setLegatoNext (bool l) { legatoNext_ = l; }
 
+    // Legato re-trigger on an ALREADY-SOUNDING voice WITHOUT the kill that
+    // juce::Synthesiser::startVoice does (stopNote(0,false) -> Voice::Kill zeroes
+    // the envelope; the firmware Voice::Trigger(legato) then skips the re-attack,
+    // so a killed-then-legato voice goes silent). The voice must already be active
+    // (its currentlyPlayingSound was set by the first note's startVoice), so this
+    // only updates the dsp pitch via startNote. (JUCE's note/channel fields are
+    // private + set only by the Synthesiser friend, but MONO note routing is
+    // monoStack-based, so leaving them is fine.)
+    void retriggerNote (juce::SynthesiserSound* sound, int midiNoteNumber, float velocity);
+
     // One-shot per-voice pitch-drift hint (14-bit units, 1/128 semitone each):
 // firmware PartData.spread applied as `tuned_note + drift` at Trigger. Consumed
     // (reset to 0) by startNote so a subsequent default trigger has no drift.

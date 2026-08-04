@@ -516,7 +516,15 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
             {
                 av->setLegatoNext (legato);
                 av->setSpreadDrift (drift);
-                startVoice (av, sound, channel, note, velocity);
+                // Overlap on a sounding voice: re-trigger WITHOUT the kill that
+                // startVoice does (stopNote(0,false) -> Voice::Kill zeroes the
+                // envelope, so the legato Trigger -- which skips the re-attack --
+                // would then render silence). The first note (voice idle) still
+                // uses startVoice for a fresh attack.
+                if (legato && av->isVoiceActive())
+                    av->retriggerNote (sound, note, velocity);
+                else
+                    startVoice (av, sound, channel, note, velocity);
                 drift += spread;
             }
         return;
@@ -590,7 +598,12 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
                 {
                     av->setLegatoNext (true);
                     av->setSpreadDrift (drift);
-                    startVoice (av, sound, channel, newNote, newVel);
+                    // Legato slide-back to the prior held note on release: same
+                    // no-kill retrigger (a kill would silence the legato Trigger).
+                    if (av->isVoiceActive())
+                        av->retriggerNote (sound, newNote, newVel);
+                    else
+                        startVoice (av, sound, channel, newNote, newVel);
                     drift += spread;
                 }
         }

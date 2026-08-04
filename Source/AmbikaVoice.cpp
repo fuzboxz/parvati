@@ -181,6 +181,16 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     displayedActive_.store (true, std::memory_order_relaxed);
 }
 
+void AmbikaVoice::retriggerNote (juce::SynthesiserSound* sound, int midiNoteNumber, float velocity)
+{
+    // Already-active voice: just update the dsp pitch via startNote -> Trigger.
+    // No kill (unlike juce::Synthesiser::startVoice's stopNote(0,false) -> Kill),
+    // so the envelope keeps sustaining and the firmware Voice::Trigger(legato)
+    // (which skips the re-attack) slides the pitch instead of going silent.
+    setKeyDown (true);
+    startNote (midiNoteNumber, velocity, sound, /*currentPitchWheelPosition*/ 0);
+}
+
 void AmbikaVoice::stopNote (float /*velocity*/, bool allowTailOff)
 {
     if (allowTailOff)

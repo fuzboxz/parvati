@@ -671,6 +671,23 @@ target_link_libraries(parvati_arp_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Mono-legato regression test (overlap/slide-back silence bug).
+add_executable(parvati_legato_test
+    tests/legato_test.cpp
+)
+target_include_directories(parvati_legato_test PRIVATE Source)
+target_compile_features(parvati_legato_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_legato_test PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_gui_basics
+)
+
+# ------------------------------------------------------------------------------
 # Polyphony mode verification (Mono/Poly/Unison2x/Cyclic/Chain allocator).
 add_executable(parvati_polyphony_test
     tests/polyphony_test.cpp
