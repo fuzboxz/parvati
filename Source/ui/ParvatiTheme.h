@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiTheme — a self-contained colour-palette struct plus the 5 built-in
 // themes (Carbon, Midnight, Obsidian, Paper, Crimson). Carbon is byte-identical

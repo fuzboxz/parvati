@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See AmbikaVoice.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See AmbikaVoice.h.
 
 #include "AmbikaVoice.h"
 

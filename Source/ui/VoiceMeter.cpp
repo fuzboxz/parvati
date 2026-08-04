@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See VoiceMeter.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See VoiceMeter.h.
 
 #include "VoiceMeter.h"
 

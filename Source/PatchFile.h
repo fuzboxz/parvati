@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // Ambika .PRO patch-file support. Ambika stores programs as RIFF "MBKS"
 // containers (see ambika_reference/controller/storage.cc): a `name` chunk +

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See MidiParameterMap.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See MidiParameterMap.h.
 
 #include "MidiParameterMap.h"
 

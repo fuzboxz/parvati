@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // Sequencer — a faithful port of Ambika's controller-side step sequencer
 // (controller/part.cc Part::ClockSequencer). It shares the arpeggiator's

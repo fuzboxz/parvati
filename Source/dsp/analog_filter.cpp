@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 // Ambika analog-filter emulation (juce::dsp). See analog_filter.h for details.
 
 #include "dsp/analog_filter.h"

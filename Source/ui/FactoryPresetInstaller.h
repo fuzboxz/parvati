@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // Factory preset installer. The GPL-3.0 Ambika "goldencard" factory banks are
 // EMBEDDED into the plugin binary at build time (CMake juce_add_binary_data,

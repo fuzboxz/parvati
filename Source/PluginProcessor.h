@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiAudioProcessor — the plugin's AudioProcessor. Owns the SynthEngine
 // (16 AmbikaVoice instances) and an AudioProcessorValueTreeState (APVTS) that

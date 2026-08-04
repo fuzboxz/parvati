@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // IconButton — a small square button that draws its glyph with juce::Path (no
 // font/unicode dependency), so Undo/Redo/Settings render correctly on every OS

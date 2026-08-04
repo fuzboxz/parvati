@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParameterLayout — the full Ambika patch parameter surface exposed through a
 // JUCE AudioProcessorValueTreeState (APVTS), plus the faithful mapping from

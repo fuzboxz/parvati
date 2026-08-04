@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See Arpeggiator.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See Arpeggiator.h.
 
 #include "Arpeggiator.h"
 

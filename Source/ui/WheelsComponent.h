@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // WheelsComponent — Pitch + Mod wheels drawn to the LEFT of the virtual
 // keyboard. Two vertical sliders: the pitch wheel is bipolar and springs back

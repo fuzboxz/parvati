@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiPreset — a Parvati-native, human-editable YAML preset format that
 // COEXISTS with the Ambika .PRO/.MUL byte format. The Ambika format has no slot

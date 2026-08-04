@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParamHelp — paramID -> curated help/tooltip text for every Parvati APVTS
 // parameter.

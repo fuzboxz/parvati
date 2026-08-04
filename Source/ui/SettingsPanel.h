@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // SettingsPanel — a compact settings UI hosted in the editor's SidePanel. Lets
 // the user pick the active theme, adjust the global zoom, and toggle tooltips.

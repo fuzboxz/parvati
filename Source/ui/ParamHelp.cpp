@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See ParamHelp.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ParamHelp.h.
 
 #include "ParamHelp.h"
 

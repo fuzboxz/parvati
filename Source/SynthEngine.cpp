@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See SynthEngine.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SynthEngine.h.
 
 #include "SynthEngine.h"
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ThemeManager — owns the built-in (and future user) themes plus the currently
 // selected one, and broadcasts a change notification whenever the selection

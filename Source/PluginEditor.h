@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiEditor — the full Ambika GUI. A tabbed editor whose controls are
 // generated entirely from the PatchParamDescriptor table (ParameterLayout.h),

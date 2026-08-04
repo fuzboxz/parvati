@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // Trivial SynthesiserSound: every AmbikaVoice can play any note on any channel.
 // (Multi-timbral part/channel filtering is deferred — out of scope for the

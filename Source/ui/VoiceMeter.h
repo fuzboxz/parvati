@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // VoiceMeter — a compact 16-voice activity indicator for the Parvati UI. Each of
 // the 16 engine voices (6 firmware voicecards) is shown as a cell that lights up

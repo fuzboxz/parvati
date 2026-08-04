@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiTheme — the 5 built-in themes. The ARGB values below are the exact
 // RGB table from the Phase 1a implementation plan. Carbon is the verbatim

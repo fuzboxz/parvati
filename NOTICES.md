@@ -4,7 +4,7 @@ This project includes or depends on the following third-party software.
 
 ## Parvati (this project)
 
-Copyright © 2024 805LABS.
+Copyright © 2026 Jozsef Ottucsak.
 
 Licensed under the **GNU General Public License v3.0** (GPL-3.0). The full text
 is in [`LICENSE`](LICENSE). Parvati is a derivative work of the Ambika firmware

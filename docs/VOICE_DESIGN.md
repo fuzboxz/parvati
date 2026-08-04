@@ -3,8 +3,7 @@
 This article is a deep technical walkthrough of the **digital voice** at the
 heart of the [Mutable Instruments **Ambika**](https://github.com/pichenettes/ambika)
 hybrid polysynth — and of how [**Parvati**](../README.md) re-implements it in
-software. It is written in the spirit of write-ups like *The Design of the Juno
-DCO*: start with a little history, get a block diagram in front of you early,
+software. It is written in the spirit of deep technical write-ups: start with a little history, get a block diagram in front of you early,
 then build up the design one component at a time, always explaining the *why*
 behind each choice.
 
@@ -630,8 +629,6 @@ preserved as a feature rather than smoothed away.
   (the 8-bit → filter → VCA → resample path).
 * **Parvati port spec** — [`docs/DSP_PORT_SPEC.md`](DSP_PORT_SPEC.md) for the
   full firmware→JUCE mapping and the filter-card topology notes.
-* **The article that inspired this one's style** — *The Design of the Juno DCO*,
-  <https://blog.thea.codes/the-design-of-the-juno-dco/>.
 
 ---
 

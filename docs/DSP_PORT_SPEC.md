@@ -1,8 +1,8 @@
 # Ambika → JUCE — DSP Port Specification
 
 **Status:** Spec for implementation subagents (Phases 2–4).
-**Reference source (read-only):** `/Users/fuzboxz/parvati/ambika_reference/`
-**Target project:** `/Users/fuzboxz/parvati/` (JUCE project "Parvati", 805LABS), JUCE at `~/JUCE`.
+**Reference source (read-only):** `ambika_reference/` (the original Ambika firmware; not tracked — see `.gitignore`)
+**Target project:** the Parvati project root (JUCE project "Parvati", Jozsef Ottucsak), JUCE at `~/JUCE`.
 
 All `file:line` citations are relative to `ambika_reference/`.
 

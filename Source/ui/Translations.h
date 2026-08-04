@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // Chrome (UI chrome) translations for the Parvati editor. Only the editor
 // chrome — top-bar buttons, settings labels, tab names, page headings — is

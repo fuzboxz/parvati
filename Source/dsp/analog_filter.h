@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 // Ambika analog-filter emulation. Original Ambika firmware (C) Emilie Gillet, GPL3.
 //
 // There is NO filter code in the Ambika firmware: the filter is ANALOG hardware

@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // SynthEngine — a juce::Synthesiser owning 16 AmbikaVoice instances divided
 // among up to kNumParts (6) Parts (multitimbral, hardware-accurate). Each Part

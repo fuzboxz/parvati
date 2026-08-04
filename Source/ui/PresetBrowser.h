@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // PresetBrowser — a button showing the current patch name that opens a
 // HIERARCHICAL juce::PopupMenu, replacing the flat patch ComboBox. Categories:

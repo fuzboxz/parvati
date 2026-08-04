@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // AmbikaVoice — bridges ONE Ambika integer voice (ambika::dsp::Voice) into a
 // juce::SynthesiserVoice, running the digital engine at the fixed internal

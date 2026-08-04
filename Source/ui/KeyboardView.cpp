@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See KeyboardView.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See KeyboardView.h.
 
 #include "KeyboardView.h"
 

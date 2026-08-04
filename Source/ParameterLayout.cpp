@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See ParameterLayout.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ParameterLayout.h.
 
 #include "ParameterLayout.h"
 

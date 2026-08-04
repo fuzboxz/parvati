@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiLookAndFeel — a juce::LookAndFeel_V4 subclass that restyles every
 // stock component from the active ParvatiTheme. setTheme() stores the theme

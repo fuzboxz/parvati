@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See PluginEditor.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PluginEditor.h.
 
 #include "PluginEditor.h"
 #include "PatchFile.h"

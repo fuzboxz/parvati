@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // Arpeggiator — a faithful port of Ambika's controller-side arpeggiator
 // (controller/part.cc ClockArpeggiator / StepArpeggio / StartArpeggio).

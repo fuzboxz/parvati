@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.  See EnvelopeDisplay.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See EnvelopeDisplay.h.
 
 #include "EnvelopeDisplay.h"
 

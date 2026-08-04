@@ -1,4 +1,4 @@
-// Copyright (c) 2024 805LABS / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // EnvelopeDisplay — a small live ADSR preview that reacts to a set of
 // Attack/Decay/Sustain/Release value getters. Intended to sit beside a row of
