@@ -83,8 +83,8 @@ endif()
 add_subdirectory("${JUCE_GLOBAL_PATH}" "${CMAKE_BINARY_DIR}/juce_build" EXCLUDE_FROM_ALL)
 
 juce_add_plugin(Parvati
-    COMPANY_NAME            "Jozsef Ottucsak"
-    BUNDLE_ID               "com.jozsefottucsak.parvati"
+    COMPANY_NAME            "805LABS"
+    BUNDLE_ID               "com.805labs.parvati"
     PLUGIN_MANUFACTURER_CODE "805L"       # >=1 uppercase letter (AU requirement)
     PLUGIN_CODE             "Prvt"        # first letter upper, rest lower (GarageBand safe)
     FORMATS                 Standalone VST3 AU
