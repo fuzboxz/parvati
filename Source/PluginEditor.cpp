@@ -36,23 +36,17 @@ const char* const kAsciiParvatiLogo = R"( ______   ________   ______    __   __ 
 // family) so each re-resolves its typeface through the active L&F after a
 // font-mode switch (juce::Label caches its font, so a plain repaint would NOT
 // pick up the new family).
-void refreshFontsIn (juce::Component* c, const juce::String& familyName)
+void refreshFontsIn (juce::Component* c, const ParvatiLookAndFeel& lnf)
 {
     if (c == nullptr)
         return;
     if (auto* l = dynamic_cast<juce::Label*> (c))
     {
         const auto f = l->getFont();
-        l->setFont (juce::Font (juce::FontOptions (familyName, f.getHeight(), f.getStyleFlags())));
+        l->setFont (lnf.appFont (f.getHeight(), f.getStyleFlags()));
     }
     for (auto* child : c->getChildren())
-        refreshFontsIn (child, familyName);
-}
-
-juce::String uiFontFamily (int mode)
-{
-    return mode == 1 ? juce::Font::getDefaultMonospacedFontName()
-                     : juce::Font::getDefaultSansSerifFontName();
+        refreshFontsIn (child, lnf);
 }
 
 namespace
@@ -1317,7 +1311,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             // re-apply every cached Label font to the chosen family, then repaint.
             if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
                 lnf->setFontMode (mode);
-            refreshFontsIn (this, uiFontFamily (mode));
+            refreshFontsIn (this, * dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()));
             repaint();
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
@@ -1334,7 +1328,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // Apply the UI font family to every cached Label now that all widgets exist
     // (console mode -> <Monospaced>). Combos/buttons follow via the L&F getters.
-    refreshFontsIn (this, uiFontFamily (processorRef_.getUiFontMode()));
+    refreshFontsIn (this, lnf_);
 
     setSize (980, 660 + kHeaderH - kBarHeight);   // merged header replaces the old patch bar
     setResizable (true, true);

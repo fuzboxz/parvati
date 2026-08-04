@@ -2,12 +2,18 @@
 
 #include "ParvatiLookAndFeel.h"
 
+#include "../../fonts/unifont_data.h"   // embedded GNU Unifont subset (console font mode)
+
 ParvatiLookAndFeel::ParvatiLookAndFeel()
 {
     // Default to Carbon so theme_ is never null and every colour ID is set
     // before any component reads it. ParvatiEditor overrides this immediately
     // via setTheme(themeManager_.getCurrentTheme()).
     setTheme (carbonTheme());
+
+    // Load the embedded GNU Unifont subset (ASCII + Latin-1 + symbols) once, for
+    // the "Console" font mode (DOS/retro look).
+    unifontTypeface_ = juce::Typeface::createSystemTypefaceFor (unifont_ttf, unifont_ttf_len);
 }
 
 void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
@@ -126,20 +132,19 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
     g.fillRoundedRectangle (r.reduced (0.5f), corner);
 }
 
-juce::String ParvatiLookAndFeel::appFontFamily() const
+juce::Font ParvatiLookAndFeel::appFont (float height, int styleFlags) const
 {
-    // JUCE family-name placeholders resolve to the platform's default sans /
-    // monospace, so switching the placeholder switches the resolved typeface.
-    return fontMode_ == 1 ? juce::Font::getDefaultMonospacedFontName()
-                         : juce::Font::getDefaultSansSerifFontName();
+    if (fontMode_ == 1 && unifontTypeface_ != nullptr)
+        return juce::Font (juce::FontOptions (unifontTypeface_).withHeight (height).withStyleFlags (styleFlags));
+    return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(), height, styleFlags));
 }
 
 juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
 {
-    return juce::Font (juce::FontOptions (appFontFamily(), 14.0f, juce::Font::plain));
+    return appFont (14.0f, juce::Font::plain);
 }
 
 juce::Font ParvatiLookAndFeel::getTextButtonFont (juce::TextButton&, int)
 {
-    return juce::Font (juce::FontOptions (appFontFamily(), 14.0f, juce::Font::plain));
+    return appFont (14.0f, juce::Font::plain);
 }

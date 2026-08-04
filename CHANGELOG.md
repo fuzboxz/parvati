@@ -4,6 +4,12 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **GNU Unifont "Console" font mode.** The Settings "Font" combo's Console
+  mode now uses an embedded subset of GNU Unifont (ASCII + Latin-1, ~18 KB of
+  the full ~12 MB face) for a true DOS/retro look, instead of the system
+  monospace. (GPL+ with font exception.)
+
 ### Fixed (post-architecture deep sweep)
 - **P0 — crush stack-use-after-scope** (`AmbikaVoice::fillInternalBlock`): the
   `crushed[]` sample-and-hold buffer was block-scoped, so the `out = crushed`

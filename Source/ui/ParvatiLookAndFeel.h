@@ -44,6 +44,11 @@ public:
     juce::Font getComboBoxFont (juce::ComboBox&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
 
+    // A Font for the active mode at @p height/style: console -> embedded GNU
+    // Unifont typeface (DOS/retro); traditional -> default sans. Public so the
+    // editor can re-apply every cached Label font on a mode switch.
+    juce::Font appFont (float height, int styleFlags) const;
+
     // Wider, rounded, brighter scrollbar thumb than the V4 default (which draws
     // a faint 1px-ish thumb that is hard to grab on the long param pages).
     void drawScrollbar (juce::Graphics&, juce::ScrollBar&, int x, int y, int width, int height,
@@ -51,11 +56,9 @@ public:
                         bool isMouseOver, bool isMouseDown) override;
 
 private:
-    // Family-name placeholder for the active mode (<Sans-Serif> / <Monospaced>).
-    juce::String appFontFamily() const;
-
     const ParvatiTheme* theme_ = nullptr;
-    int fontMode_ = 0;   // 0 = traditional sans, 1 = console monospace
+    int fontMode_ = 0;   // 0 = traditional sans, 1 = console (Unifont)
+    juce::Typeface::Ptr unifontTypeface_;   // embedded GNU Unifont (console mode)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiLookAndFeel)
 };
