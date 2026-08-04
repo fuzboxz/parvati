@@ -20,10 +20,11 @@ namespace parvati
 {
 // Extract every embedded factory preset into @p factoryDir (*.PRO, organized as
 // FACTORY/<bank>/), @p factoryMultiDir (*.MUL, FACTORY_MULTI/), and @p templatesDir
-// (full-fidelity *.parvati multis, TEMPLATES/) if any is missing or empty, and
-// ensure @p userDir (USER/) exists for user saves. No-op once the factory
-// directories already contain presets. Returns the number of files written
-// (0 on a no-op run).
+// (full-fidelity *.parvati multis, TEMPLATES/), and ensure @p userDir (USER/)
+// exists for user saves. Factory banks are written only if missing; the stock
+// TEMPLATES set is SYNCED every run (writes new/changed templates and removes a
+// local *.parvati no longer in the embedded set) so renames/removals propagate
+// to an already-installed tree. Returns the number of files (re)written.
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                                    const juce::File& factoryMultiDir,
                                    const juce::File& templatesDir,
