@@ -57,6 +57,5 @@ asio_profiler_output/
 *.tmp
 *.bak
 
-# --- Generated page / menu screenshots (tools/screen_shots.cpp, menu_shots.cpp) ---
+# --- Generated menu screenshots (tools/menu_shots.cpp) ---
 screens/
-screenshots/
