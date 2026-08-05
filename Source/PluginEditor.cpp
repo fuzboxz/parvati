@@ -1076,22 +1076,22 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     partComboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         processorRef_.getApvts(), "part_select", partCombo_);
 
-    tabs_.setTabBarDepth (32);
+    tabs_.setTabBarDepth (38);
     tabs_.setOutline (0);
     // TabbedComponent / TabbedButtonBar colours from the L&F.
 
-    struct PageInfo { const char* name; Section s; int cols, cellW, cellH; };
+    struct PageInfo { const char* name; const char* shortName; Section s; int cols, cellW, cellH; };
     const PageInfo pages[] = {
-        { "Oscillators",     Section::Oscillators, 4, 214, 106 },
-        { "Mixer",           Section::Mixer,       4, 214, 106 },
-        { "Filter",          Section::Filter,      4, 214, 106 },
-        { "Envelopes",       Section::Envelopes,   3, 198, 106 },
-        { "LFOs",            Section::Lfos,        4, 198, 106 },
-        { "Mod Matrix",      Section::ModMatrix,   6, 164, 84 },
-        { "Modifiers",       Section::Modifiers,   3, 300, 64 },
-        { "Arp",             Section::Arp,         3, 214, 106 },
-        { "Sequencer",       Section::Sequencer,   6, 150, 80 },
-        { "Global",          Section::Global,      3, 214, 106 },
+        { "Oscillators", "OSC",        Section::Oscillators, 4, 214, 106 },
+        { "Mixer",       "MIX",        Section::Mixer,       4, 214, 106 },
+        { "Filter",      "FILTER",     Section::Filter,      4, 214, 106 },
+        { "Envelopes",   "ENV",        Section::Envelopes,   3, 198, 106 },
+        { "LFOs",        "LFO",        Section::Lfos,        4, 198, 106 },
+        { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   6, 164, 84 },
+        { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 64 },
+        { "Arp",         "ARP",        Section::Arp,         3, 214, 106 },
+        { "Sequencer",   "SEQ",        Section::Sequencer,   6, 150, 80 },
+        { "Global",      "GLOBAL",     Section::Global,      3, 214, 106 },
     };
 
     for (const auto& pg : pages)
@@ -1153,15 +1153,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         if (pg.s == Section::Global)
             globalPage_ = page;   // voice-activity cells attach here as a decoration
         generatedPages_.push_back (page);
-        // Record the English (key) tab name for live language switching.
-        tabKeys_.push_back (pg.name);
+        // Short tab label (OSC, MIX, ...) for live re-application; abbreviations
+        // are language-neutral so they are not translated.
+        tabLabels_.push_back (pg.shortName);
         auto* vp = new juce::Viewport();
         // Pages fill the tab width, so only vertical scrolling is ever needed.
         vp->setScrollBarsShown (true, false);
         vp->setViewedComponent (page, true);  // viewport owns the page
         pageViewports_.push_back (vp);
         page->setSize (page->getContentWidth(), page->getContentHeight());
-        tabs_.addTab (TRANS (pg.name), theme.windowBackground, vp, true);  // tabs own the viewport
+        tabs_.addTab (pg.shortName, theme.windowBackground, vp, true);  // short label; tabs own the viewport
     }
 
     // ---- Multi / Setup overlay (custom page, not descriptor-generated) ----
@@ -1552,11 +1553,11 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
 void ParvatiEditor::applyChromeTranslations()
 {
     // Re-translate every editor-chrome string through the active
-    // LocalisedStrings so a live language switch updates immediately. tabKeys_
-    // holds the English (key) names in tab order; each tab button is re-applied
-    // (the generated pages no longer carry their own heading — the tab names
-    // them). With no mappings installed (English) TRANS() is the identity, so
-    // this is a no-op for the byte-identical default.
+    // LocalisedStrings so a live language switch updates immediately. Tab labels
+    // are short fixed abbreviations (OSC, MIX, ...) held in tabLabels_ and are
+    // re-applied as-is (not translated — abbreviations are language-neutral); the
+    // chrome strings below are translated. With no mappings installed (English)
+    // TRANS() is the identity, so this is a no-op for the default.
     patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load..."));
@@ -1567,11 +1568,8 @@ void ParvatiEditor::applyChromeTranslations()
     multiButton_.setButtonText (TRANS ("Multi"));
     multiButton_.setTooltip (TRANS ("Multi / Setup"));
 
-    for (size_t i = 0; i < tabKeys_.size(); ++i)
-    {
-        const auto translated = TRANS (tabKeys_[i]);
-        tabs_.setTabName (static_cast<int> (i), translated);
-    }
+    for (size_t i = 0; i < tabLabels_.size(); ++i)
+        tabs_.setTabName (static_cast<int> (i), tabLabels_[i]);
 
     for (auto* page : generatedPages_)
         page->refreshLanguage();
@@ -1668,6 +1666,7 @@ void ParvatiEditor::resized()
         presetBrowser_->setBounds (bar.removeFromLeft (220));
     partCaption_.setBounds (bar.removeFromLeft (40));
     partCombo_.setBounds (bar.removeFromLeft (84));
+    bar.removeFromLeft (6);   // small gap between the Part dropdown and Multi
     multiButton_.setBounds (bar.removeFromLeft (60));   // Multi/Setup overlay toggle
     // (remaining middle space is flexible / empty)
 

@@ -329,9 +329,9 @@ private:
     // Viewports wrapping the generated pages (non-owning; owned by the tab bar).
     // Kept so the editor can reflow each page to its tab width on resize.
     std::vector<juce::Viewport*> pageViewports_;
-    // English (key) tab names in tab order (the 9 section pages + "Multi"), so a
-    // live language switch can re-translate every tab + matching page heading.
-    std::vector<juce::String> tabKeys_;
+    // Short tab labels (OSC, MIX, ...) in tab order, so a live language switch
+    // can re-apply every tab label.
+    std::vector<juce::String> tabLabels_;
 
     ParvatiAudioProcessor& processorRef_;
     juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };

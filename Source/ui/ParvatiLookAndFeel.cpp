@@ -54,7 +54,7 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
 
     // ---- ScrollBar (page Viewports) ----
     setColour (juce::ScrollBar::backgroundColourId,            t.windowBackground);
-    setColour (juce::ScrollBar::thumbColourId,                 t.textDim);   // brighter than outline so the thumb reads
+    setColour (juce::ScrollBar::thumbColourId,                 t.accent);    // accent-coloured thumb
     setColour (juce::ScrollBar::trackColourId,                 t.panelBackground2);
 
     // ---- TextButton ----
@@ -97,7 +97,6 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
                                         int thumbStartPosition, int thumbSize,
                                         bool isMouseOver, bool isMouseDown)
 {
-    juce::ignoreUnused (isMouseDown);
     // Faint track behind the thumb.
     g.setColour (scrollbar.findColour (juce::ScrollBar::trackColourId));
     g.fillRect (x, y, width, height);
@@ -105,12 +104,11 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
     if (thumbSize <= 0)
         return;
 
-    // A wide, rounded thumb centred in the bar — far easier to grab than the
-    // V4 default thin thumb. Brightens toward the accent on hover.
-    auto thumb = scrollbar.findColour (juce::ScrollBar::thumbColourId);
-    if (isMouseOver)
-        thumb = thumb.overlaidWith (scrollbar.findColour (juce::Slider::thumbColourId)
-                                        .withAlpha (0.5f));
+    // A wide, rounded accent-coloured thumb centred in the bar — far easier to
+    // grab than the V4 default thin thumb. Brightens on hover / drag.
+    auto thumb = scrollbar.findColour (juce::ScrollBar::thumbColourId);   // == theme accent
+    if (isMouseOver || isMouseDown)
+        thumb = thumb.brighter (0.3f);
 
     const float corner = juce::jmin (4.0f, (float) width * 0.5f, (float) height * 0.5f);
     juce::Rectangle<float> r;
@@ -182,18 +180,18 @@ juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
 
 juce::Font ParvatiLookAndFeel::getTabButtonFont (juce::TabBarButton&, float height)
 {
-    // Same sizing as the V4 default (height * 0.6); only the family follows the
-    // mode, so tab widths / bar depth are unchanged.
-    return appFont (height * 0.6f, juce::Font::plain);
+    // Smaller than the V4 default (height * 0.6) so the short all-caps labels fit
+    // the tab width comfortably; only the family follows the active font mode.
+    return appFont (height * 0.33f, juce::Font::plain);
 }
 
 int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int tabDepth)
 {
-    // Measure the label with the SAME family that drawTabButton renders it in
-    // (appFont), otherwise a wide font like Unifont would render wider than the
-    // measured slot and clip. Matches LookAndFeel_V2 otherwise.
+    // Measure the SAME all-caps label that drawTabButton renders, otherwise a
+    // wide font like Unifont would render wider than the measured slot and clip.
+    // Matches LookAndFeel_V2 otherwise.
     const juce::Font font = getTabButtonFont (button, (float) tabDepth);
-    int width = juce::GlyphArrangement::getStringWidthInt (font, button.getButtonText().trim())
+    int width = juce::GlyphArrangement::getStringWidthInt (font, button.getButtonText().trim().toUpperCase())
               + getTabButtonOverlap (tabDepth) * 2;
 
     if (auto* extraComponent = button.getExtraComponent())
@@ -260,12 +258,13 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     if (button.getTabbedButtonBar().isVertical())
         std::swap (length, depth);
 
-    // *** the only deviation from V3: route the label through appFont(). ***
+    // *** the deviation from V3: render the label in ALL CAPS through appFont(),
+    // so the family follows the active font mode and the labels read cleanly. ***
     juce::Font font (getTabButtonFont (button, depth));
     font.setUnderline (button.hasKeyboardFocus (false));
     juce::AttributedString s;
     s.setJustification (juce::Justification::centred);
-    s.append (button.getButtonText().trim(), font, col);
+    s.append (button.getButtonText().trim().toUpperCase(), font, col);
     juce::TextLayout textLayout;
     textLayout.createLayout (s, length);
 
@@ -290,13 +289,15 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     // Mirrors LookAndFeel_V2::drawGroupComponentOutline, but the title font is
     // resolved through appFont() so panel headings ("Osc 1", "Mixer", ...) follow
     // the active font mode. The outline colour is transparent (borderless), so
-    // only the title text is visible.
-    const float textH = 15.0f;
+    // only the title text is visible. Headings render in ALL CAPS at a reduced
+    // size to read as compact section labels.
+    const float textH = 13.0f;
     const float indent = 3.0f;
     const float textEdgeGap = 4.0f;
     auto cs = 5.0f;
 
     const juce::Font f = appFont (textH, juce::Font::plain);
+    const juce::String displayText = text.toUpperCase();   // panel headings render in ALL CAPS
 
     juce::Path p;
     auto x = indent;
@@ -306,10 +307,10 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     cs = juce::jmin (cs, w * 0.5f, h * 0.5f);
     auto cs2 = 2.0f * cs;
 
-    auto textW = text.isEmpty() ? 0.0f
+    auto textW = displayText.isEmpty() ? 0.0f
                                 : juce::jlimit (0.0f,
                                                 juce::jmax (0.0f, w - cs2 - textEdgeGap * 2),
-                                                (float) juce::GlyphArrangement::getStringWidthInt (f, text)
+                                                (float) juce::GlyphArrangement::getStringWidthInt (f, displayText)
                                                     + textEdgeGap * 2.0f);
     auto textX = cs + textEdgeGap;
 
@@ -345,7 +346,7 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     g.setColour (group.findColour (juce::GroupComponent::textColourId)
                     .withMultipliedAlpha (alpha));
     g.setFont (f);
-    g.drawText (text,
+    g.drawText (displayText,
                 juce::roundToInt (x + textX), 0,
                 juce::roundToInt (textW),
                 juce::roundToInt (textH),

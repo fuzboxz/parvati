@@ -4,6 +4,74 @@
 
 #include "ParvatiTheme.h"
 
+#include <cmath>
+
+//==============================================================================
+// LCD "pixel screen" rendering for the on-screen keyboard. The keys are drawn as
+// fields of square "pixels" on an integer grid so the keyboard reads as the same
+// blocky segmented display as the envelope/LFO preview (EnvelopeDisplay), rather
+// than smooth vector keys. Every cell is a whole-pixel Rectangle<int> (drawn via
+// the integer fillRect overload) so there are no fractional edges / cut-off
+// pixels, even on scaled (HiDPI / zoomed) surfaces. The cell constants match
+// EnvelopeDisplay (3px cells) so the two surfaces share one visual language.
+namespace
+{
+    constexpr int kLcdCell  = 3;   // lit pixel size (px)  — matches EnvelopeDisplay
+    constexpr int kLcdPitch = 4;   // cell + 1px grid gap  — matches EnvelopeDisplay
+
+    struct LcdPalette
+    {
+        juce::Colour screenBase;   // panelBackground — LCD gap / between-key fill
+        juce::Colour outline;
+        juce::Colour accent;       // lit natural keys
+        juce::Colour accent2;      // pressed / active keys
+        juce::Colour track;        // faint backdrop grid
+        juce::Colour blackBase;    // unlit sharp keys (darkest)
+    };
+
+    LcdPalette resolveLcd (const juce::LookAndFeel& lnf)
+    {
+        const ParvatiTheme* t = nullptr;
+        if (const auto* p = dynamic_cast<const ParvatiLookAndFeel*> (&lnf))
+            t = p->getTheme();
+
+        if (t != nullptr)
+            return { t->panelBackground, t->outline,    t->accent,  t->accent2,
+                     t->knobTrack,       t->windowBackground };
+
+        // Carbon-derived fallback (only before the editor's L&F is inherited).
+        return { juce::Colour (0xff24242e), juce::Colour (0xff3c3c4a), juce::Colour (0xffe8b84b),
+                 juce::Colour (0xff5b8db8), juce::Colour (0xff3c3c4a), juce::Colour (0xff141419) };
+    }
+
+    // Snap a float rect to the nearest whole-pixel rect (no fractional edges).
+    juce::Rectangle<int> roundedInt (juce::Rectangle<float> a)
+    {
+        return { static_cast<int> (std::round (a.getX())),
+                 static_cast<int> (std::round (a.getY())),
+                 static_cast<int> (std::round (a.getWidth())),
+                 static_cast<int> (std::round (a.getHeight())) };
+    }
+
+    // Fill an integer @p area with a grid of @p cell-sized cells on a @p pitch
+    // lattice, starting at the area's top-left corner. Every cell is an integer
+    // Rectangle<int> (drawn via the integer fillRect overload) so each renders
+    // as a clean whole-pixel square with no fractional / cut-off edges. The last
+    // row/column stops short of the edge (leaving a whole-pixel margin) instead
+    // of drawing a partial cell. Rows are shared across keys (same Y range);
+    // columns begin at each key's left edge so every key fills cleanly.
+    void fillLcdCells (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col,
+                       int cell = kLcdCell, int pitch = kLcdPitch)
+    {
+        const int right  = area.getRight();
+        const int bottom = area.getBottom();
+        g.setColour (col);
+        for (int y = area.getY(); y + cell <= bottom; y += pitch)
+            for (int x = area.getX(); x + cell <= right; x += pitch)
+                g.fillRect (juce::Rectangle<int> (x, y, cell, cell));
+    }
+} // namespace
+
 //==============================================================================
 // Internal juce::MidiKeyboardComponent subclass that intercepts key clicks and
 // routes them to the owning KeyboardView's NoteCallback. Returning true from
@@ -63,6 +131,96 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         {
             owner.fireNoteCallback (owner.mouseDownNote_, false, 0.0f);
             owner.mouseDownNote_ = -1;
+        }
+    }
+
+    //----------------------------------------------------------------------
+    // Integer key layout: snap every key's position/width to whole pixels at the
+    // source so white AND black keys land on one shared integer grid (no
+    // fractional sizes, no misaligned sharps). The base layout is fractional
+    // (keyWidth * ratio maths); rounding here fixes geometry for BOTH drawing
+    // (getRectangleForKey) and hit-testing (getNoteAndVelocityAtPosition), which
+    // both derive from this, so they stay perfectly consistent. White notes stay
+    // contiguous because adjacent whites share an exact boundary value that
+    // rounds identically for both keys.
+    juce::Range<float> getKeyPosition (int midiNoteNumber, float targetKeyWidth) const override
+    {
+        auto r = juce::MidiKeyboardComponent::getKeyPosition (midiNoteNumber, targetKeyWidth);
+        const float s = std::round (r.getStart());
+        const float e = std::round (r.getEnd());
+        return { s, juce::jmax (e, s + 1.0f) };   // never collapse a key to zero width
+    }
+
+    //----------------------------------------------------------------------
+    // Pixelated LCD key rendering: naturals are fields of LIT cells (accent),
+    // sharps are dark recessed cells with the faint backdrop grid — the same
+    // segmented-display look as EnvelopeDisplay. Overrides the stock smooth
+    // vector keys (drawWhiteNote/drawBlackNote are the virtual hooks the final
+    // drawWhiteKey/drawBlackKey delegate to).
+    void drawWhiteNote (int midiNoteNumber, juce::Graphics& g, juce::Rectangle<float> area,
+                        bool isDown, bool isOver, juce::Colour lineColour, juce::Colour textColour) override
+    {
+        juce::ignoreUnused (lineColour);   // pixel grid + seam replace the separator line
+        const auto lcd = resolveLcd (getLookAndFeel());
+
+        juce::Colour fill = lcd.accent;
+        if (isDown) fill = lcd.accent2;                              // active colour
+        if (isOver) fill = fill.overlaidWith (lcd.accent2.withAlpha (0.45f));
+        const auto ir = roundedInt (area);
+        fillLcdCells (g, ir, fill);
+
+        // 1px seam in the screen-base colour: adjacent naturals would otherwise
+        // merge into a single lit block. Drawn on the integer grid (rounded
+        // left edge, full key height) so it is a clean whole-pixel line.
+        g.setColour (lcd.screenBase);
+        g.fillRect (juce::Rectangle<int> (ir.getX(), ir.getY(), 1, ir.getHeight ()));
+
+        // Octave label on each C — crisp text over the pixel field, like the
+        // envelope display's title overlay.
+        const auto text = getWhiteNoteText (midiNoteNumber);
+        if (text.isNotEmpty() && area.getHeight() > 16.0f)
+        {
+            auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+            g.setColour (textColour.isTransparent() ? lcd.accent.contrasting() : textColour);
+            g.setFont (lnf ? lnf->appFont (juce::jmin (11.0f, area.getWidth() * 0.6f), juce::Font::plain)
+                           : juce::Font (juce::FontOptions (11.0f)));
+            g.drawText (text, area.withTrimmedLeft (1.0f).withTrimmedBottom (2.0f),
+                        juce::Justification::centredBottom, false);
+        }
+    }
+
+    void drawBlackNote (int /*midiNoteNumber*/, juce::Graphics& g, juce::Rectangle<float> area,
+                        bool isDown, bool isOver, juce::Colour noteFillColour) override
+    {
+        juce::ignoreUnused (noteFillColour);   // LCD colours come from the theme
+        const auto lcd = resolveLcd (getLookAndFeel());
+
+        const auto ir = roundedInt (area);
+
+        if (isDown)
+        {
+            // Pressed sharp = lit accent2 cells, matching a pressed natural.
+            fillLcdCells (g, ir, lcd.accent2);
+        }
+        else
+        {
+            // Unlit sharp = dark recessed region with the faint LCD backdrop
+            // grid (the same inactive-area treatment as EnvelopeDisplay).
+            g.setColour (lcd.blackBase);
+            g.fillRect (ir);
+            fillLcdCells (g, ir, lcd.track.withAlpha (0.12f));
+            if (isOver)
+            {
+                g.setColour (lcd.accent2.withAlpha (0.45f));
+                g.fillRect (ir);
+            }
+        }
+
+        // Crisp outline so the black key reads against the lit naturals beneath.
+        if (! lcd.outline.isTransparent())
+        {
+            g.setColour (lcd.outline);
+            g.drawRect (ir);
         }
     }
 
@@ -134,7 +292,7 @@ void KeyboardView::paint (juce::Graphics& g)
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         t = lnf->getTheme();
 
-    g.fillAll (t != nullptr ? t->windowBackground : juce::Colour (0xff141419));
+    g.fillAll (t != nullptr ? t->panelBackground : juce::Colour (0xff24242e));
 }
 
 void KeyboardView::resized()
@@ -170,30 +328,31 @@ void KeyboardView::applyThemeColours()
 
     if (t != nullptr)
     {
-        // Keys follow the theme: natural keys = the PRIMARY accent, sharps = the
-        // page background (the "dark" keys). The pressed/sounding + hover
-        // overlays use the SECONDARY accent, which contrasts with both the
-        // accent naturals and the background-dark sharps, so activity always
-        // reads regardless of theme.
-        white  = t->accent;
-        black  = t->windowBackground;
-        down   = t->accent2;
-        over   = t->accent2.withAlpha (0.45f);
-        line   = t->outline;
-        text   = t->windowBackground;   // contrasts with the accent-coloured naturals
-        shadow = t->divider;
+        // The keyboard is drawn as a pixelated LCD screen (see KeyComp's
+        // drawWhiteNote/drawBlackNote): the component background is the screen
+        // base, naturals are fields of lit accent cells, and sharps are dark
+        // recessed cells. The override reads the theme directly for the cell
+        // colours; these IDs drive the base fill plus the state/label overlays
+        // the override still consults.
+        white  = t->panelBackground;            // LCD screen base (pixel gaps, between keys)
+        black  = t->windowBackground;           // sharp base (override reads theme directly)
+        down   = t->accent2;                    // pressed-key overlay
+        over   = t->accent2.withAlpha (0.45f);  // hover overlay
+        line   = t->outline;                    // keyboard bottom edge (drawKeyboardBackground)
+        text   = t->windowBackground;           // C-label text (contrasts with accent naturals)
+        shadow = juce::Colour (0x00000000);     // flat LCD surface — no top shadow gradient
     }
     else
     {
         // Carbon-derived fallback (shown only before the editor's
         // ParvatiLookAndFeel is inherited).
-        white  = juce::Colour (0xffe8b84b);                 // accent (gold)
-        black  = juce::Colour (0xff141419);                 // windowBackground
-        down   = juce::Colour (0xff5b8db8);                 // accent2 (steel)
+        white  = juce::Colour (0xff24242e);   // panelBackground (LCD screen base)
+        black  = juce::Colour (0xff141419);   // windowBackground
+        down   = juce::Colour (0xff5b8db8);   // accent2 (steel)
         over   = juce::Colour (0xff5b8db8).withAlpha (0.45f);
-        line   = juce::Colour (0xff3c3c4a);
+        line   = juce::Colour (0xff3c3c4a);   // outline (bottom edge)
         text   = juce::Colour (0xff141419);
-        shadow = juce::Colour (0xff24242e);
+        shadow = juce::Colour (0x00000000);
     }
 
     using MK = juce::MidiKeyboardComponent;
