@@ -146,7 +146,7 @@ void Arpeggiator::stepArpeggio()
             {
                 if (direction_ == static_cast<uint8_t> (ArpDirection::UpDown))
                 {
-                    arpDirection_ = -arpDirection_;
+                    arpDirection_ = static_cast<int8_t> (-arpDirection_);
                     startArpeggio();
                     if (numNotes > 1 || octaveRange_ > 1)
                         stepArpeggio();

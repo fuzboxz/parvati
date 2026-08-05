@@ -565,8 +565,8 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
         auto& part = engine_.getPart (i);
-        if (multi.parts[i].hasPatch) part.patchBytes = multi.parts[i].patch;
-        if (multi.parts[i].hasPart)  part.partBytes  = multi.parts[i].part;
+        if (multi.parts[(size_t) i].hasPatch) part.patchBytes = multi.parts[(size_t) i].patch;
+        if (multi.parts[(size_t) i].hasPart)  part.partBytes  = multi.parts[(size_t) i].part;
 
         if (multi.hasMultiData)
         {
@@ -576,7 +576,7 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
             engine_.setPartVoiceAllocation (i, pm[3]);       // firmware 6-voicecard bitmask
         }
 
-        if (multi.parts[i].hasPart)
+        if (multi.parts[(size_t) i].hasPart)
         {
             // Stage this Part's arp/seq config (PartData 7..14 + 16..79) through
             // pendingConfig_ + configDirty_ -- NOT the live objects -- so the
@@ -643,7 +643,7 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
 
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
-        auto& mp = multi.parts[i];
+        auto& mp = multi.parts[(size_t) i];
 
         if (i == currentPart_)
         {

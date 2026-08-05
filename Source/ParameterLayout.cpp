@@ -166,7 +166,6 @@ struct InitPatch
     };
     // clang-format on
 };
-constexpr uint8_t InitPatch::bytes[InitPatch::kSize];
 
 // Part defaults (controller init_part, part.cc:83-100):
 //   volume=120, legato=0, portamento=0 (Part bytes 0,5,6).

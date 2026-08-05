@@ -154,6 +154,11 @@ public:
     // titles are themed via the LookAndFeel).
     void applyThemeColors();
 
+    // Re-apply the translated group-panel titles through the active
+    // LocalisedStrings (called by the editor after a live language switch). The
+    // component name stays the English key; only the displayed text changes.
+    void refreshLanguage();
+
     // Re-flow the grouped layout to @p targetWidth (called by the editor when
     // the tab / window resizes, so the group panels wrap to the available
     // width). Lays out, then sizes the page to (targetWidth, contentHeight_) so

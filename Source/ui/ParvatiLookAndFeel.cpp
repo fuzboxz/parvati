@@ -117,7 +117,7 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
     if (isVertical)
     {
         const float tw = juce::jmin ((float) width * 0.7f, 12.0f);
-        r = juce::Rectangle<float> ((float) x + (width - tw) * 0.5f,
+        r = juce::Rectangle<float> ((float) x + ((float) width - tw) * 0.5f,
                                     (float) thumbStartPosition,
                                     tw, (float) thumbSize);
     }
@@ -125,7 +125,7 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
     {
         const float th = juce::jmin ((float) height * 0.7f, 12.0f);
         r = juce::Rectangle<float> ((float) thumbStartPosition,
-                                    (float) y + (height - th) * 0.5f,
+                                    (float) y + ((float) height - th) * 0.5f,
                                     (float) thumbSize, th);
     }
     g.setColour (thumb);

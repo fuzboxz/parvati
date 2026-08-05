@@ -276,18 +276,18 @@ public:
     // All staged in pendingConfig_ + configDirty_; applied on the audio thread
     // in processTransport before the clock loop (see servicePendingConfig).
     void setArpMode (uint8_t mode);
-    void setArpDirection (uint8_t dir)  { parts_[currentPart_].writePendingConfig ([dir] (auto& c)  { c.arpDirection = dir;  }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setArpOctave (uint8_t oct)     { parts_[currentPart_].writePendingConfig ([oct] (auto& c) { c.arpOctave = oct;     }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setArpPattern (uint8_t pat)    { parts_[currentPart_].writePendingConfig ([pat] (auto& c) { c.arpPattern = pat;    }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setArpResolution (uint8_t res) { parts_[currentPart_].writePendingConfig ([res] (auto& c) { c.arpResolution = res; }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); }
-    void setSequenceLength (int i, uint8_t len) { if (i>=0&&i<3)  { parts_[currentPart_].writePendingConfig ([i,len] (auto& c) { c.seqLength[i] = len;  }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
-    void setSequenceDataByte (int offset, uint8_t value) { if (offset>=0&&offset<64) { parts_[currentPart_].writePendingConfig ([offset,value] (auto& c) { c.seqData[offset] = value; }); parts_[currentPart_].configDirty_.store (true, std::memory_order_release); } }
+    void setArpDirection (uint8_t dir)  { parts_[(size_t) currentPart_].writePendingConfig ([dir] (auto& c)  { c.arpDirection = dir;  }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpOctave (uint8_t oct)     { parts_[(size_t) currentPart_].writePendingConfig ([oct] (auto& c) { c.arpOctave = oct;     }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpPattern (uint8_t pat)    { parts_[(size_t) currentPart_].writePendingConfig ([pat] (auto& c) { c.arpPattern = pat;    }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setArpResolution (uint8_t res) { parts_[(size_t) currentPart_].writePendingConfig ([res] (auto& c) { c.arpResolution = res; }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); }
+    void setSequenceLength (int i, uint8_t len) { if (i>=0&&i<3)  { parts_[(size_t) currentPart_].writePendingConfig ([i,len] (auto& c) { c.seqLength[(size_t) i] = len;  }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); } }
+    void setSequenceDataByte (int offset, uint8_t value) { if (offset>=0&&offset<64) { parts_[(size_t) currentPart_].writePendingConfig ([offset,value] (auto& c) { c.seqData[(size_t) offset] = value; }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); } }
 
     // ---- multitimbral Part management ----
     static constexpr int getNumParts() { return kNumParts; }
     void setCurrentPart (int part);
     int  getCurrentPart() const { return currentPart_; }
-    Part& getPart (int i) { return parts_[i]; }
+    Part& getPart (int i) { return parts_[(size_t) i]; }
 
     // Full 6-Part controller-state capture/restore for host plugin-state
     // persistence (getStateInformation / setStateInformation). Captures every
@@ -330,15 +330,15 @@ public:
     void markAllocationDirty() { allocationDirty_.store (true, std::memory_order_release); }
 
     // Part routing (MIDI channel + key zone). channel: 0=Omni, else 1..16.
-    void setPartChannel  (int part, uint8_t channel) { if (ok (part)) parts_[part].midiChannel.store (channel); }
-    void setPartKeyrange (int part, uint8_t lo, uint8_t hi) { if (ok (part)) { parts_[part].keyrangeLow.store (lo); parts_[part].keyrangeHigh.store (hi); } }
-    uint8_t getPartChannel (int part) const { return ok (part) ? parts_[part].midiChannel.load() : 0; }
+    void setPartChannel  (int part, uint8_t channel) { if (ok (part)) parts_[(size_t) part].midiChannel.store (channel); }
+    void setPartKeyrange (int part, uint8_t lo, uint8_t hi) { if (ok (part)) { parts_[(size_t) part].keyrangeLow.store (lo); parts_[(size_t) part].keyrangeHigh.store (hi); } }
+    uint8_t getPartChannel (int part) const { return ok (part) ? parts_[(size_t) part].midiChannel.load() : 0; }
 
     // GUI-contract aliases (the multitimbral editor calls these). channel: 0=Omni.
     void setPartMidiChannel (int part, int ch)             { setPartChannel (part, static_cast<uint8_t> (ch)); }
     void setPartKeyZone     (int part, int lo, int hi)     { setPartKeyrange (part, static_cast<uint8_t> (lo), static_cast<uint8_t> (hi)); }
-    uint8_t getPartKeyrangeLow  (int part) const { return ok (part) ? parts_[part].keyrangeLow.load()  : 0; }
-    uint8_t getPartKeyrangeHigh (int part) const { return ok (part) ? parts_[part].keyrangeHigh.load() : 127; }
+    uint8_t getPartKeyrangeLow  (int part) const { return ok (part) ? parts_[(size_t) part].keyrangeLow.load()  : 0; }
+    uint8_t getPartKeyrangeHigh (int part) const { return ok (part) ? parts_[(size_t) part].keyrangeHigh.load() : 127; }
 
     // ---- Voice allocation (firmware 6-voicecard bitmask) ----
     // Each firmware voicecard maps to exactly one Parvati voice (voice i ==
@@ -348,7 +348,7 @@ public:
     // enforces EXCLUSIVE ownership (a card newly claimed by a Part is removed
     // from every other Part). Default bitmask = 1<<partIndex.
     void setPartVoiceAllocation (int part, uint8_t bitmask);
-    uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[part].voiceAllocation.load (std::memory_order_relaxed) : 0; }
+    uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[(size_t) part].voiceAllocation.load (std::memory_order_relaxed) : 0; }
 
     // Advance the transport + per-part arp/sequencer for one audio block.
     void processTransport (juce::MidiBuffer& midi, int numSamples, double bpm, bool isPlaying);
@@ -356,8 +356,8 @@ public:
     // Test/internal access.
     AmbikaVoice* getAmbikaVoice (int i)
     {
-        if (i >= 0 && i < (int) voices.size())
-            return dynamic_cast<AmbikaVoice*> (voices[(size_t) i]);
+        if (i >= 0 && i < voices.size())
+            return dynamic_cast<AmbikaVoice*> (voices[i]);
         return nullptr;
     }
 
@@ -375,8 +375,8 @@ public:
     // voice per voicecard), so this is the identity clamped to the 6 cards.
     static int voiceCardForIndex (int voiceIndex);
     // Back-compat: the current Part's arp/seq.
-    parvati::Arpeggiator& getArp()       { return parts_[currentPart_].arp; }
-    parvati::Sequencer&   getSequencer() { return parts_[currentPart_].seq; }
+    parvati::Arpeggiator& getArp()       { return parts_[(size_t) currentPart_].arp; }
+    parvati::Sequencer&   getSequencer() { return parts_[(size_t) currentPart_].seq; }
 
 private:
     std::array<Part, kNumParts> parts_;

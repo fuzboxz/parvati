@@ -34,8 +34,7 @@ public:
 
         juce::Colour c = text;
         if (! isEnabled())            c = text.withAlpha (0.30f);
-        else if (getToggleState())    c = accent;            // e.g. Settings "on"
-        else if (isButtonDown)        c = accent;
+        else if (getToggleState() || isButtonDown)  c = accent;   // e.g. Settings "on" or pressed
         else if (isMouseOverButton)   c = text.brighter (0.20f);
 
         g.setColour (c);
@@ -62,7 +61,7 @@ private:
 
         const float ah  = rad * 0.55f;                 // arrowhead size
         const float ax  = clockwise ? rightX : leftX;
-        const int   dir = clockwise ? +1 : -1;
+        const float dir = clockwise ? 1.0f : -1.0f;
         juce::Path head;
         head.startNewSubPath (ax + dir * ah, footY);
         head.lineTo (ax, footY - ah * 0.7f);

@@ -203,8 +203,8 @@ bool parseAmbikaMulti (const void* data, size_t size, AmbikaMulti& out)
                 const int idx = static_cast<int> (partIdx1) - 1;
                 if (idx >= 0 && idx < 6)
                 {
-                    std::memcpy (out.parts[idx].patch.data(), payload, 112);
-                    out.parts[idx].hasPatch = true;
+                    std::memcpy (out.parts[(size_t) idx].patch.data(), payload, 112);
+                    out.parts[(size_t) idx].hasPatch = true;
                 }
             }
             else if (payloadLen == 84)               // PartData (part partIdx1)
@@ -212,8 +212,8 @@ bool parseAmbikaMulti (const void* data, size_t size, AmbikaMulti& out)
                 const int idx = static_cast<int> (partIdx1) - 1;
                 if (idx >= 0 && idx < 6)
                 {
-                    std::memcpy (out.parts[idx].part.data(), payload, 84);
-                    out.parts[idx].hasPart = true;
+                    std::memcpy (out.parts[(size_t) idx].part.data(), payload, 84);
+                    out.parts[(size_t) idx].hasPart = true;
                 }
             }
             (void) objType;

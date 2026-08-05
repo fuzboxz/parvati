@@ -57,12 +57,12 @@ private:
                 factorySub.addSubMenu (bank, bankSub);
         }
         // Factory multis (.MUL) nest at the bottom of Factory.
-        addSubIfAny (factorySub, "Multi", buildFlatSub (factoryMultiDir_, "*.MUL", false));
+        addSubIfAny (factorySub, TRANS ("Multi"), buildFlatSub (factoryMultiDir_, "*.MUL", false));
         menu.addSubMenu (TRANS ("Factory"), factorySub);
 
         menu.addSubMenu (TRANS ("User"), buildRecursiveSub (userDir_));
 
-        addSubIfAny (menu, "Templates", buildFlatSub (templatesDir_, "*.parvati", false));
+        addSubIfAny (menu, TRANS ("Templates"), buildFlatSub (templatesDir_, "*.parvati", false));
 
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (&nameBtn_));

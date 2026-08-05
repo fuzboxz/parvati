@@ -18,7 +18,6 @@
 #include <unordered_map>
 
 #include "ParameterLayout.h"
-#include "PatchFile.h"
 #include "SynthEngine.h"
 #include "MidiParameterMap.h"
 

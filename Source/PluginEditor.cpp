@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PluginEditor.h.
 
 #include "PluginEditor.h"
-#include "PatchFile.h"
 #include "ParvatiPreset.h"
 #include "ui/EnvelopeDisplay.h"
 #include "ui/ParamHelp.h"
@@ -145,7 +144,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
                 label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
                 slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 16);
                 if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-                    if (auto* theme = lnf->getTheme())
+                    if (const auto* theme = lnf->getTheme())
                         slider_->setColour (juce::Slider::rotarySliderFillColourId, theme->accent);
             }
             else
@@ -296,8 +295,8 @@ void ParamControl::showContextMenu()
     // SafePointer guards against the control being deleted while the async
     // menu is still open (e.g. editor closed mid-menu).
     juce::Component::SafePointer<ParamControl> safe (this);
-    menu.addItem ("Reset to default", [safe] { if (safe != nullptr) safe->resetToDefault(); });
-    menu.addItem ("Randomize",        [safe] { if (safe != nullptr) safe->randomize(); });
+    menu.addItem (TRANS ("Reset to default"), [safe] { if (safe != nullptr) safe->resetToDefault(); });
+    menu.addItem (TRANS ("Randomize"),        [safe] { if (safe != nullptr) safe->randomize(); });
     menu.showMenuAsync (juce::PopupMenu::Options());
 }
 
@@ -420,7 +419,7 @@ void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& des
     // order of the groups and the descriptor order within each group.
     for (int i = 0; i < (int) descriptors.size(); ++i)
     {
-        const juce::String gname = groupForId (descriptors[i]->paramID);
+        const juce::String gname = groupForId (descriptors[(size_t) i]->paramID);
         GroupLayout* g = nullptr;
         for (auto& existing : groups_)
             if (existing.name == gname) { g = &existing; break; }
@@ -604,12 +603,12 @@ void ParamPage::layoutGroups (int targetWidth)
         // never overlap — the in-place width grow above left each panel's X at
         // its natural position, which overlaps its neighbour when 2+ non-dense
         // panels share a row (e.g. Osc 1/2, Mixer + Sub Oscillator). Y is kept.
-        int x = rowStartX;
+        int tileX = rowStartX;
         for (int gi : rowPanels)
         {
             auto& g = groups_[(size_t) gi];
-            g.rect.setX (x);
-            x = g.rect.getRight() + kGroupGap;
+            g.rect.setX (tileX);
+            tileX = g.rect.getRight() + kGroupGap;
         }
     }
 
@@ -640,14 +639,14 @@ void ParamPage::applyLayout()
 
         for (int idx = 0; idx < (int) g.controlIndices.size(); ++idx)
         {
-            const int ci = g.controlIndices[idx];
+            const int ci = g.controlIndices[(size_t) idx];
             if (ci < 0 || ci >= (int) controls_.size()) continue;
             const int col = idx % cols;
             const int row = idx / cols;
             const juce::Rectangle<int> cell (inner.getX() + col * colStep,
                                              inner.getY() + row * g.cellH,
                                              colStep, g.cellH);
-            controls_[ci]->setBounds (cell.reduced (3));
+            controls_[(size_t) ci]->setBounds (cell.reduced (3));
         }
 
         // A group's decoration (if any) spans the panel width below the cells.
@@ -705,10 +704,7 @@ bool ParamPage::layoutIsSane() const
             if (g.rect.getRight() >= maxRight - 2 * kGroupGap)
                 fillsWidth = true;
         }
-    if (anyNonDense && ! fillsWidth)
-        return false;
-
-    return true;
+    return ! anyNonDense || fillsWidth;
 }
 
 void ParamPage::setGroupDecoration (const juce::String& groupName,
@@ -747,7 +743,9 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
     // Bordered panels first (so they sit behind the control cells), one per group.
     for (auto& g : groups_)
     {
-        auto gc = std::make_unique<juce::GroupComponent> (g.name, g.name);
+        // The component NAME keeps the English key (stable identity for
+        // setGroupDecoration matching); only the displayed TITLE is translated.
+        auto gc = std::make_unique<juce::GroupComponent> (g.name, TRANS (g.name));
         gc->setTextLabelPosition (juce::Justification::top | juce::Justification::left);
         // Outline + title-text colours come from the editor-wide L&F, so a theme
         // switch refreshes them automatically.
@@ -757,7 +755,7 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
     }
 
     // Control cells on top of the panel borders.
-    for (auto* d : descriptors)
+    for (const auto* d : descriptors)
     {
         controls_.emplace_back (std::make_unique<ParamControl> (processor, *d));
         addAndMakeVisible (*controls_.back());
@@ -775,6 +773,16 @@ void ParamPage::applyThemeColors()
     for (auto& gc : groupComponents_) gc->repaint();
     for (auto& c : controls_)         c->repaint();
     for (auto& d : decorations_)      d->repaint();   // e.g. ADSR previews read the theme live
+    repaint();
+}
+
+void ParamPage::refreshLanguage()
+{
+    // The group-component NAME is the stable English key (used for
+    // setGroupDecoration matching); only the displayed TITLE is re-translated.
+    for (auto& g : groups_)
+        if (g.groupComp != nullptr)
+            g.groupComp->setText (TRANS (g.name));
     repaint();
 }
 
@@ -828,7 +836,7 @@ MultiPage::MultiPage (ParvatiAudioProcessor& p, ThemeManager& themeManager)
     addCaption (hiLabel_, TRANS ("Key Zone High"));
 
     // MIDI channel: Omni (0) + 1..16.
-    channelCombo_.addItem ("Omni", 1);
+    channelCombo_.addItem (TRANS ("Omni"), 1);
     for (int c = 1; c <= 16; ++c)
         channelCombo_.addItem (juce::String (c), c + 1);
     // Combo + popup colours from the L&F.
@@ -889,13 +897,15 @@ void MultiPage::applyThemeColors()
 
 void MultiPage::refreshLanguage()
 {
-    // Re-apply the static chrome captions through the active LocalisedStrings.
-    // The dynamic "Editing Part X of Y" line is rebuilt by refresh().
+    // Re-apply the static chrome captions through the active LocalisedStrings,
+    // then rebuild the dynamic "Editing Part X of Y" line (refresh()) so it
+    // follows a live language switch too.
     heading_.setText (TRANS ("Multi / Setup"), juce::dontSendNotification);
     chLabel_.setText (TRANS ("MIDI Channel"), juce::dontSendNotification);
     loLabel_.setText (TRANS ("Key Zone Low"), juce::dontSendNotification);
     hiLabel_.setText (TRANS ("Key Zone High"), juce::dontSendNotification);
     allocLabel_.setText (TRANS ("Voice Allocation (voicecards)"), juce::dontSendNotification);
+    refresh();
     repaint();
 }
 
@@ -935,8 +945,8 @@ void MultiPage::refresh()
     refreshing_ = true;
     const int part = proc_.getEngine().getCurrentPart();
     const auto& prt = proc_.getEngine().getPart (part);
-    partLabel_.setText ("Editing Part " + juce::String (part + 1) + " of "
-                            + juce::String (SynthEngine::getNumParts()),
+    partLabel_.setText (TRANS ("Editing Part") + " " + juce::String (part + 1) + " "
+                            + TRANS ("of") + " " + juce::String (SynthEngine::getNumParts()),
                         juce::dontSendNotification);
     channelCombo_.setSelectedId (static_cast<int> (prt.midiChannel.load()) + 1);
     loSlider_.setValue (static_cast<double> (prt.keyrangeLow.load()),  juce::dontSendNotification);
@@ -1060,7 +1070,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     addAndMakeVisible (partCaption_);
 
     for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
-        partCombo_.addItem ("Part " + juce::String (i), i);
+        partCombo_.addItem (TRANS ("Part") + " " + juce::String (i), i);
     // Combo colours from the L&F.
     addAndMakeVisible (partCombo_);
     partComboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
@@ -1095,8 +1105,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // preview tracks the knobs live. (Each env_lfo unit runs BOTH its
         // envelope and its LFO; splitting the halves onto two tabs matches that.)
         auto norm = [this] (const juce::String& id) -> float {
-            auto* p = processorRef_.getApvts().getParameter (id);
-            return p ? p->getValue() : 0.0f;
+            auto* param = processorRef_.getApvts().getParameter (id);
+            return param ? param->getValue() : 0.0f;
         };
         if (pg.s == Section::Envelopes)
         {
@@ -1563,6 +1573,9 @@ void ParvatiEditor::applyChromeTranslations()
         tabs_.setTabName (static_cast<int> (i), translated);
     }
 
+    for (auto* page : generatedPages_)
+        page->refreshLanguage();
+
     if (multiPage_ != nullptr)
         multiPage_->refreshLanguage();
     if (settingsPanel_ != nullptr)
@@ -1676,7 +1689,7 @@ void ParvatiEditor::resized()
 //==========================================================================
 void ParvatiEditor::openLoadDialog()
 {
-    fileChooser_ = std::make_unique<juce::FileChooser> ("Load Patch / Multi (.PRO / .MUL / .parvati)",
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Load Patch / Multi (.PRO / .MUL / .parvati)"),
                                                        juce::File(), "*.PRO;*.MUL;*.parvati");
     const auto flags = juce::FileBrowserComponent::openMode
                      | juce::FileBrowserComponent::canSelectFiles;
@@ -1698,7 +1711,7 @@ void ParvatiEditor::openSaveDialog()
     const juce::File defaultDir = processorRef_.getUserPatchDir();
     defaultDir.createDirectory();   // ensure USER/ exists
     const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".PRO"));
-    fileChooser_ = std::make_unique<juce::FileChooser> ("Save Ambika Patch (.PRO)",
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Ambika Patch (.PRO)"),
                                                        defaultFile, "*.PRO");
     const auto flags = juce::FileBrowserComponent::saveMode
                      | juce::FileBrowserComponent::canSelectFiles
@@ -1728,7 +1741,7 @@ void ParvatiEditor::openSaveParvatiDialog()
     const juce::File defaultDir = processorRef_.getUserPatchDir();
     defaultDir.createDirectory();
     const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".parvati"));
-    fileChooser_ = std::make_unique<juce::FileChooser> ("Save Parvati Patch (.parvati)",
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Parvati Patch (.parvati)"),
                                                        defaultFile, "*.parvati");
     const auto flags = juce::FileBrowserComponent::saveMode
                      | juce::FileBrowserComponent::canSelectFiles
@@ -1791,10 +1804,10 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
 
 bool ParvatiEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
-    for (const auto& fn : files)
-        if (fn.endsWithIgnoreCase (".pro") || fn.endsWithIgnoreCase (".mul") || fn.endsWithIgnoreCase (".parvati"))
-            return true;
-    return false;
+    return std::any_of (files.begin(), files.end(), [] (const juce::String& fn) {
+        return fn.endsWithIgnoreCase (".pro") || fn.endsWithIgnoreCase (".mul")
+               || fn.endsWithIgnoreCase (".parvati");
+    });
 }
 
 void ParvatiEditor::filesDropped (const juce::StringArray& files, int, int)
