@@ -96,39 +96,59 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
                 juce::Justification::topLeft);
 
-    // Plot area (below the title, with side/bottom padding).
+    // ---- Plot area: a blocky lo-fi "LCD pixel" display ----
+    // The envelope/LFO shape is drawn as a grid of square "pixels" (lit = the
+    // theme accent) instead of a smooth vector curve, for a retro 64-pixel-LCD
+    // look. A faint backdrop lights every cell (in the knob-track colour) so the
+    // pixel grid reads even where the wave is absent.
     auto plot = bounds.reduced (8.0f, 0.0f);
     plot.removeFromTop (22.0f);
     plot.removeFromBottom (8.0f);
     const float left = plot.getX();
-    const float W = plot.getWidth();
-    const float top = plot.getY();
-    const float bottom = plot.getY() + plot.getHeight();
-    const float H = plot.getHeight();
+    const float W    = plot.getWidth();
+    const float top  = plot.getY();
+    const float H    = plot.getHeight();
 
-    // Faint horizontal grid at 25/50/75 %.
-    g.setColour (trackCol.withAlpha (0.25f));
-    for (int i = 1; i < 4; ++i)
+    constexpr int kCell  = 3;   // LCD pixel size (px)
+    constexpr int kPitch = 4;   // pixel size + 1px grid gap
+    const int cols = juce::jmax (1, juce::roundToInt (W / static_cast<float> (kPitch)));
+    const int rows = juce::jmax (1, juce::roundToInt (H / static_cast<float> (kPitch)));
+
+    auto cell = [&] (int c, int r)
     {
-        const float y = top + H * (static_cast<float> (i) / 4.0f);
-        g.drawHorizontalLine (juce::roundToInt (y), left, left + W);
-    }
+        const float x = left + static_cast<float> (c * kPitch);
+        const float y = top  + static_cast<float> (r * kPitch);
+        return juce::Rectangle<float> (x, y, static_cast<float> (kCell), static_cast<float> (kCell));
+    };
 
-    // ---- LFO waveform preview (previewMode_ == 1) ----
+    // Faint backdrop grid (every cell dimly lit).
+    g.setColour (trackCol.withAlpha (0.12f));
+    for (int r = 0; r < rows; ++r)
+        for (int c = 0; c < cols; ++c)
+            g.fillRect (cell (c, r));
+
+    // Light one column: cells lo..hi dim (accent), the peak cell (targetRow) bright.
+    auto lightColumn = [&] (int c, int targetRow, int lo, int hi)
+    {
+        g.setColour (accent.withAlpha (0.16f));
+        for (int r = lo; r <= hi; ++r)
+            g.fillRect (cell (c, r));
+        g.setColour (accent);
+        g.fillRect (cell (c, targetRow));
+    };
+
+    // ---- LFO waveform preview (previewMode_ == 1): bipolar, around the midline ----
     if (previewMode_ == 1)
     {
         const float sh = lastShape_ >= 0.0f ? lastShape_ : fetch (getShape_);
         const int shapeIdx = juce::jlimit (0, 3, juce::roundToInt (sh * 3.0f));   // 0..3: Tri/Sq/S&H/Ramp
 
-        const float midY = (top + bottom) * 0.5f;
-        const float amp = H * 0.42f;
-        const int cycles = 2;
-        const float period = W / static_cast<float> (cycles);
-
-        // Stable S&H staircase: 8 blocks/cycle, precomputed with a fixed seed so
-        // the random steps do not flicker between repaints.
         constexpr int kBlocksPerCycle = 8;
-        float shLevels[16] = {};
+        constexpr int cycles = 2;
+        const float periodFrac = 1.0f / static_cast<float> (cycles);
+
+        // Stable S&H staircase (fixed seed so it does not flicker between frames).
+        float shLevels[cycles * kBlocksPerCycle] = {};
         if (shapeIdx == 2)
         {
             uint32_t lcg = 0x9e3779b9u;
@@ -139,10 +159,10 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
             }
         }
 
-        auto levelFor = [&] (float xRel) -> float
+        auto lfoLevel = [&] (float xf) -> float   // xf 0..1 -> -1..1
         {
-            const float ph = xRel / period;                 // 0..cycles
-            const float f = ph - std::floor (ph);           // fractional position in cycle
+            const float ph = xf / periodFrac;
+            const float f  = ph - std::floor (ph);
             switch (shapeIdx)
             {
                 case 0:  return (f < 0.5f) ? (4.0f * f - 1.0f) : (3.0f - 4.0f * f);   // triangle
@@ -157,24 +177,18 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
             }
         };
 
-        juce::Path curve;
-        const int N = juce::jmax (64, juce::roundToInt (W));
-        for (int i = 0; i <= N; ++i)
+        // Render: each column's bipolar level lights cells from the midline to
+        // the peak (a blocky waveform centred on the display).
+        const int midRow  = (rows - 1) / 2;
+        const int lastRow = rows - 1;
+        for (int c = 0; c < cols; ++c)
         {
-            const float xRel = static_cast<float> (i) * W / static_cast<float> (N);
-            const float y = midY - levelFor (xRel) * amp;
-            if (i == 0) curve.startNewSubPath (left + xRel, y);
-            else        curve.lineTo (left + xRel, y);
+            const float xf = (static_cast<float> (c) + 0.5f) / static_cast<float> (cols);
+            const float v  = juce::jlimit (-1.0f, 1.0f, lfoLevel (xf));
+            int targetRow = juce::roundToInt ((1.0f - v) * 0.5f * static_cast<float> (lastRow));
+            targetRow = juce::jlimit (0, lastRow, targetRow);
+            lightColumn (c, targetRow, juce::jmin (midRow, targetRow), juce::jmax (midRow, targetRow));
         }
-
-        juce::Path fill (curve);
-        fill.lineTo (left + W, midY);
-        fill.lineTo (left, midY);
-        fill.closeSubPath();
-        g.setColour (accent.withAlpha (0.16f));
-        g.fillPath (fill);
-        g.setColour (accent);
-        g.strokePath (curve, juce::PathStrokeType (1.8f));
 
         g.setColour (textDim);
         g.setFont (lnf ? lnf->appFont (11.0f, juce::Font::plain)
@@ -185,90 +199,56 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         return;
     }
 
+    // ---- ADSR envelope (previewMode_ == 0): unipolar, filled from the baseline ----
     const float a = lastA_ >= 0.0f ? lastA_ : fetch (getAttack_);
     const float d = lastD_ >= 0.0f ? lastD_ : fetch (getDecay_);
     const float s = lastS_ >= 0.0f ? lastS_ : fetch (getSustain_);
     const float r = lastR_ >= 0.0f ? lastR_ : fetch (getRelease_);
 
     // Segment widths: a small base so a 0 value is still visible, plus the
-    // knob's contribution. The sustain plateau is a fixed middle portion.
-    const float baseW = 0.06f;
-    const float rangeW = 0.30f;
+    // knob's contribution; the sustain plateau is a fixed middle portion.
+    const float baseW = 0.06f, rangeW = 0.30f;
     const float wA = baseW + a * rangeW;
     const float wD = baseW + d * rangeW;
-    const float wS = 0.16f;                 // sustain plateau (fixed)
+    const float wS = 0.16f;
     const float wR = baseW + r * rangeW;
     const float total = wA + wD + wS + wR;
-
-    const float fracA = wA / total;
-    const float fracD = wD / total;
-    const float fracS = wS / total;
-    const float fracR = wR / total;
+    const float fracA = wA / total, fracD = wD / total, fracS = wS / total, fracR = wR / total;
     const float xEndA = fracA;
     const float xEndD = fracA + fracD;
     const float xEndS = fracA + fracD + fracS;
 
-    auto xAt = [&] (float frac) { return left + frac * W; };
-    auto yAt = [&] (float level) { return bottom - level * H; };   // level 0..1
-
-    // Build the curve as a smooth path of sampled points.
-    const int stepsPerSeg = 24;
-    juce::Path curve;
-    curve.startNewSubPath (xAt (0.0f), yAt (0.0f));
-
-    // Attack: 0 -> 1, exponential ease-out rise (fast then settling).
-    for (int i = 1; i <= stepsPerSeg; ++i)
+    // Envelope level (0..1) at a normalized x position (0..1), using the same
+    // exponential attack/decay/release eases as the smooth curve did.
+    auto envLevel = [&] (float xf) -> float
     {
-        const float tt = static_cast<float> (i) / stepsPerSeg;
-        const float x = tt * fracA;
-        const float level = 1.0f - std::pow (1.0f - tt, 2.0f);
-        curve.lineTo (xAt (x), yAt (level));
-    }
-    // Decay: 1 -> sustain, exponential settle.
-    for (int i = 1; i <= stepsPerSeg; ++i)
-    {
-        const float tt = static_cast<float> (i) / stepsPerSeg;
-        const float x = fracA + tt * fracD;
-        const float level = s + (1.0f - s) * std::pow (1.0f - tt, 2.0f);
-        curve.lineTo (xAt (x), yAt (level));
-    }
-    // Sustain plateau.
-    curve.lineTo (xAt (xEndD), yAt (s));
-    curve.lineTo (xAt (xEndS), yAt (s));
-    // Release: sustain -> 0, exponential decay.
-    for (int i = 1; i <= stepsPerSeg; ++i)
-    {
-        const float tt = static_cast<float> (i) / stepsPerSeg;
-        const float x = xEndS + tt * fracR;
-        const float level = s * std::pow (1.0f - tt, 2.0f);
-        curve.lineTo (xAt (x), yAt (level));
-    }
-
-    // Fill under the curve (translucent accent).
-    juce::Path fill (curve);
-    fill.lineTo (xAt (fracA + fracD + fracS + fracR), yAt (0.0f));
-    fill.lineTo (xAt (0.0f), yAt (0.0f));
-    fill.closeSubPath();
-    g.setColour (accent.withAlpha (0.16f));
-    g.fillPath (fill);
-
-    // Curve stroke.
-    g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (1.8f));
-
-    // Junction dots: peak (end of attack), sustain start (end of decay),
-    // release start (end of sustain plateau).
-    auto dot = [&] (float frac, float level)
-    {
-        const juce::Point<float> p (xAt (frac), yAt (level));
-        g.setColour (accent);
-        g.fillEllipse (p.x - 2.6f, p.y - 2.6f, 5.2f, 5.2f);
-        g.setColour (panelBg);
-        g.fillEllipse (p.x - 1.1f, p.y - 1.1f, 2.2f, 2.2f);
+        if (xf <= xEndA)
+        {
+            const float tt = fracA > 0.0f ? xf / fracA : 1.0f;
+            return 1.0f - std::pow (1.0f - tt, 2.0f);                 // attack ease-out
+        }
+        if (xf <= xEndD)
+        {
+            const float tt = fracD > 0.0f ? (xf - xEndA) / fracD : 1.0f;
+            return s + (1.0f - s) * std::pow (1.0f - tt, 2.0f);        // decay settle
+        }
+        if (xf <= xEndS)
+            return s;                                                  // sustain plateau
+        const float tt = fracR > 0.0f ? (xf - xEndS) / fracR : 1.0f;
+        return s * std::pow (1.0f - tt, 2.0f);                         // release decay
     };
-    dot (xEndA, 1.0f);
-    dot (xEndD, s);
-    dot (xEndS, s);
+
+    // Render: each column's level becomes a column of lit LCD pixels filled from
+    // the baseline up to the peak cell (the envelope shape as a blocky skyline).
+    const int lastRow = rows - 1;
+    for (int c = 0; c < cols; ++c)
+    {
+        const float xf = (static_cast<float> (c) + 0.5f) / static_cast<float> (cols);
+        const float v  = juce::jlimit (0.0f, 1.0f, envLevel (xf));
+        int targetRow = juce::roundToInt ((1.0f - v) * static_cast<float> (lastRow));
+        targetRow = juce::jlimit (0, lastRow, targetRow);
+        lightColumn (c, targetRow, targetRow, lastRow);
+    }
 }
 
 //==========================================================================
