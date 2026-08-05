@@ -1,27 +1,35 @@
 // tools/editor_test.cpp
-// Headless GUI coverage check for the Parvati editor.
+// Headless GUI coverage check for the Parvati editor (integrated, Serum-style layout).
 //
-// Verifies:
+// The editor is no longer a flat 10-tab TabbedComponent. It is a top-level
+// [SYNTH | GLOBAL] page selector whose SYNTH page is a SynthWorkspace hosting the
+// 9 synth ParamPages (reparented — NOT regenerated — so every APVTS attachment +
+// the byte-bridge survive) in 3 static columns (Mixer | Oscillators | Filter)
+// above two nested tab groups ([ENV | LFO] and [MOD MATRIX | MODIFIERS | ARP |
+// SEQ]); the GLOBAL page shows the Global ParamPage. This test verifies:
 //   - createEditor() returns a non-null AudioProcessorEditor
-//   - the tabbed pages are exactly the expected 10 (9 ParamPages + Multi)
+//   - the top-level page selector has exactly 2 tabs ([SYNTH | GLOBAL])
 //   - every patch/part descriptor EXCEPT `part_select` gets exactly one
-//     ParamControl cell (part_select has the dedicated top-bar Part selector)
-//   - the top-bar Part selector is wired: setting `part_select` switches the
-//     engine's current part
-//   - the Multi page's per-part MIDI-channel editing round-trips to the engine
-//   - default editor size is 1100 x 662 (36px merged header)
+//     ParamControl cell (pages are surfaced across ALL nesting levels to count)
+//   - the Oscillators page has exactly 8 controls; the Global page has 10
+//   - the top-bar Part selector is wired: setting `part_select` switches the part
+//   - default editor size is 1280 x 620 (dense integrated layout)
+//   - every surfaced ParamPage reports a sane (overlap-free, width-filling) layout
+//   - Sequencer: exactly 3 marked Length controls + correct step dimming
+//   - Voice activity meter (cells) exists on the Global page
 //   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
 //
-// Build: cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
+// Build: cmake --build build_release --target parvati_editor_test && ./build_release/parvati_editor_test
+
+#include <algorithm>
+#include <cstdio>
+#include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
-
-#include <cstdio>
-#include <vector>
 
 namespace
 {
@@ -33,23 +41,13 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-template <typename Pred>
-int countInTree (juce::Component* c, Pred pred)
+// Collect every ParamControl in c's subtree (c included).
+void collectParamControls (juce::Component* c, std::vector<ParamControl*>& out)
 {
-    int n = pred (c) ? 1 : 0;
+    if (auto* p = dynamic_cast<ParamControl*> (c))
+        out.push_back (p);
     for (auto* child : c->getChildren())
-        n += countInTree (child, pred);
-    return n;
-}
-
-juce::TabbedComponent* findTabs (juce::Component* c)
-{
-    if (auto* t = dynamic_cast<juce::TabbedComponent*> (c))
-        return t;
-    for (auto* child : c->getChildren())
-        if (auto* t = findTabs (child))
-            return t;
-    return nullptr;
+        collectParamControls (child, out);
 }
 
 // First component of type T in the subtree (depth-first).
@@ -64,13 +62,51 @@ T* findFirst (juce::Component* c)
     return nullptr;
 }
 
-// Collect every ParamControl in the subtree.
-void collectParamControls (juce::Component* c, std::vector<ParamControl*>& out)
+// First TabbedComponent in the subtree (DFS). With the integrated layout the
+// top-level page selector is the first TC discovered (it is added before the
+// nested workspace tab groups).
+juce::TabbedComponent* findTabs (juce::Component* c)
 {
-    if (auto* p = dynamic_cast<ParamControl*> (c))
-        out.push_back (p);
+    if (auto* t = dynamic_cast<juce::TabbedComponent*> (c))
+        return t;
     for (auto* child : c->getChildren())
-        collectParamControls (child, out);
+        if (auto* t = findTabs (child))
+            return t;
+    return nullptr;
+}
+
+// Surface every tab at every nesting level (switching each current in turn) so
+// every ParamPage becomes reachable, collecting the ParamPage objects. A
+// ParamPage owns its ParamControls whether parented or not, so a collected page
+// can be inspected directly. Each page is content of exactly one tab in exactly
+// one TabbedComponent, so it is surfaced exactly once.
+void surfacePages (juce::Component* c, std::vector<ParamPage*>& out)
+{
+    if (auto* page = dynamic_cast<ParamPage*> (c))
+    {
+        out.push_back (page);
+        return;   // pages never nest pages
+    }
+    if (auto* tc = dynamic_cast<juce::TabbedComponent*> (c))
+    {
+        for (int i = 0; i < tc->getNumTabs(); ++i)
+        {
+            tc->setCurrentTabIndex (i, false);   // parent this tab's content
+            if (auto* content = tc->getTabContentComponent (i))
+                surfacePages (content, out);
+        }
+        return;
+    }
+    for (auto* child : c->getChildren())
+        surfacePages (child, out);
+}
+
+// ParamControls owned by a ParamPage (the page's descendants).
+std::vector<ParamControl*> pageControls (ParamPage* page)
+{
+    std::vector<ParamControl*> v;
+    collectParamControls (page, v);
+    return v;
 }
 }  // namespace
 
@@ -98,62 +134,71 @@ int main()
             return 1;
         }
 
-        auto* tabs = findTabs (ed);
-        const int numTabs = tabs ? tabs->getNumTabs() : 0;
+        // Surface every ParamPage across all nesting levels. (Leaves the top
+        // selector on its last tab; reset to SYNTH once checks are done.)
+        std::vector<ParamPage*> pages;
+        surfacePages (ed, pages);
+        std::sort (pages.begin(), pages.end());
+        pages.erase (std::unique (pages.begin(), pages.end()), pages.end());
 
-        // JUCE only parents the CURRENT tab's content into the component tree,
-        // so visit each tab and count ParamControl cells there.
         int cells = 0;
-        std::vector<int> perTab;
-        if (tabs != nullptr)
-            for (int i = 0; i < numTabs; ++i)
-            {
-                tabs->setCurrentTabIndex (i, false);
-                const int n = countInTree (ed, [] (juce::Component* c) {
-                    return dynamic_cast<ParamControl*> (c) != nullptr;
-                });
-                perTab.push_back (n);
-                cells += n;
-            }
+        for (auto* p : pages)
+            cells += static_cast<int> (pageControls (p).size());
 
-        auto tabIndex = [&] (const char* name) -> int {
-            if (tabs == nullptr) return -1;
-            const auto names = tabs->getTabNames();
-            for (int i = 0; i < names.size(); ++i)
-                if (names[i] == name) return i;
-            return -1;
+        // Oscillators page: exactly 8 controls, all osc_*.
+        auto isOscPage = [] (ParamPage* p)
+        {
+            auto cs = pageControls (p);
+            if (cs.size() != 8) return false;
+            for (auto* c : cs)
+                if (! c->getParamID().startsWith ("osc")) return false;
+            return true;
         };
+        const auto oscPage = std::find_if (pages.begin(), pages.end(), isOscPage);
+
+        // Global page: 10 controls including filter_card + vca_curve.
+        const auto globalPage = std::find_if (pages.begin(), pages.end(), [] (ParamPage* p)
+        {
+            auto cs = pageControls (p);
+            if (cs.size() != 10) return false;
+            bool hasCard = false, hasCurve = false;
+            for (auto* c : cs)
+            {
+                if (c->getParamID() == "filter_card") hasCard = true;
+                if (c->getParamID() == "vca_curve")   hasCurve = true;
+            }
+            return hasCard && hasCurve;
+        });
+
+        auto* topTabs = findTabs (ed);
+        const int numTopTabs = topTabs ? topTabs->getNumTabs() : 0;
+
+        char msg[96];
 
         std::printf ("[1] Editor construction\n");
         check (dynamic_cast<juce::AudioProcessorEditor*> (ed) != nullptr,
                "createEditor() returns an AudioProcessorEditor");
 
-        std::printf ("\n[2] Tab pages (expected 10: 9 ParamPages + Multi)\n");
-        std::printf ("     tab pages = %d\n", numTabs);
-        check (numTabs == 10, "exactly 10 synth tab pages (Multi/Setup is now a header button, not a tab)");
+        std::printf ("\n[2] Top-level page selector (expected 2: SYNTH, GLOBAL)\n");
+        std::printf ("     top-level tabs = %d\n", numTopTabs);
+        check (numTopTabs == 2, "exactly 2 top-level page tabs ([SYNTH | GLOBAL])");
 
-        std::printf ("\n[3] ParamControl coverage\n");
-        std::printf ("     descriptors = %zu, expected ParamControl cells = %d, found = %d\n",
+        std::printf ("\n[3] ParamControl coverage (surfaced pages = %zu)\n", pages.size());
+        std::printf ("     descriptors = %zu, expected cells = %d, found = %d\n",
                      descs.size(), expectedCells, cells);
         check (cells == expectedCells,
-               "one ParamControl per descriptor (except part_select)");
+               "one ParamControl per descriptor (except part_select), across all nesting");
 
-        std::printf ("\n[3b] Global-tab placement (no global clutter on Oscillators)\n");
-        const int oscTab = tabIndex ("OSC");
-        const int glbTab = tabIndex ("GLOBAL");
-        std::printf ("     Oscillators tab controls = %d (expect 8), Global tab controls = %d (expect 10)\n",
-                     oscTab >= 0 ? perTab[(size_t) oscTab] : -1,
-                     glbTab >= 0 ? perTab[(size_t) glbTab] : -1);
-        check (oscTab >= 0 && perTab[(size_t) oscTab] == 8,
-               "Oscillators page has exactly 8 controls (no global/part clutter)");
-        check (glbTab >= 0 && perTab[(size_t) glbTab] == 10,
-               "Global page has 10 controls (volume/octave/tuning/spread/legato/portamento/polyphony/VCA/filter card/filter drive)");
+        std::printf ("\n[3b] Page grouping (Oscillators / Global)\n");
+        std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (10 controls)\n",
+                     oscPage != pages.end(), globalPage != pages.end());
+        check (oscPage != pages.end(), "Oscillators page has exactly 8 osc_* controls");
+        check (globalPage != pages.end(), "Global page has 10 controls incl. filter_card + vca_curve");
 
         std::printf ("\n[4] Top-bar Part selector is wired to the engine\n");
         processor.getApvts().getParameterAsValue ("part_select") = 3.0f;   // 1-based part 3
         processor.syncAllParamsToEngine();                                // apply synchronously
         const int curPart = processor.getEngine().getCurrentPart();
-        char msg[96];
         std::snprintf (msg, sizeof (msg), "part_select=3 => engine current part is 2 (0-based) [was %d]", curPart);
         check (curPart == 2, msg);
 
@@ -165,151 +210,89 @@ int main()
 
         std::printf ("\n[6] Default editor size\n");
         std::printf ("     %d x %d\n", ed->getWidth(), ed->getHeight());
-        check (ed->getWidth() == 1100 && ed->getHeight() == 662,
-               "default editor size is 1100 x 662 (36px merged header)");
+        check (ed->getWidth() == 1280 && ed->getHeight() == 620,
+               "default editor size is 1280 x 620 (integrated dense layout)");
 
-        std::printf ("\n[7] Layout sanity (flexible-width grid: no overlaps, fills width)\n");
-        if (tabs != nullptr)
+        std::printf ("\n[7] Layout sanity (every surfaced page: no overlaps, fills width)\n");
+        int saneCount = 0;
+        for (auto* p : pages)
         {
-            for (int i = 0; i < numTabs; ++i)
-            {
-                tabs->setCurrentTabIndex (i, false);
-                auto* content = tabs->getTabContentComponent (i);
-                auto* vp = dynamic_cast<juce::Viewport*> (content);
-                ParamPage* page = (vp != nullptr)
-                    ? dynamic_cast<ParamPage*> (vp->getViewedComponent())
-                    : nullptr;
-                if (page == nullptr)
-                    continue;   // Multi page (custom page, no group grid)
-                // Defensive: ensure the page is laid out at the tab width before
-                // validating (JUCE sizes tab content on resize, but this guards
-                // against a not-yet-parented edge case).
-                if (page->getWidth() <= 0)
-                    page->reflowToWidth (juce::jmax (400, vp != nullptr ? vp->getWidth() : 940));
-
-                char m[128];
-                std::snprintf (m, sizeof (m), "tab %d ('%s') group grid is well-formed",
-                               i, tabs->getTabNames()[i].toRawUTF8());
-                check (page->layoutIsSane(), m);
-            }
+            p->reflowToWidth (940);   // deterministic reflow before validating
+            if (p->layoutIsSane())
+                ++saneCount;
         }
+        std::printf ("     sane pages = %d / %zu\n", saneCount, pages.size());
+        check (saneCount == static_cast<int> (pages.size()),
+               "every surfaced ParamPage reports a well-formed group grid");
 
         // ------------------------------------------------------------------
         // [9] Sequencer: marked Length knob + dimmed inactive steps
         // ------------------------------------------------------------------
+        std::printf ("\n[9] Sequencer length marking + step dimming\n");
+        const auto seqPage = std::find_if (pages.begin(), pages.end(), [] (ParamPage* p)
         {
-            std::printf ("\n[9] Sequencer length marking + step dimming\n");
-            const int seqTab = tabIndex ("SEQ");
-            check (seqTab >= 0, "Sequencer tab exists");
-            if (seqTab >= 0)
+            for (auto* c : pageControls (p))
+                if (c->getParamID().startsWith ("seq")) return true;
+            return false;
+        });
+        check (seqPage != pages.end(), "Sequencer page exists");
+        if (seqPage != pages.end())
+        {
+            std::vector<ParamControl*> seq = pageControls (*seqPage);
+
+            int lengthCount = 0;
+            for (auto* p : seq)
+                if (p->isLengthControl()) ++lengthCount;
+            std::printf ("     Length controls = %d (expect 3)\n", lengthCount);
+            check (lengthCount == 3, "exactly 3 marked Length controls (Seq1/2/Note)");
+            for (auto* p : seq)
+                if (p->isLengthControl())
+                    check (p->isLengthLabelVisible(), "length control reports a visible label");
+
+            // Dim: Seq1 length=4 => seq1_step4..15 disabled, Seq2 untouched.
+            auto& apvts = processor.getApvts();
+            apvts.getParameterAsValue ("seq_length_1") = 4.0f;
+            int seq1EnabledBefore = 0, seq1DisabledPast = 0, seq2AllEnabled = 1;
+            for (auto* p : seq)
             {
-                tabs->setCurrentTabIndex (seqTab, false);
-                std::vector<ParamControl*> seq;
-                collectParamControls (ed, seq);
-
-                int lengthCount = 0;
-                for (auto* p : seq)
-                    if (p->isLengthControl())
-                        ++lengthCount;
-                std::printf ("     Length controls = %d (expect 3)\n", lengthCount);
-                check (lengthCount == 3, "exactly 3 marked Length controls (Seq1/2/Note)");
-                for (auto* p : seq)
-                    if (p->isLengthControl())
-                        check (p->isLengthLabelVisible(), "length control reports a visible label");
-
-                // Dim: Seq1 length=4 => seq1_step4..15 disabled, Seq2 untouched.
-                // getParameterAsValue fires the APVTS listeners synchronously
-                // (setNewState -> setDenormalisedValue -> parameter listeners).
-                auto& apvts = processor.getApvts();
-                apvts.getParameterAsValue ("seq_length_1") = 4.0f;
-                int seq1EnabledBefore = 0, seq1DisabledPast = 0, seq2AllEnabled = 1;
-                for (auto* p : seq)
+                if (p->getParamID().startsWith ("seq1_step"))
                 {
-                    if (p->getParamID().startsWith ("seq1_step"))
-                    {
-                        if (p->stepIndex() < 4) { if (p->isStepEnabled()) ++seq1EnabledBefore; }
-                        else                    { if (! p->isStepEnabled()) ++seq1DisabledPast; }
-                    }
-                    else if (p->getParamID().startsWith ("seq2_step"))
-                    {
-                        if (! p->isStepEnabled()) seq2AllEnabled = 0;
-                    }
+                    if (p->stepIndex() < 4) { if (p->isStepEnabled()) ++seq1EnabledBefore; }
+                    else                    { if (! p->isStepEnabled()) ++seq1DisabledPast; }
                 }
-                std::printf ("     seq1 enabled<4=%d dimmed>=4=%d seq2-all-enabled=%d\n",
-                             seq1EnabledBefore, seq1DisabledPast, seq2AllEnabled);
-                check (seq1EnabledBefore == 4, "Seq1 steps 0..3 enabled after length=4");
-                check (seq1DisabledPast == 12, "Seq1 steps 4..15 dimmed after length=4");
-                check (seq2AllEnabled == 1, "Seq2 steps unaffected by Seq1 length");
-                apvts.getParameterAsValue ("seq_length_1") = 16.0f;   // restore
+                else if (p->getParamID().startsWith ("seq2_step"))
+                {
+                    if (! p->isStepEnabled()) seq2AllEnabled = 0;
+                }
             }
+            std::printf ("     seq1 enabled<4=%d dimmed>=4=%d seq2-all-enabled=%d\n",
+                         seq1EnabledBefore, seq1DisabledPast, seq2AllEnabled);
+            check (seq1EnabledBefore == 4, "Seq1 steps 0..3 enabled after length=4");
+            check (seq1DisabledPast == 12, "Seq1 steps 4..15 dimmed after length=4");
+            check (seq2AllEnabled == 1, "Seq2 steps unaffected by Seq1 length");
+            apvts.getParameterAsValue ("seq_length_1") = 16.0f;   // restore
         }
 
         // ------------------------------------------------------------------
-        // [10] Voice activity CELLS now live on the Global page (a decoration);
-        // the bottom strip is a status bar (count + tooltip), not a VoiceMeter.
+        // [10] Voice activity CELLS live on the Global page (a decoration).
         // ------------------------------------------------------------------
+        std::printf ("\n[10] Voice meter (cells) on the Global page\n");
+        // JUCE only parents the CURRENT tab's content, so switch to GLOBAL so the
+        // Global page (and its VoiceMeter decoration) is in the component tree.
+        if (topTabs != nullptr)
         {
-            std::printf ("\n[10] Voice meter (cells) on the Global page\n");
-            // JUCE only parents the CURRENT tab's content, so switch to Global so
-            // the page (and its VoiceMeter decoration) is in the component tree.
-            if (tabs != nullptr)
-            {
-                const auto names = tabs->getTabNames();
-                int glb = -1;
-                for (int i = 0; i < names.size(); ++i)
-                    if (names[i] == "GLOBAL") { glb = i; break; }
-                if (glb >= 0)
-                    tabs->setCurrentTabIndex (glb, false);
-            }
-            auto* meter = findFirst<VoiceMeter> (ed);
-            check (meter != nullptr, "voice meter (cells) exists on the Global page");
-            if (meter != nullptr)
-                check (meter->getActiveVoiceCount() >= 0,
-                       "voice meter reports an active-voice count (6-cell view)");
+            const auto names = topTabs->getTabNames();
+            for (int i = 0; i < names.size(); ++i)
+                if (names[i] == "GLOBAL") { topTabs->setCurrentTabIndex (i, false); break; }
         }
+        auto* meter = findFirst<VoiceMeter> (ed);
+        check (meter != nullptr, "voice meter (cells) exists on the Global page");
+        if (meter != nullptr)
+            check (meter->getActiveVoiceCount() >= 0,
+                   "voice meter reports an active-voice count (6-cell view)");
 
-        // ----------------------------------------------------------------------
-        // [8] Snapshot dump (dev visual sanity check). Gated on the
-        // PARVATI_DUMP_SHOTS env var (a directory path); off by default so a
-        // normal run writes nothing. Renders the editor + each tab offscreen via
-        // paintEntireComponent (no display / no Screen-Recording permission).
-        // ----------------------------------------------------------------------
-        if (const char* dirEnv = std::getenv ("PARVATI_DUMP_SHOTS"))
-        {
-            const juce::File dir { juce::String { dirEnv } };
-            dir.createDirectory();
-            const auto dump = [&dir] (juce::Component* c, const juce::String& name)
-            {
-                juce::Image img (juce::Image::RGB, c->getWidth(), c->getHeight(), true);
-                {
-                    juce::Graphics g (img);
-                    g.fillAll (juce::Colour (0xff202020));
-                    c->paintEntireComponent (g, false);
-                }
-                juce::FileOutputStream os (dir.getChildFile (name + ".png"));
-                juce::PNGImageFormat().writeImageToStream (img, os);
-                os.flush();
-                std::printf ("  shot: %s.png  (%dx%d)\n", name.toRawUTF8(), c->getWidth(), c->getHeight());
-            };
-            std::printf ("\n[8] Snapshot dump -> %s\n", dir.getFullPathName().toRawUTF8());
-            dump (ed, "00_overview");
-            if (tabs != nullptr)
-            {
-                for (int i = 0; i < numTabs; ++i)
-                {
-                    tabs->setCurrentTabIndex (i, false);
-                    // Force the tab's page to lay out at the tab width before painting
-                    // (headless: JUCE may defer the resize otherwise).
-                    if (auto* content = tabs->getTabContentComponent (i))
-                        if (auto* vp = dynamic_cast<juce::Viewport*> (content))
-                            if (auto* page = dynamic_cast<ParamPage*> (vp->getViewedComponent()))
-                                page->reflowToWidth (juce::jmax (400, vp->getWidth() > 0 ? vp->getWidth() : 940));
-                    const juce::String nm = juce::String (i + 1) + "_"
-                        + tabs->getTabNames()[i].replaceCharacters (" /", "__");
-                    dump (ed, nm);
-                }
-            }
-        }
+        // Reset to SYNTH.
+        if (topTabs != nullptr) topTabs->setCurrentTabIndex (0, false);
 
         processor.editorBeingDeleted (ed);
         delete ed;

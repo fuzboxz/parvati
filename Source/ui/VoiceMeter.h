@@ -66,12 +66,6 @@ private:
     // MIDI note number (0..127) -> "C4" style name (60 == C4). Empty if invalid.
     static juce::String midiNoteName (int note);
 
-    // Paint one voice cell (active => accent fill + note name; free => outline +
-    // dim centre dot).
-    static void drawCell (juce::Graphics& g, juce::Rectangle<float> r, bool active, int note,
-                          float corner, juce::Colour accent, juce::Colour outline,
-                          juce::Colour textValue, juce::Colour textDim);
-
     static constexpr int kNumVoicecards = 6;   // the 6 firmware voicecards (1 voice each)
 
     struct CellState { bool active = false; int note = -1; };
@@ -85,7 +79,6 @@ private:
     int lastAnnouncedCount_ = -1;
 
     std::function<std::vector<VoiceActivity>()> provider_;
-    juce::Rectangle<int> labelArea_;                   // "Voices" / count strip
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VoiceMeter)
 };

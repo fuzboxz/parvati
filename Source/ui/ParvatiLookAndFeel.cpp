@@ -65,7 +65,7 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
 
     // ---- TabbedComponent / TabbedButtonBar ----
     setColour (juce::TabbedComponent::backgroundColourId,      t.windowBackground);
-    setColour (juce::TabbedComponent::outlineColourId,         juce::Colour (0x00000000)); // borderless
+    setColour (juce::TabbedComponent::outlineColourId,         t.outline);   // 1px card border for the nested ENV/LFO + MOD tab cards (top edge from the tab baseline)
     setColour (juce::TabbedButtonBar::tabTextColourId,         t.textDim);
     setColour (juce::TabbedButtonBar::frontTextColourId,       t.accent);
     setColour (juce::TabbedButtonBar::tabOutlineColourId,      t.outline);
@@ -271,11 +271,18 @@ juce::Font ParvatiLookAndFeel::getTabButtonFont (juce::TabBarButton&, float heig
 
 int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int tabDepth)
 {
-    // Measure the SAME all-caps label that drawTabButton renders, otherwise a
-    // wide font like Unifont would render wider than the measured slot and clip.
-    // Matches LookAndFeel_V2 otherwise.
+    // Measure the SAME all-caps label that drawTabButton renders, plus the
+    // bracket chrome (2 brackets + side padding) so the `[ LABEL ]` frame drawn
+    // by drawTabButton never clips. Matches the embedded motif's layout
+    // constants exactly (bracketW / padX).
     const juce::Font font = getTabButtonFont (button, (float) tabDepth);
+    constexpr int bracketW = 4, padX = 6;
+    // Bracket chrome only for card tabs (matches drawTabButton's isCard branch);
+    // plain top-level page-selector tabs need only side padding.
+    auto* tc = dynamic_cast<juce::TabbedComponent*> (button.getTabbedButtonBar().getParentComponent());
+    const bool isCard = (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
     int width = juce::GlyphArrangement::getStringWidthInt (font, button.getButtonText().trim().toUpperCase())
+              + (isCard ? 2 * bracketW : 0) + 2 * padX
               + getTabButtonOverlap (tabDepth) * 2;
 
     if (auto* extraComponent = button.getExtraComponent())
@@ -288,81 +295,78 @@ int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int t
 void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphics& g,
                                         bool isMouseOver, bool isMouseDown)
 {
-    // Faithful copy of LookAndFeel_V3::drawTabButton (V4 inherits it), with ONE
-    // change: the label text layout is built through appFont() instead of V3's
-    // hardcoded default-sans createTabTextLayout(), so the tab label family
-    // follows the active font mode.
-    const juce::Rectangle<int> activeArea (button.getActiveArea());
-    const juce::TabbedButtonBar::Orientation o = button.getTabbedButtonBar().getOrientation();
-    const juce::Colour bkg (button.getTabBackgroundColour());
+    // Embedded "bracket + baseline" tab motif. Every tab paints its own 1px
+    // baseline across the BOTTOM of its active area; edge-to-edge buttons tile
+    // these into one continuous full-width line (the top border of the content
+    // card). The front tab opens into the card: its label sits in a `[ LABEL ]`
+    // frame and the baseline is broken with a gap under the label. Inactive tabs
+    // show a dim label just above the continuous baseline. This replaces the old
+    // V3 floating filled-rect + 3-side outline. (Every Parvati tab bar is
+    // TabsAtTop, so only the horizontal layout is handled here.)
+    const auto activeArea = button.getActiveArea().toFloat();
+    const bool front = button.isFrontTab();
+    auto& bar = button.getTabbedButtonBar();
+    // The embedded "[ LABEL ]" bracket motif is for CARD tabs only — the nested
+    // workspace tab groups (envLfoTabs_/modTabs_), which carry a 1px outline so
+    // the bracket "opens into" a bordered card. The top-level [SYNTH|GLOBAL] page
+    // selector has outline 0 (no enclosing card), so it renders plain tabs.
+    auto* tc = dynamic_cast<juce::TabbedComponent*> (bar.getParentComponent());
+    const bool isCard = (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
+    const juce::Colour lineCol = bar.findColour (juce::TabbedButtonBar::tabOutlineColourId);   // theme.outline
+    const juce::Colour textCol = front ? bar.findColour (juce::TabbedButtonBar::frontTextColourId)  // accent
+                                       : bar.findColour (juce::TabbedButtonBar::tabTextColourId);   // dim
 
-    if (button.getToggleState())
+    g.setColour (button.getTabBackgroundColour());   // flat fill (no gradient floating box)
+    g.fillRect (activeArea);
+
+    juce::Font font (getTabButtonFont (button, activeArea.getHeight()));
+    font.setUnderline (button.hasKeyboardFocus (false));
+    const juce::String label = button.getButtonText().trim().toUpperCase();
+    const float baselineY = activeArea.getBottom() - 0.5f;   // card top-border line
+    constexpr float bracketW = 4.0f;
+
+    if (front && isCard)
     {
-        g.setColour (bkg);
+        const float textW  = (float) juce::GlyphArrangement::getStringWidthInt (font, label);
+        const float totalW = textW + 2.0f * bracketW;
+        const float lx = activeArea.getX() + (activeArea.getWidth() - totalW) * 0.5f;
+        const float ly = baselineY - font.getHeight() - 2.0f;
+        const float bh = font.getHeight();
+
+        // brackets [ ] in the accent colour.
+        g.setColour (textCol);
+        g.drawLine (lx, ly, lx, ly + bh, 1.0f);                            // [ vertical bar
+        g.drawLine (lx, ly, lx + bracketW, ly, 1.0f);                      // [ top tick
+        g.drawLine (lx + totalW, ly, lx + totalW, ly + bh, 1.0f);          // ] vertical bar
+        g.drawLine (lx + totalW - bracketW, ly, lx + totalW, ly, 1.0f);    // ] top tick
+
+        // label inside the brackets.
+        g.setFont (font);
+        g.drawText (label, juce::Rectangle<float> (lx + bracketW, ly, textW, bh),
+                    juce::Justification::centred, false);
+
+        // baseline in 2 segments with a gap under the bracketed label.
+        g.setColour (lineCol);
+        g.drawHorizontalLine (juce::roundToInt (baselineY), activeArea.getX(), lx);
+        g.drawHorizontalLine (juce::roundToInt (baselineY), lx + totalW, activeArea.getRight());
     }
     else
     {
-        juce::Point<int> p1, p2;
-        switch (o)
-        {
-            case juce::TabbedButtonBar::TabsAtBottom:   p1 = activeArea.getBottomLeft(); p2 = activeArea.getTopLeft();    break;
-            case juce::TabbedButtonBar::TabsAtTop:      p1 = activeArea.getTopLeft();    p2 = activeArea.getBottomLeft(); break;
-            case juce::TabbedButtonBar::TabsAtRight:    p1 = activeArea.getTopRight();   p2 = activeArea.getTopLeft();    break;
-            case juce::TabbedButtonBar::TabsAtLeft:     p1 = activeArea.getTopLeft();    p2 = activeArea.getTopRight();   break;
-            default:                                    jassertfalse; break;
-        }
-        g.setGradientFill (juce::ColourGradient (bkg.brighter (0.2f), p1.toFloat(),
-                                                 bkg.darker (0.1f),   p2.toFloat(), false));
+        // Plain tab — either inactive, or the FRONT tab of a non-card bar (the
+        // top-level [SYNTH|GLOBAL] page selector): label sits just above the
+        // continuous baseline with a full baseline segment under it. Front-of-
+        // non-card uses the accent at full alpha; inactive is dimmed (brightens
+        // on hover). No brackets/gap (those are card-only, above).
+        g.setFont (font);
+        const float alpha = (front || isMouseOver || isMouseDown) ? 1.0f : 0.7f;
+        g.setColour (textCol.withMultipliedAlpha (alpha));
+        g.drawText (label, juce::Rectangle<float> (activeArea.getX(),
+                                                   baselineY - font.getHeight() - 2.0f,
+                                                   activeArea.getWidth(), font.getHeight()),
+                    juce::Justification::centred, false);
+        g.setColour (lineCol);
+        g.drawHorizontalLine (juce::roundToInt (baselineY), activeArea.getX(), activeArea.getRight());
     }
-    g.fillRect (activeArea);
-
-    g.setColour (button.findColour (juce::TabbedButtonBar::tabOutlineColourId));
-    juce::Rectangle<int> r (activeArea);
-    if (o != juce::TabbedButtonBar::TabsAtBottom)   g.fillRect (r.removeFromTop (1));
-    if (o != juce::TabbedButtonBar::TabsAtTop)      g.fillRect (r.removeFromBottom (1));
-    if (o != juce::TabbedButtonBar::TabsAtRight)    g.fillRect (r.removeFromLeft (1));
-    if (o != juce::TabbedButtonBar::TabsAtLeft)     g.fillRect (r.removeFromRight (1));
-
-    const float alpha = button.isEnabled() ? ((isMouseOver || isMouseDown) ? 1.0f : 0.8f) : 0.3f;
-    juce::Colour col (bkg.contrasting().withMultipliedAlpha (alpha));
-
-    if (auto* bar = button.findParentComponentOfClass<juce::TabbedButtonBar>())
-    {
-        const juce::TabbedButtonBar::ColourIds colID = button.isFrontTab() ? juce::TabbedButtonBar::frontTextColourId
-                                                                            : juce::TabbedButtonBar::tabTextColourId;
-        if (bar->isColourSpecified (colID))
-            col = bar->findColour (colID);
-        else if (isColourSpecified (colID))
-            col = findColour (colID);
-    }
-
-    const juce::Rectangle<float> area (button.getTextArea().toFloat());
-    float length = area.getWidth();
-    float depth  = area.getHeight();
-    if (button.getTabbedButtonBar().isVertical())
-        std::swap (length, depth);
-
-    // *** the deviation from V3: render the label in ALL CAPS through appFont(),
-    // so the family follows the active font mode and the labels read cleanly. ***
-    juce::Font font (getTabButtonFont (button, depth));
-    font.setUnderline (button.hasKeyboardFocus (false));
-    juce::AttributedString s;
-    s.setJustification (juce::Justification::centred);
-    s.append (button.getButtonText().trim().toUpperCase(), font, col);
-    juce::TextLayout textLayout;
-    textLayout.createLayout (s, length);
-
-    juce::AffineTransform t;
-    switch (o)
-    {
-        case juce::TabbedButtonBar::TabsAtLeft:   t = t.rotated (juce::MathConstants<float>::pi * -0.5f).translated (area.getX(), area.getBottom()); break;
-        case juce::TabbedButtonBar::TabsAtRight:  t = t.rotated (juce::MathConstants<float>::pi *  0.5f).translated (area.getRight(), area.getY()); break;
-        case juce::TabbedButtonBar::TabsAtTop:
-        case juce::TabbedButtonBar::TabsAtBottom: t = t.translated (area.getX(), area.getY()); break;
-        default:                                  jassertfalse; break;
-    }
-    g.addTransform (t);
-    textLayout.draw (g, juce::Rectangle<float> (length, depth));
 }
 
 void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width, int height,

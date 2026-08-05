@@ -1,18 +1,20 @@
 // tools/screen_shots.cpp
 //
-// Renders the full Parvati editor screen for each page (Oscillators, Mixer,
-// Filter, Envelopes, LFOs, Mod Matrix, Modifiers, Arp, Sequencer, Global) to
-// individual PNGs — exactly as a user sees the plugin — so they can be fed to a
-// UI-redesign agent.
+// Renders the Parvati editor to PNGs for the integrated (Serum-style) layout:
+// a SYNTH overview (3-column workspace: Mixer | Oscillators | Filter, plus the
+// default nested ENV/LFO + MOD tabs), one shot per nested tab (Envelopes, LFOs,
+// Mod Matrix, Modifiers, Arp, Sequencer), and the GLOBAL page — exactly as a user
+// sees the plugin. The main-row pages (Mixer/Oscillators/Filter) are always
+// visible on the SYNTH tab, so they appear in every SYNTH shot.
 //
 // How: instantiate the real ParvatiAudioProcessor + editor (so the
 // ParvatiLookAndFeel — embedded Unifont font, colours, layout — is byte-for-byte
-// the shipped appearance), switch to each tab, and paint the whole editor
-// offscreen via paintEntireComponent at 2x for AI-readable crispness. No display
-// or screen-recording permission required; fully deterministic.
+// the shipped appearance), switch tabs, and paint the whole editor offscreen via
+// paintEntireComponent at 2x for AI-readable crispness. No display or
+// screen-recording permission required; fully deterministic.
 //
-// Build:   cmake --build build --target parvati_screen_shots
-// Run:     ./build/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+// Build:   cmake --build build_release --target parvati_screen_shots
+// Run:     ./build_release/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
 //
 // The font assertions printed to stderr are identical to those the project's own
 // headless editor_test emits (set-a-style-on-a-typeface); they are benign and
@@ -25,15 +27,29 @@
 #include "PluginProcessor.h"
 
 #include <cstdio>
+#include <vector>
 
 namespace
 {
-juce::TabbedComponent* findTabs (juce::Component* c)
+// Collect every TabbedComponent in c's subtree (DFS). With the integrated layout
+// the SYNTH tab content (SynthWorkspace) holds the two nested tab groups
+// ([ENV|LFO] and [MOD MATRIX|MODIFIERS|ARP|SEQ]); the top-level page selector is
+// the first TC found from the editor root.
+void collectTabbedComponents (juce::Component* c, std::vector<juce::TabbedComponent*>& out)
 {
-    if (auto* t = dynamic_cast<juce::TabbedComponent*> (c)) return t;
+    if (auto* t = dynamic_cast<juce::TabbedComponent*> (c)) out.push_back (t);
     for (auto* child : c->getChildren())
-        if (auto* t = findTabs (child)) return t;
-    return nullptr;
+        collectTabbedComponents (child, out);
+}
+
+// Ensure a tab's content page (if it is a Viewport viewing a ParamPage) is laid
+// out at the tab width before painting (headless: JUCE may defer the resize).
+void ensureLaidOut (juce::Component* tabContent)
+{
+    if (auto* vp = dynamic_cast<juce::Viewport*> (tabContent))
+        if (auto* page = dynamic_cast<ParamPage*> (vp->getViewedComponent()))
+            if (page->getWidth() <= 0)
+                page->reflowToWidth (juce::jmax (400, vp->getWidth() > 0 ? vp->getWidth() : 940));
 }
 
 // The tabs are created with their short label ("OSC", "MOD MATRIX", ...). Map
@@ -104,31 +120,84 @@ int main (int argc, char** argv)
         return 1;
     }
 
-    auto* tabs = findTabs (ed);
-    if (tabs == nullptr)
+    // Top-level page selector [SYNTH | GLOBAL] = the first TabbedComponent in
+    // the editor tree (it is added before the nested workspace tab groups).
+    std::vector<juce::TabbedComponent*> topLevel;
+    collectTabbedComponents (ed, topLevel);
+    if (topLevel.empty())
     {
         std::printf ("FAIL: no TabbedComponent found in editor\n");
         return 1;
     }
+    auto* pageSelector = topLevel.front();
 
-    std::printf ("Rendering page screens @ %.0fx -> %s\n", (double) scale, outDir.getFullPathName().toRawUTF8());
-
-    const int numTabs = tabs->getNumTabs();
-    for (int t = 0; t < numTabs; ++t)
+    auto tabIndex = [] (juce::TabbedComponent* tc, const char* name) -> int
     {
-        tabs->setCurrentTabIndex (t, false);
-        const juce::String name = fullTabName (tabs->getTabNames()[t]);
+        if (tc == nullptr) return -1;
+        const auto names = tc->getTabNames();
+        for (int i = 0; i < names.size(); ++i)
+            if (names[i] == name) return i;
+        return -1;
+    };
+    const int synthIdx  = juce::jmax (0, tabIndex (pageSelector, "SYNTH"));
+    const int globalIdx = tabIndex (pageSelector, "GLOBAL");
 
-        // Force the page to lay out at the tab width (headless: JUCE may defer
-        // the resize otherwise) — same guard as tools/editor_test.cpp.
-        if (auto* content = tabs->getTabContentComponent (t))
-            if (auto* vp = dynamic_cast<juce::Viewport*> (content))
-                if (auto* page = dynamic_cast<ParamPage*> (vp->getViewedComponent()))
-                    if (page->getWidth() <= 0)
-                        page->reflowToWidth (juce::jmax (400, vp->getWidth() > 0 ? vp->getWidth() : 940));
+    std::printf ("Rendering screens @ %.0fx -> %s\n", (double) scale, outDir.getFullPathName().toRawUTF8());
 
-        const juce::String fname = juce::String::formatted ("%02d_", t + 1) + name + ".png";
-        savePng (renderScreen (*ed, scale), outDir.getChildFile (fname));
+    int n = 0;
+    juce::MemoryBlock lastPng;   // consecutive-duplicate suppression
+
+    // Render the current editor state to a PNG, skipping if it is byte-identical
+    // to the previous capture. The integrated layout's default nested tab repeats
+    // the overview state, so this keeps the output set clean and sequentially
+    // numbered (only saved shots consume a number).
+    auto capture = [&] (const juce::String& desc)
+    {
+        const juce::Image img = renderScreen (*ed, scale);
+        juce::MemoryBlock mb;
+        {
+            juce::MemoryOutputStream mos (mb, false);
+            juce::PNGImageFormat().writeImageToStream (img, mos);
+        }
+        if (mb == lastPng)
+        {
+            std::printf ("  skip  %-24s (duplicate of previous)\n", desc.toRawUTF8());
+            return;
+        }
+        lastPng = mb;
+        savePng (img, outDir.getChildFile (juce::String::formatted ("%02d_", ++n) + desc));
+    };
+
+    // 1) SYNTH overview: the 3-column workspace (Mixer | Oscillators | Filter)
+    //    plus the default nested ENV/LFO + MOD tabs.
+    pageSelector->setCurrentTabIndex (synthIdx, false);
+    capture ("Synth_overview.png");
+
+    // 2) One shot per nested tab inside the SYNTH workspace. The main-row pages
+    //    (Mixer/Oscillators/Filter) stay visible in every shot; only the nested
+    //    tab content changes.
+    if (auto* synth = pageSelector->getTabContentComponent (synthIdx))
+    {
+        std::vector<juce::TabbedComponent*> nested;
+        collectTabbedComponents (synth, nested);
+        for (auto* tc : nested)
+        {
+            const auto names = tc->getTabNames();
+            for (int t = 0; t < tc->getNumTabs(); ++t)
+            {
+                tc->setCurrentTabIndex (t, false);
+                ensureLaidOut (tc->getTabContentComponent (t));
+                capture (fullTabName (names[t]) + ".png");
+            }
+        }
+    }
+
+    // 3) GLOBAL page (synth options + voice-activity cells).
+    if (globalIdx >= 0)
+    {
+        pageSelector->setCurrentTabIndex (globalIdx, false);
+        ensureLaidOut (pageSelector->getTabContentComponent (globalIdx));
+        capture ("Global.png");
     }
 
     processor.editorBeingDeleted (ed);
@@ -137,6 +206,6 @@ int main (int argc, char** argv)
     juce::DeletedAtShutdown::deleteAll();
     juce::MessageManager::deleteInstance();
 
-    std::printf ("\nDone. %d screens in: %s\n", numTabs, outDir.getFullPathName().toRawUTF8());
+    std::printf ("\nDone. %d screens in: %s\n", n, outDir.getFullPathName().toRawUTF8());
     return 0;
 }

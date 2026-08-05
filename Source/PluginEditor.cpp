@@ -4,6 +4,7 @@
 #include "ParvatiPreset.h"
 #include "ui/EnvelopeDisplay.h"
 #include "ui/ParamHelp.h"
+#include "ui/SynthWorkspace.h"
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
 
@@ -511,11 +512,14 @@ void ParamPage::configureGroupLayouts()
         }
         else if (g.name.startsWith ("Modifier "))
         {
-            // Compact horizontal strip: in1 / in2 / op (all combo boxes).
+            // Compact horizontal strip: in1 / in2 / op (all combo boxes). Taller
+            // cell than the dense-page default so the combo boxes + their caption
+            // sit comfortably inside the panel border (the 56px cell left zero
+            // slack at the panel boundary and clipped the bottom controls).
             g.singleRow = true;
             g.internalCols = juce::jmax (1, n);
             g.cellW = 100;
-            g.cellH = 56;
+            g.cellH = 64;
         }
         else if (g.name.startsWith ("Env ") || g.name.startsWith ("LFO ") || g.name == "Voice LFO")
         {
@@ -549,7 +553,7 @@ void ParamPage::layoutGroups (int targetWidth)
         // A group with a decoration (e.g. an ADSR/LFO preview) reserves room
         // below its control cells so the panel height includes it.
         if (g.decoration != nullptr)
-            g.naturalHeight += kDecorationH + kDecorationGap;
+            g.naturalHeight += g.decorationH + kDecorationGap;
     }
 
     // Greedy left-to-right flow. A row wraps when the next panel would overflow
@@ -702,7 +706,7 @@ void ParamPage::applyLayout()
         {
             const int decY = inner.getY() + rows * g.cellH + kDecorationGap;
             g.decoration->setBounds (
-                juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), kDecorationH));
+                juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), g.decorationH));
         }
     }
 }
@@ -768,6 +772,20 @@ void ParamPage::setGroupDecoration (const juce::String& groupName,
 
     // Recompute the layout so contentHeight_ already accounts for the new
     // decoration when the editor sizes this page immediately afterwards.
+    layoutGroups (juce::jmax (940, getWidth()));
+    applyLayout();
+}
+
+void ParamPage::setGroupDecorationHeight (const juce::String& groupName, int height)
+{
+    // Override the reserved room for the named group's decoration (below its
+    // control cells). Used for the compact Global voice strip (smaller than the
+    // 80px reserved for the Env/LFO ADSR/LFO previews). Re-lays out so the new
+    // height takes effect immediately.
+    for (auto& g : groups_)
+        if (g.name == groupName)
+            g.decorationH = juce::jmax (0, height);
+
     layoutGroups (juce::jmax (940, getWidth()));
     applyLayout();
 }
@@ -1063,7 +1081,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         sec[(int) sectionForId (d.paramID)].push_back (&d);
     }
 
-    addAndMakeVisible (tabs_);
+    // Integrated workspace hosts the 9 synth ParamPages (built + routed below).
+    // Created early so the page-build loop can reparent each page into it.
+    synthWorkspace_ = std::make_unique<SynthWorkspace> (themeManager_);
 
     const ParvatiTheme& theme = themeManager_.getCurrentTheme();
 
@@ -1127,9 +1147,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     partComboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         processorRef_.getApvts(), "part_select", partCombo_);
 
-    tabs_.setTabBarDepth (38);
-    tabs_.setOutline (0);
-    // TabbedComponent / TabbedButtonBar colours from the L&F.
+    // pageSelector_ ([SYNTH | GLOBAL]) tab-bar depth + outline are set after its
+    // tabs are populated (below). TabbedComponent / TabbedButtonBar colours come
+    // from the inherited editor L&F.
 
     struct PageInfo { const char* name; const char* shortName; Section s; int cols, cellW, cellH; };
     // Cell heights are kept tight (a 44px knob + its label fits in ~76px) so
@@ -1142,8 +1162,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         { "Filter",      "FILTER",     Section::Filter,      4, 214, 76 },
         { "Envelopes",   "ENV",        Section::Envelopes,   3, 198, 76 },
         { "LFOs",        "LFO",        Section::Lfos,        4, 198, 76 },
-        { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   6, 164, 72 },
-        { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 56 },
+        { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   2, 164, 72 },
+        { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 64 },   // cellH overridden per-group (configureGroupLayouts); ref only
         { "Arp",         "ARP",        Section::Arp,         3, 214, 76 },
         { "Sequencer",   "SEQ",        Section::Sequencer,   6, 150, 80 },
         { "Global",      "GLOBAL",     Section::Global,      3, 214, 76 },
@@ -1151,8 +1171,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     for (const auto& pg : pages)
     {
-        auto* page = new ParamPage (processorRef_, themeManager_, sec[(int) pg.s],
-                                    pg.cols, pg.cellW, pg.cellH);
+        auto page = std::make_unique<ParamPage> (processorRef_, themeManager_, sec[(int) pg.s],
+                                                 pg.cols, pg.cellW, pg.cellH);
 
         // Live previews: an ADSR curve under each Env group (Envelopes tab) and
         // an LFO waveform under each LFO group (LFOs tab). The getters read the
@@ -1206,19 +1226,46 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         }
 
         if (pg.s == Section::Global)
-            globalPage_ = page;   // voice-activity cells attach here as a decoration
-        generatedPages_.push_back (page);
-        // Short tab label (OSC, MIX, ...) for live re-application; abbreviations
-        // are language-neutral so they are not translated.
-        tabLabels_.push_back (pg.shortName);
-        auto* vp = new juce::Viewport();
-        // Pages fill the tab width, so only vertical scrolling is ever needed.
-        vp->setScrollBarsShown (true, false);
-        vp->setViewedComponent (page, true);  // viewport owns the page
-        pageViewports_.push_back (vp);
+            globalPage_ = page.get();   // voice-activity cells attach here as a decoration
+
         page->setSize (page->getContentWidth(), page->getContentHeight());
-        tabs_.addTab (pg.shortName, theme.windowBackground, vp, true);  // short label; tabs own the viewport
+        ParamPage* rawPage = page.get();
+        generatedPages_.push_back (std::move (page));
+
+        // Route the editor-owned page into the integrated workspace by section.
+        // The Global page is routed to the top-level GLOBAL tab after the loop.
+        // Pages are reparented — NOT regenerated — so every APVTS attachment and
+        // the verified byte-bridge survive the reorganization unchanged. (Multi
+        // is never a generated page; if/else avoids switch/enum + branch-clone
+        // warnings under -Werror.)
+        if (pg.s == Section::Mixer)            synthWorkspace_->setMainLeft   (rawPage);
+        else if (pg.s == Section::Oscillators) synthWorkspace_->setMainCenter (rawPage);
+        else if (pg.s == Section::Filter)      synthWorkspace_->setMainRight  (rawPage);
+        else if (pg.s == Section::Envelopes || pg.s == Section::Lfos)
+            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage);
+        else if (pg.s == Section::ModMatrix || pg.s == Section::Modifiers
+                 || pg.s == Section::Arp || pg.s == Section::Sequencer)
+            synthWorkspace_->addModTab (pg.shortName, rawPage);
+        // Section::Global (-> GLOBAL tab below) and Section::Multi (never
+        // generated) intentionally fall through here.
     }
+
+    // ---- Top-level page selector [SYNTH | GLOBAL] ----
+    // SYNTH shows the integrated workspace; GLOBAL shows the Global ParamPage
+    // (Viewport-wrapped, editor-owned). Both are passed as NON-owned tab content
+    // (the editor retains ownership), so teardown order stays deterministic.
+    pageSelector_.setTabBarDepth (kPageTabsH);
+    pageSelector_.setOutline (0);
+    globalViewport_ = std::make_unique<juce::Viewport>();
+    globalViewport_->setScrollBarsShown (true, false);
+    // JUCE 9 Viewport paints no background (transparent): the pageSelector_
+    // content area (TabbedComponent backgroundColourId = windowBackground) fills
+    // behind it, so a short Global page leaves no void.
+    globalViewport_->setViewedComponent (globalPage_, false);   // editor owns globalPage_
+    pageSelector_.addTab (TRANS ("SYNTH"),  theme.windowBackground, synthWorkspace_.get(),  false);
+    pageSelector_.addTab (TRANS ("GLOBAL"), theme.windowBackground, globalViewport_.get(), false);
+    pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
+    addAndMakeVisible (pageSelector_);
 
     // ---- Multi / Setup overlay (custom page, not descriptor-generated) ----
     // Multi/Setup is the multitimbral routing config — NOT part of the patch —
@@ -1334,7 +1381,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         });
         globalVoiceMeter_ = vm.get();
         if (globalPage_ != nullptr)
+        {
             globalPage_->setGroupDecoration ("Global", std::move (vm));
+            // Compact the voice strip: ~32px instead of the 80px reserved for the
+            // Env/LFO ADSR/LFO previews (those keep kDecorationH via the default).
+            globalPage_->setGroupDecorationHeight ("Global", 32);
+        }
     }
 
     // ---- Bottom status strip: compact active-voice count + tooltip bar ----
@@ -1394,14 +1446,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // buttons, tabs, popups and group titles follow via the L&F font getters.
     refreshFontsIn (this, lnf_);
 
-    // Header is 36px with the Patch/Part menu CENTRED, so the window needs room
-    // for the wide ASCII logo (left) + the centred cluster + the icon cluster
-    // (right). 1100px lets the 458px patch/part cluster centre with margin.
-    setSize (1100, 660 + kHeaderH - kBarHeight);   // 1100 wide; header(36)+tabs+keyboard(104)+status(22)=662 tall
+    // Dense integrated layout: header(40) + page tabs(28) + content + keyboard(104)
+    // + status(22). 1280 wide fits the 3-column workspace (1*|3*|2*) comfortably;
+    // min 1100 keeps the columns usable. (Headless tests call setSize() below the
+    // min, which bypasses setResizeLimits — resized() degrades to Viewport-scroll.)
+    setSize (1280, 620);
     setResizable (true, true);
-    // Min width guarantees the dense 36px header never overlaps: ASCII logo +
-    // version (left) + centred Patch/Part cluster + system icons + [KBD] (right).
-    setResizeLimits (1080, 480, 1600, 1100);
+    setResizeLimits (1100, 600, 1600, 1100);
 
     // Apply persisted zoom (global scale; only if non-default to avoid an
     // unnecessary rescale at startup).
@@ -1545,8 +1596,10 @@ void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     // keep near-white label text after switching to the light Paper theme.
     // This also re-applies the per-widget fonts (combo/button/tab/popup).
     sendLookAndFeelChange();
-    for (auto* page : generatedPages_)
+    for (auto& page : generatedPages_)
         page->applyThemeColors();
+    if (synthWorkspace_ != nullptr)
+        synthWorkspace_->applyThemeColors();   // nested tab + content backgrounds
     if (multiPage_ != nullptr)
         multiPage_->applyThemeColors();
     statusCountLabel_.setColour (juce::Label::textColourId,
@@ -1626,12 +1679,13 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
 
 void ParvatiEditor::applyChromeTranslations()
 {
-    // Re-translate every editor-chrome string through the active
-    // LocalisedStrings so a live language switch updates immediately. Tab labels
-    // are short fixed abbreviations (OSC, MIX, ...) held in tabLabels_ and are
-    // re-applied as-is (not translated — abbreviations are language-neutral); the
-    // chrome strings below are translated. With no mappings installed (English)
-    // TRANS() is the identity, so this is a no-op for the default.
+    // Re-translate every editor-chrome string through the active LocalisedStrings
+    // so a live language switch updates immediately. The top-level page-selector
+    // labels (SYNTH/GLOBAL) and the chrome strings below are translated; the
+    // nested workspace tab labels (ENV/LFO/MOD MATRIX/...) are short fixed
+    // abbreviations, re-applied as-is via SynthWorkspace::reapplyTabLabels(). With
+    // no mappings installed (English) TRANS() is the identity, so this is a no-op
+    // for the default.
     patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load..."));
@@ -1642,10 +1696,12 @@ void ParvatiEditor::applyChromeTranslations()
     multiButton_.setButtonText (TRANS ("Multi"));
     multiButton_.setTooltip (TRANS ("Multi / Setup"));
 
-    for (size_t i = 0; i < tabLabels_.size(); ++i)
-        tabs_.setTabName (static_cast<int> (i), tabLabels_[i]);
+    pageSelector_.setTabName (0, TRANS ("SYNTH"));
+    pageSelector_.setTabName (1, TRANS ("GLOBAL"));
+    if (synthWorkspace_ != nullptr)
+        synthWorkspace_->reapplyTabLabels();
 
-    for (auto* page : generatedPages_)
+    for (auto& page : generatedPages_)
         page->refreshLanguage();
 
     if (multiPage_ != nullptr)
@@ -1760,23 +1816,29 @@ void ParvatiEditor::resized()
         multiButton_.setBounds (cluster.removeFromLeft (multiW));   // Multi/Setup overlay toggle
     }
 
-    // ---- Middle: tabs (gains the old kMeterStripH band, loses kVoiceStripH) ----
-    tabs_.setBounds (area);
-    // The Multi/Setup overlay covers exactly the tab area when toggled on.
+    // ---- Page selector [SYNTH | GLOBAL] + integrated content (no void) ----
+    // pageSelector_ (a TabbedComponent) fills the remaining area: it draws its
+    // [SYNTH | GLOBAL] bar (depth kPageTabsH) at the top and sizes the current
+    // tab's content into the rest — butted directly under the header. When SYNTH
+    // is current, SynthWorkspace is sized here and lays out its 3 columns + nested
+    // tab groups in its own resized(); when GLOBAL is current, the Global Viewport
+    // is sized here.
+    pageSelector_.setBounds (area);
+
+    // The Multi/Setup overlay covers exactly the content area when toggled on.
     if (multiPage_ != nullptr)
         multiPage_->setBounds (area);
 
-    // Responsive reflow (Phase 2b): every generated page fills its tab's width so
-    // the grouped panels wrap to the window size (vertical-only scrolling). All
-    // tabs share the same content width, so reflow every page to it; a hair is
-    // reserved so the panel borders clear a vertical scrollbar when one appears.
-    // The tab CONTENT height (minus the tab bar) is passed too, so short pages
-    // centre consistently across all tabs — JUCE only sizes the current tab's
-    // Viewport, so reading it per-page would mis-centre non-current tabs.
-    const int targetW = juce::jmax (280, tabs_.getWidth() - 16);
-    const int tabContentH = juce::jmax (0, tabs_.getHeight() - tabs_.getTabBarDepth());
-    for (auto* page : generatedPages_)
-        page->reflowToWidth (targetW, tabContentH);
+    // Reflow the Global ParamPage to the page-selector content width. The 9 synth
+    // pages are reflowed by SynthWorkspace::resized() (when the SYNTH tab sizes
+    // it). JUCE only sizes the CURRENT tab's Viewport, so reflow the Global page
+    // to the uniform selector width regardless of which tab is current.
+    if (globalPage_ != nullptr)
+    {
+        const int targetW = juce::jmax (200, pageSelector_.getWidth() - 16);
+        const int contentH = juce::jmax (0, pageSelector_.getHeight() - pageSelector_.getTabBarDepth());
+        globalPage_->reflowToWidth (targetW, contentH);
+    }
 }
 
 //==========================================================================

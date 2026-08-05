@@ -84,38 +84,6 @@ juce::String VoiceMeter::midiNoteName (int note)
     return juce::String (kNoteNames[note % 12]) + juce::String (octave);
 }
 
-void VoiceMeter::drawCell (juce::Graphics& g, juce::Rectangle<float> r, bool active, int note,
-                           float corner, juce::Colour accent, juce::Colour outline,
-                           juce::Colour textValue, juce::Colour textDim)
-{
-    if (active)
-    {
-        g.setColour (accent.withAlpha (0.85f));
-        g.fillRoundedRectangle (r, corner);
-        g.setColour (accent);
-        g.drawRoundedRectangle (r, corner, 1.0f);
-
-        // Note name only if the cell is wide enough to be legible.
-        if (r.getWidth() >= 16.0f)
-        {
-            g.setColour (textValue);
-            g.setFont (juce::FontOptions (9.0f));
-            g.drawText (midiNoteName (note), r,
-                        juce::Justification::centred, false);
-        }
-    }
-    else
-    {
-        // Free voice: a faint outline with a dim centre dot.
-        g.setColour (outline);
-        g.drawRoundedRectangle (r, corner, 1.0f);
-        const float dotR = juce::jmin (2.5f, r.getWidth() * 0.18f, r.getHeight() * 0.18f);
-        const auto centre = r.getCentre();
-        g.setColour (textDim.withAlpha (0.5f));
-        g.fillEllipse (centre.x - dotR, centre.y - dotR, dotR * 2.0f, dotR * 2.0f);
-    }
-}
-
 void VoiceMeter::timerCallback()
 {
     if (! provider_)
@@ -156,6 +124,11 @@ void VoiceMeter::timerCallback()
 
 void VoiceMeter::paint (juce::Graphics& g)
 {
+    // Compact single-row strip of 6 voice indicators (one per firmware
+    // voicecard): a small square (filled accent when the voice is active, an
+    // outline when free) followed by "V#:<note>" / "V#:--". The enclosing Global
+    // group panel already supplies the frame, so only a subtle strip fill is
+    // painted here. Text follows the active font mode (Console/Serif/Sans).
     const ParvatiTheme* t = currentTheme();
     const juce::Colour panel     = t ? t->panelBackground : juce::Colour (0xff24242e);
     const juce::Colour outlineC  = t ? t->outline         : juce::Colour (0xff3c3c4a);
@@ -163,55 +136,59 @@ void VoiceMeter::paint (juce::Graphics& g)
     const juce::Colour textDim   = t ? t->textDim         : juce::Colour (0xff9a9aa8);
     const juce::Colour textValue = t ? t->textValue       : juce::Colour (0xffe8e8ee);
 
-    // Bordered panel.
-    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    const float corner = 4.0f;
     g.setColour (panel);
-    g.fillRoundedRectangle (bounds, corner);
-    g.setColour (outlineC);
-    g.drawRoundedRectangle (bounds, corner, 1.0f);
+    g.fillRect (getLocalBounds());
 
-    // ---- Left header: "Voices" + active count ----
-    const int active = getActiveVoiceCount();
-
-    if (! labelArea_.isEmpty())
+    const juce::Font font = [this]() -> juce::Font
     {
-        auto label = labelArea_;   // local copy (removeFromTop mutates)
-        g.setColour (textDim);
-        g.setFont (juce::FontOptions (12.0f));
-        g.drawText ("Voices",
-                    label.removeFromTop (label.getHeight() / 2),
-                    juce::Justification::centred, false);
-        g.setColour (accent);
-        g.drawText (juce::String (active) + "/" + juce::String (kNumVoicecards),
-                    label, juce::Justification::centred, false);
-    }
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            return lnf->appFont (10.0f, juce::Font::plain);
+        return juce::Font (juce::FontOptions (10.0f));
+    }();
 
-    const float cellCorner = 2.5f;
-
-    // ---- 6 hardware-voicecard cells ----
+    constexpr float sq = 7.0f;   // square indicator edge
     for (int c = 0; c < kNumVoicecards; ++c)
     {
         const auto r = cellRects_[(size_t) c].toFloat();
-        drawCell (g, r, state_[(size_t) c].active, state_[(size_t) c].note,
-                  cellCorner, accent, outlineC, textValue, textDim);
+        const bool active = state_[(size_t) c].active;
+        const juce::String noteText =
+            active ? midiNoteName (state_[(size_t) c].note) : "--";
+        const juce::String label = "V" + juce::String (c + 1) + ":" + noteText;
+        const juce::Colour col = active ? textValue : textDim;
+
+        // Square indicator: filled accent (active) / outline (idle).
+        const juce::Rectangle<float> sqRect (r.getX() + 2.0f,
+                                             r.getCentreY() - sq * 0.5f, sq, sq);
+        if (active)
+        {
+            g.setColour (accent);
+            g.fillRect (sqRect);
+        }
+        else
+        {
+            g.setColour (outlineC);
+            g.drawRect (sqRect, 1.0f);
+        }
+
+        g.setColour (col);
+        g.setFont (font);
+        g.drawText (label,
+                    r.withTrimmedLeft (sq + 5.0f),
+                    juce::Justification::centredLeft, false);
     }
 }
 
 void VoiceMeter::resized()
 {
-    auto area = getLocalBounds().reduced (5, 4);
+    // Compact single row: 6 even voice indicators across the strip. No separate
+    // label column (the active count is shown in the editor's bottom status
+    // strip; accessibility exposes it via getActiveVoiceCount()).
+    auto area = getLocalBounds().reduced (4);
 
-    // Compact header strip on the left ("Voices" + count).
-    labelArea_ = area.removeFromLeft (juce::jmin (44, area.getWidth() / 7));
-    area.removeFromLeft (6);   // gutter between header and cells
-
-    const int cellH = area.getHeight();
-
-    // ---- 6 even cells (one per hardware voicecard) ----
-    const int gap = 4;
+    const int gap = 6;
     const int totalGap = (kNumVoicecards - 1) * gap;
-    const int cellW = juce::jmax (6, (area.getWidth() - totalGap) / kNumVoicecards);
+    const int cellW = juce::jmax (8, (area.getWidth() - totalGap) / kNumVoicecards);
+    const int cellH = area.getHeight();
     int x = area.getX();
     const int y = area.getY();
     for (int c = 0; c < kNumVoicecards; ++c)

@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ParvatiEditor — the full Ambika GUI. A tabbed editor whose controls are
-// generated entirely from the PatchParamDescriptor table (ParameterLayout.h),
-// so the GUI and the APVTS byte-bridge can never drift apart. Every one of
+// ParvatiEditor — the full Ambika GUI. An integrated (Serum-style dense)
+// editor whose controls are generated entirely from the PatchParamDescriptor
+// table (ParameterLayout.h), so the GUI and the APVTS byte-bridge can never
+// drift apart. Every one of
 // the 104 patch/part parameters gets a control (rotary Slider or ComboBox)
 // plus an APVTS attachment.
 //
@@ -37,6 +38,7 @@ void refreshFontsIn (juce::Component* root, const ParvatiLookAndFeel& lnf);
 #include "ui/PresetBrowser.h"
 
 class MultiPage;
+class SynthWorkspace;
 
 //==============================================================================
 // One control cell: a rotary Slider (numeric params) or a ComboBox (choice
@@ -183,6 +185,13 @@ public:
     void setGroupDecoration (const juce::String& groupName,
                              std::unique_ptr<juce::Component> decoration);
 
+    // Override a named group's decoration height (reserved room below the
+    // control cells). Defaults to kDecorationH; smaller values make a compact
+    // decoration (e.g. the Global voice strip uses ~32px instead of the 80px
+    // reserved for the Env/LFO ADSR/LFO previews). Re-lays out the page so the
+    // new height takes effect immediately. No-op if @p groupName is unknown.
+    void setGroupDecorationHeight (const juce::String& groupName, int height);
+
     // Headless layout sanity check (called by parvati_editor_test): every group
     // panel has positive size, no two panels overlap, every (active) control
     // sits inside its group, and at least one non-dense row fills the page width.
@@ -206,6 +215,7 @@ private:
         int cellW = 0, cellH = 0;         // per-control cell size for this group
         bool singleRow = false;           // mod/modifier 3-wide horizontal strip
         bool stepGrid  = false;           // sequencer step grid
+        int decorationH = kDecorationH;   // reserved height for this group's decoration (overridable per group, e.g. the compact Global voice strip)
         int naturalWidth = 0, naturalHeight = 0;
         juce::Rectangle<int> rect;
     };
@@ -343,20 +353,29 @@ private:
     // is built and again on every language change.
     void applyChromeTranslations();
 
-    // The Multi page is owned here (added to the tab bar with takeOwnership=false).
+    // The Multi page is owned here and shown as an overlay over the content area.
     std::unique_ptr<MultiPage> multiPage_;
-    // Generated ParamPages, non-owning (each is owned by its Viewport, which the
-    // tab bar owns). Kept so theme changes can refresh them.
-    std::vector<ParamPage*> generatedPages_;
-    // Viewports wrapping the generated pages (non-owning; owned by the tab bar).
-    // Kept so the editor can reflow each page to its tab width on resize.
-    std::vector<juce::Viewport*> pageViewports_;
-    // Short tab labels (OSC, MIX, ...) in tab order, so a live language switch
-    // can re-apply every tab label.
-    std::vector<juce::String> tabLabels_;
+    // Generated ParamPages — EDITOR-OWNED. Each is reparented (NOT regenerated)
+    // into the integrated SynthWorkspace (the 9 synth pages) or the top-level
+    // GLOBAL tab (the Global page), so every APVTS attachment and the verified
+    // byte-bridge survive the reorganization unchanged.
+    // Declaration order is deliberate for safe teardown: pageSelector_ (holds raw
+    // refs to the two below) destroys first, then synthWorkspace_/globalViewport_
+    // (their Viewports detach from the pages), then generatedPages_ deletes them.
+    std::vector<std::unique_ptr<ParamPage>> generatedPages_;
+    // SYNTH tab content: the dense, void-free 3-column x 2-row integrated
+    // workspace hosting the 9 synth ParamPages (reparented) in static columns
+    // (Mixer | Oscillators | Filter) above two nested tab groups (ENV/LFO and
+    // MOD MATRIX/MODIFIERS/ARP/SEQ). Owns only its Viewports + nested tabs.
+    std::unique_ptr<SynthWorkspace> synthWorkspace_;
+    // GLOBAL tab content: a Viewport viewing the Global ParamPage. Editor-owned;
+    // the page itself stays owned by generatedPages_ (deleteOnRemoval=false).
+    std::unique_ptr<juce::Viewport> globalViewport_;
+    // Top-level page selector [SYNTH | GLOBAL]. SYNTH shows synthWorkspace_;
+    // GLOBAL shows globalViewport_. Both are passed as non-owned tab content.
+    juce::TabbedComponent pageSelector_ { juce::TabbedButtonBar::TabsAtTop };
 
     ParvatiAudioProcessor& processorRef_;
-    juce::TabbedComponent tabs_ { juce::TabbedButtonBar::TabsAtTop };
 
     // Theme system (Phase 2a). Direct members: ~ParvatiEditor's body removes the
     // ChangeListener and resets the L&F pointer before these members (and the
@@ -389,7 +408,8 @@ private:
     juce::Rectangle<int> logoArea_;   // set in resized(); paint() draws the logo here
 
     static constexpr int kBarHeight   = 34;
-    static constexpr int kHeaderH     = 36;  // compact header: ASCII logo + version (left) | Patch/Part (centre) | icons (right)
+    static constexpr int kHeaderH     = 40;  // compact header: ASCII logo + version (left) | Patch/Part (centre) | icons (right)
+    static constexpr int kPageTabsH   = 28;  // top-level [SYNTH | GLOBAL] page-selector strip
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
     static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
