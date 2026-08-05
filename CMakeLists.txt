@@ -20,18 +20,13 @@ if(CCACHE_PROGRAM)
     message(STATUS "ccache enabled: ${CCACHE_PROGRAM}")
 endif()
 
-# Build UNIVERSAL macOS binaries (arm64 + x86_64) so the plugin loads in both
-# native Apple-Silicon hosts and Intel/Rosetta hosts. An arm64-only build is a
-# common cause of a locally-built VST3/AU showing as "unavailable" (and of MIDI
-# not reaching it) in a host running under Rosetta (e.g. Ableton Live). No-op off
-# Apple; pass -DCMAKE_OSX_ARCHITECTURES=arm64 to force a single (faster) arch
-# (e.g. for sanitizer builds).
+# Build NATIVE arm64-only binaries (Apple Silicon). x86_64 / Rosetta support is
+# dropped — Rosetta is being removed by Apple, and a single arch halves object
+# + binary sizes (and build time). Force a universal build for distribution
+# with -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64".
 if(APPLE)
-    # A normal (non-cache) var so it always applies unless overridden by -D, and
-    # so it survives a reconfigure even if an empty value got cached earlier
-    # (a plain CACHE set won't overwrite an existing empty cache entry).
     if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
-        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+        set(CMAKE_OSX_ARCHITECTURES "arm64")
     endif()
 endif()
 
@@ -192,6 +187,58 @@ if(_staged_sources)
     target_link_libraries(Parvati PRIVATE parvati_factory_presets)
 endif()
 
+# ------------------------------------------------------------------------------
+# Compile the JUCE module stack EXACTLY ONCE and share it.
+#
+# JUCE attaches every module's sources as INTERFACE_SOURCES, so each target
+# that links juce::* recompiles the whole stack (~260 MB of objects per target).
+# With ~20 test executables that is ~4 GB of duplicated JUCE objects per build
+# dir. `Parvati` is a STATIC library that already compiles JUCE once (the 3
+# plugin formats share it); we make it the SINGLE source of JUCE for everything:
+#   * ensure Parvati compiles the full module set the tests need, and
+#   * re-export the modules' USAGE REQUIREMENTS (include dirs, compile defs,
+#     compile features, and NON-module link deps such as system frameworks) on
+#     Parvati's INTERFACE — but deliberately NOT their INTERFACE_SOURCES, which
+#     is what forces the recompilation. Test/tool targets then link ONLY Parvati
+#     (JUCE objects + headers + defines + frameworks, compiled once).
+set(PARVATI_JUCE_MODULES
+    juce::juce_audio_basics    juce::juce_audio_processors juce::juce_audio_utils
+    juce::juce_audio_formats   juce::juce_audio_devices
+    juce::juce_core            juce::juce_data_structures  juce::juce_dsp
+    juce::juce_events          juce::juce_graphics
+    juce::juce_gui_basics      juce::juce_gui_extra)
+# Parvati already compiles these modules once via its own target_link_libraries
+# block above; here we only RE-EXPORT their usage requirements (include dirs,
+# compile defs, compile features, and NON-module link deps like system
+# frameworks) on Parvati's INTERFACE — deliberately NOT their INTERFACE_SOURCES,
+# which is what forces every consumer to recompile JUCE. Test/tool targets then
+# link ONLY Parvati (JUCE objects + headers + defines + frameworks, once).
+foreach(_m ${PARVATI_JUCE_MODULES})
+    get_target_property(_inc ${_m} INTERFACE_INCLUDE_DIRECTORIES)
+    if(_inc)
+        target_include_directories(Parvati INTERFACE ${_inc})
+    endif()
+    get_target_property(_def ${_m} INTERFACE_COMPILE_DEFINITIONS)
+    if(_def)
+        target_compile_definitions(Parvati INTERFACE ${_def})
+    endif()
+    get_target_property(_feat ${_m} INTERFACE_COMPILE_FEATURES)
+    if(_feat)
+        target_compile_features(Parvati INTERFACE ${_feat})
+    endif()
+    # Propagate link deps (system frameworks etc.) but NOT other juce::* modules
+    # — those would drag their INTERFACE_SOURCES back in and re-trigger the
+    # per-target recompilation we are eliminating.
+    get_target_property(_libs ${_m} INTERFACE_LINK_LIBRARIES)
+    if(_libs)
+        foreach(_l ${_libs})
+            if(NOT (_l MATCHES "^juce::" OR _l MATCHES "^juce_"))
+                target_link_libraries(Parvati INTERFACE ${_l})
+            endif()
+        endforeach()
+    endif()
+endforeach()
+
 # Hardware-accelerated GUI rendering is ON BY DEFAULT in JUCE 9.0.0 — no define
 # is required (verified against ~/JUCE):
 #   * Windows: HWNDComponentPeer paints via an unconditional Direct2D device
@@ -253,9 +300,6 @@ add_executable(parvati_headless_test EXCLUDE_FROM_ALL
 target_include_directories(parvati_headless_test PRIVATE Source)
 target_link_libraries(parvati_headless_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
 )
 
 # ------------------------------------------------------------------------------
@@ -270,18 +314,6 @@ target_include_directories(parvati_tests PRIVATE Source)
 target_compile_features(parvati_tests PRIVATE cxx_std_17)
 target_link_libraries(parvati_tests PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -294,10 +326,6 @@ target_include_directories(parvati_lfo_sync_test PRIVATE Source)
 target_compile_features(parvati_lfo_sync_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_lfo_sync_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_dsp
 )
 
 # ------------------------------------------------------------------------------
@@ -310,10 +338,6 @@ target_include_directories(parvati_lfo_retrigger_test PRIVATE Source)
 target_compile_features(parvati_lfo_retrigger_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_lfo_retrigger_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_dsp
 )
 
 # ------------------------------------------------------------------------------
@@ -327,18 +351,6 @@ target_compile_features(parvati_multi_load_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_multi_load_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_multi_load_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -354,18 +366,6 @@ target_compile_features(parvati_roundtrip_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_roundtrip_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_roundtrip_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -379,18 +379,6 @@ target_include_directories(parvati_preset_test PRIVATE Source)
 target_compile_features(parvati_preset_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_preset_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -410,18 +398,6 @@ target_include_directories(parvati_filter_topology_test PRIVATE Source)
 target_compile_features(parvati_filter_topology_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_filter_topology_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -434,12 +410,6 @@ target_include_directories(parvati_multigui_test PRIVATE Source)
 target_compile_features(parvati_multigui_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_multigui_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
 )
 
 # ------------------------------------------------------------------------------
@@ -455,13 +425,6 @@ target_include_directories(parvati_screen_shots PRIVATE Source)
 target_compile_features(parvati_screen_shots PRIVATE cxx_std_17)
 target_link_libraries(parvati_screen_shots PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
-    juce::juce_graphics
 )
 
 # ------------------------------------------------------------------------------
@@ -477,13 +440,6 @@ target_include_directories(parvati_menu_shots PRIVATE Source)
 target_compile_features(parvati_menu_shots PRIVATE cxx_std_17)
 target_link_libraries(parvati_menu_shots PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
-    juce::juce_graphics
 )
 
 # ------------------------------------------------------------------------------
@@ -496,36 +452,12 @@ target_include_directories(parvati_multitimbral_test PRIVATE Source)
 target_compile_features(parvati_multitimbral_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_multitimbral_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 target_include_directories(parvati_patch_test PRIVATE Source)
 target_compile_features(parvati_patch_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_patch_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_patch_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -540,18 +472,6 @@ target_compile_features(parvati_partstate_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_partstate_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_partstate_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -564,18 +484,6 @@ target_include_directories(parvati_sequencer_test PRIVATE Source)
 target_compile_features(parvati_sequencer_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_sequencer_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -588,18 +496,6 @@ target_include_directories(parvati_apvts_test PRIVATE Source)
 target_compile_features(parvati_apvts_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_apvts_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -615,18 +511,6 @@ target_include_directories(parvati_idle_silence_test PRIVATE Source)
 target_compile_features(parvati_idle_silence_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_idle_silence_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -640,18 +524,6 @@ target_include_directories(parvati_realtime_test PRIVATE Source)
 target_compile_features(parvati_realtime_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_realtime_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 add_executable(parvati_concurrency_test
@@ -662,18 +534,6 @@ target_compile_features(parvati_concurrency_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_concurrency_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_concurrency_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -687,18 +547,6 @@ target_include_directories(parvati_midi_param_test PRIVATE Source)
 target_compile_features(parvati_midi_param_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_midi_param_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -712,18 +560,6 @@ target_include_directories(parvati_arp_test PRIVATE Source)
 target_compile_features(parvati_arp_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_arp_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -735,12 +571,6 @@ target_include_directories(parvati_legato_test PRIVATE Source)
 target_compile_features(parvati_legato_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_legato_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
 )
 
 # ------------------------------------------------------------------------------
@@ -752,12 +582,6 @@ target_include_directories(parvati_polyphony_test PRIVATE Source)
 target_compile_features(parvati_polyphony_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_polyphony_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
 )
 
 add_executable(parvati_patch_load_test
@@ -767,12 +591,6 @@ target_include_directories(parvati_patch_load_test PRIVATE Source)
 target_compile_features(parvati_patch_load_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_patch_load_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_gui_basics
 )
 
 # ------------------------------------------------------------------------------
@@ -788,18 +606,6 @@ target_include_directories(parvati_controller_mod_test PRIVATE Source)
 target_compile_features(parvati_controller_mod_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_controller_mod_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -812,18 +618,6 @@ target_include_directories(parvati_host_state_test PRIVATE Source)
 target_compile_features(parvati_host_state_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_host_state_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -839,18 +633,6 @@ target_include_directories(parvati_editor_test PRIVATE Source)
 target_compile_features(parvati_editor_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_editor_test PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_dsp
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
 )
 
 # ------------------------------------------------------------------------------
@@ -865,9 +647,4 @@ target_include_directories(parvati_gen_templates PRIVATE Source)
 target_compile_features(parvati_gen_templates PRIVATE cxx_std_17)
 target_link_libraries(parvati_gen_templates PRIVATE
     Parvati
-    juce::juce_audio_basics
-    juce::juce_audio_processors
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
 )
