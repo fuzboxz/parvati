@@ -92,6 +92,89 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::SidePanel::dismissButtonDownColour,    t.accent);
 }
 
+void ParvatiLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+                                            bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
+{
+    // Faithful copy of LookAndFeel_V4::drawToggleButton, with the ONE change that
+    // the button text is routed through appFont() so it follows the active font
+    // mode (Console / Serif / Sans) instead of the default family. This reaches
+    // every ToggleButton: the "Tooltips" + "Parameter Smoothing" toggles in the
+    // Settings panel and the Multi page voice-allocation bits.
+    auto fontSize = juce::jmin (15.0f, (float) button.getHeight() * 0.75f);
+    auto tickWidth = fontSize * 1.1f;
+
+    drawTickBox (g, button, 4.0f, ((float) button.getHeight() - tickWidth) * 0.5f,
+                 tickWidth, tickWidth,
+                 button.getToggleState(),
+                 button.isEnabled(),
+                 shouldDrawButtonAsHighlighted,
+                 shouldDrawButtonAsDown);
+
+    g.setColour (button.findColour (juce::ToggleButton::textColourId));
+    g.setFont (appFont (fontSize, juce::Font::plain));   // <-- routed through the active font mode
+
+    if (! button.isEnabled())
+        g.setOpacity (0.5f);
+
+    g.drawFittedText (button.getButtonText(),
+                      button.getLocalBounds().withTrimmedLeft (juce::roundToInt (tickWidth) + 10)
+                                             .withTrimmedRight (2),
+                      juce::Justification::centredLeft, 10);
+}
+
+juce::TextLayout ParvatiLookAndFeel::tooltipTextLayout (const juce::String& text, juce::Colour colour) const
+{
+    // Mirrors juce::detail::LookAndFeelHelpers::layoutTooltipText but builds the
+    // attributed string in the active appFont (the JUCE helper hardcodes a
+    // default-sans 13px bold), so hover tooltips pick up the font mode.
+    const float tooltipFontSize = 13.0f;
+    const int maxToolTipWidth = 400;
+
+    juce::AttributedString s;
+    s.setWordWrap (juce::AttributedString::WordWrap::byChar);
+    s.setJustification (juce::Justification::centred);
+    s.append (text, appFont (tooltipFontSize, juce::Font::plain), colour);
+
+    juce::TextLayout tl;
+    tl.createLayoutWithBalancedLineLengths (s, (float) maxToolTipWidth);
+    return tl;
+}
+
+juce::Rectangle<int> ParvatiLookAndFeel::getTooltipBounds (const juce::String& tipText,
+                                                           juce::Point<int> screenPos,
+                                                           juce::Rectangle<int> parentArea)
+{
+    // Same geometry as LookAndFeel_V2::getTooltipBounds, but measures the text
+    // in the active appFont so the tooltip window is sized to match how it is
+    // drawn (otherwise a wide font like Unifont would clip).
+    const juce::TextLayout tl (tooltipTextLayout (tipText, juce::Colours::black));
+
+    auto w = (int) (tl.getWidth() + 14.0f);
+    auto h = (int) (tl.getHeight() + 6.0f);
+
+    return juce::Rectangle<int> (screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 12) : screenPos.x + 24,
+                                 screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 6)  : screenPos.y + 6,
+                                 w, h)
+             .constrainedWithin (parentArea);
+}
+
+void ParvatiLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
+{
+    // Same background/outline as LookAndFeel_V4::drawTooltip, but the text is
+    // laid out in the active appFont via tooltipTextLayout().
+    juce::Rectangle<int> bounds (width, height);
+    const float cornerSize = 5.0f;
+
+    g.setColour (findColour (juce::TooltipWindow::backgroundColourId));
+    g.fillRoundedRectangle (bounds.toFloat(), cornerSize);
+
+    g.setColour (findColour (juce::TooltipWindow::outlineColourId));
+    g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f, 0.5f), cornerSize, 1.0f);
+
+    tooltipTextLayout (text, findColour (juce::TooltipWindow::textColourId))
+        .draw (g, juce::Rectangle<float> ((float) width, (float) height));
+}
+
 void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scrollbar,
                                         int x, int y, int width, int height,
                                         bool isVertical,
@@ -410,13 +493,13 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     // Centre numeric readout for ACTIVE knobs only (disabled steps show just the
     // dim track, per spec). The font auto-shrinks and the text is clipped to the
     // inner ring so long values (e.g. "8800.0 Hz") never spill past the arc.
-    // Base size is +2px over the geometric default for legibility, with the
-    // auto-shrink floor raised by the same 2px.
+    // Base size is enlarged for legibility (the value indicator is the knob's
+    // primary readout); maxTextW widens with it so typical values don't shrink.
     if (slider.isEnabled())
     {
         const juce::String valueText = slider.getTextFromValue (slider.getValue());
-        const float maxTextW = radius * 1.5f;
-        juce::Font vf = appFont (juce::jmax (7.0f, radius * 0.42f) + 2.0f, juce::Font::plain);
+        const float maxTextW = radius * 1.7f;
+        juce::Font vf = appFont (juce::jmax (11.0f, radius * 0.62f), juce::Font::plain);
         const int textW = juce::GlyphArrangement::getStringWidthInt (vf, valueText);
         if ((float) textW > maxTextW && textW > 0)
             vf = appFont (juce::jmax (8.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
@@ -463,7 +546,8 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
 void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
     // Inline text: left-padded, stopping before the right-aligned amber chevron
-    // (8px left pad + ~18px right reserve for the chevron = 26px chrome).
-    label.setBounds (8, 1, box.getWidth() - 26, box.getHeight() - 2);
+    // (6px left pad + ~18px right reserve for the chevron = 24px chrome). Kept
+    // tight so a fit-to-text dropdown reads as wide as its content, not padded.
+    label.setBounds (6, 1, box.getWidth() - 24, box.getHeight() - 2);
     label.setFont (appFont (14.0f, juce::Font::plain));
 }

@@ -9,6 +9,17 @@ project(Parvati
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Use ccache when available so reconfigures / rebuilds reuse compiled objects
+# instead of recompiling the ~1161 memory-heavy JUCE + DSP translation units
+# every time. (A clean build fan-out is what thrashes a 16 GB machine; ccache
+# turns repeat builds near-instant.) Auto-detected; no-op when not installed.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+    set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+    message(STATUS "ccache enabled: ${CCACHE_PROGRAM}")
+endif()
+
 # Build UNIVERSAL macOS binaries (arm64 + x86_64) so the plugin loads in both
 # native Apple-Silicon hosts and Intel/Rosetta hosts. An arm64-only build is a
 # common cause of a locally-built VST3/AU showing as "unavailable" (and of MIDI
@@ -454,6 +465,28 @@ target_link_libraries(parvati_screen_shots PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Dev tool: render Parvati's themed right-click / popup menus to PNGs (offscreen,
+# via the LookAndFeel draw hooks the live PopupMenu calls) so they can be fed to
+# an LLM. Mirrors parvati_screen_shots's link set.
+# Build: cmake --build build_release --target parvati_menu_shots
+# Run:   ./build_release/parvati_menu_shots [outputDir] [scale]   (defaults: ./screens/menus, 2)
+add_executable(parvati_menu_shots EXCLUDE_FROM_ALL
+    tools/menu_shots.cpp
+)
+target_include_directories(parvati_menu_shots PRIVATE Source)
+target_compile_features(parvati_menu_shots PRIVATE cxx_std_17)
+target_link_libraries(parvati_menu_shots PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_gui_basics
+    juce::juce_graphics
+)
+
+# ------------------------------------------------------------------------------
 # Multitimbral verification (6 Parts, MIDI channel routing, per-part patches).
 # Built by default. Run with: ./build/parvati_multitimbral_test
 add_executable(parvati_multitimbral_test
@@ -838,4 +871,3 @@ target_link_libraries(parvati_gen_templates PRIVATE
     juce::juce_data_structures
     juce::juce_events
 )
-

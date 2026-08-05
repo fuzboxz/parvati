@@ -93,6 +93,22 @@ public:
     // Public so the editor can re-apply every cached Label font on a mode switch.
     juce::Font appFont (float height, int styleFlags) const;
 
+    // ToggleButton text is drawn by the L&F with a hardcoded default font; the
+    // override routes the button text through appFont() so the "Tooltips" and
+    // "Parameter Smoothing" toggles (and the Multi page voice-allocation bits)
+    // follow the active font mode. Otherwise a faithful copy of V4.
+    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
+                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+
+    // Hover tooltips: both the SIZING (getTooltipBounds) and the DRAWING
+    // (drawTooltip) use JUCE's layoutTooltipText helper, which builds the text
+    // in a hardcoded default font. Overridden so the tooltip text — and its
+    // measured width/height — follow the active font mode.
+    juce::Rectangle<int> getTooltipBounds (const juce::String& tipText,
+                                           juce::Point<int> screenPos,
+                                           juce::Rectangle<int> parentArea) override;
+    void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
+
     // Wider, rounded, brighter scrollbar thumb than the V4 default (which draws
     // a faint 1px-ish thumb that is hard to grab on the long param pages).
     void drawScrollbar (juce::Graphics&, juce::ScrollBar&, int x, int y, int width, int height,
@@ -103,6 +119,10 @@ private:
     const ParvatiTheme* theme_ = nullptr;
     int fontMode_ = fontConsole;   // 0 = Console (Unifont), 1 = Serif, 2 = Sans Serif
     juce::Typeface::Ptr unifontTypeface_;   // embedded GNU Unifont (console mode)
+
+    // Tooltip text layout in the active app font (JUCE's layoutTooltipText uses
+    // a hardcoded default-sans). Shared by getTooltipBounds (sizing) + drawTooltip.
+    juce::TextLayout tooltipTextLayout (const juce::String& text, juce::Colour colour) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiLookAndFeel)
 };

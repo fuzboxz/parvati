@@ -291,10 +291,14 @@ void ParamControl::resized()
     }
     else if (comboBox_)
     {
-        // Dropdown: 28px tall, width fit-to-text (longest choice + 28px padding
-        // for the 8px left pad + amber chevron, capped at 140px), centred.
+        // Dropdown: 28px tall, width fit-to-text (longest choice + 26px chrome:
+        // 6px left pad + amber chevron + slack). There is NO fixed width cap —
+        // each dropdown is exactly as wide as its longest option (narrow lists
+        // get narrow dropdowns) — but it never exceeds the cell width so dense
+        // rows (Mod / Modifier) stay compact. Centred in the cell.
         const int comboH = juce::jmin (28, b.getHeight());
-        const int comboW = juce::jlimit (28, 140, maxChoiceTextWidth() + 28);
+        const int textW = maxChoiceTextWidth() + 26;
+        const int comboW = juce::jlimit (28, juce::jmax (28, b.getWidth()), textW);
         comboBox_->setBounds (b.withSizeKeepingCentre (comboW, comboH));
     }
 }
@@ -317,7 +321,9 @@ void ParamControl::showContextMenu()
     juce::Component::SafePointer<ParamControl> safe (this);
     menu.addItem (TRANS ("Reset to default"), [safe] { if (safe != nullptr) safe->resetToDefault(); });
     menu.addItem (TRANS ("Randomize"),        [safe] { if (safe != nullptr) safe->randomize(); });
-    menu.showMenuAsync (juce::PopupMenu::Options());
+    // withTargetComponent(this) so the menu inherits the editor's
+    // ParvatiLookAndFeel (themed colours + font) instead of the default L&F.
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this));
 }
 
 void ParamControl::resetToDefault()
@@ -495,22 +501,21 @@ void ParamPage::configureGroupLayouts()
         else if (g.name.startsWith ("Mod "))
         {
             // Mod row: source / dest / amount. The amount is a bipolar rotary
-            // knob; give the row enough height that the knob reads as a real
-            // control ABOVE its text box (a 64px row leaves only ~24px for the
-            // knob, which looks like a bare text field). The knob is the amount
-            // control; the text box below shows/edits its value.
+            // knob; keep the row tight (a 44px knob + its label fits in 72px)
+            // so the 14 mod slots pack densely. The knob is the amount control;
+            // the text box below shows/edits its value.
             g.singleRow = true;
             g.internalCols = juce::jmax (1, n);
-            g.cellW = 112;
-            g.cellH = 84;
+            g.cellW = 100;
+            g.cellH = 72;
         }
         else if (g.name.startsWith ("Modifier "))
         {
             // Compact horizontal strip: in1 / in2 / op (all combo boxes).
             g.singleRow = true;
             g.internalCols = juce::jmax (1, n);
-            g.cellW = 112;
-            g.cellH = 64;
+            g.cellW = 100;
+            g.cellH = 56;
         }
         else if (g.name.startsWith ("Env ") || g.name.startsWith ("LFO ") || g.name == "Voice LFO")
         {
@@ -633,8 +638,30 @@ void ParamPage::layoutGroups (int targetWidth)
     }
 
     contentWidth_  = juce::jmax (targetWidth, 2 * kMargin + 40);
-    contentHeight_ = groups_.empty() ? (topY + kMargin)
-                                     : (y + rowH + kMargin);
+    const int naturalH = groups_.empty() ? (topY + kMargin)
+                                          : (y + rowH + kMargin);
+
+    // Vertically centre a short page inside its viewport so sparse pages (Arp /
+    // Global) do not leave a large empty void below the controls: shift the
+    // whole grid down by half the slack and grow the page to fill the viewport
+    // (no vertical scroll when it fits). Pages taller than the viewport keep
+    // their natural height and scroll as before. The target height comes from
+    // centerHeight_ (set by the editor for every tab) — NOT getViewHeight(),
+    // which tracks the content size and so can never exceed the natural height.
+    yOffset_ = 0;
+    // Prefer the editor-supplied tab height (reliable for every tab); fall back
+    // to the parent Viewport's physical height for standalone / headless use.
+    int viewH = centerHeight_;
+    if (viewH <= 0)
+        if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+            viewH = vp->getHeight();
+    if (viewH > naturalH && viewH > 0)
+    {
+        yOffset_ = (viewH - naturalH) / 2;
+        for (auto& g : groups_)
+            g.rect.translate (0, yOffset_);
+    }
+    contentHeight_ = juce::jmax (naturalH, viewH);
 }
 
 void ParamPage::applyLayout()
@@ -817,10 +844,13 @@ void ParamPage::resized()
     applyLayout();
 }
 
-void ParamPage::reflowToWidth (int targetWidth)
+void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
 {
     if (targetWidth <= 0)
         return;
+    // Record the tab content height so layoutGroups can vertically centre short
+    // pages consistently across ALL tabs (not just the current one).
+    centerHeight_ = juce::jmax (0, viewportHeight);
     // Lay out for the requested width, then adopt the resulting height so the
     // parent Viewport scrolls vertically only. setSize() re-triggers resized()
     // which re-lays-out to the same width (cheap rectangle math).
@@ -1066,7 +1096,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         juce::PopupMenu m;
         m.addItem (1, TRANS ("Ambika Patch (.PRO)"));
         m.addItem (2, TRANS ("Parvati Patch (.parvati)"));
-        m.showMenuAsync (juce::PopupMenu::Options(), [this] (int result) {
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this] (int result) {
             if (result == 1)      openSaveDialog();
             else if (result == 2) openSaveParvatiDialog();
         });
@@ -1102,17 +1132,21 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // TabbedComponent / TabbedButtonBar colours from the L&F.
 
     struct PageInfo { const char* name; const char* shortName; Section s; int cols, cellW, cellH; };
+    // Cell heights are kept tight (a 44px knob + its label fits in ~76px) so
+    // every page matches the dense SEQ reference instead of the sparse look the
+    // 106px rows produced. Mod/Modifier/Seq groups override these in
+    // configureGroupLayouts() — their entries here are kept for reference only.
     const PageInfo pages[] = {
-        { "Oscillators", "OSC",        Section::Oscillators, 4, 214, 106 },
-        { "Mixer",       "MIX",        Section::Mixer,       4, 214, 106 },
-        { "Filter",      "FILTER",     Section::Filter,      4, 214, 106 },
-        { "Envelopes",   "ENV",        Section::Envelopes,   3, 198, 106 },
-        { "LFOs",        "LFO",        Section::Lfos,        4, 198, 106 },
-        { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   6, 164, 84 },
-        { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 64 },
-        { "Arp",         "ARP",        Section::Arp,         3, 214, 106 },
+        { "Oscillators", "OSC",        Section::Oscillators, 4, 214, 76 },
+        { "Mixer",       "MIX",        Section::Mixer,       4, 214, 76 },
+        { "Filter",      "FILTER",     Section::Filter,      4, 214, 76 },
+        { "Envelopes",   "ENV",        Section::Envelopes,   3, 198, 76 },
+        { "LFOs",        "LFO",        Section::Lfos,        4, 198, 76 },
+        { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   6, 164, 72 },
+        { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 56 },
+        { "Arp",         "ARP",        Section::Arp,         3, 214, 76 },
         { "Sequencer",   "SEQ",        Section::Sequencer,   6, 150, 80 },
-        { "Global",      "GLOBAL",     Section::Global,      3, 214, 106 },
+        { "Global",      "GLOBAL",     Section::Global,      3, 214, 76 },
     };
 
     for (const auto& pg : pages)
@@ -1736,9 +1770,13 @@ void ParvatiEditor::resized()
     // the grouped panels wrap to the window size (vertical-only scrolling). All
     // tabs share the same content width, so reflow every page to it; a hair is
     // reserved so the panel borders clear a vertical scrollbar when one appears.
+    // The tab CONTENT height (minus the tab bar) is passed too, so short pages
+    // centre consistently across all tabs — JUCE only sizes the current tab's
+    // Viewport, so reading it per-page would mis-centre non-current tabs.
     const int targetW = juce::jmax (280, tabs_.getWidth() - 16);
+    const int tabContentH = juce::jmax (0, tabs_.getHeight() - tabs_.getTabBarDepth());
     for (auto* page : generatedPages_)
-        page->reflowToWidth (targetW);
+        page->reflowToWidth (targetW, tabContentH);
 }
 
 //==========================================================================

@@ -166,8 +166,13 @@ public:
     // Re-flow the grouped layout to @p targetWidth (called by the editor when
     // the tab / window resizes, so the group panels wrap to the available
     // width). Lays out, then sizes the page to (targetWidth, contentHeight_) so
-    // the parent Viewport scrolls vertically only.
-    void reflowToWidth (int targetWidth);
+    // the parent Viewport scrolls vertically only. @p viewportHeight, when > 0,
+    // is the tab content area's height: short pages are vertically centred
+    // within it (see layoutGroups) so a sparse page does not leave a large void
+    // below the controls. The editor passes this for EVERY page (only the
+    // current tab's Viewport is sized by JUCE, so reading the viewport at layout
+    // time would mis-centre non-current tabs).
+    void reflowToWidth (int targetWidth, int viewportHeight = 0);
 
     // Attach an auxiliary "decoration" component (e.g. an EnvelopeDisplay ADSR
     // preview) to a named group panel. ParamPage owns the component and lays it
@@ -220,13 +225,26 @@ private:
     std::vector<GroupLayout> groups_;
     std::vector<std::unique_ptr<juce::Component>> decorations_;   // owned group decorations
 
-    // Layout constants (pixels).
-    static constexpr int kMargin      = 16;  // page edge padding
-    static constexpr int kGroupGap    = 12;  // gap between group panels (h + v)
-    static constexpr int kGroupPad    = 12;  // inset inside a group border
-    static constexpr int kGroupTitleH = 18;  // room reserved for the group title
-    static constexpr int kDecorationH   = 120; // reserved height for a group decoration (graphs)
-    static constexpr int kDecorationGap = 8;   // gap between control cells and a decoration
+    // Layout constants (pixels). Tight margins / gaps / insets keep every page
+    // dense (high component density, minimal whitespace), matching the compact
+    // SEQ page rather than the sparse look the wider values produced.
+    static constexpr int kMargin      = 10;  // page edge padding
+    static constexpr int kGroupGap    = 8;   // gap between group panels (h + v)
+    static constexpr int kGroupPad    = 8;   // inset inside a group border
+    static constexpr int kGroupTitleH = 16;  // room reserved for the group title
+    static constexpr int kDecorationH   = 80;  // reserved height for a group decoration (graphs)
+    static constexpr int kDecorationGap = 6;   // gap between control cells and a decoration
+
+    // Vertical centre offset applied to short pages (see layoutGroups): when a
+    // page's natural content is shorter than its viewport, the whole grid is
+    // shifted down so the empty space splits evenly instead of leaving a large
+    // void below the controls.
+    int yOffset_ = 0;
+
+    // Tab content height passed by the editor (reliable for all tabs); drives
+    // the vertical centring of short pages. 0 => fall back to the parent
+    // Viewport's height (standalone / headless test use).
+    int centerHeight_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamPage)
 };
