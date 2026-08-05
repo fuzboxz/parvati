@@ -56,3 +56,6 @@ asio_profiler_output/
 # --- Temporary test artefacts ---
 *.tmp
 *.bak
+
+# --- Generated menu screenshots (tools/menu_shots.cpp) ---
+screens/

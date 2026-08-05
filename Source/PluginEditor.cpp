@@ -16,7 +16,7 @@
 #endif
 
 // Monospace "console" font height for the ASCII-art logo.
-constexpr float kLogoFontHeight = 5.0f;
+constexpr float kLogoFontHeight = 4.0f;   // 7-line ASCII logo fits the 36px header (7*4 + pad < 36)
 
 // ASCII-art "PARVATI" logo (drawn small in the header). Leading spaces
 // are part of the art (per-line 3D indent) so they MUST be preserved; trailing
@@ -124,39 +124,30 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     else
     {
         slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
-                                                   juce::Slider::TextBoxBelow);
-        slider_->setTextBoxIsEditable (true);
-        // Mod-matrix amount: a compact text box so the rotary knob dominates the
-        // cell (the amount is the primary control of a mod row). Other knobs keep
-        // the default text box.
-        if (paramIDStr_.endsWith ("_amount"))
-            slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 14);
-        if (d.isSequencer)
+                                                   juce::Slider::NoTextBox);
+        // No value box: the numeric readout is drawn in the centre of the 44px
+        // arc-ring by the LookAndFeel (drawRotarySlider). Drag + the right-click
+        // context menu (Reset/Randomize) still adjust the value.
+        if (d.isSequencer && paramIDStr_.startsWith ("seq_length_"))
         {
-            // The length control is marked ("Length" label + accent arc) so it
-            // reads as the sequence length, not just another step pot. The step
-            // cells stay compact (label hidden; the group header "Sequencer n"
-            // identifies them) and are dimmed when past the active length
-            // (see refreshStepEnabled, wired below).
-            if (paramIDStr_.startsWith ("seq_length_"))
-            {
-                label_->setText (TRANS ("Length"), juce::dontSendNotification);
-                label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
-                slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 16);
-                if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-                    if (const auto* theme = lnf->getTheme())
-                        slider_->setColour (juce::Slider::rotarySliderFillColourId, theme->accent);
-            }
-            else
-            {
-                label_->setVisible (false);
-                slider_->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 36, 14);
-            }
+            // The length control is marked ("Length" label) so it reads as the
+            // sequence length, not just another step pot. Step cells keep their
+            // label hidden (the group header "Sequencer n" identifies them) and
+            // are dimmed when past the active length (refreshStepEnabled).
+            label_->setText (TRANS ("Length"), juce::dontSendNotification);
+            label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
+            if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+                if (const auto* theme = lnf->getTheme())
+                    slider_->setColour (juce::Slider::rotarySliderFillColourId, theme->accent);
+        }
+        else if (d.isSequencer)
+        {
+            label_->setVisible (false);   // plain step cells: no label
         }
         addAndMakeVisible (*slider_);
         sliderAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor.getApvts(), d.paramID, *slider_);
-        // Catch right-clicks on the knob/text-box (same reason as the combo).
+        // Catch right-clicks on the knob (so the cell's popup menu shows).
         slider_->addMouseListener (this, false);
     }
 
@@ -242,6 +233,28 @@ void ParamControl::applyTooltipState()
     if (comboBox_ != nullptr) comboBox_->setTooltip (tip);
 }
 
+int ParamControl::maxChoiceTextWidth() const
+{
+    // Measure every choice (plus the combo's current text) in the active L&F
+    // combo font so the dropdown fits its longest entry. Used to size the
+    // fit-to-text combo width (longest + 24px padding, capped at 140px).
+    const auto f = [this]() -> juce::Font
+    {
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            return lnf->appFont (14.0f, juce::Font::plain);
+        return juce::Font (juce::FontOptions (14.0f));
+    }();
+
+    int widest = 0;
+    if (desc_.choices != nullptr)
+        for (const auto& c : *desc_.choices)
+            widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, c));
+    if (comboBox_ != nullptr)
+        widest = juce::jmax (widest,
+                             juce::GlyphArrangement::getStringWidthInt (f, comboBox_->getText()));
+    return widest;
+}
+
 void ParamControl::setTooltipsEnabled (bool enabled)
 {
     tooltipsEnabled_ = enabled;
@@ -270,12 +283,19 @@ void ParamControl::resized()
 
     if (slider_)
     {
-        slider_->setBounds (b);
+        // Every rotary dial is a fixed 44px diameter, centred in the cell. The
+        // value readout is drawn inside the arc-ring by the LookAndFeel.
+        constexpr int kKnobDiameter = 44;
+        slider_->setBounds (b.withSizeKeepingCentre (kKnobDiameter,
+                                                     juce::jmin (kKnobDiameter, b.getHeight())));
     }
     else if (comboBox_)
     {
-        comboBox_->setBounds (b.withSizeKeepingCentre (b.getWidth(),
-                                                       juce::jmin (26, b.getHeight())));
+        // Dropdown: 28px tall, width fit-to-text (longest choice + 28px padding
+        // for the 8px left pad + amber chevron, capped at 140px), centred.
+        const int comboH = juce::jmin (28, b.getHeight());
+        const int comboW = juce::jlimit (28, 140, maxChoiceTextWidth() + 28);
+        comboBox_->setBounds (b.withSizeKeepingCentre (comboW, comboH));
     }
 }
 
@@ -849,7 +869,8 @@ MultiPage::MultiPage (ParvatiAudioProcessor& p, ThemeManager& themeManager)
 
     auto setupZoneSlider = [this] (juce::Slider& s) {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 56, 18);
+        // No value box: the readout is drawn in the centre of the arc-ring by the L&F.
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         s.setRange (0.0, 127.0, 1.0);
         // Slider colours from the L&F.
         addAndMakeVisible (s);
@@ -926,10 +947,10 @@ void MultiPage::resized()
     channelCombo_.setBounds (cell.removeFromTop (30).withSizeKeepingCentre (cell.getWidth(), 24));
     cell = row.removeFromLeft (colW);
     loLabel_.setBounds (cell.removeFromTop (18));
-    loSlider_.setBounds (cell);
+    loSlider_.setBounds (cell.withSizeKeepingCentre (44, juce::jmin (44, cell.getHeight())));
     cell = row.removeFromLeft (colW);
     hiLabel_.setBounds (cell.removeFromTop (18));
-    hiSlider_.setBounds (cell);
+    hiSlider_.setBounds (cell.withSizeKeepingCentre (44, juce::jmin (44, cell.getHeight())));
 
     area.removeFromTop (12);
     auto allocRow = area.removeFromTop (56);
@@ -1186,7 +1207,21 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (multiButton_);
 
-    // ---- Header: ASCII-art logo (painted, left) + version (under it) ----
+    // ---- [KBD] header toggle: show/hide the bottom virtual keyboard ----
+    // Default = keyboard visible (current behaviour). Toggling off hides the
+    // keyboard + wheels and reclaims the strip height for the tab area.
+    kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
+    kbdToggleButton_.setClickingTogglesState (true);
+    kbdToggleButton_.setToggleState (true, juce::dontSendNotification);   // visible by default
+    kbdToggleButton_.onClick = [this] {
+        const bool on = kbdToggleButton_.getToggleState();
+        if (keyboardView_ != nullptr) keyboardView_->setVisible (on);
+        if (wheels_       != nullptr) wheels_->setVisible (on);
+        resized();   // reflow: tabs reclaim the keyboard strip when hidden
+    };
+    addAndMakeVisible (kbdToggleButton_);
+
+    // ---- Header: ASCII-art logo (painted, left) + version (inline, right of logo) ----
     versionLabel_.setText ("v" PARVATI_VERSION, juce::dontSendNotification);
     versionLabel_.setFont (juce::FontOptions (10.0f));
     versionLabel_.setColour (juce::Label::textColourId, theme.textDim);
@@ -1325,9 +1360,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // buttons, tabs, popups and group titles follow via the L&F font getters.
     refreshFontsIn (this, lnf_);
 
-    setSize (980, 660 + kHeaderH - kBarHeight);   // merged header replaces the old patch bar
+    // Header is 36px with the Patch/Part menu CENTRED, so the window needs room
+    // for the wide ASCII logo (left) + the centred cluster + the icon cluster
+    // (right). 1100px lets the 458px patch/part cluster centre with margin.
+    setSize (1100, 660 + kHeaderH - kBarHeight);   // 1100 wide; header(36)+tabs+keyboard(104)+status(22)=662 tall
     setResizable (true, true);
-    setResizeLimits (720, 480, 1600, 1100);
+    // Min width guarantees the dense 36px header never overlaps: ASCII logo +
+    // version (left) + centred Patch/Part cluster + system icons + [KBD] (right).
+    setResizeLimits (1080, 480, 1600, 1100);
 
     // Apply persisted zoom (global scale; only if non-default to avoid an
     // unnecessary rescale at startup).
@@ -1621,9 +1661,10 @@ void ParvatiEditor::resized()
         statusTooltipLabel_.setBounds (strip);
     }
 
-    // ---- Keyboard strip directly above the status strip ----
+    // ---- Keyboard strip directly above the status strip (toggleable via [KBD]) ----
     constexpr int kWheelsW = 76;
-    if (keyboardView_ != nullptr)
+    const bool kbdVisible = kbdToggleButton_.getToggleState() && keyboardView_ != nullptr;
+    if (kbdVisible)
     {
         auto bottomStrip = area.removeFromBottom (kKeyboardH);
         if (wheels_ != nullptr)
@@ -1631,10 +1672,25 @@ void ParvatiEditor::resized()
         keyboardView_->setBounds (bottomStrip);
     }
 
-    // ---- Header (one row): [logo+version] | Patch:[browser] Part:[▾] [Multi] … [Load][Save][↶][↷][⚙] ----
+    // ---- Header (36px row): [logo+version] (left) | Patch/Part menu (centre) | icons+[KBD] (right) ----
     auto header = area.removeFromTop (kHeaderH);
-    // Logo block (left): the ASCII logo is painted here (paint()); the version
-    // sits UNDER it. Size the block to the logo's measured width + 3px padding.
+    // A kBarHeight-tall strip vertically centred in the 36px header holds every
+    // header control (the logo block uses the same strip height).
+    auto bar = header.withTrimmedTop ((kHeaderH - kBarHeight) / 2)
+                     .withTrimmedBottom ((kHeaderH - kBarHeight) / 2)
+                     .reduced (6, 0);
+
+    // Right cluster (removeFromRight => first item ends up rightmost): system
+    // icons, then the [KBD] toggle at the far right.
+    kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle
+    settingsButton_.setBounds (bar.removeFromRight (30));    // gear
+    bar.removeFromRight (6);   // small gap before undo/redo
+    redoButton_.setBounds (bar.removeFromRight (30));
+    undoButton_.setBounds (bar.removeFromRight (30));
+    saveButton_.setBounds (bar.removeFromRight (96));   // carries the format popup menu
+    loadButton_.setBounds (bar.removeFromRight (76));
+
+    // Left: ASCII logo (painted) + version label inline to its right.
     {
         const juce::Font logoFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
                                                       kLogoFontHeight, juce::Font::plain));
@@ -1646,29 +1702,29 @@ void ParvatiEditor::resized()
             logoW = juce::jmax (logoW, juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth()));
         }
         logoW += 6;   // 3px padding each side
-        logoArea_ = header.removeFromLeft (logoW);
-        auto versionArea = logoArea_;
-        versionLabel_.setBounds (versionArea.removeFromBottom (14).withTrimmedLeft (3));
+        logoArea_ = bar.removeFromLeft (logoW);   // paint() draws the ASCII logo here
+        versionLabel_.setBounds (bar.removeFromLeft (60));   // version inline right of the logo
     }
-    // Menu controls fill a kBarHeight-tall strip centred vertically in the header.
-    auto bar = header.withTrimmedTop ((kHeaderH - kBarHeight) / 2)
-                     .withTrimmedBottom ((kHeaderH - kBarHeight) / 2)
-                     .reduced (6, 0);
-    // Right cluster first (removeFromRight => the first item ends up rightmost).
-    settingsButton_.setBounds (bar.removeFromRight (30));   // gear, top-right corner
-    redoButton_.setBounds (bar.removeFromRight (30));
-    undoButton_.setBounds (bar.removeFromRight (30));
-    saveButton_.setBounds (bar.removeFromRight (96));   // carries the format popup menu
-    loadButton_.setBounds (bar.removeFromRight (76));
-    // Left cluster (right of the logo).
-    patchCaption_.setBounds (bar.removeFromLeft (48));
-    if (presetBrowser_ != nullptr)
-        presetBrowser_->setBounds (bar.removeFromLeft (220));
-    partCaption_.setBounds (bar.removeFromLeft (40));
-    partCombo_.setBounds (bar.removeFromLeft (84));
-    bar.removeFromLeft (6);   // small gap between the Part dropdown and Multi
-    multiButton_.setBounds (bar.removeFromLeft (60));   // Multi/Setup overlay toggle
-    // (remaining middle space is flexible / empty)
+
+    // Centre the Patch/Part menu cluster in the remaining middle space.
+    {
+        const int patchCapW = 48;
+        const int presetW   = (presetBrowser_ != nullptr) ? 220 : 0;
+        const int partCapW  = 40;
+        const int partComboW = 84;
+        const int gapW = 6;
+        const int multiW = 60;
+        const int clusterW = patchCapW + presetW + partCapW + partComboW + gapW + multiW;
+
+        auto cluster = bar.withSizeKeepingCentre (juce::jmin (clusterW, bar.getWidth()), bar.getHeight());
+        patchCaption_.setBounds (cluster.removeFromLeft (patchCapW));
+        if (presetBrowser_ != nullptr)
+            presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
+        partCaption_.setBounds (cluster.removeFromLeft (partCapW));
+        partCombo_.setBounds (cluster.removeFromLeft (partComboW));
+        cluster.removeFromLeft (gapW);   // small gap between the Part dropdown and Multi
+        multiButton_.setBounds (cluster.removeFromLeft (multiW));   // Multi/Setup overlay toggle
+    }
 
     // ---- Middle: tabs (gains the old kMeterStripH band, loses kVoiceStripH) ----
     tabs_.setBounds (area);

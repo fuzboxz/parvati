@@ -432,6 +432,28 @@ target_link_libraries(parvati_multigui_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Dev tool: render the full Parvati editor screen for each page to a PNG
+# (offscreen, via paintEntireComponent — no screen-recording permission needed)
+# so they can be fed to a UI-redesign agent. Mirrors parvati_multigui_test's link set.
+# Build: cmake --build build --target parvati_screen_shots
+# Run:   ./build/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+add_executable(parvati_screen_shots EXCLUDE_FROM_ALL
+    tools/screen_shots.cpp
+)
+target_include_directories(parvati_screen_shots PRIVATE Source)
+target_compile_features(parvati_screen_shots PRIVATE cxx_std_17)
+target_link_libraries(parvati_screen_shots PRIVATE
+    Parvati
+    juce::juce_audio_basics
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_gui_basics
+    juce::juce_graphics
+)
+
+# ------------------------------------------------------------------------------
 # Multitimbral verification (6 Parts, MIDI channel routing, per-part patches).
 # Built by default. Run with: ./build/parvati_multitimbral_test
 add_executable(parvati_multitimbral_test

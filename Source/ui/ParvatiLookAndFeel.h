@@ -65,13 +65,28 @@ public:
     void drawTabButton (juce::TabBarButton&, juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
     int  getTabButtonBestWidth (juce::TabBarButton&, int tabDepth) override;
 
-    // Group-component panel titles are drawn by the L&F with a hardcoded font;
-    // overridden so the title family follows the active mode. Borderless: the
-    // outline colour is transparent, so only the text is visible.
+    // Group-component panels draw a 1px rectangular border whose TOP-LEFT edge
+    // is broken by the title text (classic fieldset/legend look: the section
+    // header sits IN the top border line, e.g. ┌── [ OSC 1 ] ───┐). Title font
+    // follows the active mode; title renders in ALL CAPS.
     void drawGroupComponentOutline (juce::Graphics&, int width, int height,
                                     const juce::String& text,
                                     const juce::Justification& position,
                                     juce::GroupComponent&) override;
+
+    // Rotary knobs: a thin 1px amber arc-ring (dim empty track + bright fill
+    // arc) with the numeric value drawn in the centre of the ring. No pointer
+    // line, no value box underneath (value integrated into the dial).
+    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
+                           float sliderPos, float rotaryStartAngle,
+                           float rotaryEndAngle, juce::Slider&) override;
+
+    // ComboBox: flat dark container with an amber chevron (▾) right-aligned and
+    // inline text. Mirrors the dropdown styling spec (height 28px, dark fill).
+    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                       int buttonX, int buttonY, int buttonW, int buttonH,
+                       juce::ComboBox&) override;
+    void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
 
     // A Font for the active mode at @p height/style: console -> embedded GNU
     // Unifont typeface (DOS/retro); serif/sansSerif -> the system default family.

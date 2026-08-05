@@ -80,13 +80,23 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     const auto textDim  = t ? t->textDim         : juce::Colour (0xff9a9aa8);
 
     const auto bounds = getLocalBounds().toFloat();
-    const float corner = 4.0f;
 
+    // ---- Panel: 1px square (sharp-cornered) border with an amber pixel-matrix
+    // grid backdrop. The LCD pixel plot grid below sits on top of this. ----
     g.setColour (panelBg);
-    g.fillRoundedRectangle (bounds, corner);
+    g.fillRect (bounds);
+
+    // Amber pixel-matrix grid backdrop covering the whole interior (dim amber
+    // dots every kGridPitch px) — the retro LCD look the graph spec calls for.
+    constexpr int kGridPitch = 6;
+    constexpr float kGridDot = 1.0f;
+    g.setColour (accent.withAlpha (0.12f));
+    for (int gy = juce::roundToInt (bounds.getY()) + 2; gy < juce::roundToInt (bounds.getBottom()) - 1; gy += kGridPitch)
+        for (int gx = juce::roundToInt (bounds.getX()) + 2; gx < juce::roundToInt (bounds.getRight()) - 1; gx += kGridPitch)
+            g.fillRect (juce::Rectangle<float> ((float) gx, (float) gy, kGridDot, kGridDot));
 
     g.setColour (outline);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), corner, 1.0f);
+    g.drawRect (bounds.reduced (0.5f), 1.0f);
 
     // Title (top-left).
     g.setColour (textDim);

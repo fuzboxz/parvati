@@ -29,9 +29,9 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
     setColour (juce::Slider::textBoxHighlightColourId,         t.accent2);
 
-    // ---- ComboBox ----
-    setColour (juce::ComboBox::backgroundColourId,             t.panelBackground);
-    setColour (juce::ComboBox::outlineColourId,                juce::Colour (0x00000000)); // borderless combo
+    // ---- ComboBox (dark container, 1px outline, amber chevron) ----
+    setColour (juce::ComboBox::backgroundColourId,             t.panelBackground2);
+    setColour (juce::ComboBox::outlineColourId,                t.outline);   // 1px container border (visible)
     setColour (juce::ComboBox::textColourId,                   t.text);
     setColour (juce::ComboBox::arrowColourId,                  t.accent);
     setColour (juce::ComboBox::buttonColourId,                 t.accent);
@@ -71,9 +71,10 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::TabbedButtonBar::tabOutlineColourId,      t.outline);
     setColour (juce::TabbedButtonBar::frontOutlineColourId,    t.accent);
 
-    // ---- GroupComponent (panel headings only — no border box) ----
+    // ---- GroupComponent (1px bordered panel cards; title embedded in the top
+    // border by drawGroupComponentOutline) ----
     setColour (juce::GroupComponent::textColourId,             t.accent);
-    setColour (juce::GroupComponent::outlineColourId,          juce::Colour (0x00000000)); // no grey border around panels
+    setColour (juce::GroupComponent::outlineColourId,          t.outline);   // 1px panel border (visible)
 
     // ---- ToggleButton (Multi page voice-allocation bits) ----
     setColour (juce::ToggleButton::textColourId,               t.text);
@@ -286,69 +287,183 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
                                                      const juce::Justification& position,
                                                      juce::GroupComponent& group)
 {
-    // Mirrors LookAndFeel_V2::drawGroupComponentOutline, but the title font is
-    // resolved through appFont() so panel headings ("Osc 1", "Mixer", ...) follow
-    // the active font mode. The outline colour is transparent (borderless), so
-    // only the title text is visible. Headings render in ALL CAPS at a reduced
-    // size to read as compact section labels.
+    // A 1px RECTANGULAR (sharp-cornered) panel border whose TOP-LEFT edge is
+    // broken by the section title text — the classic fieldset/legend look:
+    //   ┌── [ OSC 1 ] ─────────────────┐
+    //   │                              │
+    //   │  controls                    │
+    //   └──────────────────────────────┘
+    // The title sits IN the top border line (anchored top-left) so it labels
+    // the panel without consuming a vertical caption band. Title font follows
+    // the active font mode and renders in ALL CAPS.
     const float textH = 13.0f;
-    const float indent = 3.0f;
-    const float textEdgeGap = 4.0f;
-    auto cs = 5.0f;
+    const float textPad = 6.0f;   // gap either side of the title inside the border break
+    // The top border line runs at yTop so the title text straddles it (the
+    // brackets sit ON the line, like ┌── [ OSC 1 ] ──┐).
+    const float yTop = (float) juce::roundToInt (textH * 0.5f);
+    juce::ignoreUnused (position);   // panels are always anchored top-left
 
     const juce::Font f = appFont (textH, juce::Font::plain);
     const juce::String displayText = text.toUpperCase();   // panel headings render in ALL CAPS
-
-    juce::Path p;
-    auto x = indent;
-    auto y = f.getAscent() - 3.0f;
-    auto w = juce::jmax (0.0f, (float) width - x * 2.0f);
-    auto h = juce::jmax (0.0f, (float) height - y - indent);
-    cs = juce::jmin (cs, w * 0.5f, h * 0.5f);
-    auto cs2 = 2.0f * cs;
-
-    auto textW = displayText.isEmpty() ? 0.0f
-                                : juce::jlimit (0.0f,
-                                                juce::jmax (0.0f, w - cs2 - textEdgeGap * 2),
-                                                (float) juce::GlyphArrangement::getStringWidthInt (f, displayText)
-                                                    + textEdgeGap * 2.0f);
-    auto textX = cs + textEdgeGap;
-
-    if (position.testFlags (juce::Justification::horizontallyCentred))
-        textX = cs + (w - cs2 - textW) * 0.5f;
-    else if (position.testFlags (juce::Justification::right))
-        textX = w - cs - textW - textEdgeGap;
-
-    p.startNewSubPath (x + textX + textW, y);
-    p.lineTo (x + w - cs, y);
-
-    p.addArc (x + w - cs2, y, cs2, cs2, 0, juce::MathConstants<float>::halfPi);
-    p.lineTo (x + w, y + h - cs);
-
-    p.addArc (x + w - cs2, y + h - cs2, cs2, cs2,
-              juce::MathConstants<float>::halfPi, juce::MathConstants<float>::pi);
-    p.lineTo (x + cs, y + h);
-
-    p.addArc (x, y + h - cs2, cs2, cs2,
-              juce::MathConstants<float>::pi, juce::MathConstants<float>::pi * 1.5f);
-    p.lineTo (x, y + cs);
-
-    p.addArc (x, y, cs2, cs2,
-              juce::MathConstants<float>::pi * 1.5f, juce::MathConstants<float>::twoPi);
-    p.lineTo (x + textX, y);
-
     const auto alpha = group.isEnabled() ? 1.0f : 0.5f;
 
-    g.setColour (group.findColour (juce::GroupComponent::outlineColourId)
-                    .withMultipliedAlpha (alpha));
-    g.strokePath (p, juce::PathStrokeType (2.0f));
+    const int textW = displayText.isEmpty()
+                        ? 0
+                        : juce::GlyphArrangement::getStringWidthInt (f, displayText);
 
+    // The title break occupies [breakX0 .. breakX1) on the top edge. Anchored
+    // top-left (matches the GroupComponent's top|left justification).
+    const float breakX0 = textPad;
+    const float breakX1 = breakX0 + (float) textW + textPad;
+    const float x0 = 0.5f;            // pixel-snapped inset so the 1px line is crisp
+    const float x1 = (float) width  - 0.5f;
+    const float y1 = (float) height - 0.5f;
+
+    const juce::Colour outlineCol = group.findColour (juce::GroupComponent::outlineColourId)
+                                        .withMultipliedAlpha (alpha);
+    g.setColour (outlineCol);
+
+    // Top edge as two segments with the title gap in between.
+    g.drawHorizontalLine (juce::roundToInt (yTop), x0, breakX0);
+    g.drawHorizontalLine (juce::roundToInt (yTop), breakX1, x1);
+    // The remaining three edges (sides run from the top line down).
+    g.drawVerticalLine   (juce::roundToInt (x1 - 0.5f), yTop, y1);
+    g.drawHorizontalLine (juce::roundToInt (y1 - 0.5f), x0, x1);
+    g.drawVerticalLine   (juce::roundToInt (x0), yTop, y1);
+
+    // Title text drawn centred ON the top border line (in the break).
     g.setColour (group.findColour (juce::GroupComponent::textColourId)
                     .withMultipliedAlpha (alpha));
     g.setFont (f);
     g.drawText (displayText,
-                juce::roundToInt (x + textX), 0,
-                juce::roundToInt (textW),
+                juce::roundToInt (breakX0),
+                juce::roundToInt (yTop - textH * 0.5f),
+                textW,
                 juce::roundToInt (textH),
-                juce::Justification::centred, true);
+                juce::Justification::centredLeft, true);
+}
+
+void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
+                                           int width, int height,
+                                           float sliderPos,
+                                           float rotaryStartAngle,
+                                           float rotaryEndAngle,
+                                           juce::Slider& slider)
+{
+    // A thin amber arc-ring knob (no pointer line): a dim empty track arc plus
+    // a bright fill arc from the start angle to the value angle. The numeric
+    // value is drawn in the CENTRE of the ring (centre readout), eliminating
+    // the dedicated value box underneath. Disabled knobs (sequencer steps past
+    // the active length) draw only the dim track arc.
+    const auto fill    = slider.findColour (juce::Slider::rotarySliderFillColourId);      // == accent (amber)
+    const auto valueCol = slider.findColour (juce::Slider::textBoxTextColourId);
+    const auto trackCol = fill.withAlpha (0.22f);   // dim amber empty track (1px amber ring)
+
+    // Square dial area centred in the given bounds.
+    const int dial = juce::jmin (width, height);
+    const auto bounds = juce::Rectangle<int> (x + (width  - dial) / 2,
+                                              y + (height - dial) / 2,
+                                              dial, dial).toFloat().reduced (2.0f);
+    const auto centre = bounds.getCentre();
+    const float radius = juce::jmax (4.0f, juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f);
+
+    const float toAngle = [&]
+    {
+        // Clamp sliderPos into [0,1] defensively (JUCE passes a normalised
+        // fraction between the rotary start/end angles).
+        const float p = juce::jlimit (0.0f, 1.0f, sliderPos);
+        return rotaryStartAngle + p * (rotaryEndAngle - rotaryStartAngle);
+    }();
+
+    // The empty track is a literal 1px amber ring (per spec); the fill arc is a
+    // touch thicker so the active sweep stays legible against it.
+    const float trackW = 1.0f;
+    const float fillW  = juce::jmax (1.5f, radius * 0.12f);
+
+    // Empty (background) track arc — full sweep, dim amber.
+    g.setColour (slider.isEnabled() ? trackCol : trackCol.withMultipliedAlpha (0.5f));
+    juce::Path trackArc;
+    trackArc.addCentredArc (centre.x, centre.y, radius, radius, 0.0f,
+                            rotaryStartAngle, rotaryEndAngle, true);
+    g.strokePath (trackArc, juce::PathStrokeType (trackW, juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+
+    // Fill arc — start angle -> value angle, bright amber. Skipped for disabled
+    // knobs so they read as inactive.
+    if (slider.isEnabled() && rotaryEndAngle > rotaryStartAngle)
+    {
+        g.setColour (fill);
+        juce::Path fillArc;
+        fillArc.addCentredArc (centre.x, centre.y, radius, radius, 0.0f,
+                               rotaryStartAngle, toAngle, true);
+        g.strokePath (fillArc, juce::PathStrokeType (fillW, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+
+        // Subtle value-position tick at the end of the fill arc.
+        const float tickR = radius - fillW;
+        const juce::Point<float> tick (centre.x + tickR * std::cos (toAngle - juce::MathConstants<float>::halfPi),
+                                       centre.y + tickR * std::sin (toAngle - juce::MathConstants<float>::halfPi));
+        g.setColour (fill);
+        g.fillEllipse (juce::Rectangle<float> (fillW * 1.4f, fillW * 1.4f).withCentre (tick));
+    }
+
+    // Centre numeric readout for ACTIVE knobs only (disabled steps show just the
+    // dim track, per spec). The font auto-shrinks and the text is clipped to the
+    // inner ring so long values (e.g. "8800.0 Hz") never spill past the arc.
+    // Base size is +2px over the geometric default for legibility, with the
+    // auto-shrink floor raised by the same 2px.
+    if (slider.isEnabled())
+    {
+        const juce::String valueText = slider.getTextFromValue (slider.getValue());
+        const float maxTextW = radius * 1.5f;
+        juce::Font vf = appFont (juce::jmax (7.0f, radius * 0.42f) + 2.0f, juce::Font::plain);
+        const int textW = juce::GlyphArrangement::getStringWidthInt (vf, valueText);
+        if ((float) textW > maxTextW && textW > 0)
+            vf = appFont (juce::jmax (8.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
+
+        const auto textRect = bounds.toNearestInt().withSizeKeepingCentre (
+            juce::roundToInt (maxTextW), juce::roundToInt (vf.getHeight() * 1.7f));
+        g.setColour (valueCol);
+        g.setFont (vf);
+        g.drawText (valueText, textRect, juce::Justification::centred, false);
+    }
+}
+
+void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
+                                       bool /*isButtonDown*/,
+                                       int /*buttonX*/, int /*buttonY*/,
+                                       int /*buttonW*/, int /*buttonH*/,
+                                       juce::ComboBox& box)
+{
+    // Flat dark container with a 1px outline and an amber chevron (▾)
+    // right-aligned. Inline text is laid out by positionComboBoxText().
+    const auto bg = box.findColour (juce::ComboBox::backgroundColourId);
+    const auto outline = box.findColour (juce::ComboBox::outlineColourId);
+    const auto arrow = box.findColour (juce::ComboBox::arrowColourId);   // == accent (amber)
+
+    const auto r = juce::Rectangle<int> (0, 0, width, height).toFloat().reduced (0.5f);
+    g.setColour (bg);
+    g.fillRect (r);
+    g.setColour (outline);
+    g.drawRect (r, 1.0f);
+
+    // Right-aligned amber chevron (a small downward triangle), vertically centred.
+    constexpr float chevronSize = 5.0f;
+    const float cx = (float) width  - 10.0f;
+    const float cy = (float) height * 0.5f;
+    juce::Path chevron;
+    chevron.startNewSubPath (cx - chevronSize, cy - chevronSize * 0.5f);
+    chevron.lineTo (cx + chevronSize, cy - chevronSize * 0.5f);
+    chevron.lineTo (cx, cy + chevronSize * 0.5f);
+    chevron.closeSubPath();
+    g.setColour (arrow);
+    g.fillPath (chevron);
+}
+
+void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+    // Inline text: left-padded, stopping before the right-aligned amber chevron
+    // (8px left pad + ~18px right reserve for the chevron = 26px chrome).
+    label.setBounds (8, 1, box.getWidth() - 26, box.getHeight() - 2);
+    label.setFont (appFont (14.0f, juce::Font::plain));
 }

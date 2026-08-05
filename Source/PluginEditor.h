@@ -98,6 +98,10 @@ private:
     // and whenever the global toggle flips.
     void applyTooltipState();
 
+    // Pixel width of the widest choice string (or the current text) measured in
+    // the active L&F combo font — drives the fit-to-text dropdown width.
+    int maxChoiceTextWidth() const;
+
     // ---- Sequencer step dimming ----
     // APVTS::Listener callback: the sibling seq_length_* param changed, so
     // re-evaluate whether this step's slider should be enabled/dimmed.
@@ -221,7 +225,7 @@ private:
     static constexpr int kGroupGap    = 12;  // gap between group panels (h + v)
     static constexpr int kGroupPad    = 12;  // inset inside a group border
     static constexpr int kGroupTitleH = 18;  // room reserved for the group title
-    static constexpr int kDecorationH   = 100; // reserved height for a group decoration
+    static constexpr int kDecorationH   = 120; // reserved height for a group decoration (graphs)
     static constexpr int kDecorationGap = 8;   // gap between control cells and a decoration
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamPage)
@@ -359,6 +363,7 @@ private:
     juce::Label    partCaption_;
     juce::ComboBox partCombo_;
     juce::TextButton multiButton_ { "Multi" };   // header button -> Multi/Setup overlay (not a patch param)
+    juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
     // Top header: ASCII-art logo (painted, left) + version label (under it).
@@ -366,7 +371,7 @@ private:
     juce::Rectangle<int> logoArea_;   // set in resized(); paint() draws the logo here
 
     static constexpr int kBarHeight   = 34;
-    static constexpr int kHeaderH     = 56;  // merged top header: ASCII logo + version (left) + menu buttons (right)
+    static constexpr int kHeaderH     = 36;  // compact header: ASCII logo + version (left) | Patch/Part (centre) | icons (right)
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
     static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
