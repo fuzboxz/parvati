@@ -127,14 +127,22 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         for (int c = 0; c < cols; ++c)
             g.fillRect (cell (c, r));
 
-    // Light one column: cells lo..hi dim (accent), the peak cell (targetRow) bright.
-    auto lightColumn = [&] (int c, int targetRow, int lo, int hi)
+    // Light one column: a dim fill across [fillLo..fillHi], plus a BRIGHT outline
+    // that connects to the previous column's peak so the traced curve reads as a
+    // continuous line even across steep rises/drops (the vertical span between
+    // the previous and current peak rows is brightened to bridge the gap).
+    int prevBrightRow = -1;
+    auto column = [&] (int c, int targetRow, int fillLo, int fillHi)
     {
         g.setColour (accent.withAlpha (0.16f));
-        for (int r = lo; r <= hi; ++r)
+        for (int r = fillLo; r <= fillHi; ++r)
             g.fillRect (cell (c, r));
         g.setColour (accent);
-        g.fillRect (cell (c, targetRow));
+        const int lo = (prevBrightRow < 0) ? targetRow : juce::jmin (prevBrightRow, targetRow);
+        const int hi = (prevBrightRow < 0) ? targetRow : juce::jmax (prevBrightRow, targetRow);
+        for (int r = lo; r <= hi; ++r)
+            g.fillRect (cell (c, r));
+        prevBrightRow = targetRow;
     };
 
     // ---- LFO waveform preview (previewMode_ == 1): bipolar, around the midline ----
@@ -187,7 +195,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
             const float v  = juce::jlimit (-1.0f, 1.0f, lfoLevel (xf));
             int targetRow = juce::roundToInt ((1.0f - v) * 0.5f * static_cast<float> (lastRow));
             targetRow = juce::jlimit (0, lastRow, targetRow);
-            lightColumn (c, targetRow, juce::jmin (midRow, targetRow), juce::jmax (midRow, targetRow));
+            column (c, targetRow, juce::jmin (midRow, targetRow), juce::jmax (midRow, targetRow));
         }
 
         g.setColour (textDim);
@@ -205,14 +213,16 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     const float s = lastS_ >= 0.0f ? lastS_ : fetch (getSustain_);
     const float r = lastR_ >= 0.0f ? lastR_ : fetch (getRelease_);
 
-    // Segment widths: a small base so a 0 value is still visible, plus the
-    // knob's contribution; the sustain plateau is a fixed middle portion.
-    const float baseW = 0.06f, rangeW = 0.30f;
-    const float wA = baseW + a * rangeW;
-    const float wD = baseW + d * rangeW;
-    const float wS = 0.16f;
-    const float wR = baseW + r * rangeW;
-    const float total = wA + wD + wS + wR;
+    // Segment widths are proportional to the 0..127 knob value (a/d/r are the
+    // normalized 0..1 parameter), so a value of 0 collapses that stage to zero
+    // width (an instant jump) and equal values draw equal widths. The sustain
+    // plateau has a FIXED minimum so it always reads; when A/D/R are all 0 the
+    // whole display becomes a rectangle at the sustain height.
+    const float wA = a;
+    const float wD = d;
+    const float wR = r;
+    const float wS = 0.5f;                 // sustain plateau (fixed minimum)
+    const float total = wA + wD + wS + wR;   // wS keeps total > 0 (no /0)
     const float fracA = wA / total, fracD = wD / total, fracS = wS / total, fracR = wR / total;
     const float xEndA = fracA;
     const float xEndD = fracA + fracD;
@@ -247,7 +257,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         const float v  = juce::jlimit (0.0f, 1.0f, envLevel (xf));
         int targetRow = juce::roundToInt ((1.0f - v) * static_cast<float> (lastRow));
         targetRow = juce::jlimit (0, lastRow, targetRow);
-        lightColumn (c, targetRow, targetRow, lastRow);
+        column (c, targetRow, targetRow, lastRow);
     }
 }
 
