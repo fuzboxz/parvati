@@ -192,6 +192,12 @@ public:
     // new height takes effect immediately. No-op if @p groupName is unknown.
     void setGroupDecorationHeight (const juce::String& groupName, int height);
 
+    // Show only the named group panels (hide the rest) and re-layout so the page
+    // contains just that subset. Used by GroupPager sub-tabs to paginate a dense
+    // section (e.g. OSC1/OSC2, MOD MATRIX slots 1-4/5-8) WITHOUT regenerating a
+    // single control or APVTS attachment. An empty array shows ALL groups.
+    void setVisibleGroups (const juce::StringArray& groupNames);
+
     // Headless layout sanity check (called by parvati_editor_test): every group
     // panel has positive size, no two panels overlap, every (active) control
     // sits inside its group, and at least one non-dense row fills the page width.
@@ -255,6 +261,14 @@ private:
     // the vertical centring of short pages. 0 => fall back to the parent
     // Viewport's height (standalone / headless test use).
     int centerHeight_ = 0;
+
+    // Active group-subset filter (empty => ALL groups visible). Set by
+    // setVisibleGroups; honoured by layoutGroups/applyLayout/layoutIsSane so a
+    // GroupPager can show one slice of a page at a time (hidden groups neither
+    // occupy space, overlap, nor fail the layout-sanity check).
+    juce::StringArray visibleGroups_;
+    bool groupVisible (const GroupLayout& g) const noexcept
+    { return visibleGroups_.isEmpty() || visibleGroups_.contains (g.name); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamPage)
 };
@@ -360,19 +374,18 @@ private:
     // GLOBAL tab (the Global page), so every APVTS attachment and the verified
     // byte-bridge survive the reorganization unchanged.
     // Declaration order is deliberate for safe teardown: pageSelector_ (holds raw
-    // refs to the two below) destroys first, then synthWorkspace_/globalViewport_
-    // (their Viewports detach from the pages), then generatedPages_ deletes them.
+    // refs to the two below) destroys first, then synthWorkspace_ (its OSC
+    // GroupPager + nested tabs detach from the pages), then generatedPages_
+    // deletes them.
     std::vector<std::unique_ptr<ParamPage>> generatedPages_;
-    // SYNTH tab content: the dense, void-free 3-column x 2-row integrated
-    // workspace hosting the 9 synth ParamPages (reparented) in static columns
-    // (Mixer | Oscillators | Filter) above two nested tab groups (ENV/LFO and
-    // MOD MATRIX/MODIFIERS/ARP/SEQ). Owns only its Viewports + nested tabs.
+    // SYNTH tab content: the dense, void-free 2-row integrated workspace hosting
+    // the 9 synth ParamPages (reparented) in signal-chain columns (OSC | Mixer |
+    // Filter) above two nested tab groups (ENV/LFO and MOD MATRIX/MODIFIERS/ARP/
+    // SEQ). Owns only its OSC GroupPager + nested tabs; pages stay editor-owned.
     std::unique_ptr<SynthWorkspace> synthWorkspace_;
-    // GLOBAL tab content: a Viewport viewing the Global ParamPage. Editor-owned;
-    // the page itself stays owned by generatedPages_ (deleteOnRemoval=false).
-    std::unique_ptr<juce::Viewport> globalViewport_;
     // Top-level page selector [SYNTH | GLOBAL]. SYNTH shows synthWorkspace_;
-    // GLOBAL shows globalViewport_. Both are passed as non-owned tab content.
+    // GLOBAL shows the Global ParamPage directly (no Viewport — zero scrollbars).
+    // Both are passed as non-owned tab content (editor-owned via generatedPages_).
     juce::TabbedComponent pageSelector_ { juce::TabbedButtonBar::TabsAtTop };
 
     ParvatiAudioProcessor& processorRef_;

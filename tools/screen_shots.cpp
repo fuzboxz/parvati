@@ -25,6 +25,7 @@
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "ui/GroupPager.h"
 
 #include <cstdio>
 #include <vector>
@@ -42,14 +43,21 @@ void collectTabbedComponents (juce::Component* c, std::vector<juce::TabbedCompon
         collectTabbedComponents (child, out);
 }
 
-// Ensure a tab's content page (if it is a Viewport viewing a ParamPage) is laid
-// out at the tab width before painting (headless: JUCE may defer the resize).
+// Ensure a tab's content is laid out at the tab width before painting (headless:
+// JUCE may defer the resize). No Viewports remain: a tab's content is a GroupPager
+// (whose resized() reflows its page) or a direct ParamPage.
 void ensureLaidOut (juce::Component* tabContent)
 {
-    if (auto* vp = dynamic_cast<juce::Viewport*> (tabContent))
-        if (auto* page = dynamic_cast<ParamPage*> (vp->getViewedComponent()))
+    if (auto* page = dynamic_cast<ParamPage*> (tabContent))
+    {
+        if (page->getWidth() <= 0)
+            page->reflowToWidth (940);
+        return;
+    }
+    if (auto* pager = dynamic_cast<GroupPager*> (tabContent))
+        if (auto* page = pager->getPage())
             if (page->getWidth() <= 0)
-                page->reflowToWidth (juce::jmax (400, vp->getWidth() > 0 ? vp->getWidth() : 940));
+                page->reflowToWidth (940);
 }
 
 // The tabs are created with their short label ("OSC", "MOD MATRIX", ...). Map

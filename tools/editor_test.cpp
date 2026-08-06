@@ -4,9 +4,10 @@
 // The editor is no longer a flat 10-tab TabbedComponent. It is a top-level
 // [SYNTH | GLOBAL] page selector whose SYNTH page is a SynthWorkspace hosting the
 // 9 synth ParamPages (reparented — NOT regenerated — so every APVTS attachment +
-// the byte-bridge survive) in 3 static columns (Mixer | Oscillators | Filter)
+// the byte-bridge survive) in signal-chain columns (Oscillators | Mixer | Filter)
 // above two nested tab groups ([ENV | LFO] and [MOD MATRIX | MODIFIERS | ARP |
-// SEQ]); the GLOBAL page shows the Global ParamPage. This test verifies:
+// SEQ]); the dense sections paginate by group via GroupPager sub-tabs, with NO
+// per-page Viewports/scrollbars. The GLOBAL page shows the Global ParamPage. This test verifies:
 //   - createEditor() returns a non-null AudioProcessorEditor
 //   - the top-level page selector has exactly 2 tabs ([SYNTH | GLOBAL])
 //   - every patch/part descriptor EXCEPT `part_select` gets exactly one

@@ -384,7 +384,7 @@ juce::String ParamPage::groupForId (const juce::String& id)
     // ---- Sequencer length slots (exact ids) belong to their step group ----
     if (id == "seq_length_1") return "Sequencer 1";
     if (id == "seq_length_2") return "Sequencer 2";
-    if (id == "seq_length_3") return "Note Sequencer";
+    if (id == "seq_length_3") return "Note Pitch";
 
     // ---- Synth options with no patch byte ----
     if (id == "vca_curve" || id == "filter_card" || id == "filter_drive")
@@ -393,7 +393,8 @@ juce::String ParamPage::groupForId (const juce::String& id)
     // ---- Sequencer step grids (prefixes) ----
     if (id.startsWith ("seq1_step")) return "Sequencer 1";
     if (id.startsWith ("seq2_step")) return "Sequencer 2";
-    if (id.startsWith ("seqnote_"))  return "Note Sequencer";
+    if (id.startsWith ("seqnote_step")) return "Note Pitch";    // note byte (gate in bit 7)
+    if (id.startsWith ("seqnote_vel"))  return "Note Velocity"; // vel byte (legato in bit 7)
 
     // ---- Oscillators / filters ----
     if (id.startsWith ("osc1_"))    return "Osc 1";
@@ -464,7 +465,7 @@ void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& des
     // seq_length_* before the step params, so reorder via stable_partition.
     for (auto& g : groups_)
     {
-        if (! (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Sequencer"))
+        if (! (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Pitch"))
             continue;
         std::stable_partition (g.controlIndices.begin(), g.controlIndices.end(),
             [&descriptors] (int idx)
@@ -491,42 +492,57 @@ void ParamPage::configureGroupLayouts()
         g.cellW = cellWidth_;
         g.cellH = cellHeight_;
 
-        if (g.name == "Sequencer 1" || g.name == "Sequencer 2" || g.name == "Note Sequencer")
+        // Dense step grids (Seq1/2 + the Note Pitch/Velocity splits). 8 columns
+        // so 16 steps wrap to 2 rows (17 cells -> 3 rows); cell sizes fit the
+        // narrow GroupPager content area (no horizontal scrollbar) while keeping
+        // the 44px step knob legible.
+        if (g.name == "Sequencer 1" || g.name == "Sequencer 2"
+            || g.name == "Note Pitch" || g.name == "Note Velocity")
         {
-            // Dense step grid: 16 (or 33) small cells laid in 8 columns.
             g.stepGrid = true;
             g.internalCols = 8;
-            g.cellW = 88;      // was 54 (~1.6x wider)
-            g.cellH = 72;      // was 50 (~1.4x taller)
+            g.cellW = 72;
+            g.cellH = 56;
         }
+        // Mod-matrix slots: source / dest / amount, one row each. Two slots fit
+        // side-by-side in the 50% right-mod column; a GroupPager shows 4 per page.
         else if (g.name.startsWith ("Mod "))
         {
-            // Mod row: source / dest / amount. The amount is a bipolar rotary
-            // knob; keep the row tight (a 44px knob + its label fits in 72px)
-            // so the 14 mod slots pack densely. The knob is the amount control;
-            // the text box below shows/edits its value.
             g.singleRow = true;
             g.internalCols = juce::jmax (1, n);
-            g.cellW = 100;
-            g.cellH = 72;
+            g.cellW = 96;
+            g.cellH = 56;
         }
+        // Modifier strips: in1 / in2 / op combos; 2 per GroupPager page.
         else if (g.name.startsWith ("Modifier "))
         {
-            // Compact horizontal strip: in1 / in2 / op (all combo boxes). Taller
-            // cell than the dense-page default so the combo boxes + their caption
-            // sit comfortably inside the panel border (the 56px cell left zero
-            // slack at the panel boundary and clipped the bottom controls).
             g.singleRow = true;
             g.internalCols = juce::jmax (1, n);
-            g.cellW = 100;
+            g.cellW = 96;
             g.cellH = 64;
         }
+        // Env / LFO generators: one row of knobs + an ADSR/LFO preview graph.
+        // Sized for the 50% left-mod column width + the GroupPager content height.
         else if (g.name.startsWith ("Env ") || g.name.startsWith ("LFO ") || g.name == "Voice LFO")
         {
-            // Env / LFO groups: one row of knobs (a wide panel). Keeps each
-            // group to a single panel per page row so the row-fill pass never
-            // grows two small panels into an overlap.
             g.internalCols = juce::jmax (1, n);
+            g.cellW = 150;
+            g.cellH = 64;
+        }
+        // Mixer column (narrow 20%): tight cells so the 3 mix groups stack and fit
+        // the main-row height with no vertical scrollbar.
+        else if (g.name == "Mixer" || g.name == "Sub Oscillator" || g.name == "Noise / Waveshaper")
+        {
+            g.internalCols = generalCols (n);
+            g.cellW = 72;   // 3-col group = 232px <= 236px avail in the 20% column
+            g.cellH = 44;   // 3 stacked single-row groups = 264px <= 265px main-row half
+        }
+        // Filter column (40%): Filter 1 (3 knobs) + Filter Mod (2 amounts).
+        else if (g.name == "Filter 1" || g.name == "Filter Mod")
+        {
+            g.internalCols = generalCols (n);
+            g.cellW = 156;  // 3-col group = 484px <= 492px avail in the 40% column
+            g.cellH = 64;   // 2 stacked single-row groups = 220px <= 265px main-row half
         }
         else
         {
@@ -543,6 +559,8 @@ void ParamPage::layoutGroups (int targetWidth)
     // Natural panel size for each group (independent of placement).
     for (auto& g : groups_)
     {
+        if (! groupVisible (g))   // a GroupPager subset hides the other groups
+            continue;
         const int cols = juce::jmax (1, g.internalCols);
         {
             const int n = (int) g.controlIndices.size();
@@ -564,17 +582,28 @@ void ParamPage::layoutGroups (int targetWidth)
     const int rowStartX = kMargin;
     const int maxRight = kMargin + juce::jmax (0, availW);
 
-    std::vector<int> rowOf (groups_.size(), 0);
+    // Visible group indices only (a GroupPager subset hides the rest). Placement,
+    // the pageCols_ count, and the row-fill pass all operate on JUST these, so a
+    // hidden group neither occupies space nor overlaps a visible one, and the
+    // page reflows to the subset's natural size.
+    std::vector<int> vis;
+    vis.reserve (groups_.size());
+    for (int gi = 0; gi < (int) groups_.size(); ++gi)
+        if (groupVisible (groups_[(size_t) gi]))
+            vis.push_back (gi);
+
+    std::vector<int> rowOf (groups_.size(), -1);   // -1 = hidden (never placed)
     int currentRow = 0;
 
-    for (int gi = 0; gi < (int) groups_.size(); ++gi)
+    for (size_t vi = 0; vi < vis.size(); ++vi)
     {
+        const int gi = vis[vi];
         auto& g = groups_[(size_t) gi];
 
-        // Panels already placed on THIS row (for the pageCols_ cap). The row is
-        // contiguous in gi, so walk back while the row tag matches.
+        // Panels already placed on THIS row (for the pageCols_ cap). Walk back
+        // over the VISIBLE groups only (hidden ones keep rowOf == -1).
         int panelsThisRow = 0;
-        for (int k = gi - 1; k >= 0 && rowOf[(size_t) k] == currentRow; --k)
+        for (int k = (int) vi - 1; k >= 0 && rowOf[(size_t) vis[(size_t) k]] == currentRow; --k)
             ++panelsThisRow;
 
         if ((x != rowStartX && (x + g.naturalWidth > maxRight))
@@ -590,7 +619,7 @@ void ParamPage::layoutGroups (int targetWidth)
         x += g.naturalWidth + kGroupGap;
         rowH = juce::jmax (rowH, g.naturalHeight);
     }
-    const int lastRow = groups_.empty() ? -1 : currentRow;
+    const int lastRow = vis.empty() ? -1 : currentRow;
 
     // ---- Row-fill justification (flexible-width grid). For each row, grow the
     // NON-dense panels (stepGrid / singleRow are excluded) so the row fills up
@@ -672,6 +701,21 @@ void ParamPage::applyLayout()
 {
     for (auto& g : groups_)
     {
+        const bool visible = groupVisible (g);
+        if (g.groupComp != nullptr)
+            g.groupComp->setVisible (visible);
+        if (g.decoration != nullptr)
+            g.decoration->setVisible (visible);
+        if (! visible)
+        {
+            // A hidden group's controls are never positioned here; hide them so
+            // they do not paint over the active subset.
+            for (int ci : g.controlIndices)
+                if (ci >= 0 && ci < (int) controls_.size())
+                    controls_[(size_t) ci]->setVisible (false);
+            continue;
+        }
+
         if (g.groupComp != nullptr)
             g.groupComp->setBounds (g.rect);
 
@@ -697,7 +741,9 @@ void ParamPage::applyLayout()
             const juce::Rectangle<int> cell (inner.getX() + col * colStep,
                                              inner.getY() + row * g.cellH,
                                              colStep, g.cellH);
-            controls_[(size_t) ci]->setBounds (cell.reduced (3));
+            auto* ctrl = controls_[(size_t) ci].get();
+            ctrl->setVisible (true);
+            ctrl->setBounds (cell.reduced (3));
         }
 
         // A group's decoration (if any) spans the panel width below the cells.
@@ -713,23 +759,36 @@ void ParamPage::applyLayout()
 
 bool ParamPage::layoutIsSane() const
 {
-    // (a) every group panel has positive size.
+    // (a) every VISIBLE group panel has positive size. (Hidden groups in an
+    // active setVisibleGroups subset have no rect and are skipped.)
     for (const auto& g : groups_)
+    {
+        if (! groupVisible (g))
+            continue;
         if (g.rect.getWidth() <= 0 || g.rect.getHeight() <= 0)
             return false;
+    }
 
-    // (b) no two group panels overlap (siblings in page coordinate space).
+    // (b) no two VISIBLE group panels overlap (siblings in page coordinate space).
     for (size_t i = 0; i < groups_.size(); ++i)
+    {
+        if (! groupVisible (groups_[i])) continue;
         for (size_t j = i + 1; j < groups_.size(); ++j)
+        {
+            if (! groupVisible (groups_[j])) continue;
             if (groups_[i].rect.intersects (groups_[j].rect))
                 return false;
+        }
+    }
 
     // (c) every control has positive size and sits inside its group's rect.
     // (ParamControl is a direct child of ParamPage, so getBoundsInParent() is in
-    // the same page-space coordinates as the group rects.) For Env/LFO slots
-    // only the ACTIVE mode's controls are laid out, so validate just those.
+    // the same page-space coordinates as the group rects.) Only VISIBLE groups
+    // are validated (a GroupPager subset hides the rest).
     for (const auto& g : groups_)
     {
+        if (! groupVisible (g))
+            continue;
         for (int ci : g.controlIndices)
         {
             if (ci < 0 || ci >= (int) controls_.size())
@@ -749,12 +808,16 @@ bool ParamPage::layoutIsSane() const
     const int maxRight = juce::jmax (0, contentWidth_ - kMargin);
     bool anyNonDense = false, fillsWidth = false;
     for (const auto& g : groups_)
+    {
+        if (! groupVisible (g))
+            continue;
         if (! (g.stepGrid || g.singleRow))
         {
             anyNonDense = true;
             if (g.rect.getRight() >= maxRight - 2 * kGroupGap)
                 fillsWidth = true;
         }
+    }
     return ! anyNonDense || fillsWidth;
 }
 
@@ -788,6 +851,26 @@ void ParamPage::setGroupDecorationHeight (const juce::String& groupName, int hei
 
     layoutGroups (juce::jmax (940, getWidth()));
     applyLayout();
+}
+
+void ParamPage::setVisibleGroups (const juce::StringArray& groupNames)
+{
+    visibleGroups_ = groupNames;
+
+    // Not yet sized (construction / pre-layout): defer entirely. The owning
+    // GroupPager::resized() performs the first real layout at the true content
+    // width; laying out here at a guessed width would be wasted and wrong.
+    if (getWidth() <= 0)
+        return;
+
+    // Re-lay-out at the CURRENT (real) width — never a 940px floor. The 940 floor
+    // made the row-fill justification grow non-dense groups (OSC/ENV/LFO) far
+    // wider than the narrow GroupPager content area, clipping their right column
+    // of knobs on a runtime sub-tab switch (reviewer blocker B1). Dense groups
+    // (stepGrid/singleRow) are unaffected by the fill pass either way.
+    layoutGroups (getWidth());
+    applyLayout();
+    setSize (getWidth(), contentHeight_);
 }
 
 ParamPage::ParamPage (ParvatiAudioProcessor& processor,
@@ -1235,35 +1318,62 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // Route the editor-owned page into the integrated workspace by section.
         // The Global page is routed to the top-level GLOBAL tab after the loop.
         // Pages are reparented — NOT regenerated — so every APVTS attachment and
-        // the verified byte-bridge survive the reorganization unchanged. (Multi
+        // the verified byte-bridge survive the reorganization unchanged. Dense
+        // sections paginate by group via a GroupPager (one sub-tab = one group
+        // subset) so each visible slice fits its cell with NO scrollbar. (Multi
         // is never a generated page; if/else avoids switch/enum + branch-clone
         // warnings under -Werror.)
-        if (pg.s == Section::Mixer)            synthWorkspace_->setMainLeft   (rawPage);
-        else if (pg.s == Section::Oscillators) synthWorkspace_->setMainCenter (rawPage);
-        else if (pg.s == Section::Filter)      synthWorkspace_->setMainRight  (rawPage);
-        else if (pg.s == Section::Envelopes || pg.s == Section::Lfos)
-            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage);
-        else if (pg.s == Section::ModMatrix || pg.s == Section::Modifiers
-                 || pg.s == Section::Arp || pg.s == Section::Sequencer)
-            synthWorkspace_->addModTab (pg.shortName, rawPage);
+        using Subsets = SynthWorkspace::GroupSubsets;
+        if (pg.s == Section::Mixer)
+            synthWorkspace_->setMainLeft (rawPage);
+        else if (pg.s == Section::Oscillators)
+            synthWorkspace_->setOscillators (rawPage,
+                Subsets { { "OSC1", juce::StringArray { "Osc 1" } },
+                          { "OSC2", juce::StringArray { "Osc 2" } } });
+        else if (pg.s == Section::Filter)
+            synthWorkspace_->setMainRight (rawPage);
+        else if (pg.s == Section::Envelopes)
+            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
+                Subsets { { "ENV1", juce::StringArray { "Env 1 (Mod)" } },
+                          { "ENV2", juce::StringArray { "Env 2 (Filter)" } },
+                          { "ENV3", juce::StringArray { "Env 3 (Amp)" } } });
+        else if (pg.s == Section::Lfos)
+            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
+                Subsets { { "LFO1", juce::StringArray { "LFO 1" } },
+                          { "LFO2", juce::StringArray { "LFO 2" } },
+                          { "LFO3", juce::StringArray { "LFO 3" } },
+                          { "VLFO", juce::StringArray { "Voice LFO" } } });
+        else if (pg.s == Section::ModMatrix)
+            synthWorkspace_->addModTab (pg.shortName, rawPage,
+                Subsets { { "1-4",  juce::StringArray { "Mod 1",  "Mod 2",  "Mod 3",  "Mod 4" } },
+                          { "5-8",  juce::StringArray { "Mod 5",  "Mod 6",  "Mod 7",  "Mod 8" } },
+                          { "9-12", juce::StringArray { "Mod 9",  "Mod 10", "Mod 11", "Mod 12" } },
+                          { "13-14", juce::StringArray { "Mod 13", "Mod 14" } } });
+        else if (pg.s == Section::Modifiers)
+            synthWorkspace_->addModTab (pg.shortName, rawPage,
+                Subsets { { "1-2", juce::StringArray { "Modifier 1", "Modifier 2" } },
+                          { "3-4", juce::StringArray { "Modifier 3", "Modifier 4" } } });
+        else if (pg.s == Section::Arp)
+            synthWorkspace_->addModTab (pg.shortName, rawPage, {});   // single group; shown directly
+        else if (pg.s == Section::Sequencer)
+            synthWorkspace_->addModTab (pg.shortName, rawPage,
+                Subsets { { "SEQ1",  juce::StringArray { "Sequencer 1" } },
+                          { "SEQ2",  juce::StringArray { "Sequencer 2" } },
+                          { "NOTES", juce::StringArray { "Note Pitch" } },
+                          { "VEL",   juce::StringArray { "Note Velocity" } } });
         // Section::Global (-> GLOBAL tab below) and Section::Multi (never
         // generated) intentionally fall through here.
     }
 
     // ---- Top-level page selector [SYNTH | GLOBAL] ----
     // SYNTH shows the integrated workspace; GLOBAL shows the Global ParamPage
-    // (Viewport-wrapped, editor-owned). Both are passed as NON-owned tab content
-    // (the editor retains ownership), so teardown order stays deterministic.
+    // DIRECTLY (no Viewport: the page fits its area, zero scrollbars). Both are
+    // passed as NON-owned tab content (the editor retains ownership), so the
+    // teardown order stays deterministic.
     pageSelector_.setTabBarDepth (kPageTabsH);
     pageSelector_.setOutline (0);
-    globalViewport_ = std::make_unique<juce::Viewport>();
-    globalViewport_->setScrollBarsShown (true, false);
-    // JUCE 9 Viewport paints no background (transparent): the pageSelector_
-    // content area (TabbedComponent backgroundColourId = windowBackground) fills
-    // behind it, so a short Global page leaves no void.
-    globalViewport_->setViewedComponent (globalPage_, false);   // editor owns globalPage_
-    pageSelector_.addTab (TRANS ("SYNTH"),  theme.windowBackground, synthWorkspace_.get(),  false);
-    pageSelector_.addTab (TRANS ("GLOBAL"), theme.windowBackground, globalViewport_.get(), false);
+    pageSelector_.addTab (TRANS ("SYNTH"),  theme.windowBackground, synthWorkspace_.get(), false);
+    pageSelector_.addTab (TRANS ("GLOBAL"), theme.windowBackground, globalPage_,           false);
     pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
     addAndMakeVisible (pageSelector_);
 
@@ -1293,7 +1403,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // keyboard + wheels and reclaims the strip height for the tab area.
     kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
     kbdToggleButton_.setClickingTogglesState (true);
-    kbdToggleButton_.setToggleState (true, juce::dontSendNotification);   // visible by default
+    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the dense no-scrollbar workspace fits 1280x620 only with the 104px keyboard strip reclaimed (toggle [KBD] to show it; see SynthWorkspace resized)
     kbdToggleButton_.onClick = [this] {
         const bool on = kbdToggleButton_.getToggleState();
         if (keyboardView_ != nullptr) keyboardView_->setVisible (on);
@@ -1821,8 +1931,8 @@ void ParvatiEditor::resized()
     // [SYNTH | GLOBAL] bar (depth kPageTabsH) at the top and sizes the current
     // tab's content into the rest — butted directly under the header. When SYNTH
     // is current, SynthWorkspace is sized here and lays out its 3 columns + nested
-    // tab groups in its own resized(); when GLOBAL is current, the Global Viewport
-    // is sized here.
+    // tab groups in its own resized(); when GLOBAL is current, the Global ParamPage
+    // is reflowed to the selector content width below.
     pageSelector_.setBounds (area);
 
     // The Multi/Setup overlay covers exactly the content area when toggled on.

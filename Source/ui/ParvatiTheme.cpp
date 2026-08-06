@@ -25,11 +25,11 @@ const ParvatiTheme& carbonTheme()
     // Default = current look. Byte-identical to PluginEditor.cpp `col::`.
     static const ParvatiTheme t {
         "Carbon",
-        juce::Colour (0xff141419), juce::Colour (0xff24242e), juce::Colour (0xff2e2e3a),
-        juce::Colour (0xff343440), juce::Colour (0xff3c3c4a), juce::Colour (0xff2a2a34),
-        juce::Colour (0xffe8b84b), juce::Colour (0xff5b8db8),   // gold / steel
+        juce::Colour (0xff15161A), juce::Colour (0xff24242e), juce::Colour (0xff2e2e3a),
+        juce::Colour (0xff343440), juce::Colour (0xff333742), juce::Colour (0xff2a2a34),
+        juce::Colour (0xffE5A93C), juce::Colour (0xff5b8db8),   // gold / steel
         juce::Colour (0xffe8e8ee), juce::Colour (0xff9a9aa8), juce::Colour (0xfff6f6fa),
-        juce::Colour (0xffe8b84b), juce::Colour (0xff3c3c4a), juce::Colour (0xff5b8db8),
+        juce::Colour (0xffE5A93C), juce::Colour (0xff333742), juce::Colour (0xff5b8db8),
         true
     };
     return t;

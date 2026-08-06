@@ -280,7 +280,8 @@ int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int t
     // Bracket chrome only for card tabs (matches drawTabButton's isCard branch);
     // plain top-level page-selector tabs need only side padding.
     auto* tc = dynamic_cast<juce::TabbedComponent*> (button.getTabbedButtonBar().getParentComponent());
-    const bool isCard = (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
+    const bool isCard = button.getTabbedButtonBar().getProperties().contains ("parvatiCardTabs")
+                     || (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
     int width = juce::GlyphArrangement::getStringWidthInt (font, button.getButtonText().trim().toUpperCase())
               + (isCard ? 2 * bracketW : 0) + 2 * padX
               + getTabButtonOverlap (tabDepth) * 2;
@@ -311,7 +312,8 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     // the bracket "opens into" a bordered card. The top-level [SYNTH|GLOBAL] page
     // selector has outline 0 (no enclosing card), so it renders plain tabs.
     auto* tc = dynamic_cast<juce::TabbedComponent*> (bar.getParentComponent());
-    const bool isCard = (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
+    const bool isCard = bar.getProperties().contains ("parvatiCardTabs")
+                     || (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
     const juce::Colour lineCol = bar.findColour (juce::TabbedButtonBar::tabOutlineColourId);   // theme.outline
     const juce::Colour textCol = front ? bar.findColour (juce::TabbedButtonBar::frontTextColourId)  // accent
                                        : bar.findColour (juce::TabbedButtonBar::tabTextColourId);   // dim
