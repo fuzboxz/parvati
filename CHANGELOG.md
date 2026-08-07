@@ -4,6 +4,26 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **Per-part FX section (Parvati-exclusive).** Each of the 6 Parts now has its
+  own stereo FX chain: 3 reorderable FX slots (Gain+Pan / Delay / Reverb /
+  Chorus placeholders), a Series/Parallel topology + slot-order control, and a
+  separate 16-slot FX mod matrix that shares the synth's modulation sources.
+  FX runs post-voice-render on the main mix only (per-part stereo), while the
+  per-voicecard aux buses stay dry. 71 new `isFx` APVTS params drive it, written
+  on the message thread and applied on the audio thread via the same
+  dirty-flag staging pattern as the rest of the engine. Audibly-identical to
+  the pre-FX dry mix when all slots are disabled (chain bypass = dry copy).
+- **FX persistence.** Per-part FX state round-trips through the Parvati-native
+  `.parvati` format (both multi and single-part patch) and the DAW host state
+  (binary blob bumped to **version 2**, length-prefixed FX block per Part).
+  Backward compatible: older `.parvati` files and v1 host blobs load with FX at
+  defaults. The Ambika `.PRO` / `.MUL` byte formats are unchanged and **drop FX
+  entirely** (FX never touches Ambika patch/part bytes), so Ambika interchange
+  stays byte-faithful. Note: DAW projects saved on v2 won't fully restore on an
+  older (v1-only) Parvati build — the engine blob is rejected and it falls back
+  to the legacy APVTS restore.
+
 ### Changed
 - **Font: Console by default + Serif / Sans Serif options + live switching.**
   The Settings "Font" combo now defaults to **Console** (embedded GNU Unifont)

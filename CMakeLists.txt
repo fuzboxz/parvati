@@ -402,6 +402,20 @@ target_link_libraries(parvati_preset_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Per-part FX serialization verification. Proves the Parvati-exclusive FX section
+# (3 slots + 16-slot FX mod matrix) round-trips through .parvati (multi + patch)
+# and the host binary state, and is DROPPED by the Ambika .PRO/.MUL formats.
+# Built by default. Run with: ./build/parvati_fx_preset_test
+add_executable(parvati_fx_preset_test
+    tests/fx_preset_test.cpp
+)
+target_include_directories(parvati_fx_preset_test PRIVATE Source)
+target_compile_features(parvati_fx_preset_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_preset_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Ambika .PRO patch-file support verification. Built by default.
 # Run with: ./build/parvati_patch_test
 add_executable(parvati_patch_test

@@ -271,6 +271,12 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 //==============================================================================
 void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, float newValue)
 {
+    // Suppress the engine re-apply while loadPartIntoApvts pushes engine->APVTS
+    // (the feedback is redundant for byte/arp/seq params and corrupts the FX mod
+    // matrix via applyFxParameter's stale sibling read -- see loadingPartIntoApvts_).
+    if (loadingPartIntoApvts_)
+        return;
+
     const auto it = paramIndex_.find (parameterID.toStdString());
     if (it == paramIndex_.end())
         return;
@@ -485,6 +491,12 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
 
 void ParvatiAudioProcessor::loadPartIntoApvts (int part)
 {
+    // Suppress the parameterChanged feedback loop while we push engine->APVTS
+    // (see loadingPartIntoApvts_). RAII: restored even if an early return is
+    // added below.
+    loadingPartIntoApvts_ = true;
+    struct Guard { bool& flag; ~Guard() { flag = false; } } guard { loadingPartIntoApvts_ };
+
     auto& p = engine_.getPart (part);
     for (const auto& d : getPatchParamDescriptors())
     {

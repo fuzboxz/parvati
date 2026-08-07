@@ -231,6 +231,15 @@ private:
     juce::String loadedProgramName_ { "Init" };
     int currentPart_ = 0;   // 0-based part currently shown in the APVTS/editor
 
+    // True while loadPartIntoApvts is pushing engine storage into the APVTS.
+    // Suppresses the parameterChanged -> engine re-apply feedback loop: loading
+    // is engine->APVTS, so feeding the same values back into the engine is
+    // redundant for byte/arp/seq params and HARMFUL for the FX mod matrix, whose
+    // applyFxParameter re-reads all three sibling APVTS values (source/dest/
+    // amount) and would otherwise read them stale mid-load and clobber the
+    // engine fxState it is sourcing from. Message-thread-only (load + listener).
+    bool loadingPartIntoApvts_ = false;
+
     // Hardware-parity MIDI CC/NRPN -> parameter mapping (spec F.4).
     MidiParameterMap midiParamMap_;
 

@@ -316,11 +316,23 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     // Byte-oriented payload (endian-independent): magic + version + current
     // part, then per Part: patch[112], part[84] (with the arp/seq region overlaid
     // from the authoritative pendingConfig_), midi channel / keyzone / voice
-    // allocation. polyphony rides in partBytes[15]; arp/seq lives in
-    // pendingConfig_ (overlaid here) and is re-staged on restore.
+    // allocation, then a length-prefixed FX block (Parvati-exclusive; version 2).
+    // polyphony rides in partBytes[15]; arp/seq lives in pendingConfig_ (overlaid
+    // here) and is re-staged on restore. The FX block is absent in version 1,
+    // so legacy v1 hosts reject the v2 blob and fall back to legacy APVTS restore
+    // (acceptable; documented in CHANGELOG).
+    //
+    // FX block layout (fixed, 71 bytes): slotType[3], slotEnabled[3],
+    // slotDryWet[3], slotParam[3][4], topology, orderIdx, modSource[16],
+    // modDest[16], modAmount[16]. Length-prefixed (4 bytes LE) for forward-safety
+    // (a future version may grow the block without re-versioning).
+    constexpr uint32_t kFxBlobLen = (uint32_t) (kNumFxSlots * 3            // type+enabled+drywet
+                                              + kNumFxSlots * kNumFxSlotParams   // slot params
+                                              + 2                              // topology + orderIdx
+                                              + kNumFxMatrixSlots * 3);        // src+dst+amount
     juce::MemoryOutputStream out (dest, false);
     out.write (kEngineStateMagic, 4);
-    out.writeByte (1);                                                       // version
+    out.writeByte (2);                                                       // version
     out.writeByte ((char) currentPart_);
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -337,6 +349,25 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         out.writeByte ((char) part.keyrangeLow.load (std::memory_order_relaxed));
         out.writeByte ((char) part.keyrangeHigh.load (std::memory_order_relaxed));
         out.writeByte ((char) part.voiceAllocation.load (std::memory_order_relaxed));
+
+        // Parvati-exclusive per-part FX state (version 2). Length prefix first
+        // (4 bytes, little-endian), then the fixed-layout FX bytes above.
+        const auto& fx = part.fxState;
+        out.writeByte ((char) (kFxBlobLen        & 0xFF));
+        out.writeByte ((char) ((kFxBlobLen >> 8)  & 0xFF));
+        out.writeByte ((char) ((kFxBlobLen >> 16) & 0xFF));
+        out.writeByte ((char) ((kFxBlobLen >> 24) & 0xFF));
+        for (int s = 0; s < kNumFxSlots; ++s) out.writeByte ((char) fx.slotType   [(size_t) s].load (std::memory_order_relaxed));
+        for (int s = 0; s < kNumFxSlots; ++s) out.writeByte ((char) fx.slotEnabled[(size_t) s].load (std::memory_order_relaxed));
+        for (int s = 0; s < kNumFxSlots; ++s) out.writeByte ((char) fx.slotDryWet [(size_t) s].load (std::memory_order_relaxed));
+        for (int s = 0; s < kNumFxSlots; ++s)
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+                out.writeByte ((char) fx.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed));
+        out.writeByte ((char) fx.topology.load (std::memory_order_relaxed));
+        out.writeByte ((char) fx.orderIdx.load  (std::memory_order_relaxed));
+        for (int m = 0; m < kNumFxMatrixSlots; ++m) out.writeByte ((char) fx.modSource[(size_t) m].load (std::memory_order_relaxed));
+        for (int m = 0; m < kNumFxMatrixSlots; ++m) out.writeByte ((char) fx.modDest  [(size_t) m].load (std::memory_order_relaxed));
+        for (int m = 0; m < kNumFxMatrixSlots; ++m) out.writeByte ((char) fx.modAmount[(size_t) m].load (std::memory_order_relaxed));
     }
     out.flush ();
 }
@@ -349,7 +380,8 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     char magic[4];
     if (in.read (magic, 4) != 4 || std::memcmp (magic, kEngineStateMagic, 4) != 0)
         return false;
-    if (in.readByte() != 1)   // version
+    const int version = in.readByte();
+    if (version != 1 && version != 2)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
         return false;
     const int savedCurrent = in.readByte();
     for (int p = 0; p < kNumParts; ++p)
@@ -366,6 +398,41 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         part.keyrangeLow.store  ((uint8_t) in.readByte());
         part.keyrangeHigh.store ((uint8_t) in.readByte());
         part.voiceAllocation.store ((uint8_t) in.readByte());
+
+        if (version == 2)
+        {
+            // Parvati-exclusive per-part FX state. Length-prefixed (4 bytes LE)
+            // then the fixed-layout FX bytes (slotType/enabled/dryWet/param,
+            // topology, orderIdx, modSource/dest/amount). A larger length is
+            // forward-compat (trailing bytes skipped); a short/truncated read is
+            // rejected like the core payload above. Absent in v1 -> fxState stays
+            // at its default-initialized values.
+            uint8_t lenBytes[4];
+            if (in.read (lenBytes, 4) != 4) return false;
+            const uint32_t fxLen = (uint32_t) lenBytes[0]
+                                 | ((uint32_t) lenBytes[1] << 8)
+                                 | ((uint32_t) lenBytes[2] << 16)
+                                 | ((uint32_t) lenBytes[3] << 24);
+            if (in.getNumBytesRemaining() < (juce::int64) fxLen) return false;   // truncated
+            juce::HeapBlock<uint8_t> fxBlob (fxLen);
+            if (in.read (fxBlob, (int) fxLen) != (int) fxLen) return false;
+
+            auto& fx = part.fxState;
+            size_t o = 0;
+            const auto take = [&] () -> uint8_t { return (o < fxLen) ? fxBlob[o++] : 0; };
+            for (int s = 0; s < kNumFxSlots; ++s) fx.slotType   [(size_t) s].store (take(), std::memory_order_relaxed);
+            for (int s = 0; s < kNumFxSlots; ++s) fx.slotEnabled[(size_t) s].store (take(), std::memory_order_relaxed);
+            for (int s = 0; s < kNumFxSlots; ++s) fx.slotDryWet [(size_t) s].store (take(), std::memory_order_relaxed);
+            for (int s = 0; s < kNumFxSlots; ++s)
+                for (int k = 0; k < kNumFxSlotParams; ++k)
+                    fx.slotParam[(size_t) s][(size_t) k].store (take(), std::memory_order_relaxed);
+            fx.topology.store (take(), std::memory_order_relaxed);
+            fx.orderIdx.store  (take(), std::memory_order_relaxed);
+            for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modSource[(size_t) m].store (take(), std::memory_order_relaxed);
+            for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modDest  [(size_t) m].store (take(), std::memory_order_relaxed);
+            for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modAmount[(size_t) m].store ((int8_t) take(), std::memory_order_relaxed);
+            fx.fxDirty_.store (true, std::memory_order_release);
+        }
     }
     setCurrentPart (juce::jlimit (0, kNumParts - 1, savedCurrent));
     resetAllVoices();        // clean slate for the restored config (deferred to AT)

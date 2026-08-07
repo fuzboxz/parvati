@@ -628,6 +628,7 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         // offset.)
         const var pmap = partNode["params"];
         bool stagedArpSeq = false;   // set configDirty_ ONCE after the loop (not per param), so the audio thread only ever services a complete pendingConfig_ snapshot
+        bool stagedFx = false;       // set fxDirty_ ONCE after the loop (same reason as stagedArpSeq)
         if (auto* pobj = pmap.getDynamicObject())
         {
             for (const auto& p : pobj->getProperties())
@@ -658,6 +659,50 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                     { const int off = d->byteOffset - 16; part.writePendingConfig ([off,v] (auto& c) { c.seqData[(size_t) off] = v; }); }
                     stagedArpSeq = true;
                 }
+                else if (d->isFx)
+                {
+                    // FX is per-part: write the value directly into this Part's
+                    // fxState atomics (relaxed: the fxDirty_ release-store after
+                    // the loop publishes the whole frame). The stored value IS the
+                    // denormalized APVTS value (int / choice index), stored verbatim
+                    // -- no patch-byte encode (byteOffset=-1 would index
+                    // patchBytes[-1]). Mirror the partRaw reader. fxDirty_ is staged
+                    // ONCE after the per-part loop so the audio thread services a
+                    // complete fxState snapshot.
+                    const juce::String id (d->paramID);
+                    const int v = juce::jlimit (0, 255, (int) raw);
+                    auto& fx = part.fxState;
+                    if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+                    {
+                        const int slot = id[2] - '1';
+                        const juce::String sfx = id.substring (4);
+                        if (sfx == "type")              fx.slotType    [(size_t) slot].store ((uint8_t) v, std::memory_order_relaxed);
+                        else if (sfx == "enabled")      fx.slotEnabled [(size_t) slot].store ((uint8_t) (v != 0 ? 1 : 0), std::memory_order_relaxed);
+                        else if (sfx == "drywet")       fx.slotDryWet  [(size_t) slot].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed);
+                        else if (sfx.startsWith ("param"))
+                        {
+                            const int k = sfx.substring (5).getIntValue();
+                            if (k >= 1 && k <= kNumFxSlotParams)
+                                fx.slotParam[(size_t) slot][(size_t) (k - 1)].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed);
+                        }
+                        stagedFx = true;
+                    }
+                    else if (id == "fx_topo")  { fx.topology.store ((uint8_t) juce::jlimit (0, 1, v), std::memory_order_relaxed); stagedFx = true; }
+                    else if (id == "fx_order") { fx.orderIdx.store  ((uint8_t) juce::jlimit (0, 5, v), std::memory_order_relaxed); stagedFx = true; }
+                    else if (id.startsWith ("fxmod") && id.contains ("_"))
+                    {
+                        const int under = id.indexOf ("_");
+                        const int m = id.substring (5, under).getIntValue();
+                        if (m >= 1 && m <= kNumFxMatrixSlots)
+                        {
+                            const juce::String sfx = id.substring (under + 1);
+                            if (sfx == "source")      fx.modSource [(size_t) (m - 1)].store ((uint8_t) v, std::memory_order_relaxed);
+                            else if (sfx == "dest")   fx.modDest   [(size_t) (m - 1)].store ((uint8_t) v, std::memory_order_relaxed);
+                            else if (sfx == "amount") fx.modAmount [(size_t) (m - 1)].store ((int8_t) juce::jlimit (-63, 63, (int) raw), std::memory_order_relaxed);
+                        }
+                        stagedFx = true;
+                    }
+                }
                 else
                 {
                     const uint8_t byte = parvatiValueToPatchByte (*d, raw);
@@ -668,6 +713,8 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         }
         if (stagedArpSeq)
             part.configDirty_.store (true, std::memory_order_release);
+        if (stagedFx)
+            part.fxState.fxDirty_.store (true, std::memory_order_release);
 
     }
 
