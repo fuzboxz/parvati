@@ -77,6 +77,19 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
     for (auto& b : voiceCardBuffers_)
         b.setSize (1, juce::jmax (1, blockSize), false, true, true);
 
+    // Per-part FX: one stereo FX-output buffer + one FX chain per Part, plus a
+    // mono scratch for the per-part voicecard sum. All sized here (never on the
+    // audio thread). The chains allocate their internal DSP state in prepare().
+    const int fxBlock = juce::jmax (1, blockSize);
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        fxOutputBuffers_[(size_t) p].setSize (2, fxBlock, false, true, true);
+        fxChains_[(size_t) p].prepare (sampleRate, fxBlock);
+    }
+    fxMonoScratch_.setSize (1, fxBlock, false, true, true);
+    for (auto& srcs : lastModSources_)
+        srcs.fill (0);
+
     for (auto* v : voices)
         if (auto* av = dynamic_cast<AmbikaVoice*> (v))
             av->prepare (sampleRate, blockSize);
@@ -246,6 +259,53 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
     });
     p.configDirty_.store (true, std::memory_order_release);
 }
+
+//==========================================================================
+// Per-part FX MT setters (message thread; called by applyFxParameter). Each
+// writes the CURRENT Part's fxState atomics + sets fxDirty_. The relaxed stores
+// are published as a frame by the fxDirty_ release-store; the audio thread
+// services fxDirty_ in renderPartFx (acq_rel exchange) and pushes the values
+// into fxChains_[p] single-threaded. EXACTLY the frameDirty_ / optionsDirty_
+// staging pattern. slot/idx are range-clamped; values stored verbatim (the AT
+// normalizes 0..127 / -63..63 to 0..1 floats when servicing the chain).
+#define PARVATI_FX_CURRENT_PART() parts_[(size_t) currentPart_]
+void SynthEngine::setFxSlotType    (int slot, uint8_t v)
+{
+    if (slot >= 0 && slot < kNumFxSlots) { PARVATI_FX_CURRENT_PART().fxState.slotType[(size_t) slot].store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+}
+void SynthEngine::setFxSlotEnabled (int slot, uint8_t v)
+{
+    if (slot >= 0 && slot < kNumFxSlots) { PARVATI_FX_CURRENT_PART().fxState.slotEnabled[(size_t) slot].store (v != 0 ? 1 : 0, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+}
+void SynthEngine::setFxSlotDryWet  (int slot, uint8_t v)
+{
+    if (slot >= 0 && slot < kNumFxSlots) { PARVATI_FX_CURRENT_PART().fxState.slotDryWet[(size_t) slot].store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+}
+void SynthEngine::setFxSlotParam   (int slot, int idx, uint8_t v)
+{
+    if (slot >= 0 && slot < kNumFxSlots && idx >= 0 && idx < kNumFxSlotParams)
+    { PARVATI_FX_CURRENT_PART().fxState.slotParam[(size_t) slot][(size_t) idx].store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+}
+void SynthEngine::setFxTopology    (uint8_t v)
+{
+    PARVATI_FX_CURRENT_PART().fxState.topology.store (v, std::memory_order_relaxed);
+    PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
+}
+void SynthEngine::setFxOrder       (uint8_t v)
+{
+    PARVATI_FX_CURRENT_PART().fxState.orderIdx.store (v, std::memory_order_relaxed);
+    PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
+}
+void SynthEngine::setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount)
+{
+    if (slot < 0 || slot >= kNumFxMatrixSlots) return;
+    auto& st = PARVATI_FX_CURRENT_PART().fxState;
+    st.modSource[(size_t) slot].store (src,    std::memory_order_relaxed);
+    st.modDest  [(size_t) slot].store (dest,   std::memory_order_relaxed);
+    st.modAmount[(size_t) slot].store (amount, std::memory_order_relaxed);
+    st.fxDirty_.store (true, std::memory_order_release);
+}
+#undef PARVATI_FX_CURRENT_PART
 
 //==========================================================================
 // Host plugin-state capture/restore (full 6-Part multitimbral persistence).
@@ -1018,5 +1078,119 @@ void SynthEngine::renderVoices (juce::AudioBuffer<float>& outputAudio,
             continue;   // all voices are AmbikaVoice; nothing else to render
         const int vc = juce::jlimit (0, kNumParts - 1, av->getVoiceCard());
         av->renderNextBlock (voiceCardBuffers_[(size_t) vc], startSample, numSamples);
+    }
+}
+
+//==========================================================================
+// Per-part FX render (audio thread; called from PluginProcessor::processBlock
+// AFTER renderNextBlock, BEFORE the main-bus sum). For each Part this:
+//   1. Services fxDirty_ single-threaded (pushes staged FX params + the
+//      mod-matrix routing into the chain + the AT cache).
+//   2. Builds a per-part mono sum of its voicecard buffers.
+//   3. Samples the first active voice's mod sources into lastModSources_[p].
+//   4. Evaluates the 16-slot FX mod matrix at block rate, combining base + mod
+//      into effective chain dryWet/param values.
+//   5. Duplicates the mono sum to L+R and runs fxChains_[p] into fxOutputBuffers_.
+// With all fx*_enabled=0 the chain is a dry copy (audibly-identical to the
+// pre-FX path). No allocation on the AT (everything reserved in prepare).
+void SynthEngine::renderPartFx (int numSamples)
+{
+    if (numSamples <= 0)
+        return;
+
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        auto& part = parts_[(size_t) p];
+        auto& chain = fxChains_[(size_t) p];
+        auto& cache = fxCached_[(size_t) p];
+
+        // ---- 1. Service fxDirty_ (single-threaded on the AT) ----
+        // Read the MT-staged fxState frame (published by fxDirty_ release-store)
+        // into the AT cache + push topology/order/type/enabled to the chain.
+        if (part.fxState.fxDirty_.exchange (false, std::memory_order_acq_rel))
+        {
+            chain.setTopology (static_cast<FxTopology> (part.fxState.topology.load (std::memory_order_relaxed)));
+            chain.setOrder (fxOrderPermutation (part.fxState.orderIdx.load (std::memory_order_relaxed)));
+
+            for (int s = 0; s < kNumFxSlots; ++s)
+            {
+                chain.setSlotType    (s, static_cast<FxType> (part.fxState.slotType   [(size_t) s].load (std::memory_order_relaxed)));
+                chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
+                cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
+                for (int k = 0; k < kNumFxSlotParams; ++k)
+                    cache.baseParam[(size_t) s][(size_t) k] = (float) part.fxState.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
+            }
+            for (int m = 0; m < kNumFxMatrixSlots; ++m)
+            {
+                cache.modSrc[(size_t) m] = part.fxState.modSource[(size_t) m].load (std::memory_order_relaxed);
+                cache.modDst[(size_t) m] = part.fxState.modDest  [(size_t) m].load (std::memory_order_relaxed);
+                cache.modAmt[(size_t) m] = part.fxState.modAmount[(size_t) m].load (std::memory_order_relaxed);
+            }
+        }
+
+        // ---- 2. Per-part mono sum of this Part's voicecard buffers ----
+        // (voiceCardBuffers_ holds the full block after renderNextBlock.)
+        float* mono = fxMonoScratch_.getWritePointer (0);
+        juce::FloatVectorOperations::clear (mono, numSamples);
+        for (int vi : part.voiceIndices)
+            if (vi >= 0 && vi < kNumParts)
+                juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vi].getReadPointer (0), numSamples);
+        // (voiceIndices empty => silence, which is correct.)
+
+        // ---- 3. Sample the first active voice's mod sources ----
+        // Sources are control-rate (~1 ms); a per-host-block read suffices. Hold
+        // the last snapshot while no voice is active so tails still modulate.
+        for (int vi : part.voiceIndices)
+        {
+            if (auto* av = getAmbikaVoice (vi))
+            {
+                if (av->isVoiceActive())
+                {
+                    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                        lastModSources_[(size_t) p][(size_t) src] = av->getModulationSource (static_cast<uint8_t> (src));
+                    break;   // first active voice only
+                }
+            }
+        }
+
+        // ---- 4. Evaluate the FX mod matrix (block-rate) -> effective values ----
+        // modOffset[dest] += amount/63 * srcValue/255 (dest = slot*5 + field:
+        // 0=dryWet, 1..4=param 0..3). Combine with the cached base, clamp 0..1.
+        float modOffset[kNumFxSlots * 5] {};   // 15 destinations (slot dryWet + 4 params)
+        const auto& srcs = lastModSources_[(size_t) p];
+        for (int m = 0; m < kNumFxMatrixSlots; ++m)
+        {
+            const int8_t amt = cache.modAmt[(size_t) m];
+            if (amt == 0) continue;
+            const int dst = (int) cache.modDst[(size_t) m];
+            if (dst < 0 || dst >= (int) (sizeof (modOffset) / sizeof (float))) continue;
+            const uint8_t sIdx = cache.modSrc[(size_t) m];
+            const float srcValue = (sIdx < ambika::dsp::MOD_SRC_LAST) ? (float) srcs[sIdx] / 255.0f : 0.0f;
+            modOffset[dst] += ((float) amt / 63.0f) * srcValue;
+        }
+
+        // Effective slot values = base + mod, clamped 0..1.
+        float effDryWet[kNumFxSlots] {};
+        float effParam [kNumFxSlots][kNumFxSlotParams] {};
+        for (int s = 0; s < kNumFxSlots; ++s)
+        {
+            effDryWet[(size_t) s] = juce::jlimit (0.0f, 1.0f, cache.baseDryWet[(size_t) s] + modOffset[s * 5 + 0]);
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+                effParam[(size_t) s][(size_t) k] = juce::jlimit (0.0f, 1.0f, cache.baseParam[(size_t) s][(size_t) k] + modOffset[s * 5 + 1 + k]);
+        }
+        // Push effective values to the chain (every block; the chain re-applies
+        // them to its processors at the next process()).
+        for (int s = 0; s < kNumFxSlots; ++s)
+        {
+            chain.setSlotDryWet (s, effDryWet[(size_t) s]);
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+                chain.setSlotParam (s, k, effParam[(size_t) s][(size_t) k]);
+        }
+
+        // ---- 5. Duplicate mono to L+R, run the chain into the FX-output buffer ----
+        auto& out = fxOutputBuffers_[(size_t) p];
+        chain.process (mono, mono,
+                       out.getWritePointer (0), out.getWritePointer (1),
+                       numSamples);
     }
 }

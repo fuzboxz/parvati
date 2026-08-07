@@ -24,6 +24,7 @@
 #include "NoteStack.h"
 #include "Sequencer.h"
 #include "TransportClock.h"
+#include "dsp/fx/FxChain.h"   // per-part FX chains (FxChain, FxType)
 #include "dsp/patch.h"
 
 // Authentic hardware = 6 voicecards => 6 Parts.
@@ -138,6 +139,26 @@ struct AtomicByteArray
     std::array<std::atomic<uint8_t>, N> a;
 };
 
+// Per-part FX storage. MT writes (engine setters called by applyFxParameter),
+// AT reads (renderPartFx). Each field is atomic; fxDirty_ (release-store by MT,
+// acq_rel-exchange by AT) publishes a frame of writes. EXACTLY the frameDirty_ /
+// optionsDirty_ pattern (processTransport's dirty-flag service loop). Values are
+// stored as raw 0..127 / -63..63 controller-style bytes; the AT normalizes them
+// to 0..1 floats when servicing the chain (FxChain::setSlotDryWet/Param).
+struct PartFxState
+{
+    std::atomic<uint8_t> slotType   [kNumFxSlots] {};               // FxType
+    std::atomic<uint8_t> slotEnabled[kNumFxSlots] {};               // 0/1
+    std::atomic<uint8_t> slotDryWet [kNumFxSlots] {};               // 0..127
+    std::atomic<uint8_t> slotParam  [kNumFxSlots][kNumFxSlotParams] {}; // 0..127
+    std::atomic<uint8_t> topology { 0 };                            // FxTopology
+    std::atomic<uint8_t> orderIdx { 0 };                            // 0..5 (perm of {0,1,2})
+    std::atomic<uint8_t> modSource[kNumFxMatrixSlots] {};          // MOD_SRC_* index
+    std::atomic<uint8_t> modDest  [kNumFxMatrixSlots] {};          // FxModDestination
+    std::atomic<int8_t>  modAmount[kNumFxMatrixSlots] {};          // -63..+63
+    std::atomic<bool>    fxDirty_ { false };
+};
+
 struct Part
 {
     AtomicByteArray<112> patchBytes {};   // sizeof(Patch) — MT writes, AT reads
@@ -221,6 +242,10 @@ struct Part
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
     parvati::NoteStack<12> monoStack;   // MONO note-priority stack
     std::vector<int> voiceIndices;   // indices into the Synthesiser's voice list
+
+    // Per-part FX state (MT writes via the engine setters, AT reads in
+    // renderPartFx; published by fxDirty_). See PartFxState above.
+    PartFxState fxState;
 };
 
 class SynthEngine : public juce::Synthesiser
@@ -386,12 +411,71 @@ public:
     parvati::Arpeggiator& getArp()       { return parts_[(size_t) currentPart_].arp; }
     parvati::Sequencer&   getSequencer() { return parts_[(size_t) currentPart_].seq; }
 
+    // ---- Per-part FX (Parvati-exclusive; post-render, host-rate stereo) ----
+    // Render every Part's FX chain into its stereo FX-output buffer (called from
+    // PluginProcessor::processBlock AFTER renderNextBlock, BEFORE the main-bus
+    // sum). For each Part: services fxDirty_ single-threaded (pushes the staged
+    // FX params + mod-matrix into the chain), builds a per-part mono sum of its
+    // voicecard buffers, samples the first active voice's mod sources, evaluates
+    // the 16-slot FX mod matrix at block rate, duplicates mono to L+R, and runs
+    // the chain. With all fx*_enabled=0 the chain is a dry copy (audibly-
+    // identical to the pre-FX path).
+    void renderPartFx (int numSamples);
+    // The per-part stereo FX-output buffers (2 channels each), sourced by the
+    // processor for the main-bus sum. Sized in prepare().
+    const std::array<juce::AudioBuffer<float>, kNumParts>& getFxOutputBuffers() const noexcept
+    {
+        return fxOutputBuffers_;
+    }
+
+    // MT setters (message thread; applyFxParameter). Each writes the CURRENT
+    // Part's fxState atomics (relaxed: the fxDirty_ release-store publishes the
+    // frame) and sets fxDirty_. The audio thread services fxDirty_ in
+    // renderPartFx (single-threaded) and pushes the values into fxChains_[p].
+    // Mirrors the frameDirty_ / optionsDirty_ staging pattern. slot 0..2, idx 0..3.
+    void setFxSlotType    (int slot, uint8_t v);
+    void setFxSlotEnabled (int slot, uint8_t v);
+    void setFxSlotDryWet  (int slot, uint8_t v);
+    void setFxSlotParam   (int slot, int idx, uint8_t v);
+    void setFxTopology    (uint8_t v);
+    void setFxOrder       (uint8_t v);
+    // Writes all three mod-matrix fields of one slot atomically (under the same
+    // fxDirty_ publish) to avoid a torn matrix slot when only one of the three
+    // APVTS params changes. src: MOD_SRC_* index; dest: FxModDestination;
+    // amount: -63..+63.
+    void setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount);
+
 private:
     std::array<Part, kNumParts> parts_;
 
     // One mono buffer per voicecard (6 total). Cleared + filled in renderVoices
     // for each sub-block range; the processor mixes them into the output buses.
     std::array<juce::AudioBuffer<float>, kNumParts> voiceCardBuffers_;
+    // One stereo (2-channel) FX-output buffer per Part, written by renderPartFx
+    // and sourced by the processor for the main-bus sum. Sized in prepare().
+    std::array<juce::AudioBuffer<float>, kNumParts> fxOutputBuffers_;
+    // One FX chain per Part (host-rate stereo). Serviced single-threaded on the
+    // audio thread in renderPartFx when fxDirty_ is set.
+    std::array<FxChain, kNumParts> fxChains_;
+    // Per-part mod-source snapshot (0..255) used by the FX mod matrix. Updated
+    // each block from the Part's first active voice (AmbikaVoice::
+    // getModulationSource); reused while no voice is active so tails still
+    // modulate. AT-only (written + read in renderPartFx).
+    std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kNumParts> lastModSources_ {};
+    // AT-side cache of each Part's base FX values + mod-matrix config, read from
+    // fxState when fxDirty_ is serviced and reused every block (mod sources
+    // change block-to-block, but the base values + matrix routing are stable
+    // between edits). AT-only. Effective chain values = base + mod-matrix offset.
+    struct FxPartCache {
+        float   baseDryWet[kNumFxSlots] {};
+        float   baseParam [kNumFxSlots][kNumFxSlotParams] {};
+        uint8_t modSrc    [kNumFxMatrixSlots] {};
+        uint8_t modDst    [kNumFxMatrixSlots] {};
+        int8_t  modAmt    [kNumFxMatrixSlots] {};
+    };
+    std::array<FxPartCache, kNumParts> fxCached_ {};
+    // Mono scratch buffer for the per-part voicecard sum (sized in prepare; AT-only).
+    juce::AudioBuffer<float> fxMonoScratch_;
     parvati::TransportClock transport_;
     // Reused per-block scratch MidiBuffer (avoids an audio-thread allocation in
     // processTransport's note-routing pass; clear() each block keeps capacity).

@@ -212,25 +212,33 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // VCA is the final gain stage.
     engine_.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
 
+    // Render the per-part FX chains into their stereo FX-output buffers (host
+    // rate). This runs AFTER renderNextBlock (so the voicecard buffers hold the
+    // full block) and BEFORE the main-bus sum (which now sources the main bus
+    // from the FX-output buffers). With all fx*_enabled=0 the chains are dry
+    // copies, so the main bus is audible-identical to the pre-FX mix. The aux
+    // buses remain raw voicecard taps (dry).
+    engine_.renderPartFx (buffer.getNumSamples());
+
     // ---- Multi-output bus mixing (Ambika hardware: 6 individual voicecard
     // outputs + a global mix) ----
-    // Main bus: sum ALL six voicecard buffers into L and R. This reproduces the
-    // pre-multi-out single-buffer mix exactly (each voice's mono signal added
-    // to both stereo channels), so the default main-stereo path is
-    // audible-identical. When the main bus is mono, only L is written.
-    // Aux buses (VC1..VC6): each ENABLED aux bus copies its voicecard output.
+    // Main bus: sum ALL six PER-PART FX-OUTPUT buffers into L and R. This is the
+    // post-FX mix (each Part's stereo FX output); with FX disabled it equals the
+    // pre-multi-out single-buffer mix (each voice's mono signal, duplicated to
+    // L+R by the dry-copy chain). When the main bus is mono, only L is written.
+    // Aux buses (VC1..VC6): each ENABLED aux bus copies its DRY voicecard output.
     const int numSamples = buffer.getNumSamples();
     const auto& vcBuffers = engine_.getVoiceCardBuffers();
+    const auto& fxBuffers = engine_.getFxOutputBuffers();
 
     if (const int mainChans = getChannelCountOfBus (false, 0); mainChans > 0)
     {
         auto mainBus = getBusBuffer (buffer, false, 0);
-        for (int vc = 0; vc < SynthEngine::getNumParts(); ++vc)
+        for (int p = 0; p < SynthEngine::getNumParts(); ++p)
         {
-            const float* src = vcBuffers[(size_t) vc].getReadPointer (0);
-            mainBus.addFrom (0, 0, src, numSamples, kMainMixHeadroomGain); // main L (-6 dB headroom)
+            mainBus.addFrom (0, 0, fxBuffers[(size_t) p].getReadPointer (0), numSamples, kMainMixHeadroomGain); // main L (-6 dB headroom)
             if (mainChans > 1)
-                mainBus.addFrom (1, 0, src, numSamples, kMainMixHeadroomGain); // main R
+                mainBus.addFrom (1, 0, fxBuffers[(size_t) p].getReadPointer (1), numSamples, kMainMixHeadroomGain); // main R
         }
 
         // Master DC blocker (main bus only): the engine's filter+VCA are
