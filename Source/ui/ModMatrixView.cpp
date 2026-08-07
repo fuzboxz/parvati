@@ -62,8 +62,13 @@ public:
                            float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
                            juce::Slider::SliderStyle /*style*/, juce::Slider& slider) override
     {
-        const auto& t      = themeManager_.getCurrentTheme();
-        const juce::Colour trackCol = t.divider;
+        const auto& t = themeManager_.getCurrentTheme();
+        // Flat bipolar depth slider: a clean DARK track (the rotary knob-track
+        // token so the slider echoes the knob tracks), a solid fill from the
+        // CENTRE to the value (accent right of centre / accent2 left of centre),
+        // a centre zero-detent tick and a flat solid CIRCLE thumb (no 3D/
+        // gradient). Geometry/positions are unchanged from the prior look.
+        const juce::Colour trackCol = t.knobTrack;
         const juce::Colour posFill  = t.accent;
         const juce::Colour negFill  = t.accent2;
         const juce::Colour thumbCol = t.textValue;
@@ -97,13 +102,11 @@ public:
         g.setColour (thumbCol.withAlpha (slider.isEnabled() ? 0.9f : 0.4f));
         g.fillRect (juce::Rectangle<float> (centreX - 0.5f, cy - trackH, 1.0f, trackH * 2.0f));
 
-        // Thumb.
+        // Flat solid circle thumb (no 3D/gradient / no outline ring).
         const float tr = juce::jmax (3.0f, static_cast<float> (height) * 0.30f);
         const auto  thumbRect = juce::Rectangle<float> (tr * 2.0f, tr * 2.0f).withCentre (juce::Point<float> (sp, cy));
         g.setColour (slider.isEnabled() ? thumbCol : thumbCol.withAlpha (0.4f));
         g.fillEllipse (thumbRect);
-        g.setColour (t.windowBackground);
-        g.drawEllipse (thumbRect, 1.0f);
     }
 
 private:

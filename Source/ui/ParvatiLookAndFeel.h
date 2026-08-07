@@ -63,38 +63,49 @@ public:
     void drawTabButton (juce::TabBarButton&, juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
     int  getTabButtonBestWidth (juce::TabBarButton&, int tabDepth) override;
 
-    // Group-component panels draw a 1px rectangular border whose TOP-LEFT edge
-    // is broken by the title text (classic fieldset/legend look: the section
-    // header sits IN the top border line, e.g. ┌── [ OSC 1 ] ───┐). Title font
-    // follows the active mode; title renders in ALL CAPS.
+    // Group-component panels: a FLAT borderless solid rounded-rect CARD (7px)
+    // with NO outline / shadow — depth is implied only by the tonal step to the
+    // window bg. The section title is a BOLD muted-gray header at the top-left
+    // (ALL CAPS).
     void drawGroupComponentOutline (juce::Graphics&, int width, int height,
                                     const juce::String& text,
                                     const juce::Justification& position,
                                     juce::GroupComponent&) override;
 
-    // Rotary knobs: a thin 1px amber arc-ring (dim empty track + bright fill
-    // arc) with the numeric value drawn in the centre of the ring. No pointer
-    // line, no value box underneath (value integrated into the dial).
+    // Rotary knobs: a flat SOLID-arc dial — a dark-gray TRACK arc (full sweep)
+    // with a bright accent FILL arc on top (start -> value). No pointer line /
+    // end tick; the numeric value is drawn in the centre of the ring. (See the
+    // .cpp note on why the value is retained centred rather than relocated below
+    // the label.)
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float rotaryStartAngle,
                            float rotaryEndAngle, juce::Slider&) override;
 
-    // ComboBox: flat selection chip — a 4px rounded frame (matching the pill
-    // buttons), a thin outline stroke (no inset bevel), and a minimal ▼ chevron
-    // in a subtle token colour (textDim, lifted to text while open),
-    // right-aligned. Inline text via positionComboBoxText() reserves ~24px on the
-    // right for the chevron so long choices never clip.
+    // Linear sliders (the Settings zoom slider + the pitch/mod wheels — both
+    // inherit this LookAndFeel). NOTE: the Mod-Matrix depth sliders use their
+    // OWN BipolarSliderLNF (ModMatrixView.cpp), so they are NOT styled here.
+    // Flat vector style: a dark rounded track, an accent FILL from the start
+    // (or the centre for bipolar ranges) to the handle, and a flat solid circle
+    // handle — no 3D bevel/shadow.
+    void drawLinearSlider (juce::Graphics&, int x, int y, int width, int height,
+                           float sliderPos, float minSliderPos, float maxSliderPos,
+                           juce::Slider::SliderStyle, juce::Slider&) override;
+
+    // ComboBox: flat semi-opaque button chip — a 5px rounded fill with NO
+    // outline / inset shadow / arrow bevel, and a minimal ▼ chevron in a subtle
+    // token colour (textDim, lifted to text while open), right-aligned. Inline
+    // text via positionComboBoxText() reserves ~24px on the right for the
+    // chevron so long choices never clip.
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH,
                        juce::ComboBox&) override;
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
 
-    // TextButton background: flat pill — 4px rounded corners, a solid fill
-    // (accent when toggled on via buttonOnColourId, panel fill otherwise), and a
-    // thin 1px stroke (outline by default, brightened toward text on hover/press,
-    // full text colour when toggled on). No inner-shadow inset bevel (the bulky
-    // 3D look is gone). IconButton (gear/undo/redo) paints itself and bypasses
-    // this. (Text itself is drawn by drawButtonText via getTextButtonFont.)
+    // TextButton background: flat borderless tonal block — 4px rounded corners,
+    // a solid fill (accent when toggled on via buttonOnColourId, panel fill
+    // otherwise), LIGHTER on hover and DARKER on press, with NO stroke / bevel /
+    // shadow. IconButton (gear/undo/redo) paints itself and bypasses this. (Text
+    // itself is drawn by drawButtonText via getTextButtonFont.)
     void drawButtonBackground (juce::Graphics&, juce::Button&,
                                const juce::Colour& backgroundColour,
                                bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;

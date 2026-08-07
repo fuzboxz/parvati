@@ -343,7 +343,7 @@ void OscPreviewDisplay::paint (juce::Graphics& g)
     const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
     parvati::vectorTrace::render (g, plot, sampleCount, sampleCycle,
                                   trace, parvati::vectorTrace::Mode::bipolar,
-                                  false, 1.5f, 0.22f);
+                                  false, 1.5f, 0.12f);
 
     // Midline reference (1px) so the bipolar centre reads on every shape.
     g.setColour (accent.withAlpha (0.25f));

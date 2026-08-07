@@ -91,15 +91,22 @@ struct CentralModBar::ModPill : public juce::Component,
 
         if (isGenerator_)
         {
-            // subtle interior + solid 1px accent border
-            g.setColour (t.containerFill);
+            // MONOCHROME: flat dark-gray fill for every inactive pill; only the
+            // selected/active generator is highlighted with the accent colour
+            // (solid 1.5px border + a glowing underline). Geometry unchanged.
+            const juce::Colour inactiveFill = t.tabUnselectedBg;
+            const juce::Colour fill = (active_ || ! hovered_)
+                                    ? inactiveFill
+                                    : inactiveFill.brighter (0.20f);   // hover: slightly lighter
+            g.setColour (fill);
             g.fillRoundedRectangle (r, 5.0f);
-            g.setColour (accent_);
-            g.drawRoundedRectangle (r, 5.0f, 1.0f);
 
-            // active-state underline glow (generators only)
             if (active_)
             {
+                g.setColour (accent_);
+                g.drawRoundedRectangle (r, 5.0f, 1.5f);
+
+                // active-state underline glow (generators only) — stays, in accent
                 const float uy = r.getBottom() - 1.5f;
                 g.setColour (accent_.withAlpha (0.30f));
                 g.fillRoundedRectangle (r.withTop (uy - 3.0f), 5.0f);
@@ -114,12 +121,19 @@ struct CentralModBar::ModPill : public juce::Component,
         }
         else
         {
-            // drag-only: subtle dotted left-handle + faint label, no border/glow
+            // drag-only: flat dark-gray fill (monochrome) + a subtle dotted
+            // left-handle in neutral gray (no per-cluster colour) + faint label.
+            // No border / glow. Geometry unchanged.
+            const juce::Colour inactiveFill = t.tabUnselectedBg;
+            const juce::Colour fill = hovered_ ? inactiveFill.brighter (0.20f) : inactiveFill;
+            g.setColour (fill);
+            g.fillRoundedRectangle (r, 5.0f);
+
             const float hx  = r.getX() + 2.0f;
             const float hy0 = r.getY() + 7.0f;
             const float hy1 = r.getBottom() - 7.0f;
             const float step = 3.0f;
-            g.setColour (accent_.withAlpha (0.6f));
+            g.setColour (t.textDim);
             for (int i = 0;; ++i)
             {
                 const float y = hy0 + static_cast<float> (i) * step;
@@ -133,6 +147,9 @@ struct CentralModBar::ModPill : public juce::Component,
             g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
         }
     }
+
+    void mouseEnter (const juce::MouseEvent&) override { hovered_ = true;  repaint(); }
+    void mouseExit  (const juce::MouseEvent&) override { hovered_ = false; repaint(); }
 
     void mouseDown (const juce::MouseEvent&) override { dragStarted_ = false; }
 
@@ -176,7 +193,8 @@ struct CentralModBar::ModPill : public juce::Component,
     bool              isGenerator_;
     bool              dragStarted_ = false;
     bool              active_      = false;
-    juce::Colour      accent_;          // resolved from the active theme (clusterAccent)
+    bool              hovered_     = false;
+    juce::Colour      accent_;          // resolved from the active theme (monochrome accent)
 
 private:
     // A small themed drag chip (mirrors ModSourceDragGrip / DraggableTabButton):
@@ -237,8 +255,14 @@ void CentralModBar::setActiveGenerator (int modSrcEnum)
 void CentralModBar::applyThemeColors()
 {
     const auto& t = theme();
+    // MONOCHROME: every pill shares a single accent palette. Inactive pills are
+    // a flat dark-gray (tabUnselectedBg); only the selected/active generator
+    // pill is highlighted with the accent colour (its underline glow stays, in
+    // accent). The per-cluster cat* tokens remain in ParvatiTheme — they are
+    // still used for the knob modulation rings — but the BAR no longer reads
+    // them. Hover is resolved in ModPill::paint() as a slightly lighter fill.
     for (auto& p : pills_)
-        p->accent_ = parvati::clusterAccent (p->cluster_, t);
+        p->accent_ = t.accent;
     repaint();
 }
 
@@ -276,7 +300,9 @@ void CentralModBar::paint (juce::Graphics& g)
     const auto& clusters = parvati::clustersInOrder();
     for (size_t ci = 0; ci < clusters.size() && ci < clusterLabelRects_.size(); ++ci)
     {
-        g.setColour (parvati::clusterAccent (clusters[ci], t).withAlpha (0.7f));
+        // Monochrome: neutral-gray cluster captions (the gaps still segment the
+        // clusters); the bar no longer uses per-cluster accent colours.
+        g.setColour (t.textDim);
         g.drawText (clusterLabel (clusters[ci]), clusterLabelRects_[ci],
                     juce::Justification::centredLeft, true);
     }

@@ -181,12 +181,13 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
     };
 
     // Smooth vector trace + translucent gradient fill (unipolar; the area fills
-    // below the curve — the pass-band skirt). Peak alpha kept <= 0.18 so the
-    // curve stays legible at the 42px decoration height.
+    // below the curve — the pass-band skirt). Peak alpha kept ~0.12 so the
+    // vertical gradient (accent at the curve fading to 0% near the baseline)
+    // stays subtle and the curve stays legible at the 42px decoration height.
     const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
     parvati::vectorTrace::render (g, plot, sampleCount, magLevel,
                                   trace, parvati::vectorTrace::Mode::unipolar,
-                                  false, 1.5f, 0.18f);
+                                  false, 1.5f, 0.12f);
 
     // Cutoff vertical reference line (clean 1px).
     const float fcT = (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f;

@@ -171,7 +171,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                                                 : juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
         parvati::vectorTrace::render (g, plot, sampleCount, lfoLevel,
                                       trace, parvati::vectorTrace::Mode::bipolar,
-                                      isSampleAndHold, 1.5f, 0.22f);
+                                      isSampleAndHold, 1.5f, 0.12f);
 
         // Midline reference (1px).
         g.setColour (accent.withAlpha (0.25f));
@@ -235,7 +235,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
     parvati::vectorTrace::render (g, plot, sampleCount, envLevel,
                                   trace, parvati::vectorTrace::Mode::unipolar,
-                                  false, 1.5f, 0.22f);
+                                  false, 1.5f, 0.12f);
 }
 
 //==========================================================================

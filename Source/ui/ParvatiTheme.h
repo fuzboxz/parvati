@@ -22,7 +22,7 @@ struct ParvatiTheme
     juce::Colour windowBackground; // page fill (was col::bg)
     juce::Colour panelBackground;  // was col::panel
     juce::Colour panelBackground2; // was col::panel2
-    juce::Colour panelHeader;      // bordered-group heading strip
+    juce::Colour panelHeader;      // section/panel header TEXT colour (muted gray, bold weight)
     juce::Colour outline;          // control/panel border (was col::outline)
     juce::Colour divider;          // thin separator inside panels
     juce::Colour accent;           // primary highlight (was col::accent gold)
@@ -70,6 +70,10 @@ struct ParvatiTheme
     // every key depth / highlight / shadow colour from this. The ONLY new colour;
     // do not hardcode a key-white outside the theme factories.
     juce::Colour keyWhite;         // natural (white) key resting fill (piano white)
+    // Low-contrast parameter-label text colour (regular weight) for the knob /
+    // combo captions that read off the default Label::textColourId. Deliberately
+    // dimmer than panelHeader so a section title reads above its control labels.
+    juce::Colour labelText;        // parameter-label text colour (low-contrast gray)
     bool isDark = true;
 };
 
