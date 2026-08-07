@@ -1,26 +1,44 @@
 // tools/editor_test.cpp
-// Headless GUI coverage check for the Parvati editor (integrated, Serum-style layout).
+// Headless GUI coverage check for the Parvati editor (integrated, Serum-style
+// layout).
 //
-// The editor is no longer a flat 10-tab TabbedComponent. It is a top-level
-// [SYNTH | GLOBAL] page selector whose SYNTH page is a SynthWorkspace hosting the
-// 9 synth ParamPages (reparented — NOT regenerated — so every APVTS attachment +
-// the byte-bridge survive) in signal-chain columns (Oscillators | Mixer | Filter)
-// above two nested tab groups ([ENV | LFO] and [MOD MATRIX | MODIFIERS | ARP |
-// SEQ]); the dense sections paginate by group via GroupPager sub-tabs, with NO
-// per-page Viewports/scrollbars. The GLOBAL page shows the Global ParamPage. This test verifies:
+// The editor is a single [SYNTH] page selector (the lone tab bar is hidden).
+// The SYNTH content is a 3-row SynthWorkspace:
+//   - TOP row: 3 direct ParamPages in signal-chain columns (OSC | MIX | FILTER),
+//     reparented (NOT regenerated) so every APVTS attachment + the byte-bridge
+//     survive.
+//   - MIDDLE row: a full-width CentralModBar (CentralModBar::kBarHeight) — the
+//     pill hub. Clicking a GENERATOR pill selects that generator (Env/LFO/Seq/
+//     Arp/Modifier), reparenting its page into the bottom-left active-editor
+//     host; dragging any pill onto a knob assigns it.
+//   - BOTTOM row: the active-editor host (shows ONE generator ParamPage at a
+//     time, chosen by the bar) on the left, and the editor-owned ModMatrixView
+//     (a DIRECT child of the workspace, no longer tab content) on the right.
+// Generator pages are EDITOR-OWNED (ParvatiEditor::generatedPages_); only ENV 1
+// is reparented at startup, the rest stay unparented until their pill is clicked.
+// A ParamPage OWNS its ParamControls whether parented or not, so this test
+// enumerates every page via ParvatiEditor::allGeneratedPages() and counts the
+// controls directly (parented or not). The Global ParamPage is a direct-child
+// overlay toggled by the header "Global" button. This test verifies:
 //   - createEditor() returns a non-null AudioProcessorEditor
-//   - the top-level page selector has exactly 2 tabs ([SYNTH | GLOBAL])
-//   - every patch/part descriptor EXCEPT `part_select` gets exactly one
-//     ParamControl cell (pages are surfaced across ALL nesting levels to count)
+//   - the top-level page selector has exactly 1 tab ([SYNTH])
+//   - every patch/part descriptor EXCEPT `part_select` and the mod-matrix slot
+//     params gets exactly one ParamControl cell (counted across ALL generated
+//     pages, parented or not)
 //   - the Oscillators page has exactly 8 controls; the Global page has 10
+//   - clicking a CentralModBar generator pill reparents the right page into the
+//     active-editor host (the new click-wiring's first automated coverage)
+//   - a ModMatrixView is a DIRECT child of SynthWorkspace (no longer tab content)
 //   - the top-bar Part selector is wired: setting `part_select` switches the part
-//   - default editor size is 1280 x 620 (dense integrated layout)
-//   - every surfaced ParamPage reports a sane (overlap-free, width-filling) layout
-//   - Sequencer: exactly 3 marked Length controls + correct step dimming
+//   - default editor size matches CentralModBar::preferredWidth()+8 x 620
+//     (~1443 x 620, not the old 1280 x 620)
+//   - every generated ParamPage reports a sane (overlap-free, width-filling) layout
+//   - the Sequencer page is present among the generated pages; it has exactly 3
+//     marked Length controls + correct step dimming
 //   - Voice activity meter (cells) exists on the Global page
 //   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
 //
-// Build: cmake --build build_release --target parvati_editor_test && ./build_release/parvati_editor_test
+// Build: cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
 
 #include <algorithm>
 #include <cctype>
@@ -32,6 +50,8 @@
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel + ambika::dsp::MOD_SRC_*
+#include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
 
 namespace
 {
@@ -52,15 +72,6 @@ void collectParamControls (juce::Component* c, std::vector<ParamControl*>& out)
         collectParamControls (child, out);
 }
 
-// Collect every TabbedButtonBar in c's subtree (c included).
-void collectTabbedButtonBars (juce::Component* c, std::vector<juce::TabbedButtonBar*>& out)
-{
-    if (auto* b = dynamic_cast<juce::TabbedButtonBar*> (c))
-        out.push_back (b);
-    for (auto* child : c->getChildren())
-        collectTabbedButtonBars (child, out);
-}
-
 // First component of type T in the subtree (depth-first).
 template <typename T>
 T* findFirst (juce::Component* c)
@@ -74,8 +85,8 @@ T* findFirst (juce::Component* c)
 }
 
 // First TabbedComponent in the subtree (DFS). With the integrated layout the
-// top-level page selector is the first TC discovered (it is added before the
-// nested workspace tab groups).
+// only TabbedComponent is the single-tab [SYNTH] page selector (the lone tab
+// bar is hidden via depth 0; the SYNTH content is the 3-row SynthWorkspace).
 juce::TabbedComponent* findTabs (juce::Component* c)
 {
     if (auto* t = dynamic_cast<juce::TabbedComponent*> (c))
@@ -84,49 +95,6 @@ juce::TabbedComponent* findTabs (juce::Component* c)
         if (auto* t = findTabs (child))
             return t;
     return nullptr;
-}
-
-// Does any tab (at any nesting level) host a component of type T as its content?
-// JUCE's TabbedComponent only parents the CURRENT tab's content, so a plain
-// subtree walk misses non-current tabs (e.g. MOD MATRIX after surfacing lands on
-// MODIFIERS). This inspects every tab's getTabContentComponent directly.
-template <typename T>
-bool anyTabHosts (juce::Component* c)
-{
-    if (auto* tc = dynamic_cast<juce::TabbedComponent*> (c))
-        for (int i = 0; i < tc->getNumTabs(); ++i)
-            if (dynamic_cast<T*> (tc->getTabContentComponent (i)) != nullptr)
-                return true;
-    for (auto* child : c->getChildren())
-        if (anyTabHosts<T> (child))
-            return true;
-    return false;
-}
-
-// Surface every tab at every nesting level (switching each current in turn) so
-// every ParamPage becomes reachable, collecting the ParamPage objects. A
-// ParamPage owns its ParamControls whether parented or not, so a collected page
-// can be inspected directly. Each page is content of exactly one tab in exactly
-// one TabbedComponent, so it is surfaced exactly once.
-void surfacePages (juce::Component* c, std::vector<ParamPage*>& out)
-{
-    if (auto* page = dynamic_cast<ParamPage*> (c))
-    {
-        out.push_back (page);
-        return;   // pages never nest pages
-    }
-    if (auto* tc = dynamic_cast<juce::TabbedComponent*> (c))
-    {
-        for (int i = 0; i < tc->getNumTabs(); ++i)
-        {
-            tc->setCurrentTabIndex (i, false);   // parent this tab's content
-            if (auto* content = tc->getTabContentComponent (i))
-                surfacePages (content, out);
-        }
-        return;
-    }
-    for (auto* child : c->getChildren())
-        surfacePages (child, out);
 }
 
 // ParamControls owned by a ParamPage (the page's descendants).
@@ -173,12 +141,21 @@ int main()
             return 1;
         }
 
-        // Surface every ParamPage across all nesting levels. (Leaves the top
-        // selector on its last tab; reset to SYNTH once checks are done.)
-        std::vector<ParamPage*> pages;
-        surfacePages (ed, pages);
+        // Enumerate EVERY generated page (parented or not) via the editor
+        // accessor — the 3 top-row direct pages (OSC/MIX/FILTER), every
+        // generator page (ENV/LFO/SEQ/ARP/Modifiers — only ENV 1 is reparented
+        // at startup), and the Global page. A ParamPage owns its ParamControls
+        // whether parented or not, so unparented generator pages are counted
+        // here too.
+        auto* editor = dynamic_cast<ParvatiEditor*> (ed);
+        std::vector<ParamPage*> pages = (editor != nullptr)
+            ? editor->allGeneratedPages() : std::vector<ParamPage*>{};
         std::sort (pages.begin(), pages.end());
         pages.erase (std::unique (pages.begin(), pages.end()), pages.end());
+
+        // The 3-row workspace (top direct pages | CentralModBar | active-editor
+        // host + ModMatrixView). Reused by [3c], [3d] and [6].
+        auto* workspace = findFirst<SynthWorkspace> (ed);
 
         int cells = 0;
         for (auto* p : pages)
@@ -222,20 +199,93 @@ int main()
         std::printf ("     top-level tabs = %d\n", numTopTabs);
         check (numTopTabs == 1, "exactly 1 top-level page tab ([SYNTH]); Global is a header-button overlay");
 
-        std::printf ("\n[3] ParamControl coverage (surfaced pages = %zu)\n", pages.size());
+        std::printf ("\n[3] ParamControl coverage (generated pages = %zu)\n", pages.size());
         std::printf ("     descriptors = %zu, expected cells = %d, found = %d\n",
                      descs.size(), expectedCells, cells);
         check (cells == expectedCells,
                "one ParamControl per descriptor (except part_select + mod-matrix), across all nesting");
 
-        // [3c] MOD MATRIX is now the editor-owned ModMatrixView (replaces the old
-        // 1-4/5-8/9-12/13-14 GroupPager pagination). The 42 mod{1..14}_* params are
-        // NOT ParamControls (excluded above); the view hosts them directly via its
-        // own combos/sliders, so a live ModMatrixView in the tree is the proof the
-        // wiring replaced the paginated ParamPage.
-        std::printf ("\n[3c] MOD MATRIX tab hosts a ModMatrixView (not a paginated ParamPage)\n");
-        check (anyTabHosts<ModMatrixView> (ed),
-               "a ModMatrixView is present in the editor tree (as MOD MATRIX tab content)");
+        // [3c] MOD MATRIX: the editor-owned ModMatrixView is now a DIRECT child
+        // of SynthWorkspace (it is no longer tab content). The 42 mod{1..14}_*
+        // params are NOT ParamControls (excluded above); the view hosts them
+        // directly via its own combos/sliders, so a live ModMatrixView parented on
+        // the workspace is the proof the wiring replaced the paginated ParamPage.
+        std::printf ("\n[3c] MOD MATRIX: a ModMatrixView is a DIRECT child of SynthWorkspace\n");
+        {
+            auto* mmv = findFirst<ModMatrixView> (ed);
+            check (mmv != nullptr, "a ModMatrixView is present in the editor tree");
+            if (mmv != nullptr)
+            {
+                auto* mmvParent = mmv->getParentComponent();
+                const bool directChild = mmvParent != nullptr
+                    && dynamic_cast<SynthWorkspace*> (mmvParent) != nullptr;
+                check (directChild,
+                       "ModMatrixView is a direct child of SynthWorkspace (no longer tab content)");
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // [3d] Click-wiring: a CentralModBar generator pill surfaces the right
+        // page (reparents it into SynthWorkspace's active-editor host). This
+        // drives the same setActiveGenerator path the bar's pill-click handler
+        // invokes — the new click-wiring's first automated coverage. The page's
+        // parent becomes the host, and the host is a direct child of
+        // SynthWorkspace, so the page's grand-parent is the workspace.
+        // ------------------------------------------------------------------
+        std::printf ("\n[3d] CentralModBar generator pill surfaces the right page\n");
+        {
+            // The LFO page's controls are envN_lfo_* / voice_lfo_* (they CONTAIN
+            // "_lfo_" rather than start with "lfo"), so it is matched by
+            // containment; the Sequencer page's controls start with "seq".
+            auto findLfoPage = [&] () -> ParamPage*
+            {
+                for (auto* p : pages)
+                    for (auto* c : pageControls (p))
+                        if (c->getParamID().contains ("_lfo_"))
+                            return p;
+                return nullptr;
+            };
+            auto findSeqPage = [&] () -> ParamPage*
+            {
+                for (auto* p : pages)
+                    for (auto* c : pageControls (p))
+                        if (c->getParamID().startsWith ("seq"))
+                            return p;
+                return nullptr;
+            };
+            check (workspace != nullptr, "SynthWorkspace present (CentralModBar host)");
+            if (workspace != nullptr)
+            {
+                // LFO 1 pill -> the LFO page.
+                ParamPage* lfoPage = findLfoPage();
+                check (lfoPage != nullptr, "LFO generator page found");
+                if (lfoPage != nullptr)
+                {
+                    workspace->setActiveGenerator (ambika::dsp::MOD_SRC_LFO_1);
+                    juce::Component* host = lfoPage->getParentComponent();
+                    const bool surfaced = host != nullptr && host->getParentComponent() == workspace;
+                    std::snprintf (msg, sizeof (msg),
+                                   "LFO_1 pill reparents the LFO page into the active-editor host [parent=%s]",
+                                   host != nullptr ? "set" : "null");
+                    check (surfaced, msg);
+                }
+
+                // NOTE pill (bar-only sentinel) -> the Sequencer page (reveals
+                // BOTH "Note Pitch" + "Note Velocity" groups).
+                ParamPage* seqNotePage = findSeqPage();
+                check (seqNotePage != nullptr, "Sequencer generator page found");
+                if (seqNotePage != nullptr)
+                {
+                    workspace->setActiveGenerator (parvati::kNoteSeqSentinel);
+                    juce::Component* host = seqNotePage->getParentComponent();
+                    const bool surfaced = host != nullptr && host->getParentComponent() == workspace;
+                    std::snprintf (msg, sizeof (msg),
+                                   "NOTE pill reparents the Sequencer page into the active-editor host [parent=%s]",
+                                   host != nullptr ? "set" : "null");
+                    check (surfaced, msg);
+                }
+            }
+        }
 
         std::printf ("\n[3b] Page grouping (Oscillators / Global)\n");
         std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (10 controls)\n",
@@ -257,9 +307,16 @@ int main()
         check (got == 7, msg);
 
         std::printf ("\n[6] Default editor size\n");
-        std::printf ("     %d x %d\n", ed->getWidth(), ed->getHeight());
-        check (ed->getWidth() == 1280 && ed->getHeight() == 620,
-               "default editor size is 1280 x 620 (integrated dense layout)");
+        {
+            const int barPrefW = (workspace != nullptr) ? workspace->barPreferredWidth() : 0;
+            const int expectedW = juce::jmax (1280, barPrefW + 8);   // == CentralModBar::preferredWidth()+8 (~1443)
+            std::printf ("     %d x %d (bar preferred=%d, expected width=%d)\n",
+                         ed->getWidth(), ed->getHeight(), barPrefW, expectedW);
+            std::snprintf (msg, sizeof (msg),
+                           "default editor size is %d x 620 [was %d x %d]",
+                           expectedW, ed->getWidth(), ed->getHeight());
+            check (ed->getWidth() == expectedW && ed->getHeight() == 620, msg);
+        }
 
         std::printf ("\n[7] Layout sanity (every surfaced page: no overlaps, fills width)\n");
         int saneCount = 0;
@@ -378,49 +435,11 @@ int main()
                    "voice meter reports an active-voice count (6-cell view)");
 
         // ------------------------------------------------------------------
-        // [11] Nested tab CATEGORY colours: the ENV/LFO/ARP/SEQ card tabs (and
-        // their GroupPager sub-tabs) carry a per-tab parvatiTabCategoryColourId so
-        // drawTabButton colours each tab by function (ENV=cyan, LFO=magenta,
-        // ARP=purple, SEQ=green, MOD*=amber).
+        // [11] REMOVED: the nested ENV/LFO/ARP/SEQ card tab bar (and its
+        // per-tab parvatiTabCategoryColourId colouring) was deleted by design
+        // — generator selection is now driven by the CentralModBar pills
+        // (covered by [3d]). Nothing to assert here.
         // ------------------------------------------------------------------
-        std::printf ("\n[11] Nested tab category colours (per-tab parvatiTabCategoryColourId)\n");
-        std::vector<juce::TabbedButtonBar*> allBars;
-        collectTabbedButtonBars (ed, allBars);
-        auto isEnvLfoCard = [] (juce::TabbedButtonBar* bar)
-        {
-            const auto names = bar->getTabNames();
-            bool hasEnv = false, hasLfo = false;
-            for (const auto& n : names)
-            {
-                if (n.containsIgnoreCase ("ENV")) hasEnv = true;
-                else if (n.containsIgnoreCase ("LFO")) hasLfo = true;
-            }
-            return hasEnv && hasLfo;
-        };
-        const auto envLfoBar = std::find_if (allBars.begin(), allBars.end(), isEnvLfoCard);
-        check (envLfoBar != allBars.end(), "ENV/LFO/ARP/SEQ nested card bar found");
-        if (envLfoBar != allBars.end())
-        {
-            int coloured = 0;
-            std::vector<juce::Colour> hues;
-            for (int i = 0; i < (*envLfoBar)->getNumTabs(); ++i)
-                if (auto* btn = (*envLfoBar)->getTabButton (i))
-                {
-                    const auto col = btn->findColour (parvatiTabCategoryColourId, false);
-                    if (col != juce::Colours::black) { ++coloured; hues.push_back (col); }
-                }
-            std::printf ("     ENV/LFO/ARP/SEQ card: coloured tabs = %d\n", coloured);
-            std::snprintf (msg, sizeof (msg),
-                           "all ENV/LFO/ARP/SEQ tabs carry a category colour (%d/%d)",
-                           coloured, (*envLfoBar)->getNumTabs());
-            check (coloured == (*envLfoBar)->getNumTabs(), msg);
-            std::sort (hues.begin(), hues.end(),
-                       [] (const juce::Colour& a, const juce::Colour& b) { return a.getARGB() < b.getARGB(); });
-            bool distinct = true;
-            for (size_t i = 1; i < hues.size(); ++i)
-                if (hues[i].getARGB() == hues[i - 1].getARGB()) { distinct = false; break; }
-            check (distinct, "ENV/LFO/ARP/SEQ tabs have DISTINCT category colours");
-        }
 
         // ------------------------------------------------------------------
         // [12] Modulation ring: per-source concentric arcs (new schema).

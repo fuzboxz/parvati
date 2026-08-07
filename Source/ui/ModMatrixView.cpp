@@ -591,11 +591,12 @@ void ModMatrixView::onSelectSlot (int slotIndex)
     for (const auto& r : rows_)
         if (r)
             r->setFlashed (false);
+    flashSlots_.clearQuick();
 
     if (slotIndex < 0 || slotIndex >= 14)
         return;
 
-    flashSlot_ = slotIndex;
+    flashSlots_.add (slotIndex);
     flashStartMs_ = juce::Time::getMillisecondCounter();
 
     if (rows_[(size_t) slotIndex] != nullptr)
@@ -625,13 +626,48 @@ void ModMatrixView::ensureRowVisible (int slot)
 
 void ModMatrixView::flashTick()
 {
-    // Auto-expire the transient selection flash.
-    if (flashSlot_ >= 0 && (juce::Time::getMillisecondCounter() - flashStartMs_) > (juce::uint32) kFlashMs)
+    // Auto-expire the transient selection flash (single-slot jump or the
+    // multi-row source-flash share this one timed expiry).
+    if (! flashSlots_.isEmpty()
+        && (juce::Time::getMillisecondCounter() - flashStartMs_) > (juce::uint32) kFlashMs)
     {
-        const int s = flashSlot_;
-        flashSlot_ = -1;
-        if (s >= 0 && s < 14 && rows_[(size_t) s] != nullptr)
-            rows_[(size_t) s]->setFlashed (false);
+        for (const int s : flashSlots_)
+            if (s >= 0 && s < 14 && rows_[(size_t) s] != nullptr)
+                rows_[(size_t) s]->setFlashed (false);
+        flashSlots_.clearQuick();
+    }
+}
+
+void ModMatrixView::flashRowsForSource (int sourceEnum)
+{
+    // Clear any prior flash, then flash every ACTIVE row currently routed FROM
+    // @p sourceEnum (read live so a freshly-edited source combo follows). The
+    // first matching row is scrolled into view; the flash auto-expires via
+    // flashTick() on the timer (same kFlashMs as the knob-double-click jump).
+    for (const auto& r : rows_)
+        if (r)
+            r->setFlashed (false);
+    flashSlots_.clearQuick();
+
+    int firstVisible = -1;
+    for (int i = 0; i < 14; ++i)
+    {
+        if (! isSlotActive (i))
+            continue;
+        if (sourceForSlot (i) != sourceEnum)
+            continue;
+        flashSlots_.add (i);
+        if (rows_[(size_t) i] != nullptr)
+            rows_[(size_t) i]->setFlashed (true);
+        if (firstVisible < 0)
+            firstVisible = i;
+    }
+
+    if (! flashSlots_.isEmpty())
+    {
+        flashStartMs_ = juce::Time::getMillisecondCounter();
+        if (firstVisible >= 0)
+            ensureRowVisible (firstVisible);
     }
 }
 

@@ -78,6 +78,14 @@ public:
     // rows for the category tint + accent bar.
     juce::String sourceNameForSlot (int slot) const;
 
+    // Briefly flash every ACTIVE row currently routed FROM @p sourceEnum (a
+    // MOD_SRC_* value), reusing the same transient flash the slot-selection
+    // (knob double-click) uses. Called from the CentralModBar when a drag-only
+    // (Perf/Util/Const) source pill is clicked, so the user can see where that
+    // source is routed. A no-op (besides clearing any prior flash) when no row
+    // uses the source. The flash auto-expires via flashTick() on the timer.
+    void flashRowsForSource (int sourceEnum);
+
     // The ModulationDestination (MOD_DST_*) a slot is currently routed to, read
     // live from its mod{N}_dest APVTS raw value (-1 on error). Used by the hover
     // highlight so a row's target dest follows live edits of its dest combo.
@@ -141,10 +149,13 @@ private:
     // ModMatrixHighlight bus subscriptions (ids for unsubscribe in the dtor) +
     // the transient selection-flash state. The flash marks the row a knob's
     // double-click jumped to; it auto-expires via flashTick() on the timer.
+    // Generalized to a SET of slots so the single-slot knob-double-click jump
+    // (onSelectSlot) AND the multi-row source-flash (flashRowsForSource) share
+    // one timed expiry.
     int destHighlightSub_ = -1;
     int slotSelectSub_    = -1;
     int assignSub_        = -1;   // drag-drop assign handler (unsubscribe in dtor)
-    int flashSlot_        = -1;
+    juce::Array<int> flashSlots_;
     juce::uint32 flashStartMs_ = 0;
     static constexpr int kFlashMs = 1200;
 

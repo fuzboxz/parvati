@@ -1,23 +1,24 @@
 // tools/screen_shots.cpp
 //
 // Renders the Parvati editor to PNGs for the integrated (Serum-style) layout:
-// a SYNTH overview (3-column workspace: Oscillators (both visible) | Mixer |
-// Filter, plus the nested ENV/LFO/ARP/SEQ and MOD MATRIX/MODIFIERS tab cards), one
-// shot per nested tab, and the GLOBAL overlay (header button) — exactly as a user
-// sees the plugin. The main-row pages (Mixer/Oscillators/Filter) are always
-// visible on the SYNTH tab, so they appear in every SYNTH shot.
+// a SYNTH overview (the 3-row SynthWorkspace: top OSC|MIX|FILTER direct pages,
+// the full-width CentralModBar, and the bottom active-editor host + ModMatrixView),
+// one in-context shot per generator (each generator pill clicked via the
+// catalogue so its editor is surfaced in the live workspace), one standalone
+// shot per generated ParamPage (via ParvatiEditor::allGeneratedPages()), and the
+// GLOBAL overlay (header button) — exactly as a user sees the plugin.
 //
 // How: instantiate the real ParvatiAudioProcessor + editor (so the
 // ParvatiLookAndFeel — system sans-serif font, colours, layout — is byte-for-byte
-// the shipped appearance), switch tabs, and paint the whole editor offscreen via
+// the shipped appearance), surface each page, and paint it offscreen via
 // paintEntireComponent at 2x for AI-readable crispness. No display or
 // screen-recording permission required; fully deterministic.
 //
-// Build:   cmake --build build_release --target parvati_screen_shots
-// Run:     ./build_release/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+// Build:   cmake --build build --target parvati_screen_shots
+// Run:     ./build/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
 //
 // CANONICAL (builds the tool from latest source, then runs it — never stale):
-//   cmake --build build_release --target screens
+//   cmake --build build --target screens
 //
 // The font assertions printed to stderr are identical to those the project's own
 // headless editor_test emits (set-a-style-on-a-typeface); they are benign and
@@ -28,60 +29,82 @@
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
-#include "ui/GroupPager.h"
+#include "ui/ModSourceCatalog.h"   // parvati::kAllSources (generator pill set)
+#include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
 
 #include <cstdio>
 #include <vector>
 
 namespace
 {
-// Collect every TabbedComponent in c's subtree (DFS). With the integrated layout
-// the SYNTH tab content (SynthWorkspace) holds the two nested tab groups
-// ([ENV|LFO] and [MOD MATRIX|MODIFIERS|ARP|SEQ]); the top-level page selector is
-// the first TC found from the editor root.
-void collectTabbedComponents (juce::Component* c, std::vector<juce::TabbedComponent*>& out)
+// First component of type T in the subtree (DFS).
+template <typename T>
+T* findFirst (juce::Component* c)
 {
-    if (auto* t = dynamic_cast<juce::TabbedComponent*> (c)) out.push_back (t);
+    if (auto* t = dynamic_cast<T*> (c))
+        return t;
     for (auto* child : c->getChildren())
-        collectTabbedComponents (child, out);
+        if (auto* t = findFirst<T> (child))
+            return t;
+    return nullptr;
 }
 
-// Ensure a tab's content is laid out at the tab width before painting (headless:
-// JUCE may defer the resize). No Viewports remain: a tab's content is a GroupPager
-// (whose resized() reflows its page) or a direct ParamPage.
-void ensureLaidOut (juce::Component* tabContent)
+// Collect every ParamControl in c's subtree (c included).
+void collectParamControls (juce::Component* c, std::vector<ParamControl*>& out)
 {
-    if (auto* page = dynamic_cast<ParamPage*> (tabContent))
-    {
-        if (page->getWidth() <= 0)
-            page->reflowToWidth (940);
+    if (auto* p = dynamic_cast<ParamControl*> (c))
+        out.push_back (p);
+    for (auto* child : c->getChildren())
+        collectParamControls (child, out);
+}
+
+// Ensure a page is laid out at a readable width before painting (headless: JUCE
+// may defer the resize). A ParamPage owns its controls whether parented or not,
+// so a standalone (unparented generator) page renders fine here too.
+void ensureLaidOut (ParamPage* page, int width = 940)
+{
+    if (page == nullptr)
         return;
-    }
-    if (auto* pager = dynamic_cast<GroupPager*> (tabContent))
-        if (auto* page = pager->getPage())
-            if (page->getWidth() <= 0)
-                page->reflowToWidth (940);
+    if (page->getWidth() <= 0)
+        page->reflowToWidth (width);
 }
 
-// The tabs are created with their short label ("OSC", "MOD MATRIX", ...). Map
-// those to the full section names for clearer output filenames.
-juce::String fullTabName (const juce::String& shortName)
+// Map a page's dominant control prefix to a clear output filename. Returns an
+// empty string for the Global page (it is captured separately as the header-
+// button overlay) and for any page without a recognised control.
+juce::String pageName (ParamPage* page)
 {
-    static const std::pair<juce::String, juce::String> map[] = {
-        { "OSC",        "Oscillators" },
-        { "MIX",        "Mixer"       },
-        { "FILTER",     "Filter"      },
-        { "ENV",        "Envelopes"   },
-        { "LFO",        "LFOs"        },
-        { "MOD MATRIX", "Mod_Matrix"  },
-        { "MODIFIERS",  "Modifiers"   },
-        { "ARP",        "Arp"         },
-        { "SEQ",        "Sequencer"   },
-        { "GLOBAL",     "Global"      },
-    };
-    for (const auto& [k, v] : map)
-        if (shortName == k) return v;
-    return shortName;
+    if (page == nullptr)
+        return {};
+    std::vector<ParamControl*> cs;
+    collectParamControls (page, cs);
+    bool hasCard = false, hasCurve = false;
+    bool isLfo = false;   // envN_lfo_* / voice_lfo_* live on the LFO page
+    juce::String name;
+    for (auto* c : cs)
+    {
+        const auto id = c->getParamID();
+        if (id == "filter_card") hasCard = true;
+        if (id == "vca_curve")   hasCurve = true;
+        if (id.contains ("_lfo_")) isLfo = true;
+        if (name.isEmpty())
+        {
+            // "modif" before "mod" (modifiers vs nothing-on-a-ParamPage); the
+            // mod-matrix mod{N}_* params live on ModMatrixView, not a ParamPage.
+            if      (id.startsWith ("modif")) name = "Modifiers";
+            else if (id.startsWith ("osc"))   name = "Oscillators";
+            else if (id.startsWith ("mix"))   name = "Mixer";
+            else if (id.startsWith ("filter"))name = "Filter";
+            else if (id.startsWith ("env"))   name = "Envelopes";
+            else if (id.startsWith ("seq"))   name = "Sequencer";
+            else if (id.startsWith ("arp"))   name = "Arp";
+        }
+    }
+    if (hasCard && hasCurve)
+        return {};   // Global page -> handled by the overlay capture
+    if (isLfo)
+        return "LFOs";   // overrides the "env" prefix (env1_lfo_* is an LFO control)
+    return name;
 }
 
 // Paint a component (and all children) into a fresh image at @p scale.
@@ -89,7 +112,7 @@ juce::Image renderScreen (juce::Component& c, float scale)
 {
     const int w = juce::roundToInt ((float) c.getWidth()  * scale);
     const int h = juce::roundToInt ((float) c.getHeight() * scale);
-    juce::Image img (juce::Image::RGB, w, h, true);
+    juce::Image img (juce::Image::RGB, juce::jmax (1, w), juce::jmax (1, h), true);
     {
         juce::Graphics g (img);
         g.addTransform (juce::AffineTransform::scale (scale));
@@ -137,39 +160,24 @@ int main (int argc, char** argv)
         return 1;
     }
 
-    // Top-level page selector [SYNTH | GLOBAL] = the first TabbedComponent in
-    // the editor tree (it is added before the nested workspace tab groups).
-    std::vector<juce::TabbedComponent*> topLevel;
-    collectTabbedComponents (ed, topLevel);
-    if (topLevel.empty())
-    {
-        std::printf ("FAIL: no TabbedComponent found in editor\n");
-        return 1;
-    }
-    auto* pageSelector = topLevel.front();
-
-    auto tabIndex = [] (juce::TabbedComponent* tc, const char* name) -> int
-    {
-        if (tc == nullptr) return -1;
-        const auto names = tc->getTabNames();
-        for (int i = 0; i < names.size(); ++i)
-            if (names[i] == name) return i;
-        return -1;
-    };
-    const int synthIdx  = juce::jmax (0, tabIndex (pageSelector, "SYNTH"));
+    auto* workspace = findFirst<SynthWorkspace> (ed);
 
     std::printf ("Rendering screens @ %.0fx -> %s\n", (double) scale, outDir.getFullPathName().toRawUTF8());
 
     int n = 0;
     juce::MemoryBlock lastPng;   // consecutive-duplicate suppression
 
-    // Render the current editor state to a PNG, skipping if it is byte-identical
-    // to the previous capture. The integrated layout's default nested tab repeats
-    // the overview state, so this keeps the output set clean and sequentially
-    // numbered (only saved shots consume a number).
-    auto capture = [&] (const juce::String& desc)
+    // Render a component to a PNG, skipping if byte-identical to the previous
+    // capture. Keeps the output set clean and sequentially numbered (only saved
+    // shots consume a number).
+    auto capture = [&] (juce::Component& c, const juce::String& desc)
     {
-        const juce::Image img = renderScreen (*ed, scale);
+        if (c.getWidth() <= 0 || c.getHeight() <= 0)
+        {
+            std::printf ("  skip  %-24s (zero size)\n", desc.toRawUTF8());
+            return;
+        }
+        const juce::Image img = renderScreen (c, scale);
         juce::MemoryBlock mb;
         {
             juce::MemoryOutputStream mos (mb, false);
@@ -184,31 +192,48 @@ int main (int argc, char** argv)
         savePng (img, outDir.getChildFile (juce::String::formatted ("%02d_", ++n) + desc));
     };
 
-    // 1) SYNTH overview: the 3-column workspace (Mixer | Oscillators | Filter)
-    //    plus the default nested ENV/LFO + MOD tabs.
-    pageSelector->setCurrentTabIndex (synthIdx, false);
-    capture ("Synth_overview.png");
+    // 1) SYNTH overview: the default 3-row workspace (ENV 1 is the default
+    //    active generator).
+    capture (*ed, "Synth_overview.png");
 
-    // 2) One shot per nested tab inside the SYNTH workspace. The main-row pages
-    //    (Mixer/Oscillators/Filter) stay visible in every shot; only the nested
-    //    tab content changes.
-    if (auto* synth = pageSelector->getTabContentComponent (synthIdx))
+    // 2) One in-context shot per generator: click each GENERATOR pill via its
+    //    catalogue enum through SynthWorkspace::setActiveGenerator (the real
+    //    click path) — the generator's page is reparented into the active-editor
+    //    host in the live 3-row layout, then the whole editor is captured exactly
+    //    as a user sees that generator selected. The catalogue drives the same
+    //    generator pages ParvatiEditor::allGeneratedPages() owns; one generator
+    //    page can back several pills (Env1/2/3, LFO1..4), so a per-pill capture
+    //    shows each group subset, and the bar-only NOTE sentinel is included.
+    if (workspace != nullptr)
     {
-        std::vector<juce::TabbedComponent*> nested;
-        collectTabbedComponents (synth, nested);
-        for (auto* tc : nested)
+        for (const auto& src : parvati::kAllSources)
         {
-            const auto names = tc->getTabNames();
-            for (int t = 0; t < tc->getNumTabs(); ++t)
-            {
-                tc->setCurrentTabIndex (t, false);
-                ensureLaidOut (tc->getTabContentComponent (t));
-                capture (fullTabName (names[t]) + ".png");
-            }
+            if (! src.isGenerator)
+                continue;
+            workspace->setActiveGenerator (src.enumValue);
+            capture (*ed, juce::String (src.fullName).replace (" ", "_") + ".png");
         }
     }
 
-    // 3) GLOBAL overlay (the header "Global" button toggles it; render the
+    // 3) One standalone shot per generated ParamPage via allGeneratedPages()
+    //    (the editor-owned pages). Each page is laid out and rendered directly —
+    //    this covers the top-row direct pages (Oscillators/Mixer/Filter), which
+    //    are not generator pills, and re-emits each generator page as a clean
+    //    standalone editor. A ParamPage owns its controls whether parented or
+    //    not, so unparented generator pages render here too.
+    if (auto* editor = dynamic_cast<ParvatiEditor*> (ed))
+    {
+        for (auto* page : editor->allGeneratedPages())
+        {
+            ensureLaidOut (page);
+            const juce::String name = pageName (page);
+            if (name.isEmpty())
+                continue;   // Global page -> overlay capture below
+            capture (*page, name + ".png");
+        }
+    }
+
+    // 4) GLOBAL overlay (the header "Global" button toggles it; render the
     //    overlay page directly — it is a direct child of the editor).
     for (auto* child : ed->getChildren())
         if (auto* gp = dynamic_cast<ParamPage*> (child))
@@ -216,7 +241,7 @@ int main (int argc, char** argv)
             gp->setVisible (true);
             gp->toFront (false);
             ensureLaidOut (gp);
-            capture ("Global.png");
+            capture (*gp, "Global.png");
             gp->setVisible (false);
             break;
         }

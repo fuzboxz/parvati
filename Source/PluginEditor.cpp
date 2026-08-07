@@ -9,6 +9,7 @@
 #include "ui/OscPreviewDisplay.h"
 #include "ui/ParamHelp.h"
 #include "ui/SynthWorkspace.h"
+#include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel (bar-only NOTE pill)
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
@@ -2123,6 +2124,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         { "Global",      "GLOBAL",     Section::Global,      3, 214, 76 },
     };
 
+    // Generator pages captured by section during the loop, then registered with
+    // the CentralModBar's active-generator editor (bottom-left host). Each is an
+    // editor-owned ParamPage (reparented, never regenerated); ARP shows all its
+    // groups (empty setVisibleGroups set).
+    ParamPage* envPage = nullptr;
+    ParamPage* lfoPage = nullptr;
+    ParamPage* modifierPage = nullptr;
+    ParamPage* arpPage = nullptr;
+    ParamPage* seqPage = nullptr;
+
     for (const auto& pg : pages)
     {
         // MOD MATRIX is now the editor-owned ModMatrixView (Wave 1), NOT a
@@ -2262,65 +2273,75 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // sections paginate by group via a GroupPager (one sub-tab = one group
         // subset) so each visible slice fits its cell with NO scrollbar. (Multi
         // is never a generated page; if/else avoids switch/enum + branch-clone
-        // warnings under -Werror.)
-        using Subsets = SynthWorkspace::GroupSubsets;
-        // ONE generator-tab -> MOD_SRC_* map shared by the ENV / LFO / SEQ sub-tab
-        // strips so each sub-tab is itself a draggable mod-source drag SOURCE
-        // (payload "parvatiModSrc:<enum>", dropped onto a destination knob).
-        // Tab labels match the subsets below; VLFO == the per-voice LFO
-        // (MOD_SRC_LFO_4, verified in voice.cpp). NOTES/VEL/others are not
-        // draggable (map -> -1). static (built once) + captureless => no churn.
-        static const GroupPager::TabSourceMap generatorSourceForTab =
-            [] (const juce::String& tab) -> int
-        {
-            using namespace ambika::dsp;
-            if (tab == "ENV 1") return MOD_SRC_ENV_1;
-            if (tab == "ENV 2") return MOD_SRC_ENV_2;
-            if (tab == "ENV 3") return MOD_SRC_ENV_3;
-            if (tab == "LFO 1") return MOD_SRC_LFO_1;
-            if (tab == "LFO 2") return MOD_SRC_LFO_2;
-            if (tab == "LFO 3") return MOD_SRC_LFO_3;
-            if (tab == "VLFO")  return MOD_SRC_LFO_4;   // per-voice LFO
-            if (tab == "SEQ 1") return MOD_SRC_SEQ_1;
-            if (tab == "SEQ 2") return MOD_SRC_SEQ_2;
-            return -1;   // NOTES / VEL / others: not draggable
-        };
+        // Route the editor-owned page by section. Main-row pages (MIX/OSC/
+        // FILTER) are hosted directly. Generator pages (ENV/LFO/MODIFIERS/ARP/
+        // SEQ) are captured here and registered with the CentralModBar's
+        // active-generator editor AFTER the loop (one pill -> one page+group).
+        // Pages are reparented — NOT regenerated — so every APVTS attachment and
+        // the verified byte-bridge survive unchanged. (Multi/ModMatrix never
+        // reach here; the if/else avoids switch/enum + branch-clone warnings.)
         if (pg.s == Section::Mixer)
             synthWorkspace_->setMainLeft (rawPage);
         else if (pg.s == Section::Oscillators)
-            synthWorkspace_->setOscillators (rawPage);   // both osc panels visible directly (no pager)
+            synthWorkspace_->setOscillators (rawPage);   // both osc panels visible directly
         else if (pg.s == Section::Filter)
             synthWorkspace_->setMainRight (rawPage);
         else if (pg.s == Section::Envelopes)
-            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
-                Subsets { { "ENV 1", juce::StringArray { "Env 1 (Mod)" } },
-                          { "ENV 2", juce::StringArray { "Env 2 (Filter)" } },
-                          { "ENV 3", juce::StringArray { "Env 3 (Amp)" } } },
-                generatorSourceForTab);
+            envPage = rawPage;
         else if (pg.s == Section::Lfos)
-            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
-                Subsets { { "LFO 1", juce::StringArray { "LFO 1" } },
-                          { "LFO 2", juce::StringArray { "LFO 2" } },
-                          { "LFO 3", juce::StringArray { "LFO 3" } },
-                          { "VLFO", juce::StringArray { "Voice LFO" } } },
-                generatorSourceForTab);
+            lfoPage = rawPage;
         else if (pg.s == Section::Modifiers)
-            synthWorkspace_->addModTab (pg.shortName, rawPage,
-                Subsets { { "1-2", juce::StringArray { "Modifier 1", "Modifier 2" } },
-                          { "3-4", juce::StringArray { "Modifier 3", "Modifier 4" } } });
+            modifierPage = rawPage;
         else if (pg.s == Section::Arp)
-            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage, {});   // single group; shown directly (left card)
+            arpPage = rawPage;
         else if (pg.s == Section::Sequencer)
-            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
-                Subsets { { "SEQ 1",  juce::StringArray { "Sequencer 1" } },
-                          { "SEQ 2",  juce::StringArray { "Sequencer 2" } },
-                          { "NOTES", juce::StringArray { "Note Pitch" } },
-                          { "VEL",   juce::StringArray { "Note Velocity" } } },
-                generatorSourceForTab);   // left card
+            seqPage = rawPage;
         // Section::ModMatrix is handled by the early-continue above (ModMatrixView).
         // Section::Global (-> GLOBAL tab below) and Section::Multi (never
         // generated) intentionally fall through here.
     }
+
+    // ---- Central Modulation Bar wiring (Phase 2) ----
+    // Register every GENERATOR pill -> { owning ParamPage, groups-to-show } so the
+    // bar's bottom-left active-editor host can reparent + setVisibleGroups the
+    // right slice per pill (pages are never regenerated). Group names match the
+    // ParamPage groupForId() keys (verified in groupForId). VLFO == per-voice
+    // LFO (MOD_SRC_LFO_4, verified in voice.cpp). ARP shows ALL its groups
+    // (EMPTY array). The Note Sequencer pill is the bar-only sentinel
+    // (parvati::kNoteSeqSentinel == -1, NOT a real MOD_SRC_*): it reveals BOTH
+    // of its groups ("Note Pitch" + "Note Velocity") from the Sequencer page,
+    // and is click-only (the bar skips its drag because enumValue < 0). The drag
+    // payload ("parvatiModSrc:<enum>") is emitted by the bar itself, so the
+    // destination-side rings / padlock / ModMatrixHighlight need ZERO changes.
+    using namespace ambika::dsp;
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_ENV_1, envPage,        juce::StringArray{ "Env 1 (Mod)" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_ENV_2, envPage,        juce::StringArray{ "Env 2 (Filter)" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_ENV_3, envPage,        juce::StringArray{ "Env 3 (Amp)" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_1, lfoPage,        juce::StringArray{ "LFO 1" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_2, lfoPage,        juce::StringArray{ "LFO 2" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_3, lfoPage,        juce::StringArray{ "LFO 3" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_4, lfoPage,        juce::StringArray{ "Voice LFO" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_1, seqPage,        juce::StringArray{ "Sequencer 1" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_2, seqPage,        juce::StringArray{ "Sequencer 2" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_ARP_STEP, arpPage,     juce::StringArray{});   // empty => all groups
+    // Note Sequencer pill (bar-only sentinel): click-only, NOT draggable; opens
+    // the Sequencer page with BOTH Note Pitch + Note Velocity groups visible.
+    synthWorkspace_->registerGeneratorPage (parvati::kNoteSeqSentinel, seqPage,
+                                            juce::StringArray{ "Note Pitch", "Note Velocity" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_1, modifierPage,    juce::StringArray{ "Modifier 1" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_2, modifierPage,    juce::StringArray{ "Modifier 2" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_3, modifierPage,    juce::StringArray{ "Modifier 3" });
+    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_4, modifierPage,    juce::StringArray{ "Modifier 4" });
+    // Drag-only (Perf/Util/Const) pill click: briefly flash the mod-matrix rows
+    // routed FROM that source, reusing the existing timed flash.
+    synthWorkspace_->setOnDragOnlyPillClicked ([this] (int src)
+    {
+        if (modMatrixView_ != nullptr)
+            modMatrixView_->flashRowsForSource (src);
+    });
+    // Default to Env 1 visible on startup.
+    synthWorkspace_->setActiveGenerator (MOD_SRC_ENV_1);
+
 
     // ---- Top-level page selector [SYNTH] ----
     // A single SYNTH tab holds the integrated workspace (GLOBAL is now a header
@@ -2543,13 +2564,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // tabs, popups and group titles follow via the L&F font getters.
     refreshFontsIn (this, lnf_);
 
-    // Dense integrated layout: header(40) + page tabs(28) + content + keyboard(104)
-    // + status(22). 1280 wide fits the 3-column workspace (1*|3*|2*) comfortably;
-    // min 1100 keeps the columns usable. (Headless tests call setSize() below the
-    // min, which bypasses setResizeLimits — resized() degrades to Viewport-scroll.)
-    setSize (1280, 620);
+    // Dense integrated layout: header(40) + page tabs(28) + content + status(22).
+    // The CentralModBar spans the full content width (== editor width — no
+    // horizontal chrome), so the MINIMUM width is its no-clipping preferredWidth()
+    // plus a small safety margin: NO pill ever compresses. The DEFAULT size is
+    // raised to at least that minimum so the bar is uncompressed at startup too.
+    // Min height 600 keeps the 3 rows (top | bar | bottom) usable. (Headless tests
+    // call setSize() below the min, which bypasses setResizeLimits.)
+    const int minBarW = (synthWorkspace_ != nullptr) ? synthWorkspace_->barPreferredWidth() : 0;
+    const int minWidth = minBarW + 8;
+    setSize (juce::jmax (1280, minWidth), 620);
     setResizable (true, true);
-    setResizeLimits (1100, 600, 1600, 1100);
+    setResizeLimits (minWidth, 600, 1800, 1100);
 
     // Apply persisted zoom (global scale; only if non-default to avoid an
     // unnecessary rescale at startup).
@@ -2748,9 +2774,9 @@ void ParvatiEditor::applyAllColoursFromTheme()
     for (auto& page : generatedPages_)
         page->applyThemeColors();
     if (synthWorkspace_ != nullptr)
-        synthWorkspace_->applyThemeColors();   // nested tab + content backgrounds
+        synthWorkspace_->applyThemeColors();   // 3-row workspace: top pages + bar + active editor + matrix
     if (modMatrixView_ != nullptr)
-        modMatrixView_->applyThemeColors();    // MOD MATRIX tab content (ModMatrixView, replaces the old ParamPage)
+        modMatrixView_->applyThemeColors();    // bottom-right ModMatrixView (direct child of the workspace)
     if (multiPage_ != nullptr)
         multiPage_->applyThemeColors();
     // Re-resolve + re-push every control's category arc colour / mod-source tint
@@ -2795,6 +2821,15 @@ void ParvatiEditor::setZoom (double zoom)
 {
     zoom_ = juce::jlimit (0.75, 2.0, zoom);
     juce::Desktop::getInstance().setGlobalScaleFactor (static_cast<float> (zoom_));
+}
+
+std::vector<ParamPage*> ParvatiEditor::allGeneratedPages() const
+{
+    std::vector<ParamPage*> out;
+    out.reserve (generatedPages_.size());
+    for (const auto& p : generatedPages_)
+        out.push_back (p.get());
+    return out;
 }
 
 bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
@@ -2859,10 +2894,9 @@ void ParvatiEditor::applyChromeTranslations()
     // Re-translate every editor-chrome string through the active LocalisedStrings
     // so a live language switch updates immediately. The top-level page-selector
     // labels (SYNTH/GLOBAL) and the chrome strings below are translated; the
-    // nested workspace tab labels (ENV/LFO/MOD MATRIX/...) are short fixed
-    // abbreviations, re-applied as-is via SynthWorkspace::reapplyTabLabels(). With
-    // no mappings installed (English) TRANS() is the identity, so this is a no-op
-    // for the default.
+    // CentralModBar pill/cluster labels are short fixed codes (E1/L1/ARP/...),
+    // so they need no translation. With no mappings installed (English) TRANS()
+    // is the identity, so this is a no-op for the default.
     patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load"));
@@ -2876,8 +2910,9 @@ void ParvatiEditor::applyChromeTranslations()
     globalButton_.setTooltip (TRANS ("Global settings"));
 
     pageSelector_.setTabName (0, TRANS ("SYNTH"));
-    if (synthWorkspace_ != nullptr)
-        synthWorkspace_->reapplyTabLabels();
+    // The CentralModBar pill/cluster labels are language-neutral short codes
+    // (E1/L1/ARP/ENV...), so there are no tab labels to re-apply on a language
+    // switch (the old nested ENV/LFO/MOD-MATRIX tab strip is gone).
 
     for (auto& page : generatedPages_)
         page->refreshLanguage();

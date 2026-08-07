@@ -56,6 +56,14 @@ struct ParvatiTheme
     juce::Colour catLfo;           // LFOs (magenta)
     juce::Colour catSeq;           // Sequencer (neon green)
     juce::Colour catArp;           // Arpeggiator (electric purple)
+    // --- modulation-source catalogue tokens (CentralModBar clusters) ---
+    // Read by ModSourceCatalog::clusterAccent to tint each cluster's micro-pills
+    // and drag image. The four hues are DISTINCT from the five control-arc tokens
+    // above so a generator pill never reads the same colour as a control section.
+    juce::Colour catPerf;          // Performance sources: Velocity/Aftertouch/Bend/Wheels/Expression/Note (yellow)
+    juce::Colour catUtil;          // Utility sources: Gate/Noise/Random (orange)
+    juce::Colour catMod;           // Modifier / operator outputs (magenta, distinct from catArp)
+    juce::Colour catConst;         // Constant sources 256..4 (slate/teal)
     // --- keyboard natural-key token ---
     // Resting fill of the on-screen piano's natural (white) keys — a warm near-
     // white on the dark themes, a light off-white on Paper. KeyboardView derives

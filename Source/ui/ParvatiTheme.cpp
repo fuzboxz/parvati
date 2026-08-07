@@ -23,6 +23,7 @@ namespace
     //   containerFill, containerShadow, innerShadow,
     //   tabUnselectedBg, tabSelectedBg, tabUnderline,
     //   catAudio, catEnv, catLfo, catSeq, catArp,
+    //   catPerf, catUtil, catMod, catConst,
     //   keyWhite,
     //   isDark (bool)
 } // namespace
@@ -44,6 +45,9 @@ const ParvatiTheme& carbonTheme()
         // category colours: catAudio, catEnv, catLfo, catSeq, catArp
         juce::Colour (0xffFFB400), juce::Colour (0xff00E5FF), juce::Colour (0xffFF0055),
         juce::Colour (0xff00FF66), juce::Colour (0xffAA00FF),
+        // mod-catalogue cluster colours: catPerf, catUtil, catMod, catConst
+        juce::Colour (0xffFFE600), juce::Colour (0xffFF7800), juce::Colour (0xffFF52D9),
+        juce::Colour (0xff3DD2B8),
         // keyWhite: natural (white) key resting fill (warm ivory)
         juce::Colour (0xffeeeae0),
         true
@@ -67,6 +71,9 @@ const ParvatiTheme& midnightTheme()
         // category colours: catAudio, catEnv, catLfo, catSeq, catArp
         juce::Colour (0xffFFB400), juce::Colour (0xff00E5FF), juce::Colour (0xffFF0055),
         juce::Colour (0xff00FF66), juce::Colour (0xffAA00FF),
+        // mod-catalogue cluster colours: catPerf, catUtil, catMod, catConst
+        juce::Colour (0xffFFE600), juce::Colour (0xffFF7800), juce::Colour (0xffFF52D9),
+        juce::Colour (0xff3DD2B8),
         // keyWhite: natural (white) key resting fill (cool ivory, suits the blue palette)
         juce::Colour (0xffeceef1),
         true
@@ -90,6 +97,9 @@ const ParvatiTheme& obsidianTheme()
         // category colours: catAudio, catEnv, catLfo, catSeq, catArp
         juce::Colour (0xffFFB400), juce::Colour (0xff00E5FF), juce::Colour (0xffFF0055),
         juce::Colour (0xff00FF66), juce::Colour (0xffAA00FF),
+        // mod-catalogue cluster colours: catPerf, catUtil, catMod, catConst
+        juce::Colour (0xffFFE600), juce::Colour (0xffFF7800), juce::Colour (0xffFF52D9),
+        juce::Colour (0xff3DD2B8),
         // keyWhite: natural (white) key resting fill (neutral ivory w/ faint violet)
         juce::Colour (0xffefeaf2),
         true
@@ -114,6 +124,10 @@ const ParvatiTheme& paperTheme()
         // (darker / saturated variants for clear contrast on the light bg)
         juce::Colour (0xffB45309), juce::Colour (0xff0E7490), juce::Colour (0xffBE123C),
         juce::Colour (0xff15803D), juce::Colour (0xff6B21A8),
+        // mod-catalogue cluster colours: catPerf, catUtil, catMod, catConst
+        // (dark / saturated variants for clear contrast on the light bg)
+        juce::Colour (0xffA16207), juce::Colour (0xffC2410C), juce::Colour (0xffA21CAF),
+        juce::Colour (0xff475569),
         // keyWhite: light off-white that still reads against the light keyboard strip
         juce::Colour (0xfffbf9f4),
         false
@@ -138,6 +152,10 @@ const ParvatiTheme& crimsonTheme()
         // (harmonized with the crimson palette: vivid but slightly desaturated / shifted)
         juce::Colour (0xffE8923C), juce::Colour (0xff3DD6D0), juce::Colour (0xffE0508A),
         juce::Colour (0xff4FD17A), juce::Colour (0xff9D5BD9),
+        // mod-catalogue cluster colours: catPerf, catUtil, catMod, catConst
+        // (harmonized with the crimson palette; catConst is slate since catEnv is teal)
+        juce::Colour (0xffE8C04A), juce::Colour (0xffCC3A1F), juce::Colour (0xffB85AB5),
+        juce::Colour (0xff6B8FA8),
         // keyWhite: natural (white) key resting fill (warm ivory w/ faint warm undertone)
         juce::Colour (0xfff1ebe7),
         true

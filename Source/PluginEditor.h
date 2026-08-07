@@ -497,6 +497,15 @@ public:
     // timerCallback also hides it while any modal popup stays open).
     juce::TooltipWindow* getTooltipWindow() const noexcept { return tooltipWindow_.get(); }
 
+    // Enumerate EVERY generated ParamPage as a raw pointer — the 3 top-row
+    // direct pages (OSC/Mixer/Filter), the generator pages (ENV/LFO/SEQ/ARP/
+    // Modifiers), and the Global page — parented or not. Headless coverage /
+    // screenshot tools use this to inspect each page's ParamControls (a
+    // ParamPage owns its controls whether parented or not) without depending on
+    // the live reparent/visibility state the CentralModBar drives. Exposed for
+    // test/tool access only.
+    std::vector<ParamPage*> allGeneratedPages() const;
+
 private:
     // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL files.
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
@@ -532,26 +541,32 @@ private:
 
     // The Multi page is owned here and shown as an overlay over the content area.
     std::unique_ptr<MultiPage> multiPage_;
-    // Generated ParamPages — EDITOR-OWNED. Each is reparented (NOT regenerated)
-    // into the integrated SynthWorkspace (the 9 synth pages) or the top-level
-    // GLOBAL tab (the Global page), so every APVTS attachment and the verified
-    // byte-bridge survive the reorganization unchanged.
-    // Declaration order is deliberate for safe teardown: pageSelector_ (holds a
-    // raw ref to synthWorkspace_ below) destroys first, then synthWorkspace_ (its
-    // nested tabs detach from the pages), then generatedPages_ deletes them.
+    // Generated ParamPages — EDITOR-OWNED. Every page is created here so every
+    // APVTS attachment and the verified byte-bridge survive the layout
+    // unchanged: the 3 top-row direct pages (OSC/Mixer/Filter), the generator
+    // pages (ENV/LFO/SEQ/ARP/Modifiers), and the Global ParamPage. At most one
+    // generator page is reparented into SynthWorkspace's active-editor host at a
+    // time (default ENV 1); the rest stay unparented until their CentralModBar
+    // pill is clicked. The Global page is a direct-child overlay toggled by the
+    // header "Global" button.
+    // Declaration order is deliberate for safe teardown: pageSelector_ (hosting
+    // synthWorkspace_ as non-owned content) destroys first, then synthWorkspace_
+    // (its host + bar merely detach the non-owned pages), then generatedPages_
+    // deletes them.
     std::vector<std::unique_ptr<ParamPage>> generatedPages_;
-    // The redesigned MOD MATRIX panel (Wave 1). EDITOR-OWNED. Hosted NON-owned
-    // by SynthWorkspace's nested modTabs_ (deleteWhenNotNeeded=false), exactly
-    // like the reparented ParamPages, so the view must outlive the TabbedComponent
-    // that hosts it. Declared BEFORE synthWorkspace_ on purpose: members destroy in
-    // REVERSE declaration order, so synthWorkspace_ (and its modTabs_) tear down
-    // FIRST and merely DETACH the non-owned view, then modMatrixView_ deletes it —
-    // no use-after-free, no double-free.
+    // The redesigned MOD MATRIX panel (Wave 1). EDITOR-OWNED. Hosted NON-owned as
+    // a DIRECT child of SynthWorkspace (setModMatrixView), exactly like the
+    // reparented ParamPages, so the view must outlive the workspace that hosts
+    // it. Declared BEFORE synthWorkspace_ on purpose: members destroy in REVERSE
+    // declaration order, so synthWorkspace_ tears down FIRST and merely DETACHES
+    // the non-owned view, then modMatrixView_ deletes it — no use-after-free,
+    // no double-free.
     std::unique_ptr<ModMatrixView> modMatrixView_;
-    // SYNTH content: the dense, void-free 2-row integrated workspace hosting the
-    // 9 synth ParamPages (reparented) in signal-chain columns (OSC | Mixer |
-    // Filter) above two nested tab groups (ENV/LFO/ARP/SEQ and MOD MATRIX/
-    // MODIFIERS). Owns only its nested tabs; pages stay editor-owned.
+    // SYNTH content: the 3-row workspace. TOP = OSC|MIX|FILTER direct ParamPages;
+    // MIDDLE = the full-width CentralModBar (the pill hub); BOTTOM = the
+    // active-editor host (one generator ParamPage at a time, chosen by the
+    // bar's pills) on the left and the ModMatrixView on the right. Owns only its
+    // bar + host; pages + view stay editor-owned.
     std::unique_ptr<SynthWorkspace> synthWorkspace_;
     // Single-tab page selector [SYNTH] (the lone bar is hidden via depth 0). SYNTH
     // shows synthWorkspace_; GLOBAL is a header-button overlay (globalPage_), not

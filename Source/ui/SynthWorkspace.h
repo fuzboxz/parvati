@@ -1,34 +1,36 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // SynthWorkspace — the content of the top-level SYNTH tab. A rigid, void-free
-// 2-row integrated panel that hosts the EXISTING, editor-owned ParamPages
+// 3-row integrated panel that hosts the EXISTING, editor-owned ParamPages
 // (reparented, NOT regenerated), so every APVTS attachment and the verified
 // byte-bridge survive the reorganization unchanged:
 //
-//   Main row (top 50%): 3 columns  [ OSCILLATORS 40% | MIXER 20% | FILTER 40% ]
+//   TOP row:    3 columns  [ OSCILLATORS 40% | MIXER 20% | FILTER 40% ]
 //       OSCILLATORS = a direct ParamPage (BOTH "Osc 1"/"Osc 2" visible)
 //       MIXER / FILTER = direct ParamPages
-//   Mod row (bottom 50%): 2 halves, each a nested TabbedComponent (depth 28)
-//       LEFT  = [ENV][LFO][ARP][SEQ] — generators + arp/seq in one visible strip;
-//               each tab a GroupPager (one generator/sub-tab), ARP shown directly
-//       RIGHT = [MOD MATRIX][MODIFIERS]
-//                           — GroupPagers where a section paginates by group
+//   MIDDLE row: full-width CentralModBar (CentralModBar::kBarHeight) — the
+//       central hub: click a GENERATOR pill (E1-3 / L1-3 / vLFO / S1-2 / ARP /
+//       M1-4) to swap the bottom-left active generator editor; drag ANY pill
+//       onto a destination knob to assign it (drag carries the same
+//       "parvatiModSrc:<enum>" payload the rest of the editor emits).
+//   BOTTOM row: LEFT 50% = the ACTIVE GENERATOR EDITOR (one generator page at a
+//       time, chosen by the bar — reparented, never regenerated), RIGHT 50% =
+//       the editor-owned ModMatrixView (direct-hosted, no tab bar).
 //
-// NO per-page juce::Viewport wrappers: every page fits its cell (the GroupPager
-// sub-tabs keep each visible group-subset short enough), so there are ZERO
-// param-panel scrollbars. The pages stay owned by ParvatiEditor (generatedPages_);
-// the workspace owns only the GroupPagers + nested TabbedComponents, so reparenting
-// never duplicates a ParamControl / APVTS attachment.
+// NO per-page juce::Viewport wrappers: every page fits its cell, so there are
+// ZERO param-panel scrollbars. The pages stay owned by ParvatiEditor
+// (generatedPages_); the workspace owns only the bar + the plain active-editor
+// host, so reparenting never duplicates a ParamControl / APVTS attachment.
 
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
-#include <utility>
-#include <vector>
+#include <unordered_map>
 
-#include "GroupPager.h"   // GroupPager (nested-tab content: ENV/LFO/ARP/SEQ groups)
+#include "CentralModBar.h"
 
 class ModMatrixView;
 class ParamPage;
@@ -40,41 +42,52 @@ class SynthWorkspace : public juce::Component
 public:
     explicit SynthWorkspace (ThemeManager& themeManager);
 
-    // Sub-tab partitions handed to a GroupPager: { tab label, group names shown }.
-    using GroupSubsets = std::vector<std::pair<juce::String, juce::StringArray>>;
-
     // Main-row columns in signal-chain order (OSC | MIX | FILTER at 40/20/40).
-    // OSC is shown DIRECTLY (both "Osc 1"/"Osc 2" visible); MIX/FILTER are shown
-    // directly too. Pages stay editor-owned (reparented, never regenerated).
+    // All three are direct editor-owned pages (reparented, never regenerated).
     void setMainLeft    (ParamPage* page);          // Mixer (direct)
     void setOscillators (ParamPage* page);          // Oscillators (direct; both osc panels visible)
     void setMainRight   (ParamPage* page);          // Filter (direct)
 
-    // A nested mod-row tab. A non-empty @p subsets builds a GroupPager (the page
-    // is paginated by group); an empty subsets hosts the page directly (ARP).
-    // @p tabDragSource (optional, generator pagers only) makes the GroupPager's
-    // sub-tab buttons themselves draggable mod-source drag SOURCES; pass {} (or
-    // omit) for the direct-host ARP branch / non-generator pagers.
-    void addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets,
-                       GroupPager::TabSourceMap tabDragSource = {});
-    void addModTab    (const juce::String& shortName, ParamPage* page, GroupSubsets subsets);
+    // ---- Bottom-left: the ACTIVE GENERATOR EDITOR ----
+    // Register a generator (a MOD_SRC_* enum whose catalogue entry is a
+    // generator, or the bar-only Note Sequencer sentinel) -> { owning
+    // ParamPage*, group names shown via setVisibleGroups }. The page stays
+    // editor-owned; the workspace reparents it into the active-editor host when
+    // its generator is selected (NEVER regenerated). An EMPTY @p groupNames
+    // array shows ALL of the page's groups (e.g. ARP). A multi-element array
+    // reveals several groups at once (e.g. the Note Sequencer reveals both its
+    // "Note Pitch" and "Note Velocity" groups).
+    void registerGeneratorPage (int modSrcEnum, ParamPage* page,
+                                const juce::StringArray& groupNames);
 
-    // Host an editor-owned ModMatrixView as the MOD MATRIX tab content. The view
-    // is NON-owned by the TabbedComponent (deleteWhenNotNeeded=false), exactly
-    // like the direct-host path of addModTab hosts a page — the editor retains
-    // ownership. Replaces the old 1-4/5-8/9-12/13-14 GroupPager pagination.
+    // Show the registered generator's page (reparent + setVisibleGroups) and
+    // highlight its bar pill. No-op if @p modSrcEnum is not a registered
+    // generator. Called from the bar's pill-click handler (generators) and once
+    // at startup to set the default (Env 1).
+    void setActiveGenerator (int modSrcEnum);
+
+    // Drag-only (Perf / Util / Const) pill click — the editor registers a handler
+    // that briefly highlights the mod-matrix rows currently routed FROM that
+    // source (ModMatrixView::flashRowsForSource), reusing the existing timed
+    // flash. Generators do NOT reach this handler (they swap the editor instead).
+    void setOnDragOnlyPillClicked (std::function<void (int)> cb);
+
+    // Host an editor-owned ModMatrixView as the BOTTOM-RIGHT panel (direct child,
+    // non-owned — the editor retains ownership, exactly like the reparented
+    // ParamPages). The view paints + lays out its own rows in its resized().
     void setModMatrixView (ModMatrixView* view);
 
     void resized() override;
     void paint (juce::Graphics&) override;
 
-    // Re-apply the stored short tab labels to the nested TabbedComponents. The
-    // abbreviations are language-neutral; the editor calls this on a live
-    // language switch so any future translation re-resolves through here.
-    void reapplyTabLabels();
-
-    // Re-apply theme colours to the nested tab + GroupPager + page backgrounds.
+    // Re-apply theme colours to the main pages + the bar + the active editor
+    // page + the ModMatrixView. Called by the editor on a theme switch.
     void applyThemeColors();
+
+    // The bar's no-clipping minimum width (CentralModBar::preferredWidth).
+    // The editor uses this as the floor of setResizeLimits so the bar never
+    // compresses a pill.
+    int barPreferredWidth() const;
 
 private:
     ThemeManager& themeManager_;
@@ -84,13 +97,34 @@ private:
     ParamPage* mainLeftPage_  = nullptr;    // Mixer (direct)
     ParamPage* mainRightPage_ = nullptr;    // Filter (direct)
 
-    // Nested tab groups (workspace-owned) + their short labels. envLfoTabs_ = the
-    // LEFT card [ENV][LFO][ARP][SEQ]; modTabs_ = the RIGHT card [MOD MATRIX]
-    // [MODIFIERS] (method names are historical; only the routing differs).
-    std::unique_ptr<juce::TabbedComponent> envLfoTabs_, modTabs_;
-    std::vector<juce::String> envLfoTabNames_, modTabNames_;
+    // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
+    std::unique_ptr<CentralModBar> modBar_;
 
-    static constexpr int kNestedTabBarDepth = 28;   // compact nested tab strip
+    // BOTTOM-LEFT: a plain host that reparents ONE generator page at a time. The
+    // reparented page stays editor-owned (generatedPages_); the host owns only
+    // its layout slot, so reparenting never duplicates a control/attachment.
+    std::unique_ptr<juce::Component> activeEditorHost_;
+    ParamPage* activePage_ = nullptr;   // page currently reparented into the host
+
+    // Generator -> { page, groups-to-show } registration (built by the editor from
+    // the page-generation loop; one entry per generator pill).
+    struct GenEntry { ParamPage* page = nullptr; juce::StringArray groups; };
+    std::unordered_map<int, GenEntry> generators_;
+
+    // Editor-supplied handler for a drag-only (Perf/Util/Const) pill click.
+    std::function<void (int)> onDragOnlyPillClicked_;
+
+    // BOTTOM-RIGHT: the editor-owned ModMatrixView (direct-hosted, non-owned).
+    ModMatrixView* modMatrixView_ = nullptr;
+
+    // Reparent + setVisibleGroups + size the registered generator's page into the
+    // active-editor host (the page is never regenerated). Called for generator
+    // pills; the bar pill highlight is handled separately by setActiveGenerator.
+    void showGenerator (int modSrcEnum);
+
+    // Reflow the currently-active page into the host's current bounds. Called
+    // from resized() (and after a generator swap) so the page follows resizes.
+    void reflowActiveEditor();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SynthWorkspace)
 };

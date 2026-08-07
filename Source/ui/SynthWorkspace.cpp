@@ -4,49 +4,34 @@
 
 #include "PluginEditor.h"   // ParamPage complete type
 #include "ModMatrixView.h"
+#include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
 #include "ThemeManager.h"
-
-//==============================================================================
-// Map a nested-tab shortName to its FUNCTION-CATEGORY colour token from the
-// active theme (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD MATRIX /
-// MODIFIERS=amber). Falls back to tabUnderline so a tab without a category keeps
-// the default highlight. Drives the per-tab category colour (see
-// drawTabButton + parvatiTabCategoryColourId).
-static juce::Colour categoryColourForShortName (const juce::String& shortName, const ParvatiTheme& t)
-{
-    if (shortName.startsWithIgnoreCase ("ENV")) return t.catEnv;
-    if (shortName.startsWithIgnoreCase ("LFO")) return t.catLfo;
-    if (shortName.startsWithIgnoreCase ("ARP")) return t.catArp;
-    if (shortName.startsWithIgnoreCase ("SEQ")) return t.catSeq;
-    if (shortName.startsWithIgnoreCase ("MOD")) return t.catAudio;   // MOD MATRIX / MODIFIERS
-    return t.tabUnderline;
-}
-
-// Set a single TabbedComponent tab button's category colour (the individual
-// TabBarButton carries the hue; drawTabButton reads it).
-static void colourTabButton (juce::TabbedComponent& tc, int tabIndex, juce::Colour colour)
-{
-    auto& bar = tc.getTabbedButtonBar();
-    if (auto* btn = bar.getTabButton (tabIndex))
-        btn->setColour (parvatiTabCategoryColourId, colour);
-}
 
 //==============================================================================
 SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     : themeManager_ (tm)
 {
-    // Two nested TabbedComponents for the bottom mod row. They inherit the
-    // editor-wide ParvatiLookAndFeel, so tab/combo colours come automatically;
-    // only the tab-bar depth + outline are set here.
-    envLfoTabs_ = std::make_unique<juce::TabbedComponent> (juce::TabbedButtonBar::TabsAtTop);
-    envLfoTabs_->setTabBarDepth (kNestedTabBarDepth);
-    envLfoTabs_->setOutline (1);   // 1px card border (left/right/bottom); tab baseline (drawTabButton) supplies the top edge
-    addAndMakeVisible (*envLfoTabs_);
+    // The full-width Central Modulation Bar (middle seam).
+    modBar_ = std::make_unique<CentralModBar> (themeManager_);
+    addAndMakeVisible (*modBar_);
 
-    modTabs_ = std::make_unique<juce::TabbedComponent> (juce::TabbedButtonBar::TabsAtTop);
-    modTabs_->setTabBarDepth (kNestedTabBarDepth);
-    modTabs_->setOutline (1);   // 1px card border (left/right/bottom); tab baseline (drawTabButton) supplies the top edge
-    addAndMakeVisible (*modTabs_);
+    // BOTTOM-LEFT: a plain host that reparents one generator page at a time.
+    activeEditorHost_ = std::make_unique<juce::Component>();
+    addAndMakeVisible (*activeEditorHost_);
+
+    // Wire the bar's pill clicks. A GENERATOR pill (catalogue isGenerator) swaps
+    // the bottom-left active editor to its page+group AND lights the pill's
+    // underline glow. A drag-only pill (Perf/Util/Const) delegates to the
+    // editor-registered handler (ModMatrixView row flash for rows routed from
+    // that source). The drag itself (any pill) is handled inside the bar and
+    // needs no wiring here — it carries the "parvatiModSrc:<enum>" payload.
+    modBar_->setOnPillClicked ([this] (int src)
+    {
+        if (parvati::entryFor (src).isGenerator)
+            setActiveGenerator (src);
+        else if (onDragOnlyPillClicked_)
+            onDragOnlyPillClicked_ (src);
+    });
 }
 
 //==============================================================================
@@ -76,63 +61,79 @@ void SynthWorkspace::setMainRight (ParamPage* page)
         addAndMakeVisible (*page);
 }
 
-void SynthWorkspace::addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets,
-                                   GroupPager::TabSourceMap tabDragSource)
+void SynthWorkspace::registerGeneratorPage (int modSrcEnum, ParamPage* page,
+                                            const juce::StringArray& groupNames)
 {
-    envLfoTabNames_.push_back (shortName);
-    const auto& theme = themeManager_.getCurrentTheme();
-    const auto bg = theme.windowBackground;
-    const auto catColour = categoryColourForShortName (shortName, theme);
-    if (! subsets.empty())
-    {
-        // GroupPager paginates the page by generator (one Env/LFO per sub-tab).
-        // The nested TC owns (deletes) the GroupPager; the page stays editor-owned.
-        // The bar's parent category colour is propagated to every sub-tab.
-        // tabDragSource makes each sub-tab a draggable mod-source drag SOURCE
-        // (passed through only for the ENV/LFO/SEQ generator pagers).
-        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets), catColour,
-                                                   std::move (tabDragSource));
-        envLfoTabs_->addTab (shortName, bg, pager.release(), true);
-    }
-    else
-    {
-        envLfoTabs_->addTab (shortName, bg, page, false);   // editor-owned page; TC must NOT delete it
-    }
-    colourTabButton (*envLfoTabs_, envLfoTabs_->getNumTabs() - 1, catColour);
+    generators_[modSrcEnum] = { page, groupNames };
 }
 
-void SynthWorkspace::addModTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets)
+void SynthWorkspace::setOnDragOnlyPillClicked (std::function<void (int)> cb)
 {
-    modTabNames_.push_back (shortName);
-    const auto& theme = themeManager_.getCurrentTheme();
-    const auto bg = theme.windowBackground;
-    const auto catColour = categoryColourForShortName (shortName, theme);
-    if (! subsets.empty())
-    {
-        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets), catColour);
-        modTabs_->addTab (shortName, bg, pager.release(), true);
-    }
-    else
-    {
-        modTabs_->addTab (shortName, bg, page, false);
-    }
-    colourTabButton (*modTabs_, modTabs_->getNumTabs() - 1, catColour);
+    onDragOnlyPillClicked_ = std::move (cb);
 }
 
 void SynthWorkspace::setModMatrixView (ModMatrixView* view)
 {
-    // Host the editor-owned ModMatrixView as the MOD MATRIX tab content. Mirrors
-    // the direct-host path of addModTab (deleteWhenNotNeeded=false): the view
-    // stays editor-owned; the TabbedComponent must NOT delete it. Replaces the
-    // old 1-4/5-8/9-12/13-14 GroupPager pagination for the MOD MATRIX tab only
-    // (MODIFIERS keeps its GroupPager).
-    const juce::String shortName { "MOD MATRIX" };
-    modTabNames_.push_back (shortName);
-    const auto& theme = themeManager_.getCurrentTheme();
-    const auto bg = theme.windowBackground;
-    const auto catColour = categoryColourForShortName (shortName, theme);
-    modTabs_->addTab (shortName, bg, view, false);
-    colourTabButton (*modTabs_, modTabs_->getNumTabs() - 1, catColour);
+    // Host the editor-owned ModMatrixView directly as the BOTTOM-RIGHT panel
+    // (single content, no tab bar). NON-owned (the editor retains ownership via
+    // modMatrixView_): addAndMakeVisible reparents without transferring
+    // ownership, exactly like the reparented ParamPages, so the teardown order
+    // (synthWorkspace_ before modMatrixView_) stays safe.
+    modMatrixView_ = view;
+    if (view != nullptr)
+        addAndMakeVisible (*view);
+}
+
+//==============================================================================
+void SynthWorkspace::showGenerator (int modSrcEnum)
+{
+    const auto it = generators_.find (modSrcEnum);
+    if (it == generators_.end() || it->second.page == nullptr)
+        return;
+
+    auto* page = it->second.page;
+
+    // Reparent the page into the active-editor host (the page is NEVER
+    // regenerated — only its parent + visible-group subset change). The prior
+    // page is detached (non-owned: removeChildComponent, never deleted).
+    if (activePage_ != page)
+    {
+        if (activePage_ != nullptr)
+            activeEditorHost_->removeChildComponent (activePage_);
+        activeEditorHost_->addAndMakeVisible (*page);
+        activePage_ = page;
+    }
+
+    // Show just this generator's group subset (EMPTY array => ALL groups, e.g.
+    // ARP). The stored array is passed through unchanged so a multi-group entry
+    // (e.g. the Note Sequencer's "Note Pitch" + "Note Velocity") reveals every
+    // group it names.
+    page->setVisibleGroups (it->second.groups);
+
+    reflowActiveEditor();
+}
+
+void SynthWorkspace::setActiveGenerator (int modSrcEnum)
+{
+    showGenerator (modSrcEnum);
+    modBar_->setActiveGenerator (modSrcEnum);   // underline-glow the pill
+}
+
+void SynthWorkspace::reflowActiveEditor()
+{
+    if (activePage_ == nullptr)
+        return;
+    const auto b = activeEditorHost_->getLocalBounds();
+    if (b.isEmpty())
+        return;
+    activePage_->setBounds (b);
+    activePage_->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
+}
+
+//==============================================================================
+int SynthWorkspace::barPreferredWidth() const
+{
+    return modBar_ != nullptr ? modBar_->preferredWidth() : 0;
 }
 
 //==============================================================================
@@ -149,21 +150,22 @@ void SynthWorkspace::resized()
     if (area.isEmpty())
         return;
 
-    // ---- Main row (top 50%) + mod row (bottom 50%): butted, no gap ----
-    const int mainH = area.getHeight() / 2;
-    auto mainRow = area.removeFromTop (mainH);
-    auto modRow  = area;   // remaining bottom half
+    // ---- 3 rows: TOP (main) | MIDDLE (bar) | BOTTOM (generators | matrix) ----
+    // The bar is a fixed-height full-width seam; the remaining height splits
+    // evenly between the top main row and the bottom row (as the prior 50/50).
+    const int remaining = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
+    const int mainH = remaining / 2;
+
+    auto mainRow  = area.removeFromTop (mainH);
+    auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);
+    auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
     // ---- Main row columns: OSCILLATORS 40% | MIXER 20% | FILTER 40% ----
-    // Signal-chain order (Osc -> Mixer -> Filter), left to right.
     const int fullW = mainRow.getWidth();
     auto oscCol = mainRow.removeFromLeft (fullW * 40 / 100);
     auto mixCol = mainRow.removeFromLeft (fullW * 20 / 100);
     auto filCol = mainRow;                       // remaining 40%
 
-    // All three main-row columns are direct pages, sized + reflowed to the
-    // column (no Viewport, no scrollbar: the group layout is dense enough to fit
-    // the cell). OSC shows BOTH oscillators (empty visibleGroups_ => all groups).
     auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b)
     {
         if (page == nullptr)
@@ -175,88 +177,37 @@ void SynthWorkspace::resized()
     sizeDirect (mainLeftPage_,  mixCol);
     sizeDirect (mainRightPage_, filCol);
 
-    // ---- Mod row: LEFT 50% = envLfoTabs_, RIGHT 50% = modTabs_ ----
-    auto modLeft  = modRow.removeFromLeft (modRow.getWidth() / 2);
-    auto modRight = modRow;
+    // ---- Middle seam: full-width bar ----
+    modBar_->setBounds (barRow);
 
-    envLfoTabs_->setBounds (modLeft);
-    modTabs_->setBounds    (modRight);
+    // ---- Bottom row: LEFT 50% = active editor, RIGHT 50% = ModMatrixView ----
+    auto modLeft  = bottomRow.removeFromLeft (bottomRow.getWidth() / 2);
+    auto modRight = bottomRow;
 
-    // Reflow EVERY tab's content (GroupPager or direct page) to the nested tab
-    // content area, so non-current tabs are laid out before they are shown — JUCE
-    // only sizes the CURRENT tab's content, so the headless test / screenshots
-    // (and a real tab switch) need every page laid out ahead of time.
-    auto reflowAllTabs = [] (juce::TabbedComponent* tc)
-    {
-        if (tc == nullptr)
-            return;
-        const int w = juce::jmax (1, tc->getWidth());
-        const int h = juce::jmax (0, tc->getHeight() - kNestedTabBarDepth);
-        for (int i = 0; i < tc->getNumTabs(); ++i)
-        {
-            auto* content = tc->getTabContentComponent (i);
-            if (auto* pager = dynamic_cast<GroupPager*> (content))
-                pager->setBounds ({ 0, kNestedTabBarDepth, w, h });   // BELOW the tab bar (was {0,0} which overlapped it)
-            else if (auto* page = dynamic_cast<ParamPage*> (content))
-            {
-                page->setBounds ({ 0, kNestedTabBarDepth, w, h });
-                page->reflowToWidth (w, h);
-            }
-            else if (auto* mmv = dynamic_cast<ModMatrixView*> (content))
-                mmv->setBounds ({ 0, kNestedTabBarDepth, w, h });   // editor-owned view; sized like a direct page (its resized() lays out rows)
-        }
-    };
-    reflowAllTabs (envLfoTabs_.get());
-    reflowAllTabs (modTabs_.get());
+    activeEditorHost_->setBounds (modLeft);
+    reflowActiveEditor();
+
+    if (modMatrixView_ != nullptr)
+        modMatrixView_->setBounds (modRight);   // its resized() lays out the rows
 }
 
 //==============================================================================
-void SynthWorkspace::reapplyTabLabels()
-{
-    for (size_t i = 0; i < envLfoTabNames_.size(); ++i)
-        envLfoTabs_->setTabName (static_cast<int> (i), envLfoTabNames_[i]);
-    for (size_t i = 0; i < modTabNames_.size(); ++i)
-        modTabs_->setTabName (static_cast<int> (i), modTabNames_[i]);
-}
-
 void SynthWorkspace::applyThemeColors()
 {
-    const auto& theme = themeManager_.getCurrentTheme();
-    const auto bg = theme.windowBackground;
-
     if (mainOscPage_   != nullptr) mainOscPage_->applyThemeColors();
     if (mainLeftPage_  != nullptr) mainLeftPage_->applyThemeColors();
     if (mainRightPage_ != nullptr) mainRightPage_->applyThemeColors();
 
-    // Re-apply the per-tab FUNCTION-CATEGORY colour from the NEW theme token +
-    // the stored shortName to each nested card tab, and propagate the fresh hue
-    // to any GroupPager sub-tabs (setTabCategoryColour), so cycling themes
-    // re-colours the tabs. (The category Colour is a theme snapshot, so it MUST
-    // be re-resolved here — a plain repaint would freeze the old theme's hue.)
-    auto applyTc = [&bg, &theme] (juce::TabbedComponent* tc, const std::vector<juce::String>& names)
-    {
-        if (tc == nullptr)
-            return;
-        for (int i = 0; i < tc->getNumTabs(); ++i)
-        {
-            tc->setTabBackgroundColour (i, bg);
-            const juce::Colour catColour = (i < (int) names.size())
-                ? categoryColourForShortName (names[(size_t) i], theme)
-                : theme.tabUnderline;
-            colourTabButton (*tc, i, catColour);
-            if (auto* pager = dynamic_cast<GroupPager*> (tc->getTabContentComponent (i)))
-            {
-                pager->setTabCategoryColour (catColour);
-                pager->applyThemeColors();
-            }
-            else if (auto* page = dynamic_cast<ParamPage*> (tc->getTabContentComponent (i)))
-                page->applyThemeColors();
-            else if (auto* mmv = dynamic_cast<ModMatrixView*> (tc->getTabContentComponent (i)))
-                mmv->applyThemeColors();
-        }
-    };
-    applyTc (envLfoTabs_.get(), envLfoTabNames_);
-    applyTc (modTabs_.get(),    modTabNames_);
+    if (modBar_ != nullptr)
+        modBar_->applyThemeColors();
+
+    // The active generator page re-themes here; non-active pages are themed by
+    // the editor's generatedPages_ pass in applyAllColoursFromTheme.
+    if (activePage_ != nullptr)
+        activePage_->applyThemeColors();
+
+    if (modMatrixView_ != nullptr)
+        modMatrixView_->applyThemeColors();
 
     repaint();
 }
