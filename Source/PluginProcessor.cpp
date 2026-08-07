@@ -299,6 +299,13 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
         return;
     }
 
+    // Per-part FX params route to the engine's FX setters (no patch byte).
+    if (d.isFx)
+    {
+        applyFxParameter (d, newValue);
+        return;
+    }
+
     const uint8_t byte = parvatiValueToPatchByte (d, newValue);
     if (d.isPart)
         engine_.applyPartByte (d.byteOffset, byte);
@@ -328,6 +335,12 @@ void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& 
     {
         const float raw = apvts.getRawParameterValue (d.paramID)->load();
         applySequencerParameter (d, raw);
+        return;
+    }
+    if (d.isFx)
+    {
+        const float raw = apvts.getRawParameterValue (d.paramID)->load();
+        applyFxParameter (d, raw);
         return;
     }
 
@@ -377,6 +390,58 @@ void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d,
         static const float kDriveValues[] = { 1.0f, 1.2f, 1.5f, 2.0f, 3.0f, 5.0f, 8.0f, 12.0f };
         const int idx = juce::jlimit (0, 7, static_cast<int> (rawValue));
         engine_.setFilterDrive (kDriveValues[idx]);
+    }
+}
+
+void ParvatiAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, float rawValue)
+{
+    // Decode the FX paramID by prefix/structure -> call the matching engine
+    // setter on the CURRENT part (engine setters stage into fxState + set
+    // fxDirty_). Values are passed as the raw controller-style int/choice index.
+    const juce::String id (d.paramID);
+    const int v = juce::roundToInt (rawValue);
+
+    // Per-slot params: fx{1,2,3}_type/enabled/drywet/param{1..4}.
+    // (fx_topo / fx_order / fxmod* are filtered out by the id[2] digit check.)
+    if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+    {
+        const int slot = id[2] - '1';
+        const juce::String suffix = id.substring (4);
+        if (suffix == "type")              engine_.setFxSlotType    (slot, static_cast<uint8_t> (v));
+        else if (suffix == "enabled")      engine_.setFxSlotEnabled (slot, static_cast<uint8_t> (juce::jlimit (0, 1, v)));
+        else if (suffix == "drywet")       engine_.setFxSlotDryWet  (slot, static_cast<uint8_t> (juce::jlimit (0, 127, v)));
+        else if (suffix.startsWith ("param"))
+        {
+            const int k = suffix.substring (5).getIntValue();
+            if (k >= 1 && k <= kNumFxSlotParams)
+                engine_.setFxSlotParam (slot, k - 1, static_cast<uint8_t> (juce::jlimit (0, 127, v)));
+        }
+        return;
+    }
+
+    if (id == "fx_topo")  { engine_.setFxTopology (static_cast<uint8_t> (juce::jlimit (0, 1, v))); return; }
+    if (id == "fx_order") { engine_.setFxOrder    (static_cast<uint8_t> (juce::jlimit (0, 5, v))); return; }
+
+    // FX mod matrix: fxmod{1..16}_source/_dest/_amount. When ANY of the three
+    // changes, re-read all three sibling APVTS values for this slot and write
+    // them together via setFxModSlot so the engine never sees a torn matrix
+    // slot (the MT writes all three atomics under one fxDirty_ publish).
+    if (id.startsWith ("fxmod") && id.contains ("_"))
+    {
+        const int under = id.indexOf ("_");   // first '_' after "fxmod{M}"
+        const int m = id.substring (5, under).getIntValue();   // after "fxmod"
+        if (m >= 1 && m <= kNumFxMatrixSlots)
+        {
+            const juce::String base = "fxmod" + juce::String (m);
+            const auto readInt = [&] (const char* field) {
+                const std::string pid = (base + field).toStdString();
+                return juce::roundToInt (apvts.getRawParameterValue (pid)->load());
+            };
+            const uint8_t src = static_cast<uint8_t> (juce::jlimit (0, 255, readInt ("_source")));
+            const uint8_t dst = static_cast<uint8_t> (juce::jlimit (0, 255, readInt ("_dest")));
+            const int    amt = juce::jlimit (-63, 63, readInt ("_amount"));
+            engine_.setFxModSlot (m - 1, src, dst, static_cast<int8_t> (amt));
+        }
     }
 }
 
@@ -446,6 +511,42 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
             else if (d.paramID == "seq_length_3") value = (float) pc.seqLength[2];
             else                                   value = (float) pc.seqData[(size_t) (d.byteOffset - 16)];
         }
+        else if (d.isFx)
+        {
+            // FX is per-part: read the current Part's fxState atomics and map
+            // them back to the APVTS (reverse of applyFxParameter). NOT skipped
+            // like isOption (those are global); FX follows the part selector.
+            const juce::String id (d.paramID);
+            const auto& fx = p.fxState;
+            if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+            {
+                const int slot = id[2] - '1';
+                const juce::String sfx = id.substring (4);
+                if (sfx == "type")              value = (float) fx.slotType    [(size_t) slot].load();
+                else if (sfx == "enabled")      value = (float) fx.slotEnabled [(size_t) slot].load();
+                else if (sfx == "drywet")       value = (float) fx.slotDryWet  [(size_t) slot].load();
+                else if (sfx.startsWith ("param"))
+                {
+                    const int k = sfx.substring (5).getIntValue();
+                    if (k >= 1 && k <= kNumFxSlotParams)
+                        value = (float) fx.slotParam[(size_t) slot][(size_t) (k - 1)].load();
+                }
+            }
+            else if (id == "fx_topo")           value = (float) fx.topology.load();
+            else if (id == "fx_order")          value = (float) fx.orderIdx.load();
+            else if (id.startsWith ("fxmod") && id.contains ("_"))
+            {
+                const int under = id.indexOf ("_");
+                const int m = id.substring (5, under).getIntValue();
+                if (m >= 1 && m <= kNumFxMatrixSlots)
+                {
+                    const juce::String sfx = id.substring (under + 1);
+                    if (sfx == "source")          value = (float) fx.modSource [(size_t) (m - 1)].load();
+                    else if (sfx == "dest")       value = (float) fx.modDest   [(size_t) (m - 1)].load();
+                    else if (sfx == "amount")     value = (float) fx.modAmount [(size_t) (m - 1)].load();
+                }
+            }
+        }
         else
         {
             const uint8_t byte = d.isPart ? p.partBytes[(size_t) d.byteOffset]
@@ -472,7 +573,7 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     // the GUI reads from the APVTS so it updates too.
     for (const auto& d : getPatchParamDescriptors())
     {
-        if (d.isArp || d.isOption)
+        if (d.isArp || d.isOption || d.isFx)
             continue;  // not stored in the patch/part structs
 
         const uint8_t byte = (d.isPart || d.isSequencer ? part84 : patch112)[d.byteOffset];
@@ -515,7 +616,7 @@ bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
 
     for (const auto& d : getPatchParamDescriptors())
     {
-        if (d.isArp || d.isOption)
+        if (d.isArp || d.isOption || d.isFx)
             continue;  // no patch / part byte
 
         const float raw = apvts.getRawParameterValue (d.paramID)->load();
@@ -660,7 +761,7 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
             // patch[off<112] / part[off<84]. Captures live APVTS edits.
             for (const auto& d : getPatchParamDescriptors())
             {
-                if (d.isArp || d.isOption)
+                if (d.isArp || d.isOption || d.isFx)
                     continue;
 
                 const float raw = apvts.getRawParameterValue (d.paramID)->load();

@@ -29,6 +29,7 @@ struct PatchParamDescriptor
     bool isArp = false;           // true => controller-side arpeggiator param (no patch byte)
     bool isOption = false;        // true => synth option (no patch byte), routed specially (e.g. VCA curve)
     bool isSequencer = false;     // true => step-sequencer param (controller PartData; routed to the engine Sequencer)
+    bool isFx = false;            // true => Parvati per-part FX param (no patch byte; routed via applyFxParameter)
     const juce::StringArray* choices = nullptr;  // non-null => AudioParameterChoice (value = index)
     int minValue = 0;             // APVTS Int range (ignored for Choice)
     int maxValue = 0;

@@ -378,6 +378,46 @@ float partRaw (SynthEngine& engine, int partIndex, const PatchParamDescriptor& d
         // sequence_data[] region is offset by -16 within PartData.
         return static_cast<float> (pc.seqData[(size_t) (d.byteOffset - 16)]);
     }
+    if (d.isFx)
+    {
+        // FX is per-part: read the raw value from this Part's fxState atomics.
+        // The stored value IS the denormalized APVTS value (int/choice index),
+        // so it is returned directly (no patch-byte decode). Regression guard:
+        // without this branch the Patch/Part byte read below would index
+        // patchBytes[-1] (byteOffset=-1) and crash on .parvati multi save.
+        const juce::String id (d.paramID);
+        const auto& fx = part.fxState;
+        if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+        {
+            const int slot = id[2] - '1';
+            const juce::String sfx = id.substring (4);
+            if (sfx == "type")              return (float) fx.slotType    [(size_t) slot].load();
+            if (sfx == "enabled")           return (float) fx.slotEnabled [(size_t) slot].load();
+            if (sfx == "drywet")            return (float) fx.slotDryWet  [(size_t) slot].load();
+            if (sfx.startsWith ("param"))
+            {
+                const int k = sfx.substring (5).getIntValue();
+                if (k >= 1 && k <= kNumFxSlotParams)
+                    return (float) fx.slotParam[(size_t) slot][(size_t) (k - 1)].load();
+            }
+            return 0.0f;
+        }
+        if (id == "fx_topo")               return (float) fx.topology.load();
+        if (id == "fx_order")              return (float) fx.orderIdx.load();
+        if (id.startsWith ("fxmod") && id.contains ("_"))
+        {
+            const int under = id.indexOf ("_");
+            const int m = id.substring (5, under).getIntValue();
+            if (m >= 1 && m <= kNumFxMatrixSlots)
+            {
+                const juce::String sfx = id.substring (under + 1);
+                if (sfx == "source")       return (float) fx.modSource [(size_t) (m - 1)].load();
+                if (sfx == "dest")         return (float) fx.modDest   [(size_t) (m - 1)].load();
+                if (sfx == "amount")       return (float) fx.modAmount [(size_t) (m - 1)].load();
+            }
+        }
+        return 0.0f;
+    }
     // Patch / Part byte param.
     const uint8_t byte = d.isPart ? part.partBytes[(size_t) d.byteOffset]
                                   : part.patchBytes[(size_t) d.byteOffset];

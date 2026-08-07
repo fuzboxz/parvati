@@ -211,6 +211,13 @@ private:
     // Route a synth option (e.g. VCA curve) to the engine.
     void applyOptionParameter (const PatchParamDescriptor& descriptor, float rawValue);
 
+    // Route a per-part FX parameter to the engine's current-Part FX setters.
+    // Decodes the descriptor paramID by prefix (fx{N}_*, fx_topo, fx_order,
+    // fxmod{M}_*) and calls the matching engine_.setFx* setter. For fxmod{M}_*
+    // the three sibling APVTS values (source/dest/amount) are re-read and written
+    // together via setFxModSlot to avoid a torn matrix slot.
+    void applyFxParameter (const PatchParamDescriptor& descriptor, float rawValue);
+
     // Multitimbral: switch the Part being edited. Loads the new Part's stored
     // patch/part/arp/seq into the APVTS (GUI reflects it) + the engine.
     void onPartSelect (int newPart1Based);

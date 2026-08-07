@@ -148,8 +148,8 @@ int main()
 
     // ---- descriptor count check ----
     const int descCount = static_cast<int> (getPatchParamDescriptors().size());
-    std::printf ("[arp_test] descriptor count: %d (expected 181 = 105 + 5 arp + 4 options + 67 sequencer)\n", descCount);
-    check (descCount == 181, "descriptor table includes 5 arp params (+4 options + 67 sequencer)");
+    std::printf ("[arp_test] descriptor count: %d (expected 252 = 105 + 5 arp + 4 options + 67 sequencer + 71 fx)\n", descCount);
+    check (descCount == 252, "descriptor table includes 5 arp params (+4 options + 67 sequencer + 71 fx)");
 
     // ---- report ----
     std::printf ("\nARP TEST: %s\n", g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES");

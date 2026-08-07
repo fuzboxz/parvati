@@ -2,6 +2,7 @@
 
 #include "ParameterLayout.h"
 
+#include "dsp/fx/FxTypes.h"   // FxType / FxModDestination + counts (FX descriptors)
 #include "dsp/patch.h"  // enum value counts + the init patch field semantics
 
 namespace
@@ -93,6 +94,31 @@ juce::StringArray makeModDests()
 juce::StringArray makeModifierOps()
 {
     return { "None", "Sum", "Product", "Attenuate", "Max", "Min", "XOR", "GE", "LE", "Quantize", "Lag" };
+}
+
+// FxType choice list (FxType::None..Chorus). Matches the enum order.
+juce::StringArray makeFxTypes()
+{
+    return { "None", "Gain+Pan", "Delay", "Reverb", "Chorus" };
+}
+
+// FxTopology choice list (Series / Parallel).
+juce::StringArray makeFxTopologies()
+{
+    return { "Series", "Parallel" };
+}
+
+// FxModDestination choice list (FX_DST_FX1_DRYWET .. FX_DST_FX3_P4). 15 entries
+// (one dry/wet + four generic params per slot); matches the FxModDestination
+// enum order. FX_DST_NONE (-1) is NOT a choice entry — an inactive mod slot is
+// signalled by amount=0, not a special dest.
+juce::StringArray makeFxDests()
+{
+    return {
+        "FX1 Dry/Wet", "FX1 Param 1", "FX1 Param 2", "FX1 Param 3", "FX1 Param 4",
+        "FX2 Dry/Wet", "FX2 Param 1", "FX2 Param 2", "FX2 Param 3", "FX2 Param 4",
+        "FX3 Dry/Wet", "FX3 Param 1", "FX3 Param 2", "FX3 Param 3", "FX3 Param 4"
+    };
 }
 
 const juce::StringArray kOnOff { "Off", "On" };
@@ -430,6 +456,58 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             d.push_back (std::move (fd));
         }
 
+        // ---- Per-part FX (Parvati-exclusive; no Ambika patch byte; per-part) ----
+        // 71 params: 3 slots x (type/enabled/drywet/param1..4) = 21, + fx_topo +
+        // fx_order = 2, + 16 x (fxmod source/dest/amount) = 48. All isFx=true,
+        // byteOffset=-1 (never touch patch/part bytes). Routed via
+        // applyFxParameter; loaded per-part in loadPartIntoApvts. Reuses the
+        // synth mod-source choice list (makeModSources) for fxmod sources.
+        {
+            static const auto kFxTypes      = makeFxTypes();
+            static const auto kFxTopologies = makeFxTopologies();
+            static const auto kFxDests      = makeFxDests();
+            static const auto kFxModSources = makeModSources();   // reuse synth sources
+            jassert (kFxTypes.size()      == (int) FxType::Count);
+            jassert (kFxTopologies.size() == 2);
+            jassert (kFxDests.size()      == FX_DST_LAST);
+            juce::ignoreUnused (kFxTypes, kFxTopologies, kFxDests, kFxModSources);
+
+            auto addFx = [&] (std::string id, std::string label,
+                              const juce::StringArray* choices, int defVal,
+                              int mn = 0, int mx = 0)
+            {
+                PatchParamDescriptor p;
+                p.paramID = std::move (id);
+                p.label   = std::move (label);
+                p.byteOffset = -1;   // FX params carry no Ambika patch/part byte
+                p.isFx  = true;
+                p.choices = choices;
+                p.minValue = mn;
+                p.maxValue = mx;
+                p.defaultValue = defVal;
+                d.push_back (std::move (p));
+            };
+
+            for (int s = 1; s <= 3; ++s)
+            {
+                addFx ("fx" + std::to_string (s) + "_type",    "FX" + std::to_string (s) + " Type",    &kFxTypes, 0);  // None
+                addFx ("fx" + std::to_string (s) + "_enabled", "FX" + std::to_string (s) + " Enable",  nullptr,   0, 0, 1);
+                addFx ("fx" + std::to_string (s) + "_drywet",  "FX" + std::to_string (s) + " Dry/Wet", nullptr,   0, 0, 127);  // 0 = fully dry
+                addFx ("fx" + std::to_string (s) + "_param1",  "FX" + std::to_string (s) + " Param 1", nullptr,   0, 0, 127);
+                addFx ("fx" + std::to_string (s) + "_param2",  "FX" + std::to_string (s) + " Param 2", nullptr,   0, 0, 127);
+                addFx ("fx" + std::to_string (s) + "_param3",  "FX" + std::to_string (s) + " Param 3", nullptr,   0, 0, 127);
+                addFx ("fx" + std::to_string (s) + "_param4",  "FX" + std::to_string (s) + " Param 4", nullptr,   0, 0, 127);
+            }
+            addFx ("fx_topo", "FX Topology", &kFxTopologies, 0);   // Series
+            addFx ("fx_order", "FX Order",    nullptr,        0, 0, 5);   // orderIdx 0..5
+            for (int m = 1; m <= 16; ++m)
+            {
+                addFx ("fxmod" + std::to_string (m) + "_source", "FX Mod " + std::to_string (m) + " Src",    &kFxModSources, 0);
+                addFx ("fxmod" + std::to_string (m) + "_dest",   "FX Mod " + std::to_string (m) + " Dest",   &kFxDests,      0);
+                addFx ("fxmod" + std::to_string (m) + "_amount", "FX Mod " + std::to_string (m) + " Amount", nullptr,        0, -63, 63);
+            }
+        }
+
         return d;
     }();
 
@@ -457,8 +535,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout
 
 uint8_t parvatiValueToPatchByte (const PatchParamDescriptor& d, float rawValue)
 {
-    if (d.isArp || d.isOption || d.isSequencer)
-        return 0;  // arp / option / sequencer params have no patch byte
+    if (d.isArp || d.isOption || d.isSequencer || d.isFx)
+        return 0;  // arp / option / sequencer / FX params have no patch byte
 
     // APVTS stores integer params as denormalized floats, which can drift by
     // a tiny epsilon (e.g. 63 -> 62.999996). Truncating would chop that to 62;
