@@ -44,7 +44,7 @@ const std::array<Cluster, 7>& clustersInOrder()
 {
     static constexpr std::array<Cluster, 7> kClustersInOrder =
     {{
-        Cluster::Env, Cluster::Lfo, Cluster::SeqArp, Cluster::Perf,
+        Cluster::Perf, Cluster::Env, Cluster::Lfo, Cluster::SeqArp,
         Cluster::Util, Cluster::Mod, Cluster::Const
     }};
     return kClustersInOrder;

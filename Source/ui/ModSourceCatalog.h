@@ -31,10 +31,10 @@ namespace parvati
 // (left -> right in the bar) == declaration order.
 enum class Cluster
 {
+    Perf,   // Velocity/Aftertouch/Bend/Wheels/Expression/Note (drag-only) — leads the bar
     Env,    // MOD_SRC_ENV_1..3 (generators)
     Lfo,    // MOD_SRC_LFO_1..4 (generators; LFO 4 == per-voice LFO)
     SeqArp, // MOD_SRC_SEQ_1..2 + MOD_SRC_ARP_STEP (generators)
-    Perf,   // Velocity/Aftertouch/Bend/Wheels/Expression/Note (drag-only)
     Util,   // Gate/Noise/Random (drag-only)
     Mod,    // MOD_SRC_OP_1..4 modifier outputs (generators)
     Const   // MOD_SRC_CONSTANT_256..4 (drag-only)
@@ -67,13 +67,21 @@ struct SourceEntry
 inline constexpr int kNoteSeqSentinel = -1;
 
 //==============================================================================
-// All catalogue entries in CLUSTER display order (Env, Lfo, SeqArp, Perf,
+// All catalogue entries in CLUSTER display order (Perf, Env, Lfo, SeqArp,
 // Util, Mod, Const). The array holds the 31 real MOD_SRC_* entries PLUS one
 // bar-only sentinel (kNoteSeqSentinel == -1, the Note Sequencer) appended to
 // the SeqArp cluster. The array is NOT ordered by enum value (Modifiers live
 // between LFO and SEQ in the enum), so look up by enum via entryFor().
 inline constexpr std::array<SourceEntry, 32> kAllSources =
 {{
+    // --- Perf (drag-only) — leads the bar ---
+    { ambika::dsp::MOD_SRC_VELOCITY,   "VEL", "Velocity",   Cluster::Perf, false },
+    { ambika::dsp::MOD_SRC_AFTERTOUCH, "AT",  "Aftertouch", Cluster::Perf, false },
+    { ambika::dsp::MOD_SRC_PITCH_BEND, "PB",  "Pitch Bend", Cluster::Perf, false },
+    { ambika::dsp::MOD_SRC_WHEEL,      "MW",  "Wheel",      Cluster::Perf, false },
+    { ambika::dsp::MOD_SRC_WHEEL_2,    "W2",  "Wheel 2",    Cluster::Perf, false },
+    { ambika::dsp::MOD_SRC_EXPRESSION, "EXP", "Expression", Cluster::Perf, false },
+    { ambika::dsp::MOD_SRC_NOTE,       "KEY", "Note",       Cluster::Perf, false },
     // --- Env (generators) ---
     { ambika::dsp::MOD_SRC_ENV_1, "E1",  "Env 1",   Cluster::Env,    true },
     { ambika::dsp::MOD_SRC_ENV_2, "E2",  "Env 2",   Cluster::Env,    true },
@@ -90,14 +98,6 @@ inline constexpr std::array<SourceEntry, 32> kAllSources =
     // Bar-only Note Sequencer (see kNoteSeqSentinel above): generator-style
     // pill in the SEQ cluster, but click-only (NOT draggable). enumValue < 0.
     { kNoteSeqSentinel,              "NOTE", "Note Sequencer", Cluster::SeqArp, true },
-    // --- Perf (drag-only) ---
-    { ambika::dsp::MOD_SRC_VELOCITY,   "VEL", "Velocity",   Cluster::Perf, false },
-    { ambika::dsp::MOD_SRC_AFTERTOUCH, "AT",  "Aftertouch", Cluster::Perf, false },
-    { ambika::dsp::MOD_SRC_PITCH_BEND, "PB",  "Pitch Bend", Cluster::Perf, false },
-    { ambika::dsp::MOD_SRC_WHEEL,      "MW",  "Wheel",      Cluster::Perf, false },
-    { ambika::dsp::MOD_SRC_WHEEL_2,    "W2",  "Wheel 2",    Cluster::Perf, false },
-    { ambika::dsp::MOD_SRC_EXPRESSION, "EXP", "Expression", Cluster::Perf, false },
-    { ambika::dsp::MOD_SRC_NOTE,       "KEY", "Note",       Cluster::Perf, false },
     // --- Util (drag-only) ---
     { ambika::dsp::MOD_SRC_GATE,   "GATE", "Gate",   Cluster::Util, false },
     { ambika::dsp::MOD_SRC_NOISE,  "NOIS", "Noise",  Cluster::Util, false },
@@ -107,14 +107,16 @@ inline constexpr std::array<SourceEntry, 32> kAllSources =
     { ambika::dsp::MOD_SRC_OP_2, "M2", "Modifier 2 Output", Cluster::Mod, true },
     { ambika::dsp::MOD_SRC_OP_3, "M3", "Modifier 3 Output", Cluster::Mod, true },
     { ambika::dsp::MOD_SRC_OP_4, "M4", "Modifier 4 Output", Cluster::Mod, true },
-    // --- Const (drag-only) ---
-    { ambika::dsp::MOD_SRC_CONSTANT_256, "C1", "Constant 256", Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_128, "C2", "Constant 128", Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_64,  "C3", "Constant 64",  Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_32,  "C4", "Constant 32",  Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_16,  "C5", "Constant 16",  Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_8,   "C6", "Constant 8",   Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_4,   "C7", "Constant 4",   Cluster::Const, false },
+    // --- Const (drag-only). Labels show the ACTUAL value each constant writes
+    // (CONSTANT_256 writes 255, etc. — see dsp/voice.cpp) so a pill reads as a
+    // modulation amount, not an arbitrary index. Ascending by value. ---
+    { ambika::dsp::MOD_SRC_CONSTANT_4,   "C4",   "Constant 4",   Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_8,   "C8",   "Constant 8",   Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_16,  "C16",  "Constant 16",  Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_32,  "C32",  "Constant 32",  Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_64,  "C64",  "Constant 64",  Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_128, "C128", "Constant 128", Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_256, "C255", "Constant 255", Cluster::Const, false },
 }};
 
 // Look up the catalogue entry for a MOD_SRC_* enum value (0..MOD_SRC_LAST-1)
