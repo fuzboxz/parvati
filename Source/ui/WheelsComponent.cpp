@@ -48,7 +48,7 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
         // Match the surrounding label text (e.g. the keyboard's key labels use
         // the bright `text` token) rather than the dim caption token.
-        g.setColour (t != nullptr ? t->text : juce::Colour (0xffe0e0e0));
+        g.setColour (t != nullptr ? t->textPrimary : juce::Colour (0xffe0e0e0));
         // Same app typeface as all other UI text (appFont uses the system
         // default sans-serif). The explicit fallback guarantees the FACE even
         // if this child's LookAndFeel is not yet resolved, so the caption never
@@ -80,8 +80,8 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
         const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
         const juce::Colour fill = (t != nullptr) ? t->containerFill : juce::Colour (0xff202028);
-        const juce::Colour txt  = (t != nullptr) ? t->text          : juce::Colour (0xffe0e0e0);
-        const juce::Colour acc  = (t != nullptr) ? t->accent        : juce::Colour (0xffc8a44a);
+        const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : juce::Colour (0xffe0e0e0);
+        const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : juce::Colour (0xffc8a44a);
         const juce::Font f = (lnf != nullptr) ? lnf->appFont (13.0f, juce::Font::plain)
                                               : juce::Font (juce::FontOptions (13.0f));
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, label_);
@@ -140,9 +140,9 @@ void WheelsComponent::paint (juce::Graphics& g)
     auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
     const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
 
-    const juce::Colour bg    = (t != nullptr) ? t->windowBackground : juce::Colour (0xff141419);
+    const juce::Colour bg    = (t != nullptr) ? t->backgroundBase : juce::Colour (0xff141419);
     const juce::Colour track = (t != nullptr) ? t->outline          : juce::Colour (0xff3a3a44);
-    const juce::Colour thumb = (t != nullptr) ? t->accent           : juce::Colour (0xffc8a44a);
+    const juce::Colour thumb = (t != nullptr) ? t->accentPrimary           : juce::Colour (0xffc8a44a);
 
     g.fillAll (bg);
 

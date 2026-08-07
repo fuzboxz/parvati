@@ -587,7 +587,7 @@ juce::Colour ParamControl::categoryColourForSourceName (const juce::String& name
     if (name.startsWith ("LFO") || name == "Voice LFO")         return theme.catLfo;
     if (name.startsWith ("Seq"))                                return theme.catSeq;
     if (name.startsWith ("Arp"))                                return theme.catArp;
-    return theme.accent;   // Op/Const/Velocity/etc => neutral
+    return theme.accentPrimary;   // Op/Const/Velocity/etc => neutral
 }
 
 void ParamControl::refreshModRing()
@@ -1785,7 +1785,7 @@ void ParamPage::refreshLanguage()
 void ParamPage::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
-    g.fillAll (theme.windowBackground);
+    g.fillAll (theme.backgroundBase);
 
     // Sub-section dividers inside a sectioned panel (merged Mixer):
     // a 1px muted line in each inter-section gap, drawn from the theme divider
@@ -1843,7 +1843,7 @@ MultiPage::MultiPage (ParvatiAudioProcessor& p, ThemeManager& themeManager)
     heading_.setText (TRANS ("Multi / Setup"), juce::dontSendNotification);
     heading_.setJustificationType (juce::Justification::centredLeft);
     heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
+    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
     addAndMakeVisible (heading_);
 
     partLabel_.setFont (juce::FontOptions (14.0f));
@@ -1918,7 +1918,7 @@ MultiPage::MultiPage (ParvatiAudioProcessor& p, ThemeManager& themeManager)
 
 void MultiPage::applyThemeColors()
 {
-    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accent);
+    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
     repaint();
 }
 
@@ -1936,7 +1936,7 @@ void MultiPage::refreshLanguage()
     repaint();
 }
 
-void MultiPage::paint (juce::Graphics& g) { g.fillAll (themeManager_.getCurrentTheme().windowBackground); }
+void MultiPage::paint (juce::Graphics& g) { g.fillAll (themeManager_.getCurrentTheme().backgroundBase); }
 
 void MultiPage::resized()
 {
@@ -2351,7 +2351,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // teardown order stays deterministic.
     pageSelector_.setTabBarDepth (0);          // single SYNTH tab: hide the now-lone bar, reclaim 28px
     pageSelector_.setOutline (0);
-    pageSelector_.addTab (TRANS ("SYNTH"),  theme.windowBackground, synthWorkspace_.get(), false);
+    pageSelector_.addTab (TRANS ("SYNTH"),  theme.backgroundBase, synthWorkspace_.get(), false);
     pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
     addAndMakeVisible (pageSelector_);
 
@@ -2431,7 +2431,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // ---- Header: brand icon + white "Parvati" wordmark (painted, left) + version (inline, right of logo) ----
     versionLabel_.setText ("by 805 Labs - v" PARVATI_VERSION, juce::dontSendNotification);
     versionLabel_.setFont (juce::FontOptions (10.0f));
-    versionLabel_.setColour (juce::Label::textColourId, theme.textDim);
+    versionLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     versionLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (versionLabel_);
 
@@ -2518,7 +2518,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // ---- Bottom status strip: compact active-voice count + tooltip bar ----
     statusCountLabel_.setJustificationType (juce::Justification::centred);
     statusCountLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    statusCountLabel_.setColour (juce::Label::textColourId, theme.accent);
+    statusCountLabel_.setColour (juce::Label::textColourId, theme.accentPrimary);
     statusCountLabel_.setText ("0/" + juce::String (
         processorRef_.getEngine()
             .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
@@ -2526,7 +2526,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     addAndMakeVisible (statusCountLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
     statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
-    statusTooltipLabel_.setColour (juce::Label::textColourId, theme.textDim);
+    statusTooltipLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     addAndMakeVisible (statusTooltipLabel_);
 
     // ---- Phase 4a: settings side panel (right side, always-on-top) ----
@@ -2788,9 +2788,9 @@ void ParvatiEditor::applyAllColoursFromTheme()
     ParamControl::reapplyCategoryColours();
     reapplyGraphCategoryColours();
     statusCountLabel_.setColour (juce::Label::textColourId,
-                                 themeManager_.getCurrentTheme().accent);
+                                 themeManager_.getCurrentTheme().accentPrimary);
     statusTooltipLabel_.setColour (juce::Label::textColourId,
-                                   themeManager_.getCurrentTheme().textDim);
+                                   themeManager_.getCurrentTheme().textSecondary);
     // Phase 4a: refresh visualization components so they pick up the new colours.
     if (keyboardView_ != nullptr)
         keyboardView_->refresh();
@@ -2951,7 +2951,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
     const auto& theme = themeManager_.getCurrentTheme();
     // The whole UI (header included) is one flat windowBackground — no tinted
     // band, no grey divider lines (borderless aesthetic).
-    g.fillAll (theme.windowBackground);
+    g.fillAll (theme.backgroundBase);
 
     // Header logo cluster: [brand icon] [gap] [white "Parvati" text], painted
     // into the reserved left logo block (the version label sits inline to its
@@ -2967,14 +2967,14 @@ void ParvatiEditor::paint (juce::Graphics& g)
                                      .withSizeKeepingCentre (kLogoIconSize, kLogoIconSize);
         block.removeFromRight (kLogoTextIconGap);   // gap between the text and the icon (8px)
         g.setFont (lnf_.appFont (kLogoTextHeight, juce::Font::bold));
-        g.setColour (theme.text);
+        g.setColour (theme.textPrimary);
         g.drawText (kLogoText, block, juce::Justification::centredLeft, false);
         if (logoDrawable_ != nullptr)
             logoDrawable_->drawWithin (g, iconArea.toFloat().reduced (1.0f),
                 juce::RectanglePlacement (juce::RectanglePlacement::centred
                     | juce::RectanglePlacement::onlyReduceInSize), 1.0f);
         // Thin square white border framing the brand icon (1px stroke, 1px padding inside).
-        g.setColour (theme.text);
+        g.setColour (theme.textPrimary);
         g.drawRect (iconArea.toFloat(), 1.0f);
     }
 }

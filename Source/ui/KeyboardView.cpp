@@ -39,8 +39,8 @@ namespace
             t = p->getTheme();
 
         if (t != nullptr)
-            return { t->panelBackground, t->outline, t->accent, t->accent2,
-                     t->windowBackground, t->keyWhite };
+            return { t->backgroundPanel, t->outline, t->accentPrimary, t->accentSecondary,
+                     t->backgroundBase, t->keyWhite };
 
         // Carbon-derived fallback (only before the editor's L&F is inherited).
         // keyWhite reuses Carbon's factory value so no new colour literal lives
@@ -346,7 +346,7 @@ void KeyboardView::paint (juce::Graphics& g)
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         t = lnf->getTheme();
 
-    g.fillAll (t != nullptr ? t->panelBackground : juce::Colour (0xff24242e));
+    g.fillAll (t != nullptr ? t->backgroundPanel : juce::Colour (0xff24242e));
 }
 
 void KeyboardView::resized()
@@ -388,10 +388,10 @@ void KeyboardView::applyThemeColours()
         // fills. The override reads the theme directly for the key colours;
         // these IDs drive the base fill plus the state/label overlays the
         // override still consults.
-        white  = t->panelBackground;            // screen base (between-key seam fill)
-        black  = t->windowBackground;           // sharp base (override reads theme directly)
-        down   = t->accent2;                    // pressed-key overlay
-        over   = t->accent2.withAlpha (0.45f);  // hover overlay
+        white  = t->backgroundPanel;            // screen base (between-key seam fill)
+        black  = t->backgroundBase;           // sharp base (override reads theme directly)
+        down   = t->accentSecondary;                    // pressed-key overlay
+        over   = t->accentSecondary.withAlpha (0.45f);  // hover overlay
         line   = t->outline;                    // keyboard bottom edge (drawKeyboardBackground)
         text   = t->keyWhite.contrasting();     // C-label text (contrasts with the white naturals)
         shadow = juce::Colour (0x00000000);     // flat LCD surface — no top shadow gradient

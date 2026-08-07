@@ -91,8 +91,8 @@ private:
         const int h = 22;
 
         const juce::Colour containerFill = (t != nullptr) ? t->containerFill : juce::Colours::lightgrey;
-        const juce::Colour textCol       = (t != nullptr) ? t->text          : juce::Colours::black;
-        const juce::Colour accent        = (t != nullptr) ? t->accent         : juce::Colours::darkgrey;
+        const juce::Colour textCol       = (t != nullptr) ? t->textPrimary          : juce::Colours::black;
+        const juce::Colour accent        = (t != nullptr) ? t->accentPrimary         : juce::Colours::darkgrey;
 
         juce::Image img (juce::Image::ARGB, w, h, true);
         juce::Graphics g (img);
@@ -150,7 +150,7 @@ GroupPager::GroupPager (ThemeManager& tm, ParamPage* page, std::vector<Subset> s
     addAndMakeVisible (*bar_);
     bar_->addChangeListener (this);   // TabbedButtonBar broadcasts on every click
 
-    const auto bg = themeManager_.getCurrentTheme().windowBackground;
+    const auto bg = themeManager_.getCurrentTheme().backgroundBase;
     for (const auto& s : subsets_)
         bar_->addTab (s.first, bg, -1);   // (name, tab fill colour, append)
 
@@ -174,7 +174,7 @@ GroupPager::GroupPager (ThemeManager& tm, ParamPage* page, std::vector<Subset> s
 void GroupPager::paint (juce::Graphics& g)
 {
     // Void-free fill behind the bar + page (transparent children sit on this).
-    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
 void GroupPager::resized()
@@ -244,7 +244,7 @@ void GroupPager::applySubTabCategoryColours()
 //==============================================================================
 void GroupPager::applyThemeColors()
 {
-    const auto bg = themeManager_.getCurrentTheme().windowBackground;
+    const auto bg = themeManager_.getCurrentTheme().backgroundBase;
     for (int i = 0; i < bar_->getNumTabs(); ++i)
         bar_->setTabBackgroundColour (i, bg);
     applySubTabCategoryColours();   // re-colour sub-tabs (snapshot set by setTabCategoryColour)

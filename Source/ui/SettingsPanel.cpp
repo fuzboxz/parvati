@@ -197,7 +197,7 @@ void SettingsPanel::paint (juce::Graphics& g)
     // Fill with the active theme's window background for a seamless look with
     // the rest of the editor. Controls inherit their colours from the
     // editor-wide ParvatiLookAndFeel (no manual setColour calls).
-    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
 void SettingsPanel::resized()

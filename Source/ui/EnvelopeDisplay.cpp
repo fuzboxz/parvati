@@ -89,10 +89,10 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
     const ParvatiTheme* t = lnf ? lnf->getTheme() : nullptr;
 
-    const auto panelBg = t ? t->panelBackground : juce::Colour (0xff24242e);
+    const auto panelBg = t ? t->backgroundPanel : juce::Colour (0xff24242e);
     const auto outline = t ? t->outline         : juce::Colour (0xff3c3c4a);
-    const auto accent  = t ? t->accent          : juce::Colour (0xffe8b84b);
-    const auto textDim = t ? t->textDim         : juce::Colour (0xff9a9aa8);
+    const auto accent  = t ? t->accentPrimary          : juce::Colour (0xffe8b84b);
+    const auto textDim = t ? t->textSecondary         : juce::Colour (0xff9a9aa8);
     // The waveform trace + its gradient fill adopt a category hue (cyan ENV /
     // magenta LFO) when set; otherwise the live theme accent. The neutral clean
     // grid backdrop uses the theme divider token so the graph reads on any theme.

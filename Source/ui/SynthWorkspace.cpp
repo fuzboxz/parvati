@@ -141,7 +141,7 @@ void SynthWorkspace::paint (juce::Graphics& g)
 {
     // Flat windowBackground fill so any integer-division remainder between the
     // rigid cells (or a short page) never bleeds the default component colour.
-    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
 void SynthWorkspace::resized()

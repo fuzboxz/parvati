@@ -15,76 +15,82 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     theme_ = &t;
 
     // ---- Slider (rotary + text box) ----
-    setColour (juce::Slider::rotarySliderFillColourId,        t.knobArc);       // knob fill arc (theme accent)
-    setColour (juce::Slider::rotarySliderOutlineColourId,      t.knobTrack);     // rotary background track (== outline in Carbon)
-    setColour (juce::Slider::thumbColourId,                    t.accent);
-    setColour (juce::Slider::textBoxTextColourId,              t.textValue);  // bright knob centre readout (the knob's primary readout)
-    setColour (juce::Slider::textBoxBackgroundColourId,        t.panelBackground);
+    setColour (juce::Slider::rotarySliderFillColourId,        t.accentPrimary);   // knob fill arc (theme brand accent)
+    setColour (juce::Slider::rotarySliderOutlineColourId,      t.trackEmpty);      // rotary background track (recedes)
+    setColour (juce::Slider::thumbColourId,                    t.accentPrimary);
+    setColour (juce::Slider::textBoxTextColourId,              t.textPrimary);  // bright knob centre readout (the knob's primary readout)
+    setColour (juce::Slider::textBoxBackgroundColourId,        t.backgroundInput);
     setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
-    setColour (juce::Slider::textBoxHighlightColourId,         t.accent2);
+    setColour (juce::Slider::textBoxHighlightColourId,         t.accentSecondary);
 
     // ---- ComboBox (dark container, 1px outline, amber chevron) ----
-    setColour (juce::ComboBox::backgroundColourId,             t.panelBackground2);
+    setColour (juce::ComboBox::backgroundColourId,             t.backgroundInput);
     setColour (juce::ComboBox::outlineColourId,                juce::Colour (0x00000000));   // borderless (drawComboBox draws no outline)
-    setColour (juce::ComboBox::textColourId,                   t.text);
-    setColour (juce::ComboBox::arrowColourId,                  t.accent);
-    setColour (juce::ComboBox::buttonColourId,                 t.accent);
-    setColour (juce::ComboBox::focusedOutlineColourId,         t.accent);
+    // ComboBox text is always LIGHT: drawComboBox fills every dropdown with a
+    // uniform dark gray, so the inline text reads crisp white. On the dark
+    // themes that is exactly textPrimary; on the light Paper theme (whose
+    // textPrimary is dark for its light surfaces) a fixed light value keeps the
+    // closed-dropdown text legible on the dark fill.
+    setColour (juce::ComboBox::textColourId,
+               t.isDark ? t.textPrimary : juce::Colour (0xfff6f6fa));
+    setColour (juce::ComboBox::arrowColourId,                  t.accentPrimary);
+    setColour (juce::ComboBox::buttonColourId,                 t.accentPrimary);
+    setColour (juce::ComboBox::focusedOutlineColourId,         t.accentPrimary);
 
     // ---- PopupMenu (used by every ComboBox's drop-down) ----
-    setColour (juce::PopupMenu::backgroundColourId,            t.panelBackground2);
-    setColour (juce::PopupMenu::textColourId,                  t.text);
-    setColour (juce::PopupMenu::headerTextColourId,            t.accent);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, t.accent2);
-    setColour (juce::PopupMenu::highlightedTextColourId,       t.text);
+    setColour (juce::PopupMenu::backgroundColourId,            t.backgroundInput);
+    setColour (juce::PopupMenu::textColourId,                  t.textPrimary);
+    setColour (juce::PopupMenu::headerTextColourId,            t.accentPrimary);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, t.accentSecondary);
+    setColour (juce::PopupMenu::highlightedTextColourId,       t.textPrimary);
 
     // ---- Label ----
     // Control-name labels (knob/combo captions) render in the low-contrast
-    // labelText tier (regular-weight gray), NOT the accent. Per-component
+    // textSecondary tier (regular-weight gray), NOT the accent. Per-component
     // overrides (e.g. the version/status labels, section headings) still set a
     // specific colour.
-    setColour (juce::Label::textColourId,                      t.labelText);
+    setColour (juce::Label::textColourId,                      t.textSecondary);
     setColour (juce::Label::backgroundColourId,                juce::Colour (0x00000000)); // transparent (preserve default)
     setColour (juce::Label::outlineColourId,                   juce::Colour (0x00000000)); // borderless
 
     // ---- ScrollBar (page Viewports) ----
-    setColour (juce::ScrollBar::backgroundColourId,            t.windowBackground);
-    setColour (juce::ScrollBar::thumbColourId,                 t.accent);    // accent-coloured thumb
-    setColour (juce::ScrollBar::trackColourId,                 t.panelBackground2);
+    setColour (juce::ScrollBar::backgroundColourId,            t.backgroundBase);
+    setColour (juce::ScrollBar::thumbColourId,                 t.accentPrimary);    // accent-coloured thumb
+    setColour (juce::ScrollBar::trackColourId,                 t.backgroundInput);
 
     // ---- TextButton ----
-    setColour (juce::TextButton::buttonColourId,               t.panelBackground);
-    setColour (juce::TextButton::buttonOnColourId,             t.accent);
-    setColour (juce::TextButton::textColourOffId,              t.text);
-    setColour (juce::TextButton::textColourOnId,               t.windowBackground);
+    setColour (juce::TextButton::buttonColourId,               t.backgroundPanel);
+    setColour (juce::TextButton::buttonOnColourId,             t.accentPrimary);
+    setColour (juce::TextButton::textColourOffId,              t.textPrimary);
+    setColour (juce::TextButton::textColourOnId,               t.backgroundBase);
 
     // ---- TabbedComponent / TabbedButtonBar ----
-    setColour (juce::TabbedComponent::backgroundColourId,      t.windowBackground);
+    setColour (juce::TabbedComponent::backgroundColourId,      t.backgroundBase);
     setColour (juce::TabbedComponent::outlineColourId,         juce::Colour (0x00000000));   // no card outline (flat / borderless)
-    setColour (juce::TabbedButtonBar::tabTextColourId,         t.textDim);
-    setColour (juce::TabbedButtonBar::frontTextColourId,       t.accent);
+    setColour (juce::TabbedButtonBar::tabTextColourId,         t.textSecondary);
+    setColour (juce::TabbedButtonBar::frontTextColourId,       t.accentPrimary);
     setColour (juce::TabbedButtonBar::tabOutlineColourId,      t.outline);
-    setColour (juce::TabbedButtonBar::frontOutlineColourId,    t.accent);
+    setColour (juce::TabbedButtonBar::frontOutlineColourId,    t.accentPrimary);
 
     // ---- GroupComponent (borderless solid rounded-rect panel CARDS; the title
     // is a bold muted-gray header drawn by drawGroupComponentOutline) ----
-    setColour (juce::GroupComponent::textColourId,             t.panelHeader);
+    setColour (juce::GroupComponent::textColourId,             t.textSecondary);
     setColour (juce::GroupComponent::outlineColourId,          juce::Colour (0x00000000));   // no outline (borderless cards)
 
     // ---- ToggleButton (Multi page voice-allocation bits) ----
-    setColour (juce::ToggleButton::textColourId,               t.text);
-    setColour (juce::ToggleButton::tickColourId,               t.accent);
-    setColour (juce::ToggleButton::tickDisabledColourId,       t.textDim);
+    setColour (juce::ToggleButton::textColourId,               t.textPrimary);
+    setColour (juce::ToggleButton::tickColourId,               t.accentPrimary);
+    setColour (juce::ToggleButton::tickDisabledColourId,       t.textSecondary);
 
     // ---- SidePanel (Settings panel) ----
     // Without these the chrome falls back to LookAndFeel_V4's hardcoded
     // dark-grey scheme, so the panel looks alien on non-default themes.
-    setColour (juce::SidePanel::backgroundColour,            t.panelBackground);
-    setColour (juce::SidePanel::titleTextColour,             t.text);
-    setColour (juce::SidePanel::shadowBaseColour,            t.windowBackground.darker());
-    setColour (juce::SidePanel::dismissButtonNormalColour,   t.textDim);
-    setColour (juce::SidePanel::dismissButtonOverColour,    t.accent);
-    setColour (juce::SidePanel::dismissButtonDownColour,    t.accent);
+    setColour (juce::SidePanel::backgroundColour,            t.backgroundPanel);
+    setColour (juce::SidePanel::titleTextColour,             t.textPrimary);
+    setColour (juce::SidePanel::shadowBaseColour,            t.backgroundBase.darker());
+    setColour (juce::SidePanel::dismissButtonNormalColour,   t.textSecondary);
+    setColour (juce::SidePanel::dismissButtonOverColour,    t.accentPrimary);
+    setColour (juce::SidePanel::dismissButtonDownColour,    t.accentPrimary);
 }
 
 void ParvatiLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
@@ -327,7 +333,7 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
         else if (tabText.startsWith ("ARP")) catColour = theme_->catArp;     // Arpeggiator
         else if (tabText.startsWith ("SEQ")) catColour = theme_->catSeq;     // Sequencer / SEQ 1-2
         else if (tabText.startsWith ("MOD")) catColour = theme_->catAudio;   // MOD MATRIX / MODIFIERS
-        else                                 catColour = theme_->tabUnderline;
+        else                                 catColour = theme_->accentPrimary;
     }
 
     // Modern rounded-TOP tabs. Each tab's fill is a rectangle with a square
@@ -365,8 +371,8 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     }
     else
     {
-        g.setColour (hover ? theme_->panelBackground.brighter (0.15f)
-                           : theme_->panelBackground);
+        g.setColour (hover ? theme_->backgroundPanel.brighter (0.15f)
+                           : theme_->backgroundPanel);
         g.fillPath (tabShape);
     }
 
@@ -376,7 +382,7 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
 
     // Label (ALL CAPS), centred; reserve room at the bottom for the active
     // underline.
-    juce::Colour textCol = front ? theme_->text : theme_->textDim;
+    juce::Colour textCol = front ? theme_->textPrimary : theme_->textSecondary;
     if (hover)
         textCol = textCol.brighter (0.20f);
 
@@ -432,7 +438,7 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     }
 
     // Bold muted-gray section header, left-aligned within the card's top band
-    // (GroupComponent::textColourId == theme_->panelHeader after setTheme).
+    // (GroupComponent::textColourId == theme_->textSecondary after setTheme).
     const juce::Font f = appFont (textH, juce::Font::bold);
     const juce::String displayText = text.toUpperCase();
     const juce::Colour titleCol = group.findColour (juce::GroupComponent::textColourId)
@@ -534,7 +540,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     // Centre numeric readout for ACTIVE knobs only (disabled steps show just the
     // track arc, per spec). The value indicator is the knob's primary readout, so
     // it stays on the brightest text tier (Slider::textBoxTextColourId ==
-    // theme.textValue). The font is kept compact + auto-shrinks so long values
+    // theme.textPrimary). The font is kept compact + auto-shrinks so long values
     // (e.g. "8800.0 Hz") stay within the dial. (See the function-header note on
     // why the readout is retained centred rather than below the label.)
     if (slider.isEnabled())
@@ -681,7 +687,7 @@ void ParvatiLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
     const bool vertical = (style == juce::Slider::LinearVertical);
     const bool enabled  = slider.isEnabled();
 
-    const juce::Colour trackCol = theme_->knobTrack;          // dark rounded track
+    const juce::Colour trackCol = theme_->trackEmpty;          // dark rounded track
     const juce::Colour fillCol  = slider.findColour (juce::Slider::thumbColourId);  // == accent
     const juce::Colour thumbCol = fillCol;
 
@@ -769,13 +775,14 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                                        int buttonW, int buttonH,
                                        juce::ComboBox& box)
 {
-    // FLAT semi-opaque button chip — a 5px rounded fill (panelBackground2) with
-    // NO outline, NO inset shadow and NO arrow bevel (the bulky recessed look is
-    // gone). The fill lifts slightly while the drop-down is open for a tonal
-    // affordance. The chevron is a minimal ▼ in a subtle token colour (textDim,
-    // lifted toward text while open). Inline text is laid out by
-    // positionComboBoxText(), whose ~24px right reserve matches the chevron so
-    // long choice text never clips.
+    // DARK DROPDOWN (flat, opaque, no bevel): a UNIFORM solid dark-gray fill
+    // (the darkest chassis tone on dark themes) so crisp WHITE text reads fully
+    // legible over any row tint, with a minimal ▼ chevron (light token,
+    // right-aligned) and NO outline / inset shadow / arrow bevel. A mod-matrix
+    // SOURCE combo additionally carries a 4px family-colour TAG strip on its
+    // far-left edge (the "parvatiComboTag" property). Inline text is laid out
+    // by positionComboBoxText(), whose ~24px right reserve matches the chevron
+    // so long choices never clip.
     if (theme_ == nullptr)
     {
         juce::LookAndFeel_V4::drawComboBox (g, width, height, isButtonDown,
@@ -783,20 +790,46 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
         return;
     }
 
-    const auto bg = box.findColour (juce::ComboBox::backgroundColourId);   // panelBackground2
+    // DARK DROPDOWN (flat, opaque, no bevel): a UNIFORM solid dark-gray fill so
+    // crisp WHITE text reads fully legible over any row tint. The fill is the
+    // darkest chassis tone on the dark themes (backgroundBase); on the light
+    // Paper theme a neutral dark gray keeps the same dark-dropdown look (the
+    // per-combo background colour is intentionally ignored — every combo is the
+    // same dark field). A small tonal lift on hover / while open stays dark.
+    const bool hover = box.isMouseOver() || isButtonDown;
+    const juce::Colour baseFill = theme_->isDark ? theme_->backgroundBase
+                                                 : juce::Colour (0xff2A2E35);
+    const auto fill = hover ? baseFill.brighter (0.06f) : baseFill;
     constexpr float corner = 5.0f;
     const auto r = juce::Rectangle<int> (0, 0, width, height).toFloat().reduced (0.5f);
 
-    // Flat borderless fill (no inset shadow, no arrow bevel). Lifts slightly
-    // while the drop-down is open (isButtonDown) for a tonal hover affordance.
-    g.setColour (isButtonDown ? bg.brighter (0.10f) : bg);
+    g.setColour (fill);
     g.fillRoundedRectangle (r, corner);
 
-    // Minimal right-aligned ▼ chevron, vertically centred. Subtle textDim,
-    // lifted toward the brighter text token while the drop-down is open for a
-    // light affordance (NOT always-bright amber).
-    const auto chevronCol = isButtonDown ? theme_->text : theme_->textDim;
-    constexpr float chevronSize = 4.0f;
+    // FAMILY COLOUR TAG (mod-matrix SOURCE combo only): a bright 4px vertical
+    // strip on the FAR-LEFT edge, clipped to the rounded rect so it follows the
+    // corner radius. The strip colour is carried in the "parvatiComboTag"
+    // property (an ARGB int set by ModMatrixRow for the source combo, in that
+    // source's family colour). It tags the family WITHOUT colouring the dark
+    // dropdown fill. Combos without the property (dest combo + every other
+    // combo in the editor) get no tag.
+    const auto* tagVar = box.getProperties().getVarPointer ("parvatiComboTag");
+    if (tagVar != nullptr && tagVar->isInt())
+    {
+        const juce::Colour tagCol ((uint32_t) (int) *tagVar);
+        juce::Path clip;
+        clip.addRoundedRectangle (r, corner);
+        g.saveState();
+        g.reduceClipRegion (clip);
+        g.setColour (tagCol);
+        g.fillRect (juce::Rectangle<float> (r.getX(), r.getY(), 4.0f, r.getHeight()));
+        g.restoreState();
+    }
+
+    // CRISP clear downward ▼ chevron, vertically centred, in a light token (so
+    // it pops on the dark fill on every theme). Solid flat fill (no bevel).
+    const auto chevronCol = theme_->isDark ? theme_->textPrimary : juce::Colour (0xfff6f6fa);
+    constexpr float chevronSize = 5.0f;
     const float cx = (float) width  - 12.0f;
     const float cy = (float) height * 0.5f;
     juce::Path chevron;

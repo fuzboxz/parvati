@@ -45,8 +45,8 @@ public:
         a theme switch (and once from the ctor). */
     void applyThemeColors();
 
-    /** The true minimum width to show every pill + cluster label with no
-        clipping (the host uses this as the window minimum width). */
+    /** The true minimum width to show every pill with no clipping (the host
+        uses this as the window minimum width). */
     int preferredWidth() const;
 
     //==========================================================================
@@ -55,7 +55,6 @@ public:
     juce::Font          pillFont() const;   // font used to draw + measure pills
 
     //==========================================================================
-    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
@@ -69,19 +68,15 @@ private:
     /**
         Lays the 7 clusters out left -> right. When @p positionChildren is true
         the pills are positioned; either way the total preferred width is
-        returned. If @p outLabelRects is non-null it is filled with the seven
-        cluster-caption rectangles (used by paint()).
+        returned. Clusters are separated only by the inter-cluster gap (no
+        caption — the family-coloured underline identifies each cluster).
     */
-    int computeLayout (bool positionChildren,
-                       std::vector<juce::Rectangle<int>>* outLabelRects) const;
-
-    juce::Font labelFont() const;   // small cluster-caption font
+    int computeLayout (bool positionChildren) const;
 
     ThemeManager& themeManager_;
     std::function<void (int)> onPillClicked_;
 
     std::vector<std::unique_ptr<ModPill>> pills_;
-    std::vector<juce::Rectangle<int>>     clusterLabelRects_;   // one per cluster
     int activeEnum_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CentralModBar)

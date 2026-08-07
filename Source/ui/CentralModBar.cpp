@@ -2,10 +2,11 @@
 //
 // Layout geometry (px):
 //   kBarHeight = 38 (declared in the header), pill height 28 -> 5px top/bottom.
-//   Pills are left-aligned within each cluster; clusters are separated by a
-//   gap. Each cluster is prefixed by a small caption (cluster name) drawn by
-//   CentralModBar::paint(). preferredWidth() returns the exact width needed so
-//   every pill + caption fits with no clipping.
+//   Pills are left-aligned within each cluster; clusters are separated ONLY by
+//   the inter-cluster gap (no caption — the family colour identifies the
+//   cluster instead, via each pill's persistent family-coloured underline).
+//   preferredWidth() returns the exact width needed so every pill fits with no
+//   clipping.
 
 #include "CentralModBar.h"
 
@@ -19,31 +20,20 @@ namespace
     constexpr int kPillHPad        = 8;    // horizontal padding inside a pill
     constexpr int kPillMinW        = 30;   // minimum pill width
     constexpr int kPillGap         = 4;    // gap between pills within a cluster
-    constexpr int kClusterGap      = 14;   // gap between clusters
+    constexpr int kClusterGap      = 20;   // gap between clusters
+    constexpr int kSideGap         = 40;   // larger gap splitting generators (L) from drag-only (R)
     constexpr int kEdgePad         = 6;    // left/right outer padding
-    constexpr int kClusterLabelW   = 30;   // per-cluster caption width
-    constexpr int kClusterLabelGap = 5;    // gap after the caption, before pills
-
-    const char* clusterLabel (parvati::Cluster c)
-    {
-        switch (c)
-        {
-            case parvati::Cluster::Env:    return "ENV";
-            case parvati::Cluster::Lfo:    return "LFO";
-            case parvati::Cluster::SeqArp: return "SEQ";
-            case parvati::Cluster::Perf:   return "PERF";
-            case parvati::Cluster::Util:   return "UTIL";
-            case parvati::Cluster::Mod:    return "MOD";
-            case parvati::Cluster::Const:  return "CONST";
-        }
-        return "";
-    }
 }  // namespace
 
 //==============================================================================
-// ModPill — a single modulation-source micro-pill. Generators (Env/LFO/Seq/Arp/
-// Op) draw a solid 1px accent border + an active-state underline glow; drag-only
-// sources (Perf/Util/Const) draw a subtle dotted left-handle and no glow.
+// ModPill — a single modulation-source micro-pill. EVERY pill draws a persistent
+// family-coloured underline (resolved from its ModSourceCatalog cluster -> the
+// cat* family token): the underline now carries the cluster identity, since the
+// cluster text captions were removed. The active generator pill keeps its solid
+// lighter background + bright text and STRENGTHENS the underline (thicker / full
+// alpha); inactive pills use a dark fill + dim text + the subtle family underline.
+// Drag-only sources (Perf/Util/Const) additionally show a subtle dotted left-handle.
+// All flat (no outline / glow / bevel). Geometry is unchanged from the bar layout.
 //
 // Mouse handling mirrors the existing drag sources (DraggableTabButton /
 // ModSourceDragGrip / WheelDragLabel): a drag past ~5px starts an INTERNAL
@@ -83,6 +73,30 @@ struct CentralModBar::ModPill : public juce::Component,
         if (a != active_) { active_ = a; repaint(); }
     }
 
+    /** Persistent family-coloured underline (the cluster cue now that the
+        captions are gone). Subtle (thin, dim) on every pill; STRENGTHENED
+        (thicker, full alpha) on the active generator. Solid flat stroke. */
+    void drawFamilyUnderline (juce::Graphics& g, const juce::Rectangle<float>& r) const
+    {
+        const float ux = r.getX() + 3.0f;
+        const float uw = r.getWidth() - 6.0f;
+        const float uy = r.getBottom() - 1.5f;
+
+        if (active_)
+        {
+            // Strengthened on the active generator: solid 2px full-alpha stroke.
+            g.setColour (accent_);
+            g.fillRect (juce::Rectangle<float> (ux, uy - 1.0f, uw, 2.0f));
+        }
+        else
+        {
+            // Subtle on inactive pills: thin 1px low-alpha stroke (identifies
+            // the family without competing with the active pill).
+            g.setColour (accent_.withAlpha (0.45f));
+            g.fillRect (juce::Rectangle<float> (ux, uy, uw, 1.0f));
+        }
+    }
+
     void paint (juce::Graphics& g) override
     {
         const auto&      t = owner_.theme();
@@ -91,39 +105,34 @@ struct CentralModBar::ModPill : public juce::Component,
 
         if (isGenerator_)
         {
-            // MONOCHROME: flat dark-gray fill for every inactive pill; only the
-            // selected/active generator is highlighted with the accent colour
-            // (solid 1.5px border + a glowing underline). Geometry unchanged.
-            const juce::Colour inactiveFill = t.tabUnselectedBg;
-            const juce::Colour fill = (active_ || ! hovered_)
-                                    ? inactiveFill
-                                    : inactiveFill.brighter (0.20f);   // hover: slightly lighter
+            // Active clarity: the active generator pill gets a SOLID slightly-
+            // lighter background (tabSelectedBg) with HIGH-CONTRAST text
+            // (textPrimary) — the solid fill is the PRIMARY active cue, with NO
+            // outline. Inactive pills keep the dark fill (tabUnselectedBg) +
+            // dim text (textSecondary), lifted a touch on hover. Every pill
+            // draws a persistent FAMILY-coloured underline (the family colour
+            // replaces the removed cluster caption); the active pill's underline
+            // is STRENGTHENED (thicker / full alpha). Geometry unchanged; flat.
+            const juce::Colour fill = active_ ? t.tabSelectedBg
+                                    : (hovered_ ? t.tabUnselectedBg.brighter (0.20f)
+                                                : t.tabUnselectedBg);
             g.setColour (fill);
             g.fillRoundedRectangle (r, 5.0f);
 
-            if (active_)
-            {
-                g.setColour (accent_);
-                g.drawRoundedRectangle (r, 5.0f, 1.5f);
+            drawFamilyUnderline (g, r);
 
-                // active-state underline glow (generators only) — stays, in accent
-                const float uy = r.getBottom() - 1.5f;
-                g.setColour (accent_.withAlpha (0.30f));
-                g.fillRoundedRectangle (r.withTop (uy - 3.0f), 5.0f);
-                g.setColour (accent_);
-                g.fillRect (juce::Rectangle<float> (r.getX() + 3.0f, uy - 1.0f,
-                                                    r.getWidth() - 6.0f, 2.0f));
-            }
-
-            g.setColour (active_ ? t.textValue : t.text);
+            g.setColour (active_ ? t.textPrimary
+                                 : (hovered_ ? t.textSecondary.brighter (0.20f)
+                                             : t.textSecondary));
             g.setFont (f);
             g.drawText (shortLabel_, getLocalBounds(), juce::Justification::centred, true);
         }
         else
         {
-            // drag-only: flat dark-gray fill (monochrome) + a subtle dotted
-            // left-handle in neutral gray (no per-cluster colour) + faint label.
-            // No border / glow. Geometry unchanged.
+            // drag-only: flat dark-gray fill + a subtle dotted left-handle (the
+            // drag-source cue) + faint label. A persistent family-coloured
+            // underline (subtle) identifies the cluster (replaces the removed
+            // caption). No border / glow. Geometry unchanged.
             const juce::Colour inactiveFill = t.tabUnselectedBg;
             const juce::Colour fill = hovered_ ? inactiveFill.brighter (0.20f) : inactiveFill;
             g.setColour (fill);
@@ -133,7 +142,7 @@ struct CentralModBar::ModPill : public juce::Component,
             const float hy0 = r.getY() + 7.0f;
             const float hy1 = r.getBottom() - 7.0f;
             const float step = 3.0f;
-            g.setColour (t.textDim);
+            g.setColour (t.textSecondary);
             for (int i = 0;; ++i)
             {
                 const float y = hy0 + static_cast<float> (i) * step;
@@ -142,7 +151,9 @@ struct CentralModBar::ModPill : public juce::Component,
                 g.fillEllipse (juce::Rectangle<float> (1.6f, 1.6f).withCentre ({ hx, y }));
             }
 
-            g.setColour (t.textDim);
+            drawFamilyUnderline (g, r);
+
+            g.setColour (t.textSecondary);
             g.setFont (f);
             g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
         }
@@ -194,7 +205,7 @@ struct CentralModBar::ModPill : public juce::Component,
     bool              dragStarted_ = false;
     bool              active_      = false;
     bool              hovered_     = false;
-    juce::Colour      accent_;          // resolved from the active theme (monochrome accent)
+    juce::Colour      accent_;          // family colour (ModSourceCatalog cluster -> cat* token)
 
 private:
     // A small themed drag chip (mirrors ModSourceDragGrip / DraggableTabButton):
@@ -215,11 +226,11 @@ private:
         g.setColour (accent_);
         g.fillRoundedRectangle (juce::Rectangle<float> (5.0f, 5.0f, 7.0f, static_cast<float> (h) - 10.0f), 2.0f);
 
-        g.setColour (t.text);
+        g.setColour (t.textPrimary);
         g.setFont (f);
         g.drawText (shortLabel_, juce::Rectangle<int> (17, 0, w - 17, h), juce::Justification::centredLeft, true);
 
-        g.setColour (t.accent.withAlpha (0.6f));
+        g.setColour (t.accentPrimary.withAlpha (0.6f));
         g.drawRoundedRectangle (img.getBounds().toFloat().reduced (0.5f), 5.0f, 1.0f);
         return img;
     }
@@ -255,14 +266,15 @@ void CentralModBar::setActiveGenerator (int modSrcEnum)
 void CentralModBar::applyThemeColors()
 {
     const auto& t = theme();
-    // MONOCHROME: every pill shares a single accent palette. Inactive pills are
-    // a flat dark-gray (tabUnselectedBg); only the selected/active generator
-    // pill is highlighted with the accent colour (its underline glow stays, in
-    // accent). The per-cluster cat* tokens remain in ParvatiTheme — they are
-    // still used for the knob modulation rings — but the BAR no longer reads
-    // them. Hover is resolved in ModPill::paint() as a slightly lighter fill.
+    // FAMILY-COLOURED: each pill resolves its underline colour from its
+    // ModSourceCatalog cluster -> the cat* family token (Env=teal, LFO=magenta,
+    // Perf=amber, Seq/Arp/Note=mint, Util=orange, Mod=purple, Const=slate-blue).
+    // The cluster captions are gone, so the family colour now carries the
+    // cluster identity on every pill (its persistent underline). The active
+    // generator pill stays highlighted via its solid fill + bright text (see
+    // ModPill::paint); the family colour only tints the underline.
     for (auto& p : pills_)
-        p->accent_ = t.accent;
+        p->accent_ = parvati::clusterAccent (p->cluster_, t);
     repaint();
 }
 
@@ -284,49 +296,22 @@ juce::Font CentralModBar::pillFont() const
     return juce::Font (juce::FontOptions (12.0f));
 }
 
-juce::Font CentralModBar::labelFont() const
-{
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        return lnf->appFont (9.0f, juce::Font::plain);
-    return juce::Font (juce::FontOptions (9.0f));
-}
-
-void CentralModBar::paint (juce::Graphics& g)
-{
-    const auto&      t  = theme();
-    const juce::Font lf = labelFont();
-    g.setFont (lf);
-
-    const auto& clusters = parvati::clustersInOrder();
-    for (size_t ci = 0; ci < clusters.size() && ci < clusterLabelRects_.size(); ++ci)
-    {
-        // Monochrome: neutral-gray cluster captions (the gaps still segment the
-        // clusters); the bar no longer uses per-cluster accent colours.
-        g.setColour (t.textDim);
-        g.drawText (clusterLabel (clusters[ci]), clusterLabelRects_[ci],
-                    juce::Justification::centredLeft, true);
-    }
-}
-
 void CentralModBar::resized()
 {
-    computeLayout (true, &clusterLabelRects_);
+    computeLayout (true);
 }
 
 int CentralModBar::preferredWidth() const
 {
-    return computeLayout (false, nullptr);
+    return computeLayout (false);
 }
 
-int CentralModBar::computeLayout (bool positionChildren,
-                                  std::vector<juce::Rectangle<int>>* outLabelRects) const
+int CentralModBar::computeLayout (bool positionChildren) const
 {
     const juce::Font f = pillFont();
     const int        yOff = (kBarHeight - kPillH) / 2;   // vertical centre of the pills
 
     const auto& clusters = parvati::clustersInOrder();
-    if (outLabelRects != nullptr)
-        outLabelRects->assign (clusters.size(), {});
 
     int x = kEdgePad;
     size_t idx = 0;   // walks kAllSources, which is already in cluster order
@@ -335,12 +320,19 @@ int CentralModBar::computeLayout (bool positionChildren,
     {
         const parvati::Cluster c = clusters[ci];
 
-        // Cluster caption region (drawn by paint()).
-        if (outLabelRects != nullptr)
-            (*outLabelRects)[ci] = juce::Rectangle<int> (x, 0, kClusterLabelW, kBarHeight);
-        x += kClusterLabelW + kClusterLabelGap;
+        // Separator BEFORE this cluster (skipped before the very first): the
+        // normal inter-cluster gap, EXCEPT at the generators->drag-only split,
+        // where a larger kSideGap clearly separates the two halves of the bar.
+        if (ci > 0)
+        {
+            const bool prevGen = parvati::isGeneratorCluster (clusters[ci - 1]);
+            const bool thisGen = parvati::isGeneratorCluster (c);
+            x += (prevGen && ! thisGen) ? kSideGap : kClusterGap;
+        }
 
         // Pills belonging to this cluster (kAllSources is ordered to match).
+        // No caption — clusters are identified by their family-coloured
+        // underline (see ModPill::paint).
         bool first = true;
         for (; idx < parvati::kAllSources.size() && parvati::kAllSources[idx].cluster == c; ++idx)
         {
@@ -352,10 +344,7 @@ int CentralModBar::computeLayout (bool positionChildren,
                 pills_[idx]->setBounds (x, yOff, w, kPillH);
             x += w;
         }
-
-        x += kClusterGap;   // separator after every cluster
     }
 
-    // Drop the trailing cluster gap and add the right edge padding.
-    return (x - kClusterGap) + kEdgePad;
+    return x + kEdgePad;   // right edge padding
 }

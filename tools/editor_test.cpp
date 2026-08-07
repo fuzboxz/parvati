@@ -493,8 +493,8 @@ int main()
                         { 6.0f,  "Voice LFO", carbon.catLfo },   // special: name == "Voice LFO"
                         { 11.0f, "Seq 1",     carbon.catSeq },
                         { 13.0f, "Arp Step",  carbon.catArp },
-                        { 10.0f, "Op 4",      carbon.accent },   // neutral
-                        { 14.0f, "Velocity",  carbon.accent },   // neutral
+                        { 10.0f, "Op 4",      carbon.accentPrimary },   // neutral
+                        { 14.0f, "Velocity",  carbon.accentPrimary },   // neutral
                     };
                     for (const auto& cat : cats)
                     {

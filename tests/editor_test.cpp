@@ -62,8 +62,13 @@ int main()
     // isDark is correct per theme, and the dark themes use the exact spec hues.
     std::printf ("\n[4] Theme category tokens (positional-init guard)\n");
     {
-        const juce::Colour specAudio (0xffFFB400), specEnv (0xff00E5FF),
-            specLfo (0xffFF0055), specSeq (0xff00FF66), specArp (0xffAA00FF);
+        const juce::Colour specAudio (0xffFFB400), specEnv (0xff2DD4BF),
+            specLfo (0xffE879F9), specSeq (0xff34D399), specArp (0xff34D399);
+        // STRICT family palette: catAudio stays amber; Env=teal, Lfo=magenta,
+        // Seq/Arp=mint. catArp == catSeq (Seq + Arp intentionally share the
+        // mint sequencer-family hue), so that pair is exempt from the
+        // pairwise-distinct guard below (the exact spec-hue match still guards
+        // its positional-init alignment).
 
         const auto opaque = [] (const juce::Colour& c) { return c.getAlpha() == 255; };
 
@@ -83,11 +88,17 @@ int main()
             bool allOpaque = true;
             for (const auto& c : cats)
                 if (! opaque (c)) allOpaque = false;
-            // pairwise-distinct (ARGB) within a theme
+            // pairwise-distinct (ARGB) within a theme. catSeq (idx 3) and
+            // catArp (idx 4) are EXEMPT — they intentionally share the mint
+            // sequencer-family hue; the exact spec-hue match above still
+            // guards their positional-init alignment.
             bool allDistinct = true;
             for (size_t i = 0; i < 5 && allDistinct; ++i)
                 for (size_t j = i + 1; j < 5; ++j)
+                {
+                    if (i == 3 && j == 4) continue;
                     if (cats[i].getARGB() == cats[j].getARGB()) { allDistinct = false; break; }
+                }
 
             std::snprintf (buf, sizeof (buf), "%s: 5 category colours are opaque", tc.name);
             check (allOpaque, buf);
@@ -102,7 +113,7 @@ int main()
             std::snprintf (buf, sizeof (buf), "%s: keyWhite is opaque", tc.name);
             check (opaque (tc.t.keyWhite), buf);
             std::snprintf (buf, sizeof (buf), "%s: keyWhite is distinct from the black-key colour", tc.name);
-            check (tc.t.keyWhite.getARGB() != tc.t.windowBackground.getARGB(), buf);
+            check (tc.t.keyWhite.getARGB() != tc.t.backgroundBase.getARGB(), buf);
 
             if (tc.expectSpec)
             {

@@ -18,16 +18,37 @@ static_assert (ambika::dsp::kNumModulations == 14, "ModMatrixView assumes a 14-s
 //==============================================================================
 namespace
 {
-// Category colour for a mod-source display name (Env/LFO/Seq/Arp), mirroring
-// ParamControl::applyModSourceTint. Returns a transparent Colour for sources
-// with no functional-category tint (Op/Const/Velocity/etc).
+// Category colour for a mod-source display name, mirroring the STRICT family
+// palette (and ModSourceCatalog::clusterAccent): Env=teal, LFO=magenta,
+// Seq/Arp=mint, Op(modifier)=purple, Const=indigo, keyboard/Perf=amber,
+// Gate/Noise/Random=orange. Returns a transparent Colour only for a source
+// name with no known family.
 juce::Colour sourceCategoryColour (const ParvatiTheme& t, const juce::String& sourceName)
 {
-    if (sourceName.startsWith ("Env"))                                 return t.catEnv;
-    if (sourceName.startsWith ("LFO") || sourceName == "Voice LFO")    return t.catLfo;
-    if (sourceName.startsWith ("Seq"))                                 return t.catSeq;
-    if (sourceName.startsWith ("Arp"))                                 return t.catArp;
+    if (sourceName.startsWith ("Env"))                                 return t.catEnv;   // Envelopes (teal)
+    if (sourceName.startsWith ("LFO") || sourceName == "Voice LFO")    return t.catLfo;   // LFOs (magenta)
+    if (sourceName.startsWith ("Seq"))                                 return t.catSeq;   // Sequencer (mint)
+    if (sourceName.startsWith ("Arp"))                                 return t.catArp;   // Arpeggiator (mint — sequencer family)
+    if (sourceName.startsWith ("Op"))                                  return t.catMod;   // Modifier outputs M1-4 (purple)
+    if (sourceName.startsWith ("Const"))                               return t.catConst; // Constants C4..C255 (indigo)
+    if (sourceName == "Velocity" || sourceName == "Aftertouch"
+        || sourceName == "Pitch Bend" || sourceName.startsWith ("Wheel")
+        || sourceName == "Expression" || sourceName == "Note")         return t.catPerf;  // keyboard / performance (amber)
+    if (sourceName == "Gate" || sourceName == "Noise" || sourceName == "Random")
+                                                                       return t.catUtil;  // utility (orange)
     return {};   // transparent (alpha 0) => no tint
+}
+
+// Row category colour matching the knob MODULATION RINGS + the STRICT family
+// palette: every source resolves to its family cat* token (Env/LFO/Seq/Arp/Op/
+// Const/Perf/Util -> their cat* token); an unknown name falls back to the
+// neutral accent. Every row therefore resolves to a concrete colour (never
+// transparent), so the full-row tint + depth-slider fill + source-combo colour
+// tag always carry the row's family hue.
+juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourceName)
+{
+    const juce::Colour cat = sourceCategoryColour (t, sourceName);
+    return cat.isTransparent() ? t.accentPrimary : cat;
 }
 
 // A signed amount (-63..+63) -> "+100%" / "0%" / "-50%". The slider/engine use
@@ -65,13 +86,22 @@ public:
         const auto& t = themeManager_.getCurrentTheme();
         // Flat bipolar depth slider: a clean DARK track (the rotary knob-track
         // token so the slider echoes the knob tracks), a solid fill from the
-        // CENTRE to the value (accent right of centre / accent2 left of centre),
-        // a centre zero-detent tick and a flat solid CIRCLE thumb (no 3D/
-        // gradient). Geometry/positions are unchanged from the prior look.
-        const juce::Colour trackCol = t.knobTrack;
-        const juce::Colour posFill  = t.accent;
-        const juce::Colour negFill  = t.accent2;
-        const juce::Colour thumbCol = t.textValue;
+        // CENTRE to the value in this ROW's category colour (the row's
+        // routing-source category — same tokens the knob rings use; neutral
+        // sources -> accent; the NEGATIVE side is a dimmed same-hue version for
+        // sign readability), a centre zero-detent tick and a flat solid CIRCLE
+        // thumb (no 3D/gradient). Geometry/positions are unchanged.
+        const juce::Colour trackCol = t.trackEmpty;
+        // Per-row category fill (pushed onto the slider as "parvatiRowFill" by
+        // ModMatrixRow::applyThemeColors); falls back to the accent when unset.
+        const juce::Colour rowFill = [&]
+        {
+            const auto* v = slider.getProperties().getVarPointer ("parvatiRowFill");
+            return (v != nullptr && v->isInt()) ? juce::Colour ((uint32_t) (int) *v) : t.accentPrimary;
+        }();
+        const juce::Colour posFill  = rowFill;
+        const juce::Colour negFill  = rowFill.darker (0.40f);
+        const juce::Colour thumbCol = t.textPrimary;
 
         const float cy      = static_cast<float> (y) + static_cast<float> (height) * 0.5f;
         const float trackH  = 4.0f;
@@ -133,7 +163,7 @@ struct ModSourceDragGrip : public juce::Component,
     void paint (juce::Graphics& g) override
     {
         const auto& t = owner_.themeManager().getCurrentTheme();
-        g.setColour (t.textDim);
+        g.setColour (t.textSecondary);
         const float r  = 1.4f;
         const int   w  = getWidth();
         const int   h  = getHeight();
@@ -188,14 +218,14 @@ private:
         g.fillRoundedRectangle (img.getBounds().toFloat(), 5.0f);
 
         const juce::Colour cat = sourceCategoryColour (t, name);
-        g.setColour (cat.isTransparent() ? t.accent : cat);
+        g.setColour (cat.isTransparent() ? t.accentPrimary : cat);
         g.fillRoundedRectangle (juce::Rectangle<float> (5.0f, 5.0f, 7.0f, static_cast<float> (h) - 10.0f), 2.0f);
 
-        g.setColour (t.text);
+        g.setColour (t.textPrimary);
         g.setFont (f);
         g.drawText (name, juce::Rectangle<int> (17, 0, w - 17, h), juce::Justification::centredLeft, true);
 
-        g.setColour (t.accent.withAlpha (0.6f));
+        g.setColour (t.accentPrimary.withAlpha (0.6f));
         g.drawRoundedRectangle (img.getBounds().toFloat().reduced (0.5f), 5.0f, 1.0f);
         return img;
     }
@@ -210,7 +240,8 @@ private:
 // to its slot's APVTS params via attachments that live for the view's lifetime
 // (visibility toggles, attachments never churn). Buttons call back into the view.
 struct ModMatrixRow : public juce::Component,
-                      private juce::Slider::Listener
+                      private juce::Slider::Listener,
+                      private juce::ComboBox::Listener
 {
     ModMatrixRow (ModMatrixView& owner, int slot, juce::LookAndFeel& sliderLnf)
         : owner_ (owner), slot_ (slot)
@@ -264,6 +295,9 @@ struct ModMatrixRow : public juce::Component,
         depthAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>  (apvts, amtId, depthSlider_);
 
         depthSlider_.addListener (this);
+        // Re-resolve the row's category colour (row tint + slider fill + combo
+        // tint) whenever a new source is picked so it follows live.
+        sourceCombo_.addListener (this);
         refreshValueDisplay();
 
         // Register this row as a MouseListener on every child so a hover anywhere
@@ -283,6 +317,7 @@ struct ModMatrixRow : public juce::Component,
     ~ModMatrixRow() override
     {
         depthSlider_.removeListener (this);
+        sourceCombo_.removeListener (this);
         indexLabel_.removeMouseListener (this);
         dragGrip_->removeMouseListener (this);
         sourceCombo_.removeMouseListener (this);
@@ -297,6 +332,15 @@ struct ModMatrixRow : public juce::Component,
     }
 
     void sliderValueChanged (juce::Slider*) override { refreshValueDisplay(); }
+
+    void comboBoxChanged (juce::ComboBox*) override
+    {
+        // A new source was picked: re-resolve this row's category colour (the
+        // full-row tint, the depth-slider fill and the source-combo tint all
+        // live in applyThemeColors).
+        applyThemeColors();
+        repaint();
+    }
 
     // ---- Hover / selection emphasis (driven via the ModMatrixHighlight bus) ----
     void mouseEnter (const juce::MouseEvent&) override
@@ -334,7 +378,7 @@ struct ModMatrixRow : public juce::Component,
         depthSlider_.setEnabled (! muted);
         muteButton_.setToggleState (muted, juce::dontSendNotification);
         const auto& t = owner_.themeManager().getCurrentTheme();
-        valueLabel_.setColour (juce::Label::textColourId, muted ? t.textDim : t.textValue);
+        valueLabel_.setColour (juce::Label::textColourId, muted ? t.textSecondary : t.textPrimary);
         refreshValueDisplay();
         repaint();
     }
@@ -345,19 +389,33 @@ struct ModMatrixRow : public juce::Component,
         const juce::Font f = appFontOr (*this, 12.0f);
         indexLabel_.setFont (f);
         valueLabel_.setFont (f);
-        indexLabel_.setColour (juce::Label::textColourId, t.textDim);
+        indexLabel_.setColour (juce::Label::textColourId, t.textSecondary);
         valueLabel_.setColour (juce::Label::textColourId,
-                               owner_.isSlotMuted (slot_) ? t.textDim : t.textValue);
+                               owner_.isSlotMuted (slot_) ? t.textSecondary : t.textPrimary);
 
-        // Source category tint (Env/LFO/Seq/Arp), matching the rest of the editor.
-        const juce::Colour cat = sourceCategoryColour (t, owner_.sourceNameForSlot (slot_));
-        if (! cat.isTransparent())
-            sourceCombo_.setColour (juce::ComboBox::backgroundColourId, cat.withAlpha (0.15f));
-        else
-            sourceCombo_.removeColour (juce::ComboBox::backgroundColourId);
+        // SOURCE combo: uniformly DARK dropdown (the fill is drawn by the shared
+        // drawComboBox, which ignores the per-combo background colour) tagged with
+        // a 4px family-colour STRIP on its far-left edge. The strip colour is this
+        // row's routing-source FAMILY (the same cat*/accent token the knob rings +
+        // row tint resolve to) — it tags the family WITHOUT colouring the dropdown
+        // fill. The DEST combo gets NO tag (just dark + white).
+        const juce::Colour famCol = rowCategoryColour (t, owner_.sourceNameForSlot (slot_));
+        sourceCombo_.getProperties().set ("parvatiComboTag", (int) famCol.getARGB());
+        sourceCombo_.removeColour (juce::ComboBox::backgroundColourId);
+        destCombo_.getProperties().remove ("parvatiComboTag");
+        destCombo_.removeColour (juce::ComboBox::backgroundColourId);
 
-        muteButton_.setColour (juce::TextButton::buttonOnColourId, t.accent);
-        muteButton_.setColour (juce::TextButton::textColourOnId, t.windowBackground);
+        // Per-row depth-slider fill colour: this row's routing-source CATEGORY
+        // colour (the same tokens the knob modulation rings use; neutral sources
+        // -> accent). BipolarSliderLNF reads "parvatiRowFill" so each slider
+        // matches its own row. Re-applied here on every build / source change /
+        // theme switch (the negative side is a dimmed same-hue version, derived
+        // in the LNF).
+        depthSlider_.getProperties().set ("parvatiRowFill",
+            (int) rowCategoryColour (t, owner_.sourceNameForSlot (slot_)).getARGB());
+
+        muteButton_.setColour (juce::TextButton::buttonOnColourId, t.accentPrimary);
+        muteButton_.setColour (juce::TextButton::textColourOnId, t.backgroundBase);
         repaint();
     }
 
@@ -365,13 +423,21 @@ struct ModMatrixRow : public juce::Component,
     {
         const auto& t = owner_.themeManager().getCurrentTheme();
 
+        // FULL-ROW CATEGORY TINT: a very low-opacity (0.08) fill of this row's
+        // routing-source category colour — the same cat*/accent tokens the knob
+        // modulation rings resolve to — so the WHOLE row reads in its source's
+        // hue at a glance (in addition to the thin left stripe below). Flat;
+        // painted first so a stronger flash/highlight overlay still wins.
+        g.setColour (rowCategoryColour (t, owner_.sourceNameForSlot (slot_)).withAlpha (0.08f));
+        g.fillAll();
+
         // Emphasis when this row is the highlighted modulation target (hovered
         // knob or matching row) or the transient selection (knob double-click).
         // A faint accent background makes the row read as the target; the flash
         // (double-click jump) is the stronger of the two.
         if (flashed_ || highlighted_)
         {
-            g.setColour (t.accent.withAlpha (flashed_ ? 0.18f : 0.10f));
+            g.setColour (t.accentPrimary.withAlpha (flashed_ ? 0.18f : 0.10f));
             g.fillAll();
         }
 
@@ -387,12 +453,12 @@ struct ModMatrixRow : public juce::Component,
         // Outline while emphasised so the target row is unmistakable.
         if (flashed_ || highlighted_)
         {
-            g.setColour (t.accent.withAlpha (flashed_ ? 0.85f : 0.55f));
+            g.setColour (t.accentPrimary.withAlpha (flashed_ ? 0.85f : 0.55f));
             g.drawRect (getLocalBounds(), 1);
         }
 
         // Arrow glyph between the source and dest combos.
-        g.setColour (t.textDim);
+        g.setColour (t.textSecondary);
         g.setFont (appFontOr (*this, 13.0f));
         const int arrowX = sourceCombo_.getBounds().getRight() + 4;
         g.drawText (TRANS (">"),
@@ -800,7 +866,7 @@ void ModMatrixView::rebuildLayout()
 //==============================================================================
 void ModMatrixView::paint (juce::Graphics& g)
 {
-    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
 void ModMatrixView::resized()
@@ -822,15 +888,15 @@ void ModMatrixView::resized()
 void ModMatrixView::applyThemeColors()
 {
     const auto& t = themeManager_.getCurrentTheme();
-    headerLabel_.setColour (juce::Label::textColourId, t.text);
+    headerLabel_.setColour (juce::Label::textColourId, t.textPrimary);
     headerLabel_.setFont (appFontOr (*this, 13.0f));
 
     addButton_->setColour (juce::TextButton::buttonColourId, t.containerFill);
-    addButton_->setColour (juce::TextButton::buttonOnColourId, t.accent);
-    addButton_->setColour (juce::TextButton::textColourOffId, t.text);
-    addButton_->setColour (juce::TextButton::textColourOnId, t.windowBackground);
+    addButton_->setColour (juce::TextButton::buttonOnColourId, t.accentPrimary);
+    addButton_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+    addButton_->setColour (juce::TextButton::textColourOnId, t.backgroundBase);
 
-    content_.bg = t.windowBackground;
+    content_.bg = t.backgroundBase;
     content_.setOpaque (true);
     content_.repaint();
     for (const auto& r : rows_)

@@ -91,11 +91,12 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            juce::Slider::SliderStyle, juce::Slider&) override;
 
-    // ComboBox: flat semi-opaque button chip — a 5px rounded fill with NO
-    // outline / inset shadow / arrow bevel, and a minimal ▼ chevron in a subtle
-    // token colour (textDim, lifted to text while open), right-aligned. Inline
-    // text via positionComboBoxText() reserves ~24px on the right for the
-    // chevron so long choices never clip.
+    // ComboBox: a flat DARK dropdown — a 5px rounded solid dark-gray fill with
+    // NO outline / inset shadow / arrow bevel, crisp WHITE inline text and a
+    // minimal ▼ chevron (light token, right-aligned). A mod-matrix SOURCE combo
+    // additionally carries a 4px family-colour TAG strip on its far-left edge
+    // (the "parvatiComboTag" property). Inline text via positionComboBoxText()
+    // reserves ~24px on the right for the chevron so long choices never clip.
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH,
                        juce::ComboBox&) override;
