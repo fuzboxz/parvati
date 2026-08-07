@@ -32,6 +32,14 @@ static constexpr int kNumParts  = 6;
 // 6-note max polyphony total across Parts.
 static constexpr int kNumVoices = 6;
 
+// ===== Parvati-exclusive per-part FX (Ambika knows nothing about these) =====
+// FxType / FxTopology / FxModDestination / kNumFxSlots / kNumFxMatrixSlots /
+// kNumFxSlotParams / fxOrderPermutation. Kept in a dependency-free shard
+// (dsp/fx/FxTypes.h) so the FX DSP core can use them without pulling in all of
+// SynthEngine.h (avoids a circular include: this file -> FxChain.h ->
+// FxProcessor.h).
+#include "dsp/fx/FxTypes.h"
+
 // One multitimbral Part. The Arpeggiator/Sesequencer objects ARE the per-part
 // storage for those settings (edits route to the current Part's objects).
 //
