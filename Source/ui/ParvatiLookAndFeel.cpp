@@ -504,6 +504,32 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
                      titleCol);
 }
 
+// A small padlock glyph drawn centred at @p c (size @p sz) — the "can't drop
+// here" indicator shown on non-destination controls while a mod-source drag is
+// hovered over them. Theme-agnostic (caller supplies the colour).
+static void drawPadlock (juce::Graphics& g, juce::Point<float> c, float sz, juce::Colour col)
+{
+    const float bodyW = sz * 0.66f;
+    const float bodyH = sz * 0.52f;
+    const auto  body  = juce::Rectangle<float> (c.x - bodyW * 0.5f,
+                                                c.y - bodyH * 0.5f + sz * 0.14f,
+                                                bodyW, bodyH);
+    // Shackle: top half-arc resting on the body's top edge.
+    juce::Path shackle;
+    const float r = bodyW * 0.34f;
+    shackle.addCentredArc (c.x, body.getY(), r, r, 0.0f,
+                           juce::MathConstants<float>::pi,
+                           juce::MathConstants<float>::twoPi, false);
+    g.setColour (col);
+    g.strokePath (shackle, juce::PathStrokeType (juce::jmax (1.0f, sz * 0.12f),
+                                                 juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
+    g.fillRoundedRectangle (body, juce::jmax (1.0f, sz * 0.12f));
+    // Keyhole.
+    g.setColour (col.contrasting (0.6f));
+    g.fillEllipse (juce::Rectangle<float> (sz * 0.13f, sz * 0.13f).withCentre (body.getCentre()));
+}
+
 void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
                                            int width, int height,
                                            float sliderPos,
@@ -589,6 +615,112 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
         drawTextUncurtained (g, valueText, vf, textRect.toFloat(), valueCol,
                              juce::Justification::centred);
     }
+
+    // --- Modulation ring (per-source concentric arcs) ---
+    // A knob whose paramID maps to a MOD_DST draws one OUTER concentric arc PER
+    // active matrix slot routed to it, each coloured by that source's functional
+    // CATEGORY (Env=cyan, LFO=magenta, Seq=green, Arp=purple; Op/Const/etc =
+    // neutral). The count + per-source colour/amount are pushed onto the slider's
+    // getProperties() by ParamControl::refreshModRing():
+    //   "parvatiModN"      = number of active arcs
+    //   "parvatiModCol"+i  = ARGB of the i-th arc's category colour
+    //   "parvatiModAmt"+i  = signed amount (-63..63) of the i-th arc
+    // Each arc is ANCHORED AT THE KNOB'S CURRENT VALUE ANGLE (`toAngle`) — NOT
+    // the centre — extending +/- by (amount/63)*halfRange, clamped to the dial.
+    // When "parvatiModHi" is set (this knob is the hovered/selected target) the
+    // arcs render thicker + brighter. N<=0 draws nothing (no faint zero ring).
+    // --- Drop-zone affordance (active while a mod source is being dragged) ---
+    // During a parvatiModSrc drag every VALID destination knob lights up as a
+    // drop target: a prominent full-sweep ring just outside the value arc, in
+    // the knob's fill/category colour brightened (~0.6 alpha, ~2px, rounded).
+    // Drawn FIRST so the per-source modulation arcs sit on top. Knobs with NO
+    // current modulation (parvatiModN==0) still light up. The flag is pushed by
+    // ParamControl::applyModDragAffordance; non-targets are dimmed via the
+    // cell's alpha (setAlpha) and never reach this branch.
+    const bool dragTarget = [&]
+    {
+        const auto* v = slider.getProperties().getVarPointer ("parvatiModDrag");
+        return v != nullptr && v->isBool() && (bool) *v;
+    }();
+    if (dragTarget)
+    {
+        const float cellHalf = juce::jmin ((float) width, (float) height) * 0.5f;
+        const float ringR = juce::jlimit (4.0f, juce::jmax (4.0f, cellHalf - 1.0f),
+                                           radius + 2.0f);
+        g.setColour (fill.brighter (0.25f).withAlpha (0.6f));
+        juce::Path zone;
+        zone.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f,
+                            rotaryStartAngle, rotaryEndAngle, true);
+        g.strokePath (zone, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    }
+    const auto* hiVar = slider.getProperties().getVarPointer ("parvatiModHi");
+    const bool  highlighted = (hiVar != nullptr && hiVar->isBool() && (bool) *hiVar);
+    const auto* nVar = slider.getProperties().getVarPointer ("parvatiModN");
+    const int N = (nVar != nullptr && nVar->isInt()) ? juce::jlimit (0, 6, (int) *nVar) : 0;
+    if (N > 0)
+    {
+        // The first arc sits just outside the value arc; subsequent arcs step
+        // outward, all clamped to the cell half-extent (minus a 1px margin) so
+        // the concentric stack never clips. Tiny knobs with no room draw none.
+        const float cellHalf = juce::jmin ((float) width, (float) height) * 0.5f;
+        const float baseRing = radius + 2.0f;
+        const float maxSweep = (rotaryEndAngle - rotaryStartAngle) * 0.5f;
+        const float step     = 2.2f;
+        for (int i = 0; i < N; ++i)
+        {
+            const float ringR = baseRing + (float) i * step;
+            if (ringR > cellHalf - 1.0f)
+                break;   // cap: no more arcs fit inside the cell
+
+            const auto* colVar = slider.getProperties().getVarPointer ("parvatiModCol" + juce::String (i));
+            const juce::Colour col = (colVar != nullptr && colVar->isInt())
+                ? juce::Colour ((uint32_t) (int) *colVar)
+                : fill;   // fallback to the knob fill if no colour was pushed
+
+            const auto* amtVar = slider.getProperties().getVarPointer ("parvatiModAmt" + juce::String (i));
+            const int amt = (amtVar != nullptr && amtVar->isInt())
+                ? juce::jlimit (-63, 63, (int) *amtVar) : 0;
+
+            // Signed sweep from the CURRENT value angle, clamped to the dial.
+            const float sweep = ((float) amt / 63.0f) * maxSweep;   // signed; |sweep| <= maxSweep < pi
+            const float a1 = juce::jlimit (rotaryStartAngle, rotaryEndAngle,
+                                           juce::jmin (toAngle, toAngle + sweep));
+            const float a2 = juce::jlimit (rotaryStartAngle, rotaryEndAngle,
+                                           juce::jmax (toAngle, toAngle + sweep));
+            if (a2 <= a1)
+                continue;   // zero-length (e.g. amount==0) draws nothing
+
+            // Subtle full-sweep context track at this arc's radius.
+            juce::Path trackPath;
+            trackPath.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f,
+                                     rotaryStartAngle, rotaryEndAngle, true);
+            g.setColour (col.withMultipliedAlpha (0.08f));
+            g.strokePath (trackPath, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                           juce::PathStrokeType::rounded));
+
+            // The arc itself, anchored at the current value angle: full alpha,
+            // 1.6px (thickened + brightened while highlighted).
+            const float arcW = highlighted ? 2.0f : 1.6f;
+            juce::Path arcPath;
+            arcPath.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f, a1, a2, true);
+            g.setColour (highlighted ? col.brighter (0.30f) : col);
+            g.strokePath (arcPath, juce::PathStrokeType (arcW, juce::PathStrokeType::curved,
+                                                          juce::PathStrokeType::rounded));
+        }
+    }
+
+    // "Can't drop here" padlock: shown on a NON-destination knob while a
+    // mod-source drag is hovered over it (ParamControl::setDropLocked).
+    {
+        const auto* lv = slider.getProperties().getVarPointer ("parvatiModLocked");
+        if (lv != nullptr && lv->isBool() && (bool) *lv)
+        {
+            const float lsz = juce::jmin ((float) width, (float) height) * 0.34f;
+            drawPadlock (g, centre, lsz,
+                         slider.findColour (juce::Slider::textBoxTextColourId).withAlpha (0.9f));
+        }
+    }
 }
 
 void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
@@ -637,6 +769,16 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     chevron.closeSubPath();
     g.setColour (chevronCol);
     g.fillPath (chevron);
+
+    // "Can't drop here" padlock on a NON-destination combo while a mod-source
+    // drag is hovered over it (ParamControl::setDropLocked).
+    {
+        const auto* lv = box.getProperties().getVarPointer ("parvatiModLocked");
+        if (lv != nullptr && lv->isBool() && (bool) *lv)
+            drawPadlock (g, juce::Point<float> ((float) width * 0.5f, (float) height * 0.5f),
+                         (float) height * 0.7f,
+                         box.findColour (juce::ComboBox::textColourId).withAlpha (0.9f));
+    }
 }
 
 void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)

@@ -30,6 +30,7 @@
 
 #include "GroupPager.h"   // GroupPager (nested-tab content: ENV/LFO/ARP/SEQ groups)
 
+class ModMatrixView;
 class ParamPage;
 class ThemeManager;
 
@@ -51,8 +52,18 @@ public:
 
     // A nested mod-row tab. A non-empty @p subsets builds a GroupPager (the page
     // is paginated by group); an empty subsets hosts the page directly (ARP).
-    void addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets);
+    // @p tabDragSource (optional, generator pagers only) makes the GroupPager's
+    // sub-tab buttons themselves draggable mod-source drag SOURCES; pass {} (or
+    // omit) for the direct-host ARP branch / non-generator pagers.
+    void addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets,
+                       GroupPager::TabSourceMap tabDragSource = {});
     void addModTab    (const juce::String& shortName, ParamPage* page, GroupSubsets subsets);
+
+    // Host an editor-owned ModMatrixView as the MOD MATRIX tab content. The view
+    // is NON-owned by the TabbedComponent (deleteWhenNotNeeded=false), exactly
+    // like the direct-host path of addModTab hosts a page — the editor retains
+    // ownership. Replaces the old 1-4/5-8/9-12/13-14 GroupPager pagination.
+    void setModMatrixView (ModMatrixView* view);
 
     void resized() override;
     void paint (juce::Graphics&) override;

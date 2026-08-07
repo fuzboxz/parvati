@@ -23,6 +23,7 @@
 // Build: cmake --build build_release --target parvati_editor_test && ./build_release/parvati_editor_test
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <vector>
 
@@ -85,6 +86,23 @@ juce::TabbedComponent* findTabs (juce::Component* c)
     return nullptr;
 }
 
+// Does any tab (at any nesting level) host a component of type T as its content?
+// JUCE's TabbedComponent only parents the CURRENT tab's content, so a plain
+// subtree walk misses non-current tabs (e.g. MOD MATRIX after surfacing lands on
+// MODIFIERS). This inspects every tab's getTabContentComponent directly.
+template <typename T>
+bool anyTabHosts (juce::Component* c)
+{
+    if (auto* tc = dynamic_cast<juce::TabbedComponent*> (c))
+        for (int i = 0; i < tc->getNumTabs(); ++i)
+            if (dynamic_cast<T*> (tc->getTabContentComponent (i)) != nullptr)
+                return true;
+    for (auto* child : c->getChildren())
+        if (anyTabHosts<T> (child))
+            return true;
+    return false;
+}
+
 // Surface every tab at every nesting level (switching each current in turn) so
 // every ParamPage becomes reachable, collecting the ParamPage objects. A
 // ParamPage owns its ParamControls whether parented or not, so a collected page
@@ -127,11 +145,22 @@ int main()
     const auto& descs = getPatchParamDescriptors();
 
     // Every descriptor except `part_select` should get a ParamControl on a page
-    // (part_select has the dedicated top-bar ComboBox).
+    // (part_select has the dedicated top-bar ComboBox). The mod-matrix params
+    // (mod{1..14}_source/_dest/_amount) are now hosted by the editor-owned
+    // ModMatrixView (Wave 1) — NOT ParamControls on a ParamPage — so they are
+    // intentionally excluded from this coverage count (validated separately as
+    // [3c]: a ModMatrixView is present in the tree). "modif*" is NOT matched
+    // (modifiers stay on a paginated ParamPage).
     int expectedCells = 0;
     for (const auto& d : descs)
-        if (d.paramID != "part_select")
-            ++expectedCells;
+    {
+        if (d.paramID == "part_select")
+            continue;
+        if (d.paramID.size() > 3 && d.paramID.compare (0, 3, "mod") == 0
+            && std::isdigit (static_cast<unsigned char> (d.paramID[3])))
+            continue;   // mod{N}_... == a ModMatrixView slot param
+        ++expectedCells;
+    }
 
     {
         ParvatiAudioProcessor processor;
@@ -197,7 +226,16 @@ int main()
         std::printf ("     descriptors = %zu, expected cells = %d, found = %d\n",
                      descs.size(), expectedCells, cells);
         check (cells == expectedCells,
-               "one ParamControl per descriptor (except part_select), across all nesting");
+               "one ParamControl per descriptor (except part_select + mod-matrix), across all nesting");
+
+        // [3c] MOD MATRIX is now the editor-owned ModMatrixView (replaces the old
+        // 1-4/5-8/9-12/13-14 GroupPager pagination). The 42 mod{1..14}_* params are
+        // NOT ParamControls (excluded above); the view hosts them directly via its
+        // own combos/sliders, so a live ModMatrixView in the tree is the proof the
+        // wiring replaced the paginated ParamPage.
+        std::printf ("\n[3c] MOD MATRIX tab hosts a ModMatrixView (not a paginated ParamPage)\n");
+        check (anyTabHosts<ModMatrixView> (ed),
+               "a ModMatrixView is present in the editor tree (as MOD MATRIX tab content)");
 
         std::printf ("\n[3b] Page grouping (Oscillators / Global)\n");
         std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (10 controls)\n",
@@ -382,6 +420,116 @@ int main()
             for (size_t i = 1; i < hues.size(); ++i)
                 if (hues[i].getARGB() == hues[i - 1].getARGB()) { distinct = false; break; }
             check (distinct, "ENV/LFO/ARP/SEQ tabs have DISTINCT category colours");
+        }
+
+        // ------------------------------------------------------------------
+        // [12] Modulation ring: per-source concentric arcs (new schema).
+        // ParamControl::refreshModRing() pushes the per-source count/colour/
+        // amount onto the knob's Slider getProperties(), read here headlessly.
+        // filter1_cutoff is the Filter column's MOD_DST_FILTER_CUTOFF knob — a
+        // DIRECT (always-parented) page, so its LookAndFeel resolves the theme
+        // and the colour props are actually pushed. reapplyCategoryColours()
+        // (the theme-switch entry point) forces a synchronous refreshModRing(),
+        // which exercises categoryColourForSourceName() via the arc colours.
+        // ------------------------------------------------------------------
+        std::printf ("\n[12] Modulation ring schema (per-source concentric arcs)\n");
+        {
+            const auto& carbon = carbonTheme();
+            auto& apvts = processor.getApvts();
+
+            // Find the filter1_cutoff control + its Slider child.
+            ParamControl* cutoff = nullptr;
+            for (auto* p : pages)
+                for (auto* c : pageControls (p))
+                    if (c->getParamID() == "filter1_cutoff")
+                        cutoff = c;
+            check (cutoff != nullptr, "filter1_cutoff ParamControl exists");
+            if (cutoff != nullptr)
+            {
+                juce::Slider* sl = nullptr;
+                for (auto* child : cutoff->getChildren())
+                    if (auto* s = dynamic_cast<juce::Slider*> (child))
+                        sl = s;
+                check (sl != nullptr, "filter1_cutoff has a Slider child");
+                if (sl != nullptr)
+                {
+                    auto& props = sl->getProperties();
+
+                    // Route slot1 to Filter Cutoff with amount 30, then vary the
+                    // SOURCE: the arc colour must follow the source's category.
+                    apvts.getParameterAsValue ("mod1_dest")   = 12.0f;  // MOD_DST_FILTER_CUTOFF
+                    apvts.getParameterAsValue ("mod1_amount") = 30.0f;
+
+                    auto arc0Colour = [&]() -> uint32_t
+                    {
+                        ParamControl::reapplyCategoryColours();
+                        const auto* v = props.getVarPointer ("parvatiModCol0");
+                        return (v && v->isInt()) ? (uint32_t) (int) *v : 0;
+                    };
+
+                    struct SrcCat { float idx; const char* label; juce::Colour want; };
+                    const SrcCat cats[] = {
+                        { 0.0f,  "Env 1",     carbon.catEnv },
+                        { 4.0f,  "LFO 2",     carbon.catLfo },
+                        { 6.0f,  "Voice LFO", carbon.catLfo },   // special: name == "Voice LFO"
+                        { 11.0f, "Seq 1",     carbon.catSeq },
+                        { 13.0f, "Arp Step",  carbon.catArp },
+                        { 10.0f, "Op 4",      carbon.accent },   // neutral
+                        { 14.0f, "Velocity",  carbon.accent },   // neutral
+                    };
+                    for (const auto& cat : cats)
+                    {
+                        apvts.getParameterAsValue ("mod1_source") = cat.idx;
+                        const uint32_t arcCol = arc0Colour();
+                        std::snprintf (msg, sizeof (msg),
+                                       "arc0 colour follows source category (%s)", cat.label);
+                        check (arcCol == cat.want.getARGB(), msg);
+                    }
+
+                    // Schema keys for the one-slot case.
+                    const auto* nVar = props.getVarPointer ("parvatiModN");
+                    const int N = (nVar && nVar->isInt()) ? (int) *nVar : -1;
+                    std::snprintf (msg, sizeof (msg), "one active slot => parvatiModN=1 [was %d]", N);
+                    check (N == 1, msg);
+                    const auto* amt0 = props.getVarPointer ("parvatiModAmt0");
+                    check (amt0 && amt0->isInt() && (int) *amt0 == 30, "parvatiModAmt0 == 30");
+                    check (props.getVarPointer ("parvatiModDepth") == nullptr,
+                           "legacy parvatiModDepth key removed");
+
+                    // Second source on the same dest -> two concentric arcs.
+                    apvts.getParameterAsValue ("mod2_source") = 3.0f;   // LFO 2
+                    apvts.getParameterAsValue ("mod2_dest")   = 12.0f;
+                    apvts.getParameterAsValue ("mod2_amount") = -20.0f;
+                    ParamControl::reapplyCategoryColours();
+                    const auto* n2Var = props.getVarPointer ("parvatiModN");
+                    const int N2 = (n2Var && n2Var->isInt()) ? (int) *n2Var : -1;
+                    std::snprintf (msg, sizeof (msg), "two sources => parvatiModN=2 [was %d]", N2);
+                    check (N2 == 2, msg);
+                    const auto* col1 = props.getVarPointer ("parvatiModCol1");
+                    check (col1 && col1->isInt()
+                           && juce::Colour ((uint32_t) (int) *col1).getARGB() == carbon.catLfo.getARGB(),
+                           "second arc parvatiModCol1 == catLfo (magenta)");
+                    const auto* amt1 = props.getVarPointer ("parvatiModAmt1");
+                    check (amt1 && amt1->isInt() && (int) *amt1 == -20, "parvatiModAmt1 == -20");
+
+                    // Move the first slot's dest away from Cutoff -> arc removed.
+                    apvts.getParameterAsValue ("mod1_dest") = 18.0f;  // VCA
+                    ParamControl::reapplyCategoryColours();
+                    const auto* n3Var = props.getVarPointer ("parvatiModN");
+                    const int N3 = (n3Var && n3Var->isInt()) ? (int) *n3Var : -1;
+                    std::snprintf (msg, sizeof (msg),
+                                   "moving slot1 dest away => parvatiModN=1 [was %d]", N3);
+                    check (N3 == 1, msg);
+
+                    // Restore defaults so the tree is clean for teardown.
+                    apvts.getParameterAsValue ("mod1_source") = 0.0f;
+                    apvts.getParameterAsValue ("mod1_dest")   = 0.0f;
+                    apvts.getParameterAsValue ("mod1_amount") = 0.0f;
+                    apvts.getParameterAsValue ("mod2_source") = 0.0f;
+                    apvts.getParameterAsValue ("mod2_dest")   = 0.0f;
+                    apvts.getParameterAsValue ("mod2_amount") = 0.0f;
+                }
+            }
         }
 
         // Reset to SYNTH.

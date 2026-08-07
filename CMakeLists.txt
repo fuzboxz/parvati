@@ -536,6 +536,20 @@ target_link_libraries(parvati_apvts_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# ModDestMap unit test: the paramID <-> MOD_DST mapping table + per-slot amount
+# aggregation (aggregateAmount / slotsForDest) used by the mod-ring, hover-
+# highlight, and drag-and-drop features. Built by default.
+# Run with: ./build/parvati_mod_dest_map_test
+add_executable(parvati_mod_dest_map_test
+    tests/mod_dest_map_test.cpp
+)
+target_include_directories(parvati_mod_dest_map_test PRIVATE Source)
+target_compile_features(parvati_mod_dest_map_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_mod_dest_map_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Startup rumble regression: the ENV->VCA modulation is multiplicative, so an
 # idle voice with a modulation amount < 63 leaks a sub-audio oscillator tone as
 # a low-frequency rumble at load. This sets mod11 (ENV3->VCA) to 32 to construct
@@ -560,6 +574,21 @@ add_executable(parvati_realtime_test
 target_include_directories(parvati_realtime_test PRIVATE Source)
 target_compile_features(parvati_realtime_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_realtime_test PRIVATE
+    Parvati
+)
+
+# Diagnostic / regression guard (built by default, runs in the suite): create a
+# fresh processor + editor and assert the amp-envelope modulation
+# (mod11_amount = ENV3->VCA) is preserved and the engine stays audible after
+# the editor (ModMatrixView + ring listeners + drag affordance) is created.
+# Guards the subtle "editor creation clobbers the amp routing -> silence"
+# regression. Run with: ./build/parvati_mod_audio_test
+add_executable(parvati_mod_audio_test
+    tests/mod_audio_test.cpp
+)
+target_include_directories(parvati_mod_audio_test PRIVATE Source)
+target_compile_features(parvati_mod_audio_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_mod_audio_test PRIVATE
     Parvati
 )
 

@@ -39,5 +39,14 @@ private:
     std::unique_ptr<SpringSlider>   pitch_;
     std::unique_ptr<juce::Slider>   mod_;
 
+    // The "PITCH" / "MOD" caption labels double as DRAG SOURCES for modulation
+    // assignment: dragging the caption starts a `parvatiModSrc:<enum>` drag
+    // (PITCH -> MOD_SRC_PITCH_BEND, MOD -> MOD_SRC_WHEEL) so the source can be
+    // dropped onto any destination knob (same payload as the generator tabs /
+    // matrix-row grip). The wheels themselves stay playable; only the caption
+    // strip initiates the assignment drag. Concrete type is file-local in the .cpp.
+    std::unique_ptr<juce::Component> pitchDrag_;
+    std::unique_ptr<juce::Component> modDrag_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WheelsComponent)
 };

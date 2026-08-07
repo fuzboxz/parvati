@@ -22,6 +22,8 @@
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
 #include "ui/KeyboardView.h"
+#include "ui/ModDestMap.h"
+#include "ui/ModMatrixView.h"
 #include "ui/WheelsComponent.h"
 #include "ui/ParvatiLookAndFeel.h"
 
@@ -49,7 +51,8 @@ class EnvelopeDisplay;
 // and the cell exposes its parameter's help text as a tooltip.
 class ParamControl : public juce::Component,
                      public juce::TooltipClient,
-                     public juce::AudioProcessorValueTreeState::Listener
+                     public juce::AudioProcessorValueTreeState::Listener,
+                     public juce::DragAndDropTarget
 {
 public:
     ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
@@ -90,11 +93,48 @@ public:
     // re-resolved + re-pushed (the L&F default alone would not recolour them).
     static void   reapplyCategoryColours();
 
+    // While a modulation source is being dragged onto a destination knob, dim
+    // every control that is NOT a valid drop target (alpha 0.3) and light up
+    // every valid target with a drop-zone ring (parvatiModDrag). Toggled from
+    // ParvatiEditor's dragOperationStarted/Ended; iterates the live registry
+    // (mirrors setTooltipsEnabled / reapplyCategoryColours). Restored (full
+    // alpha, ring cleared) the instant the drag ends.
+    static void   setModDragActive (bool active);
+
     // Right-click (popup) on this cell — or on its child Slider/ComboBox, which
     // registers `this` as a MouseListener (Component is already a MouseListener,
     // so no extra base is needed) — shows a context menu (Reset to default /
     // Randomize). Non-popup clicks fall through to normal interaction.
     void mouseDown (const juce::MouseEvent& e) override;
+
+    // Hover highlight: mousing over a mod-destination knob publishes its dest on
+    // the editor-scoped ModMatrixHighlight bus so every matching matrix row
+    // emphasises itself (and this knob's own ring glows — see applyModHighlight).
+    // Also routed here from the child slider/label because this cell is registered
+    // as their MouseListener.
+    void mouseEnter (const juce::MouseEvent& e) override;
+    void mouseExit  (const juce::MouseEvent& e) override;
+    // Double-click on a mod-destination knob whose modulation ring is active
+    // (aggregate depth != 0) selects the first ACTIVE slot targeting this dest
+    // on the bus, so the Mod Matrix scrolls to + emphasises that row.
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+
+    // ---- Drag-and-drop assignment (drag a mod source onto a dest knob) ----
+    // An internal "parvatiModSrc:<enum>" drag is accepted by EVERY ParamControl
+    // (so drag hover/exit/drop fire on non-targets too, not just destination
+    // knobs). Over a destination knob the modulation ring glows (STEP-3
+    // highlight bus) and the drop consumes the next free slot for
+    // (source -> this knob's dest). Over a NON-destination control a small
+    // padlock is shown (setDropLocked) to signal "can't drop here", and the
+    // drop is a no-op.
+    bool isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
+    void itemDragEnter (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
+    void itemDragExit  (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
+    void itemDropped   (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
+    // Show/clear the "locked" padlock on a non-target control while a mod-source
+    // drag is hovered over it. Locked => full alpha + the padlock flag the L&F
+    // renders; cleared => restore the drag dim/alpha state.
+    void setDropLocked (bool locked);
 
     // ---- Sequencer step-grid introspection (UI + the editor_test) ----
     // paramID of the bound APVTS parameter (e.g. "seq1_step7", "seq_length_2").
@@ -127,6 +167,13 @@ private:
     // when there is no theme yet. The numeric value readout stays neutral
     // (textBoxTextColourId is never touched).
     void applyCategoryArcColour();
+    // Resolve a mod SOURCE's functional CATEGORY colour from its (human) name:
+    // Env -> catEnv, LFO / "Voice LFO" -> catLfo, Seq -> catSeq, Arp -> catArp;
+    // every other source (Op/Const/Velocity/etc) resolves to the neutral `accent`.
+    // Shared by the mod-source combo tint AND the per-source modulation ring so
+    // both use one consistent name->colour mapping. Pure / null-safe.
+    static juce::Colour categoryColourForSourceName (const juce::String& name,
+                                                     const ParvatiTheme& theme);
     // Tint a mod-source combo's background (modN_source / modifN_in1|in2) to 15%
     // alpha of the SELECTED source's category colour (Env=cyan, LFO=magenta,
     // Seq=green, Arp=purple; Op/Const/Velocity/etc => neutral / no tint).
@@ -134,6 +181,26 @@ private:
     // Whether this combo takes a modulation source (and so is eligible for the
     // category tint). Detected from the paramID at construction.
     bool isModSourceCombo() const noexcept { return isModSourceCombo_; }
+
+    // ---- Modulation ring (per-source concentric arcs) ----
+    // Recompute the ACTIVE mod slots routed to this knob's ModulationDestination
+    // (parvati::ModDestMap::slotsForDest) and push ONE concentric arc PER active
+    // source onto the slider's getProperties(): "parvatiModN" = count, and for
+    // each i: "parvatiModCol"+i = the source's CATEGORY colour (via
+    // categoryColourForSourceName), "parvatiModAmt"+i = the signed amount
+    // (-63..63). Each arc is later anchored at the knob's CURRENT value angle by
+    // the LookAndFeel (NOT the centre). Capped at 6 arcs. A no-op for
+    // non-destination knobs. Re-entrant-safe (refreshingModRing_).
+    void refreshModRing();
+    // Push the highlight flag onto the slider's getProperties() ("parvatiModHi")
+    // so the LookAndFeel renders the modulation ring brighter/thicker when this
+    // knob is the hovered/selected modulation target (@p modDst == modDest_),
+    // and clears it otherwise. A no-op for non-destination knobs.
+    void applyModHighlight (int modDst);
+    // Re-style this cell for the active drag affordance: dim non-targets
+    // (alpha 0.3) and push the drop-zone flag onto a destination knob's slider
+    // so the LookAndFeel renders the drop-zone ring. Idempotent / null-safe.
+    void applyModDragAffordance();
 
     // Pixel width of the widest choice string (or the current text) measured in
     // the active L&F combo font — drives the fit-to-text dropdown width.
@@ -170,6 +237,7 @@ private:
 
     juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
     static bool tooltipsEnabled_;   // toggled from the Settings panel
+    static bool modDragActive_;     // true while a parvatiModSrc drag is in flight
 
     juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
     juce::String lengthParamID_;     // sibling length param; empty for non-steps
@@ -179,6 +247,19 @@ private:
     // guards against any re-entrant setColour path.
     bool isModSourceCombo_ = false;
     bool refreshingModTint_ = false;
+
+    // Modulation-ring state: a knob whose paramID maps to a MOD_DST listens to
+    // all 42 mod{1..14}_source/_dest/_amount params so any matrix edit refreshes
+    // the per-source concentric rings (a source change recolours an arc, a dest
+    // change adds/removes an arc, an amount change resizes one). modDest_ is -1
+    // for non-destination controls. refreshingModRing_ guards against re-entrant
+    // repaints (mirrors the refreshingModTint_ pattern).
+    parvati::ModDestMap::ModDst modDest_ = -1;
+    bool isModDestKnob_ = false;
+    bool refreshingModRing_ = false;
+    // ModMatrixHighlight bus subscription id for the dest-highlight observer
+    // (so the knob's ring follows a hover on a matching matrix row). -1 = none.
+    int modHighlightSub_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamControl)
 };
@@ -378,6 +459,7 @@ private:
 
 //==============================================================================
 class ParvatiEditor : public juce::AudioProcessorEditor,
+                     public juce::DragAndDropContainer,
                      private juce::FileDragAndDropTarget,
                      private juce::Timer,
                      private juce::ChangeListener
@@ -420,6 +502,16 @@ private:
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
+    // juce::DragAndDropContainer — detect the start/end of an internal
+    // mod-source drag (payload "parvatiModSrc:<enum>") to toggle the drag-drop
+    // affordance: valid destination knobs light up as drop zones and every
+    // other control dims. dragOperationEnded fires on BOTH drop and cancel, so
+    // the state always clears. (ParvatiEditor IS a DragAndDropContainer, so it
+    // overrides these two protected virtuals directly — this JUCE version has
+    // no separate DragAndDropContainer::Listener / addListener API.)
+    void dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details) override;
+    void dragOperationEnded   (const juce::DragAndDropTarget::SourceDetails&) override;
+
     // juce::Timer — keep the Multi page in sync with the edited part (~30 Hz).
     void timerCallback() override;
 
@@ -448,6 +540,14 @@ private:
     // raw ref to synthWorkspace_ below) destroys first, then synthWorkspace_ (its
     // nested tabs detach from the pages), then generatedPages_ deletes them.
     std::vector<std::unique_ptr<ParamPage>> generatedPages_;
+    // The redesigned MOD MATRIX panel (Wave 1). EDITOR-OWNED. Hosted NON-owned
+    // by SynthWorkspace's nested modTabs_ (deleteWhenNotNeeded=false), exactly
+    // like the reparented ParamPages, so the view must outlive the TabbedComponent
+    // that hosts it. Declared BEFORE synthWorkspace_ on purpose: members destroy in
+    // REVERSE declaration order, so synthWorkspace_ (and its modTabs_) tear down
+    // FIRST and merely DETACH the non-owned view, then modMatrixView_ deletes it —
+    // no use-after-free, no double-free.
+    std::unique_ptr<ModMatrixView> modMatrixView_;
     // SYNTH content: the dense, void-free 2-row integrated workspace hosting the
     // 9 synth ParamPages (reparented) in signal-chain columns (OSC | Mixer |
     // Filter) above two nested tab groups (ENV/LFO/ARP/SEQ and MOD MATRIX/

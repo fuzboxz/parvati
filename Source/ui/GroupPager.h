@@ -18,6 +18,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -33,12 +35,23 @@ public:
     // shows ALL of the page's groups for that tab.
     using Subset = std::pair<juce::String, juce::StringArray>;
 
+    // Maps a sub-tab LABEL to its modulation SOURCE enum (MOD_SRC_*), so the
+    // sub-tab button itself can be DRAGGED onto a destination knob as a mod
+    // source (drag payload "parvatiModSrc:<enum>"). Returns -1 for tabs that are
+    // NOT a draggable generator (NOTES/VEL/...). A null map disables dragging
+    // entirely (the MODIFIERS pager), in which case the sub-tabs stay plain.
+    using TabSourceMap = std::function<int (const juce::String& tabLabel)>;
+
     // @p page is the editor-owned ParamPage to paginate (NOT owned/deleted here).
     // @p categoryColour is the bar's FUNCTION-CATEGORY colour (resolved from the
     // parent tab's shortName + theme); all of this pager's sub-tabs are coloured
     // with it (see drawTabButton + parvatiTabCategoryColourId).
+    // @p tabDragSource (optional) makes the sub-tab buttons themselves draggable
+    // mod-source drag SOURCES (see TabSourceMap); pass {} for non-generator
+    // pagers (MODIFIERS) whose sub-tabs must stay plain tab buttons.
     GroupPager (ThemeManager& themeManager, ParamPage* page, std::vector<Subset> subsets,
-                juce::Colour categoryColour = {});
+                juce::Colour categoryColour = {},
+                TabSourceMap tabDragSource = {});
 
     void resized() override;
     void paint (juce::Graphics&) override;
@@ -69,7 +82,11 @@ private:
     ThemeManager& themeManager_;
     ParamPage* page_;                 // non-owning; editor-owned (generatedPages_)
     std::vector<Subset> subsets_;
-    juce::TabbedButtonBar bar_ { juce::TabbedButtonBar::TabsAtTop };
+    // A DraggableTabButtonBar (a TabbedButtonBar subclass defined in the .cpp) so
+    // each sub-tab is a DraggableTabButton carrying a "parvatiModSrc:<enum>" drag
+    // payload when a TabSourceMap is set. Held as the base type to keep the drag
+    // machinery file-local; the virtual Component dtor deletes it correctly.
+    std::unique_ptr<juce::TabbedButtonBar> bar_;
     juce::Colour tabCategoryColour_;  // bar's parent-category colour (theme token snapshot)
     int current_ = 0;
 

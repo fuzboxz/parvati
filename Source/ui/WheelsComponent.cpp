@@ -4,6 +4,7 @@
 
 #include "ParvatiLookAndFeel.h"
 #include "ParvatiTheme.h"
+#include "dsp/patch.h"            // ambika::dsp::MOD_SRC_PITCH_BEND / MOD_SRC_WHEEL
 
 //==============================================================================
 // A vertical slider that snaps back to its midpoint (0.0) on mouse release.
@@ -25,6 +26,89 @@ struct WheelsComponent::SpringSlider : public juce::Slider
 };
 
 //==============================================================================
+// A caption label ("PITCH" / "MOD") that is ALSO a modulation-source DRAG
+// SOURCE. A drag past ~5px starts an internal DragAndDropContainer drag
+// carrying "parvatiModSrc:<enum>", which any destination knob accepts (same
+// payload/paths as the generator tab buttons and the matrix-row grip). The
+// wheels above stay fully playable; only this caption strip initiates the
+// assignment drag.
+struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClient
+{
+    WheelDragLabel (juce::String label, int sourceEnum)
+        : label_ (std::move (label)), src_ (sourceEnum)
+    {
+        setInterceptsMouseClicks (true, false);
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+        setTooltip ("Drag onto a knob to assign " + label_ + " as a modulation source");
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+        const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
+        // Match the surrounding label text (e.g. the keyboard's key labels use
+        // the bright `text` token) rather than the dim caption token.
+        g.setColour (t != nullptr ? t->text : juce::Colour (0xffe0e0e0));
+        // Same app typeface as all other UI text (appFont uses the system
+        // default sans-serif). The explicit fallback guarantees the FACE even
+        // if this child's LookAndFeel is not yet resolved, so the caption never
+        // silently renders in a different font than the surrounding labels.
+        g.setFont (lnf != nullptr ? lnf->appFont (9.0f, juce::Font::plain)
+                                  : juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
+                                                                   9.0f, juce::Font::plain)));
+        g.drawText (label_, getLocalBounds(), juce::Justification::centredTop);
+    }
+
+    void mouseDown (const juce::MouseEvent&) override { dragStarted_ = false; }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (dragStarted_ || src_ < 0 || e.getDistanceFromDragStart() <= 5)
+            return;
+        auto* ddc = findParentComponentOfClass<juce::DragAndDropContainer>();
+        if (ddc == nullptr)
+            return;   // no DragAndDropContainer ancestor (e.g. a headless test)
+        dragStarted_ = true;
+        ddc->startDragging ("parvatiModSrc:" + juce::String (src_), this, buildDragImage(), true);
+    }
+
+    void mouseUp (const juce::MouseEvent&) override { dragStarted_ = false; }
+
+    // A small themed chip (mirrors ModSourceDragGrip::buildDragImage).
+    juce::Image buildDragImage() const
+    {
+        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+        const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
+        const juce::Colour fill = (t != nullptr) ? t->containerFill : juce::Colour (0xff202028);
+        const juce::Colour txt  = (t != nullptr) ? t->text          : juce::Colour (0xffe0e0e0);
+        const juce::Colour acc  = (t != nullptr) ? t->accent        : juce::Colour (0xffc8a44a);
+        const juce::Font f = (lnf != nullptr) ? lnf->appFont (13.0f, juce::Font::plain)
+                                              : juce::Font (juce::FontOptions (13.0f));
+        const int textW = juce::GlyphArrangement::getStringWidthInt (f, label_);
+        const int w = juce::jmax (48, 12 + 8 + textW + 10);
+        const int h = 22;
+        juce::Image img (juce::Image::ARGB, w, h, true);
+        juce::Graphics g (img);
+        g.setColour (fill);
+        g.fillRoundedRectangle (img.getBounds().toFloat(), 5.0f);
+        // Performance sources (Pitch Bend / Wheel) carry no Env/LFO/Seq/Arp
+        // category, so the chip's accent bar uses the theme accent.
+        g.setColour (acc);
+        g.fillRoundedRectangle (juce::Rectangle<float> (5.0f, 5.0f, 7.0f, static_cast<float> (h) - 10.0f), 2.0f);
+        g.setColour (txt);
+        g.setFont (f);
+        g.drawText (label_, juce::Rectangle<int> (17, 0, w - 17, h), juce::Justification::centredLeft, true);
+        g.setColour (acc.withAlpha (0.6f));
+        g.drawRoundedRectangle (img.getBounds().toFloat().reduced (0.5f), 5.0f, 1.0f);
+        return img;
+    }
+
+    juce::String label_;
+    int src_;
+    bool dragStarted_ = false;
+};
+
+//==============================================================================
 WheelsComponent::WheelsComponent()
 {
     pitch_ = std::make_unique<SpringSlider>();
@@ -36,6 +120,14 @@ WheelsComponent::WheelsComponent()
     mod_->setValue (0.0, juce::dontSendNotification);
     mod_->onValueChange = [this] { if (onMod) onMod (static_cast<float> (mod_->getValue())); };
     addAndMakeVisible (*mod_);
+
+    // Caption labels double as modulation-source drag sources (PITCH -> Pitch
+    // Bend, MOD -> Mod Wheel). Dropped on a destination knob they consume the
+    // next free slot, exactly like dragging a generator tab.
+    pitchDrag_ = std::make_unique<WheelDragLabel> ("PITCH", ambika::dsp::MOD_SRC_PITCH_BEND);
+    modDrag_   = std::make_unique<WheelDragLabel> ("MOD",   ambika::dsp::MOD_SRC_WHEEL);
+    addAndMakeVisible (*pitchDrag_);
+    addAndMakeVisible (*modDrag_);
 }
 
 WheelsComponent::~WheelsComponent() = default;
@@ -51,7 +143,6 @@ void WheelsComponent::paint (juce::Graphics& g)
     const juce::Colour bg    = (t != nullptr) ? t->windowBackground : juce::Colour (0xff141419);
     const juce::Colour track = (t != nullptr) ? t->outline          : juce::Colour (0xff3a3a44);
     const juce::Colour thumb = (t != nullptr) ? t->accent           : juce::Colour (0xffc8a44a);
-    const juce::Colour dim   = (t != nullptr) ? t->textDim          : juce::Colour (0xff8a8a96);
 
     g.fillAll (bg);
 
@@ -62,22 +153,20 @@ void WheelsComponent::paint (juce::Graphics& g)
         s->setColour (juce::Slider::thumbColourId, thumb);
     }
 
-    g.setColour (dim);
-    g.setFont (lnf != nullptr ? lnf->appFont (9.0f, juce::Font::plain)
-                              : juce::Font (juce::FontOptions (9.0f)));
-    const int halfW = getWidth() / 2;
-    g.drawText ("PITCH", juce::Rectangle<int> (0, getHeight() - 13, halfW, 12),
-                juce::Justification::centredTop);
-    g.drawText ("MOD", juce::Rectangle<int> (halfW, getHeight() - 13, getWidth() - halfW, 12),
-                juce::Justification::centredTop);
+    // The "PITCH" / "MOD" captions are drawn by the pitchDrag_ / modDrag_ label
+    // components (which double as modulation-source drag sources), not here.
 }
 
 void WheelsComponent::resized()
 {
     auto b = getLocalBounds();
-    b.removeFromBottom (14);   // reserve the label strip drawn in paint()
+    auto labelStrip = b.removeFromBottom (14);   // the PITCH/MOD caption drag strip
 
     const int half = b.getWidth() / 2;
     pitch_->setBounds (b.removeFromLeft (half).reduced (5, 2));
     mod_->setBounds (b.reduced (5, 2));
+
+    const int halfL = labelStrip.getWidth() / 2;
+    pitchDrag_->setBounds (labelStrip.removeFromLeft (halfL));
+    modDrag_->setBounds (labelStrip);
 }

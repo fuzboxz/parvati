@@ -4,11 +4,14 @@
 #include "ParvatiPreset.h"
 #include "ui/EnvelopeDisplay.h"
 #include "ui/FilterResponseDisplay.h"
+#include "ui/ModDestMap.h"
+#include "ui/ModMatrixHighlight.h"
 #include "ui/OscPreviewDisplay.h"
 #include "ui/ParamHelp.h"
 #include "ui/SynthWorkspace.h"
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
+#include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
 
@@ -117,6 +120,7 @@ juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
 //==============================================================================
 //==============================================================================
 bool ParamControl::tooltipsEnabled_ = true;
+bool ParamControl::modDragActive_    = false;
 
 namespace
 {
@@ -303,9 +307,11 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     {
         slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                    juce::Slider::NoTextBox);
-        // No value box: the numeric readout is drawn in the centre of the 44px
-        // arc-ring by the LookAndFeel (drawRotarySlider). Drag + the right-click
+        // Knobs adjust by DRAG only: disable the mouse wheel so an accidental
+        // scroll over a knob never changes its value (the wheel is reserved for
+        // scrolling lists / the Mod Matrix viewport). Drag + the right-click
         // context menu (Reset/Randomize) still adjust the value.
+        slider_->setScrollWheelEnabled (false);
         if (d.isSequencer && paramIDStr_.startsWith ("seq_length_"))
         {
             // The length control is marked ("Length" label) so it reads as the
@@ -350,6 +356,42 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         processor_.getApvts().addParameterListener (lengthParamID_, this);
         refreshStepEnabled();
     }
+
+    // Modulation-ring destination knobs: resolve the MOD_DST_* this knob is the
+    // base value of (combos / sequencer steps are unaffected — slider_ is null).
+    // A destination knob listens to all 14 mod{1..14}_amount params so ANY matrix
+    // edit refreshes the outer aggregate-depth ring drawn by the LookAndFeel.
+    // Seeded once here from the current APVTS values.
+    modDest_ = parvati::ModDestMap::destForParamID (paramIDStr_);
+    isModDestKnob_ = (modDest_ >= 0 && slider_ != nullptr);
+    if (isModDestKnob_)
+    {
+        // A source change recolours an arc, a dest change adds/removes an arc,
+        // and an amount change resizes one, so listen to ALL 42 mod params.
+        for (int slot = 1; slot <= 14; ++slot)
+        {
+            const auto s = juce::String (slot);
+            processor_.getApvts().addParameterListener ("mod" + s + "_source", this);
+            processor_.getApvts().addParameterListener ("mod" + s + "_dest", this);
+            processor_.getApvts().addParameterListener ("mod" + s + "_amount", this);
+        }
+        refreshModRing();
+
+        // Receive hover/selection broadcasts from the Mod Matrix (and from other
+        // knobs) so this knob's modulation ring glows when its dest is the
+        // highlighted target. The callback is SafePointer-guarded AND explicitly
+        // unsubscribed in the dtor, so a stale broadcast after teardown is a
+        // safe no-op (see the multi-editor caveat in ModMatrixHighlight.h).
+        juce::Component::SafePointer<ParamControl> safe (this);
+        modHighlightSub_ = parvati::ModMatrixHighlight::instance().onDestHighlighted (
+            [safe] (int modDst) { if (safe != nullptr) safe->applyModHighlight (modDst); });
+
+        // Register this cell as a MouseListener on the label too so the hover
+        // highlight fires across the whole cell, not just the dial (the slider
+        // is already registered above). `false` => label events only.
+        if (label_ != nullptr)
+            label_->addMouseListener (this, false);
+    }
 }
 
 ParamControl::~ParamControl()
@@ -358,6 +400,20 @@ ParamControl::~ParamControl()
         processor_.getApvts().removeParameterListener (lengthParamID_, this);
     if (isModSourceCombo_)
         processor_.getApvts().removeParameterListener (paramIDStr_, this);
+    if (isModDestKnob_)
+    {
+        for (int slot = 1; slot <= 14; ++slot)
+        {
+            const auto s = juce::String (slot);
+            processor_.getApvts().removeParameterListener ("mod" + s + "_source", this);
+            processor_.getApvts().removeParameterListener ("mod" + s + "_dest", this);
+            processor_.getApvts().removeParameterListener ("mod" + s + "_amount", this);
+        }
+        if (label_ != nullptr)
+            label_->removeMouseListener (this);
+        if (modHighlightSub_ >= 0)
+            parvati::ModMatrixHighlight::instance().unsubscribe (modHighlightSub_);
+    }
     auto& r = paramControlRegistry();
     r.erase (std::remove (r.begin(), r.end(), this), r.end());
 }
@@ -394,6 +450,11 @@ void ParamControl::parameterChanged (const juce::String& id, float)
         refreshStepEnabled();
     if (isModSourceCombo_ && id == paramIDStr_)   // selected mod source changed
         applyModSourceTint();
+    // A mod-destination knob refreshes its per-source rings on ANY matrix edit:
+    // a slot's SOURCE change recolours an arc, a DEST change adds/removes an
+    // arc, an AMOUNT change resizes one (listeners cover all 42 mod params).
+    if (isModDestKnob_ && id.startsWith ("mod"))
+        refreshModRing();
 }
 
 void ParamControl::refreshStepEnabled()
@@ -448,6 +509,13 @@ void ParamControl::setTooltipsEnabled (bool enabled)
         c->applyTooltipState();
 }
 
+void ParamControl::setModDragActive (bool active)
+{
+    modDragActive_ = active;
+    for (auto* c : paramControlRegistry())
+        c->applyModDragAffordance();
+}
+
 void ParamControl::applyCategoryArcColour()
 {
     if (slider_ == nullptr)
@@ -489,13 +557,15 @@ void ParamControl::applyModSourceTint()
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         if (const auto* theme = lnf->getTheme())
         {
-            juce::Colour tintCol;
-            bool hasTint = true;
-            if      (sourceName.startsWith ("Env"))                       tintCol = theme->catEnv;
-            else if (sourceName.startsWith ("LFO") || sourceName == "Voice LFO") tintCol = theme->catLfo;
-            else if (sourceName.startsWith ("Seq"))                       tintCol = theme->catSeq;
-            else if (sourceName.startsWith ("Arp"))                       tintCol = theme->catArp;
-            else                                                          hasTint = false;   // Op/Const/Velocity/etc
+            // The category colour is resolved by the shared helper. Neutral
+            // sources (Op/Const/Velocity/etc) resolve to `accent`; only the
+            // four functional categories carry a tint, so the tint-vs-revert
+            // decision still keys on the category prefixes.
+            const juce::Colour tintCol = categoryColourForSourceName (sourceName, *theme);
+            const bool hasTint = sourceName.startsWith ("Env")
+                              || sourceName.startsWith ("LFO") || sourceName == "Voice LFO"
+                              || sourceName.startsWith ("Seq")
+                              || sourceName.startsWith ("Arp");
 
             if (hasTint)
                 comboBox_->setColour (juce::ComboBox::backgroundColourId, tintCol.withAlpha (0.15f));
@@ -506,15 +576,179 @@ void ParamControl::applyModSourceTint()
         }
 }
 
+juce::Colour ParamControl::categoryColourForSourceName (const juce::String& name,
+                                                        const ParvatiTheme& theme)
+{
+    // One consistent source-name -> category-colour mapping (shared by the
+    // mod-source combo tint and the per-source modulation ring). A source whose
+    // name matches no category resolves to the neutral `accent`.
+    if (name.startsWith ("Env"))                                return theme.catEnv;
+    if (name.startsWith ("LFO") || name == "Voice LFO")         return theme.catLfo;
+    if (name.startsWith ("Seq"))                                return theme.catSeq;
+    if (name.startsWith ("Arp"))                                return theme.catArp;
+    return theme.accent;   // Op/Const/Velocity/etc => neutral
+}
+
+void ParamControl::refreshModRing()
+{
+    if (! isModDestKnob_ || slider_ == nullptr)
+        return;
+    // Guard against any re-entrant repaint path (mirrors refreshingModTint_).
+    if (refreshingModRing_)
+        return;
+    const juce::ScopedValueSetter<bool> guard (refreshingModRing_, true);
+
+    // Bound the concentric stack (one arc per active source) so it never
+    // overflows the cell.
+    constexpr int kMaxModRings = 6;
+
+    auto& props = slider_->getProperties();
+
+    // Resolve the theme via the component's L&F (same path applyModSourceTint
+    // uses). If the theme is not yet reachable (pre-reparent construction) defer
+    // — the per-source props get pushed on reparent (parentHierarchyChanged /
+    // lookAndFeelChanged) as today, so clear them here to avoid a stale render.
+    const ParvatiTheme* theme = nullptr;
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        theme = lnf->getTheme();
+
+    auto clearAll = [&]
+    {
+        props.remove ("parvatiModN");
+        for (int i = 0; i < kMaxModRings; ++i)
+        {
+            props.remove ("parvatiModCol" + juce::String (i));
+            props.remove ("parvatiModAmt" + juce::String (i));
+        }
+        // Legacy single-arc keys (no longer set / read).
+        props.remove ("parvatiModDepth");
+        props.remove ("parvatiModPosArgb");
+        props.remove ("parvatiModNegArgb");
+    };
+
+    if (theme == nullptr)
+    {
+        clearAll();
+        slider_->repaint();
+        return;
+    }
+
+    // Build the per-source active list: one concentric arc per matrix slot
+    // routed to this knob's destination (ascending slot order), each coloured by
+    // that source's functional CATEGORY (Env=cyan, LFO=magenta, Seq=green,
+    // Arp=purple; Velocity/Op/Const/etc = neutral). Zero-amount slots are
+    // skipped; the list is capped at kMaxModRings.
+    auto& apvts = processor_.getApvts();
+    const auto slots = parvati::ModDestMap::slotsForDest (apvts, modDest_);
+
+    clearAll();
+    int n = 0;
+    for (int slot : slots)
+    {
+        if (n >= kMaxModRings)
+            break;
+
+        const auto slotPrefix = "mod" + juce::String (slot + 1);
+
+        int amount = 0;
+        if (auto* raw = apvts.getRawParameterValue (slotPrefix + "_amount"))
+            amount = juce::roundToInt (raw->load());
+        if (amount == 0)
+            continue;   // an inactive slot draws no arc
+
+        // Resolve the source's category colour from its (human) name. The source
+        // raw value is the index into mod{N}_source's choices (kModSources).
+        const auto sourceParamID = slotPrefix + "_source";
+        int srcIdx = 0;
+        if (auto* raw = apvts.getRawParameterValue (sourceParamID))
+            srcIdx = juce::roundToInt (raw->load());
+
+        juce::String sourceName;
+        if (auto* param = apvts.getParameter (sourceParamID))
+            if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
+                if (srcIdx >= 0 && srcIdx < choice->choices.size())
+                    sourceName = choice->choices[srcIdx];
+
+        const juce::Colour col = categoryColourForSourceName (sourceName, *theme);
+        props.set ("parvatiModCol" + juce::String (n), (int) col.getARGB());
+        props.set ("parvatiModAmt" + juce::String (n), amount);
+        ++n;
+    }
+    props.set ("parvatiModN", n);
+
+    slider_->repaint();
+}
+
+void ParamControl::applyModHighlight (int modDst)
+{
+    if (! isModDestKnob_ || slider_ == nullptr)
+        return;
+    // Glow only when the broadcast dest matches this knob's destination; clear
+    // otherwise (including the -1 clear). The LookAndFeel reads "parvatiModHi".
+    slider_->getProperties().set ("parvatiModHi", modDst == modDest_);
+    slider_->repaint();
+}
+
+void ParamControl::applyModDragAffordance()
+{
+    // A modulation-source drag is in flight: visually HIDE every control that
+    // is NOT a valid drop target (dim to 0.3 alpha), and light up every
+    // destination knob (full alpha + the drop-zone ring flag). setAlpha on the
+    // ParamControl multiplies the whole cell — slider + label + combo — so
+    // non-target combos/knobs visually recede. Idempotent: re-applied on both
+    // drag-start and drag-end (modDragActive_ false restores full alpha +
+    // clears the ring flag). The per-hover padlock (parvatiModLocked) is cleared
+    // here too — locks are cursor-over only (set via itemDragEnter/Exit).
+    const bool available = isModDestKnob_;
+    setAlpha ((modDragActive_ && ! available) ? 0.3f : 1.0f);
+    if (slider_ != nullptr)
+    {
+        slider_->getProperties().set ("parvatiModDrag", modDragActive_ && available);
+        slider_->getProperties().set ("parvatiModLocked", false);
+        slider_->repaint();
+    }
+    if (comboBox_ != nullptr)
+    {
+        comboBox_->getProperties().set ("parvatiModLocked", false);
+        comboBox_->repaint();
+    }
+    repaint();
+}
+
+void ParamControl::setDropLocked (bool locked)
+{
+    // Bring the hovered NON-target back to full alpha while it shows the
+    // padlock (otherwise the drag dim would make the lock illegible); clear =>
+    // restore the drag dim/alpha state via applyModDragAffordance().
+    if (locked)
+    {
+        setAlpha (1.0f);
+        if (slider_  != nullptr) slider_->getProperties().set  ("parvatiModLocked", true);
+        if (comboBox_ != nullptr) comboBox_->getProperties().set ("parvatiModLocked", true);
+    }
+    else
+    {
+        if (slider_  != nullptr) slider_->getProperties().set  ("parvatiModLocked", false);
+        if (comboBox_ != nullptr) comboBox_->getProperties().set ("parvatiModLocked", false);
+        applyModDragAffordance();   // restore dim/alpha for the current drag state
+    }
+    if (slider_  != nullptr) slider_->repaint();
+    if (comboBox_ != nullptr) comboBox_->repaint();
+    repaint();
+}
+
 void ParamControl::reapplyCategoryColours()
 {
     // A theme switch changed the token VALUES, so re-resolve + re-push every
     // control's category colour from the new theme. Component-level setColour
     // overrides survive the switch but keep the OLD theme's value otherwise.
+    // The mod ring's bipolar colours are re-resolved here too (each ParamControl
+    // re-reads the APVTS depth + the new theme tokens).
     for (auto* c : paramControlRegistry())
     {
         c->applyCategoryArcColour();
         c->applyModSourceTint();
+        c->refreshModRing();
     }
 }
 
@@ -535,6 +769,7 @@ void ParamControl::lookAndFeelChanged()
     // category hues follow the active theme. Both calls are idempotent.
     applyCategoryArcColour();
     applyModSourceTint();
+    refreshModRing();
 }
 
 void ParamControl::parentHierarchyChanged()
@@ -545,6 +780,7 @@ void ParamControl::parentHierarchyChanged()
     // where the category arc / mod tint first take effect. Idempotent.
     applyCategoryArcColour();
     applyModSourceTint();
+    refreshModRing();
 }
 
 void ParamControl::resized()
@@ -578,6 +814,105 @@ void ParamControl::resized()
         const int comboW = juce::jlimit (28, juce::jmax (28, b.getWidth()), textW);
         comboBox_->setBounds (b.withSizeKeepingCentre (comboW, comboH));
     }
+}
+
+//==========================================================================
+// Hover highlight (mod-destination knobs <-> Mod Matrix rows).
+void ParamControl::mouseEnter (const juce::MouseEvent&)
+{
+    if (isModDestKnob_)
+        parvati::ModMatrixHighlight::instance().setHighlightedDest (modDest_);
+}
+
+void ParamControl::mouseExit (const juce::MouseEvent& e)
+{
+    if (! isModDestKnob_)
+        return;
+    // This cell is a MouseListener on its slider + label, so a mouseExit also
+    // fires when moving BETWEEN those sub-components. Only clear when the mouse
+    // has genuinely left the cell bounds (avoids a flicker / premature clear).
+    const auto rel = e.getEventRelativeTo (this);
+    if (! getLocalBounds().contains (rel.position.toInt()))
+        parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+}
+
+void ParamControl::mouseDoubleClick (const juce::MouseEvent&)
+{
+    if (! isModDestKnob_)
+        return;
+    auto& apvts = processor_.getApvts();
+    // Only jump when the modulation ring is active (aggregate depth != 0): an
+    // unmodulated knob has no matrix row to scroll to.
+    if (parvati::ModDestMap::aggregateAmount (apvts, modDest_) == 0)
+        return;
+    // Jump to the first ACTIVE slot targeting this dest (its row is visible in
+    // the matrix). slotsForDest lists every routed slot; pick the first whose
+    // amount is non-zero so the scroll lands on a shown row.
+    const auto slots = parvati::ModDestMap::slotsForDest (apvts, modDest_);
+    for (int s : slots)
+    {
+        if (auto* raw = apvts.getRawParameterValue ("mod" + juce::String (s + 1) + "_amount"))
+            if (juce::roundToInt (raw->load()) != 0)
+            {
+                parvati::ModMatrixHighlight::instance().selectSlot (s);
+                return;
+            }
+    }
+}
+
+//==========================================================================
+// Drag-and-drop assignment: a mod source dragged from the Mod Matrix onto a
+// destination knob. isInterested gates on mod-dest knobs + the payload prefix;
+// drag-enter/exit drive the ring glow via the STEP-3 highlight bus; the drop
+// requests the ModMatrixView to consume the next free slot for the source.
+bool ParamControl::isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
+{
+    // Only mod-destination knobs accept the drag, and only for our payload.
+    // Every ParamControl accepts the drag so hover/exit/drop fire on non-targets
+    // too (non-targets show a padlock via itemDragEnter; their drop is a no-op).
+    return dragSourceDetails.description.toString().startsWith ("parvatiModSrc:");
+}
+
+void ParamControl::itemDragEnter (const juce::DragAndDropTarget::SourceDetails&)
+{
+    if (isModDestKnob_)
+        parvati::ModMatrixHighlight::instance().setHighlightedDest (modDest_);   // glow the ring
+    else
+        setDropLocked (true);   // non-target: show the "can't drop here" padlock
+}
+
+void ParamControl::itemDragExit (const juce::DragAndDropTarget::SourceDetails&)
+{
+    if (isModDestKnob_)
+        parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+    else
+        setDropLocked (false);
+}
+
+void ParamControl::itemDropped (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
+{
+    if (! isModDestKnob_)
+    {
+        setDropLocked (false);   // non-target drop: no-op, just clear the padlock
+        return;
+    }
+
+    // Clear the drop glow whether or not the assignment succeeds.
+    parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+
+    // Parse "parvatiModSrc:<enum>" -> the MOD_SRC_* source enum to assign.
+    const juce::String desc = dragSourceDetails.description.toString();
+    if (! desc.startsWith ("parvatiModSrc:"))
+        return;
+    const int sourceEnum = desc.fromFirstOccurrenceOf (":", false, false).getIntValue();
+    if (sourceEnum < 0)
+        return;
+
+    // requestAssign fans out to the ModMatrixView's registered handler, which
+    // writes the source/dest/amount APVTS params (byte-bridged + undoable). The
+    // knob's mod{1..14}_amount listeners (STEP 2) then refresh the ring on their
+    // own, so no manual repaint is needed here. A full matrix is a silent no-op.
+    parvati::ModMatrixHighlight::instance().requestAssign (sourceEnum, modDest_);
 }
 
 //==========================================================================
@@ -1790,6 +2125,19 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     for (const auto& pg : pages)
     {
+        // MOD MATRIX is now the editor-owned ModMatrixView (Wave 1), NOT a
+        // ParamPage: build + host it here and skip page generation entirely.
+        // The mod1_*/mod14_* APVTS params are created independently in
+        // createParameterLayout (ParameterLayout.cpp), so removing this ParamPage
+        // does NOT touch the byte-bridge / patch / DSP. The view is hosted
+        // NON-owned by the MOD MATRIX tab (editor-owned via modMatrixView_).
+        if (pg.s == Section::ModMatrix)
+        {
+            modMatrixView_ = std::make_unique<ModMatrixView> (processorRef_, themeManager_);
+            synthWorkspace_->setModMatrixView (modMatrixView_.get());
+            continue;
+        }
+
         auto page = std::make_unique<ParamPage> (processorRef_, themeManager_, sec[(int) pg.s],
                                                  pg.cols, pg.cellW, pg.cellH);
 
@@ -1916,6 +2264,27 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // is never a generated page; if/else avoids switch/enum + branch-clone
         // warnings under -Werror.)
         using Subsets = SynthWorkspace::GroupSubsets;
+        // ONE generator-tab -> MOD_SRC_* map shared by the ENV / LFO / SEQ sub-tab
+        // strips so each sub-tab is itself a draggable mod-source drag SOURCE
+        // (payload "parvatiModSrc:<enum>", dropped onto a destination knob).
+        // Tab labels match the subsets below; VLFO == the per-voice LFO
+        // (MOD_SRC_LFO_4, verified in voice.cpp). NOTES/VEL/others are not
+        // draggable (map -> -1). static (built once) + captureless => no churn.
+        static const GroupPager::TabSourceMap generatorSourceForTab =
+            [] (const juce::String& tab) -> int
+        {
+            using namespace ambika::dsp;
+            if (tab == "ENV 1") return MOD_SRC_ENV_1;
+            if (tab == "ENV 2") return MOD_SRC_ENV_2;
+            if (tab == "ENV 3") return MOD_SRC_ENV_3;
+            if (tab == "LFO 1") return MOD_SRC_LFO_1;
+            if (tab == "LFO 2") return MOD_SRC_LFO_2;
+            if (tab == "LFO 3") return MOD_SRC_LFO_3;
+            if (tab == "VLFO")  return MOD_SRC_LFO_4;   // per-voice LFO
+            if (tab == "SEQ 1") return MOD_SRC_SEQ_1;
+            if (tab == "SEQ 2") return MOD_SRC_SEQ_2;
+            return -1;   // NOTES / VEL / others: not draggable
+        };
         if (pg.s == Section::Mixer)
             synthWorkspace_->setMainLeft (rawPage);
         else if (pg.s == Section::Oscillators)
@@ -1926,19 +2295,15 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
                 Subsets { { "ENV 1", juce::StringArray { "Env 1 (Mod)" } },
                           { "ENV 2", juce::StringArray { "Env 2 (Filter)" } },
-                          { "ENV 3", juce::StringArray { "Env 3 (Amp)" } } });
+                          { "ENV 3", juce::StringArray { "Env 3 (Amp)" } } },
+                generatorSourceForTab);
         else if (pg.s == Section::Lfos)
             synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
                 Subsets { { "LFO 1", juce::StringArray { "LFO 1" } },
                           { "LFO 2", juce::StringArray { "LFO 2" } },
                           { "LFO 3", juce::StringArray { "LFO 3" } },
-                          { "VLFO", juce::StringArray { "Voice LFO" } } });
-        else if (pg.s == Section::ModMatrix)
-            synthWorkspace_->addModTab (pg.shortName, rawPage,
-                Subsets { { "1-4",  juce::StringArray { "Mod 1",  "Mod 2",  "Mod 3",  "Mod 4" } },
-                          { "5-8",  juce::StringArray { "Mod 5",  "Mod 6",  "Mod 7",  "Mod 8" } },
-                          { "9-12", juce::StringArray { "Mod 9",  "Mod 10", "Mod 11", "Mod 12" } },
-                          { "13-14", juce::StringArray { "Mod 13", "Mod 14" } } });
+                          { "VLFO", juce::StringArray { "Voice LFO" } } },
+                generatorSourceForTab);
         else if (pg.s == Section::Modifiers)
             synthWorkspace_->addModTab (pg.shortName, rawPage,
                 Subsets { { "1-2", juce::StringArray { "Modifier 1", "Modifier 2" } },
@@ -1950,7 +2315,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 Subsets { { "SEQ 1",  juce::StringArray { "Sequencer 1" } },
                           { "SEQ 2",  juce::StringArray { "Sequencer 2" } },
                           { "NOTES", juce::StringArray { "Note Pitch" } },
-                          { "VEL",   juce::StringArray { "Note Velocity" } } });   // left card
+                          { "VEL",   juce::StringArray { "Note Velocity" } } },
+                generatorSourceForTab);   // left card
+        // Section::ModMatrix is handled by the early-continue above (ModMatrixView).
         // Section::Global (-> GLOBAL tab below) and Section::Multi (never
         // generated) intentionally fall through here.
     }
@@ -2228,6 +2595,24 @@ ParvatiEditor::~ParvatiEditor()
         juce::Desktop::getInstance().setGlobalScaleFactor (1.0f);
 }
 
+void ParvatiEditor::dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details)
+{
+    // Only a modulation-source drag (payload "parvatiModSrc:<enum>") triggers
+    // the drop-zone affordance; any other (defensive — none exist today) leaves
+    // the controls untouched. dragOperationStarted fires at the end of
+    // startDragging() for the drag that THIS container owns.
+    if (details.description.toString().startsWith ("parvatiModSrc"))
+        ParamControl::setModDragActive (true);
+}
+
+void ParvatiEditor::dragOperationEnded (const juce::DragAndDropTarget::SourceDetails&)
+{
+    // Unconditional restore: dragOperationEnded fires from the DragImageComponent
+    // destructor on BOTH a successful drop and a cancel, so the affordance state
+    // always clears — no knob is left dimmed or ring-flagged.
+    ParamControl::setModDragActive (false);
+}
+
 void ParvatiEditor::timerCallback()
 {
     // ---- Tooltip bleed-through fix (~30 Hz) ----
@@ -2364,6 +2749,8 @@ void ParvatiEditor::applyAllColoursFromTheme()
         page->applyThemeColors();
     if (synthWorkspace_ != nullptr)
         synthWorkspace_->applyThemeColors();   // nested tab + content backgrounds
+    if (modMatrixView_ != nullptr)
+        modMatrixView_->applyThemeColors();    // MOD MATRIX tab content (ModMatrixView, replaces the old ParamPage)
     if (multiPage_ != nullptr)
         multiPage_->applyThemeColors();
     // Re-resolve + re-push every control's category arc colour / mod-source tint

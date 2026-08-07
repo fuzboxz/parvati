@@ -1,0 +1,141 @@
+// ModDestMap unit test — verifies the paramID <-> MOD_DST mapping table and the
+// per-slot modulation-amount aggregation helpers (aggregateAmount /
+// slotsForDest) used by the modulation-ring, hover-highlight, and drag-and-drop
+// features. Drives a real ParvatiAudioProcessor APVTS so the raw-value paths
+// are exercised exactly as the UI will call them. Built by default.
+// Run with: ./build/parvati_mod_dest_map_test
+
+#include <cstdio>
+#include <vector>
+
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_core/juce_core.h>
+#include <juce_data_structures/juce_data_structures.h>
+#include <juce_events/juce_events.h>
+#include <juce_gui_basics/juce_gui_basics.h>  // ScopedJuceInitialiser_GUI
+
+#include "PluginProcessor.h"
+#include "ui/ModDestMap.h"
+
+namespace
+{
+int g_failures = 0;
+
+void check (bool cond, const char* msg)
+{
+    std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
+    if (! cond) ++g_failures;
+}
+
+// Set an Int or Choice parameter to an integer value via the canonical host path
+// (setValueNotifyingHost fires APVTS parameterChanged synchronously -> engine).
+void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
+{
+    if (auto* p = proc.getApvts().getParameter (id))
+    {
+        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
+            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
+        else if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (p))
+            cp->setValueNotifyingHost (cp->convertTo0to1 (static_cast<float> (value)));
+    }
+}
+
+// Route slot (0-based) -> dest with amount.
+void setMod (ParvatiAudioProcessor& proc, int slot, int dest, int amount)
+{
+    char id[32];
+    std::snprintf (id, sizeof (id), "mod%d_dest", slot + 1);   setParam (proc, id, dest);
+    std::snprintf (id, sizeof (id), "mod%d_amount", slot + 1); setParam (proc, id, amount);
+}
+}  // namespace
+
+int main()
+{
+    using namespace parvati::ModDestMap;
+
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
+    // { dest enum value, expected knob paramID } for the knob-backed destinations.
+    struct Map { int dest; const char* paramID; };
+    constexpr Map mapped[] = {
+        { 0,  "osc1_param" },
+        { 1,  "osc2_param" },
+        { 6,  "mix_balance" },
+        { 7,  "mix_param" },
+        { 8,  "mix_noise" },
+        { 9,  "mix_sub" },
+        { 10, "mix_fuzz" },
+        { 11, "mix_crush" },
+        { 12, "filter1_cutoff" },
+        { 13, "filter1_reso" },
+        { 17, "voice_lfo_rate" },
+    };
+    constexpr int numMapped = static_cast<int> (sizeof (mapped) / sizeof (mapped[0]));
+
+    std::printf ("[1] paramID <-> MOD_DST round-trip for knob-backed destinations\n");
+    int rtOk = 0;
+    for (int i = 0; i < numMapped; ++i)
+    {
+        const juce::String pid = paramIDForDest (mapped[i].dest);
+        const ModDst back = destForParamID (mapped[i].paramID);
+        if (pid == mapped[i].paramID && back == mapped[i].dest && hasVisibleKnob (mapped[i].dest))
+            ++rtOk;
+    }
+    check (rtOk == numMapped, "all 11 knob-backed dests round-trip paramID <-> dest");
+
+    std::printf ("\n[2] no-knob destinations report no visible knob\n");
+    constexpr int noKnob[] = { 2, 3, 4, 5, 14, 15, 16, 18 };  // OSC_1/2, COARSE/FINE, ADR, VCA
+    int noKnobOk = 0;
+    for (int d : noKnob)
+        if (! hasVisibleKnob (d) && paramIDForDest (d).isEmpty())
+            ++noKnobOk;
+    check (noKnobOk == 8, "all 8 no-knob destinations report no visible knob");
+
+    // Unknown / out-of-range inputs are rejected.
+    check (destForParamID ("osc1_shape") == -1, "non-destination paramID -> -1");
+    check (destForParamID ("does_not_exist") == -1, "bogus paramID -> -1");
+    check (! hasVisibleKnob (-1), "dest -1 -> no knob");
+    check (paramIDForDest (-1).isEmpty(), "dest -1 -> empty paramID");
+    check (paramIDForDest (999).isEmpty(), "out-of-range dest -> empty paramID");
+
+    std::printf ("\n[3] aggregateAmount + slotsForDest (APVTS-driven)\n");
+    ParvatiAudioProcessor proc;
+    proc.prepareToPlay (48000.0, 512);
+
+    // Neutralise all 14 slots first for deterministic aggregation.
+    constexpr int kSlots = 14;
+    for (int s = 0; s < kSlots; ++s)
+        setMod (proc, s, 18 /*VCA*/, 0);
+
+    // Slot 0 (mod1) + slot 4 (mod5) -> FILTER_CUTOFF(12); slot 2 -> MIX_BALANCE(6).
+    setMod (proc, 0, 12, 20);
+    setMod (proc, 4, 12, -10);
+    setMod (proc, 2, 6, 5);
+    proc.syncAllParamsToEngine();
+
+    auto& apvts = proc.getApvts();
+    check (aggregateAmount (apvts, 12) == 10, "cutoff aggregate == 20 + (-10) = 10");
+    check (aggregateAmount (apvts, 12, 0) == -10, "cutoff aggregate excluding slot 0 == -10");
+    check (aggregateAmount (apvts, 6) == 5, "balance aggregate == 5");
+    check (aggregateAmount (apvts, 18) == 0, "vca aggregate == 0 (neutralised)");
+    check (aggregateAmount (apvts, -1) == 0, "invalid dest aggregate == 0");
+
+    const auto cutoffSlots = slotsForDest (apvts, 12);
+    check (cutoffSlots.size() == 2 && cutoffSlots[0] == 0 && cutoffSlots[1] == 4,
+           "cutoff slots == {0, 4}");
+
+    const auto balanceSlots = slotsForDest (apvts, 6);
+    check (balanceSlots.size() == 1 && balanceSlots[0] == 2, "balance slots == {2}");
+
+    const auto vcaSlots = slotsForDest (apvts, 18);
+    check (vcaSlots.size() == 11, "vca slots == 11 (the 11 neutralised leftover slots)");
+
+    const auto invalidSlots = slotsForDest (apvts, -1);
+    check (invalidSlots.empty(), "invalid dest -> empty slot list");
+
+    std::printf ("\n=== %s (%d failure%s) ===\n",
+                 g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
+                 g_failures, g_failures == 1 ? "" : "s");
+    return g_failures == 0 ? 0 : 1;
+}

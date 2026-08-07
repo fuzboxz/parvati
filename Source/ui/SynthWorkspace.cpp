@@ -3,6 +3,7 @@
 #include "SynthWorkspace.h"
 
 #include "PluginEditor.h"   // ParamPage complete type
+#include "ModMatrixView.h"
 #include "ThemeManager.h"
 
 //==============================================================================
@@ -75,7 +76,8 @@ void SynthWorkspace::setMainRight (ParamPage* page)
         addAndMakeVisible (*page);
 }
 
-void SynthWorkspace::addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets)
+void SynthWorkspace::addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets,
+                                   GroupPager::TabSourceMap tabDragSource)
 {
     envLfoTabNames_.push_back (shortName);
     const auto& theme = themeManager_.getCurrentTheme();
@@ -86,7 +88,10 @@ void SynthWorkspace::addEnvLfoTab (const juce::String& shortName, ParamPage* pag
         // GroupPager paginates the page by generator (one Env/LFO per sub-tab).
         // The nested TC owns (deletes) the GroupPager; the page stays editor-owned.
         // The bar's parent category colour is propagated to every sub-tab.
-        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets), catColour);
+        // tabDragSource makes each sub-tab a draggable mod-source drag SOURCE
+        // (passed through only for the ENV/LFO/SEQ generator pagers).
+        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets), catColour,
+                                                   std::move (tabDragSource));
         envLfoTabs_->addTab (shortName, bg, pager.release(), true);
     }
     else
@@ -111,6 +116,22 @@ void SynthWorkspace::addModTab (const juce::String& shortName, ParamPage* page, 
     {
         modTabs_->addTab (shortName, bg, page, false);
     }
+    colourTabButton (*modTabs_, modTabs_->getNumTabs() - 1, catColour);
+}
+
+void SynthWorkspace::setModMatrixView (ModMatrixView* view)
+{
+    // Host the editor-owned ModMatrixView as the MOD MATRIX tab content. Mirrors
+    // the direct-host path of addModTab (deleteWhenNotNeeded=false): the view
+    // stays editor-owned; the TabbedComponent must NOT delete it. Replaces the
+    // old 1-4/5-8/9-12/13-14 GroupPager pagination for the MOD MATRIX tab only
+    // (MODIFIERS keeps its GroupPager).
+    const juce::String shortName { "MOD MATRIX" };
+    modTabNames_.push_back (shortName);
+    const auto& theme = themeManager_.getCurrentTheme();
+    const auto bg = theme.windowBackground;
+    const auto catColour = categoryColourForShortName (shortName, theme);
+    modTabs_->addTab (shortName, bg, view, false);
     colourTabButton (*modTabs_, modTabs_->getNumTabs() - 1, catColour);
 }
 
@@ -181,6 +202,8 @@ void SynthWorkspace::resized()
                 page->setBounds ({ 0, kNestedTabBarDepth, w, h });
                 page->reflowToWidth (w, h);
             }
+            else if (auto* mmv = dynamic_cast<ModMatrixView*> (content))
+                mmv->setBounds ({ 0, kNestedTabBarDepth, w, h });   // editor-owned view; sized like a direct page (its resized() lays out rows)
         }
     };
     reflowAllTabs (envLfoTabs_.get());
@@ -228,6 +251,8 @@ void SynthWorkspace::applyThemeColors()
             }
             else if (auto* page = dynamic_cast<ParamPage*> (tc->getTabContentComponent (i)))
                 page->applyThemeColors();
+            else if (auto* mmv = dynamic_cast<ModMatrixView*> (tc->getTabContentComponent (i)))
+                mmv->applyThemeColors();
         }
     };
     applyTc (envLfoTabs_.get(), envLfoTabNames_);
