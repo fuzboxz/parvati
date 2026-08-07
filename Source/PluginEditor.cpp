@@ -3,6 +3,8 @@
 #include "PluginEditor.h"
 #include "ParvatiPreset.h"
 #include "ui/EnvelopeDisplay.h"
+#include "ui/FilterResponseDisplay.h"
+#include "ui/OscPreviewDisplay.h"
 #include "ui/ParamHelp.h"
 #include "ui/SynthWorkspace.h"
 #include "ui/WheelsComponent.h"
@@ -16,21 +18,32 @@
 #define PARVATI_VERSION "0.0.0"
 #endif
 
-// Monospace "console" font height for the ASCII-art logo.
-constexpr float kLogoFontHeight = 4.0f;   // 7-line ASCII logo fits the 36px header (7*4 + pad < 36)
-
-// ASCII-art "PARVATI" logo (drawn small in the header). Leading spaces
-// are part of the art (per-line 3D indent) so they MUST be preserved; trailing
-// spaces are trimmed at draw time.
-namespace {
-const char* const kAsciiParvatiLogo = R"( ______   ________   ______    __   __   ________   _________  ________    
-/_____/\ /_______/\ /_____/\  /_/\ /_/\ /_______/\ /________/\/_______/\   
-\:::_ \ \\::: _  \ \\:::_ \ \ \:\ \\ \\ \\::: _  \ \\__.::.__\/\__.::._\/   
- \:(_) \ \\::(_)  \ \\:(_) ) )_\:\ \\ \\ \\::(_)  \ \  \::\ \     \::\ \    
-  \: ___\/ \:: __  \ \\: __ `\ \\:\_/.:\ \\:: __  \ \  \::\ \    _\::\ \__ 
-   \ \ \    \:.\ \  \ \\ \ `\ \ \\ ..::/ / \:.\ \  \ \  \::\ \  /__\::\__/\
-    \_\/     \__\/\__\/ \_\/ \_\/ \___/_(   \__\/\__\/   \__\/  \________\/)";
+// parvati_logo.svg is embedded via a dedicated juce_add_binary_data target
+// (NAMESPACE ParvatiLogo, see CMakeLists.txt). We resolve its bytes through
+// getNamedResource() rather than #include "BinaryData.h": the project already
+// links a second binary-data target (parvati_factory_presets, namespace
+// FactoryPresets) whose generated header shares the filename "BinaryData.h",
+// so an #include here would be ambiguous across the two JuceLibraryCode include
+// dirs. getNamedResource() is emitted in the generated BinaryData.cpp (external
+// linkage); "parvati_logo_svg" is the resource name derived from the filename
+// parvati_logo.svg.
+namespace ParvatiLogo {
+    const char* getNamedResource (const char* resourceNameUTF8, int& dataSizeInBytes);
 }
+
+// ---- Header logo: [brand icon] + white "Parvati" wordmark -----------------
+// The embedded parvati_logo.svg is true vector art (outlined <path>/<g>, no
+// raster); it is parsed once into logoDrawable_ via JUCE's SVG renderer and
+// drawn as-is (brand colours, NOT theme-tinted). The "Parvati" wordmark is
+// painted in the theme `text` token (theme-aware near-white; dark on Paper)
+// so it re-colours on theme switch. The logo block width is measured in
+// resized() with the SAME font paint() uses so the logo/version/centre/right
+// header cluster stays byte-stable.
+constexpr const char* kLogoText       = "Parvati";
+constexpr float       kLogoTextHeight = 22.0f;   // bold sans-serif cap height in the 34px header bar
+constexpr int         kLogoIconSize   = 28;      // square brand icon (~header bar height, aspect preserved)
+constexpr int         kLogoIconGap      = 2;       // gap between the icon and the version label
+constexpr int         kLogoTextIconGap  = 8;       // gap between "Parvati" text and the icon (a touch more room)
 
 // Re-apply each Label's font in the component tree (same height/style, default
 // family) so each re-resolves its typeface through the active L&F after a
@@ -60,10 +73,10 @@ Section sectionForId (const juce::String& id)
 {
     // Global synth options (no Patch/Part byte) live on the dedicated Global
     // tab. Check these BEFORE the prefix rules so e.g. "filter_card" (a global
-    // option) is not swept into the Filter page by the "filter" prefix.
-    if (id == "filter_card")  return Section::Global;
+    // filter voice-card selector) is not swept into the Filter page.
+    if (id == "filter_card") return Section::Global;
     if (id == "vca_curve")    return Section::Global;
-    if (id == "filter_drive") return Section::Global;   // Ladder drive: a global option, like filter_card
+    if (id == "filter_drive") return Section::Global;   // Ladder drive: a global option
     // Order matters: "modif" before "mod", "arp" before others.
     if (id.startsWith ("arp"))       return Section::Arp;
     if (id.startsWith ("seq"))       return Section::Sequencer;
@@ -81,6 +94,24 @@ Section sectionForId (const juce::String& id)
     if (id.startsWith ("part"))      return Section::Global;   // part volume/legato/portamento
     return Section::Global;
 }
+
+// Map a functional Section to its theme category-token colour. Oscillators /
+// Mixer / Filter / ModMatrix / Modifiers / Global / Multi share the neutral
+// "audio" amber; Envelopes/LFOs/Sequencer/Arp get their own hue. This is the
+// ONLY place a Section resolves to a category token, so every arc / graph / tint
+// shares one consistent mapping and a theme switch re-resolves automatically.
+juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
+{
+    // Only Envelopes/LFOs/Sequencer/Arp carry a distinct hue; every other
+    // section shares the neutral "audio" amber. (if-chain, not switch, so the
+    // remaining categories fall through to the neutral default without a
+    // -Wswitch-enum warning.)
+    if (s == Section::Envelopes) return theme.catEnv;
+    if (s == Section::Lfos)      return theme.catLfo;
+    if (s == Section::Sequencer) return theme.catSeq;
+    if (s == Section::Arp)       return theme.catArp;
+    return theme.catAudio;   // Osc/Mix/Filter/ModMatrix/Modifiers/Global/Multi
+}
 }  // namespace
 
 //==============================================================================
@@ -97,13 +128,146 @@ std::vector<ParamControl*>& paramControlRegistry()
     static std::vector<ParamControl*> r;
     return r;
 }
+
+// Strip the redundant section prefix from a control's display label, driven by
+// the parameter ID prefix (deterministic, easy to review). The full label is
+// preserved elsewhere (tooltip / accessibility), so the section name stays
+// discoverable. If the label doesn't start with the expected prefix, it is
+// returned unchanged — never mangled. Display-only: ParameterLayout.cpp is NOT
+// touched.
+juce::String displayLabelFor (const juce::String& paramID, const juce::String& fullLabel)
+{
+    const auto stripPrefix = [&] (const juce::String& labelPrefix) -> juce::String
+    {
+        if (fullLabel.startsWith (labelPrefix))
+            return fullLabel.substring (labelPrefix.length());
+        return fullLabel;   // mismatch — never mangle
+    };
+
+    // env{1-3}_lfo_* — check BEFORE the generic envN_ ADSR rule
+    for (int i = 1; i <= 3; ++i)
+    {
+        const auto n = juce::String (i);
+        if (paramID.startsWith ("env" + n + "_lfo_"))
+            return stripPrefix ("Env " + n + " LFO ");
+    }
+
+    // voice_lfo_*
+    if (paramID.startsWith ("voice_lfo_"))
+        return stripPrefix ("Voice LFO ");
+
+    // osc1_ / osc2_
+    for (int i = 1; i <= 2; ++i)
+    {
+        const auto n = juce::String (i);
+        if (paramID.startsWith ("osc" + n + "_"))
+            return stripPrefix ("Osc " + n + " ");
+    }
+
+    // filter1_
+    if (paramID.startsWith ("filter1_"))
+        return stripPrefix ("Filter 1 ");
+
+    // env{1-3}_ (ADSR — LFO handled above)
+    for (int i = 1; i <= 3; ++i)
+    {
+        const auto n = juce::String (i);
+        if (paramID.startsWith ("env" + n + "_"))
+            return stripPrefix ("Env " + n + " ");
+    }
+
+    // mod{N}_*  (N is the digit run after "mod")
+    if (paramID.startsWith ("mod") && paramID.length() > 3
+        && paramID[3] >= '0' && paramID[3] <= '9')
+    {
+        juce::String num;
+        for (int i = 3; i < paramID.length() && paramID[i] >= '0' && paramID[i] <= '9'; ++i)
+            num += paramID[i];
+        return stripPrefix ("Mod " + num + " ");
+    }
+
+    // modif{N}_*
+    if (paramID.startsWith ("modif") && paramID.length() > 5
+        && paramID[5] >= '0' && paramID[5] <= '9')
+    {
+        juce::String num;
+        for (int i = 5; i < paramID.length() && paramID[i] >= '0' && paramID[i] <= '9'; ++i)
+            num += paramID[i];
+        return stripPrefix ("Modifier " + num + " ");
+    }
+
+    // arp_*
+    if (paramID.startsWith ("arp_"))
+        return stripPrefix ("Arp ");
+
+    // mix_*, part_*, filter_card, vca_curve, filter_drive, seq step/length —
+    // already short: leave as-is.
+    return fullLabel;
+}
+}  // namespace
+
+//==============================================================================
+// Tooltip helper for popup-menu items. See ParamControl::showContextMenu.
+namespace
+{
+// A PopupMenu item rendered EXACTLY like a default item (via the active L&F
+// drawPopupMenuItem — same geometry, colours and font as every other entry) but
+// ALSO a juce::TooltipClient, so hovering it shows a short description.
+// juce::PopupMenu items have no native tooltip field; a PopupMenu::CustomComponent
+// carrying the tooltip is the JUCE idiom. Because it is "triggered automatically"
+// the menu still fires the item action on a click — no manual mouse handling.
+// getIdealSize() delegates to the L&F so the row matches the height/width of a
+// normal item (no clipping, no layout change).
+class TooltipMenuItemComponent final : public juce::PopupMenu::CustomComponent,
+                                       public juce::TooltipClient
+{
+public:
+    TooltipMenuItemComponent (juce::String itemText, juce::String tip)
+        : text_ (std::move (itemText)), tip_ (std::move (tip)) {}
+
+    void getIdealSize (int& idealWidth, int& idealHeight) override
+    {
+        getLookAndFeel().getIdealPopupMenuItemSize (text_, false, 0,
+                                                    idealWidth, idealHeight);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        getLookAndFeel().drawPopupMenuItem (g, getLocalBounds(),
+                                            false,                 // isSeparator
+                                            isEnabled(),           // isActive
+                                            isItemHighlighted(),   // isHighlighted
+                                            false,                 // isTicked
+                                            false,                 // hasSubMenu
+                                            text_,
+                                            juce::String(),        // shortcutKeyText
+                                            nullptr,               // icon
+                                            nullptr);              // textColour -> L&F default
+    }
+
+    // Respect the global tooltips toggle (Settings panel): when tooltips are
+    // disabled the context-menu items show nothing either, matching every other
+    // ParamControl tooltip.
+    juce::String getTooltip() override
+    {
+        return ParamControl::tooltipsEnabled() ? tip_ : juce::String();
+    }
+
+private:
+    juce::String text_, tip_;
+};
 }  // namespace
 
 //==============================================================================
 ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& d)
     : desc_ (d), processor_ (processor), paramIDStr_ (d.paramID)
 {
-    label_ = std::make_unique<juce::Label> (d.paramID + "_lbl", d.label);
+    // Visible label uses the short (prefix-stripped) display form so the section
+    // name (shown in the panel border) isn't redundantly repeated in every knob
+    // caption. The FULL label is preserved for tooltips / accessibility (see
+    // getTooltip -> getParamHelp, which returns the full param help text).
+    label_ = std::make_unique<juce::Label> (d.paramID + "_lbl",
+                                            displayLabelFor (d.paramID, d.label));
     label_->setJustificationType (juce::Justification::centred);
     label_->setFont (juce::FontOptions (12.0f));
     // Label / combo / slider colours all come from the editor-wide
@@ -121,6 +285,19 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         // click before this component sees it). `false` => events for the combo
         // only (no recursion into its popup children).
         comboBox_->addMouseListener (this, false);
+
+        // A modulation-source combo (modN_source / modifN_in1|in2) listens to its
+        // OWN value so it can re-tint its closed-box background to 15% alpha of
+        // the SELECTED source's category colour as the routing changes.
+        // Ordinary combos (osc shape / filter mode / mix op) are left untinted.
+        isModSourceCombo_ = paramIDStr_.endsWith ("_source")
+            || (paramIDStr_.startsWith ("modif")
+                && (paramIDStr_.endsWith ("_in1") || paramIDStr_.endsWith ("_in2")));
+        if (isModSourceCombo_)
+        {
+            processor_.getApvts().addParameterListener (paramIDStr_, this);
+            applyModSourceTint();   // seed the tint for the current source
+        }
     }
     else
     {
@@ -137,9 +314,6 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
             // are dimmed when past the active length (refreshStepEnabled).
             label_->setText (TRANS ("Length"), juce::dontSendNotification);
             label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
-            if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-                if (const auto* theme = lnf->getTheme())
-                    slider_->setColour (juce::Slider::rotarySliderFillColourId, theme->accent);
         }
         else if (d.isSequencer)
         {
@@ -150,6 +324,12 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
             processor.getApvts(), d.paramID, *slider_);
         // Catch right-clicks on the knob (so the cell's popup menu shows).
         slider_->addMouseListener (this, false);
+        // Colour the knob's fill ARC by functional category (amber Osc/Filter/Mix,
+        // cyan Env, magenta LFO, green Seq, purple Arp). Only the arc adopts the
+        // category hue; the numeric value readout stays neutral. The LookAndFeel
+        // drawRotarySlider reads this colour ID per-component, so this overrides
+        // ONLY this knob (no L&F fork). Re-applied on theme change.
+        applyCategoryArcColour();
     }
 
     // Cache the per-parameter help text and push it onto the interactive
@@ -176,6 +356,8 @@ ParamControl::~ParamControl()
 {
     if (lengthParamID_.isNotEmpty())
         processor_.getApvts().removeParameterListener (lengthParamID_, this);
+    if (isModSourceCombo_)
+        processor_.getApvts().removeParameterListener (paramIDStr_, this);
     auto& r = paramControlRegistry();
     r.erase (std::remove (r.begin(), r.end(), this), r.end());
 }
@@ -206,9 +388,12 @@ int ParamControl::parseStepIndex (const juce::String& id)
     return -1;
 }
 
-void ParamControl::parameterChanged (const juce::String&, float)
+void ParamControl::parameterChanged (const juce::String& id, float)
 {
-    refreshStepEnabled();
+    if (id == lengthParamID_)
+        refreshStepEnabled();
+    if (isModSourceCombo_ && id == paramIDStr_)   // selected mod source changed
+        applyModSourceTint();
 }
 
 void ParamControl::refreshStepEnabled()
@@ -263,12 +448,103 @@ void ParamControl::setTooltipsEnabled (bool enabled)
         c->applyTooltipState();
 }
 
+void ParamControl::applyCategoryArcColour()
+{
+    if (slider_ == nullptr)
+        return;
+    // Resolve the category hue from the CURRENT theme via the component's L&F
+    // (zero hardcoded hues; every value comes from a theme token).
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (const auto* theme = lnf->getTheme())
+        {
+            slider_->setColour (juce::Slider::rotarySliderFillColourId,
+                                categoryColourForSection (*theme, sectionForId (paramIDStr_)));
+            return;
+        }
+    // No theme yet (pre-L&F construction): leave the L&F default untouched.
+}
+
+void ParamControl::applyModSourceTint()
+{
+    if (comboBox_ == nullptr || ! isModSourceCombo_)
+        return;
+    // Guard against any re-entrant path (setColour does not itself change the
+    // param, but the flag keeps the contract explicit, like MultiPage).
+    if (refreshingModTint_)
+        return;
+    const juce::ScopedValueSetter<bool> guard (refreshingModTint_, true);
+
+    // Read the SELECTED source's name from the APVTS raw value (the choice index
+    // into kModSources). Reading the param directly avoids racing the combo
+    // attachment's own listener update.
+    juce::String sourceName;
+    if (desc_.choices != nullptr && ! desc_.choices->isEmpty())
+    {
+        int idx = 0;
+        if (auto* raw = processor_.getApvts().getRawParameterValue (paramIDStr_))
+            idx = juce::jlimit (0, desc_.choices->size() - 1, juce::roundToInt (raw->load()));
+        sourceName = (*desc_.choices) [idx];
+    }
+
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (const auto* theme = lnf->getTheme())
+        {
+            juce::Colour tintCol;
+            bool hasTint = true;
+            if      (sourceName.startsWith ("Env"))                       tintCol = theme->catEnv;
+            else if (sourceName.startsWith ("LFO") || sourceName == "Voice LFO") tintCol = theme->catLfo;
+            else if (sourceName.startsWith ("Seq"))                       tintCol = theme->catSeq;
+            else if (sourceName.startsWith ("Arp"))                       tintCol = theme->catArp;
+            else                                                          hasTint = false;   // Op/Const/Velocity/etc
+
+            if (hasTint)
+                comboBox_->setColour (juce::ComboBox::backgroundColourId, tintCol.withAlpha (0.15f));
+            else
+                comboBox_->removeColour (juce::ComboBox::backgroundColourId);   // revert to the L&F default
+            comboBox_->repaint();
+            return;
+        }
+}
+
+void ParamControl::reapplyCategoryColours()
+{
+    // A theme switch changed the token VALUES, so re-resolve + re-push every
+    // control's category colour from the new theme. Component-level setColour
+    // overrides survive the switch but keep the OLD theme's value otherwise.
+    for (auto* c : paramControlRegistry())
+    {
+        c->applyCategoryArcColour();
+        c->applyModSourceTint();
+    }
+}
+
 juce::String ParamControl::getTooltip()
 {
     // When tooltips are disabled (Settings panel toggle), return an empty String
     // so the editor's TooltipWindow shows nothing. Cleaner than recreating the
     // window or toggling its visibility.
     return tooltipsEnabled_ ? getParamHelp (desc_.paramID) : juce::String();
+}
+
+void ParamControl::lookAndFeelChanged()
+{
+    // The ParvatiLookAndFeel (and its theme) is not attached during construction
+    // (the control is reparented into the editor tree afterwards), so the
+    // category arc / mod-source tint are applied once the L&F is reachable.
+    // This also re-applies on a theme switch (sendLookAndFeelChange), making the
+    // category hues follow the active theme. Both calls are idempotent.
+    applyCategoryArcColour();
+    applyModSourceTint();
+}
+
+void ParamControl::parentHierarchyChanged()
+{
+    // On the initial reparent into the editor tree getLookAndFeel() finally
+    // resolves to the editor's ParvatiLookAndFeel (lookAndFeelChanged does NOT
+    // fire for inherited L&F, only for an explicit setLookAndFeel), so this is
+    // where the category arc / mod tint first take effect. Idempotent.
+    applyCategoryArcColour();
+    applyModSourceTint();
 }
 
 void ParamControl::resized()
@@ -284,9 +560,9 @@ void ParamControl::resized()
 
     if (slider_)
     {
-        // Every rotary dial is a fixed 44px diameter, centred in the cell. The
+        // Every rotary dial is a fixed diameter, centred in the cell. The
         // value readout is drawn inside the arc-ring by the LookAndFeel.
-        constexpr int kKnobDiameter = 44;
+        constexpr int kKnobDiameter = 52;
         slider_->setBounds (b.withSizeKeepingCentre (kKnobDiameter,
                                                      juce::jmin (kKnobDiameter, b.getHeight())));
     }
@@ -316,15 +592,64 @@ void ParamControl::mouseDown (const juce::MouseEvent& e)
 
 void ParamControl::showContextMenu()
 {
+    // Suppress the editor's (parented) TooltipWindow the instant the menu is
+    // about to open: it would otherwise FREEZE this control's tip on screen
+    // (the bleed-through). The editor's 30 Hz timer also hides it while a modal
+    // popup stays open; this call covers the very first frame.
+    if (auto* ed = dynamic_cast<ParvatiEditor*> (getParentComponent()))
+        if (auto* tw = ed->getTooltipWindow())
+            tw->hideTip();
+
     juce::PopupMenu menu;
     // SafePointer guards against the control being deleted while the async
     // menu is still open (e.g. editor closed mid-menu).
     juce::Component::SafePointer<ParamControl> safe (this);
-    menu.addItem (TRANS ("Reset to default"), [safe] { if (safe != nullptr) safe->resetToDefault(); });
-    menu.addItem (TRANS ("Randomize"),        [safe] { if (safe != nullptr) safe->randomize(); });
+
+    // Each item is a TooltipMenuItemComponent: a menu entry rendered exactly
+    // like a default item (via the L&F drawPopupMenuItem) that ALSO implements
+    // juce::TooltipClient, so hovering it shows a short description. juce::PopupMenu
+    // items have no native tooltip field, so a PopupMenu::CustomComponent is the
+    // JUCE idiom. The item is "triggered automatically" so a click still fires
+    // item.action (reset / randomize) — no manual mouse handling.
+    auto addItemWithTooltip = [&menu] (const juce::String& text,
+                                          const juce::String& tip,
+                                          int itemID,
+                                          std::function<void()> action)
+    {
+        juce::PopupMenu::Item item;
+        item.text = text;
+        item.itemID = itemID;   // non-zero: the menu fires item.action on click
+        item.action = std::move (action);
+        item.customComponent = new TooltipMenuItemComponent (text, tip);
+        menu.addItem (std::move (item));
+    };
+
+    addItemWithTooltip (TRANS ("Reset to default"),
+                        TRANS ("Reset this parameter to its default value"),
+                        1, [safe] { if (safe != nullptr) safe->resetToDefault(); });
+    addItemWithTooltip (TRANS ("Randomize"),
+                        TRANS ("Set this parameter to a random value"),
+                        2, [safe] { if (safe != nullptr) safe->randomize(); });
+
+    // The editor's TooltipWindow is parented to the editor (so it CANNOT render
+    // above the popup window) and is suppressed while a popup is open. So the
+    // context-menu item tooltips need their OWN window that floats above the
+    // popup. A desktop (unparented) TooltipWindow tracks components in the
+    // popup's peer and shows the hovered item's tooltip; themed via the editor's
+    // L&F so it matches the normal tooltips. It lives only while this menu is
+    // open and is destroyed in the close callback.
+    popupTooltipWindow_ = std::make_unique<juce::TooltipWindow>();
+    popupTooltipWindow_->setLookAndFeel (&getLookAndFeel());
+
     // withTargetComponent(this) so the menu inherits the editor's
     // ParvatiLookAndFeel (themed colours + font) instead of the default L&F.
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this));
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                        [safe] (int)
+                        {
+                            // Tear down the desktop tooltip window on close.
+                            if (safe != nullptr)
+                                safe->popupTooltipWindow_.reset();
+                        });
 }
 
 void ParamControl::resetToDefault()
@@ -366,16 +691,85 @@ void ParamControl::randomize()
     processor_.getApvts().getParameterAsValue (desc_.paramID) = value;
 }
 
-//==============================================================================
-juce::String ParamPage::groupForId (const juce::String& id)
+// Sub-section key for the merged Mixer panel: the three logical
+// groups (Mixer / Sub Oscillator / Noise) used only for internal layout +
+// divider placement. (groupForId now returns ONE merged name for all mix IDs.)
+static juce::String mixerSubSectionForId (const juce::String& id)
 {
-    // ---- Mixer splits into three sub-groups (exact ids) ----
     if (id == "mix_balance" || id == "mix_op" || id == "mix_param")
         return "Mixer";
     if (id == "mix_sub_shape" || id == "mix_sub")
         return "Sub Oscillator";
-    if (id == "mix_noise" || id == "mix_fuzz" || id == "mix_crush")
-        return "Noise / Waveshaper";
+    return "Noise / Waveshaper";   // mix_noise / mix_fuzz / mix_crush
+}
+
+// Partition a group's control indices into consecutive mixer sub-sections
+// (preserving descriptor order): { name, [controlIndices...] }. Used by the
+// sectioned layout so each sub-section occupies its own row-band inside the
+// single Mixer panel.
+static std::vector<std::pair<juce::String, std::vector<int>>>
+mixerSubSectionsOf (const std::vector<std::unique_ptr<ParamControl>>& controls,
+                    const std::vector<int>& controlIndices)
+{
+    std::vector<std::pair<juce::String, std::vector<int>>> out;
+    for (int ci : controlIndices)
+    {
+        if (ci < 0 || ci >= (int) controls.size()) continue;
+        const auto key = mixerSubSectionForId (controls[(size_t) ci]->getParamID());
+        if (out.empty() || out.back().first != key)
+            out.emplace_back (key, std::vector<int>{});
+        out.back().second.push_back (ci);
+    }
+    return out;
+}
+
+// Per-control column span inside a mixer sub-section (the sectioned panel). A
+// span > 1 lets a wider control occupy multiple cells in its row. Keyed on
+// paramID so it travels with the descriptor (no hardcoded position): today
+// only mix_sub_shape ("Sub Shape") spans 2 cells (cols 1-2) with mix_sub
+// ("Sub Level") on col 3.
+static int mixerControlSpan (const juce::String& id)
+{
+    if (id == "mix_sub_shape") return 2;
+    return 1;
+}
+
+// Number of row-bands a mixer sub-section occupies, honouring per-control
+// column spans. Mirrors applyLayout's column-cursor placement exactly so the
+// panel height (layoutGroups) + themed divider gaps (paint) stay in sync with
+// the actual cell positions (a ceil(size/cols) formula would break the moment
+// a span changes the row count).
+static int mixerSectionRowCount (const std::vector<std::unique_ptr<ParamControl>>& controls,
+                                const std::vector<int>& controlIndices, int cols)
+{
+    int col = 0, row = 0, rows = 1;
+    for (int ci : controlIndices)
+    {
+        if (ci < 0 || ci >= (int) controls.size())
+            continue;
+        const int span = mixerControlSpan (controls[(size_t) ci]->getParamID());
+        if (col + span > cols && col > 0)   // wrap to a new row
+        {
+            col = 0;
+            ++row;
+        }
+        rows = juce::jmax (rows, row + 1);
+        col += span;
+    }
+    return rows;
+}
+
+//==============================================================================
+juce::String ParamPage::groupForId (const juce::String& id)
+{
+    // ---- Mixer: ONE merged panel ("Mixer") holding all 8 mix
+    // controls. The three logical sub-sections (Mixer / Sub Oscillator / Noise)
+    // are separated inside the panel by themed dividers (see ParamPage::paint +
+    // the sectioned layout path), not by separate bordered boxes. ----
+    if (id == "mix_balance" || id == "mix_op"     || id == "mix_param" ||
+        id == "mix_sub_shape" || id == "mix_sub" ||
+        id == "mix_noise"   || id == "mix_fuzz"  || id == "mix_crush")
+        return "Mixer";
 
     // ---- The two filter modulation amounts share one panel ----
     if (id == "filter_env" || id == "filter_lfo")
@@ -386,7 +780,7 @@ juce::String ParamPage::groupForId (const juce::String& id)
     if (id == "seq_length_2") return "Sequencer 2";
     if (id == "seq_length_3") return "Note Pitch";
 
-    // ---- Synth options with no patch byte ----
+    // ---- Synth options with no patch byte (Global page) ----
     if (id == "vca_curve" || id == "filter_card" || id == "filter_drive")
         return "Global";
 
@@ -399,7 +793,7 @@ juce::String ParamPage::groupForId (const juce::String& id)
     // ---- Oscillators / filters ----
     if (id.startsWith ("osc1_"))    return "Osc 1";
     if (id.startsWith ("osc2_"))    return "Osc 2";
-    if (id.startsWith ("filter1_")) return "Filter 1";
+    if (id.startsWith ("filter1_")) return "Filter";
     if (id.startsWith ("filter2_")) return "Filter 2";
 
     // ---- Envelopes / LFOs (now on separate tabs) ----
@@ -529,20 +923,43 @@ void ParamPage::configureGroupLayouts()
             g.cellW = 150;
             g.cellH = 64;
         }
-        // Mixer column (narrow 20%): tight cells so the 3 mix groups stack and fit
-        // the main-row height with no vertical scrollbar.
-        else if (g.name == "Mixer" || g.name == "Sub Oscillator" || g.name == "Noise / Waveshaper")
+        // Mixer column (narrow 20%): ONE merged "Mixer" panel holds
+        // all 8 mix controls, laid out in 3 logical sub-sections (one row each)
+        // separated by themed dividers. cellH matches Filter (full-arc knobs);
+        // cellW is a floor that the row-fill grows to the column width. One
+        // panel of 3 rows = 232px <= 279px main-row half at 1280x620.
+        else if (g.name == "Mixer")
         {
-            g.internalCols = generalCols (n);
-            g.cellW = 72;   // 3-col group = 232px <= 236px avail in the 20% column
-            g.cellH = 44;   // 3 stacked single-row groups = 264px <= 265px main-row half
+            g.sectioned    = true;
+            g.internalCols = 3;   // widest sub-section (Mixer/Noise = 3 knobs)
+            g.cellW = 60;         // floor: 3-col natural = 196px <= 200px avail at min 1100
+            g.cellH = 64;         // full-arc knobs (matches Filter)
         }
-        // Filter column (40%): Filter 1 (3 knobs) + Filter Mod (2 amounts).
-        else if (g.name == "Filter 1" || g.name == "Filter Mod")
+        // Filter column (40%): Filter (3 knobs) + Filter Mod (2 amounts) + a
+        // magnitude-response curve decoration under Filter. cellW sized so the
+        // 3-knob group (3*cellW+16) fits the 420px content width at the 1100px
+        // minimum (no horizontal clipping of the knobs OR the curve); the row
+        // grows to fill at 1280.
+        else if (g.name == "Filter" || g.name == "Filter Mod")
         {
             g.internalCols = generalCols (n);
-            g.cellW = 156;  // 3-col group = 484px <= 492px avail in the 40% column
-            g.cellH = 64;   // 2 stacked single-row groups = 220px <= 265px main-row half
+            g.cellW = 130;  // 3-col group = 406px <= 420px avail at min 1100
+            g.cellH = 64;   // 2 stacked single-row groups + curve fit <= 269px main-row half at min 1100
+        }
+        // Oscillators (40% column): Shape combo + INLINE waveform preview + the
+        // other 3 knobs (param/range/detune), all in ONE row so both "Osc 1" +
+        // "Osc 2" stack and fit the ~440px-wide (min 1100) / 512px (1280) OSC
+        // column with BOTH visible at once (no [OSC1][OSC2] pager). The row is
+        // modelled as 5 columns: col0=Shape, col1=reserved for the INLINE
+        // preview (set via setGroupInlinePreview), col2..4=param/range/detune.
+        // cellW=80 is a floor sized so 5 columns (5*80+16=416px) fit the 420px
+        // content width at the 1100px minimum (no horizontal clipping); the row
+        // grows to fill at 1280.
+        else if (g.name == "Osc 1" || g.name == "Osc 2")
+        {
+            g.internalCols = 5;
+            g.cellW = 80;
+            g.cellH = 64;
         }
         else
         {
@@ -564,9 +981,26 @@ void ParamPage::layoutGroups (int targetWidth)
         const int cols = juce::jmax (1, g.internalCols);
         {
             const int n = (int) g.controlIndices.size();
-            const int rows = (n + cols - 1) / cols;
-            g.naturalWidth  = cols * g.cellW + 2 * kGroupPad;
-            g.naturalHeight = kGroupTitleH + rows * g.cellH + 2 * kGroupPad;
+            if (g.sectioned)
+            {
+                // A sectioned panel (merged Mixer) stacks its sub-sections, each
+                // on its own row-band, separated by kSectionGap dividers. The
+                // total height must match applyLayout's placement exactly so no
+                // control lands outside its group rect (layoutIsSane check c).
+                const auto sections = mixerSubSectionsOf (controls_, g.controlIndices);
+                int rows = 0;
+                for (const auto& s : sections)
+                    rows += mixerSectionRowCount (controls_, s.second, cols);
+                const int gaps = juce::jmax (0, (int) sections.size() - 1);
+                g.naturalWidth  = cols * g.cellW + 2 * kGroupPad;
+                g.naturalHeight = kGroupTitleH + rows * g.cellH + gaps * kSectionGap + 2 * kGroupPad;
+            }
+            else
+            {
+                const int rows = (n + cols - 1) / cols;
+                g.naturalWidth  = cols * g.cellW + 2 * kGroupPad;
+                g.naturalHeight = kGroupTitleH + rows * g.cellH + 2 * kGroupPad;
+            }
         }
         // A group with a decoration (e.g. an ADSR/LFO preview) reserves room
         // below its control cells so the panel height includes it.
@@ -681,6 +1115,14 @@ void ParamPage::layoutGroups (int targetWidth)
     // their natural height and scroll as before. The target height comes from
     // centerHeight_ (set by the editor for every tab) — NOT getViewHeight(),
     // which tracks the content size and so can never exceed the natural height.
+    // Top-align the page content (no vertical centring). Previously short
+    // pages (single-row group subsets like Mod Matrix [13-14] or Modifiers
+    // [3-4]) floated in the vertical middle of the viewport, looking
+    // inconsistent next to denser multi-row pages. Content now starts at the
+    // top; the page still grows to fill the viewport (contentHeight_ >= viewH)
+    // so there is no vertical scrollbar. The target height comes from
+    // centerHeight_ (set by the editor for every tab) — NOT getViewHeight(),
+    // which tracks the content size and so can never exceed the natural height.
     yOffset_ = 0;
     // Prefer the editor-supplied tab height (reliable for every tab); fall back
     // to the parent Viewport's physical height for standalone / headless use.
@@ -688,12 +1130,6 @@ void ParamPage::layoutGroups (int targetWidth)
     if (viewH <= 0)
         if (auto* vp = findParentComponentOfClass<juce::Viewport>())
             viewH = vp->getHeight();
-    if (viewH > naturalH && viewH > 0)
-    {
-        yOffset_ = (viewH - naturalH) / 2;
-        for (auto& g : groups_)
-            g.rect.translate (0, yOffset_);
-    }
     contentHeight_ = juce::jmax (naturalH, viewH);
 }
 
@@ -706,6 +1142,8 @@ void ParamPage::applyLayout()
             g.groupComp->setVisible (visible);
         if (g.decoration != nullptr)
             g.decoration->setVisible (visible);
+        if (g.inlinePreview != nullptr)
+            g.inlinePreview->setVisible (visible);
         if (! visible)
         {
             // A hidden group's controls are never positioned here; hide them so
@@ -732,18 +1170,75 @@ void ParamPage::applyLayout()
         const int colStep = dense ? g.cellW
                                   : juce::jmax (g.cellW, inner.getWidth() / cols);
 
+        if (g.sectioned)
+        {
+            // Sectioned panel (merged Mixer): each sub-section occupies its own
+            // row-band; Y advances by the section's row count + kSectionGap so
+            // the themed dividers (drawn in paint) sit in the gaps. This mirrors
+            // layoutGroups' naturalHeight exactly so no control lands outside
+            // its group rect.
+            const auto sections = mixerSubSectionsOf (controls_, g.controlIndices);
+            int y = inner.getY();
+            for (const auto& s : sections)
+            {
+                // Per-control column span: a column cursor advances by each
+                // control's span (mix_sub_shape = 2), wrapping to the next row
+                // when it would overflow cols. The sub-section's row count is
+                // precomputed by the SAME cursor logic (mixerSectionRowCount) so
+                // the themed divider gap sits at the right Y regardless of spans.
+                const int sRows = mixerSectionRowCount (controls_, s.second, cols);
+                int col = 0, row = 0;
+                for (int i = 0; i < (int) s.second.size(); ++i)
+                {
+                    const int ci = s.second[(size_t) i];
+                    if (ci < 0 || ci >= (int) controls_.size())
+                        continue;
+                    const int span = mixerControlSpan (controls_[(size_t) ci]->getParamID());
+                    if (col + span > cols && col > 0)   // wrap to a new row
+                    {
+                        col = 0;
+                        ++row;
+                    }
+                    const juce::Rectangle<int> cell (inner.getX() + col * colStep,
+                                                     y + row * g.cellH,
+                                                     span * colStep, g.cellH);
+                    auto* ctrl = controls_[(size_t) ci].get();
+                    ctrl->setVisible (true);
+                    ctrl->setBounds (cell.reduced (3));
+                    col += span;
+                }
+                y += sRows * g.cellH + kSectionGap;
+            }
+            continue;   // sectioned: skip the standard grid + decoration
+        }
+
+        // OSC groups reserve column 1 for an INLINE waveform preview (col0=Shape,
+        // col1=preview, col2..4=param/range/detune), so the shape combo + preview
+        // sit side by side and the other 3 knobs shift right by one column.
+        const bool hasInlinePreview = (g.inlinePreview != nullptr);
+
         for (int idx = 0; idx < (int) g.controlIndices.size(); ++idx)
         {
             const int ci = g.controlIndices[(size_t) idx];
             if (ci < 0 || ci >= (int) controls_.size()) continue;
-            const int col = idx % cols;
-            const int row = idx / cols;
+            const int col = hasInlinePreview ? (idx == 0 ? 0 : idx + 1) : (idx % cols);
+            const int row = hasInlinePreview ? 0 : (idx / cols);
             const juce::Rectangle<int> cell (inner.getX() + col * colStep,
                                              inner.getY() + row * g.cellH,
                                              colStep, g.cellH);
             auto* ctrl = controls_[(size_t) ci].get();
             ctrl->setVisible (true);
             ctrl->setBounds (cell.reduced (3));
+        }
+
+        // The inline preview occupies its reserved column (col 1) for the row height.
+        if (hasInlinePreview)
+        {
+            g.inlinePreview->setVisible (true);
+            const juce::Rectangle<int> pc (inner.getX() + 1 * colStep,
+                                           inner.getY(),
+                                           colStep, g.cellH);
+            g.inlinePreview->setBounds (pc.reduced (3));
         }
 
         // A group's decoration (if any) spans the panel width below the cells.
@@ -835,6 +1330,23 @@ void ParamPage::setGroupDecoration (const juce::String& groupName,
 
     // Recompute the layout so contentHeight_ already accounts for the new
     // decoration when the editor sizes this page immediately afterwards.
+    layoutGroups (juce::jmax (940, getWidth()));
+    applyLayout();
+}
+
+void ParamPage::setGroupInlinePreview (const juce::String& groupName,
+                                       std::unique_ptr<juce::Component> preview)
+{
+    // ParamPage always owns the component (reuse the decorations_ ownership
+    // vector), even if @p groupName does not match an existing group.
+    auto* raw = preview.get();
+    decorations_.push_back (std::move (preview));
+    addAndMakeVisible (raw);
+    for (auto& g : groups_)
+        if (g.name == groupName)
+            g.inlinePreview = raw;
+
+    // Re-lay out so the reserved column + remapped knobs take effect immediately.
     layoutGroups (juce::jmax (940, getWidth()));
     applyLayout();
 }
@@ -936,7 +1448,34 @@ void ParamPage::refreshLanguage()
 
 void ParamPage::paint (juce::Graphics& g)
 {
-    g.fillAll (themeManager_.getCurrentTheme().windowBackground);
+    const auto& theme = themeManager_.getCurrentTheme();
+    g.fillAll (theme.windowBackground);
+
+    // Sub-section dividers inside a sectioned panel (merged Mixer):
+    // a 1px muted line in each inter-section gap, drawn from the theme divider
+    // token (never a literal colour). The gap positions mirror applyLayout's
+    // section walk so each line sits cleanly between knob rows.
+    for (const auto& grp : groups_)
+    {
+        if (! grp.sectioned || ! groupVisible (grp))
+            continue;
+        const auto sections = mixerSubSectionsOf (controls_, grp.controlIndices);
+        if (sections.size() < 2)
+            continue;
+        auto inner = grp.rect.reduced (kGroupPad);
+        inner.removeFromTop (kGroupTitleH);
+        const int cols = juce::jmax (1, grp.internalCols);
+        int y = inner.getY();
+        g.setColour (theme.divider);
+        for (size_t si = 0; si + 1 < sections.size(); ++si)
+        {
+            const int sRows = mixerSectionRowCount (controls_, sections[si].second, cols);
+            y += sRows * grp.cellH;                 // top of the gap
+            const int dy = y + kSectionGap / 2;      // centre of the gap
+            g.drawHorizontalLine (dy, (float) inner.getX(), (float) inner.getRight());
+            y += kSectionGap;
+        }
+    }
 }
 
 void ParamPage::resized()
@@ -1129,9 +1668,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Theme + LookAndFeel: one L&F on the editor, inherited by the whole control
     // tree, so no per-component palette is needed.
     lnf_.setTheme (themeManager_.getCurrentTheme());
-    // Apply the saved UI font mode BEFORE building any widgets, so every label /
-    // combo / tab picks up the chosen family (traditional vs console) at creation.
-    lnf_.setFontMode (processorRef_.getUiFontMode());
     setLookAndFeel (&lnf_);
     themeManager_.addChangeListener (this);
 
@@ -1185,7 +1721,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
     addAndMakeVisible (*presetBrowser_);
 
-    loadButton_.setButtonText (TRANS ("Load..."));
+    loadButton_.setButtonText (TRANS ("Load"));
     // Button colours from the L&F.
     loadButton_.onClick = [this] { openLoadDialog(); };
     addAndMakeVisible (loadButton_);
@@ -1194,7 +1730,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // (.PRO)" writes the byte-faithful hardware-shareable patch; "Parvati Patch
     // (.parvati)" writes the full-fidelity YAML (carries vca_curve / filter_card
     // / arp that the .PRO byte format drops).
-    saveButton_.setButtonText (TRANS ("Save..."));
+    saveButton_.setButtonText (TRANS ("Save"));
     saveButton_.onClick = [this] {
         juce::PopupMenu m;
         m.addItem (1, TRANS ("Ambika Patch (.PRO)"));
@@ -1247,8 +1783,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         { "LFOs",        "LFO",        Section::Lfos,        4, 198, 76 },
         { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   2, 164, 72 },
         { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 64 },   // cellH overridden per-group (configureGroupLayouts); ref only
-        { "Arp",         "ARP",        Section::Arp,         3, 214, 76 },
         { "Sequencer",   "SEQ",        Section::Sequencer,   6, 150, 80 },
+        { "Arp",         "ARP",        Section::Arp,         3, 214, 76 },
         { "Global",      "GLOBAL",     Section::Global,      3, 214, 76 },
     };
 
@@ -1266,6 +1802,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             auto* param = processorRef_.getApvts().getParameter (id);
             return param ? param->getValue() : 0.0f;
         };
+        // Register a graph preview for live category re-tinting on theme change:
+        // each entry stores a closure calling the concrete component's
+        // setCategoryColour + a theme-token pointer so reapplyGraphCategoryColours
+        // can re-resolve the NEW theme's value and re-push it.
+        auto bindGraph = [this] (GraphTintFn fn, ThemeColourField field) {
+            graphCategoryBindings_.emplace_back (std::move (fn), field);
+        };
         if (pg.s == Section::Envelopes)
         {
             const juce::String envs[3] = { "env1", "env2", "env3" };
@@ -1280,6 +1823,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     [norm, e] { return norm (e + "_sustain"); },
                     [norm, e] { return norm (e + "_release"); });
                 disp->setPreviewMode (0);   // ADSR curve
+                // Cyan trace from the Envelopes category token (re-resolved live
+                // on theme change via the binding registered below).
+                disp->setCategoryColour (theme.catEnv);
+                bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
+                           &ParvatiTheme::catEnv);
                 page->setGroupDecoration (envLabels[i], std::move (disp));
             }
         }
@@ -1296,6 +1844,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     std::function<float()> {}, std::function<float()> {},
                     [norm, e] { return norm (e + "_lfo_shape"); });
                 disp->setPreviewMode (1);   // LFO waveform
+                disp->setCategoryColour (theme.catLfo);   // magenta trace
+                bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
+                           &ParvatiTheme::catLfo);
                 page->setGroupDecoration ("LFO " + juce::String (i + 1), std::move (disp));
             }
             // Voice LFO (MOD_SRC_LFO_4).
@@ -1305,7 +1856,48 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 std::function<float()> {}, std::function<float()> {},
                 [norm] { return norm ("voice_lfo_shape"); });
             vdisp->setPreviewMode (1);
+            vdisp->setCategoryColour (theme.catLfo);   // magenta trace
+            bindGraph ([gp = vdisp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
+                       &ParvatiTheme::catLfo);
             page->setGroupDecoration ("Voice LFO", std::move (vdisp));
+        }
+        else if (pg.s == Section::Oscillators)
+        {
+            // INLINE waveform preview beside each OSC Shape dropdown: one
+            // OscPreviewDisplay per oscillator, laid out in the reserved column
+            // 1 (configureGroupLayouts gives each OSC group 5 columns). Amber
+            // (catAudio) trace, re-tinted live on theme change.
+            const juce::String oscs[2]  = { "osc1", "osc2" };
+            const juce::String labels[2] = { "Osc 1", "Osc 2" };
+            for (int i = 0; i < 2; ++i)
+            {
+                const juce::String o = oscs[i];
+                auto disp = std::make_unique<OscPreviewDisplay> (
+                    labels[i] + " Wave",
+                    [norm, o] { return norm (o + "_shape"); },
+                    [norm, o] { return norm (o + "_param"); });
+                disp->setCategoryColour (theme.catAudio);   // amber trace
+                bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
+                           &ParvatiTheme::catAudio);
+                page->setGroupInlinePreview (labels[i], std::move (disp));
+            }
+        }
+        else if (pg.s == Section::Filter)
+        {
+            // Magnitude-response curve under the "Filter" group (decoration).
+            // Compact height so the Filter column (3 knobs + filter-env/lfo
+            // amounts + the curve) fits the main-row half-height at the 1100
+            // minimum. Amber (catAudio) trace, re-tinted live on theme change.
+            auto disp = std::make_unique<FilterResponseDisplay> (
+                "Filter Response",
+                [norm] { return norm ("filter1_cutoff"); },
+                [norm] { return norm ("filter1_reso"); },
+                [norm] { return norm ("filter1_mode"); });
+            disp->setCategoryColour (theme.catAudio);   // amber trace
+            bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
+                       &ParvatiTheme::catAudio);
+            page->setGroupDecoration ("Filter", std::move (disp));
+            page->setGroupDecorationHeight ("Filter", 42);
         }
 
         if (pg.s == Section::Global)
@@ -1327,21 +1919,19 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         if (pg.s == Section::Mixer)
             synthWorkspace_->setMainLeft (rawPage);
         else if (pg.s == Section::Oscillators)
-            synthWorkspace_->setOscillators (rawPage,
-                Subsets { { "OSC1", juce::StringArray { "Osc 1" } },
-                          { "OSC2", juce::StringArray { "Osc 2" } } });
+            synthWorkspace_->setOscillators (rawPage);   // both osc panels visible directly (no pager)
         else if (pg.s == Section::Filter)
             synthWorkspace_->setMainRight (rawPage);
         else if (pg.s == Section::Envelopes)
             synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
-                Subsets { { "ENV1", juce::StringArray { "Env 1 (Mod)" } },
-                          { "ENV2", juce::StringArray { "Env 2 (Filter)" } },
-                          { "ENV3", juce::StringArray { "Env 3 (Amp)" } } });
+                Subsets { { "ENV 1", juce::StringArray { "Env 1 (Mod)" } },
+                          { "ENV 2", juce::StringArray { "Env 2 (Filter)" } },
+                          { "ENV 3", juce::StringArray { "Env 3 (Amp)" } } });
         else if (pg.s == Section::Lfos)
             synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
-                Subsets { { "LFO1", juce::StringArray { "LFO 1" } },
-                          { "LFO2", juce::StringArray { "LFO 2" } },
-                          { "LFO3", juce::StringArray { "LFO 3" } },
+                Subsets { { "LFO 1", juce::StringArray { "LFO 1" } },
+                          { "LFO 2", juce::StringArray { "LFO 2" } },
+                          { "LFO 3", juce::StringArray { "LFO 3" } },
                           { "VLFO", juce::StringArray { "Voice LFO" } } });
         else if (pg.s == Section::ModMatrix)
             synthWorkspace_->addModTab (pg.shortName, rawPage,
@@ -1354,28 +1944,37 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 Subsets { { "1-2", juce::StringArray { "Modifier 1", "Modifier 2" } },
                           { "3-4", juce::StringArray { "Modifier 3", "Modifier 4" } } });
         else if (pg.s == Section::Arp)
-            synthWorkspace_->addModTab (pg.shortName, rawPage, {});   // single group; shown directly
+            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage, {});   // single group; shown directly (left card)
         else if (pg.s == Section::Sequencer)
-            synthWorkspace_->addModTab (pg.shortName, rawPage,
-                Subsets { { "SEQ1",  juce::StringArray { "Sequencer 1" } },
-                          { "SEQ2",  juce::StringArray { "Sequencer 2" } },
+            synthWorkspace_->addEnvLfoTab (pg.shortName, rawPage,
+                Subsets { { "SEQ 1",  juce::StringArray { "Sequencer 1" } },
+                          { "SEQ 2",  juce::StringArray { "Sequencer 2" } },
                           { "NOTES", juce::StringArray { "Note Pitch" } },
-                          { "VEL",   juce::StringArray { "Note Velocity" } } });
+                          { "VEL",   juce::StringArray { "Note Velocity" } } });   // left card
         // Section::Global (-> GLOBAL tab below) and Section::Multi (never
         // generated) intentionally fall through here.
     }
 
-    // ---- Top-level page selector [SYNTH | GLOBAL] ----
-    // SYNTH shows the integrated workspace; GLOBAL shows the Global ParamPage
-    // DIRECTLY (no Viewport: the page fits its area, zero scrollbars). Both are
-    // passed as NON-owned tab content (the editor retains ownership), so the
+    // ---- Top-level page selector [SYNTH] ----
+    // A single SYNTH tab holds the integrated workspace (GLOBAL is now a header
+    // button -> overlay, below). The lone tab bar is hidden (depth 0) so the
+    // workspace fills the full content area and reclaims the 28px strip. SYNTH
+    // content is NON-owned tab content (editor-owned via synthWorkspace_), so the
     // teardown order stays deterministic.
-    pageSelector_.setTabBarDepth (kPageTabsH);
+    pageSelector_.setTabBarDepth (0);          // single SYNTH tab: hide the now-lone bar, reclaim 28px
     pageSelector_.setOutline (0);
     pageSelector_.addTab (TRANS ("SYNTH"),  theme.windowBackground, synthWorkspace_.get(), false);
-    pageSelector_.addTab (TRANS ("GLOBAL"), theme.windowBackground, globalPage_,           false);
     pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
     addAndMakeVisible (pageSelector_);
+
+    // Global ParamPage: a direct-child overlay toggled by the header "Global"
+    // button (mirrors the Multi overlay). The editor retains ownership via
+    // generatedPages_ (deletion stays there; addChildComponent only reparents).
+    if (globalPage_ != nullptr)
+    {
+        addChildComponent (globalPage_);
+        globalPage_->setVisible (false);
+    }
 
     // ---- Multi / Setup overlay (custom page, not descriptor-generated) ----
     // Multi/Setup is the multitimbral routing config — NOT part of the patch —
@@ -1395,25 +1994,54 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             if (on)
                 multiPage_->toFront (true);   // bounds are kept in sync by resized()
         }
+        if (on && globalPage_ != nullptr)     // mutual-exclusion: only one overlay at a time
+        {
+            globalPage_->setVisible (false);
+            globalButton_.setToggleState (false, juce::dontSendNotification);
+        }
     };
     addAndMakeVisible (multiButton_);
 
+    // ---- Global settings overlay (header button) ----
+    // The Global ParamPage (generated above) is shown as an overlay over the
+    // content area, toggled by the header "Global" button. Mirrors the Multi
+    // overlay; the two overlays are mutually exclusive.
+    globalButton_.setTooltip (TRANS ("Global settings"));
+    globalButton_.setClickingTogglesState (true);
+    globalButton_.onClick = [this] {
+        const bool on = globalButton_.getToggleState();
+        if (globalPage_ != nullptr)
+        {
+            globalPage_->setVisible (on);
+            if (on)
+                globalPage_->toFront (true);   // bounds are kept in sync by resized()
+        }
+        if (on && multiPage_ != nullptr)       // mutual-exclusion: only one overlay at a time
+        {
+            multiPage_->setVisible (false);
+            multiButton_.setToggleState (false, juce::dontSendNotification);
+        }
+    };
+    addAndMakeVisible (globalButton_);
+
     // ---- [KBD] header toggle: show/hide the bottom virtual keyboard ----
-    // Default = keyboard visible (current behaviour). Toggling off hides the
-    // keyboard + wheels and reclaims the strip height for the tab area.
+    // The keyboard floats as an OVERLAY over the bottom of the workspace:
+    // toggling only shows/hides it. The content area keeps its FULL height
+    // whether or not the keyboard is visible, so the synth controls never move
+    // (the keyboard bounds are positioned once in resized() and only its
+    // visibility toggles here). See resized() for the overlay placement + z-order.
     kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
     kbdToggleButton_.setClickingTogglesState (true);
-    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the dense no-scrollbar workspace fits 1280x620 only with the 104px keyboard strip reclaimed (toggle [KBD] to show it; see SynthWorkspace resized)
+    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the dense no-scrollbar workspace fits 1280x620 without reserving the 104px keyboard strip (toggle [KBD] to float it on top)
     kbdToggleButton_.onClick = [this] {
         const bool on = kbdToggleButton_.getToggleState();
         if (keyboardView_ != nullptr) keyboardView_->setVisible (on);
         if (wheels_       != nullptr) wheels_->setVisible (on);
-        resized();   // reflow: tabs reclaim the keyboard strip when hidden
     };
     addAndMakeVisible (kbdToggleButton_);
 
-    // ---- Header: ASCII-art logo (painted, left) + version (inline, right of logo) ----
-    versionLabel_.setText ("v" PARVATI_VERSION, juce::dontSendNotification);
+    // ---- Header: brand icon + white "Parvati" wordmark (painted, left) + version (inline, right of logo) ----
+    versionLabel_.setText ("by 805 Labs - v" PARVATI_VERSION, juce::dontSendNotification);
     versionLabel_.setFont (juce::FontOptions (10.0f));
     versionLabel_.setColour (juce::Label::textColourId, theme.textDim);
     versionLabel_.setJustificationType (juce::Justification::centredLeft);
@@ -1529,15 +2157,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             processorRef_.setUiLanguage (code);
             installLanguage (code);
             applyChromeTranslations();
-        },
-        [this] (int mode) {
-            // Font mode changed: apply to the L&F (all per-widget font getters:
-            // combo/button/tab/popup/label/group) and re-apply every cached
-            // Label font to the chosen family, then repaint the whole editor.
-            if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-                lnf->setFontMode (mode);
-            refreshFontsIn (this, * dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()));
-            repaint();
         });
     settingsPanelHost_->setContent (settingsPanel_, true);
     // Keep the Settings button's toggle state in sync when the panel is
@@ -1551,9 +2170,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Refresh the Multi page (~30 Hz) so it tracks the edited part.
     startTimerHz (30);
 
-    // Apply the UI font family to every cached Label now that all widgets exist
-    // (console mode -> embedded Unifont; serif/sans -> system defaults). Combos,
-    // buttons, tabs, popups and group titles follow via the L&F font getters.
+    // Re-apply the UI font family (system default sans-serif) to every cached
+    // Label now that all widgets exist (juce::Label caches its font, so the
+    // family from getLabelFont needs to be pushed here too). Combos, buttons,
+    // tabs, popups and group titles follow via the L&F font getters.
     refreshFontsIn (this, lnf_);
 
     // Dense integrated layout: header(40) + page tabs(28) + content + keyboard(104)
@@ -1568,6 +2188,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // unnecessary rescale at startup).
     if (processorRef_.getUiZoom() != 1.0)
         setZoom (processorRef_.getUiZoom());
+
+    // Guarantee the full theme-derived colour re-apply runs on first build in
+    // EVERY context (standalone, headless screen tool, editor tests).
+    // changeListenerCallback is only the theme-CHANGE path: it is NOT invoked at
+    // initial construction unless selectByName actually moves the selection
+    // (default Carbon => no broadcast), so without this explicit call the
+    // category knob arcs / ENV-LFO graph traces / mod-source tints could stay on
+    // the L&F default gold until the first manual theme switch. The helper runs
+    // the SAME sequence as changeListenerCallback after the whole tree is built
+    // + parented, so every control resolves its category colour from the active
+    // theme on the very first paint.
+    applyAllColoursFromTheme();
 }
 
 ParvatiEditor::~ParvatiEditor()
@@ -1598,6 +2230,26 @@ ParvatiEditor::~ParvatiEditor()
 
 void ParvatiEditor::timerCallback()
 {
+    // ---- Tooltip bleed-through fix (~30 Hz) ----
+    // ROOT CAUSE: the editor's TooltipWindow is parented to the editor (so it
+    // inherits the ParvatiLookAndFeel and scales with the editor / DAW), but a
+    // popup menu (a ComboBox drop-down OR a right-click context menu) lives in
+    // its OWN top-level window with a different ComponentPeer. The base
+    // juce::TooltipWindow::timerCallback only processes components that share
+    // ITS peer, so while a popup is open it SKIPS its show/hide logic and
+    // FREEZES the underlying control's tip on screen (the reported bleed).
+    // A popup always enters the modal state (juce::PopupMenu::showMenuAsync ->
+    // MenuWindow::enterModalState), so while any modal component is active we
+    // hide the editor tooltip. (tooltipWindow_'s own timer then does nothing —
+    // it skips its block while a different-peer popup is open — so the hide
+    // sticks until the popup closes.) The context-menu items show their OWN
+    // tooltips via the desktop TooltipWindow created in
+    // ParamControl::showContextMenu; ComboBox drop-down items simply show
+    // nothing. No-op when no popup is open.
+    const bool popupOpen = juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
+    if (popupOpen && tooltipWindow_ != nullptr)
+        tooltipWindow_->hideTip();
+
     // Mirror the UndoManager's undo/redo availability onto the top-bar buttons
     // (~30 Hz, same cadence as the Multi-page part-sync below). Cheap O(1)
     // canUndo/canRedo checks; setEnabled() is a no-op when unchanged.
@@ -1619,9 +2271,12 @@ void ParvatiEditor::timerCallback()
 
         // Tooltip bar: the help text of the control under the mouse (walks up
         // to the first ancestor carrying a tooltip). Empty when tooltips are
-        // disabled in Settings or the mouse is over dead space.
+        // disabled in Settings or the mouse is over dead space. Suppressed while
+        // a modal popup is open too: getComponentAt() would otherwise return the
+        // editor control physically under the popup and leak its help text
+        // (same bleed-through class of bug, in the status strip).
         juce::String tip;
-        if (ParamControl::tooltipsEnabled())
+        if (ParamControl::tooltipsEnabled() && ! popupOpen)
         {
             const auto rel = getMouseXYRelative();
             if (getLocalBounds().contains (rel))
@@ -1694,17 +2349,16 @@ void ParvatiEditor::timerCallback()
     }
 }
 
-void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+void ParvatiEditor::applyAllColoursFromTheme()
 {
-    // A new theme was selected: re-apply the L&F colours, refresh the few
-    // explicitly-coloured elements, and repaint everything.
-    lnf_.setTheme (themeManager_.getCurrentTheme());
     // Force every descendant to re-run lookAndFeelChanged(): ComboBox only
     // re-syncs its internal label's text colour (ComboBox::textColourId) in
     // colourChanged()/lookAndFeelChanged(), which a plain L&F colour change
     // does NOT trigger — so a combo themed under a dark theme would otherwise
     // keep near-white label text after switching to the light Paper theme.
-    // This also re-applies the per-widget fonts (combo/button/tab/popup).
+    // This also re-applies the per-widget fonts (combo/button/tab/popup) and
+    // (crucially) makes each ParamControl::lookAndFeelChanged() re-push its
+    // category arc / mod tint once the editor's ParvatiLookAndFeel is attached.
     sendLookAndFeelChange();
     for (auto& page : generatedPages_)
         page->applyThemeColors();
@@ -1712,6 +2366,14 @@ void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
         synthWorkspace_->applyThemeColors();   // nested tab + content backgrounds
     if (multiPage_ != nullptr)
         multiPage_->applyThemeColors();
+    // Re-resolve + re-push every control's category arc colour / mod-source tint
+    // and the ENV/LFO graph trace from the active theme. Component-level
+    // setColour overrides survive a theme switch but keep the OLD theme's value
+    // otherwise, so they must be re-resolved (sliders, source combos, graph
+    // traces). sendLookAndFeelChange() above also re-applies the arcs, but this
+    // explicit pass guarantees them regardless of any L&F-resolution timing.
+    ParamControl::reapplyCategoryColours();
+    reapplyGraphCategoryColours();
     statusCountLabel_.setColour (juce::Label::textColourId,
                                  themeManager_.getCurrentTheme().accent);
     statusTooltipLabel_.setColour (juce::Label::textColourId,
@@ -1722,6 +2384,24 @@ void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     if (globalVoiceMeter_ != nullptr)
         globalVoiceMeter_->refresh();
     repaint();
+}
+
+void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    // A new theme was selected: install it on the L&F, then re-apply every
+    // theme-derived colour across the whole tree (shared helper, also used at
+    // ctor end for the first-paint guarantee).
+    lnf_.setTheme (themeManager_.getCurrentTheme());
+    applyAllColoursFromTheme();
+}
+
+void ParvatiEditor::reapplyGraphCategoryColours()
+{
+    // Re-resolve each graph preview's category token from the current theme and
+    // re-push it (a snapshot Colour would otherwise freeze on the old theme).
+    const auto& theme = themeManager_.getCurrentTheme();
+    for (auto& binding : graphCategoryBindings_)
+        binding.first (theme.*binding.second);
 }
 
 void ParvatiEditor::setZoom (double zoom)
@@ -1798,16 +2478,17 @@ void ParvatiEditor::applyChromeTranslations()
     // for the default.
     patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
-    loadButton_.setButtonText (TRANS ("Load..."));
-    saveButton_.setButtonText (TRANS ("Save..."));
+    loadButton_.setButtonText (TRANS ("Load"));
+    saveButton_.setButtonText (TRANS ("Save"));
     undoButton_.setTooltip (TRANS ("Undo"));
     redoButton_.setTooltip (TRANS ("Redo"));
     settingsButton_.setTooltip (TRANS ("Settings"));
     multiButton_.setButtonText (TRANS ("Multi"));
     multiButton_.setTooltip (TRANS ("Multi / Setup"));
+    globalButton_.setButtonText (TRANS ("Global"));
+    globalButton_.setTooltip (TRANS ("Global settings"));
 
     pageSelector_.setTabName (0, TRANS ("SYNTH"));
-    pageSelector_.setTabName (1, TRANS ("GLOBAL"));
     if (synthWorkspace_ != nullptr)
         synthWorkspace_->reapplyTabLabels();
 
@@ -1825,6 +2506,24 @@ void ParvatiEditor::applyChromeTranslations()
     repaint();
 }
 
+void ParvatiEditor::loadLogoIcon()
+{
+    if (logoDrawable_ != nullptr)
+        return;
+
+    int svgBytes = 0;
+    const char* const svgData = ParvatiLogo::getNamedResource ("parvati_logo_svg", svgBytes);
+    if (svgData == nullptr || svgBytes <= 0)
+        return;
+
+    // parvati_logo.svg is now TRUE vector art (outlined <path>/<g>, no raster),
+    // so parse it with JUCE's SVG renderer and cache the resulting Drawable.
+    // No PNG/base64/<image> decode anywhere. (JUCE 9 exposes the string-based
+    // parser createFromSVGString; the older createFromSVG(XmlElement) is gone.)
+    logoDrawable_ = juce::Drawable::createFromSVGString (
+        juce::String (svgData, (size_t) svgBytes));
+}
+
 void ParvatiEditor::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
@@ -1832,21 +2531,29 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // band, no grey divider lines (borderless aesthetic).
     g.fillAll (theme.windowBackground);
 
-    // ASCII-art "PARVATI" logo inside the reserved logo block (left), small
-    // monospace (console) in the accent colour, with a 3px padding inset.
+    // Header logo cluster: [brand icon] [gap] [white "Parvati" text], painted
+    // into the reserved left logo block (the version label sits inline to its
+    // right). The icon is a fixed brand asset drawn as-is (own colours); the
+    // "Parvati" text uses the theme `text` token so it re-colours each paint().
     if (! logoArea_.isEmpty())
     {
-        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                   kLogoFontHeight, juce::Font::plain)));
-        g.setColour (theme.accent);
-        const juce::StringArray lines = juce::StringArray::fromLines (kAsciiParvatiLogo);
-        const int x = logoArea_.getX() + 3;
-        int baselineY = logoArea_.getY() + 3 + juce::roundToInt (kLogoFontHeight);
-        for (const auto& line : lines)
-        {
-            g.drawSingleLineText (line.trimEnd(), x, baselineY);
-            baselineY += juce::roundToInt (kLogoFontHeight);
-        }
+        loadLogoIcon();   // idempotent: parses the SVG once, then a cheap null check
+
+        auto block = logoArea_;
+        // Icon sits to the RIGHT of the "Parvati" text; text fills the left.
+        const auto iconArea = block.removeFromRight (kLogoIconSize)
+                                     .withSizeKeepingCentre (kLogoIconSize, kLogoIconSize);
+        block.removeFromRight (kLogoTextIconGap);   // gap between the text and the icon (8px)
+        g.setFont (lnf_.appFont (kLogoTextHeight, juce::Font::bold));
+        g.setColour (theme.text);
+        g.drawText (kLogoText, block, juce::Justification::centredLeft, false);
+        if (logoDrawable_ != nullptr)
+            logoDrawable_->drawWithin (g, iconArea.toFloat().reduced (1.0f),
+                juce::RectanglePlacement (juce::RectanglePlacement::centred
+                    | juce::RectanglePlacement::onlyReduceInSize), 1.0f);
+        // Thin square white border framing the brand icon (1px stroke, 1px padding inside).
+        g.setColour (theme.text);
+        g.drawRect (iconArea.toFloat(), 1.0f);
     }
 }
 
@@ -1861,16 +2568,10 @@ void ParvatiEditor::resized()
         statusTooltipLabel_.setBounds (strip);
     }
 
-    // ---- Keyboard strip directly above the status strip (toggleable via [KBD]) ----
-    constexpr int kWheelsW = 76;
-    const bool kbdVisible = kbdToggleButton_.getToggleState() && keyboardView_ != nullptr;
-    if (kbdVisible)
-    {
-        auto bottomStrip = area.removeFromBottom (kKeyboardH);
-        if (wheels_ != nullptr)
-            wheels_->setBounds (bottomStrip.removeFromLeft (kWheelsW));
-        keyboardView_->setBounds (bottomStrip);
-    }
+    // NOTE: the virtual keyboard is NO LONGER part of the layout flow. It floats
+    // as an OVERLAY over the bottom of the content area (positioned at the end of
+    // resized()), so the workspace + overlays keep the FULL content height and
+    // toggling [KBD] never moves the controls.
 
     // ---- Header (36px row): [logo+version] (left) | Patch/Part menu (centre) | icons+[KBD] (right) ----
     auto header = area.removeFromTop (kHeaderH);
@@ -1882,72 +2583,109 @@ void ParvatiEditor::resized()
 
     // Right cluster (removeFromRight => first item ends up rightmost): system
     // icons, then the [KBD] toggle at the far right.
-    kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle
+    // Right cluster = a coherent toolbar grouped [Load][Save] | [Undo][Redo][Gear] | [KBD].
+    // The three 30px icon buttons share a uniform 4px gap; an 8px gap separates
+    // the history/settings icons from the file group. Save/Load are trimmed
+    // (100/80 -> 84/70) so the whole cluster (312px) stays <= the previous width
+    // and never collides with the centred Patch/Part cluster at the 1100px min.
+    kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle (far right)
+    bar.removeFromRight (4);
     settingsButton_.setBounds (bar.removeFromRight (30));    // gear
-    bar.removeFromRight (6);   // small gap before undo/redo
-    redoButton_.setBounds (bar.removeFromRight (30));
-    undoButton_.setBounds (bar.removeFromRight (30));
-    saveButton_.setBounds (bar.removeFromRight (96));   // carries the format popup menu
-    loadButton_.setBounds (bar.removeFromRight (76));
+    bar.removeFromRight (4);
+    redoButton_.setBounds (bar.removeFromRight (30));        // redo
+    bar.removeFromRight (4);
+    undoButton_.setBounds (bar.removeFromRight (30));        // undo
+    bar.removeFromRight (8);   // separates the history/settings icons from the file group
+    saveButton_.setBounds (bar.removeFromRight (84));        // Save (carries the format popup menu)
+    bar.removeFromRight (4);
+    loadButton_.setBounds (bar.removeFromRight (70));        // Load
 
-    // Left: ASCII logo (painted) + version label inline to its right.
+    // Left: brand icon + white "Parvati" wordmark (painted) + version label
+    // inline to its right. Layout: [~14px edge] "Parvati" [6px] [icon] [6px] [version]
+    // (equal 6px gaps; text width measured with the SAME font paint() uses).
     {
-        const juce::Font logoFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                      kLogoFontHeight, juce::Font::plain));
-        int logoW = 0;
-        for (const auto& line : juce::StringArray::fromLines (kAsciiParvatiLogo))
-        {
-            juce::GlyphArrangement ga;
-            ga.addLineOfText (logoFont, line.trimEnd(), 0.0f, 0.0f);
-            logoW = juce::jmax (logoW, juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth()));
-        }
-        logoW += 6;   // 3px padding each side
-        logoArea_ = bar.removeFromLeft (logoW);   // paint() draws the ASCII logo here
-        versionLabel_.setBounds (bar.removeFromLeft (60));   // version inline right of the logo
+        bar.removeFromLeft (8);   // extra left edge whitespace (6 from bar.reduced + 8 = ~14px)
+        const juce::Font textFont = lnf_.appFont (kLogoTextHeight, juce::Font::bold);
+        juce::GlyphArrangement ga;
+        ga.addLineOfText (textFont, kLogoText, 0.0f, 0.0f);
+        const int textW = juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
+        const int logoW = textW + kLogoTextIconGap + kLogoIconSize;   // "Parvati" + 8px gap + icon
+        logoArea_ = bar.removeFromLeft (logoW);   // paint() draws the icon + "Parvati" text here
+        bar.removeFromLeft (kLogoIconGap);        // 6px gap between the icon and the version label
+        const juce::Font versionFont (juce::FontOptions (10.0f));
+        juce::GlyphArrangement vga;
+        vga.addLineOfText (versionFont, versionLabel_.getText(), 0.0f, 0.0f);
+        const int versionW = juce::roundToInt (vga.getBoundingBox (0, vga.getNumGlyphs(), true).getWidth()) + 8;
+        versionLabel_.setBounds (bar.removeFromLeft (versionW));   // "by 805 Labs - v…" inline right of the logo
     }
 
-    // Centre the Patch/Part menu cluster in the remaining middle space.
+    // Centre the Global/Patch/Part menu cluster in the remaining middle space.
     {
         const int patchCapW = 48;
         const int presetW   = (presetBrowser_ != nullptr) ? 220 : 0;
         const int partCapW  = 40;
-        const int partComboW = 84;
+        const int partComboW = 88;
         const int gapW = 6;
-        const int multiW = 60;
-        const int clusterW = patchCapW + presetW + partCapW + partComboW + gapW + multiW;
+        const int multiW = 64;
+        const int globalW = 64;
+        const int clusterW = patchCapW + presetW + gapW + globalW + partCapW + partComboW + gapW + multiW;
 
         auto cluster = bar.withSizeKeepingCentre (juce::jmin (clusterW, bar.getWidth()), bar.getHeight());
         patchCaption_.setBounds (cluster.removeFromLeft (patchCapW));
         if (presetBrowser_ != nullptr)
             presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
+        cluster.removeFromLeft (gapW);   // small gap between the Patch dropdown and Global
+        globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Global overlay toggle (between Patch dropdown and Part)
         partCaption_.setBounds (cluster.removeFromLeft (partCapW));
         partCombo_.setBounds (cluster.removeFromLeft (partComboW));
         cluster.removeFromLeft (gapW);   // small gap between the Part dropdown and Multi
         multiButton_.setBounds (cluster.removeFromLeft (multiW));   // Multi/Setup overlay toggle
     }
 
-    // ---- Page selector [SYNTH | GLOBAL] + integrated content (no void) ----
-    // pageSelector_ (a TabbedComponent) fills the remaining area: it draws its
-    // [SYNTH | GLOBAL] bar (depth kPageTabsH) at the top and sizes the current
-    // tab's content into the rest — butted directly under the header. When SYNTH
-    // is current, SynthWorkspace is sized here and lays out its 3 columns + nested
-    // tab groups in its own resized(); when GLOBAL is current, the Global ParamPage
-    // is reflowed to the selector content width below.
+    // ---- Page selector [SYNTH] + integrated content (no void) ----
+    // pageSelector_ (a single-tab TabbedComponent, bar hidden via depth 0) fills
+    // the remaining area and sizes SYNTH (SynthWorkspace) into all of it — butted
+    // directly under the header. SynthWorkspace lays out its 3 columns + nested
+    // tab groups in its own resized().
     pageSelector_.setBounds (area);
 
-    // The Multi/Setup overlay covers exactly the content area when toggled on.
+    // The Multi/Setup + Global overlays cover exactly the content area when
+    // toggled on (mutually exclusive). Global is a ParamPage, so reflow it to
+    // the overlay width/height (its short content is vertically centred within
+    // the full area, covering the whole content region).
     if (multiPage_ != nullptr)
         multiPage_->setBounds (area);
 
-    // Reflow the Global ParamPage to the page-selector content width. The 9 synth
-    // pages are reflowed by SynthWorkspace::resized() (when the SYNTH tab sizes
-    // it). JUCE only sizes the CURRENT tab's Viewport, so reflow the Global page
-    // to the uniform selector width regardless of which tab is current.
     if (globalPage_ != nullptr)
     {
-        const int targetW = juce::jmax (200, pageSelector_.getWidth() - 16);
-        const int contentH = juce::jmax (0, pageSelector_.getHeight() - pageSelector_.getTabBarDepth());
-        globalPage_->reflowToWidth (targetW, contentH);
+        globalPage_->setBounds (area);
+        globalPage_->reflowToWidth (juce::jmax (200, area.getWidth() - 16),
+                                    juce::jmax (0, area.getHeight()));
+    }
+
+    // ---- Keyboard OVERLAY: floats over the bottom of the content area ----
+    // `area` is the full content rect (status strip + header already trimmed);
+    // the workspace + overlays above were given ALL of it, so they keep their
+    // full height. The keyboard (incl. the pitch/mod wheels to its left) is now
+    // positioned absolutely over the bottom kKeyboardH pixels of that rect and
+    // shown/hidden purely via setVisible() — toggling [KBD] never resizes the
+    // content above. Z-order: keyboardView_ is added AFTER pageSelector_ so it
+    // already paints above the workspace; the Multi/Global overlays call
+    // toFront() when shown so they cover the keyboard, and the Settings side
+    // panel (added last) stays above it too. No toFront() is called here so a
+    // resize while a modal is open never lifts the keyboard above it.
+    if (keyboardView_ != nullptr)
+    {
+        constexpr int kWheelsW = 76;
+        const bool kbdVisible = kbdToggleButton_.getToggleState();
+        auto bottomStrip = area.withHeight (juce::jmin (kKeyboardH, area.getHeight()))
+                               .withY (area.getBottom() - juce::jmin (kKeyboardH, area.getHeight()));
+        if (wheels_ != nullptr)
+            wheels_->setBounds (bottomStrip.removeFromLeft (kWheelsW));
+        keyboardView_->setBounds (bottomStrip);
+        keyboardView_->setVisible (kbdVisible);
+        if (wheels_ != nullptr)
+            wheels_->setVisible (kbdVisible);
     }
 }
 

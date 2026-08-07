@@ -133,7 +133,6 @@ void VoiceMeter::paint (juce::Graphics& g)
     const juce::Colour panel     = t ? t->panelBackground : juce::Colour (0xff24242e);
     const juce::Colour outlineC  = t ? t->outline         : juce::Colour (0xff3c3c4a);
     const juce::Colour accent    = t ? t->accent          : juce::Colour (0xffe8b84b);
-    const juce::Colour textDim   = t ? t->textDim         : juce::Colour (0xff9a9aa8);
     const juce::Colour textValue = t ? t->textValue       : juce::Colour (0xffe8e8ee);
 
     g.setColour (panel);
@@ -142,11 +141,11 @@ void VoiceMeter::paint (juce::Graphics& g)
     const juce::Font font = [this]() -> juce::Font
     {
         if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            return lnf->appFont (10.0f, juce::Font::plain);
-        return juce::Font (juce::FontOptions (10.0f));
+            return lnf->appFont (14.0f, juce::Font::plain);
+        return juce::Font (juce::FontOptions (14.0f));
     }();
 
-    constexpr float sq = 7.0f;   // square indicator edge
+    constexpr float sq = 8.0f;   // square indicator edge
     for (int c = 0; c < kNumVoicecards; ++c)
     {
         const auto r = cellRects_[(size_t) c].toFloat();
@@ -154,7 +153,7 @@ void VoiceMeter::paint (juce::Graphics& g)
         const juce::String noteText =
             active ? midiNoteName (state_[(size_t) c].note) : "--";
         const juce::String label = "V" + juce::String (c + 1) + ":" + noteText;
-        const juce::Colour col = active ? textValue : textDim;
+        const juce::Colour col = active ? textValue : accent;
 
         // Square indicator: filled accent (active) / outline (idle).
         const juce::Rectangle<float> sqRect (r.getX() + 2.0f,

@@ -35,8 +35,8 @@ const juce::String& frenchChromeStrings()
         "\n"
         // ---- top-bar buttons ----
         "\"Settings\" = \"Réglages\"\n"
-        "\"Load...\" = \"Charger...\"\n"
-        "\"Save...\" = \"Enregistrer...\"\n"
+        "\"Load\" = \"Charger\"\n"
+        "\"Save\" = \"Enregistrer\"\n"
         "\"Undo\" = \"Annuler\"\n"
         "\"Redo\" = \"Rétablir\"\n"
         // ---- top-bar captions ----
@@ -71,11 +71,6 @@ const juce::String& frenchChromeStrings()
         "\"Standard (1×)\" = \"Standard (1×)\"\n"
         "\"High (2×)\" = \"Élevée (2×)\"\n"
         "\"Maximum (4×)\" = \"Maximum (4×)\"\n"
-        // ---- Font combo ----
-        "\"Font\" = \"Police\"\n"
-        "\"Console\" = \"Console\"\n"
-        "\"Serif\" = \"Serif\"\n"
-        "\"Sans Serif\" = \"Sans Serif\"\n"
         // ---- group-panel titles ----
         "\"Mixer\" = \"Mixeur\"\n"
         "\"Sub Oscillator\" = \"Oscillateur secondaire\"\n"
@@ -130,8 +125,8 @@ const juce::String& germanChromeStrings()
         "\n"
         // ---- top-bar buttons ----
         "\"Settings\" = \"Einstellungen\"\n"
-        "\"Load...\" = \"Laden...\"\n"
-        "\"Save...\" = \"Speichern...\"\n"
+        "\"Load\" = \"Laden\"\n"
+        "\"Save\" = \"Speichern\"\n"
         "\"Undo\" = \"Rückgängig\"\n"
         "\"Redo\" = \"Wiederholen\"\n"
         // ---- top-bar captions ----
@@ -166,11 +161,6 @@ const juce::String& germanChromeStrings()
         "\"Standard (1×)\" = \"Standard (1×)\"\n"
         "\"High (2×)\" = \"Hoch (2×)\"\n"
         "\"Maximum (4×)\" = \"Maximum (4×)\"\n"
-        // ---- Font combo ----
-        "\"Font\" = \"Schriftart\"\n"
-        "\"Console\" = \"Konsole\"\n"
-        "\"Serif\" = \"Serif\"\n"
-        "\"Sans Serif\" = \"Sans Serif\"\n"
         // ---- group-panel titles ----
         "\"Mixer\" = \"Mixer\"\n"
         "\"Sub Oscillator\" = \"Sub-Oszillator\"\n"

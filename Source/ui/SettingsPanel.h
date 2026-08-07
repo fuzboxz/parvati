@@ -39,8 +39,7 @@ public:
                    std::function<void (bool)>   onTooltipsChanged,
                    std::function<void (bool)>   onSmoothingChanged,
                    std::function<void (int)>    onOversamplingChanged,
-                   std::function<void (const juce::String&)> onLanguageChanged,
-                   std::function<void (int)>    onFontModeChanged);
+                   std::function<void (const juce::String&)> onLanguageChanged);
 
     ~SettingsPanel() override = default;
 
@@ -61,8 +60,6 @@ private:
     // (Re)build the Filter Quality combo from TRANS() labels. The item IDs
     // (1/2/4) are stable across languages, so the selection survives a rebuild.
     void populateOversamplingCombo();
-    // (Re)build the Font combo (Console / Serif / Sans Serif). IDs 1/2/3 are stable.
-    void populateFontCombo();
     // Index <-> persisted-code helpers for the Language combo (which uses
     // index+1 as its item ID). An unknown code maps to index 0 ("auto").
     int          languageIndexFromCode (const juce::String& code) const;
@@ -75,10 +72,9 @@ private:
     std::function<void (bool)>   onSmoothingChanged_;
     std::function<void (int)>    onOversamplingChanged_;
     std::function<void (const juce::String&)> onLanguageChanged_;
-    std::function<void (int)>    onFontModeChanged_;
 
-    juce::Label     themeLabel_, zoomLabel_, osLabel_, langLabel_, fontLabel_;
-    juce::ComboBox  themeCombo_, osCombo_, langCombo_, fontCombo_;
+    juce::Label     themeLabel_, zoomLabel_, osLabel_, langLabel_;
+    juce::ComboBox  themeCombo_, osCombo_, langCombo_;
     juce::Slider    zoomSlider_;
     juce::ToggleButton tooltipsToggle_ { "Tooltips" };
     juce::ToggleButton smoothingToggle_ { "Parameter Smoothing" };

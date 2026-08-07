@@ -19,6 +19,16 @@
 #include "ParvatiTheme.h"
 
 //==============================================================================
+// Custom colour ID set per-tab-button on the nested card tabs (ENV/LFO/ARP/SEQ,
+// MOD MATRIX/MODIFIERS) and the GroupPager sub-tabs (ENV1/2/3, LFO1/2/3…).
+// drawTabButton reads it to colour each tab by its FUNCTION CATEGORY
+// (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD*=amber) instead of one
+// shared accent — a single TabbedButtonBar holds several categories, so the
+// colour must travel with the individual TabBarButton. A JUCE colour ID in the
+// user range (well above the stock IDs).
+constexpr int parvatiTabCategoryColourId = 0x2F000001;
+
+//==============================================================================
 class ParvatiLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -33,24 +43,11 @@ public:
     /** The active theme, or nullptr if setTheme() has never been called. */
     const ParvatiTheme* getTheme() const noexcept { return theme_; }
 
-    // App-wide font mode (mirrors PluginProcessor::uiFontMode_). Every stock
-    // text surface resolves its font through appFont(), so switching the mode
-    // updates combos, buttons, tab labels, popup menus, labels AND group-
-    // component headings live (see the getters below + refreshFontsIn).
-    enum AppFontMode : int
-    {
-        fontConsole  = 0,   // embedded GNU Unifont (DOS/retro) — DEFAULT
-        fontSerif    = 1,   // system default serif
-        fontSansSerif = 2,  // system default sans-serif
-    };
-
-    void setFontMode (int mode) { fontMode_ = mode; }
-    int  getFontMode() const noexcept { return fontMode_; }
-
     // Per-widget font getters (virtual): EVERY text-drawing stock component is
-    // routed through appFont(), so a font-mode switch reaches combos, buttons,
-    // tab labels, popup-menu items, labels and group titles alike (previously
-    // only combos/buttons + manually-refreshed labels updated).
+    // routed through appFont() (the system default sans-serif), so combos,
+    // buttons, tab labels, popup-menu items, labels and group titles all share
+    // one UI family. The ASCII "PARVATI" logo keeps its own monospaced font
+    // (see ParvatiEditor::paint) and is NOT routed through appFont().
     juce::Font getComboBoxFont   (juce::ComboBox&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getPopupMenuFont  () override;
@@ -61,7 +58,8 @@ public:
     // label with a HARDCODED font and never consults getTabButtonFont() — so the
     // tab labels stayed in the default font regardless of the mode. Override the
     // whole drawTabButton (and the width measurement) to route the tab text
-    // through appFont(), matching V3's background / outline exactly otherwise.
+    // through appFont(), and render a flat contiguous SEGMENTED bar (see the .cpp
+    // for the per-state fill / frame logic).
     void drawTabButton (juce::TabBarButton&, juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
     int  getTabButtonBestWidth (juce::TabBarButton&, int tabDepth) override;
 
@@ -81,16 +79,29 @@ public:
                            float sliderPos, float rotaryStartAngle,
                            float rotaryEndAngle, juce::Slider&) override;
 
-    // ComboBox: flat dark container with an amber chevron (▾) right-aligned and
-    // inline text. Mirrors the dropdown styling spec (height 28px, dark fill).
+    // ComboBox: flat selection chip — a 4px rounded frame (matching the pill
+    // buttons), a thin outline stroke (no inset bevel), and a minimal ▼ chevron
+    // in a subtle token colour (textDim, lifted to text while open),
+    // right-aligned. Inline text via positionComboBoxText() reserves ~24px on the
+    // right for the chevron so long choices never clip.
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH,
                        juce::ComboBox&) override;
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
 
-    // A Font for the active mode at @p height/style: console -> embedded GNU
-    // Unifont typeface (DOS/retro); serif/sansSerif -> the system default family.
-    // Public so the editor can re-apply every cached Label font on a mode switch.
+    // TextButton background: flat pill — 4px rounded corners, a solid fill
+    // (accent when toggled on via buttonOnColourId, panel fill otherwise), and a
+    // thin 1px stroke (outline by default, brightened toward text on hover/press,
+    // full text colour when toggled on). No inner-shadow inset bevel (the bulky
+    // 3D look is gone). IconButton (gear/undo/redo) paints itself and bypasses
+    // this. (Text itself is drawn by drawButtonText via getTextButtonFont.)
+    void drawButtonBackground (juce::Graphics&, juce::Button&,
+                               const juce::Colour& backgroundColour,
+                               bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+
+    // The app-wide UI font: the system default sans-serif family at the given
+    // @p height / @p styleFlags. Public so the editor can re-apply every cached
+    // Label font (juce::Label caches its font, so a repaint alone is not enough).
     juce::Font appFont (float height, int styleFlags) const;
 
     // ToggleButton text is drawn by the L&F with a hardcoded default font; the
@@ -117,8 +128,23 @@ public:
 
 private:
     const ParvatiTheme* theme_ = nullptr;
-    int fontMode_ = fontConsole;   // 0 = Console (Unifont), 1 = Serif, 2 = Sans Serif
-    juce::Typeface::Ptr unifontTypeface_;   // embedded GNU Unifont (console mode)
+
+    // Draws a section-header / emphasised label with extra weight (Font::bold
+    // in the app sans-serif). @p colour + @p font are applied as-is; @p area
+    // centres the text horizontally within it.
+    void drawHeadingText (juce::Graphics&, const juce::String& text,
+                          const juce::Font& font, juce::Rectangle<float> area,
+                          juce::Colour colour);
+
+    // Draws a single line of text with a GlyphArrangement (addLineOfText) so the
+    // LAST glyph is never silently curtailed — unlike Graphics::drawText(..,
+    // rect, .., false) which internally reshapes with wordWrapWidth ==
+    // rect.getWidth() and can drop the final glyph on a sub-pixel kerning
+    // difference. @p justification positions the text within @p area. Underline
+    // (from @p font) is honoured by GlyphArrangement::draw.
+    void drawTextUncurtained (juce::Graphics&, const juce::String& text,
+                              const juce::Font& font, juce::Rectangle<float> area,
+                              juce::Colour colour, juce::Justification justification);
 
     // Tooltip text layout in the active app font (JUCE's layoutTooltipText uses
     // a hardcoded default-sans). Shared by getTooltipBounds (sizing) + drawTooltip.

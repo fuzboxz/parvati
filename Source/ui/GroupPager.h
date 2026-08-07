@@ -12,8 +12,7 @@
 //
 // The page stays owned by ParvatiEditor (reparent, never regenerate); GroupPager
 // holds only a raw ParamPage* and never destroys it. The bare juce::TabbedButtonBar
-// carries the "parvatiCardTabs" property so the editor-wide ParvatiLookAndFeel
-// renders the embedded "[ LABEL ]" bracket motif for these sub-tabs too.
+// renders the segmented sub-tabs via the editor-wide ParvatiLookAndFeel.
 
 #pragma once
 
@@ -35,7 +34,11 @@ public:
     using Subset = std::pair<juce::String, juce::StringArray>;
 
     // @p page is the editor-owned ParamPage to paginate (NOT owned/deleted here).
-    GroupPager (ThemeManager& themeManager, ParamPage* page, std::vector<Subset> subsets);
+    // @p categoryColour is the bar's FUNCTION-CATEGORY colour (resolved from the
+    // parent tab's shortName + theme); all of this pager's sub-tabs are coloured
+    // with it (see drawTabButton + parvatiTabCategoryColourId).
+    GroupPager (ThemeManager& themeManager, ParamPage* page, std::vector<Subset> subsets,
+                juce::Colour categoryColour = {});
 
     void resized() override;
     void paint (juce::Graphics&) override;
@@ -43,6 +46,11 @@ public:
     // The bar + page pick colours up via the inherited editor L&F; this just
     // repaints (and re-applies the tab fill) on a theme switch.
     void applyThemeColors();
+
+    // Re-colour all sub-tabs with @p colour (the bar's category hue resolved
+    // from the CURRENT theme). Called by SynthWorkspace on a theme switch so the
+    // sub-tabs follow the new theme's category token value.
+    void setTabCategoryColour (juce::Colour colour);
 
     // The paginated page (for the editor's per-tab reflow / sanity tooling).
     ParamPage* getPage() const noexcept { return page_; }
@@ -54,10 +62,15 @@ private:
 
     void selectSubset (int index);
 
+    // Push the stored category colour onto every sub-tab button (drawTabButton
+    // reads parvatiTabCategoryColourId per TabBarButton).
+    void applySubTabCategoryColours();
+
     ThemeManager& themeManager_;
     ParamPage* page_;                 // non-owning; editor-owned (generatedPages_)
     std::vector<Subset> subsets_;
     juce::TabbedButtonBar bar_ { juce::TabbedButtonBar::TabsAtTop };
+    juce::Colour tabCategoryColour_;  // bar's parent-category colour (theme token snapshot)
     int current_ = 0;
 
     static constexpr int kBarH = 28;   // compact sub-tab strip (matches nested cards)

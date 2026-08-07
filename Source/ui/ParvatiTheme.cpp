@@ -9,14 +9,22 @@
 
 namespace
 {
-    // Helper: the 14 colours are declared in struct field order so every
-    // factory reads identically and a diff against the table is trivial.
+    // Helper: the colours are declared in struct field order so every factory
+    // reads identically and a diff against the table is trivial. POSITIONAL
+    // brace init is used, so a missed / extra / mis-ordered value silently
+    // misaligns ALL later fields with NO compile error. Keep this list and every
+    // factory in lockstep, and keep the editor_test guard green:
+    //   name (juce::String),
     //   windowBackground, panelBackground, panelBackground2, panelHeader,
     //   outline, divider,
     //   accent, accent2,
     //   text, textDim, textValue,
     //   knobArc, knobTrack, knobMod,
-    //   isDark
+    //   containerFill, containerShadow, innerShadow,
+    //   tabUnselectedBg, tabSelectedBg, tabUnderline,
+    //   catAudio, catEnv, catLfo, catSeq, catArp,
+    //   keyWhite,
+    //   isDark (bool)
 } // namespace
 
 //==============================================================================
@@ -30,6 +38,14 @@ const ParvatiTheme& carbonTheme()
         juce::Colour (0xffE5A93C), juce::Colour (0xff5b8db8),   // gold / steel
         juce::Colour (0xffe8e8ee), juce::Colour (0xff9a9aa8), juce::Colour (0xfff6f6fa),
         juce::Colour (0xffE5A93C), juce::Colour (0xff333742), juce::Colour (0xff5b8db8),
+        // container fill/shadow, inner shadow, tab unselected/selected bg, tab underline
+        juce::Colour (0xff1e1e26), juce::Colour (0xff050507), juce::Colour (0xff060609),
+        juce::Colour (0xff16161c), juce::Colour (0xff262630), juce::Colour (0xffE5A93C),
+        // category colours: catAudio, catEnv, catLfo, catSeq, catArp
+        juce::Colour (0xffFFB400), juce::Colour (0xff00E5FF), juce::Colour (0xffFF0055),
+        juce::Colour (0xff00FF66), juce::Colour (0xffAA00FF),
+        // keyWhite: natural (white) key resting fill (warm ivory)
+        juce::Colour (0xffeeeae0),
         true
     };
     return t;
@@ -45,6 +61,14 @@ const ParvatiTheme& midnightTheme()
         juce::Colour (0xff2bb6c4), juce::Colour (0xff5b9bd5),   // teal / blue
         juce::Colour (0xffdde7f0), juce::Colour (0xff8a9bb0), juce::Colour (0xffeaf4fb),
         juce::Colour (0xff2bb6c4), juce::Colour (0xff2b3a52), juce::Colour (0xff5b9bd5),
+        // container fill/shadow, inner shadow, tab unselected/selected bg, tab underline
+        juce::Colour (0xff121b2c), juce::Colour (0xff04070c), juce::Colour (0xff05080e),
+        juce::Colour (0xff101827), juce::Colour (0xff1a2638), juce::Colour (0xff2bb6c4),
+        // category colours: catAudio, catEnv, catLfo, catSeq, catArp
+        juce::Colour (0xffFFB400), juce::Colour (0xff00E5FF), juce::Colour (0xffFF0055),
+        juce::Colour (0xff00FF66), juce::Colour (0xffAA00FF),
+        // keyWhite: natural (white) key resting fill (cool ivory, suits the blue palette)
+        juce::Colour (0xffeceef1),
         true
     };
     return t;
@@ -60,6 +84,14 @@ const ParvatiTheme& obsidianTheme()
         juce::Colour (0xff8b5cf6), juce::Colour (0xffd946ef),   // violet / fuchsia
         juce::Colour (0xffe4e0f0), juce::Colour (0xff9a92b0), juce::Colour (0xfff0ecfa),
         juce::Colour (0xff8b5cf6), juce::Colour (0xff2a2a3c), juce::Colour (0xffd946ef),
+        // container fill/shadow, inner shadow, tab unselected/selected bg, tab underline
+        juce::Colour (0xff131320), juce::Colour (0xff030305), juce::Colour (0xff040406),
+        juce::Colour (0xff10101a), juce::Colour (0xff1c1c2c), juce::Colour (0xff8b5cf6),
+        // category colours: catAudio, catEnv, catLfo, catSeq, catArp
+        juce::Colour (0xffFFB400), juce::Colour (0xff00E5FF), juce::Colour (0xffFF0055),
+        juce::Colour (0xff00FF66), juce::Colour (0xffAA00FF),
+        // keyWhite: natural (white) key resting fill (neutral ivory w/ faint violet)
+        juce::Colour (0xffefeaf2),
         true
     };
     return t;
@@ -75,6 +107,15 @@ const ParvatiTheme& paperTheme()
         juce::Colour (0xffb45309), juce::Colour (0xff2563eb),   // deep amber / blue
         juce::Colour (0xff2b2a26), juce::Colour (0xff6b6862), juce::Colour (0xff11100e),
         juce::Colour (0xffb45309), juce::Colour (0xffc2beb3), juce::Colour (0xff2563eb),
+        // container fill/shadow (grey, not near-black), inner shadow, tab unselected/selected bg, tab underline
+        juce::Colour (0xfff2f0ea), juce::Colour (0xffc4c0b4), juce::Colour (0xffb0aca0),
+        juce::Colour (0xffe0ddd3), juce::Colour (0xffece9e0), juce::Colour (0xffb45309),
+        // category colours: catAudio, catEnv, catLfo, catSeq, catArp
+        // (darker / saturated variants for clear contrast on the light bg)
+        juce::Colour (0xffB45309), juce::Colour (0xff0E7490), juce::Colour (0xffBE123C),
+        juce::Colour (0xff15803D), juce::Colour (0xff6B21A8),
+        // keyWhite: light off-white that still reads against the light keyboard strip
+        juce::Colour (0xfffbf9f4),
         false
     };
     return t;
@@ -90,6 +131,15 @@ const ParvatiTheme& crimsonTheme()
         juce::Colour (0xffe5484d), juce::Colour (0xff3b82f6),   // crimson / blue
         juce::Colour (0xfff2e6e6), juce::Colour (0xffb08a8a), juce::Colour (0xfff9eded),
         juce::Colour (0xffe5484d), juce::Colour (0xff4a2424), juce::Colour (0xff3b82f6),
+        // container fill/shadow, inner shadow, tab unselected/selected bg, tab underline
+        juce::Colour (0xff261616), juce::Colour (0xff080303), juce::Colour (0xff0a0404),
+        juce::Colour (0xff1f1212), juce::Colour (0xff301a1a), juce::Colour (0xffe5484d),
+        // category colours: catAudio, catEnv, catLfo, catSeq, catArp
+        // (harmonized with the crimson palette: vivid but slightly desaturated / shifted)
+        juce::Colour (0xffE8923C), juce::Colour (0xff3DD6D0), juce::Colour (0xffE0508A),
+        juce::Colour (0xff4FD17A), juce::Colour (0xff9D5BD9),
+        // keyWhite: natural (white) key resting fill (warm ivory w/ faint warm undertone)
+        juce::Colour (0xfff1ebe7),
         true
     };
     return t;

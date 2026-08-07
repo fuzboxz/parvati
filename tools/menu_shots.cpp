@@ -9,7 +9,7 @@
 // ParvatiLookAndFeel the live menu uses (the editor's), calling the public L&F
 // hooks the live PopupMenu calls: drawPopupMenuBackground + drawPopupMenuItem +
 // getIdealPopupMenuItemSize + getPopupMenuFont. The result is byte-faithful to
-// the shipped appearance (Carbon theme, embedded Unifont), at 2x for crispness.
+// the shipped appearance (Carbon theme, system sans-serif), at 2x for crispness.
 //
 // Each menu is rendered in two states: resting (no highlight) and with the first
 // item highlighted, so both the text colour and the accent highlight are visible.
@@ -100,6 +100,10 @@ void renderMenu (ParvatiLookAndFeel& lnf,
         std::printf ("  FAIL: could not open %s\n", file.getFullPathName().toRawUTF8());
         return;
     }
+    // JUCE's FileOutputStream opens an existing file at EOF (append mode); reset
+    // + truncate so re-renders overwrite instead of stacking PNGs.
+    os.setPosition (0);
+    os.truncate();
     juce::PNGImageFormat().writeImageToStream (img, os);
     os.flush();
     std::printf ("  wrote %-34s (%dx%d)\n", (file.getFileName()).toRawUTF8(), w * scale, h * scale);

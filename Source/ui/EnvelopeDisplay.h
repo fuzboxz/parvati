@@ -46,6 +46,14 @@ public:
     /** Relabel the unit (e.g. "Env 1"). */
     void setTitle (const juce::String& title) { title_ = title; juce::Component::setTitle (title); repaint(); }
 
+    /** Adopt a category hue for the waveform TRACE + fill (e.g. the Envelopes
+        cyan / LFOs magenta token). When never called, the trace reads the live
+        theme accent. Only the trace + its fill change; the neutral LCD grid
+        backdrop keeps the theme accent so the graph still reads on any theme. */
+    void setCategoryColour (const juce::Colour& c) { categoryColour_ = c; hasCategoryColour_ = true; repaint(); }
+    bool hasCategoryColour() const noexcept { return hasCategoryColour_; }
+    juce::Colour getCategoryColour() const noexcept { return categoryColour_; }
+
     void paint (juce::Graphics&) override;
 
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
@@ -63,8 +71,17 @@ private:
     // 0 = ADSR envelope, 1 = LFO waveform.
     int previewMode_ = 0;
 
-    // Last drawn values (initialized to -1 so the first timer tick repaints).
-    float lastA_ = -1.0f, lastD_ = -1.0f, lastS_ = -1.0f, lastR_ = -1.0f, lastShape_ = -1.0f;
+    // Optional category hue for the trace/fill (defaults off -> live accent).
+    juce::Colour categoryColour_;
+    bool hasCategoryColour_ = false;
+
+    // DISPLAYED ADSR values, tracked EXACTLY to the live APVTS target each
+    // 30 Hz tick so the preview is accurate under automation (no smoothing lag);
+    // the repaint gate fires on a change vs the previous tick. -1 => first tick.
+    // The LFO shape choice is discrete and snaps (lastShape_ is its eps-change
+    // gate).
+    float dispA_ = -1.0f, dispD_ = -1.0f, dispS_ = -1.0f, dispR_ = -1.0f;
+    float lastShape_ = -1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EnvelopeDisplay)
 };

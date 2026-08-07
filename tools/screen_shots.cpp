@@ -1,20 +1,23 @@
 // tools/screen_shots.cpp
 //
 // Renders the Parvati editor to PNGs for the integrated (Serum-style) layout:
-// a SYNTH overview (3-column workspace: Mixer | Oscillators | Filter, plus the
-// default nested ENV/LFO + MOD tabs), one shot per nested tab (Envelopes, LFOs,
-// Mod Matrix, Modifiers, Arp, Sequencer), and the GLOBAL page — exactly as a user
+// a SYNTH overview (3-column workspace: Oscillators (both visible) | Mixer |
+// Filter, plus the nested ENV/LFO/ARP/SEQ and MOD MATRIX/MODIFIERS tab cards), one
+// shot per nested tab, and the GLOBAL overlay (header button) — exactly as a user
 // sees the plugin. The main-row pages (Mixer/Oscillators/Filter) are always
 // visible on the SYNTH tab, so they appear in every SYNTH shot.
 //
 // How: instantiate the real ParvatiAudioProcessor + editor (so the
-// ParvatiLookAndFeel — embedded Unifont font, colours, layout — is byte-for-byte
+// ParvatiLookAndFeel — system sans-serif font, colours, layout — is byte-for-byte
 // the shipped appearance), switch tabs, and paint the whole editor offscreen via
 // paintEntireComponent at 2x for AI-readable crispness. No display or
 // screen-recording permission required; fully deterministic.
 //
 // Build:   cmake --build build_release --target parvati_screen_shots
 // Run:     ./build_release/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+//
+// CANONICAL (builds the tool from latest source, then runs it — never stale):
+//   cmake --build build_release --target screens
 //
 // The font assertions printed to stderr are identical to those the project's own
 // headless editor_test emits (set-a-style-on-a-typeface); they are benign and
@@ -104,6 +107,12 @@ void savePng (const juce::Image& img, const juce::File& file)
         std::printf ("  SKIP  %s (cannot open output)\n", file.getFileName().toRawUTF8());
         return;
     }
+    // JUCE's FileOutputStream opens an existing file at EOF (append mode — see
+    // juce_SharedCode_posix.h openHandle: lseek SEEK_END). Without this reset a
+    // re-render would concatenate the new PNG after the old one, so viewers kept
+    // showing the stale first image and the file grew on every run.
+    os.setPosition (0);
+    os.truncate();
     juce::PNGImageFormat().writeImageToStream (img, os);
     os.flush();
     std::printf ("  wrote %-28s (%dx%d)\n", file.getFileName().toRawUTF8(), img.getWidth(), img.getHeight());
@@ -148,7 +157,6 @@ int main (int argc, char** argv)
         return -1;
     };
     const int synthIdx  = juce::jmax (0, tabIndex (pageSelector, "SYNTH"));
-    const int globalIdx = tabIndex (pageSelector, "GLOBAL");
 
     std::printf ("Rendering screens @ %.0fx -> %s\n", (double) scale, outDir.getFullPathName().toRawUTF8());
 
@@ -200,13 +208,18 @@ int main (int argc, char** argv)
         }
     }
 
-    // 3) GLOBAL page (synth options + voice-activity cells).
-    if (globalIdx >= 0)
-    {
-        pageSelector->setCurrentTabIndex (globalIdx, false);
-        ensureLaidOut (pageSelector->getTabContentComponent (globalIdx));
-        capture ("Global.png");
-    }
+    // 3) GLOBAL overlay (the header "Global" button toggles it; render the
+    //    overlay page directly — it is a direct child of the editor).
+    for (auto* child : ed->getChildren())
+        if (auto* gp = dynamic_cast<ParamPage*> (child))
+        {
+            gp->setVisible (true);
+            gp->toFront (false);
+            ensureLaidOut (gp);
+            capture ("Global.png");
+            gp->setVisible (false);
+            break;
+        }
 
     processor.editorBeingDeleted (ed);
     delete ed;

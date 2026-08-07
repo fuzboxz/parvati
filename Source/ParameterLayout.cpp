@@ -239,12 +239,12 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         add ("osc2_detune", "Osc 2 Detune",  7, false, true,  nullptr,      -64, 64);
 
         // ---- Mixer (patch bytes 8..15) ----
-        add ("mix_balance",  "Mix Balance",   8,  false, false, nullptr,        0, 63);
+        add ("mix_balance",  "Balance",       8,  false, false, nullptr,        0, 63);
         add ("mix_op",       "Mix Op",        9,  false, false, &kMixOps,       0, 0);
-        add ("mix_param",    "Mix Parameter", 10, false, false, nullptr,        0, 63);
-        add ("mix_sub_shape","Sub Osc Shape", 11, false, false, &kSubOscShapes, 0, 0);
-        add ("mix_sub",      "Sub Osc Level", 12, false, false, nullptr,        0, 63);
-        add ("mix_noise",    "Noise Level",   13, false, false, nullptr,        0, 63);
+        add ("mix_param",    "Mix Param",     10, false, false, nullptr,        0, 63);
+        add ("mix_sub_shape","Sub Shape",     11, false, false, &kSubOscShapes, 0, 0);
+        add ("mix_sub",      "Sub Level",     12, false, false, nullptr,        0, 63);
+        add ("mix_noise",    "Noise",         13, false, false, nullptr,        0, 63);
         add ("mix_fuzz",     "Fuzz",          14, false, false, nullptr,        0, 63);
         add ("mix_crush",    "Crush",         15, false, false, nullptr,        0, 31);
 

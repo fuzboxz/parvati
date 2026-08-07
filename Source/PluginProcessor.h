@@ -101,9 +101,10 @@ public:
     void setUiOversampling (int n)      { uiOversampling_ = n; }
     void setUiLanguage (juce::String code) { uiLanguage_ = std::move (code); }
 
-    // UI font mode: 0 = Console (embedded Unifont, default), 1 = Serif, 2 = Sans Serif (system defaults).
-    int  getUiFontMode() const noexcept { return uiFontMode_; }
-    void setUiFontMode (int mode)       { uiFontMode_ = mode; }
+    // NOTE: the UI font mode selector was removed — the whole UI now uses the
+    // system default sans-serif (see ParvatiLookAndFeel::appFont). The field
+    // below is kept ONLY so legacy saved states that carry a ui_font_mode
+    // property still load (the value is read + re-saved but no longer applied).
 
     // Enable/disable optional per-sample parameter smoothing (knob / automation
     // zipper-noise reduction). Propagates to all voices + persists the pref.
@@ -236,7 +237,7 @@ private:
     bool         uiTooltips_ { true };
     bool         uiSmoothing_ { false };   // default OFF -> bit-identical audio
     int          uiOversampling_ { 1 };    // 1 / 2 / 4; default 1 -> bit-identical
-    int          uiFontMode_ { 0 };        // 0 = Console (Unifont), 1 = Serif, 2 = Sans Serif
+    int          uiFontMode_ { 0 };        // LEGACY: persisted for old states only (font selector removed; UI is sans-serif)
     juce::String uiLanguage_ { "auto" };   // editor chrome language (auto/en/fr)
 
     // Offline-render flag (host bounce). Updated by setNonRealtime() and kept

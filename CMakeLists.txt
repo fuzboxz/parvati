@@ -13,12 +13,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # instead of recompiling the ~1161 memory-heavy JUCE + DSP translation units
 # every time. (A clean build fan-out is what thrashes a 16 GB machine; ccache
 # turns repeat builds near-instant.) Auto-detected; no-op when not installed.
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
-    set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
-    message(STATUS "ccache enabled: ${CCACHE_PROGRAM}")
-endif()
+# ccache DISABLED: it was serving stale compiled objects on source changes
+# (screen renders / installed plugins fell behind the code). Re-enable only on
+# explicit request; the `deploy` target rebuilds reliably without it.
+# find_program(CCACHE_PROGRAM ccache)
+# if(CCACHE_PROGRAM)
+#     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+#     set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
+#     message(STATUS "ccache enabled: ${CCACHE_PROGRAM}")
+# endif()
+unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
+unset(CMAKE_C_COMPILER_LAUNCHER CACHE)
 
 # Build NATIVE arm64-only binaries (Apple Silicon). x86_64 / Rosetta support is
 # dropped — Rosetta is being removed by Apple, and a single arch halves object
@@ -186,6 +191,21 @@ if(_staged_sources)
         SOURCES ${_staged_sources})
     target_link_libraries(Parvati PRIVATE parvati_factory_presets)
 endif()
+
+# ------------------------------------------------------------------------------
+# Brand logo (parvati_logo.svg at the repo root) embedded as its OWN
+# binary-data target (namespace ParvatiLogo). It is NOT folded into
+# parvati_factory_presets: that target's installer iterates every resource and
+# would otherwise try to extract the SVG as a preset. parvati_logo.svg is TRUE
+# vector art (outlined <path>/<g>, no raster); the editor parses it once with
+# JUCE's SVG renderer (Drawable::createFromSVGString) and paints a vector
+# Drawable. Accessed via ParvatiLogo::getNamedResource in PluginEditor.cpp
+# (forward-declared there — see comment for why we do not #include the
+# generated BinaryData.h).
+juce_add_binary_data(parvati_logo_assets
+    NAMESPACE ParvatiLogo
+    SOURCES parvati_logo.svg)
+target_link_libraries(Parvati PRIVATE parvati_logo_assets)
 
 # ------------------------------------------------------------------------------
 # Compile the JUCE module stack EXACTLY ONCE and share it.
@@ -416,8 +436,13 @@ target_link_libraries(parvati_multigui_test PRIVATE
 # Dev tool: render the full Parvati editor screen for each page to a PNG
 # (offscreen, via paintEntireComponent — no screen-recording permission needed)
 # so they can be fed to a UI-redesign agent. Mirrors parvati_multigui_test's link set.
-# Build: cmake --build build --target parvati_screen_shots
-# Run:   ./build/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+# Build: cmake --build build_release --target parvati_screen_shots
+# Run:   ./build_release/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+#
+# CANONICAL regeneration (builds the tool from the LATEST source, then runs it):
+#   cmake --build build_release --target screens
+# Do NOT run ./build_release/parvati_screen_shots by hand after editing UI code
+# unless you rebuilt that target first — a stale binary renders stale screens.
 add_executable(parvati_screen_shots EXCLUDE_FROM_ALL
     tools/screen_shots.cpp
 )
@@ -425,6 +450,18 @@ target_include_directories(parvati_screen_shots PRIVATE Source)
 target_compile_features(parvati_screen_shots PRIVATE cxx_std_17)
 target_link_libraries(parvati_screen_shots PRIVATE
     Parvati
+)
+
+# `screens`: the foolproof way to regenerate ./screens. DEPENDS forces a Parvati
+# recompile + parvati_screen_shots relink from the latest source whenever any UI
+# code changed, THEN runs the tool. Always use this instead of invoking the
+# binary directly (which can render from a stale build).
+add_custom_target(screens
+    COMMAND "$<TARGET_FILE:parvati_screen_shots>" "${CMAKE_SOURCE_DIR}/screens" 2
+    DEPENDS parvati_screen_shots
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Regenerating ./screens from the latest Parvati build"
+    VERBATIM
 )
 
 # ------------------------------------------------------------------------------
@@ -647,4 +684,25 @@ target_include_directories(parvati_gen_templates PRIVATE Source)
 target_compile_features(parvati_gen_templates PRIVATE cxx_std_17)
 target_link_libraries(parvati_gen_templates PRIVATE
     Parvati
+)
+
+# ------------------------------------------------------------------------------
+# `deploy` — one-command release workflow: build ALL plugin formats (VST3, AU,
+# Standalone) + render ./screens from the latest source + install the VST3 and
+# AU bundles into the user plug-in folders. Use this instead of a plain build so
+# the installed plug-ins and the screenshots are never stale (a plain
+# `--target Parvati` does NOT rebuild the VST3/AU format wrappers).
+#   cmake --build build_release --target deploy
+set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
+add_custom_target(deploy
+    COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
+    COMMAND rm -rf "${_parvati_plugins_dir}/VST3/Parvati.vst3"
+    COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3" "${_parvati_plugins_dir}/VST3/Parvati.vst3"
+    COMMAND ${CMAKE_COMMAND} -E echo "deploy: install AU"
+    COMMAND rm -rf "${_parvati_plugins_dir}/Components/Parvati.component"
+    COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component" "${_parvati_plugins_dir}/Components/Parvati.component"
+    COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed VST3 + AU"
+    DEPENDS Parvati_VST3 Parvati_AU Parvati_Standalone screens
+    COMMENT "Build all formats + render screens + install VST3/AU"
+    VERBATIM
 )

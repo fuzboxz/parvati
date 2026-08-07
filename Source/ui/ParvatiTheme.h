@@ -33,6 +33,35 @@ struct ParvatiTheme
     juce::Colour knobArc;          // rotary fill arc
     juce::Colour knobTrack;        // rotary background track
     juce::Colour knobMod;          // bipolar / modulation overlay
+    // --- UI-refinement tokens (container depth + tab chrome) ---
+    // Subtle interior fill that "lifts" functional containers off the pure
+    // background; the LookAndFeel draws it inside every GroupComponent card.
+    juce::Colour containerFill;    // subtle interior fill of functional panels (lighter than bg)
+    // Base colour for a faint diffuse depth ring drawn inside each panel. The
+    // LookAndFeel applies alpha (stored opaque so the struct stays a palette).
+    juce::Colour containerShadow;  // faint diffuse depth ring inside panels (darker than bg; alpha applied in L&F)
+    // Inset depth line for clickable containers (ComboBox / TextButton) so they
+    // read as recessed rather than flat; alpha applied in the LookAndFeel.
+    juce::Colour innerShadow;      // inset depth line for combos/buttons (alpha applied in L&F)
+    // Tab-button chrome. Selected tab sits on a lighter fill with a prominent
+    // full-width underline; unselected on a darker charcoal fill.
+    juce::Colour tabUnselectedBg;  // tab button background — inactive
+    juce::Colour tabSelectedBg;    // tab button background — active
+    juce::Colour tabUnderline;     // prominent active-tab underline (== accent)
+    // --- category colour tokens (control arcs/graphs coloured by function group) ---
+    // Later workers READ these to tint per-category control arcs / graphs. They
+    // are the ONLY new colours; do not hardcode category hues elsewhere.
+    juce::Colour catAudio;         // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (amber)
+    juce::Colour catEnv;           // Envelopes (cyan)
+    juce::Colour catLfo;           // LFOs (magenta)
+    juce::Colour catSeq;           // Sequencer (neon green)
+    juce::Colour catArp;           // Arpeggiator (electric purple)
+    // --- keyboard natural-key token ---
+    // Resting fill of the on-screen piano's natural (white) keys — a warm near-
+    // white on the dark themes, a light off-white on Paper. KeyboardView derives
+    // every key depth / highlight / shadow colour from this. The ONLY new colour;
+    // do not hardcode a key-white outside the theme factories.
+    juce::Colour keyWhite;         // natural (white) key resting fill (piano white)
     bool isDark = true;
 };
 

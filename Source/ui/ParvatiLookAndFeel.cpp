@@ -2,18 +2,12 @@
 
 #include "ParvatiLookAndFeel.h"
 
-#include "../../fonts/unifont_data.h"   // embedded GNU Unifont subset (console font mode)
-
 ParvatiLookAndFeel::ParvatiLookAndFeel()
 {
     // Default to Carbon so theme_ is never null and every colour ID is set
     // before any component reads it. ParvatiEditor overrides this immediately
     // via setTheme(themeManager_.getCurrentTheme()).
     setTheme (carbonTheme());
-
-    // Load the embedded GNU Unifont subset (ASCII + Latin-1 + symbols) once, for
-    // the "Console" font mode (DOS/retro look).
-    unifontTypeface_ = juce::Typeface::createSystemTypefaceFor (unifont_ttf, unifont_ttf_len);
 }
 
 void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
@@ -24,14 +18,14 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::Slider::rotarySliderFillColourId,        t.knobArc);       // knob fill arc (theme accent)
     setColour (juce::Slider::rotarySliderOutlineColourId,      t.knobTrack);     // rotary background track (== outline in Carbon)
     setColour (juce::Slider::thumbColourId,                    t.accent);
-    setColour (juce::Slider::textBoxTextColourId,              t.text);
+    setColour (juce::Slider::textBoxTextColourId,              t.textValue);  // bright knob centre readout (the knob's primary readout)
     setColour (juce::Slider::textBoxBackgroundColourId,        t.panelBackground);
     setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
     setColour (juce::Slider::textBoxHighlightColourId,         t.accent2);
 
     // ---- ComboBox (dark container, 1px outline, amber chevron) ----
     setColour (juce::ComboBox::backgroundColourId,             t.panelBackground2);
-    setColour (juce::ComboBox::outlineColourId,                t.outline);   // 1px container border (visible)
+    setColour (juce::ComboBox::outlineColourId,                t.outline);   // flat chip border (drawComboBox strokes theme_->outline)
     setColour (juce::ComboBox::textColourId,                   t.text);
     setColour (juce::ComboBox::arrowColourId,                  t.accent);
     setColour (juce::ComboBox::buttonColourId,                 t.accent);
@@ -96,10 +90,10 @@ void ParvatiLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton
                                             bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     // Faithful copy of LookAndFeel_V4::drawToggleButton, with the ONE change that
-    // the button text is routed through appFont() so it follows the active font
-    // mode (Console / Serif / Sans) instead of the default family. This reaches
-    // every ToggleButton: the "Tooltips" + "Parameter Smoothing" toggles in the
-    // Settings panel and the Multi page voice-allocation bits.
+    // the button text is routed through appFont() so it uses the app sans-serif
+    // family instead of the JUCE default. This reaches every ToggleButton: the
+    // "Tooltips" + "Parameter Smoothing" toggles in the Settings panel and the
+    // Multi page voice-allocation bits.
     auto fontSize = juce::jmin (15.0f, (float) button.getHeight() * 0.75f);
     auto tickWidth = fontSize * 1.1f;
 
@@ -111,7 +105,7 @@ void ParvatiLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton
                  shouldDrawButtonAsDown);
 
     g.setColour (button.findColour (juce::ToggleButton::textColourId));
-    g.setFont (appFont (fontSize, juce::Font::plain));   // <-- routed through the active font mode
+    g.setFont (appFont (fontSize, juce::Font::plain));   // <-- app sans-serif
 
     if (! button.isEnabled())
         g.setOpacity (0.5f);
@@ -125,8 +119,8 @@ void ParvatiLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton
 juce::TextLayout ParvatiLookAndFeel::tooltipTextLayout (const juce::String& text, juce::Colour colour) const
 {
     // Mirrors juce::detail::LookAndFeelHelpers::layoutTooltipText but builds the
-    // attributed string in the active appFont (the JUCE helper hardcodes a
-    // default-sans 13px bold), so hover tooltips pick up the font mode.
+    // attributed string in the app sans-serif (the JUCE helper hardcodes a
+    // default-sans 13px bold), so hover tooltips use the app family.
     const float tooltipFontSize = 13.0f;
     const int maxToolTipWidth = 400;
 
@@ -145,8 +139,7 @@ juce::Rectangle<int> ParvatiLookAndFeel::getTooltipBounds (const juce::String& t
                                                            juce::Rectangle<int> parentArea)
 {
     // Same geometry as LookAndFeel_V2::getTooltipBounds, but measures the text
-    // in the active appFont so the tooltip window is sized to match how it is
-    // drawn (otherwise a wide font like Unifont would clip).
+    // in the app font so the tooltip window is sized to match how it is drawn.
     const juce::TextLayout tl (tooltipTextLayout (tipText, juce::Colours::black));
 
     auto w = (int) (tl.getWidth() + 14.0f);
@@ -216,24 +209,14 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
 
 juce::Font ParvatiLookAndFeel::appFont (float height, int styleFlags) const
 {
-    switch (fontMode_)
-    {
-        case fontSerif:   // system default serif
-            return juce::Font (juce::FontOptions (juce::Font::getDefaultSerifFontName(),
-                                                  height, styleFlags));
-        case fontSansSerif:   // system default sans-serif
-            return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
-                                                  height, styleFlags));
-        case fontConsole:
-        default:
-            // Console (default): embedded GNU Unifont (DOS/retro). Fall back to
-            // the system monospace family if the embedded typeface failed to load.
-            if (unifontTypeface_ != nullptr)
-                return juce::Font (juce::FontOptions (unifontTypeface_)
-                                       .withHeight (height).withStyleFlags (styleFlags));
-            return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                  height, styleFlags));
-    }
+    // The single app-wide UI font: the system default sans-serif family. Kept
+    // explicit (not an empty FontOptions) so the family never silently resolves
+    // to a serif on platforms where the default is ambiguous. The header
+    // "Parvati" wordmark is also routed through here (bold) so it shares the
+    // app typeface.
+    // Point sizes / weights are passed through unchanged.
+    return juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
+                                          height, styleFlags));
 }
 
 juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
@@ -249,41 +232,38 @@ juce::Font ParvatiLookAndFeel::getTextButtonFont (juce::TextButton&, int)
 juce::Font ParvatiLookAndFeel::getPopupMenuFont()
 {
     // The drop-down list of every ComboBox (and the Save format menu). Without
-    // this override, PopupMenu would always render in the default sans, so the
-    // family would NOT follow a font-mode switch.
+    // this override, PopupMenu would always render in the JUCE default font;
+    // this routes it through the app sans-serif.
     return appFont (15.0f, juce::Font::plain);
 }
 
 juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
 {
-    // Preserve each label's own height/style and only swap the family, so the
-    // mode follows live even for labels the editor does not re-apply manually.
+    // Preserve each label's own height/style and only swap the family to the
+    // app sans-serif (juce::Label caches its font, so getLabelFont re-resolves
+    // the family whenever the label is laid out).
     const auto f = label.getFont();
     return appFont (f.getHeight(), f.getStyleFlags());
 }
 
 juce::Font ParvatiLookAndFeel::getTabButtonFont (juce::TabBarButton&, float height)
 {
-    // Smaller than the V4 default (height * 0.6) so the short all-caps labels fit
-    // the tab width comfortably; only the family follows the active font mode.
-    return appFont (height * 0.33f, juce::Font::plain);
+    // +40% over the legacy factor (0.33) so the redesigned button tabs are
+    // prominent and easy to click; the family is the app sans-serif.
+    return appFont (height * 0.46f, juce::Font::plain);
 }
 
 int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int tabDepth)
 {
-    // Measure the SAME all-caps label that drawTabButton renders, plus the
-    // bracket chrome (2 brackets + side padding) so the `[ LABEL ]` frame drawn
-    // by drawTabButton never clips. Matches the embedded motif's layout
-    // constants exactly (bracketW / padX).
+    // Measure the SAME all-caps label that drawTabButton renders, plus symmetric
+    // side padding. The redesigned button tabs carry NO bracket chrome (the
+    // `[ LABEL ]` motif was removed), so the old isCard / bracketW branch is
+    // gone. padX is widened (6 -> 8) to give the larger tab text a comfortable
+    // hit area. Matches drawTabButton's layout exactly.
     const juce::Font font = getTabButtonFont (button, (float) tabDepth);
-    constexpr int bracketW = 4, padX = 6;
-    // Bracket chrome only for card tabs (matches drawTabButton's isCard branch);
-    // plain top-level page-selector tabs need only side padding.
-    auto* tc = dynamic_cast<juce::TabbedComponent*> (button.getTabbedButtonBar().getParentComponent());
-    const bool isCard = button.getTabbedButtonBar().getProperties().contains ("parvatiCardTabs")
-                     || (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
+    constexpr int padX = 8;
     int width = juce::GlyphArrangement::getStringWidthInt (font, button.getButtonText().trim().toUpperCase())
-              + (isCard ? 2 * bracketW : 0) + 2 * padX
+              + 2 * padX
               + getTabButtonOverlap (tabDepth) * 2;
 
     if (auto* extraComponent = button.getExtraComponent())
@@ -296,79 +276,153 @@ int ParvatiLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& button, int t
 void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphics& g,
                                         bool isMouseOver, bool isMouseDown)
 {
-    // Embedded "bracket + baseline" tab motif. Every tab paints its own 1px
-    // baseline across the BOTTOM of its active area; edge-to-edge buttons tile
-    // these into one continuous full-width line (the top border of the content
-    // card). The front tab opens into the card: its label sits in a `[ LABEL ]`
-    // frame and the baseline is broken with a gap under the label. Inactive tabs
-    // show a dim label just above the continuous baseline. This replaces the old
-    // V3 floating filled-rect + 3-side outline. (Every Parvati tab bar is
+    // SEGMENTED tab bar with rounded-top tabs. Every tab (the nested
+    // ENV|LFO|ARP|SEQ + MOD MATRIX|MODIFIERS cards, OSC1|OSC2, SYNTH) is a
+    // rounded-top segment (only the UPPER-LEFT / UPPER-RIGHT corners are rounded;
+    // the bottom is square and flush with the content card). Only the rounded TOP
+    // edge is outlined — NOT a per-tab vertical outline — so adjacent tabs read
+    // as one contiguous segmented control instead of discrete buttons:
+    //   - active (front): SOLID highlight background (tabSelectedBg tinted toward
+    //     accent for a clear on-brand gold segment) + bright text + the prominent
+    //     full-width tabUnderline.
+    //   - unselected: subtle panelBackground fill + dim text (textDim); lifted on
+    //     hover for affordance.
+    // All colours come from the active ParvatiTheme tokens (theme_). Horizontal
+    // padding is owned by getTabButtonBestWidth (padX 8); the label is centred in
+    // the full tab width so the two stay in sync. (Every Parvati tab bar is
     // TabsAtTop, so only the horizontal layout is handled here.)
+    if (theme_ == nullptr)
+    {
+        juce::LookAndFeel_V4::drawTabButton (button, g, isMouseOver, isMouseDown);
+        return;
+    }
+
     const auto activeArea = button.getActiveArea().toFloat();
     const bool front = button.isFrontTab();
-    auto& bar = button.getTabbedButtonBar();
-    // The embedded "[ LABEL ]" bracket motif is for CARD tabs only — the nested
-    // workspace tab groups (envLfoTabs_/modTabs_), which carry a 1px outline so
-    // the bracket "opens into" a bordered card. The top-level [SYNTH|GLOBAL] page
-    // selector has outline 0 (no enclosing card), so it renders plain tabs.
-    auto* tc = dynamic_cast<juce::TabbedComponent*> (bar.getParentComponent());
-    const bool isCard = bar.getProperties().contains ("parvatiCardTabs")
-                     || (tc != nullptr && tc->getProperties().contains ("parvatiCardTabs"));
-    const juce::Colour lineCol = bar.findColour (juce::TabbedButtonBar::tabOutlineColourId);   // theme.outline
-    const juce::Colour textCol = front ? bar.findColour (juce::TabbedButtonBar::frontTextColourId)  // accent
-                                       : bar.findColour (juce::TabbedButtonBar::tabTextColourId);   // dim
+    const bool hover = (isMouseOver || isMouseDown) && ! front;
 
-    g.setColour (button.getTabBackgroundColour());   // flat fill (no gradient floating box)
-    g.fillRect (activeArea);
+    // Per-tab FUNCTION-CATEGORY colour (set on each TabBarButton via
+    // parvatiTabCategoryColourId by SynthWorkspace / GroupPager). Falls back to
+    // the shared tabUnderline token for any tab without a category assigned (the
+    // default look is unchanged). findColour returns opaque-black for an unset
+    // ID, and no category token is opaque-black, so the comparison is a safe
+    // unset-detect. The category hue drives the active highlight + underline and
+    // a dimmed underline on inactive tabs so every tab reads as its function
+    // (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD*=amber).
+    //
+    // Robustness: juce::TabbedButtonBar can (re)create tab buttons (on resize /
+    // add / setCurrentTabIndex), and the headless screen tool switches tabs
+    // before painting — so an explicitly-set category colour may be absent on a
+    // freshly-created button. When it is unset, DERIVE the category colour from
+    // the tab's OWN text via the active theme, so tabs are ALWAYS correctly
+    // coloured at paint time regardless of button recreation (the explicit
+    // setColour stays the primary path; this only fills the gap).
+    juce::Colour catColour = button.findColour (parvatiTabCategoryColourId, false);
+    if (catColour == juce::Colours::black)
+    {
+        const juce::String tabText = button.getButtonText().trim().toUpperCase();
+        if      (tabText.startsWith ("ENV")) catColour = theme_->catEnv;     // Envelopes / ENV 1-3
+        else if (tabText.startsWith ("LFO")) catColour = theme_->catLfo;     // LFOs / LFO 1-3
+        else if (tabText.startsWith ("ARP")) catColour = theme_->catArp;     // Arpeggiator
+        else if (tabText.startsWith ("SEQ")) catColour = theme_->catSeq;     // Sequencer / SEQ 1-2
+        else if (tabText.startsWith ("MOD")) catColour = theme_->catAudio;   // MOD MATRIX / MODIFIERS
+        else                                 catColour = theme_->tabUnderline;
+    }
+
+    // Modern rounded-TOP tabs. Each tab's fill is a rectangle with a square
+    // bottom (flush with the content card) and selectively-rounded TOP corners
+    // (radius kTabCorner). Corner rounding is chosen so the bar stays contiguous
+    // with NO background gaps between segments: a tab paints only within its own
+    // (clipped) bounds, so a corner shared with a neighbour can only be rounded
+    // on ONE side — the other side stays square and fills flush up to the seam.
+    // So: the ACTIVE (front) tab rounds BOTH top corners (it reads as a
+    // rounded-top button sitting on the bar), each bar-END tab rounds its OUTER
+    // corner (rounds the bar's silhouette), and interior inactive tabs keep
+    // square top corners (flush with their neighbours). Vertical sides are
+    // never stroked (no per-tab vertical outlines). Colours are unchanged
+    // (active = tabSelectedBg + category tint; inactive = panel fill, hover-lifted).
+    constexpr float kTabCorner = 5.0f;
+    const int numTabs = button.getTabbedButtonBar().getNumTabs();
+    const int idx     = button.getIndex();
+    const bool roundTL = front || (idx <= 0);
+    const bool roundTR = front || (idx >= numTabs - 1);
+
+    juce::Path tabShape;
+    tabShape.addRoundedRectangle (activeArea.getX(), activeArea.getY(),
+                                  activeArea.getWidth(), activeArea.getHeight(),
+                                  kTabCorner, kTabCorner,
+                                  roundTL ? 1.0f : 0.0f,   // top-left
+                                  roundTR ? 1.0f : 0.0f,   // top-right
+                                  0.0f, 0.0f);             // square bottom (flush)
+
+    if (front)
+    {
+        g.setColour (theme_->tabSelectedBg);
+        g.fillPath (tabShape);
+        g.setColour (catColour.withMultipliedAlpha (0.22f));
+        g.fillPath (tabShape);
+    }
+    else
+    {
+        g.setColour (hover ? theme_->panelBackground.brighter (0.15f)
+                           : theme_->panelBackground);
+        g.fillPath (tabShape);
+    }
+
+    // TOP outline only (no vertical sides, no bottom): the rounded corner arcs
+    // (where present) + the flat top edge. The cubic-Bezier arcs use the SAME
+    // 0.45 control points as Path::addRoundedRectangle above, so the 1px outline
+    // sits exactly on the fill's corner edge. (An interior inactive tab has both
+    // corners square, so its top is a plain full-width line — the segments join
+    // into one continuous top rule.)
+    g.setColour (theme_->outline);
+    juce::Path topEdge;
+    {
+        const float tx = activeArea.getX();
+        const float tr = activeArea.getRight();
+        const float ty = activeArea.getY();
+        const float c45 = kTabCorner * 0.45f;
+        topEdge.startNewSubPath (tx, roundTL ? (ty + kTabCorner) : ty);
+        if (roundTL)
+            topEdge.cubicTo (tx, ty + c45, tx + c45, ty, tx + kTabCorner, ty);  // top-left arc
+        topEdge.lineTo (roundTR ? (tr - kTabCorner) : tr, ty);                  // flat top
+        if (roundTR)
+            topEdge.cubicTo (tr - c45, ty, tr, ty + c45, tr, ty + kTabCorner);  // top-right arc
+    }
+    g.strokePath (topEdge, juce::PathStrokeType (1.0f));
+
+    // Bottom rule: full-width 1px line (the segment's flush lower edge).
+    g.setColour (theme_->outline);
+    g.drawHorizontalLine (juce::roundToInt (activeArea.getBottom() - 1.0f),
+                          activeArea.getX(), activeArea.getRight());
+
+    // Label (ALL CAPS), centred; reserve room at the bottom for the active
+    // underline.
+    juce::Colour textCol = front ? theme_->text : theme_->textDim;
+    if (hover)
+        textCol = textCol.brighter (0.20f);
 
     juce::Font font (getTabButtonFont (button, activeArea.getHeight()));
     font.setUnderline (button.hasKeyboardFocus (false));
     const juce::String label = button.getButtonText().trim().toUpperCase();
-    const float baselineY = activeArea.getBottom() - 0.5f;   // card top-border line
-    constexpr float bracketW = 4.0f;
 
-    if (front && isCard)
-    {
-        const float textW  = (float) juce::GlyphArrangement::getStringWidthInt (font, label);
-        const float totalW = textW + 2.0f * bracketW;
-        const float lx = activeArea.getX() + (activeArea.getWidth() - totalW) * 0.5f;
-        const float ly = baselineY - font.getHeight() - 2.0f;
-        const float bh = font.getHeight();
+    const float bottomReserve = front ? 4.0f : 2.0f;   // room for the underline
+    g.setFont (font);
+    drawTextUncurtained (g, label, font,
+                         juce::Rectangle<float> (activeArea.getX(), activeArea.getY(),
+                                                 activeArea.getWidth(), activeArea.getHeight() - bottomReserve),
+                         textCol, juce::Justification::centred);
 
-        // brackets [ ] in the accent colour.
-        g.setColour (textCol);
-        g.drawLine (lx, ly, lx, ly + bh, 1.0f);                            // [ vertical bar
-        g.drawLine (lx, ly, lx + bracketW, ly, 1.0f);                      // [ top tick
-        g.drawLine (lx + totalW, ly, lx + totalW, ly + bh, 1.0f);          // ] vertical bar
-        g.drawLine (lx + totalW - bracketW, ly, lx + totalW, ly, 1.0f);    // ] top tick
-
-        // label inside the brackets.
-        g.setFont (font);
-        g.drawText (label, juce::Rectangle<float> (lx + bracketW, ly, textW, bh),
-                    juce::Justification::centred, false);
-
-        // baseline in 2 segments with a gap under the bracketed label.
-        g.setColour (lineCol);
-        g.drawHorizontalLine (juce::roundToInt (baselineY), activeArea.getX(), lx);
-        g.drawHorizontalLine (juce::roundToInt (baselineY), lx + totalW, activeArea.getRight());
-    }
-    else
-    {
-        // Plain tab — either inactive, or the FRONT tab of a non-card bar (the
-        // top-level [SYNTH|GLOBAL] page selector): label sits just above the
-        // continuous baseline with a full baseline segment under it. Front-of-
-        // non-card uses the accent at full alpha; inactive is dimmed (brightens
-        // on hover). No brackets/gap (those are card-only, above).
-        g.setFont (font);
-        const float alpha = (front || isMouseOver || isMouseDown) ? 1.0f : 0.7f;
-        g.setColour (textCol.withMultipliedAlpha (alpha));
-        g.drawText (label, juce::Rectangle<float> (activeArea.getX(),
-                                                   baselineY - font.getHeight() - 2.0f,
-                                                   activeArea.getWidth(), font.getHeight()),
-                    juce::Justification::centred, false);
-        g.setColour (lineCol);
-        g.drawHorizontalLine (juce::roundToInt (baselineY), activeArea.getX(), activeArea.getRight());
-    }
+    // Per-tab CATEGORY underline: the ACTIVE tab gets a prominent full-width
+    // line in its category hue; INACTIVE tabs get the same line dimmed (0.32
+    // alpha) so every tab carries its function colour at a glance even when not
+    // selected. Sits on top of the bottom rule, marking the segment's lower
+    // edge. (Keeps the contiguous segmented shape — still no per-tab vertical
+    // outlines between adjacent tabs.)
+    g.setColour (front ? catColour : catColour.withMultipliedAlpha (0.32f));
+    g.fillRect (juce::Rectangle<float> (activeArea.getX(),
+                                        activeArea.getBottom() - 2.0f,
+                                        activeArea.getWidth(), 2.0f));
 }
 
 void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width, int height,
@@ -376,23 +430,27 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
                                                      const juce::Justification& position,
                                                      juce::GroupComponent& group)
 {
-    // A 1px RECTANGULAR (sharp-cornered) panel border whose TOP-LEFT edge is
-    // broken by the section title text — the classic fieldset/legend look:
+    // A sharp-cornered panel card with a subtle interior fill + faint inset
+    // depth, whose TOP-LEFT edge is broken by the section title text — the
+    // classic fieldset/legend look:
     //   ┌── [ OSC 1 ] ─────────────────┐
     //   │                              │
     //   │  controls                    │
     //   └──────────────────────────────┘
-    // The title sits IN the top border line (anchored top-left) so it labels
-    // the panel without consuming a vertical caption band. Title font follows
-    // the active font mode and renders in ALL CAPS.
-    const float textH = 13.0f;
+    // The fill + inset "lift" the card off the pure background (R1 mitigation:
+    // depth is drawn within bounds, not as an outer Gaussian shadow). The 1px
+    // outline + title-break geometry are unchanged; the title sits IN the top
+    // border line and renders in ALL CAPS with extra weight (see drawHeadingText).
+    const float textH = 14.3f;   // +10% over the legacy 13px section header
     const float textPad = 6.0f;   // gap either side of the title inside the border break
-    // The top border line runs at yTop so the title text straddles it (the
-    // brackets sit ON the line, like ┌── [ OSC 1 ] ──┐).
+    // The top border line runs at yTop so the title text straddles it.
     const float yTop = (float) juce::roundToInt (textH * 0.5f);
     juce::ignoreUnused (position);   // panels are always anchored top-left
 
-    const juce::Font f = appFont (textH, juce::Font::plain);
+    // Measure the title with the SAME bold weight used to render it
+    // (drawHeadingText re-resolves to bold). Plain glyphs are narrower, so a
+    // plain measurement left the bold title clipped to a too-narrow break.
+    const juce::Font f = appFont (textH, juce::Font::bold);
     const juce::String displayText = text.toUpperCase();   // panel headings render in ALL CAPS
     const auto alpha = group.isEnabled() ? 1.0f : 0.5f;
 
@@ -402,34 +460,48 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
 
     // The title break occupies [breakX0 .. breakX1) on the top edge. Anchored
     // top-left (matches the GroupComponent's top|left justification).
+    // kTitleSlack widens BOTH the draw rect and the border break so that even
+    // a drawText wordWrapWidth curtailment (sub-pixel kerning vs the measured
+    // width) cannot drop the LAST glyph. (drawHeadingText now routes through
+    // drawTextUncurtained, but the slack is kept as belt-and-suspenders.)
+    constexpr float kTitleSlack = 6.0f;
     const float breakX0 = textPad;
-    const float breakX1 = breakX0 + (float) textW + textPad;
+    const float breakX1 = breakX0 + (float) textW + kTitleSlack;
     const float x0 = 0.5f;            // pixel-snapped inset so the 1px line is crisp
     const float x1 = (float) width  - 0.5f;
     const float y1 = (float) height - 0.5f;
 
+    // --- container depth: subtle interior fill ("lifts" the card off the bg) +
+    // a faint inset depth ring just inside the outline (pseudo drop/bevel). The
+    // fill covers the FULL card bounds (uniform lift); both read from the theme
+    // so the 5 themes (incl. the light Paper theme) adapt. ---
+    if (theme_ != nullptr)
+    {
+        g.setColour (theme_->containerFill.withMultipliedAlpha (alpha));
+        g.fillRect (juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height));
+
+        g.setColour (theme_->containerShadow.withMultipliedAlpha (0.5f * alpha));
+        g.drawRect (juce::Rectangle<float> (1.0f, 1.0f,
+                                            (float) width - 2.0f, (float) height - 2.0f), 1.0f);
+    }
+
+    // --- 1px outline: top edge split around the title break, then 3 sides. ---
     const juce::Colour outlineCol = group.findColour (juce::GroupComponent::outlineColourId)
                                         .withMultipliedAlpha (alpha);
     g.setColour (outlineCol);
-
-    // Top edge as two segments with the title gap in between.
     g.drawHorizontalLine (juce::roundToInt (yTop), x0, breakX0);
     g.drawHorizontalLine (juce::roundToInt (yTop), breakX1, x1);
-    // The remaining three edges (sides run from the top line down).
     g.drawVerticalLine   (juce::roundToInt (x1 - 0.5f), yTop, y1);
     g.drawHorizontalLine (juce::roundToInt (y1 - 0.5f), x0, x1);
     g.drawVerticalLine   (juce::roundToInt (x0), yTop, y1);
 
-    // Title text drawn centred ON the top border line (in the break).
-    g.setColour (group.findColour (juce::GroupComponent::textColourId)
-                    .withMultipliedAlpha (alpha));
-    g.setFont (f);
-    g.drawText (displayText,
-                juce::roundToInt (breakX0),
-                juce::roundToInt (yTop - textH * 0.5f),
-                textW,
-                juce::roundToInt (textH),
-                juce::Justification::centredLeft, true);
+    // --- weighty section title, centred ON the top border line (in the break). ---
+    const juce::Colour titleCol = group.findColour (juce::GroupComponent::textColourId)
+                                      .withMultipliedAlpha (alpha);
+    drawHeadingText (g, displayText, f,
+                     juce::Rectangle<float> (breakX0, yTop - textH * 0.5f,
+                                             (float) textW + kTitleSlack, textH),
+                     titleCol);
 }
 
 void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
@@ -499,53 +571,71 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     // Centre numeric readout for ACTIVE knobs only (disabled steps show just the
     // dim track, per spec). The font auto-shrinks and the text is clipped to the
     // inner ring so long values (e.g. "8800.0 Hz") never spill past the arc.
-    // Base size is enlarged for legibility (the value indicator is the knob's
-    // primary readout); maxTextW widens with it so typical values don't shrink.
+    // Base size is enlarged by ~50% for legibility (the value indicator is the
+    // knob's primary readout); maxTextW widens with it so typical values don't
+    // shrink. Colour reads Slider::textBoxTextColourId (== theme.textValue, the
+    // brightest tier) for maximum contrast.
     if (slider.isEnabled())
     {
         const juce::String valueText = slider.getTextFromValue (slider.getValue());
-        const float maxTextW = radius * 1.7f;
-        juce::Font vf = appFont (juce::jmax (11.0f, radius * 0.62f), juce::Font::plain);
+        const float maxTextW = radius * 2.2f;
+        juce::Font vf = appFont (juce::jmax (14.0f, radius * 0.93f), juce::Font::plain);
         const int textW = juce::GlyphArrangement::getStringWidthInt (vf, valueText);
         if ((float) textW > maxTextW && textW > 0)
-            vf = appFont (juce::jmax (8.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
+            vf = appFont (juce::jmax (12.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
 
         const auto textRect = bounds.toNearestInt().withSizeKeepingCentre (
             juce::roundToInt (maxTextW), juce::roundToInt (vf.getHeight() * 1.7f));
-        g.setColour (valueCol);
-        g.setFont (vf);
-        g.drawText (valueText, textRect, juce::Justification::centred, false);
+        drawTextUncurtained (g, valueText, vf, textRect.toFloat(), valueCol,
+                             juce::Justification::centred);
     }
 }
 
 void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
-                                       bool /*isButtonDown*/,
-                                       int /*buttonX*/, int /*buttonY*/,
-                                       int /*buttonW*/, int /*buttonH*/,
+                                       bool isButtonDown,
+                                       int buttonX, int buttonY,
+                                       int buttonW, int buttonH,
                                        juce::ComboBox& box)
 {
-    // Flat dark container with a 1px outline and an amber chevron (▾)
-    // right-aligned. Inline text is laid out by positionComboBoxText().
-    const auto bg = box.findColour (juce::ComboBox::backgroundColourId);
-    const auto outline = box.findColour (juce::ComboBox::outlineColourId);
-    const auto arrow = box.findColour (juce::ComboBox::arrowColourId);   // == accent (amber)
+    // FLAT selection chip — a 4px rounded frame matching the pill buttons, a
+    // thin 1px outline stroke (the subtle outline token, NOT the always-accent
+    // border) and NO innerShadow inset bevel (that was the bulky recessed look).
+    // The chevron is a minimal ▼ drawn in a subtle token colour (textDim, lifted
+    // toward text while the drop-down is open) instead of always-bright amber.
+    // Inline text is laid out by positionComboBoxText(), whose ~24px right
+    // reserve matches the chevron so long choice text never clips.
+    if (theme_ == nullptr)
+    {
+        juce::LookAndFeel_V4::drawComboBox (g, width, height, isButtonDown,
+                                            buttonX, buttonY, buttonW, buttonH, box);
+        return;
+    }
 
+    const auto bg = box.findColour (juce::ComboBox::backgroundColourId);   // panelBackground2
+    constexpr float corner = 4.0f;
     const auto r = juce::Rectangle<int> (0, 0, width, height).toFloat().reduced (0.5f);
-    g.setColour (bg);
-    g.fillRect (r);
-    g.setColour (outline);
-    g.drawRect (r, 1.0f);
 
-    // Right-aligned amber chevron (a small downward triangle), vertically centred.
-    constexpr float chevronSize = 5.0f;
-    const float cx = (float) width  - 10.0f;
+    // Subtle dark fill (flat — no inset bevel).
+    g.setColour (bg);
+    g.fillRoundedRectangle (r, corner);
+
+    // Thin 1px outline stroke (subtle outline token, matching the pill buttons).
+    g.setColour (theme_->outline);
+    g.drawRoundedRectangle (r, corner, 1.0f);
+
+    // Minimal right-aligned ▼ chevron, vertically centred. Subtle textDim,
+    // lifted toward the brighter text token while the drop-down is open for a
+    // light affordance (NOT always-bright amber).
+    const auto chevronCol = isButtonDown ? theme_->text : theme_->textDim;
+    constexpr float chevronSize = 4.0f;
+    const float cx = (float) width  - 12.0f;
     const float cy = (float) height * 0.5f;
     juce::Path chevron;
     chevron.startNewSubPath (cx - chevronSize, cy - chevronSize * 0.5f);
     chevron.lineTo (cx + chevronSize, cy - chevronSize * 0.5f);
     chevron.lineTo (cx, cy + chevronSize * 0.5f);
     chevron.closeSubPath();
-    g.setColour (arrow);
+    g.setColour (chevronCol);
     g.fillPath (chevron);
 }
 
@@ -556,4 +646,109 @@ void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label&
     // tight so a fit-to-text dropdown reads as wide as its content, not padded.
     label.setBounds (6, 1, box.getWidth() - 24, box.getHeight() - 2);
     label.setFont (appFont (14.0f, juce::Font::plain));
+}
+
+void ParvatiLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+                                               const juce::Colour& backgroundColour,
+                                               bool shouldDrawButtonAsHighlighted,
+                                               bool shouldDrawButtonAsDown)
+{
+    // FLAT pill button — 4px rounded corners, a thin 1px stroke (the subtle
+    // outline token, NOT accent-on-every-button) and NO innerShadow inset bevel
+    // (that was the bulky 3D look to flatten). State routing reuses the existing
+    // colour-ID path: backgroundColour already encodes on/off (TextButton passes
+    // buttonOnColourId == theme accent when toggled on, buttonColourId ==
+    // panelBackground otherwise), so:
+    //   - toggled-on: solid accent fill + bright text-coloured border;
+    //   - default/off: subtle panel fill + outline stroke;
+    //   - hover (off): fill lifts (glow) + border brightens toward the text
+    //     colour for affordance.
+    // IconButton (gear/undo/redo) paints itself and bypasses this method.
+    if (theme_ == nullptr)
+    {
+        juce::LookAndFeel_V4::drawButtonBackground (g, button, backgroundColour,
+                                                    shouldDrawButtonAsHighlighted,
+                                                    shouldDrawButtonAsDown);
+        return;
+    }
+
+    const float enabledAlpha = button.isEnabled() ? 1.0f : 0.5f;
+    const auto r = button.getLocalBounds().toFloat().reduced (0.5f);
+    constexpr float corner = 4.0f;
+
+    const bool on   = button.getToggleState();
+    const bool down = shouldDrawButtonAsDown;
+    const bool over = shouldDrawButtonAsHighlighted && ! on;
+
+    // Fill (on/off aware via backgroundColour; slight glow on hover/press).
+    auto fill = backgroundColour.withMultipliedAlpha (enabledAlpha);
+    if (! on)
+    {
+        if (down)
+            fill = fill.brighter (0.10f);
+        else if (over)
+            fill = fill.brighter (0.06f);
+    }
+    g.setColour (fill);
+    g.fillRoundedRectangle (r, corner);   // 4px rounded, flat
+
+    // Thin 1px stroke: outline by default, brightened toward the bright text
+    // colour on hover/press, and the full bright text colour when toggled on.
+    juce::Colour stroke;
+    if (on)
+        stroke = theme_->text;
+    else if (over || down)
+        stroke = theme_->outline.interpolatedWith (theme_->text, 0.55f);
+    else
+        stroke = theme_->outline;
+    g.setColour (stroke.withMultipliedAlpha (enabledAlpha));
+    g.drawRoundedRectangle (r, corner, 1.0f);
+}
+
+void ParvatiLookAndFeel::drawHeadingText (juce::Graphics& g, const juce::String& text,
+                                          const juce::Font& font, juce::Rectangle<float> area,
+                                          juce::Colour colour)
+{
+    // Emphasised label (e.g. GroupComponent section headers): a bold weight in
+    // the app sans-serif. (@p font carries the height; the family/style are
+    // re-resolved through appFont so the heading always uses the UI family.)
+    // Routed through drawTextUncurtained so the LAST glyph is never silently
+    // dropped by Graphics::drawText's internal wordWrapWidth curtailment.
+    drawTextUncurtained (g, text, appFont (font.getHeight(), juce::Font::bold),
+                         area, colour, juce::Justification::centredLeft);
+}
+
+void ParvatiLookAndFeel::drawTextUncurtained (juce::Graphics& g, const juce::String& text,
+                                               const juce::Font& font, juce::Rectangle<float> area,
+                                               juce::Colour colour, juce::Justification justification)
+{
+    // Builds a GlyphArrangement via addLineOfText (unbounded wordWrap — no
+    // curtailment, unlike Graphics::drawText's internal wordWrapWidth), then
+    // translates the arrangement so its bounding box is positioned within @p
+    // area per the justification flags. Underline from @p font is rendered by
+    // GlyphArrangement::draw.
+    juce::GlyphArrangement ga;
+    ga.addLineOfText (font, text, 0.0f, 0.0f);
+
+    const auto bb = ga.getBoundingBox (0, ga.getNumGlyphs(), true);
+
+    float dx = area.getX() - bb.getX();
+    float dy = area.getY() - bb.getY();
+
+    const auto flags = justification.getFlags();
+
+    if ((flags & juce::Justification::right) != 0)
+        dx += area.getWidth() - bb.getWidth();
+    else if ((flags & juce::Justification::horizontallyCentred) != 0)
+        dx += (area.getWidth() - bb.getWidth()) * 0.5f;
+
+    if ((flags & juce::Justification::bottom) != 0)
+        dy += area.getHeight() - bb.getHeight();
+    else if ((flags & juce::Justification::verticallyCentred) != 0)
+        dy += (area.getHeight() - bb.getHeight()) * 0.5f;
+
+    ga.moveRangeOfGlyphs (0, ga.getNumGlyphs(), dx, dy);
+
+    g.setColour (colour);
+    ga.draw (g);
 }

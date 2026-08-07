@@ -6,6 +6,31 @@
 #include "ThemeManager.h"
 
 //==============================================================================
+// Map a nested-tab shortName to its FUNCTION-CATEGORY colour token from the
+// active theme (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD MATRIX /
+// MODIFIERS=amber). Falls back to tabUnderline so a tab without a category keeps
+// the default highlight. Drives the per-tab category colour (see
+// drawTabButton + parvatiTabCategoryColourId).
+static juce::Colour categoryColourForShortName (const juce::String& shortName, const ParvatiTheme& t)
+{
+    if (shortName.startsWithIgnoreCase ("ENV")) return t.catEnv;
+    if (shortName.startsWithIgnoreCase ("LFO")) return t.catLfo;
+    if (shortName.startsWithIgnoreCase ("ARP")) return t.catArp;
+    if (shortName.startsWithIgnoreCase ("SEQ")) return t.catSeq;
+    if (shortName.startsWithIgnoreCase ("MOD")) return t.catAudio;   // MOD MATRIX / MODIFIERS
+    return t.tabUnderline;
+}
+
+// Set a single TabbedComponent tab button's category colour (the individual
+// TabBarButton carries the hue; drawTabButton reads it).
+static void colourTabButton (juce::TabbedComponent& tc, int tabIndex, juce::Colour colour)
+{
+    auto& bar = tc.getTabbedButtonBar();
+    if (auto* btn = bar.getTabButton (tabIndex))
+        btn->setColour (parvatiTabCategoryColourId, colour);
+}
+
+//==============================================================================
 SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     : themeManager_ (tm)
 {
@@ -15,13 +40,11 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     envLfoTabs_ = std::make_unique<juce::TabbedComponent> (juce::TabbedButtonBar::TabsAtTop);
     envLfoTabs_->setTabBarDepth (kNestedTabBarDepth);
     envLfoTabs_->setOutline (1);   // 1px card border (left/right/bottom); tab baseline (drawTabButton) supplies the top edge
-    envLfoTabs_->getProperties().set ("parvatiCardTabs", true);   // marker: drawTabButton renders the embedded bracket motif for these card tabs only
     addAndMakeVisible (*envLfoTabs_);
 
     modTabs_ = std::make_unique<juce::TabbedComponent> (juce::TabbedButtonBar::TabsAtTop);
     modTabs_->setTabBarDepth (kNestedTabBarDepth);
     modTabs_->setOutline (1);   // 1px card border (left/right/bottom); tab baseline (drawTabButton) supplies the top edge
-    modTabs_->getProperties().set ("parvatiCardTabs", true);   // marker: embedded bracket motif (card tabs only)
     addAndMakeVisible (*modTabs_);
 }
 
@@ -34,12 +57,14 @@ void SynthWorkspace::setMainLeft (ParamPage* page)
         addAndMakeVisible (*page);
 }
 
-void SynthWorkspace::setOscillators (ParamPage* page, GroupSubsets subsets)
+void SynthWorkspace::setOscillators (ParamPage* page)
 {
-    // Oscillators — one GroupPager paginates the page by oscillator ([OSC1][OSC2]).
-    // The workspace owns the pager; the page inside stays editor-owned.
-    oscPager_ = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets));
-    addAndMakeVisible (*oscPager_);
+    // Oscillators — shown DIRECTLY (both "Osc 1"/"Osc 2" visible; an empty
+    // visibleGroups_ set => all groups render). The page stays editor-owned
+    // (reparented, never regenerated).
+    mainOscPage_ = page;
+    if (page != nullptr)
+        addAndMakeVisible (*page);
 }
 
 void SynthWorkspace::setMainRight (ParamPage* page)
@@ -53,33 +78,40 @@ void SynthWorkspace::setMainRight (ParamPage* page)
 void SynthWorkspace::addEnvLfoTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets)
 {
     envLfoTabNames_.push_back (shortName);
-    const auto bg = themeManager_.getCurrentTheme().windowBackground;
+    const auto& theme = themeManager_.getCurrentTheme();
+    const auto bg = theme.windowBackground;
+    const auto catColour = categoryColourForShortName (shortName, theme);
     if (! subsets.empty())
     {
         // GroupPager paginates the page by generator (one Env/LFO per sub-tab).
         // The nested TC owns (deletes) the GroupPager; the page stays editor-owned.
-        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets));
+        // The bar's parent category colour is propagated to every sub-tab.
+        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets), catColour);
         envLfoTabs_->addTab (shortName, bg, pager.release(), true);
     }
     else
     {
         envLfoTabs_->addTab (shortName, bg, page, false);   // editor-owned page; TC must NOT delete it
     }
+    colourTabButton (*envLfoTabs_, envLfoTabs_->getNumTabs() - 1, catColour);
 }
 
 void SynthWorkspace::addModTab (const juce::String& shortName, ParamPage* page, GroupSubsets subsets)
 {
     modTabNames_.push_back (shortName);
-    const auto bg = themeManager_.getCurrentTheme().windowBackground;
+    const auto& theme = themeManager_.getCurrentTheme();
+    const auto bg = theme.windowBackground;
+    const auto catColour = categoryColourForShortName (shortName, theme);
     if (! subsets.empty())
     {
-        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets));
+        auto pager = std::make_unique<GroupPager> (themeManager_, page, std::move (subsets), catColour);
         modTabs_->addTab (shortName, bg, pager.release(), true);
     }
     else
     {
         modTabs_->addTab (shortName, bg, page, false);
     }
+    colourTabButton (*modTabs_, modTabs_->getNumTabs() - 1, catColour);
 }
 
 //==============================================================================
@@ -108,12 +140,9 @@ void SynthWorkspace::resized()
     auto mixCol = mainRow.removeFromLeft (fullW * 20 / 100);
     auto filCol = mainRow;                       // remaining 40%
 
-    // OSC = GroupPager (its resized() repositions the bar + reflows the page).
-    if (oscPager_ != nullptr)
-        oscPager_->setBounds (oscCol);
-
-    // MIX / FILTER = direct pages, sized + reflowed to the column (no Viewport,
-    // no scrollbar: the group layout is kept dense enough to fit the cell).
+    // All three main-row columns are direct pages, sized + reflowed to the
+    // column (no Viewport, no scrollbar: the group layout is dense enough to fit
+    // the cell). OSC shows BOTH oscillators (empty visibleGroups_ => all groups).
     auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b)
     {
         if (page == nullptr)
@@ -121,6 +150,7 @@ void SynthWorkspace::resized()
         page->setBounds (b);
         page->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
     };
+    sizeDirect (mainOscPage_,   oscCol);
     sizeDirect (mainLeftPage_,  mixCol);
     sizeDirect (mainRightPage_, filCol);
 
@@ -145,10 +175,10 @@ void SynthWorkspace::resized()
         {
             auto* content = tc->getTabContentComponent (i);
             if (auto* pager = dynamic_cast<GroupPager*> (content))
-                pager->setBounds ({ 0, 0, w, h });   // resized() reflows the page inside
+                pager->setBounds ({ 0, kNestedTabBarDepth, w, h });   // BELOW the tab bar (was {0,0} which overlapped it)
             else if (auto* page = dynamic_cast<ParamPage*> (content))
             {
-                page->setBounds ({ 0, 0, w, h });
+                page->setBounds ({ 0, kNestedTabBarDepth, w, h });
                 page->reflowToWidth (w, h);
             }
         }
@@ -168,28 +198,40 @@ void SynthWorkspace::reapplyTabLabels()
 
 void SynthWorkspace::applyThemeColors()
 {
-    const auto bg = themeManager_.getCurrentTheme().windowBackground;
+    const auto& theme = themeManager_.getCurrentTheme();
+    const auto bg = theme.windowBackground;
 
-    if (oscPager_ != nullptr)
-        oscPager_->applyThemeColors();
+    if (mainOscPage_   != nullptr) mainOscPage_->applyThemeColors();
     if (mainLeftPage_  != nullptr) mainLeftPage_->applyThemeColors();
     if (mainRightPage_ != nullptr) mainRightPage_->applyThemeColors();
 
-    auto applyTc = [bg] (juce::TabbedComponent* tc)
+    // Re-apply the per-tab FUNCTION-CATEGORY colour from the NEW theme token +
+    // the stored shortName to each nested card tab, and propagate the fresh hue
+    // to any GroupPager sub-tabs (setTabCategoryColour), so cycling themes
+    // re-colours the tabs. (The category Colour is a theme snapshot, so it MUST
+    // be re-resolved here — a plain repaint would freeze the old theme's hue.)
+    auto applyTc = [&bg, &theme] (juce::TabbedComponent* tc, const std::vector<juce::String>& names)
     {
         if (tc == nullptr)
             return;
         for (int i = 0; i < tc->getNumTabs(); ++i)
         {
             tc->setTabBackgroundColour (i, bg);
+            const juce::Colour catColour = (i < (int) names.size())
+                ? categoryColourForShortName (names[(size_t) i], theme)
+                : theme.tabUnderline;
+            colourTabButton (*tc, i, catColour);
             if (auto* pager = dynamic_cast<GroupPager*> (tc->getTabContentComponent (i)))
+            {
+                pager->setTabCategoryColour (catColour);
                 pager->applyThemeColors();
+            }
             else if (auto* page = dynamic_cast<ParamPage*> (tc->getTabContentComponent (i)))
                 page->applyThemeColors();
         }
     };
-    applyTc (envLfoTabs_.get());
-    applyTc (modTabs_.get());
+    applyTc (envLfoTabs_.get(), envLfoTabNames_);
+    applyTc (modTabs_.get(),    modTabNames_);
 
     repaint();
 }

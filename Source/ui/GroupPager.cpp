@@ -6,13 +6,11 @@
 #include "ThemeManager.h"
 
 //==============================================================================
-GroupPager::GroupPager (ThemeManager& tm, ParamPage* page, std::vector<Subset> subsets)
-    : themeManager_ (tm), page_ (page), subsets_ (std::move (subsets))
+GroupPager::GroupPager (ThemeManager& tm, ParamPage* page, std::vector<Subset> subsets,
+                        juce::Colour categoryColour)
+    : themeManager_ (tm), page_ (page), subsets_ (std::move (subsets)),
+      tabCategoryColour_ (categoryColour)
 {
-    // The bare bar carries the "parvatiCardTabs" marker so the editor-wide
-    // ParvatiLookAndFeel renders the embedded "[ LABEL ]" bracket motif for
-    // these sub-tabs (the same motif the nested card TabbedComponents use).
-    bar_.getProperties().set ("parvatiCardTabs", true);
     bar_.setMinimumTabScaleFactor (0.25);
     addAndMakeVisible (bar_);
     bar_.addChangeListener (this);   // TabbedButtonBar broadcasts on every click
@@ -20,6 +18,10 @@ GroupPager::GroupPager (ThemeManager& tm, ParamPage* page, std::vector<Subset> s
     const auto bg = themeManager_.getCurrentTheme().windowBackground;
     for (const auto& s : subsets_)
         bar_.addTab (s.first, bg, -1);   // (name, tab fill colour, append)
+
+    // Colour every sub-tab with the bar's parent-category hue (ENV*->cyan,
+    // LFO*->magenta, SEQ*->green, MOD MATRIX/MODIFIERS ->amber).
+    applySubTabCategoryColours();
 
     // The paginated page stays editor-owned (generatedPages_); it is merely
     // reparented here so every APVTS attachment survives. addAndMakeVisible does
@@ -91,11 +93,26 @@ void GroupPager::selectSubset (int index)
 }
 
 //==============================================================================
+void GroupPager::setTabCategoryColour (juce::Colour colour)
+{
+    tabCategoryColour_ = colour;
+    applySubTabCategoryColours();
+}
+
+void GroupPager::applySubTabCategoryColours()
+{
+    for (int i = 0; i < bar_.getNumTabs(); ++i)
+        if (auto* btn = bar_.getTabButton (i))
+            btn->setColour (parvatiTabCategoryColourId, tabCategoryColour_);
+}
+
+//==============================================================================
 void GroupPager::applyThemeColors()
 {
     const auto bg = themeManager_.getCurrentTheme().windowBackground;
     for (int i = 0; i < bar_.getNumTabs(); ++i)
         bar_.setTabBackgroundColour (i, bg);
+    applySubTabCategoryColours();   // re-colour sub-tabs (snapshot set by setTabCategoryColour)
     if (page_ != nullptr)
         page_->applyThemeColors();
     repaint();

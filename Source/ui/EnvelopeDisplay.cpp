@@ -4,6 +4,8 @@
 
 #include <cmath>
 
+#include "VectorTrace.h"
+
 //==============================================================================
 EnvelopeDisplay::EnvelopeDisplay (juce::String title,
                                  std::function<float()> getAttack,
@@ -48,20 +50,34 @@ float EnvelopeDisplay::fetch (const std::function<float()>& f) const
 
 void EnvelopeDisplay::timerCallback()
 {
-    const float a = fetch (getAttack_);
-    const float d = fetch (getDecay_);
-    const float s = fetch (getSustain_);
-    const float r = fetch (getRelease_);
+    const float a  = fetch (getAttack_);
+    const float d  = fetch (getDecay_);
+    const float s  = fetch (getSustain_);
+    const float r  = fetch (getRelease_);
     const float sh = fetch (getShape_);
 
-    constexpr float eps = 1.0f / 512.0f;   // ~0.002: ignore sub-knob jitter
-    if (std::fabs (a - lastA_) > eps || std::fabs (d - lastD_) > eps
-        || std::fabs (s - lastS_) > eps || std::fabs (r - lastR_) > eps
-        || std::fabs (sh - lastShape_) > eps)
-    {
-        lastA_ = a; lastD_ = d; lastS_ = s; lastR_ = r; lastShape_ = sh;
+    constexpr float eps    = 1.0f / 512.0f;   // ~0.002: ignore sub-knob jitter
+
+    // Track the live APVTS target EXACTLY so the preview is accurate under
+    // automation (no smoothing lag). Detect a change vs the previously-shown
+    // value to drive the repaint gate (eps gate: sub-knob jitter does not cause
+    // constant repaints). The LFO shape is discrete and snaps.
+    const bool paramChanged = std::fabs (a - dispA_) > eps
+                           || std::fabs (d - dispD_) > eps
+                           || std::fabs (s - dispS_) > eps
+                           || std::fabs (r - dispR_) > eps;
+    dispA_ = a;
+    dispD_ = d;
+    dispS_ = s;
+    dispR_ = r;
+
+    const bool shapeChanged = std::fabs (sh - lastShape_) > eps;
+    if (shapeChanged) lastShape_ = sh;   // discrete LFO shape snaps
+
+    // Repaint only when the target moved since the last tick or on a shape
+    // switch (eps gate: no constant repaint when idle).
+    if (shapeChanged || paramChanged)
         repaint();
-    }
 }
 
 //==============================================================================
@@ -73,27 +89,23 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
     const ParvatiTheme* t = lnf ? lnf->getTheme() : nullptr;
 
-    const auto panelBg  = t ? t->panelBackground : juce::Colour (0xff24242e);
-    const auto outline  = t ? t->outline         : juce::Colour (0xff3c3c4a);
-    const auto accent   = t ? t->accent          : juce::Colour (0xffe8b84b);
-    const auto trackCol = t ? t->knobTrack       : outline;
-    const auto textDim  = t ? t->textDim         : juce::Colour (0xff9a9aa8);
+    const auto panelBg = t ? t->panelBackground : juce::Colour (0xff24242e);
+    const auto outline = t ? t->outline         : juce::Colour (0xff3c3c4a);
+    const auto accent  = t ? t->accent          : juce::Colour (0xffe8b84b);
+    const auto textDim = t ? t->textDim         : juce::Colour (0xff9a9aa8);
+    // The waveform trace + its gradient fill adopt a category hue (cyan ENV /
+    // magenta LFO) when set; otherwise the live theme accent. The neutral clean
+    // grid backdrop uses the theme divider token so the graph reads on any theme.
+    const auto trace   = hasCategoryColour_ ? categoryColour_ : accent;
+    const auto gridCol = t ? t->divider.withAlpha (0.10f) : accent.withAlpha (0.06f);
 
     const auto bounds = getLocalBounds().toFloat();
 
-    // ---- Panel: 1px square (sharp-cornered) border with an amber pixel-matrix
-    // grid backdrop. The LCD pixel plot grid below sits on top of this. ----
+    // Panel fill + 1px square border with a faint clean grid backdrop.
     g.setColour (panelBg);
     g.fillRect (bounds);
 
-    // Amber pixel-matrix grid backdrop covering the whole interior (dim amber
-    // dots every kGridPitch px) — the retro LCD look the graph spec calls for.
-    constexpr int kGridPitch = 6;
-    constexpr float kGridDot = 1.0f;
-    g.setColour (accent.withAlpha (0.12f));
-    for (int gy = juce::roundToInt (bounds.getY()) + 2; gy < juce::roundToInt (bounds.getBottom()) - 1; gy += kGridPitch)
-        for (int gx = juce::roundToInt (bounds.getX()) + 2; gx < juce::roundToInt (bounds.getRight()) - 1; gx += kGridPitch)
-            g.fillRect (juce::Rectangle<float> ((float) gx, (float) gy, kGridDot, kGridDot));
+    parvati::vectorTrace::drawGrid (g, bounds.reduced (0.5f), gridCol, 20.0f);
 
     g.setColour (outline);
     g.drawRect (bounds.reduced (0.5f), 1.0f);
@@ -106,54 +118,10 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
                 juce::Justification::topLeft);
 
-    // ---- Plot area: a blocky lo-fi "LCD pixel" display ----
-    // The envelope/LFO shape is drawn as a grid of square "pixels" (lit = the
-    // theme accent) instead of a smooth vector curve, for a retro 64-pixel-LCD
-    // look. A faint backdrop lights every cell (in the knob-track colour) so the
-    // pixel grid reads even where the wave is absent.
+    // ---- Plot area ----
     auto plot = bounds.reduced (8.0f, 0.0f);
     plot.removeFromTop (22.0f);
     plot.removeFromBottom (8.0f);
-    const float left = plot.getX();
-    const float W    = plot.getWidth();
-    const float top  = plot.getY();
-    const float H    = plot.getHeight();
-
-    constexpr int kCell  = 3;   // LCD pixel size (px)
-    constexpr int kPitch = 4;   // pixel size + 1px grid gap
-    const int cols = juce::jmax (1, juce::roundToInt (W / static_cast<float> (kPitch)));
-    const int rows = juce::jmax (1, juce::roundToInt (H / static_cast<float> (kPitch)));
-
-    auto cell = [&] (int c, int r)
-    {
-        const float x = left + static_cast<float> (c * kPitch);
-        const float y = top  + static_cast<float> (r * kPitch);
-        return juce::Rectangle<float> (x, y, static_cast<float> (kCell), static_cast<float> (kCell));
-    };
-
-    // Faint backdrop grid (every cell dimly lit).
-    g.setColour (trackCol.withAlpha (0.12f));
-    for (int r = 0; r < rows; ++r)
-        for (int c = 0; c < cols; ++c)
-            g.fillRect (cell (c, r));
-
-    // Light one column: a dim fill across [fillLo..fillHi], plus a BRIGHT outline
-    // that connects to the previous column's peak so the traced curve reads as a
-    // continuous line even across steep rises/drops (the vertical span between
-    // the previous and current peak rows is brightened to bridge the gap).
-    int prevBrightRow = -1;
-    auto column = [&] (int c, int targetRow, int fillLo, int fillHi)
-    {
-        g.setColour (accent.withAlpha (0.16f));
-        for (int r = fillLo; r <= fillHi; ++r)
-            g.fillRect (cell (c, r));
-        g.setColour (accent);
-        const int lo = (prevBrightRow < 0) ? targetRow : juce::jmin (prevBrightRow, targetRow);
-        const int hi = (prevBrightRow < 0) ? targetRow : juce::jmax (prevBrightRow, targetRow);
-        for (int r = lo; r <= hi; ++r)
-            g.fillRect (cell (c, r));
-        prevBrightRow = targetRow;
-    };
 
     // ---- LFO waveform preview (previewMode_ == 1): bipolar, around the midline ----
     if (previewMode_ == 1)
@@ -195,18 +163,20 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
             }
         };
 
-        // Render: each column's bipolar level lights cells from the midline to
-        // the peak (a blocky waveform centred on the display).
-        const int midRow  = (rows - 1) / 2;
-        const int lastRow = rows - 1;
-        for (int c = 0; c < cols; ++c)
-        {
-            const float xf = (static_cast<float> (c) + 0.5f) / static_cast<float> (cols);
-            const float v  = juce::jlimit (-1.0f, 1.0f, lfoLevel (xf));
-            int targetRow = juce::roundToInt ((1.0f - v) * 0.5f * static_cast<float> (lastRow));
-            targetRow = juce::jlimit (0, lastRow, targetRow);
-            column (c, targetRow, juce::jmin (midRow, targetRow), juce::jmax (midRow, targetRow));
-        }
+        // Smooth vector trace + translucent gradient fill (bipolar, around the
+        // midline). The S&H shape keeps its crisp staircase (held segments);
+        // square/PWM/ramp/triangle stay smooth.
+        const bool isSampleAndHold = (shapeIdx == 2);
+        const int sampleCount = isSampleAndHold ? (cycles * kBlocksPerCycle)
+                                                : juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
+        parvati::vectorTrace::render (g, plot, sampleCount, lfoLevel,
+                                      trace, parvati::vectorTrace::Mode::bipolar,
+                                      isSampleAndHold, 1.5f, 0.22f);
+
+        // Midline reference (1px).
+        g.setColour (accent.withAlpha (0.25f));
+        g.drawHorizontalLine (juce::roundToInt (plot.getCentre().y),
+                              plot.getX(), plot.getRight());
 
         g.setColour (textDim);
         g.setFont (lnf ? lnf->appFont (11.0f, juce::Font::plain)
@@ -218,10 +188,12 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     }
 
     // ---- ADSR envelope (previewMode_ == 0): unipolar, filled from the baseline ----
-    const float a = lastA_ >= 0.0f ? lastA_ : fetch (getAttack_);
-    const float d = lastD_ >= 0.0f ? lastD_ : fetch (getDecay_);
-    const float s = lastS_ >= 0.0f ? lastS_ : fetch (getSustain_);
-    const float r = lastR_ >= 0.0f ? lastR_ : fetch (getRelease_);
+    // Attack/decay/sustain/release are the SMOOTHED displayed values, so turning
+    // their knobs animates the curve instead of snapping.
+    const float a = dispA_ >= 0.0f ? dispA_ : fetch (getAttack_);
+    const float d = dispD_ >= 0.0f ? dispD_ : fetch (getDecay_);
+    const float s = dispS_ >= 0.0f ? dispS_ : fetch (getSustain_);
+    const float r = dispR_ >= 0.0f ? dispR_ : fetch (getRelease_);
 
     // Segment widths are proportional to the 0..127 knob value (a/d/r are the
     // normalized 0..1 parameter), so a value of 0 collapses that stage to zero
@@ -258,17 +230,12 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         return s * std::pow (1.0f - tt, 2.0f);                         // release decay
     };
 
-    // Render: each column's level becomes a column of lit LCD pixels filled from
-    // the baseline up to the peak cell (the envelope shape as a blocky skyline).
-    const int lastRow = rows - 1;
-    for (int c = 0; c < cols; ++c)
-    {
-        const float xf = (static_cast<float> (c) + 0.5f) / static_cast<float> (cols);
-        const float v  = juce::jlimit (0.0f, 1.0f, envLevel (xf));
-        int targetRow = juce::roundToInt ((1.0f - v) * static_cast<float> (lastRow));
-        targetRow = juce::jlimit (0, lastRow, targetRow);
-        column (c, targetRow, targetRow, lastRow);
-    }
+    // Smooth vector trace + translucent gradient fill (unipolar, filled from the
+    // baseline).
+    const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
+    parvati::vectorTrace::render (g, plot, sampleCount, envLevel,
+                                  trace, parvati::vectorTrace::Mode::unipolar,
+                                  false, 1.5f, 0.22f);
 }
 
 //==========================================================================

@@ -51,6 +51,15 @@ void collectParamControls (juce::Component* c, std::vector<ParamControl*>& out)
         collectParamControls (child, out);
 }
 
+// Collect every TabbedButtonBar in c's subtree (c included).
+void collectTabbedButtonBars (juce::Component* c, std::vector<juce::TabbedButtonBar*>& out)
+{
+    if (auto* b = dynamic_cast<juce::TabbedButtonBar*> (c))
+        out.push_back (b);
+    for (auto* child : c->getChildren())
+        collectTabbedButtonBars (child, out);
+}
+
 // First component of type T in the subtree (depth-first).
 template <typename T>
 T* findFirst (juce::Component* c)
@@ -180,9 +189,9 @@ int main()
         check (dynamic_cast<juce::AudioProcessorEditor*> (ed) != nullptr,
                "createEditor() returns an AudioProcessorEditor");
 
-        std::printf ("\n[2] Top-level page selector (expected 2: SYNTH, GLOBAL)\n");
+        std::printf ("\n[2] Top-level page selector (expected 1: SYNTH; Global is a header-button overlay)\n");
         std::printf ("     top-level tabs = %d\n", numTopTabs);
-        check (numTopTabs == 2, "exactly 2 top-level page tabs ([SYNTH | GLOBAL])");
+        check (numTopTabs == 1, "exactly 1 top-level page tab ([SYNTH]); Global is a header-button overlay");
 
         std::printf ("\n[3] ParamControl coverage (surfaced pages = %zu)\n", pages.size());
         std::printf ("     descriptors = %zu, expected cells = %d, found = %d\n",
@@ -225,6 +234,49 @@ int main()
         std::printf ("     sane pages = %d / %zu\n", saneCount, pages.size());
         check (saneCount == static_cast<int> (pages.size()),
                "every surfaced ParamPage reports a well-formed group grid");
+
+        // ------------------------------------------------------------------
+        // [8] Mixer: "Sub Shape" (mix_sub_shape) spans 2 cells; "Sub Level"
+        // (mix_sub) sits on the 3rd column of the merged Mixer panel.
+        // ------------------------------------------------------------------
+        std::printf ("\n[8] Mixer sub-section: mix_sub_shape spans 2 cells\n");
+        const auto mixerPage = std::find_if (pages.begin(), pages.end(), [] (ParamPage* p)
+        {
+            for (auto* c : pageControls (p))
+                if (c->getParamID() == "mix_sub_shape") return true;
+            return false;
+        });
+        check (mixerPage != pages.end(), "Mixer page (mix_sub_shape) exists");
+        if (mixerPage != pages.end())
+        {
+            (*mixerPage)->reflowToWidth (940);   // deterministic sectioned layout
+            ParamControl* shape = nullptr;
+            ParamControl* level = nullptr;
+            for (auto* c : pageControls (*mixerPage))
+            {
+                if (c->getParamID() == "mix_sub_shape") shape = c;
+                if (c->getParamID() == "mix_sub")       level = c;
+            }
+            if (shape != nullptr && level != nullptr)
+            {
+                const int shapeW = shape->getWidth();
+                const int levelW = level->getWidth();
+                std::snprintf (msg, sizeof (msg),
+                               "mix_sub_shape width %d >= 1.8x mix_sub width %d", shapeW, levelW);
+                check (shapeW * 10 >= levelW * 18, msg);
+                std::snprintf (msg, sizeof (msg),
+                               "mix_sub x %d is right of mix_sub_shape right %d",
+                               level->getX(), shape->getRight());
+                check (level->getX() >= shape->getRight() - 2, msg);
+                std::printf ("     mix_sub_shape=%dx%d @x=%d ; mix_sub=%dx%d @x=%d\n",
+                             shapeW, shape->getHeight(), shape->getX(),
+                             levelW, level->getHeight(), level->getX());
+            }
+            else
+            {
+                check (false, "mix_sub_shape + mix_sub controls found on the Mixer page");
+            }
+        }
 
         // ------------------------------------------------------------------
         // [9] Sequencer: marked Length knob + dimmed inactive steps
@@ -278,19 +330,59 @@ int main()
         // [10] Voice activity CELLS live on the Global page (a decoration).
         // ------------------------------------------------------------------
         std::printf ("\n[10] Voice meter (cells) on the Global page\n");
-        // JUCE only parents the CURRENT tab's content, so switch to GLOBAL so the
-        // Global page (and its VoiceMeter decoration) is in the component tree.
-        if (topTabs != nullptr)
-        {
-            const auto names = topTabs->getTabNames();
-            for (int i = 0; i < names.size(); ++i)
-                if (names[i] == "GLOBAL") { topTabs->setCurrentTabIndex (i, false); break; }
-        }
+        // globalPage_ is now a permanent (invisible) direct-child overlay, so its
+        // VoiceMeter decoration is always in the component tree — no tab switch
+        // is needed to surface it.
         auto* meter = findFirst<VoiceMeter> (ed);
         check (meter != nullptr, "voice meter (cells) exists on the Global page");
         if (meter != nullptr)
             check (meter->getActiveVoiceCount() >= 0,
                    "voice meter reports an active-voice count (6-cell view)");
+
+        // ------------------------------------------------------------------
+        // [11] Nested tab CATEGORY colours: the ENV/LFO/ARP/SEQ card tabs (and
+        // their GroupPager sub-tabs) carry a per-tab parvatiTabCategoryColourId so
+        // drawTabButton colours each tab by function (ENV=cyan, LFO=magenta,
+        // ARP=purple, SEQ=green, MOD*=amber).
+        // ------------------------------------------------------------------
+        std::printf ("\n[11] Nested tab category colours (per-tab parvatiTabCategoryColourId)\n");
+        std::vector<juce::TabbedButtonBar*> allBars;
+        collectTabbedButtonBars (ed, allBars);
+        auto isEnvLfoCard = [] (juce::TabbedButtonBar* bar)
+        {
+            const auto names = bar->getTabNames();
+            bool hasEnv = false, hasLfo = false;
+            for (const auto& n : names)
+            {
+                if (n.containsIgnoreCase ("ENV")) hasEnv = true;
+                else if (n.containsIgnoreCase ("LFO")) hasLfo = true;
+            }
+            return hasEnv && hasLfo;
+        };
+        const auto envLfoBar = std::find_if (allBars.begin(), allBars.end(), isEnvLfoCard);
+        check (envLfoBar != allBars.end(), "ENV/LFO/ARP/SEQ nested card bar found");
+        if (envLfoBar != allBars.end())
+        {
+            int coloured = 0;
+            std::vector<juce::Colour> hues;
+            for (int i = 0; i < (*envLfoBar)->getNumTabs(); ++i)
+                if (auto* btn = (*envLfoBar)->getTabButton (i))
+                {
+                    const auto col = btn->findColour (parvatiTabCategoryColourId, false);
+                    if (col != juce::Colours::black) { ++coloured; hues.push_back (col); }
+                }
+            std::printf ("     ENV/LFO/ARP/SEQ card: coloured tabs = %d\n", coloured);
+            std::snprintf (msg, sizeof (msg),
+                           "all ENV/LFO/ARP/SEQ tabs carry a category colour (%d/%d)",
+                           coloured, (*envLfoBar)->getNumTabs());
+            check (coloured == (*envLfoBar)->getNumTabs(), msg);
+            std::sort (hues.begin(), hues.end(),
+                       [] (const juce::Colour& a, const juce::Colour& b) { return a.getARGB() < b.getARGB(); });
+            bool distinct = true;
+            for (size_t i = 1; i < hues.size(); ++i)
+                if (hues[i].getARGB() == hues[i - 1].getARGB()) { distinct = false; break; }
+            check (distinct, "ENV/LFO/ARP/SEQ tabs have DISTINCT category colours");
+        }
 
         // Reset to SYNTH.
         if (topTabs != nullptr) topTabs->setCurrentTabIndex (0, false);
