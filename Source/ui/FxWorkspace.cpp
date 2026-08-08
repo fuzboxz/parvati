@@ -59,6 +59,11 @@ void FxWorkspace::setOnDragOnlyPillClicked (std::function<void (int)> cb)
     onDragOnlyPillClicked_ = std::move (cb);
 }
 
+void FxWorkspace::setOnActiveGeneratorChanged (std::function<void (int)> cb)
+{
+    onActiveGenChanged_ = std::move (cb);
+}
+
 void FxWorkspace::setFxMatrixView (FxMatrixView* view)
 {
     // Host the editor-owned FxMatrixView directly as the BOTTOM-RIGHT panel
@@ -105,6 +110,17 @@ void FxWorkspace::setActiveGenerator (int modSrcEnum)
 {
     showGenerator (modSrcEnum);
     modBar_->setActiveGenerator (modSrcEnum);   // underline-glow the pill
+    if (onActiveGenChanged_)
+        onActiveGenChanged_ (modSrcEnum);
+}
+
+void FxWorkspace::releaseActiveEditor()
+{
+    if (activePage_ != nullptr)
+    {
+        activeEditorHost_->removeChildComponent (activePage_);
+        activePage_ = nullptr;
+    }
 }
 
 void FxWorkspace::reflowActiveEditor()

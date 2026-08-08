@@ -66,11 +66,24 @@ public:
     // at startup to set the default (Env 1).
     void setActiveGenerator (int modSrcEnum);
 
+    // Detach the currently-active generator page from this workspace's
+    // active-editor host (non-owned: removeChildComponent, never deleted) and
+    // forget it. Used by the editor on a Synth<->FX toggle so the SHARED page
+    // re-parents cleanly into the newly-visible FxWorkspace (a JUCE Component
+    // can only have one parent).
+    void releaseActiveEditor();
+
     // Drag-only (Perf / Util / Const) pill click — the editor registers a handler
     // that briefly highlights the mod-matrix rows currently routed FROM that
     // source (ModMatrixView::flashRowsForSource), reusing the existing timed
     // flash. Generators do NOT reach this handler (they swap the editor instead).
     void setOnDragOnlyPillClicked (std::function<void (int)> cb);
+
+    // Fired from setActiveGenerator whenever the active generator selection moves
+    // (a generator pill click). The editor uses it to track the SHARED active
+    // generator so a Synth<->FX toggle reparents the right page into the
+    // newly-visible FxWorkspace.
+    void setOnActiveGeneratorChanged (std::function<void (int)> cb);
 
     // Host an editor-owned ModMatrixView as the BOTTOM-RIGHT panel (direct child,
     // non-owned — the editor retains ownership, exactly like the reparented
@@ -113,6 +126,9 @@ private:
 
     // Editor-supplied handler for a drag-only (Perf/Util/Const) pill click.
     std::function<void (int)> onDragOnlyPillClicked_;
+
+    // Editor-supplied handler fired when the active generator selection moves.
+    std::function<void (int)> onActiveGenChanged_;
 
     // BOTTOM-RIGHT: the editor-owned ModMatrixView (direct-hosted, non-owned).
     ModMatrixView* modMatrixView_ = nullptr;

@@ -9,6 +9,8 @@
 #include "ui/OscPreviewDisplay.h"
 #include "ui/ParamHelp.h"
 #include "ui/SynthWorkspace.h"
+#include "ui/FxWorkspace.h"
+#include "ui/FxMatrixView.h"
 #include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel (bar-only NOTE pill)
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
@@ -71,7 +73,7 @@ namespace
 // ---- Map a parameter ID to one of the GUI sections --------------------------
 // (Derived from the well-defined paramID prefixes in ParameterLayout.cpp, so the
 //  verified APVTS byte-bridge stays untouched.)
-enum class Section { Oscillators, Mixer, Filter, Envelopes, Lfos, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi };
+enum class Section { Oscillators, Mixer, Filter, Envelopes, Lfos, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi, Fx, FxMatrix };
 
 Section sectionForId (const juce::String& id)
 {
@@ -81,6 +83,15 @@ Section sectionForId (const juce::String& id)
     if (id == "filter_card") return Section::Global;
     if (id == "vca_curve")    return Section::Global;
     if (id == "filter_drive") return Section::Global;   // Ladder drive: a global option
+
+    // ---- Per-part FX params (isFx). Checked early so the generic synth prefixes
+    // never sweep an FX id. fxmod{N}_* -> the FX mod matrix (FxMatrix, a clone of
+    // the synth matrix, NOT a generated ParamPage). fx{1,2,3}_* per-slot params +
+    // fx_topo / fx_order (fx_*) -> Section::Fx (generated into FX-slot pages).
+    if (id.startsWith ("fxmod")) return Section::FxMatrix;
+    if (id.startsWith ("fx1") || id.startsWith ("fx2") || id.startsWith ("fx3")
+        || id.startsWith ("fx_"))   return Section::Fx;
+
     // Order matters: "modif" before "mod", "arp" before others.
     if (id.startsWith ("arp"))       return Section::Arp;
     if (id.startsWith ("seq"))       return Section::Sequencer;
@@ -1132,6 +1143,14 @@ juce::String ParamPage::groupForId (const juce::String& id)
     if (id.startsWith ("filter1_")) return "Filter";
     if (id.startsWith ("filter2_")) return "Filter 2";
 
+    // ---- FX slots (fx{N}_*) — one panel per slot. Each FX-slot ParamPage holds
+    // a single slot's type/enabled/drywet/param1-4; fx_topo / fx_order (the FX
+    // chain topology + slot order) group as "FX Chain" on the FX1 page. ----
+    if (id.startsWith ("fx1_")) return "FX1";
+    if (id.startsWith ("fx2_")) return "FX2";
+    if (id.startsWith ("fx3_")) return "FX3";
+    if (id == "fx_topo" || id == "fx_order") return "FX Chain";
+
     // ---- Envelopes / LFOs (now on separate tabs) ----
     // env{N}_attack/decay/sustain/release -> "Env N (role)"; env{N}_lfo_* -> "LFO N".
     // Role verified from the dsp routing: ENV3 -> VCA (mod-matrix default,
@@ -2033,6 +2052,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     {
         if (d.paramID == "part_select")
             continue;
+        // FX params (fx* / fxmod*) are per-part Parvati-exclusive params routed
+        // via applyFxParameter; they are NEVER bucketed into the synth pages.
+        // The FX-slot pages are generated separately below, and the FX mod matrix
+        // is the editor-owned FxMatrixView (no ParamPage at all).
+        if (d.isFx)
+            continue;
         sec[(int) sectionForId (d.paramID)].push_back (&d);
     }
 
@@ -2343,15 +2368,91 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     synthWorkspace_->setActiveGenerator (MOD_SRC_ENV_1);
 
 
-    // ---- Top-level page selector [SYNTH] ----
-    // A single SYNTH tab holds the integrated workspace (GLOBAL is now a header
-    // button -> overlay, below). The lone tab bar is hidden (depth 0) so the
-    // workspace fills the full content area and reclaims the 28px strip. SYNTH
-    // content is NON-owned tab content (editor-owned via synthWorkspace_), so the
-    // teardown order stays deterministic.
-    pageSelector_.setTabBarDepth (0);          // single SYNTH tab: hide the now-lone bar, reclaim 28px
+    // ---- FX workspace construction (Phase 4) ----
+    // FxWorkspace is a structural clone of SynthWorkspace (TOP = 3 FX-slot
+    // ParamPages, MIDDLE = its own CentralModBar, BOTTOM-LEFT = the SHARED
+    // active-generator host, BOTTOM-RIGHT = the editor-owned FxMatrixView). It
+    // reuses the synth's generator ParamPages (shared, never duplicated) so a
+    // mode toggle reparents a single active selection between the two
+    // workspaces. The FX-slot pages + FxMatrixView are editor-owned
+    // (generatedPages_ / fxMatrixView_) and hosted NON-owned by the workspace.
+    fxWorkspace_ = std::make_unique<FxWorkspace> (themeManager_);
+
+    // Generate the 3 FX-slot ParamPages (one per slot) from the fx{1,2,3}_*
+    // descriptors. fx_topo / fx_order ride on the FX1 page as a small "FX Chain"
+    // group (the only FX-chain-level controls). Pages are editor-owned via
+    // generatedPages_; the workspace hosts them NON-owned via setFxSlotPage.
+    for (int slot = 0; slot < 3; ++slot)
+    {
+        const juce::String prefix = "fx" + juce::String (slot + 1) + "_";
+        std::vector<const PatchParamDescriptor*> fxDescs;
+        for (const auto& d : getPatchParamDescriptors())
+            if (d.isFx && juce::String (d.paramID).startsWith (prefix))
+                fxDescs.push_back (&d);
+        // The FX-chain topology + order controls go on the first (FX1) slot page.
+        if (slot == 0)
+            for (const auto& d : getPatchParamDescriptors())
+                if (d.paramID == "fx_topo" || d.paramID == "fx_order")
+                    fxDescs.push_back (&d);
+
+        auto page = std::make_unique<ParamPage> (processorRef_, themeManager_, fxDescs, 3, 214, 76);
+        page->setSize (page->getContentWidth(), page->getContentHeight());
+        fxSlotPages_[slot] = page.get();
+        generatedPages_.push_back (std::move (page));
+        fxWorkspace_->setFxSlotPage (slot, fxSlotPages_[slot]);
+    }
+
+    // The FX mod matrix (editor-owned, NON-owned host of the FX workspace).
+    fxMatrixView_ = std::make_unique<FxMatrixView> (processorRef_, themeManager_);
+    fxWorkspace_->setFxMatrixView (fxMatrixView_.get());
+
+    // Register the SAME generator pages into the FX workspace (SHARED editor —
+    // the pages are NOT duplicated, only reparented between workspaces on a
+    // mode toggle). ARP shows all its groups (empty array); the Note Sequencer
+    // pill reveals both Note Pitch + Note Velocity from the Sequencer page.
+    using namespace ambika::dsp;
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_1, envPage,        juce::StringArray{ "Env 1 (Mod)" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_2, envPage,        juce::StringArray{ "Env 2 (Filter)" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_3, envPage,        juce::StringArray{ "Env 3 (Amp)" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_1, lfoPage,        juce::StringArray{ "LFO 1" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_2, lfoPage,        juce::StringArray{ "LFO 2" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_3, lfoPage,        juce::StringArray{ "LFO 3" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_4, lfoPage,        juce::StringArray{ "Voice LFO" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_1, seqPage,        juce::StringArray{ "Sequencer 1" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_2, seqPage,        juce::StringArray{ "Sequencer 2" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_ARP_STEP, arpPage,     juce::StringArray{});   // empty => all groups
+    fxWorkspace_->registerGeneratorPage (parvati::kNoteSeqSentinel, seqPage,
+                                         juce::StringArray{ "Note Pitch", "Note Velocity" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_1, modifierPage,    juce::StringArray{ "Modifier 1" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_2, modifierPage,    juce::StringArray{ "Modifier 2" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_3, modifierPage,    juce::StringArray{ "Modifier 3" });
+    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_4, modifierPage,    juce::StringArray{ "Modifier 4" });
+    // Drag-only pill click: flash the FX-matrix rows routed FROM that source.
+    fxWorkspace_->setOnDragOnlyPillClicked ([this] (int src)
+    {
+        if (fxMatrixView_ != nullptr)
+            fxMatrixView_->flashRowsForSource (src);
+    });
+    // Track the SHARED active generator selection from BOTH workspaces so a mode
+    // toggle reparents the right page into the newly-visible workspace.
+    synthWorkspace_->setOnActiveGeneratorChanged ([this] (int src) { activeGeneratorModSrc_ = src; });
+    fxWorkspace_->setOnActiveGeneratorChanged    ([this] (int src) { activeGeneratorModSrc_ = src; });
+    // NOTE: the FX workspace does NOT host the active generator at startup — the
+    // shared page can only have ONE parent, and the VISIBLE workspace (SYNTH,
+    // default) owns it (set above). setFxMode(true) releases it from SYNTH and
+    // reparents it into FX on demand (via activeGeneratorModSrc_).
+
+
+    // ---- Top-level page selector [SYNTH | FX] ----
+    // Two NON-owned tab contents (synthWorkspace_ at index 0, fxWorkspace_ at
+    // index 1). The tab bar is HIDDEN (depth 0) — the header [Synth]/[FX]
+    // buttons are the UI (setFxMode swaps the current tab). GLOBAL is a header
+    // overlay (globalPage_), not a tab. Both tab contents are editor-owned
+    // (synthWorkspace_ / fxWorkspace_), so the teardown order stays deterministic.
+    pageSelector_.setTabBarDepth (0);          // hide the tab bar — [Synth]/[FX] header buttons are the UI
     pageSelector_.setOutline (0);
-    pageSelector_.addTab (TRANS ("SYNTH"),  theme.backgroundBase, synthWorkspace_.get(), false);
+    pageSelector_.addTab (TRANS ("SYNTH"), theme.backgroundBase, synthWorkspace_.get(), false);
+    pageSelector_.addTab (TRANS ("FX"),    theme.backgroundBase, fxWorkspace_.get(),     false);
     pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
     addAndMakeVisible (pageSelector_);
 
@@ -2371,6 +2472,24 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     multiPage_ = std::make_unique<MultiPage> (processorRef_, themeManager_);
     addChildComponent (multiPage_.get());   // owned here; invisible until toggled
     multiPage_->setVisible (false);
+
+    // ---- [Synth] / [FX] mode toggle (header, between Part and Multi) ----
+    // Swaps pageSelector_ between the SYNTH tab (index 0) and the FX tab
+    // (index 1) and reparents the SHARED active generator page into the
+    // newly-visible workspace (setFxMode). NOT an APVTS param — a view-mode
+    // selector like Multi/Global. The toggle is exclusive; clicking the
+    // already-active mode is a no-op. Styling mirrors multiButton_/globalButton_.
+    synthModeButton_.setTooltip (TRANS ("Synth mode"));
+    fxModeButton_.setTooltip (TRANS ("FX mode"));
+    synthModeButton_.setClickingTogglesState (true);
+    fxModeButton_.setClickingTogglesState (true);
+    synthModeButton_.setRadioGroupId (1, juce::dontSendNotification);
+    fxModeButton_.setRadioGroupId (1, juce::dontSendNotification);
+    synthModeButton_.setToggleState (true, juce::dontSendNotification);   // SYNTH is the default
+    synthModeButton_.onClick = [this] { if (fxModeActive_) setFxMode (false); };
+    fxModeButton_.onClick    = [this] { if (! fxModeActive_) setFxMode (true); };
+    addAndMakeVisible (synthModeButton_);
+    addAndMakeVisible (fxModeButton_);
 
     multiButton_.setTooltip (TRANS ("Multi / Setup"));
     multiButton_.setClickingTogglesState (true);
@@ -2760,6 +2879,35 @@ void ParvatiEditor::timerCallback()
     }
 }
 
+void ParvatiEditor::setFxMode (bool fx)
+{
+    fxModeActive_ = fx;
+
+    // Swap the visible workspace: SYNTH = tab 0, FX = tab 1 (the tab bar is
+    // hidden; the [Synth]/[FX] header buttons are the UI).
+    pageSelector_.setCurrentTabIndex (fx ? 1 : 0, false);
+    synthModeButton_.setToggleState (! fx, juce::dontSendNotification);
+    fxModeButton_.setToggleState (fx, juce::dontSendNotification);
+
+    // The generator ParamPages are SHARED (editor-owned, registered into BOTH
+    // workspaces). Only the VISIBLE workspace may host the active page: release
+    // it from the outgoing workspace first (detach + forget), then reparent it
+    // into the now-visible workspace. This guarantees a single parent — no
+    // double-parent / dangling (a JUCE Component can only have one parent, and
+    // addAndMakeVisible re-parents cleanly once the outgoing host has
+    // released its stale activePage_ reference).
+    if (fx)
+    {
+        if (synthWorkspace_ != nullptr) synthWorkspace_->releaseActiveEditor();
+        if (fxWorkspace_    != nullptr) fxWorkspace_->setActiveGenerator (activeGeneratorModSrc_);
+    }
+    else
+    {
+        if (fxWorkspace_    != nullptr) fxWorkspace_->releaseActiveEditor();
+        if (synthWorkspace_ != nullptr) synthWorkspace_->setActiveGenerator (activeGeneratorModSrc_);
+    }
+}
+
 void ParvatiEditor::applyAllColoursFromTheme()
 {
     // Force every descendant to re-run lookAndFeelChanged(): ComboBox only
@@ -2777,6 +2925,10 @@ void ParvatiEditor::applyAllColoursFromTheme()
         synthWorkspace_->applyThemeColors();   // 3-row workspace: top pages + bar + active editor + matrix
     if (modMatrixView_ != nullptr)
         modMatrixView_->applyThemeColors();    // bottom-right ModMatrixView (direct child of the workspace)
+    if (fxWorkspace_ != nullptr)
+        fxWorkspace_->applyThemeColors();      // FX workspace: slot pages + bar + active editor + FxMatrixView
+    if (fxMatrixView_ != nullptr)
+        fxMatrixView_->applyThemeColors();     // bottom-right FxMatrixView (direct child of the FX workspace)
     if (multiPage_ != nullptr)
         multiPage_->applyThemeColors();
     // Re-resolve + re-push every control's category arc colour / mod-source tint
@@ -2908,8 +3060,12 @@ void ParvatiEditor::applyChromeTranslations()
     multiButton_.setTooltip (TRANS ("Multi / Setup"));
     globalButton_.setButtonText (TRANS ("Global"));
     globalButton_.setTooltip (TRANS ("Global settings"));
+    synthModeButton_.setButtonText (TRANS ("Synth"));
+    fxModeButton_.setButtonText (TRANS ("FX"));
 
     pageSelector_.setTabName (0, TRANS ("SYNTH"));
+    if (pageSelector_.getNumTabs() > 1)
+        pageSelector_.setTabName (1, TRANS ("FX"));
     // The CentralModBar pill/cluster labels are language-neutral short codes
     // (E1/L1/ARP/ENV...), so there are no tab labels to re-apply on a language
     // switch (the old nested ENV/LFO/MOD-MATRIX tab strip is gone).
@@ -3050,7 +3206,10 @@ void ParvatiEditor::resized()
         const int gapW = 6;
         const int multiW = 64;
         const int globalW = 64;
-        const int clusterW = patchCapW + presetW + gapW + globalW + partCapW + partComboW + gapW + multiW;
+        const int modeW = 50;   // [Synth]/[FX] toggle buttons (radio group)
+        // Centre cluster: [Patch:][preset][gap][Global][Part:][Part n][Synth][FX][gap][Multi]
+        const int clusterW = patchCapW + presetW + gapW + globalW + partCapW + partComboW
+                             + modeW + modeW + gapW + multiW;
 
         auto cluster = bar.withSizeKeepingCentre (juce::jmin (clusterW, bar.getWidth()), bar.getHeight());
         patchCaption_.setBounds (cluster.removeFromLeft (patchCapW));
@@ -3060,6 +3219,9 @@ void ParvatiEditor::resized()
         globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Global overlay toggle (between Patch dropdown and Part)
         partCaption_.setBounds (cluster.removeFromLeft (partCapW));
         partCombo_.setBounds (cluster.removeFromLeft (partComboW));
+        // Synth/FX mode toggle (radio group) between Part and Multi.
+        synthModeButton_.setBounds (cluster.removeFromLeft (modeW));
+        fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
         cluster.removeFromLeft (gapW);   // small gap between the Part dropdown and Multi
         multiButton_.setBounds (cluster.removeFromLeft (multiW));   // Multi/Setup overlay toggle
     }

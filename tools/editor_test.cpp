@@ -52,6 +52,8 @@
 #include "PluginProcessor.h"
 #include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel + ambika::dsp::MOD_SRC_*
 #include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
+#include "ui/FxWorkspace.h"        // complete type for findFirst<FxWorkspace>
+#include "ui/FxMatrixView.h"       // complete type for findFirst<FxMatrixView>
 
 namespace
 {
@@ -127,6 +129,8 @@ int main()
         if (d.paramID.size() > 3 && d.paramID.compare (0, 3, "mod") == 0
             && std::isdigit (static_cast<unsigned char> (d.paramID[3])))
             continue;   // mod{N}_... == a ModMatrixView slot param
+        if (d.paramID.size() > 5 && d.paramID.compare (0, 5, "fxmod") == 0)
+            continue;   // fxmod{N}_... == an FxMatrixView slot param (per-part FX mod matrix)
         ++expectedCells;
     }
 
@@ -195,9 +199,9 @@ int main()
         check (dynamic_cast<juce::AudioProcessorEditor*> (ed) != nullptr,
                "createEditor() returns an AudioProcessorEditor");
 
-        std::printf ("\n[2] Top-level page selector (expected 1: SYNTH; Global is a header-button overlay)\n");
+        std::printf ("\n[2] Top-level page selector (expected 2: SYNTH + FX; Global is a header-button overlay)\n");
         std::printf ("     top-level tabs = %d\n", numTopTabs);
-        check (numTopTabs == 1, "exactly 1 top-level page tab ([SYNTH]); Global is a header-button overlay");
+        check (numTopTabs == 2, "exactly 2 top-level page tabs ([SYNTH][FX]); Global is a header-button overlay");
 
         std::printf ("\n[3] ParamControl coverage (generated pages = %zu)\n", pages.size());
         std::printf ("     descriptors = %zu, expected cells = %d, found = %d\n",
@@ -222,6 +226,34 @@ int main()
                 check (directChild,
                        "ModMatrixView is a direct child of SynthWorkspace (no longer tab content)");
             }
+        }
+
+        // [3c-fx] FX MATRIX: the editor-owned FxMatrixView is a DIRECT child of
+        // FxWorkspace (Phase 4). The fxmod{1..16}_* params are NOT ParamControls
+        // (excluded from the coverage count above); the view hosts them directly
+        // via its own combos/sliders. A TabbedComponent only parents the CURRENT
+        // tab's content, so switch to the FX tab (index 1) first — then an
+        // FxMatrixView parented on the FX workspace proves the wiring mirrors the
+        // synth wiring. Restored to SYNTH (index 0) afterwards.
+        std::printf ("\n[3c-fx] FX MATRIX: an FxMatrixView is a DIRECT child of FxWorkspace\n");
+        {
+            const int prevTab = topTabs ? topTabs->getCurrentTabIndex() : 0;
+            if (topTabs != nullptr && topTabs->getNumTabs() > 1)
+                topTabs->setCurrentTabIndex (1, false);   // make the FX tab current
+            auto* fxv = findFirst<FxMatrixView> (ed);
+            check (fxv != nullptr, "an FxMatrixView is present in the editor tree (FX tab)");
+            if (fxv != nullptr)
+            {
+                auto* fxvParent = fxv->getParentComponent();
+                const bool directChild = fxvParent != nullptr
+                    && dynamic_cast<FxWorkspace*> (fxvParent) != nullptr;
+                check (directChild,
+                       "FxMatrixView is a direct child of FxWorkspace");
+                check (findFirst<FxWorkspace> (ed) != nullptr,
+                       "an FxWorkspace is present in the editor tree (FX tab)");
+            }
+            if (topTabs != nullptr)
+                topTabs->setCurrentTabIndex (prevTab, false);   // restore
         }
 
         // ------------------------------------------------------------------

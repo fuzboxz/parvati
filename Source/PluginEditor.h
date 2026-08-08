@@ -42,6 +42,8 @@ void refreshFontsIn (juce::Component* root, const ParvatiLookAndFeel& lnf);
 
 class MultiPage;
 class SynthWorkspace;
+class FxWorkspace;
+class FxMatrixView;
 class EnvelopeDisplay;
 
 //==============================================================================
@@ -568,9 +570,21 @@ private:
     // bar's pills) on the left and the ModMatrixView on the right. Owns only its
     // bar + host; pages + view stay editor-owned.
     std::unique_ptr<SynthWorkspace> synthWorkspace_;
-    // Single-tab page selector [SYNTH] (the lone bar is hidden via depth 0). SYNTH
-    // shows synthWorkspace_; GLOBAL is a header-button overlay (globalPage_), not
-    // a tab. Non-owned tab content (editor-owned via generatedPages_).
+    // FX content: a clone of SynthWorkspace for the FX tab (TOP = 3 FX-slot
+    // ParamPages, MIDDLE = its own CentralModBar, BOTTOM-LEFT = the SHARED
+    // active-generator host, BOTTOM-RIGHT = the editor-owned FxMatrixView). Owns
+    // only its bar + host; slot/matrix pages + the shared generator pages stay
+    // editor-owned. Declared fxMatrixView_ BEFORE fxWorkspace_ (reverse-destruction
+    // discipline): fxWorkspace_ tears down FIRST and merely DETACHES the
+    // non-owned FxMatrixView + the shared generator pages, then fxMatrixView_
+    // deletes itself — no use-after-free / double-free (mirrors the
+    // modMatrixView_/synthWorkspace_ comment above).
+    std::unique_ptr<FxMatrixView> fxMatrixView_;
+    std::unique_ptr<FxWorkspace>  fxWorkspace_;
+    // Two-tab page selector (bar hidden via depth 0). Index 0 = synthWorkspace_,
+    // index 1 = fxWorkspace_; the header [Synth]/[FX] buttons swap the current
+    // tab (setFxMode). GLOBAL is a header-button overlay (globalPage_), not a
+    // tab. Non-owned tab content (editor-owned via generatedPages_).
     juce::TabbedComponent pageSelector_ { juce::TabbedButtonBar::TabsAtTop };
 
     ParvatiAudioProcessor& processorRef_;
@@ -597,6 +611,12 @@ private:
     // Top bar: Part selector (bound to the `part_select` APVTS param).
     juce::Label    partCaption_;
     juce::ComboBox partCombo_;
+    // Synth<->FX mode toggle (a view-mode selector, like the Multi/Global
+    // overlays — NOT an APVTS param). Inserted between partCombo_ and
+    // multiButton_ in the header cluster: Part [Part 1] [Synth] [FX] [Multi].
+    juce::TextButton synthModeButton_ { "Synth" };
+    juce::TextButton fxModeButton_    { "FX" };
+    bool             fxModeActive_    = false;   // mirrors which workspace pageSelector_ shows
     juce::TextButton multiButton_ { "Multi" };   // header button -> Multi/Setup overlay (not a patch param)
     juce::TextButton globalButton_ { "Global" }; // header button -> Global ParamPage overlay (not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
@@ -633,6 +653,9 @@ private:
     std::unique_ptr<WheelsComponent> wheels_;   // pitch + mod wheels (left of keyboard)
     VoiceMeter* globalVoiceMeter_ { nullptr };  // cells display; owned by the Global ParamPage
     ParamPage*  globalPage_ { nullptr };        // Global page overlay (toggled by globalButton_; owns the meter as a decoration)
+    // FX-slot ParamPages (FX1/FX2/FX3) — editor-owned via generatedPages_, hosted
+    // NON-owned by fxWorkspace_->setFxSlotPage (reparented, never regenerated).
+    ParamPage*  fxSlotPages_[3] {};
 
     // Live graph previews (EnvelopeDisplay / OscPreviewDisplay /
     // FilterResponseDisplay) + the theme category token they read for their trace
@@ -656,6 +679,17 @@ private:
     // invoked when selectByName actually moves the selection, so without this
     // explicit call the category colours could stay on the L&F default.
     void applyAllColoursFromTheme();
+
+    // ---- Synth<->FX mode toggle ----
+    // Swap the page-selector tab (index 0 = SYNTH workspace, 1 = FX workspace)
+    // and reparent the SHARED active generator page into the now-visible
+    // workspace (single active selection — the generator pages are editor-owned
+    // and shared, NOT duplicated). The outgoing workspace releases its
+    // (non-owned) reference to the active page so the incoming workspace's
+    // addAndMakeVisible re-parents it cleanly (a JUCE Component has one parent).
+    void setFxMode (bool fx);
+    int  activeGeneratorModSrc_ { 0 };   // current active generator (MOD_SRC_*); default ENV 1
+
     juce::Label statusCountLabel_;              // bottom-left "n/denom" active-voice count
     juce::Label statusTooltipLabel_;            // bottom hover-tooltip bar (fills the rest)
 

@@ -72,6 +72,11 @@ void SynthWorkspace::setOnDragOnlyPillClicked (std::function<void (int)> cb)
     onDragOnlyPillClicked_ = std::move (cb);
 }
 
+void SynthWorkspace::setOnActiveGeneratorChanged (std::function<void (int)> cb)
+{
+    onActiveGenChanged_ = std::move (cb);
+}
+
 void SynthWorkspace::setModMatrixView (ModMatrixView* view)
 {
     // Host the editor-owned ModMatrixView directly as the BOTTOM-RIGHT panel
@@ -117,6 +122,17 @@ void SynthWorkspace::setActiveGenerator (int modSrcEnum)
 {
     showGenerator (modSrcEnum);
     modBar_->setActiveGenerator (modSrcEnum);   // underline-glow the pill
+    if (onActiveGenChanged_)
+        onActiveGenChanged_ (modSrcEnum);
+}
+
+void SynthWorkspace::releaseActiveEditor()
+{
+    if (activePage_ != nullptr)
+    {
+        activeEditorHost_->removeChildComponent (activePage_);
+        activePage_ = nullptr;
+    }
 }
 
 void SynthWorkspace::reflowActiveEditor()
