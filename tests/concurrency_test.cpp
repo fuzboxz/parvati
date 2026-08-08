@@ -256,7 +256,7 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
                       parvati_test::setParamRaw (proc, (pfx + "_drywet").toRawUTF8(),  (float) rng.nextInt (128));
                       parvati_test::setParamRaw (proc, (pfx + "_param1").toRawUTF8(),  (float) rng.nextInt (128));
                       parvati_test::setParamRaw (proc, (pfx + "_param2").toRawUTF8(),  (float) rng.nextInt (128));
-                      parvati_test::setParamRaw (proc, "fx_topo",                       (float) rng.nextInt (2));      // Series/Parallel
+                      parvati_test::setParamRaw (proc, "fx_topo",                       (float) rng.nextInt (3));      // Series / Parallel 1+2->3 / Parallel 1->2+3
                       parvati_test::setParamRaw (proc, "fx_order",                      (float) rng.nextInt (6));      // 6 permutations
                       // an FX-mod routing (16-slot matrix) onto this slot's drywet + a source.
                       const int m = 1 + rng.nextInt (kNumFxMatrixSlots);

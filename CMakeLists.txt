@@ -416,6 +416,20 @@ target_link_libraries(parvati_fx_preset_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Per-part FX ROUTING verification. Proves FxChain::process() renders finite,
+# wet output for every topology (Series / Parallel12to3 / Parallel1to23) x every
+# order permutation, and that an all-disabled chain is a dry passthrough.
+# Built by default. Run with: ./build/parvati_fx_routing_test
+add_executable(parvati_fx_routing_test
+    tests/fx_routing_test.cpp
+)
+target_include_directories(parvati_fx_routing_test PRIVATE Source)
+target_compile_features(parvati_fx_routing_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_routing_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Ambika .PRO patch-file support verification. Built by default.
 # Run with: ./build/parvati_patch_test
 add_executable(parvati_patch_test

@@ -296,6 +296,15 @@ void SynthEngine::setFxOrder       (uint8_t v)
     PARVATI_FX_CURRENT_PART().fxState.orderIdx.store (v, std::memory_order_relaxed);
     PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
 }
+// Master-section setters (engine-state v3). Mirror the topology/order pattern:
+// relaxed store into the CURRENT Part's fxState + a release-store on fxDirty_ to
+// publish the frame to the audio thread. FxChain does not consume these yet (the
+// DSP is added by a follow-up) -- they only need to round-trip + not break the AT.
+void SynthEngine::setFxMix       (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.mix.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxKeepTails (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.keepTails.store (v != 0 ? 1 : 0, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxEqLow     (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqLow.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxEqMid     (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqMid.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxEqHigh    (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqHigh.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 void SynthEngine::setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount)
 {
     if (slot < 0 || slot >= kNumFxMatrixSlots) return;
@@ -329,10 +338,11 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     constexpr uint32_t kFxBlobLen = (uint32_t) (kNumFxSlots * 3            // type+enabled+drywet
                                               + kNumFxSlots * kNumFxSlotParams   // slot params
                                               + 2                              // topology + orderIdx
-                                              + kNumFxMatrixSlots * 3);        // src+dst+amount
+                                              + kNumFxMatrixSlots * 3          // src+dst+amount
+                                              + 5);                            // master section (v3): mix + keepTails + eqLow/mid/high
     juce::MemoryOutputStream out (dest, false);
     out.write (kEngineStateMagic, 4);
-    out.writeByte (2);                                                       // version
+    out.writeByte (3);                                                       // version (3 = per-part FX + master section)
     out.writeByte ((char) currentPart_);
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -368,6 +378,12 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         for (int m = 0; m < kNumFxMatrixSlots; ++m) out.writeByte ((char) fx.modSource[(size_t) m].load (std::memory_order_relaxed));
         for (int m = 0; m < kNumFxMatrixSlots; ++m) out.writeByte ((char) fx.modDest  [(size_t) m].load (std::memory_order_relaxed));
         for (int m = 0; m < kNumFxMatrixSlots; ++m) out.writeByte ((char) fx.modAmount[(size_t) m].load (std::memory_order_relaxed));
+        // Master section (v3): global wet/dry + bypass-tail + 3-band master EQ.
+        out.writeByte ((char) fx.mix.load (std::memory_order_relaxed));
+        out.writeByte ((char) fx.keepTails.load (std::memory_order_relaxed));
+        out.writeByte ((char) fx.eqLow.load (std::memory_order_relaxed));
+        out.writeByte ((char) fx.eqMid.load (std::memory_order_relaxed));
+        out.writeByte ((char) fx.eqHigh.load (std::memory_order_relaxed));
     }
     out.flush ();
 }
@@ -381,7 +397,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     if (in.read (magic, 4) != 4 || std::memcmp (magic, kEngineStateMagic, 4) != 0)
         return false;
     const int version = in.readByte();
-    if (version != 1 && version != 2)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
+    if (version != 1 && version != 2 && version != 3)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
         return false;
     const int savedCurrent = in.readByte();
     for (int p = 0; p < kNumParts; ++p)
@@ -399,14 +415,17 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         part.keyrangeHigh.store ((uint8_t) in.readByte());
         part.voiceAllocation.store ((uint8_t) in.readByte());
 
-        if (version == 2)
+        if (version >= 2)
         {
             // Parvati-exclusive per-part FX state. Length-prefixed (4 bytes LE)
             // then the fixed-layout FX bytes (slotType/enabled/dryWet/param,
             // topology, orderIdx, modSource/dest/amount). A larger length is
             // forward-compat (trailing bytes skipped); a short/truncated read is
             // rejected like the core payload above. Absent in v1 -> fxState stays
-            // at its default-initialized values.
+            // at its default-initialized values. The master-section fields
+            // (mix/keepTails/eqLow/mid/high) are v3-only: a v1/v2 blob lacks
+            // them, so they are reset to their preserving-audio defaults below
+            // (not 0-filled by take()) and only overwritten for a v3 blob.
             uint8_t lenBytes[4];
             if (in.read (lenBytes, 4) != 4) return false;
             const uint32_t fxLen = (uint32_t) lenBytes[0]
@@ -431,6 +450,22 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modSource[(size_t) m].store (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modDest  [(size_t) m].store (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modAmount[(size_t) m].store ((int8_t) take(), std::memory_order_relaxed);
+            // Master section (v3): reset to the audio-preserving defaults first
+            // (so a v1/v2 blob -- which lacks these -- loads at defaults, not
+            // 0-filled by take()), then overwrite from the blob for a v3 save.
+            fx.mix.store (127, std::memory_order_relaxed);
+            fx.keepTails.store (0, std::memory_order_relaxed);
+            fx.eqLow.store (0, std::memory_order_relaxed);
+            fx.eqMid.store (64, std::memory_order_relaxed);
+            fx.eqHigh.store (64, std::memory_order_relaxed);
+            if (version >= 3)
+            {
+                fx.mix.store (take(), std::memory_order_relaxed);
+                fx.keepTails.store (take(), std::memory_order_relaxed);
+                fx.eqLow.store (take(), std::memory_order_relaxed);
+                fx.eqMid.store (take(), std::memory_order_relaxed);
+                fx.eqHigh.store (take(), std::memory_order_relaxed);
+            }
             fx.fxDirty_.store (true, std::memory_order_release);
         }
     }
@@ -1193,6 +1228,18 @@ void SynthEngine::renderPartFx (int numSamples)
                 cache.modDst[(size_t) m] = part.fxState.modDest  [(size_t) m].load (std::memory_order_relaxed);
                 cache.modAmt[(size_t) m] = part.fxState.modAmount[(size_t) m].load (std::memory_order_relaxed);
             }
+            // Master-section frame (v3): push global mix + keep-tails + the
+            // 3-band master EQ to this part's chain.
+            const uint8_t fxMixV       = part.fxState.mix.load (std::memory_order_relaxed);
+            const uint8_t fxKeepTailsV = part.fxState.keepTails.load (std::memory_order_relaxed);
+            const uint8_t fxEqLowV     = part.fxState.eqLow.load (std::memory_order_relaxed);
+            const uint8_t fxEqMidV     = part.fxState.eqMid.load (std::memory_order_relaxed);
+            const uint8_t fxEqHighV    = part.fxState.eqHigh.load (std::memory_order_relaxed);
+            chain.setMasterMix    ((float) fxMixV / 127.0f);
+            chain.setKeepTails    (fxKeepTailsV != 0);
+            chain.setMasterEqLow  (fxEqLowV);
+            chain.setMasterEqMid  (fxEqMidV);
+            chain.setMasterEqHigh (fxEqHighV);
         }
 
         // ---- 2. Per-part mono sum of this Part's voicecard buffers ----

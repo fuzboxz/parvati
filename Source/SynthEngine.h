@@ -153,6 +153,13 @@ struct PartFxState
     std::atomic<uint8_t> slotParam  [kNumFxSlots][kNumFxSlotParams] {}; // 0..127
     std::atomic<uint8_t> topology { 0 };                            // FxTopology
     std::atomic<uint8_t> orderIdx { 0 };                            // 0..5 (perm of {0,1,2})
+    // Master section (engine-state v3). Defaults preserve prior audio:
+    // mix=127 (fully wet), keepTails=0 (hard-cut bypass), EQ at unity/no-cut.
+    std::atomic<uint8_t> mix { 127 };                              // global chain wet/dry 0..127
+    std::atomic<uint8_t> keepTails { 0 };                          // 0/1 keep effect tails on bypass
+    std::atomic<uint8_t> eqLow { 0 };                              // low-cut (high-pass) 0..127
+    std::atomic<uint8_t> eqMid { 64 };                             // mid peaking gain 0..127 (64 = 0 dB)
+    std::atomic<uint8_t> eqHigh { 64 };                            // high-shelf gain 0..127 (64 = 0 dB)
     std::atomic<uint8_t> modSource[kNumFxMatrixSlots] {};          // MOD_SRC_* index
     std::atomic<uint8_t> modDest  [kNumFxMatrixSlots] {};          // FxModDestination
     std::atomic<int8_t>  modAmount[kNumFxMatrixSlots] {};          // -63..+63
@@ -439,6 +446,12 @@ public:
     void setFxSlotParam   (int slot, int idx, uint8_t v);
     void setFxTopology    (uint8_t v);
     void setFxOrder       (uint8_t v);
+    // Master section (v3): global wet/dry + bypass-tail + 3-band master EQ.
+    void setFxMix         (uint8_t v);
+    void setFxKeepTails   (uint8_t v);
+    void setFxEqLow       (uint8_t v);
+    void setFxEqMid       (uint8_t v);
+    void setFxEqHigh      (uint8_t v);
     // Writes all three mod-matrix fields of one slot atomically (under the same
     // fxDirty_ publish) to avoid a torn matrix slot when only one of the three
     // APVTS params changes. src: MOD_SRC_* index; dest: FxModDestination;

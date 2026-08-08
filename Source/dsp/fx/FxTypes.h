@@ -27,8 +27,18 @@ enum class FxType : uint8_t {
 };
 // choice list string: { "None", "Gain+Pan", "Delay", "Reverb", "Chorus" }
 
-enum class FxTopology : uint8_t { Series = 0, Parallel = 1 };
-// choice list string: { "Series", "Parallel" }
+// Effect-chain topology (drives fx_topo choice). The three slots are taken in
+// the current order permutation (order_[0], order_[1], order_[2]) — call them
+// A, B, C below. A disabled slot is a passthrough in every topology.
+enum class FxTopology : uint8_t {
+    Series = 0,          // A -> B -> C  (each slot processes the running signal)
+    Parallel12to3 = 1,   // (A || B) -> C   (A and B process the dry input in
+                         //  parallel, equal-gain sum, then C processes the sum)
+    Parallel1to23 = 2,   // A -> (B || C)   (A processes the dry input, then B and
+                         //  C each process a copy of A's output, equal-gain sum)
+    Count
+};
+// choice list string: { "Series", "Parallel 1+2->3", "Parallel 1->2+3" }
 
 // FX mod-matrix destinations (drives fxmod{N}_dest choice). Distinct from
 // MOD_DST_* (synth destinations). One dry/wet + four generic params per slot.

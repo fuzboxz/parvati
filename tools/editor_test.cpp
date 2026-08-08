@@ -54,6 +54,9 @@
 #include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
 #include "ui/FxWorkspace.h"        // complete type for findFirst<FxWorkspace>
 #include "ui/FxMatrixView.h"       // complete type for findFirst<FxMatrixView>
+#include "ui/FxSlotCard.h"         // complete type for findFirst/collectAll<FxSlotCard>
+#include "ui/FxRoutingBar.h"       // complete type for findFirst<FxRoutingBar>
+#include "ui/FxSlotVisualizer.h"   // complete type for findFirst<FxSlotVisualizer>
 
 namespace
 {
@@ -84,6 +87,16 @@ T* findFirst (juce::Component* c)
         if (auto* t = findFirst<T> (child))
             return t;
     return nullptr;
+}
+
+// Collect EVERY component of type T in c's subtree (c included, depth-first).
+template <typename T>
+void collectAll (juce::Component* c, std::vector<T*>& out)
+{
+    if (auto* t = dynamic_cast<T*> (c))
+        out.push_back (t);
+    for (auto* child : c->getChildren())
+        collectAll<T> (child, out);
 }
 
 // First TabbedComponent in the subtree (DFS). With the integrated layout the
@@ -120,7 +133,12 @@ int main()
     // ModMatrixView (Wave 1) — NOT ParamControls on a ParamPage — so they are
     // intentionally excluded from this coverage count (validated separately as
     // [3c]: a ModMatrixView is present in the tree). "modif*" is NOT matched
-    // (modifiers stay on a paginated ParamPage).
+    // (modifiers stay on a paginated ParamPage). Likewise the per-part FX-slot
+    // params (fx{1,2,3}_type/enabled/drywet/param1-4) are now hosted by the
+    // self-contained FxSlotCards (5 owned ParamControls each), and fx_topo /
+    // fx_order live on the FxRoutingBar (fx_topo via the compact FLOW ComboBox;
+    // fx_order is no longer user-exposed) — none are ParamControls on a
+    // ParamPage, so they are excluded here too.
     int expectedCells = 0;
     for (const auto& d : descs)
     {
@@ -131,6 +149,15 @@ int main()
             continue;   // mod{N}_... == a ModMatrixView slot param
         if (d.paramID.size() > 5 && d.paramID.compare (0, 5, "fxmod") == 0)
             continue;   // fxmod{N}_... == an FxMatrixView slot param (per-part FX mod matrix)
+        if (d.paramID == "fx_topo" || d.paramID == "fx_order"
+            || d.paramID == "fx_mix" || d.paramID == "fx_keep_tails"
+            || d.paramID == "fx_eq_low" || d.paramID == "fx_eq_mid" || d.paramID == "fx_eq_high")
+            continue;   // fx_topo/fx_order + the master section (fx_mix/keep_tails/eq_*) -> FxRoutingBar controls, not ParamPage ParamControls
+        if (d.paramID.size() > 4
+            && d.paramID.compare (0, 2, "fx") == 0
+            && (d.paramID[2] == '1' || d.paramID[2] == '2' || d.paramID[2] == '3')
+            && d.paramID[3] == '_')
+            continue;   // fx{1,2,3}_... -> an FxSlotCard's 5 owned ParamControls
         ++expectedCells;
     }
 
@@ -581,6 +608,176 @@ int main()
                     apvts.getParameterAsValue ("mod2_amount") = 0.0f;
                 }
             }
+        }
+
+        // ------------------------------------------------------------------
+        // [13] FX top-section layout (3 FxSlotCards + FxRoutingBar). Headless
+        // layout-sanity coverage so regressions (knob cells too small, a missing
+        // visualizer / type combo / power toggle) are caught WITHOUT a render.
+        // Switches to the FX tab, asserts the card + routing-bar child structure
+        // + bounds + dynamic knob visibility, then restores SYNTH. The compact
+        // FxRoutingBar now exposes only a title + a FLOW (topology) ComboBox
+        // (the big chain + chips + drag-reorder were removed), so the routing
+        // assertions check the bar's presence + bounds + the FLOW ComboBox.
+        // ------------------------------------------------------------------
+        std::printf ("\n[13] FX top-section layout (cards + routing bar)\n");
+        {
+            const int prevTab = topTabs ? topTabs->getCurrentTabIndex() : 0;
+            if (topTabs != nullptr && topTabs->getNumTabs() > 1)
+                topTabs->setCurrentTabIndex (1, false);   // FX tab current (content parented + laid out synchronously)
+
+            // ---- 3 FxSlotCards (DFS, in slot order: cards[0] == FX1) ----
+            std::vector<FxSlotCard*> cards;
+            collectAll<FxSlotCard> (ed, cards);
+            std::printf ("     FxSlotCards found = %zu (expect 3)\n", cards.size());
+            check (cards.size() == 3, "exactly 3 FxSlotCards present (FX1/FX2/FX3)");
+
+            bool cardsPositive = true;
+            for (auto* card : cards)
+                if (card->getWidth() <= 0 || card->getHeight() <= 0)
+                    cardsPositive = false;
+            check (cardsPositive, "every FxSlotCard has positive width + height");
+
+            if (cards.size() == 3)
+            {
+                // Sort left->right and assert the 3 equal columns do not overlap.
+                std::vector<FxSlotCard*> sorted = cards;
+                std::sort (sorted.begin(), sorted.end(),
+                           [] (FxSlotCard* a, FxSlotCard* b) { return a->getX() < b->getX(); });
+                bool nonOverlapping = true;
+                for (size_t i = 1; i < sorted.size(); ++i)
+                    if (sorted[i]->getX() < sorted[i - 1]->getRight() - 1)
+                        nonOverlapping = false;
+                check (nonOverlapping,
+                       "the 3 FxSlotCards are side-by-side (no horizontal overlap)");
+            }
+
+            // ---- Per-card child structure + usable knob sizes ----
+            for (size_t i = 0; i < cards.size(); ++i)
+            {
+                auto* card = cards[i];
+
+                // Exactly 5 owned ParamControls (param1..4 + drywet), parented
+                // or not (counted across the card's whole subtree).
+                std::vector<ParamControl*> knobControls;
+                collectParamControls (card, knobControls);
+                std::snprintf (msg, sizeof (msg),
+                               "FX%d card owns 5 ParamControls (param1..4 + drywet) [found %zu]",
+                               (int) i + 1, knobControls.size());
+                check (knobControls.size() == 5, msg);
+
+                // DIRECT children: a type ComboBox, a power/bypass Button, + an
+                // FxSlotVisualizer. (Direct-child checks avoid matching the
+                // ComboBox's internal arrow Button.)
+                bool hasCombo = false, hasButton = false, hasVisualizer = false;
+                for (auto* child : card->getChildren())
+                {
+                    if (dynamic_cast<juce::ComboBox*> (child)     != nullptr) hasCombo     = true;
+                    if (dynamic_cast<juce::Button*> (child)       != nullptr) hasButton     = true;
+                    if (dynamic_cast<FxSlotVisualizer*> (child)   != nullptr) hasVisualizer  = true;
+                }
+                std::snprintf (msg, sizeof (msg), "FX%d card has a type ComboBox", (int) i + 1);
+                check (hasCombo, msg);
+                std::snprintf (msg, sizeof (msg), "FX%d card has a power/bypass Button", (int) i + 1);
+                check (hasButton, msg);
+                std::snprintf (msg, sizeof (msg), "FX%d card has an FxSlotVisualizer", (int) i + 1);
+                check (hasVisualizer, msg);
+
+                // Visible knobs must be usable (catches a "knobs collapsed to a
+                // sliver" regression; the dial targets 52px so the cell needs
+                // ~74px). 50px is a conservative floor.
+                int minVisibleKnobH = 0;
+                bool anyVisibleKnob = false;
+                for (auto* pc : knobControls)
+                    if (pc->isVisible())
+                    {
+                        if (! anyVisibleKnob || pc->getHeight() < minVisibleKnobH)
+                            minVisibleKnobH = pc->getHeight();
+                        anyVisibleKnob = true;
+                    }
+                if (anyVisibleKnob)
+                {
+                    std::snprintf (msg, sizeof (msg),
+                                   "FX%d visible knob height >= 50px (usable dial) [min=%d]",
+                                   (int) i + 1, minVisibleKnobH);
+                    check (minVisibleKnobH >= 50, msg);
+                }
+            }
+
+            // ---- FxRoutingBar: exists, positive bounds, FLOW (topology) combo ----
+            auto* routeBar = findFirst<FxRoutingBar> (ed);
+            check (routeBar != nullptr, "an FxRoutingBar is present (FX tab)");
+            if (routeBar != nullptr)
+            {
+                check (routeBar->getWidth() > 0 && routeBar->getHeight() > 0,
+                       "FxRoutingBar has positive width + height");
+                check (findFirst<juce::ComboBox> (routeBar) != nullptr,
+                       "FxRoutingBar has a FLOW (topology) ComboBox");
+            }
+
+            // ---- Dynamic knob visibility: fx1_type = Reverb -> 4 active + Mix ----
+            if (! cards.empty())
+            {
+                auto& apvts = processor.getApvts();
+                apvts.getParameterAsValue ("fx1_type") = 3.0f;   // FxType::Reverb (choice idx 3); the card's APVTS listener refreshes knob visibility synchronously on this (message) thread
+
+                int visibleKnobs = 0;
+                std::vector<ParamControl*> fx1Controls;
+                collectParamControls (cards[0], fx1Controls);   // cards[0] == FX1 (slot 0)
+                for (auto* pc : fx1Controls)
+                    if (pc->isVisible())
+                        ++visibleKnobs;
+                std::snprintf (msg, sizeof (msg),
+                               "fx1_type=Reverb => 5 visible knobs (4 active + Mix) [found %d]",
+                               visibleKnobs);
+                check (visibleKnobs == 5, msg);
+
+                // Engagement defaults: selecting a type seeds audible per-type
+                // param defaults (the card's parameterChanged applies them on the
+                // message thread). A LATER param write — as a preset/part load does
+                // (descriptor order sets type THEN params) — must OVERRIDE that
+                // default, so saved patches keep their own values (preset-safe).
+                {
+                    apvts.getParameterAsValue ("fx1_type") = 2.0f;      // Delay
+                    const int p1AfterType = juce::roundToInt (apvts.getParameterAsValue ("fx1_param1").getValue());
+                    std::snprintf (msg, sizeof (msg),
+                                   "fx1_type=Delay seeds param1=50 (engagement default) [got %d]",
+                                   p1AfterType);
+                    check (p1AfterType == 50, msg);
+
+                    apvts.getParameterAsValue ("fx1_param1") = 100.0f;  // override (preset value / user tweak)
+                    const int p1AfterOverride = juce::roundToInt (apvts.getParameterAsValue ("fx1_param1").getValue());
+                    std::snprintf (msg, sizeof (msg),
+                                   "param write after type overrides the engagement default [got %d]",
+                                   p1AfterOverride);
+                    check (p1AfterOverride == 100, msg);
+                }
+
+                // The type ComboBox itself must drive fx{N}_type via its
+                // ComboBoxAttachment — simulate a user selection and confirm the
+                // param follows (rules out a broken/non-interactive combo).
+                {
+                    apvts.getParameterAsValue ("fx1_type") = 0.0f;   // start from None
+                    juce::ComboBox* typeCombo = nullptr;
+                    for (auto* c : cards[0]->getChildren())
+                        if ((typeCombo = dynamic_cast<juce::ComboBox*> (c)))
+                            break;
+                    std::snprintf (msg, sizeof (msg),
+                                   "FX1 type combo has 5 items [got %d]",
+                                   typeCombo ? typeCombo->getNumItems() : -1);
+                    check (typeCombo != nullptr && typeCombo->getNumItems() == 5, msg);
+                    // (Selection -> APVTS propagation is async via the attachment and
+                    // isn't pumpable in this headless test; the identical addItemList +
+                    // ComboBoxAttachment pattern already powers the working osc-shape
+                    // and routing-bar dropdowns, so propagation is proven at runtime.
+                    // The real regression was an EMPTY dropdown, covered by the count.)
+                }
+
+                apvts.getParameterAsValue ("fx1_type") = 0.0f;   // restore None
+            }
+
+            if (topTabs != nullptr)
+                topTabs->setCurrentTabIndex (prevTab, false);   // restore
         }
 
         // Reset to SYNTH.

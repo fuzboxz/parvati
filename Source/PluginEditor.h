@@ -44,6 +44,8 @@ class MultiPage;
 class SynthWorkspace;
 class FxWorkspace;
 class FxMatrixView;
+class FxRoutingBar;
+class FxSlotCard;
 class EnvelopeDisplay;
 
 //==============================================================================
@@ -141,6 +143,13 @@ public:
     // ---- Sequencer step-grid introspection (UI + the editor_test) ----
     // paramID of the bound APVTS parameter (e.g. "seq1_step7", "seq_length_2").
     const juce::String& getParamID() const noexcept { return paramIDStr_; }
+
+    // Override the displayed knob label (used by FxSlotCard to show the active
+    // algorithm's semantic name, e.g. "Time"/"Feedback", instead of the static
+    // descriptor label "FX1 Param 1"). An EMPTY string reverts to the
+    // descriptor-derived label (displayLabelFor). Stored even when the control
+    // has no visible label so a later re-show honours it.
+    void setDisplayLabel (const juce::String& label);
     // True for the Seq1/2/3 length controls (marked "Length").
     bool isLengthControl() const noexcept { return paramIDStr_.startsWith ("seq_length_"); }
     // 0-based step index for a seq*_step* / seqnote_* control, else -1.
@@ -242,6 +251,7 @@ private:
     static bool modDragActive_;     // true while a parvatiModSrc drag is in flight
 
     juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
+    juce::String displayLabelOverride_;   // empty => use displayLabelFor (desc_.paramID, desc_.label)
     juce::String lengthParamID_;     // sibling length param; empty for non-steps
 
     // Mod-source combo tint state: a source/modifyer-input combo listens to its
@@ -585,6 +595,18 @@ private:
     // deletes itself — no use-after-free / double-free (mirrors the
     // modMatrixView_/synthWorkspace_ comment above).
     std::unique_ptr<FxMatrixView> fxMatrixView_;
+
+    // FX-slot cards (FX1/FX2/FX3) + the full-width FX routing header bar —
+    // editor-owned, hosted NON-owned by fxWorkspace_ (reparented, never
+    // regenerated). Declared BEFORE fxWorkspace_ (reverse-destruction
+    // discipline, like fxMatrixView_): fxWorkspace_ tears down FIRST and merely
+    // DETACHES these non-owned views, then they are destroyed here. Each card
+    // owns its 5 ParamControls (param1..4 + drywet) + the power/bypass toggle +
+    // the type combo + an FxSlotVisualizer; the bar owns the topology combo +
+    // the drag-reorderable chain.
+    std::unique_ptr<FxRoutingBar> fxRoutingBar_;
+    std::unique_ptr<FxSlotCard>   fxSlotCards_[3] {};
+
     std::unique_ptr<FxWorkspace>  fxWorkspace_;
     // Two-tab page selector (bar hidden via depth 0). Index 0 = synthWorkspace_,
     // index 1 = fxWorkspace_; the header [Synth]/[FX] buttons swap the current
@@ -658,9 +680,8 @@ private:
     std::unique_ptr<WheelsComponent> wheels_;   // pitch + mod wheels (left of keyboard)
     VoiceMeter* globalVoiceMeter_ { nullptr };  // cells display; owned by the Global ParamPage
     ParamPage*  globalPage_ { nullptr };        // Global page overlay (toggled by globalButton_; owns the meter as a decoration)
-    // FX-slot ParamPages (FX1/FX2/FX3) — editor-owned via generatedPages_, hosted
-    // NON-owned by fxWorkspace_->setFxSlotPage (reparented, never regenerated).
-    ParamPage*  fxSlotPages_[3] {};
+    // (FX-slot cards FX1/FX2/FX3 are owned by fxSlotCards_ above; the FX routing
+    // bar is owned by fxRoutingBar_ above — both hosted NON-owned by fxWorkspace_.)
 
     // Live graph previews (EnvelopeDisplay / OscPreviewDisplay /
     // FilterResponseDisplay) + the theme category token they read for their trace

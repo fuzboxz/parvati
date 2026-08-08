@@ -4,6 +4,8 @@
 
 #include "PluginEditor.h"   // ParamPage complete type
 #include "FxMatrixView.h"
+#include "FxRoutingBar.h"
+#include "FxSlotCard.h"
 #include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
 #include "ThemeManager.h"
 
@@ -38,14 +40,26 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
 }
 
 //==============================================================================
-void FxWorkspace::setFxSlotPage (int slot, ParamPage* page)
+void FxWorkspace::setFxSlotCard (int slot, FxSlotCard* card)
 {
     if (slot < 0 || slot >= 3)
         return;
-    // Direct child (editor-owned page, reparented not regenerated).
-    fxSlotPages_[slot] = page;
-    if (page != nullptr)
-        addAndMakeVisible (*page);
+    // Direct child (editor-owned card, reparented not regenerated).
+    fxSlotCards_[slot] = card;
+    if (card != nullptr)
+        addAndMakeVisible (*card);
+}
+
+void FxWorkspace::setFxRoutingBar (FxRoutingBar* bar)
+{
+    // Host the editor-owned FX routing header bar directly as the TOP strip of
+    // the upper region (NON-owned — the editor retains ownership, exactly like
+    // the slot cards + the FxMatrixView). addAndMakeVisible reparents without
+    // transferring ownership, so the teardown order (fxWorkspace_ before
+    // fxRoutingBar_) stays safe.
+    fxRoutingBar_ = bar;
+    if (bar != nullptr)
+        addAndMakeVisible (*bar);
 }
 
 void FxWorkspace::registerGeneratorPage (int modSrcEnum, ParamPage* page,
@@ -164,22 +178,35 @@ void FxWorkspace::resized()
     auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);
     auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
-    // ---- Main row columns: FX1 | FX2 | FX3 (equal thirds) ----
+    // ---- Upper region: routing bar on top, then FX1 | FX2 | FX3 (equal thirds) ----
+    // The full-width FxRoutingBar eats a fixed-height slice off the top of the
+    // upper region; the remaining height fills three equal-width FxSlotCard
+    // columns. The TOTAL upper height (mainH) is unchanged from SynthWorkspace,
+    // so the FX upper region matches the Synth page's OSC/MIXER/FILTER footprint
+    // exactly. Each card lays out its own header / visualizer / param grid.
+    // Floor for the card CONTENT when clamping the routing bar at short window
+    // heights: roughly the card's header + type row + visualizer floor + gaps
+    // (~80px), so the cards stay usable even when the upper region is squeezed.
+    // Same value as before, now named for clarity.
+    constexpr int kMinCardContentH = 80;
+    const int routeH = juce::jmin (FxRoutingBar::kBarHeight,
+                                   juce::jmax (0, mainRow.getHeight() - kMinCardContentH));
+    if (fxRoutingBar_ != nullptr)
+        fxRoutingBar_->setBounds (mainRow.removeFromTop (routeH));
+
     const int fullW = mainRow.getWidth();
     auto fx1Col = mainRow.removeFromLeft (fullW / 3);
     auto fx2Col = mainRow.removeFromLeft (fullW / 3);
     auto fx3Col = mainRow;                       // remaining third (+ 0..2px remainder)
 
-    auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b)
+    auto sizeCard = [] (FxSlotCard* card, const juce::Rectangle<int>& b)
     {
-        if (page == nullptr)
-            return;
-        page->setBounds (b);
-        page->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
+        if (card != nullptr)
+            card->setBounds (b);
     };
-    sizeDirect (fxSlotPages_[0], fx1Col);
-    sizeDirect (fxSlotPages_[1], fx2Col);
-    sizeDirect (fxSlotPages_[2], fx3Col);
+    sizeCard (fxSlotCards_[0], fx1Col);
+    sizeCard (fxSlotCards_[1], fx2Col);
+    sizeCard (fxSlotCards_[2], fx3Col);
 
     // ---- Middle seam: full-width bar ----
     modBar_->setBounds (barRow);
@@ -198,9 +225,12 @@ void FxWorkspace::resized()
 //==============================================================================
 void FxWorkspace::applyThemeColors()
 {
-    for (auto* page : fxSlotPages_)
-        if (page != nullptr)
-            page->applyThemeColors();
+    if (fxRoutingBar_ != nullptr)
+        fxRoutingBar_->applyThemeColors();
+
+    for (auto* card : fxSlotCards_)
+        if (card != nullptr)
+            card->applyThemeColors();
 
     if (modBar_ != nullptr)
         modBar_->applyThemeColors();

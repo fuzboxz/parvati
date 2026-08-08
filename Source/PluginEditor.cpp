@@ -10,6 +10,8 @@
 #include "ui/ParamHelp.h"
 #include "ui/SynthWorkspace.h"
 #include "ui/FxWorkspace.h"
+#include "ui/FxRoutingBar.h"
+#include "ui/FxSlotCard.h"
 #include "ui/FxMatrixView.h"
 #include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel (bar-only NOTE pill)
 #include "ui/WheelsComponent.h"
@@ -490,6 +492,24 @@ void ParamControl::applyTooltipState()
     if (label_    != nullptr) label_->setTooltip (tip);
     if (slider_   != nullptr) slider_->setTooltip (tip);
     if (comboBox_ != nullptr) comboBox_->setTooltip (tip);
+}
+
+void ParamControl::setDisplayLabel (const juce::String& label)
+{
+    // Override the visible caption (FxSlotCard relabels FX knobs to the active
+    // algorithm's semantic name, e.g. "Time"/"Feedback", instead of the static
+    // "FX1 Param 1" descriptor label). An EMPTY string reverts to the
+    // descriptor-derived label (displayLabelFor). Harmless on controls with a
+    // hidden label (sequencer step cells) — the text is set on the invisible
+    // component; the override is stored so a re-show would honour it.
+    displayLabelOverride_ = label;
+    if (label_ != nullptr)
+    {
+        const auto text = displayLabelOverride_.isEmpty()
+            ? displayLabelFor (desc_.paramID, desc_.label)
+            : displayLabelOverride_;
+        label_->setText (text, juce::dontSendNotification);
+    }
 }
 
 int ParamControl::maxChoiceTextWidth() const
@@ -2378,29 +2398,42 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // (generatedPages_ / fxMatrixView_) and hosted NON-owned by the workspace.
     fxWorkspace_ = std::make_unique<FxWorkspace> (themeManager_);
 
-    // Generate the 3 FX-slot ParamPages (one per slot) from the fx{1,2,3}_*
-    // descriptors. fx_topo / fx_order ride on the FX1 page as a small "FX Chain"
-    // group (the only FX-chain-level controls). Pages are editor-owned via
-    // generatedPages_; the workspace hosts them NON-owned via setFxSlotPage.
+    // Generate the 3 FX-slot CARDS (FX1/FX2/FX3) — self-contained modular cards
+    // (power/bypass toggle + type combo + visualizer + a param knob grid with the
+    // dry/wet anchored bottom-right). Each card CREATES + OWNS its 5 full
+    // ParamControls from the fx{N}_param1..4 + fx{N}_drywet descriptors (so they
+    // keep EVERY modulation behaviour: FX-mod-matrix drag-drop + mod rings +
+    // tooltips + category arc). fx_topo / fx_order now ride on the full-width
+    // FxRoutingBar (set below), NOT on a slot page. Cards are editor-owned
+    // (fxSlotCards_) and hosted NON-owned via setFxSlotCard.
     for (int slot = 0; slot < 3; ++slot)
     {
         const juce::String prefix = "fx" + juce::String (slot + 1) + "_";
-        std::vector<const PatchParamDescriptor*> fxDescs;
+        const PatchParamDescriptor *p1 = nullptr, *p2 = nullptr, *p3 = nullptr,
+                                   *p4 = nullptr, *dw = nullptr;
         for (const auto& d : getPatchParamDescriptors())
-            if (d.isFx && juce::String (d.paramID).startsWith (prefix))
-                fxDescs.push_back (&d);
-        // The FX-chain topology + order controls go on the first (FX1) slot page.
-        if (slot == 0)
-            for (const auto& d : getPatchParamDescriptors())
-                if (d.paramID == "fx_topo" || d.paramID == "fx_order")
-                    fxDescs.push_back (&d);
-
-        auto page = std::make_unique<ParamPage> (processorRef_, themeManager_, fxDescs, 3, 214, 76);
-        page->setSize (page->getContentWidth(), page->getContentHeight());
-        fxSlotPages_[slot] = page.get();
-        generatedPages_.push_back (std::move (page));
-        fxWorkspace_->setFxSlotPage (slot, fxSlotPages_[slot]);
+        {
+            if (! (d.isFx && juce::String (d.paramID).startsWith (prefix)))
+                continue;
+            if      (d.paramID == prefix + "param1") p1 = &d;
+            else if (d.paramID == prefix + "param2") p2 = &d;
+            else if (d.paramID == prefix + "param3") p3 = &d;
+            else if (d.paramID == prefix + "param4") p4 = &d;
+            else if (d.paramID == prefix + "drywet") dw = &d;
+        }
+        jassert (p1 != nullptr && p2 != nullptr && p3 != nullptr
+                 && p4 != nullptr && dw != nullptr);
+        auto card = std::make_unique<FxSlotCard> (processorRef_, slot,
+                                                  p1, p2, p3, p4, dw);
+        FxSlotCard* raw = card.get();
+        fxSlotCards_[slot] = std::move (card);
+        fxWorkspace_->setFxSlotCard (slot, raw);
     }
+
+    // The FX routing header bar (topology dropdown + drag-reorderable chain).
+    // Editor-owned, hosted NON-owned above the three cards.
+    fxRoutingBar_ = std::make_unique<FxRoutingBar> (processorRef_, themeManager_);
+    fxWorkspace_->setFxRoutingBar (fxRoutingBar_.get());
 
     // The FX mod matrix (editor-owned, NON-owned host of the FX workspace).
     fxMatrixView_ = std::make_unique<FxMatrixView> (processorRef_, themeManager_);

@@ -5,8 +5,14 @@
 // ParamPages (reparented, NOT regenerated) so every APVTS attachment and the
 // verified byte-bridge survive unchanged:
 //
-//   TOP row:    3 equal columns  [ FX1 | FX2 | FX3 ] — one ParamPage per FX
-//               slot (the fx1_/fx2_/fx3_ descriptors), reparented directly.
+//   TOP row:    a full-width FxRoutingBar (topology dropdown + a
+//               drag-reorderable [FX1]->[FX2]->[FX3] chain) spanning the top of
+//               the upper region, then 3 equal-width columns of self-contained
+//               FxSlotCards (FX1/FX2/FX3) directly below — each a
+//               Serum/Pigments-style modular card (power/bypass toggle + type
+//               combo + a per-algorithm visualizer + a param knob grid with the
+//               dry/wet anchored bottom-right). The total upper height matches
+//               SynthWorkspace (OSC/MIXER/FILTER combined).
 //   MIDDLE row: full-width CentralModBar (CentralModBar::kBarHeight) — the SAME
 //               source set as the synth (modulators come from the synth). Click a
 //               GENERATOR pill (E1-3 / L1-3 / vLFO / S1-2 / ARP / M1-4) to swap
@@ -17,10 +23,10 @@
 //               between the two workspaces on a Synth<->FX toggle, never
 //               regenerated), RIGHT 50% = the editor-owned FxMatrixView.
 //
-// The FX-slot order / series-parallel topology controls live on the FX-slot
-// ParamPages themselves (fx_order / fx_topo params), so this workspace adds no
-// bespoke reorder UI. The placeholder is deliberately a structural clone of the
-// synth layout; visual design can be tuned later.
+// The FX-slot order / series-parallel topology controls live on the full-width
+// FxRoutingBar (fx_topo / fx_order params); each FxSlotCard binds its own
+// fx{N}_type / fx{N}_enabled / params. The placeholder is a structural clone
+// of the synth layout's row skeleton; the card visual design is tuned here.
 
 #pragma once
 
@@ -33,6 +39,8 @@
 #include "CentralModBar.h"
 
 class FxMatrixView;
+class FxRoutingBar;
+class FxSlotCard;
 class ParamPage;
 class ThemeManager;
 
@@ -42,9 +50,13 @@ class FxWorkspace : public juce::Component
 public:
     explicit FxWorkspace (ThemeManager& themeManager);
 
-    // TOP-row FX-slot columns: one editor-owned ParamPage per slot (0..2),
-    // reparented directly (never regenerated). setFxSlotPage(slot, page).
-    void setFxSlotPage (int slot, ParamPage* page);
+    // TOP-row FX-slot cards: one self-contained FxSlotCard per slot (0..2),
+    // reparented directly (never regenerated). setFxSlotCard(slot, card).
+    void setFxSlotCard (int slot, FxSlotCard* card);
+
+    // TOP-row full-width FX routing header bar (topology dropdown + drag-
+    // reorderable chain). Editor-owned, hosted NON-owned.
+    void setFxRoutingBar (FxRoutingBar* bar);
 
     // ---- Bottom-left: the ACTIVE GENERATOR EDITOR (shared with SynthWorkspace) ----
     // Register a generator (a MOD_SRC_* enum whose catalogue entry is a
@@ -99,8 +111,11 @@ public:
 private:
     ThemeManager& themeManager_;
 
-    // TOP-row direct FX-slot pages (FX1/FX2/FX3) — all shown directly.
-    ParamPage* fxSlotPages_[3] { nullptr, nullptr, nullptr };
+    // TOP-row direct FX-slot cards (FX1/FX2/FX3) — all shown directly.
+    FxSlotCard* fxSlotCards_[3] { nullptr, nullptr, nullptr };
+
+    // TOP-row full-width FX routing header bar (editor-owned, NON-owned host).
+    FxRoutingBar* fxRoutingBar_ = nullptr;
 
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;

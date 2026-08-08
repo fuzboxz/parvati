@@ -404,6 +404,12 @@ float partRaw (SynthEngine& engine, int partIndex, const PatchParamDescriptor& d
         }
         if (id == "fx_topo")               return (float) fx.topology.load();
         if (id == "fx_order")              return (float) fx.orderIdx.load();
+        // Master section (v3).
+        if (id == "fx_mix")        return (float) fx.mix.load();
+        if (id == "fx_keep_tails") return (float) fx.keepTails.load();
+        if (id == "fx_eq_low")     return (float) fx.eqLow.load();
+        if (id == "fx_eq_mid")     return (float) fx.eqMid.load();
+        if (id == "fx_eq_high")    return (float) fx.eqHigh.load();
         if (id.startsWith ("fxmod") && id.contains ("_"))
         {
             const int under = id.indexOf ("_");
@@ -687,8 +693,14 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                         }
                         stagedFx = true;
                     }
-                    else if (id == "fx_topo")  { fx.topology.store ((uint8_t) juce::jlimit (0, 1, v), std::memory_order_relaxed); stagedFx = true; }
+                    else if (id == "fx_topo")  { fx.topology.store ((uint8_t) juce::jlimit (0, 2, v), std::memory_order_relaxed); stagedFx = true; }
                     else if (id == "fx_order") { fx.orderIdx.store  ((uint8_t) juce::jlimit (0, 5, v), std::memory_order_relaxed); stagedFx = true; }
+                    // Master section (v3): global wet/dry + bypass tails + 3-band EQ.
+                    else if (id == "fx_mix")        { fx.mix.store       ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
+                    else if (id == "fx_keep_tails") { fx.keepTails.store ((uint8_t) (v != 0 ? 1 : 0),            std::memory_order_relaxed); stagedFx = true; }
+                    else if (id == "fx_eq_low")     { fx.eqLow.store     ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
+                    else if (id == "fx_eq_mid")     { fx.eqMid.store     ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
+                    else if (id == "fx_eq_high")    { fx.eqHigh.store    ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
                     else if (id.startsWith ("fxmod") && id.contains ("_"))
                     {
                         const int under = id.indexOf ("_");
