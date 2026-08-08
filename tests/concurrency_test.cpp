@@ -5,11 +5,13 @@
 // block (so the arpeggiator / note-sequencer actually generate notes), while the
 // MESSAGE thread concurrently performs the FULL host surface:
 //
-//   * EVERY patch/part/arp/seq/option parameter (the whole ~181-param table from
+//   * EVERY patch/part/arp/seq/option/FX parameter (the whole param table from
 //     getPatchParamDescriptors()) swept to min / max / random -- routed through
 //     the APVTS listener (the exact host-knob path) so each hits its faithful
 //     engine method, including the full 14-slot mod matrix, 4 modifiers, all 64
-//     sequencer bytes, and every oscillator shape.
+//     sequencer bytes, every oscillator shape, AND the per-part FX section (3
+//     reorderable slots + 16-slot FX mod matrix, ENABLED so the real renderPartFx
+//     chain runs on the audio thread, not the dry-copy bypass).
 //   * engine modes: polyphony (Mono..Chain on every Part), filter oversampling
 //     (1/2/4), parameter smoothing, VCA curve.
 //   * multitimbrality: per-Part MIDI channel, key zone, voice-card allocation.
@@ -210,7 +212,7 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
     for (int i = 0; i < iters; ++i)
     {
         unsigned op;
-        do { op = static_cast<unsigned> (rng.nextInt (10)); } while (! (modeMask & (1u << op)));
+        do { op = static_cast<unsigned> (rng.nextInt (11)); } while (! (modeMask & (1u << op)));
         switch (op)
         {
             case 0: { const auto& d = descs[(size_t) rng.nextInt (nDescs)];           // random param (full table)
@@ -242,6 +244,25 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
                         case 0: if (multi.existsAsFile()) (void) proc.loadMultiFile (multi); break;
                         case 1: if (patch.existsAsFile()) (void) proc.loadProgramFile (patch); break;
                         case 2: if (tpl.existsAsFile())   (void) proc.loadParvatiMultiFile (tpl); break;
+                    } break;
+            case 10: { // FX section (Parvati-exclusive): ENABLE a slot so the real renderPartFx
+                       // chain runs on the audio thread (not the dry-copy bypass) while we mutate
+                       // its params + the FX mod matrix + topology/order concurrently. This is the
+                       // MT-write / AT-read race the fxDirty_ flag must guard (run under TSAN).
+                      const int slot = 1 + rng.nextInt (kNumFxSlots);               // fx1..3
+                      const juce::String pfx = "fx" + juce::String (slot);
+                      parvati_test::setParamRaw (proc, (pfx + "_type").toRawUTF8(),    (float) rng.nextInt ((int) FxType::Count));
+                      parvati_test::setParamRaw (proc, (pfx + "_enabled").toRawUTF8(), rng.nextBool() ? 1.0f : 0.0f);
+                      parvati_test::setParamRaw (proc, (pfx + "_drywet").toRawUTF8(),  (float) rng.nextInt (128));
+                      parvati_test::setParamRaw (proc, (pfx + "_param1").toRawUTF8(),  (float) rng.nextInt (128));
+                      parvati_test::setParamRaw (proc, (pfx + "_param2").toRawUTF8(),  (float) rng.nextInt (128));
+                      parvati_test::setParamRaw (proc, "fx_topo",                       (float) rng.nextInt (2));      // Series/Parallel
+                      parvati_test::setParamRaw (proc, "fx_order",                      (float) rng.nextInt (6));      // 6 permutations
+                      // an FX-mod routing (16-slot matrix) onto this slot's drywet + a source.
+                      const int m = 1 + rng.nextInt (kNumFxMatrixSlots);
+                      parvati_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_source").toRawUTF8(), (float) rng.nextInt (31));
+                      parvati_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_dest").toRawUTF8(),   (float) ((slot - 1) * 5));
+                      parvati_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_amount").toRawUTF8(), (float) (rng.nextInt (127) - 63));
                     } break;
         }
         std::this_thread::sleep_for (std::chrono::microseconds (20 + rng.nextInt (80)));
