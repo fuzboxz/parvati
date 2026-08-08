@@ -31,6 +31,7 @@
 #include "PluginProcessor.h"
 #include "ui/ModSourceCatalog.h"   // parvati::kAllSources (generator pill set)
 #include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
+#include "ui/FxWorkspace.h"        // complete type for findFirst<FxWorkspace>
 
 #include <cstdio>
 #include <vector>
@@ -98,6 +99,11 @@ juce::String pageName (ParamPage* page)
             else if (id.startsWith ("env"))   name = "Envelopes";
             else if (id.startsWith ("seq"))   name = "Sequencer";
             else if (id.startsWith ("arp"))   name = "Arp";
+            // FX-slot pages (fx1_/fx2_/fx3_ + fx_topo/fx_order). Standalone shots
+            // of each of the 3 FX slot panels (type/enabled/drywet/4 params).
+            else if (id.startsWith ("fx1"))   name = "FX_Slot1";
+            else if (id.startsWith ("fx2"))   name = "FX_Slot2";
+            else if (id.startsWith ("fx3"))   name = "FX_Slot3";
         }
     }
     if (hasCard && hasCurve)
@@ -215,13 +221,67 @@ int main (int argc, char** argv)
         }
     }
 
+    // 2b) FX workspace (Parvati-exclusive). Switch the top-level page selector to
+    //     the FX tab and capture the 3-row FX layout (3 slot panels | CentralModBar
+    //     | shared generator editor + FxMatrixView), exactly as a user sees it.
+    //     The modulator editor is SHARED with SYNTH, so each generator pill is
+    //     also captured in the FX context. A populated variant (FX1 = Reverb,
+    //     enabled, + an FX-matrix routing) shows the FX + matrix in action.
+    auto* editor = dynamic_cast<ParvatiEditor*> (ed);
+    if (editor != nullptr)
+    {
+        editor->setFxMode (true);
+        auto* fxs = findFirst<FxWorkspace> (ed);
+
+        // FX overview (default active generator = ENV 1).
+        capture (*ed, "FX_overview.png");
+
+        // Each generator surfaced in the FX workspace (shared modulator editor).
+        if (fxs != nullptr)
+            for (const auto& src : parvati::kAllSources)
+            {
+                if (! src.isGenerator)
+                    continue;
+                fxs->setActiveGenerator (src.enumValue);
+                capture (*ed, "FX_" + juce::String (src.fullName).replace (" ", "_") + ".png");
+            }
+
+        // Populated FX: enable FX1 = Reverb with dry/wet + an FX-matrix routing
+        // (Env 1 -> FX1 Dry/Wet) so the matrix list + an active slot are visible.
+        auto setFxParam = [&processor] (const char* id, float v)
+        { processor.getApvts().getParameterAsValue (juce::String (id)) = v; };
+        setFxParam ("fx1_type",    3.0f);   // Reverb
+        setFxParam ("fx1_enabled", 1.0f);
+        setFxParam ("fx1_drywet",  72.0f);
+        setFxParam ("fx1_param1",  90.0f);
+        setFxParam ("fx1_param2",  60.0f);
+        setFxParam ("fx1_param3",  80.0f);
+        setFxParam ("fx1_param4",  64.0f);
+        setFxParam ("fxmod1_source", 0.0f);  // Env 1
+        setFxParam ("fxmod1_dest",   0.0f);  // FX1 Dry/Wet
+        setFxParam ("fxmod1_amount", 28.0f);
+        // ENV 1 is the default active generator after setFxMode, so the shared
+        // modulator editor already shows Env 1 in the FX context.
+        capture (*ed, "FX_reverb_active.png");
+
+        // Reset FX params to defaults so the standalone FX-slot page captures
+        // (below) render clean.
+        for (const char* id : { "fx1_type", "fx1_enabled", "fx1_drywet",
+                                "fx1_param1", "fx1_param2", "fx1_param3", "fx1_param4",
+                                "fxmod1_source", "fxmod1_dest", "fxmod1_amount" })
+            setFxParam (id, 0.0f);
+
+        editor->setFxMode (false);   // back to SYNTH for the remaining captures
+    }
+
     // 3) One standalone shot per generated ParamPage via allGeneratedPages()
     //    (the editor-owned pages). Each page is laid out and rendered directly —
     //    this covers the top-row direct pages (Oscillators/Mixer/Filter), which
     //    are not generator pills, and re-emits each generator page as a clean
     //    standalone editor. A ParamPage owns its controls whether parented or
-    //    not, so unparented generator pages render here too.
-    if (auto* editor = dynamic_cast<ParvatiEditor*> (ed))
+    //    not, so unparented generator pages render here too. The FX-slot pages
+    //    (fx1_/fx2_/fx3_) are also editor-owned, so they are captured here too.
+    if (editor != nullptr)
     {
         for (auto* page : editor->allGeneratedPages())
         {

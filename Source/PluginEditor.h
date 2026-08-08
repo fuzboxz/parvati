@@ -508,6 +508,11 @@ public:
     // test/tool access only.
     std::vector<ParamPage*> allGeneratedPages() const;
 
+    // Switch the top-level page selector between the SYNTH workspace (false) and
+    // the FX workspace (true). Public so the offscreen screen-shot tool (and
+    // tests) can drive the mode toggle without simulating header-button clicks.
+    void setFxMode (bool fx);
+
 private:
     // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL files.
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
@@ -687,7 +692,6 @@ private:
     // and shared, NOT duplicated). The outgoing workspace releases its
     // (non-owned) reference to the active page so the incoming workspace's
     // addAndMakeVisible re-parents it cleanly (a JUCE Component has one parent).
-    void setFxMode (bool fx);
     int  activeGeneratorModSrc_ { 0 };   // current active generator (MOD_SRC_*); default ENV 1
 
     juce::Label statusCountLabel_;              // bottom-left "n/denom" active-voice count
