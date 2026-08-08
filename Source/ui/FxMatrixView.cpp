@@ -143,10 +143,10 @@ private:
 // matrix's own rows cannot be a drop target today; the drop just doesn't feed
 // back into the FX matrix — acceptable for the placeholder FX UI). Clicking (no
 // drag) is a no-op so the grip never competes with the adjacent source combo.
-struct ModSourceDragGrip : public juce::Component,
+struct FxSourceDragGrip : public juce::Component,
                               public juce::SettableTooltipClient
 {
-    ModSourceDragGrip (FxMatrixView& owner, int slot) : owner_ (owner), slot_ (slot)
+    FxSourceDragGrip (FxMatrixView& owner, int slot) : owner_ (owner), slot_ (slot)
     {
         setTooltip (TRANS ("Drag onto a knob to assign this modulation"));
     }
@@ -258,7 +258,7 @@ struct FxMatrixRow : public juce::Component,
         indexLabel_.setJustificationType (juce::Justification::centred);
         addAndMakeVisible (indexLabel_);
 
-        dragGrip_ = std::make_unique<ModSourceDragGrip> (owner_, slot);
+        dragGrip_ = std::make_unique<FxSourceDragGrip> (owner_, slot);
         addAndMakeVisible (*dragGrip_);
 
         addAndMakeVisible (sourceCombo_);
@@ -460,7 +460,7 @@ struct FxMatrixRow : public juce::Component,
     const int slot_;
 
     juce::Label    indexLabel_;
-    std::unique_ptr<ModSourceDragGrip> dragGrip_;   // drag source (parvatiModSrc payload)
+    std::unique_ptr<FxSourceDragGrip> dragGrip_;   // drag source (parvatiModSrc payload)
     juce::ComboBox sourceCombo_;
     juce::ComboBox destCombo_;
     juce::Slider   depthSlider_;
