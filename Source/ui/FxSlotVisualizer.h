@@ -18,16 +18,17 @@
 //                  ghost row offset by the stereo-spread param conveys width.
 //   Reverb   (3) — a decaying impulse-response tail envelope (length = size,
 //                  steepness = damp) + a wet-level band + a stereo-width bracket.
-//   Chorus   (4) — two wobbling delayed traces (L/R) whose sine rate/depth track
-//                  the params; the phase advances in real time via the 30 Hz
-//                  timer so the graphic animates continuously.
+//   Chorus   (4) — two wobbling delayed traces (L/R) whose sine amplitude tracks
+//                  `depth` and whose spatial wobble count tracks `rate`. STATIC
+//                  (frozen phase): it redraws only on a rate/depth/type change.
 //
 // The slot's Dry/Wet (getDryWet) scales the overall trace vividness: a fully-dry
 // slot reads dimmer, a fully-wet slot reads vivid (the knob is visible here).
 //
 // All values are tracked EXACTLY to the live APVTS target each 30 Hz tick (no
 // smoothing lag); the repaint gate fires on a change vs the previous tick. The
-// Chorus graphic also repaints every tick (its phase animates in real time).
+// Chorus graphic is STATIC (its phase is frozen) so it too only redraws on a
+// rate/depth/type change.
 
 #pragma once
 

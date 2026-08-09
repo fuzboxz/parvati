@@ -25,6 +25,24 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   to the legacy APVTS restore.
 
 ### Changed
+- **FX page: 4-column synth-style top row + routing/slot overhaul.** The
+  FX page's top row is a single 4-column row `[ ROUTING | FX1 | FX2 | FX3 ]`, so
+  every FX card gets the full top-row height and its knobs reach their 52px
+  synth-parity dial. The cards + routing column are borderless sibling panels
+  (`containerFill`, 7px corners) matching the synth `GroupComponent` cards, with
+  a 14px bold uppercase header. The **ROUTING** column centres an in→out
+  signal-flow block diagram (`IN ▶ [FX1] ▶ [FX2] ▶ [FX3] ▶ OUT`) that redraws
+  for the Series / Parallel-1+2→3 / Parallel-1→2+3 topologies — topology is
+  changed via ◀ ▶ steppers (the FLOW dropdown is gone); the slot blocks are
+  bright `FXn` pills and `IN`/`OUT` are smaller muted endpoints, evenly spaced
+  in Series. Below sit a `Mix` knob, the 3-band master **EQ** (Low/Mid/High,
+  wired to the existing `fx_eq_*` biquads), and a modern pill **Keep FX Tails**
+  switch. The **FX-slot cards** lay their knobs in a Mixer-style grid (Mix last;
+  Chorus / Gain-Pan drop to 2 columns for a 2-row look), use a fit-to-text type
+  combo, and a compact ~80px visualizer (the Chorus graphic is now static). The
+  standalone `FxMasterEqCurve` component is removed. **Global / Synth / FX /
+  Multi** are unified into four peer top-level pages (Global and Multi are no
+  longer overlays).
 - **Font: Console by default + Serif / Sans Serif options + live switching.**
   The Settings "Font" combo now defaults to **Console** (embedded GNU Unifont)
   and adds system-default **Serif** and **Sans Serif** choices. Switching the

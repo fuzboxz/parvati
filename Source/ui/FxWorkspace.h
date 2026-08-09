@@ -5,14 +5,15 @@
 // ParamPages (reparented, NOT regenerated) so every APVTS attachment and the
 // verified byte-bridge survive unchanged:
 //
-//   TOP row:    a full-width FxRoutingBar (topology dropdown + a
-//               drag-reorderable [FX1]->[FX2]->[FX3] chain) spanning the top of
-//               the upper region, then 3 equal-width columns of self-contained
-//               FxSlotCards (FX1/FX2/FX3) directly below — each a
-//               Serum/Pigments-style modular card (power/bypass toggle + type
-//               combo + a per-algorithm visualizer + a param knob grid with the
-//               dry/wet anchored bottom-right). The total upper height matches
-//               SynthWorkspace (OSC/MIXER/FILTER combined).
+//   TOP row:    4 columns [ ROUTING | FX1 | FX2 | FX3 ]. A slim FxRoutingBar
+//               column (topology dropdown + global MIX + keep-tails toggle) on
+//               the left, then 3 equal-width columns of self-contained
+//               FxSlotCards (FX1/FX2/FX3) — each a modular card (power/bypass
+//               toggle + type combo + a per-algorithm visualizer + a param knob
+//               grid with the dry/wet anchored rightmost). Every column gets the
+//               FULL top-row height (synth-page OSC/MIXER/FILTER parity), so the
+//               knobs reach their 52px synth-parity dial. The cards are
+//               borderless sibling panels (containerFill, no outline).
 //   MIDDLE row: full-width CentralModBar (CentralModBar::kBarHeight) — the SAME
 //               source set as the synth (modulators come from the synth). Click a
 //               GENERATOR pill (E1-3 / L1-3 / vLFO / S1-2 / ARP / M1-4) to swap
@@ -54,8 +55,9 @@ public:
     // reparented directly (never regenerated). setFxSlotCard(slot, card).
     void setFxSlotCard (int slot, FxSlotCard* card);
 
-    // TOP-row full-width FX routing header bar (topology dropdown + drag-
-    // reorderable chain). Editor-owned, hosted NON-owned.
+    // TOP-row slim ROUTING column (FLOW topology dropdown + global MIX +
+    // keep-tails toggle), now the leftmost of the 4-column top row. Editor-owned,
+    // hosted NON-owned.
     void setFxRoutingBar (FxRoutingBar* bar);
 
     // ---- Bottom-left: the ACTIVE GENERATOR EDITOR (shared with SynthWorkspace) ----

@@ -2506,63 +2506,28 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     addChildComponent (multiPage_.get());   // owned here; invisible until toggled
     multiPage_->setVisible (false);
 
-    // ---- [Synth] / [FX] mode toggle (header, between Part and Multi) ----
-    // Swaps pageSelector_ between the SYNTH tab (index 0) and the FX tab
-    // (index 1) and reparents the SHARED active generator page into the
-    // newly-visible workspace (setFxMode). NOT an APVTS param — a view-mode
-    // selector like Multi/Global. The toggle is exclusive; clicking the
-    // already-active mode is a no-op. Styling mirrors multiButton_/globalButton_.
-    synthModeButton_.setTooltip (TRANS ("Synth mode"));
-    fxModeButton_.setTooltip (TRANS ("FX mode"));
-    synthModeButton_.setClickingTogglesState (true);
-    fxModeButton_.setClickingTogglesState (true);
-    synthModeButton_.setRadioGroupId (1, juce::dontSendNotification);
-    fxModeButton_.setRadioGroupId (1, juce::dontSendNotification);
-    synthModeButton_.setToggleState (true, juce::dontSendNotification);   // SYNTH is the default
-    synthModeButton_.onClick = [this] { if (fxModeActive_) setFxMode (false); };
-    fxModeButton_.onClick    = [this] { if (! fxModeActive_) setFxMode (true); };
-    addAndMakeVisible (synthModeButton_);
-    addAndMakeVisible (fxModeButton_);
-
-    multiButton_.setTooltip (TRANS ("Multi / Setup"));
-    multiButton_.setClickingTogglesState (true);
-    multiButton_.onClick = [this] {
-        const bool on = multiButton_.getToggleState();
-        if (multiPage_ != nullptr)
-        {
-            multiPage_->setVisible (on);
-            if (on)
-                multiPage_->toFront (true);   // bounds are kept in sync by resized()
-        }
-        if (on && globalPage_ != nullptr)     // mutual-exclusion: only one overlay at a time
-        {
-            globalPage_->setVisible (false);
-            globalButton_.setToggleState (false, juce::dontSendNotification);
-        }
-    };
-    addAndMakeVisible (multiButton_);
-
-    // ---- Global settings overlay (header button) ----
-    // The Global ParamPage (generated above) is shown as an overlay over the
-    // content area, toggled by the header "Global" button. Mirrors the Multi
-    // overlay; the two overlays are mutually exclusive.
-    globalButton_.setTooltip (TRANS ("Global settings"));
-    globalButton_.setClickingTogglesState (true);
-    globalButton_.onClick = [this] {
-        const bool on = globalButton_.getToggleState();
-        if (globalPage_ != nullptr)
-        {
-            globalPage_->setVisible (on);
-            if (on)
-                globalPage_->toFront (true);   // bounds are kept in sync by resized()
-        }
-        if (on && multiPage_ != nullptr)       // mutual-exclusion: only one overlay at a time
-        {
-            multiPage_->setVisible (false);
-            multiButton_.setToggleState (false, juce::dontSendNotification);
-        }
-    };
-    addAndMakeVisible (globalButton_);
+    // ---- Unified 4-way top-level page selector: [Synth][FX][Global][Multi] ----
+    // All four header buttons are radio-group peers; each selects its PAGE via
+    // showTopPage(idx), which sets EXCLUSIVE visibility (Global/Multi are now
+    // FULL pages — pageSelector_ is hidden while they are active, so they are
+    // the sole content, not floating overlays) and syncs every button. Synth/FX
+    // additionally reparent the shared generator (only on a real Synth<->FX
+    // change). NOT APVTS params — view-state only.
+    synthModeButton_.setTooltip (TRANS ("Synth page"));
+    fxModeButton_.setTooltip    (TRANS ("FX page"));
+    globalButton_.setTooltip    (TRANS ("Global page"));
+    multiButton_.setTooltip     (TRANS ("Multi / Setup page"));
+    for (auto* b : { &synthModeButton_, &fxModeButton_, &globalButton_, &multiButton_ })
+    {
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (1, juce::dontSendNotification);
+        addAndMakeVisible (*b);
+    }
+    synthModeButton_.onClick = [this] { showTopPage (0); };
+    fxModeButton_.onClick    = [this] { showTopPage (1); };
+    globalButton_.onClick    = [this] { showTopPage (2); };
+    multiButton_.onClick     = [this] { showTopPage (3); };
+    showTopPage (0);   // SYNTH is the default page (sets visibility + button states)
 
     // ---- [KBD] header toggle: show/hide the bottom virtual keyboard ----
     // The keyboard floats as an OVERLAY over the bottom of the workspace:
@@ -2912,24 +2877,16 @@ void ParvatiEditor::timerCallback()
     }
 }
 
-void ParvatiEditor::setFxMode (bool fx)
+void ParvatiEditor::reparentGeneratorTo (bool toFx)
 {
-    fxModeActive_ = fx;
-
-    // Swap the visible workspace: SYNTH = tab 0, FX = tab 1 (the tab bar is
-    // hidden; the [Synth]/[FX] header buttons are the UI).
-    pageSelector_.setCurrentTabIndex (fx ? 1 : 0, false);
-    synthModeButton_.setToggleState (! fx, juce::dontSendNotification);
-    fxModeButton_.setToggleState (fx, juce::dontSendNotification);
-
     // The generator ParamPages are SHARED (editor-owned, registered into BOTH
     // workspaces). Only the VISIBLE workspace may host the active page: release
     // it from the outgoing workspace first (detach + forget), then reparent it
-    // into the now-visible workspace. This guarantees a single parent — no
+    // into the destination workspace. This guarantees a single parent — no
     // double-parent / dangling (a JUCE Component can only have one parent, and
-    // addAndMakeVisible re-parents cleanly once the outgoing host has
-    // released its stale activePage_ reference).
-    if (fx)
+    // addAndMakeVisible re-parents cleanly once the outgoing host has released
+    // its stale activePage_ reference).
+    if (toFx)
     {
         if (synthWorkspace_ != nullptr) synthWorkspace_->releaseActiveEditor();
         if (fxWorkspace_    != nullptr) fxWorkspace_->setActiveGenerator (activeGeneratorModSrc_);
@@ -2939,6 +2896,55 @@ void ParvatiEditor::setFxMode (bool fx)
         if (fxWorkspace_    != nullptr) fxWorkspace_->releaseActiveEditor();
         if (synthWorkspace_ != nullptr) synthWorkspace_->setActiveGenerator (activeGeneratorModSrc_);
     }
+}
+
+void ParvatiEditor::setFxMode (bool fx)
+{
+    // Public entry for the screen-shot tool / tests: select SYNTH (false) or FX
+    // (true) via the unified page selector.
+    showTopPage (fx ? 1 : 0);
+}
+
+void ParvatiEditor::showTopPage (int idx)
+{
+    // idx: 0=Synth 1=FX 2=Global 3=Multi — four PEER top-level pages. Global and
+    // Multi are FULL pages now (pageSelector_ is hidden while they are active so
+    // they are the sole content), not floating overlays.
+    currentTopPage_ = idx;
+
+    // Reparent the shared generator only when landing on Synth/FX and it is
+    // currently hosted by the OTHER workspace. Going to/from Global/Multi leaves
+    // the generator where it was (its workspace is just hidden, not torn down).
+    if (idx == 0 && fxModeActive_)        { fxModeActive_ = false; reparentGeneratorTo (false); }
+    else if (idx == 1 && ! fxModeActive_) { fxModeActive_ = true;  reparentGeneratorTo (true); }
+
+    // Exclusive page visibility: exactly one of the synth/fx tabbed selector or
+    // the Global/Multi full-page children is shown.
+    pageSelector_.setVisible (idx == 0 || idx == 1);
+    if (idx == 0 || idx == 1)
+        pageSelector_.setCurrentTabIndex (idx, false);
+    if (globalPage_ != nullptr) globalPage_->setVisible (idx == 2);
+    if (multiPage_  != nullptr) multiPage_->setVisible  (idx == 3);
+
+    // The full-page children cover the content area; bring the active one to the
+    // front (above the keyboard overlay) and reflow the Global ParamPage to its
+    // bounds for vertical centring.
+    if (idx == 2 && globalPage_ != nullptr)
+    {
+        globalPage_->toFront (true);
+        globalPage_->reflowToWidth (juce::jmax (200, globalPage_->getWidth() - 16),
+                                    juce::jmax (0, globalPage_->getHeight()));
+    }
+    else if (idx == 3 && multiPage_ != nullptr)
+    {
+        multiPage_->toFront (true);
+    }
+
+    // Sync all four header page buttons to the active page.
+    synthModeButton_.setToggleState (idx == 0, juce::dontSendNotification);
+    fxModeButton_.setToggleState    (idx == 1, juce::dontSendNotification);
+    globalButton_.setToggleState    (idx == 2, juce::dontSendNotification);
+    multiButton_.setToggleState     (idx == 3, juce::dontSendNotification);
 }
 
 void ParvatiEditor::applyAllColoursFromTheme()

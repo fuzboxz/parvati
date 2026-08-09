@@ -2,52 +2,314 @@
 
 #include "FxRoutingBar.h"
 
-#include "FxMasterEqCurve.h"
 #include "PluginProcessor.h"   // ParvatiAudioProcessor complete type (getApvts)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
+#include "ParvatiLookAndFeel.h"   // dynamic_cast + appFont() in FxFlowDiagram / FxBypassSwitch
 
 //==============================================================================
 namespace
 {
-    // LEFT-column layout constants (px).
-    constexpr int kMargin       = 10;   // horizontal edge inset (matches the slot cards)
-    constexpr int kLeftPct      = 45;   // left column width = 45% of the bar
-    constexpr int kRowGap       = 5;    // vertical gap between left rows
-    constexpr int kFlowLabelW   = 38;   // "FLOW:" label width
-    constexpr int kFlowComboW   = 190;  // topology (FLOW) combo width
-    constexpr int kMixLabelW    = 34;   // "MIX:" label width
-    constexpr int kMixKnobSize  = 40;   // MIX rotary knob cell
+    // Vertical-column layout constants (px). The bar is now a slim full-height
+    // column (column 0 of the 4-column FX top row), not a wide strip.
+    constexpr int kPad        = 6;    // card edge inset (matches the FX-slot cards)
+    constexpr float kCorner   = 7.0f; // card panel corner radius (synth GroupComponent parity)
+    constexpr int kHeaderH    = 16;   // header band (painted "FX ROUTING" title)
+    constexpr int kGap        = 8;    // vertical gap between sections
+    constexpr int kLabelH     = 14;   // "Mix" caption height
+    constexpr int kKnobSize   = 52;   // Mix rotary dial (synth-parity)
+    constexpr int kStepBtnW   = 24;   // ◀ ▶ topology stepper width
+    constexpr int kStepBtnH   = 28;   // ◀ ▶ topology stepper height
+    constexpr int kFlowRowH   = 56;   // [◀][flow diagram][▶] row height
+    constexpr int kCtrlRowH   = 70;   // [Mix knob] | [Bypass switch] row height
+    constexpr int kEqRowH     = 58;   // [Low][Mid][High] EQ knob row height
+    constexpr int kEqKnobSize = 42;   // EQ rotary dial (compact)
 }
+
+//==============================================================================
+// FxFlowDiagram — a compact in->out signal-flow block chart for the 3 FX-chain
+// topologies (Series / Parallel 1+2->3 / Parallel 1->2+3). A read-only visual
+// that tracks fx_topo LIVE (an APVTS::Listener repaints it on any topology
+// change — combo edit, ◀▶ stepper, host automation, preset load). Slot blocks are
+// labelled "FX1".."FX3", falling back to the bare digit "1".."3" when a block is
+// too narrow for the full label. File-scope (not anonymous) so FxRoutingBar.h's
+// forward declaration + unique_ptr<FxFlowDiagram> resolve to this type.
+class FxFlowDiagram : public juce::Component,
+                      private juce::AudioProcessorValueTreeState::Listener,
+                      private juce::AsyncUpdater
+{
+public:
+    FxFlowDiagram (ParvatiAudioProcessor& proc, ThemeManager& tm)
+        : processor_ (proc), themeManager_ (tm)
+    {
+        setTitle ("FX signal flow");
+        setDescription ("FX chain topology signal-flow diagram");
+        processor_.getApvts().addParameterListener ("fx_topo", this);
+    }
+
+    ~FxFlowDiagram() override
+    {
+        processor_.getApvts().removeParameterListener ("fx_topo", this);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto& t = themeManager_.getCurrentTheme();
+        const juce::Colour trace   = t.accentSecondary;   // wires + BRIGHT FX-slot borders (FX accent)
+        const juce::Colour blockBg = t.containerFill;     // FX-slot block fill (lifts above the card)
+        const juce::Colour text    = t.textPrimary;       // FX-slot label
+        const juce::Colour dim     = t.textSecondary;     // IN/OUT border + label grey
+
+        constexpr float kBlockH    = 18.0f;
+        constexpr float kEndH      = 14.0f;   // IN/OUT endpoint height (smaller — "utility")
+        constexpr float kBlockMinW = 22.0f;
+        constexpr float kBlockMaxW = 40.0f;
+        constexpr float kRound     = 3.0f;
+        constexpr float kWire      = 1.5f;
+        constexpr float kBorder    = 1.5f;   // bright block-border weight
+
+        const auto frame = getLocalBounds().toFloat();
+        const auto plot  = frame.reduced (4.0f);
+        const float cy     = plot.getCentreY();
+        const float rowOff = kBlockH * 0.85f;              // parallel-branch vertical offset
+
+        const int topo = currentTopoIndex();               // 0=Series 1=Par 1+2->3 2=Par 1->2+3
+        const juce::Font blockFont (juce::FontOptions (10.0f, juce::Font::bold));
+        const juce::Font endFont   (juce::FontOptions (8.0f,  juce::Font::bold));   // IN/OUT (smaller utility label)
+
+        auto nodeRect = [&] (float cx, float bcY, float w) -> juce::Rectangle<float>
+        {
+            return { cx - w * 0.5f, bcY - kBlockH * 0.5f, w, kBlockH };
+        };
+        // IN / OUT use a SHORTER rect so they read as utility endpoints, not peer
+        // slots (centred on the midline, so wires still land at their centre).
+        auto endRect = [&] (float cx, float bcY, float w) -> juce::Rectangle<float>
+        {
+            return { cx - w * 0.5f, bcY - kEndH * 0.5f, w, kEndH };
+        };
+
+        // IN / OUT end-blocks (narrower, sized to the "IN"/"OUT" glyphs).
+        constexpr float kInW  = 20.0f;
+        constexpr float kOutW = 26.0f;
+        const auto inBlock  = endRect (plot.getX() + kInW * 0.5f, cy, kInW);
+        const auto outBlock = endRect (plot.getRight() - kOutW * 0.5f, cy, kOutW);
+        const float midLeft  = inBlock.getRight();
+        const float midRight = outBlock.getX();
+        const float midW     = midRight - midLeft;
+
+        // FX slot-block rectangles (geometry only; rendered after the wires).
+        const float topY = cy - rowOff, botY = cy + rowOff;
+        juce::Rectangle<float> fx[3];
+        if (topo == 0)                     // Series: IN-FX1-FX2-FX3-OUT with EQUAL gaps
+        {
+            constexpr float kMinGap = 6.0f;
+            const float w   = juce::jlimit (kBlockMinW, kBlockMaxW, (midW - 4.0f * kMinGap) / 3.0f);
+            const float gap = juce::jmax (2.0f, (midW - 3.0f * w) * 0.25f);   // equal inter-element gap
+            for (int s = 0; s < 3; ++s)
+                fx[s] = nodeRect (midLeft + gap + static_cast<float> (s) * (w + gap) + w * 0.5f, cy, w);
+        }
+        else                               // Parallel: 2 columns
+        {
+            const float w  = juce::jlimit (kBlockMinW, kBlockMaxW, midW * 0.36f);
+            const float c0 = midLeft + midW * 0.30f;
+            const float c1 = midLeft + midW * 0.70f;
+            if (topo == 1)                 // (1 || 2) -> 3
+            {
+                fx[0] = nodeRect (c0, topY, w);
+                fx[1] = nodeRect (c0, botY, w);
+                fx[2] = nodeRect (c1, cy, w);
+            }
+            else                           // 1 -> (2 || 3)
+            {
+                fx[0] = nodeRect (c0, cy, w);
+                fx[1] = nodeRect (c1, topY, w);
+                fx[2] = nodeRect (c1, botY, w);
+            }
+        }
+
+        auto wire = [&] (float x1, float y1, float x2, float y2)
+        {
+            g.setColour (trace);
+            g.drawLine (x1, y1, x2, y2, kWire);
+        };
+
+        // No background frame: the flow renders directly on the card so the
+        // diagram reads as lightly as possible. (frame/plot are geometry only.)
+
+        // ---- Wires (drawn before the nodes so the nodes cover the endpoints) ----
+        if (topo == 0)                     // Series: IN -> 1 -> 2 -> 3 -> OUT
+        {
+            wire (inBlock.getRight(), cy, fx[0].getX(), cy);
+            wire (fx[0].getRight(), cy, fx[1].getX(), cy);
+            wire (fx[1].getRight(), cy, fx[2].getX(), cy);
+            wire (fx[2].getRight(), cy, outBlock.getX(), cy);
+        }
+        else if (topo == 1)                // Parallel (1 || 2) -> 3
+        {
+            const float j0 = fx[0].getX() - 4.0f;          // split junction (left of the pair)
+            const float j1 = fx[0].getRight() + 4.0f;      // merge junction (right of the pair)
+            wire (inBlock.getRight(), cy, j0, cy);
+            wire (j0, cy, j0, topY);  wire (j0, topY, fx[0].getX(), topY);
+            wire (j0, cy, j0, botY);  wire (j0, botY, fx[1].getX(), botY);
+            wire (fx[0].getRight(), topY, j1, topY);  wire (j1, topY, j1, cy);
+            wire (fx[1].getRight(), botY, j1, botY);  wire (j1, botY, j1, cy);
+            wire (j1, cy, fx[2].getX(), cy);
+            wire (fx[2].getRight(), cy, outBlock.getX(), cy);
+        }
+        else                               // Parallel 1 -> (2 || 3)
+        {
+            const float j0 = fx[0].getRight() + 4.0f;      // split junction (right of slot 1)
+            const float j1 = fx[1].getRight() + 4.0f;      // merge junction (right of the pair)
+            wire (inBlock.getRight(), cy, fx[0].getX(), cy);
+            wire (fx[0].getRight(), cy, j0, cy);
+            wire (j0, cy, j0, topY);  wire (j0, topY, fx[1].getX(), topY);
+            wire (j0, cy, j0, botY);  wire (j0, botY, fx[2].getX(), botY);
+            wire (fx[1].getRight(), topY, j1, topY);  wire (j1, topY, j1, cy);
+            wire (fx[2].getRight(), botY, j1, botY);  wire (j1, botY, j1, cy);
+            wire (j1, cy, outBlock.getX(), cy);
+        }
+
+        // ---- Nodes (drawn over the wire ends). FX slots are BRIGHT (filled +
+        //      orange border + white label); the IN/OUT endpoints are MUTED (thin
+        //      grey border + grey label, no fill) so they recede. ----
+        auto drawNode = [&] (const juce::Rectangle<float>& r, const juce::String& label, const juce::Font& f,
+                             juce::Colour border, juce::Colour labelCol, bool filled)
+        {
+            if (filled)
+            {
+                g.setColour (blockBg);
+                g.fillRoundedRectangle (r, kRound);
+            }
+            g.setColour (border);
+            g.drawRoundedRectangle (r, kRound, filled ? kBorder : 1.0f);
+            g.setColour (labelCol);
+            g.setFont (f);
+            g.drawText (label, r, juce::Justification::centred);
+        };
+
+        drawNode (inBlock,  "IN",  endFont, dim, text, false);   // muted-but-visible endpoint (grey border, white label)
+        drawNode (outBlock, "OUT", endFont, dim, text, false);
+        for (int s = 0; s < 3; ++s)
+        {
+            const juce::String full  = "FX" + juce::String (s + 1);
+            const juce::String label = static_cast<float> (juce::GlyphArrangement::getStringWidthInt (blockFont, full)) > (fx[s].getWidth() - 4.0f)
+                                       ? juce::String (s + 1) : full;
+            drawNode (fx[s], label, blockFont, trace, text, true);   // bright FX slot
+        }
+    }
+
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<juce::AccessibilityHandler> (*this, juce::AccessibilityRole::group);
+    }
+
+private:
+    void parameterChanged (const juce::String& id, float) override
+    {
+        if (id != "fx_topo")
+            return;
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm != nullptr && mm->isThisTheMessageThread())
+            repaint();
+        else
+            triggerAsyncUpdate();
+    }
+
+    void handleAsyncUpdate() override { repaint(); }
+
+    int currentTopoIndex() const
+    {
+        // fx_topo is an AudioParameterChoice: getValue() is normalized 0..1
+        // across the 3 choices -> scale to 0..2.
+        auto* p = processor_.getApvts().getParameter ("fx_topo");
+        const float v = p != nullptr ? p->getValue() : 0.0f;
+        return juce::jlimit (0, 2, juce::roundToInt (v * 2.0f));
+    }
+
+    ParvatiAudioProcessor& processor_;
+    ThemeManager&          themeManager_;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxFlowDiagram)
+};
+
+//==============================================================================
+// FxBypassSwitch — a modern pill toggle-switch for the "Keep FX Tails" option
+// (fx_keep_tails). The track fills with accentPrimary (the rotary-arc
+// yellow/orange) when ON and recedes to trackEmpty when OFF; the knob slides
+// L->R; the label is drawn to the right of the switch. Reads the active
+// ParvatiTheme via its LookAndFeel every paint (theme switches are free).
+class FxBypassSwitch : public juce::Button
+{
+public:
+    explicit FxBypassSwitch (juce::String label) : juce::Button ({}), label_ (std::move (label))
+    {
+        setClickingTogglesState (true);
+    }
+
+    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool /*isButtonDown*/) override
+    {
+        const ParvatiTheme* t = nullptr;
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            t = lnf->getTheme();
+        const juce::Colour accent = t ? t->accentPrimary : juce::Colour (0xffe8b84b);
+        const juce::Colour trackC = t ? t->trackEmpty    : juce::Colour (0xff3a3a46);
+        const juce::Colour text   = t ? t->textSecondary : juce::Colour (0xffb0b0bc);
+
+        const bool on = getToggleState();
+
+        // Switch pill (left).
+        const float sh = juce::jlimit (14.0f, 18.0f, static_cast<float> (getHeight()) * 0.5f);
+        const float sw = sh * 1.85f;
+        const juce::Rectangle<float> pill (0.0f, (static_cast<float> (getHeight()) - sh) * 0.5f, sw, sh);
+        juce::Colour trackCol = on ? accent : trackC;
+        if (! on && isMouseOverButton) trackCol = trackC.brighter (0.20f);
+        g.setColour (trackCol);
+        g.fillRoundedRectangle (pill, sh * 0.5f);
+
+        // Knob (slides L -> R).
+        const float knobR = sh * 0.34f;
+        const float kx = on ? pill.getRight() - knobR : pill.getX() + knobR;
+        g.setColour (juce::Colours::white.withAlpha (on ? 0.95f : 0.72f));
+        g.fillEllipse (kx - knobR, pill.getCentreY() - knobR, knobR * 2.0f, knobR * 2.0f);
+
+        // Label to the right of the switch.
+        g.setColour (text);
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            g.setFont (lnf->appFont (11.0f, juce::Font::plain));
+        else
+            g.setFont (juce::Font (juce::FontOptions (11.0f)));
+        g.drawText (label_, juce::Rectangle<float> (sw + 6.0f, 0.0f,
+                                                     juce::jmax (0.0f, (float) getWidth() - sw - 6.0f),
+                                                     (float) getHeight()),
+                    juce::Justification::centredLeft, true);
+    }
+
+private:
+    juce::String label_;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxBypassSwitch)
+};
 
 //==============================================================================
 FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
     : processor_ (processor), themeManager_ (themeManager)
 {
-    // ---- Title (far left, top) ----
-    titleLabel_.setText (TRANS ("ROUTING & MASTER EQ"), juce::dontSendNotification);
-    titleLabel_.setJustificationType (juce::Justification::centredLeft);
-    titleLabel_.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-    titleLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
-    addAndMakeVisible (titleLabel_);
+    // ---- in->out signal-flow block chart (tracks fx_topo live) + ◀ ▶ steppers ----
+    flowDiagram_ = std::make_unique<FxFlowDiagram> (processor_, themeManager_);
+    addAndMakeVisible (*flowDiagram_);
 
-    // ---- "FLOW:" + topology combo (bound to fx_topo; its OWN choice list) ----
-    flowLabel_.setText (TRANS ("FLOW:"), juce::dontSendNotification);
-    flowLabel_.setJustificationType (juce::Justification::centredRight);
-    flowLabel_.setFont (juce::FontOptions (12.0f));
-    flowLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
-    addAndMakeVisible (flowLabel_);
+    prevButton_.setButtonText ("<");
+    nextButton_.setButtonText (">");
+    prevButton_.setTooltip (TRANS ("Previous FX topology"));
+    nextButton_.setTooltip (TRANS ("Next FX topology"));
+    addAndMakeVisible (prevButton_);
+    addAndMakeVisible (nextButton_);
+    prevButton_.onClick = [this] { stepTopology (-1); };
+    nextButton_.onClick = [this] { stepTopology (+1); };
 
-    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (processor_.getApvts().getParameter ("fx_topo")))
-        topoCombo_.addItemList (p->choices, 1);
-    topoCombo_.setTooltip (TRANS ("FX chain routing topology"));
-    addAndMakeVisible (topoCombo_);
-    topoAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-        processor_.getApvts(), "fx_topo", topoCombo_);
-
-    // ---- "MIX:" + a rotary knob bound to fx_mix + "Global Wet/Dry" caption ----
-    mixLabel_.setText (TRANS ("MIX:"), juce::dontSendNotification);
-    mixLabel_.setJustificationType (juce::Justification::centredRight);
+    // ---- "Mix" caption + the global wet/dry knob (synth-style rotary: the
+    //      value is drawn centred in the ring by the editor-wide LookAndFeel,
+    //      identical to the Mixer / Oscillator knobs). ----
+    mixLabel_.setText (TRANS ("Mix"), juce::dontSendNotification);
+    mixLabel_.setJustificationType (juce::Justification::centred);
     mixLabel_.setFont (juce::FontOptions (12.0f));
     mixLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
     addAndMakeVisible (mixLabel_);
@@ -60,41 +322,41 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     mixAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         processor_.getApvts(), "fx_mix", mixKnob_);
 
-    mixCaption_.setText (TRANS ("Global Wet/Dry"), juce::dontSendNotification);
-    mixCaption_.setJustificationType (juce::Justification::centredLeft);
-    mixCaption_.setFont (juce::FontOptions (10.0f));
-    mixCaption_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
-    addAndMakeVisible (mixCaption_);
+    // ---- 3-band master EQ (Low / Mid / High): synth-style rotaries bound to
+    //      fx_eq_low / fx_eq_mid / fx_eq_high (0..127). The value renders in-ring
+    //      via the editor-wide LookAndFeel, identical to the Mix knob. ----
+    const char* const eqIds[3]   = { "fx_eq_low", "fx_eq_mid", "fx_eq_high" };
+    const char* const eqNames[3] = { "Low", "Mid", "High" };
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        eqLabels_[i].setText (TRANS (eqNames[i]), juce::dontSendNotification);
+        eqLabels_[i].setJustificationType (juce::Justification::centred);
+        eqLabels_[i].setFont (juce::FontOptions (12.0f));
+        eqLabels_[i].setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
+        addAndMakeVisible (eqLabels_[i]);
 
-    // ---- "Keep FX Tails on Bypass" toggle (fx_keep_tails is an Int 0/1, bound
-    //      via a Value + Value::Listener — NOT a ButtonAttachment) ----
-    keepTailsToggle_.setButtonText (TRANS ("Keep FX Tails on Bypass"));
-    keepTailsToggle_.setTooltip (TRANS ("Let delay/reverb tails ring out when an FX slot is bypassed"));
-    keepTailsToggle_.setColour (juce::ToggleButton::textColourId, themeManager_.getCurrentTheme().textSecondary);
-    keepTailsToggle_.setColour (juce::ToggleButton::tickColourId, themeManager_.getCurrentTheme().accentPrimary);
-    addAndMakeVisible (keepTailsToggle_);
-    keepTailsValue_ = processor_.getApvts().getParameterAsValue ("fx_keep_tails");
+        eqKnobs_[i].setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        eqKnobs_[i].setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+        eqKnobs_[i].setScrollWheelEnabled (false);
+        eqKnobs_[i].setTooltip (TRANS ("FX master EQ ") + eqNames[i]);
+        addAndMakeVisible (eqKnobs_[i]);
+        eqAttach_[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            processor_.getApvts(), eqIds[i], eqKnobs_[i]);
+    }
+
+    // ---- "Keep FX Tails" pill switch (fx_keep_tails is an Int 0/1, bound via a
+    //      Value + Value::Listener — NOT a ButtonAttachment) ----
+    bypassSwitch_ = std::make_unique<FxBypassSwitch> (TRANS ("Keep FX Tails"));
+    bypassSwitch_->setTooltip (TRANS ("Let delay/reverb tails ring out when an FX slot is bypassed"));
+    addAndMakeVisible (*bypassSwitch_);
+    keepTailsValue_ = processor_.getApvts ().getParameterAsValue ("fx_keep_tails");
     keepTailsValue_.addListener (this);
-    keepTailsToggle_.onClick = [this]
+    bypassSwitch_->onClick = [this]
     {
         // Write 0/1 (the Int param's denormalized value via getParameterAsValue).
-        keepTailsValue_ = keepTailsToggle_.getToggleState() ? 1.0f : 0.0f;
+        keepTailsValue_ = bypassSwitch_->getToggleState () ? 1.0f : 0.0f;
     };
-    syncKeepTails();
-
-    // ---- RIGHT: master EQ curve (read-only getters, normalized 0..1) ----
-    auto norm = [this] (const char* id) -> float
-    {
-        auto* p = processor_.getApvts().getParameter (id);
-        return p != nullptr ? p->getValue() : 0.0f;
-    };
-    eqCurve_ = std::make_unique<FxMasterEqCurve> (
-        [norm] { return norm ("fx_eq_low"); },
-        [norm] { return norm ("fx_eq_mid"); },
-        [norm] { return norm ("fx_eq_high"); });
-    if (const auto* th = &themeManager_.getCurrentTheme())
-        eqCurve_->setCategoryColour (th->catAudio);   // amber trace, like the Filter curve
-    addAndMakeVisible (*eqCurve_);
+    syncKeepTails ();
 }
 
 FxRoutingBar::~FxRoutingBar()
@@ -105,8 +367,23 @@ FxRoutingBar::~FxRoutingBar()
 //==============================================================================
 void FxRoutingBar::syncKeepTails()
 {
-    keepTailsToggle_.setToggleState (juce::roundToInt (keepTailsValue_.getValue()) != 0,
-                                     juce::dontSendNotification);
+    if (bypassSwitch_ != nullptr)
+        bypassSwitch_->setToggleState (juce::roundToInt (keepTailsValue_.getValue()) != 0,
+                                       juce::dontSendNotification);
+}
+
+void FxRoutingBar::stepTopology (int direction)
+{
+    // Cycle fx_topo by ±1 (wrap) by writing the choice index directly. The
+    // diagram's APVTS listener picks up the change and repaints.
+    auto& apvts = processor_.getApvts();
+    auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter ("fx_topo"));
+    const int n = (p != nullptr) ? p->choices.size() : 3;
+    if (n <= 0)
+        return;
+    auto v = apvts.getParameterAsValue ("fx_topo");   // choice index (0..n-1) for AudioParameterChoice
+    const int cur = juce::jlimit (0, n - 1, juce::roundToInt (v.getValue()));
+    v = static_cast<float> ((cur + direction + n) % n);
 }
 
 void FxRoutingBar::valueChanged (juce::Value& v)
@@ -119,93 +396,112 @@ void FxRoutingBar::valueChanged (juce::Value& v)
 void FxRoutingBar::paint (juce::Graphics& g)
 {
     const auto& t = themeManager_.getCurrentTheme();
-    g.fillAll (t.backgroundPanel);
 
-    // Thin divider along the bottom edge separates the bar from the slot cards.
-    g.setColour (t.divider);
-    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+    // Sibling-card panel: solid containerFill, 7px corners, NO outline (matches
+    // the FX-slot cards + the synth GroupComponent cards — depth by tonal lift
+    // over the page backgroundBase only).
+    g.setColour (t.containerFill);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), kCorner);
 
-    // A subtle vertical divider between the left (routing/mix/tails) + right
-    // (master EQ) columns.
-    const int divX = getLocalBounds().getX() + (getWidth() * kLeftPct) / 100;
-    g.setColour (t.divider);
-    g.drawVerticalLine (divX, 3.0f, (float) (getHeight() - 3));
+    // Section header "FX ROUTING" — the SAME typography as the OSC 1 / MIXER
+    // GroupComponent headers (bold 14px, UPPERCASE, textSecondary), drawn here
+    // rather than via a Label so it is byte-identical to the synth card titles.
+    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+    const juce::Font headerFont = lnf != nullptr
+        ? lnf->appFont (14.0f, juce::Font::bold)
+        : juce::Font (juce::FontOptions (14.0f, juce::Font::bold));
+    g.setColour (t.textSecondary);
+    g.setFont (headerFont);
+    g.drawText (TRANS ("FX ROUTING").toUpperCase(),
+                juce::Rectangle<int> (kPad + 2, kPad, getWidth() - 2 * kPad, kHeaderH),
+                juce::Justification::centredLeft, true);
 }
 
 void FxRoutingBar::resized()
 {
-    // Layout against the ACTUAL assigned height (getHeight()), not the reserved
-    // kBarHeight — the host may clamp this bar; the rows follow.
-    auto area = getLocalBounds().reduced (kMargin, 4);
+    // The bar is the slim column 0 of the 4-column FX top row. Layout (top to
+    // bottom): a painted "FX ROUTING" header band, then the [◀][flow diagram][▶]
+    // row (a FlexBox, horizontally centred), then the [Mix knob | Bypass switch]
+    // row. The flow + controls rows are vertically centred as a block in the
+    // remaining height so a tall column breathes evenly.
+    auto area = getLocalBounds().reduced (kPad);
     if (area.isEmpty())
         return;
 
-    // ---- LEFT / RIGHT split ----
-    const int leftW = (area.getWidth() * kLeftPct) / 100;
-    auto left  = area.removeFromLeft (leftW).withTrimmedRight (kRowGap);
-    auto right = area;   // master EQ curve
+    // Header band (the "FX ROUTING" title is painted in paint(), not a child).
+    area.removeFromTop (kHeaderH);
+    if (area.getHeight() > kGap) area.removeFromTop (kGap);
 
-    // ---- LEFT column: stacked rows ----
-    auto row = [&] (int h) -> juce::Rectangle<int>
+    // Reserve the three rows + their gaps, then centre the block vertically.
+    const int flowH = juce::jlimit (0, area.getHeight(), kFlowRowH);
+    const int eqH   = juce::jlimit (0, juce::jmax (0, area.getHeight() - flowH - 2 * kGap), kEqRowH);
+    const int ctrlH = juce::jlimit (0, juce::jmax (0, area.getHeight() - flowH - eqH - 3 * kGap), kCtrlRowH);
+    const int blockH = flowH
+                     + (eqH   > 0 ? kGap + eqH   : 0)
+                     + (ctrlH > 0 ? kGap + ctrlH : 0);
+    if (area.getHeight() > blockH)
+        area.removeFromTop ((area.getHeight() - blockH) / 2);
+
+    // ---- Flow row: [◀][flow diagram][▶] horizontally centred (FlexBox) ----
+    if (flowH > 0 && flowDiagram_ != nullptr)
     {
-        return left.removeFromTop (juce::jmin (h, left.getHeight()));
-    };
-
-    // Row 1: title.
-    titleLabel_.setBounds (row (16));
-    if (left.getHeight() <= 0) return;
-    left.removeFromTop (kRowGap);
-
-    // Row 2: FLOW label + combo.
-    {
-        auto r = row (juce::jmin (22, left.getHeight()));
-        auto r2 = r;
-        flowLabel_.setBounds (r2.removeFromLeft (juce::jmin (kFlowLabelW, r2.getWidth())));
-        const int ch = juce::jmin (22, r.getHeight());
-        topoCombo_.setBounds (r.getX() + kFlowLabelW, r.getY() + (r.getHeight() - ch) / 2,
-                              juce::jmin (kFlowComboW, juce::jmax (0, r.getWidth() - kFlowLabelW)), ch);
-        if (left.getHeight() <= 0) return;
-        left.removeFromTop (kRowGap);
+        auto flowRow = area.removeFromTop (flowH);
+        juce::FlexBox fb;
+        fb.flexDirection  = juce::FlexBox::Direction::row;
+        fb.justifyContent = juce::FlexBox::JustifyContent::center;
+        fb.alignItems     = juce::FlexBox::AlignItems::center;
+        fb.items.add (juce::FlexItem (prevButton_).withWidth ((float) kStepBtnW).withHeight ((float) kStepBtnH));
+        fb.items.add (juce::FlexItem (*flowDiagram_).withFlex (1.0f).withHeight ((float) flowH));
+        fb.items.add (juce::FlexItem (nextButton_).withWidth ((float) kStepBtnW).withHeight ((float) kStepBtnH));
+        fb.performLayout (flowRow);
+        if ((eqH > 0 || ctrlH > 0) && area.getHeight() > kGap) area.removeFromTop (kGap);
     }
 
-    // Row 3: MIX label + knob + caption.
+    // ---- EQ row: [Low][Mid][High] synth-style rotary knobs (3 equal cells) ----
+    if (eqH > 0)
     {
-        auto r = row (juce::jmin (kMixKnobSize, left.getHeight()));
-        mixLabel_.setBounds (r.removeFromLeft (juce::jmin (kMixLabelW, r.getWidth())));
-        mixKnob_.setBounds (r.removeFromLeft (juce::jmin (kMixKnobSize, r.getWidth()))
-                               .withSizeKeepingCentre (kMixKnobSize, kMixKnobSize));
-        mixCaption_.setBounds (r);   // remaining = "Global Wet/Dry"
-        if (left.getHeight() <= 0) return;
-        left.removeFromTop (kRowGap);
+        auto eqRow = area.removeFromTop (eqH);
+        const int cellW = eqRow.getWidth() / 3;
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            auto cell = (i < 2) ? eqRow.removeFromLeft (cellW) : eqRow;
+            eqLabels_[i].setBounds (cell.removeFromTop (kLabelH));
+            cell.removeFromTop (2);
+            const int ks = juce::jmin (kEqKnobSize, cell.getWidth(), cell.getHeight());
+            eqKnobs_[i].setBounds (cell.withSizeKeepingCentre (ks, ks));
+        }
+        if (ctrlH > 0 && area.getHeight() > kGap) area.removeFromTop (kGap);
     }
 
-    // Row 4: Keep FX Tails toggle.
-    keepTailsToggle_.setBounds (row (juce::jmin (22, left.getHeight())));
-
-    // ---- RIGHT column: master EQ curve fills it ----
-    if (eqCurve_ != nullptr && ! right.isEmpty())
-        eqCurve_->setBounds (right);
+    // ---- Controls row: [Mix knob + label] | [Bypass switch], side by side ----
+    if (ctrlH > 0)
+    {
+        auto row   = area.removeFromTop (ctrlH);
+        auto left  = row.removeFromLeft (row.getWidth() / 2);
+        auto right = row;   // remainder
+        // Mix: "Mix" caption above a centred synth-parity dial.
+        mixLabel_.setBounds (left.removeFromTop (kLabelH));
+        left.removeFromTop (2);
+        const int ks = juce::jmin (kKnobSize, left.getWidth(), left.getHeight());
+        mixKnob_.setBounds (left.withSizeKeepingCentre (ks, ks));
+        // Bypass pill switch fills its half (switch left, label right).
+        if (bypassSwitch_ != nullptr)
+            bypassSwitch_->setBounds (right);
+    }
 }
 
 //==============================================================================
 void FxRoutingBar::applyThemeColors()
 {
     const auto& t = themeManager_.getCurrentTheme();
-    titleLabel_.setColour (juce::Label::textColourId, t.textSecondary);
-    flowLabel_.setColour (juce::Label::textColourId, t.textSecondary);
     mixLabel_.setColour (juce::Label::textColourId, t.textSecondary);
-    mixCaption_.setColour (juce::Label::textColourId, t.textSecondary);
+    for (auto& l : eqLabels_)
+        l.setColour (juce::Label::textColourId, t.textSecondary);
 
-    topoCombo_.setColour (juce::ComboBox::backgroundColourId, t.backgroundInput);
-    topoCombo_.setColour (juce::ComboBox::outlineColourId, t.outline);
-    topoCombo_.setColour (juce::ComboBox::textColourId, t.textPrimary);
-    topoCombo_.setColour (juce::ComboBox::arrowColourId, t.textSecondary);
-
-    keepTailsToggle_.setColour (juce::ToggleButton::textColourId, t.textSecondary);
-    keepTailsToggle_.setColour (juce::ToggleButton::tickColourId, t.accentPrimary);
-
-    if (eqCurve_ != nullptr)
-        eqCurve_->setCategoryColour (t.catAudio);   // amber trace, re-tinted live on theme switch
+    if (flowDiagram_ != nullptr)
+        flowDiagram_->repaint();   // re-resolve trace/block colours from the new theme
+    if (bypassSwitch_ != nullptr)
+        bypassSwitch_->repaint();  // re-resolve the switch track/knob colours
 
     repaint();
 }

@@ -1,34 +1,24 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// FxRoutingBar — the full-width header strip at the top of the FX page's upper
-// region. It holds the chain-level ROUTING control AND the MASTER section:
+// FxRoutingBar — the slim ROUTING column (column 0 of the FX page's 4-column
+// top row: [ ROUTING | FX1 | FX2 | FX3 ]). It holds the chain-level routing
+// controls only (the master-EQ section was removed):
 //
-//     | ROUTING & MASTER EQ                                                         |
-//     | FLOW: [ FX1 -> FX2 -> FX3 |v]            |        /--\            ------\  |
-//     | MIX:  ( 50 ) Global Wet/Dry             |       /    \          /       \ |
-//     |                                          |  ---/      \----------/         \ |
-//     | [x] Keep FX Tails on Bypass             |     Low Cut      Mid      High Shelf |
+//   +-------------------------------+
+//   | ROUTING                       |   bold 14px header (sibling-card style)
+//   | FLOW: [ Series ...        |v] |   juce::ComboBox bound to `fx_topo`
+//   | MIX:        ( dial )          |   rotary knob bound to `fx_mix`
+//   |                               |
+//   | [x] Keep FX Tails on Bypass   |   juce::ToggleButton bound to `fx_keep_tails`
+//   +-------------------------------+
 //
-//   LEFT column (~45%):
-//     * A bold "ROUTING & MASTER EQ" title.
-//     * "FLOW:" + a juce::ComboBox bound to `fx_topo` (ComboBoxAttachment); the
-//       combo's choice list is the parameter's OWN list (flow strings), so this
-//       single dropdown IS the routing control.
-//     * "MIX:" + a rotary knob bound to `fx_mix` (SliderAttachment) + a "Global
-//       Wet/Dry" caption. (127 = fully wet = the pre-master default.)
-//     * A "Keep FX Tails on Bypass" juce::ToggleButton bound to `fx_keep_tails`
-//       (an Int 0/1, two-way via a juce::Value + Value::Listener — NOT a
-//       ButtonAttachment, mirroring FxSlotCard's fx{N}_enabled binding).
-//   RIGHT column (~55%):
-//     * An FxMasterEqCurve — the composite master-EQ response (low-cut / mid /
-//       high-shelf), drawn to MATCH FxChain's RBJ biquads exactly.
-//
-// `fx_order` stays in the engine/serialization but is not user-exposed here
-// (default process order). The bar remains a DragAndDropContainer (harmless).
-//
-// Self-contained: reads theme via ThemeManager and binds APVTS state directly
-// (no editor coupling). The editor owns the bar and hosts it non-owned inside
-// FxWorkspace (mirrors FxMatrixView).
+// Rendered as a borderless sibling card (containerFill, 7px corners, no outline)
+// matching the FX-slot cards + the synth GroupComponent cards. The editor owns
+// the bar and hosts it non-owned as the LEFTMOST column of FxWorkspace's top row
+// (it gets the full top-row height, like the cards). `fx_order` stays in the
+// engine/serialization but is not user-exposed (default process order). The
+// DragAndDropContainer base is retained (harmless). Self-contained: reads theme
+// via ThemeManager + binds APVTS state directly (no editor coupling).
 
 #pragma once
 
@@ -36,11 +26,13 @@
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachment types
 
 #include <memory>
+#include <array>
 
 #include "ThemeManager.h"     // also brings ParvatiTheme.h
 
 class ParvatiAudioProcessor;
-class FxMasterEqCurve;
+class FxFlowDiagram;
+class FxBypassSwitch;
 
 //==============================================================================
 class FxRoutingBar : public juce::Component,
@@ -51,38 +43,34 @@ public:
     FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
     ~FxRoutingBar() override;
 
-    /** Fixed bar height the host reserves for this strip (fits the left routing
-        + mix + tails stack AND the right EQ curve). */
-    static constexpr int kBarHeight = 108;
-
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /** Re-resolve theme colours onto the title/labels/combo/knob/toggle + the
-        EQ curve + repaint (theme switch). */
+    /** Re-resolve theme colours onto the diagram / Mix knob / Bypass switch +
+        repaint (theme switch). */
     void applyThemeColors();
 
 private:
     ParvatiAudioProcessor& processor_;
     ThemeManager&          themeManager_;
 
-    // ---- LEFT: routing + mix + tails ----
-    juce::Label titleLabel_;        // "ROUTING & MASTER EQ"
-    juce::Label flowLabel_;         // "FLOW:"
-    juce::ComboBox topoCombo_;      // bound to fx_topo
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> topoAttach_;
+    // ---- Routing: flow diagram + ◀ ▶ steppers + Mix knob + Bypass switch ----
+    juce::TextButton prevButton_, nextButton_;                 // ◀ ▶ topology steppers (cycle fx_topo)
+    std::unique_ptr<FxFlowDiagram> flowDiagram_;               // in->out signal-flow block chart (fx_topo)
 
-    juce::Label  mixLabel_;         // "MIX:"
-    juce::Slider mixKnob_;          // bound to fx_mix
+    juce::Label  mixLabel_;         // "Mix" caption above the Mix knob
+    juce::Slider mixKnob_;          // bound to fx_mix (synth-style rotary, value drawn in-ring)
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttach_;
-    juce::Label  mixCaption_;       // "Global Wet/Dry"
 
-    juce::ToggleButton keepTailsToggle_;   // bound to fx_keep_tails via keepTailsValue_
+    // ---- 3-band master EQ (Low / Mid / High) — synth-style rotary knobs ----
+    std::array<juce::Slider, 3>           eqKnobs_;
+    std::array<juce::Label, 3>            eqLabels_;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> eqAttach_;
+
+    std::unique_ptr<FxBypassSwitch> bypassSwitch_;   // "Keep FX Tails" pill switch (fx_keep_tails)
     juce::Value keepTailsValue_;
-    void syncKeepTails();                  // push param -> toggle state
-
-    // ---- RIGHT: master EQ curve ----
-    std::unique_ptr<FxMasterEqCurve> eqCurve_;
+    void syncKeepTails();                  // push param -> switch state
+    void stepTopology (int direction);     // ◀ ▶ : cycle fx_topo directly
 
     // juce::Value::Listener: keep the toggle state in sync with the param value
     // (preset load / host automation / programmatic set).

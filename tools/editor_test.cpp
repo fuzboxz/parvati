@@ -615,10 +615,11 @@ int main()
         // layout-sanity coverage so regressions (knob cells too small, a missing
         // visualizer / type combo / power toggle) are caught WITHOUT a render.
         // Switches to the FX tab, asserts the card + routing-bar child structure
-        // + bounds + dynamic knob visibility, then restores SYNTH. The compact
-        // FxRoutingBar now exposes only a title + a FLOW (topology) ComboBox
-        // (the big chain + chips + drag-reorder were removed), so the routing
-        // assertions check the bar's presence + bounds + the FLOW ComboBox.
+        // + bounds + dynamic knob visibility, then restores SYNTH. The FX top row
+        // is a 4-column [ ROUTING | FX1 | FX2 | FX3 ] layout: the slim
+        // FxRoutingBar column (FLOW topology ComboBox + MIX + keep-tails) is the
+        // leftmost column, so the routing assertions check its presence + bounds
+        // + the FLOW ComboBox.
         // ------------------------------------------------------------------
         std::printf ("\n[13] FX top-section layout (cards + routing bar)\n");
         {
@@ -686,13 +687,15 @@ int main()
                 // Visible knobs must be usable (catches a "knobs collapsed to a
                 // sliver" regression; the dial targets 52px so the cell needs
                 // ~74px). 50px is a conservative floor.
-                int minVisibleKnobH = 0;
+                int minVisibleKnobH = 0, minVisibleKnobW = 0;
                 bool anyVisibleKnob = false;
                 for (auto* pc : knobControls)
                     if (pc->isVisible())
                     {
                         if (! anyVisibleKnob || pc->getHeight() < minVisibleKnobH)
                             minVisibleKnobH = pc->getHeight();
+                        if (! anyVisibleKnob || pc->getWidth() < minVisibleKnobW)
+                            minVisibleKnobW = pc->getWidth();
                         anyVisibleKnob = true;
                     }
                 if (anyVisibleKnob)
@@ -701,18 +704,38 @@ int main()
                                    "FX%d visible knob height >= 50px (usable dial) [min=%d]",
                                    (int) i + 1, minVisibleKnobH);
                     check (minVisibleKnobH >= 50, msg);
+                    // Width floor: the rotary dial is forced to 52px and centred,
+                    // so a cell < 52px overlaps its neighbour. 50px catches a
+                    // too-narrow column (e.g. a 5-knob Reverb row in a shrunken
+                    // card) regression.
+                    std::snprintf (msg, sizeof (msg),
+                                   "FX%d visible knob width >= 50px (no dial overlap) [min=%d]",
+                                   (int) i + 1, minVisibleKnobW);
+                    check (minVisibleKnobW >= 50, msg);
                 }
             }
 
-            // ---- FxRoutingBar: exists, positive bounds, FLOW (topology) combo ----
+            // ---- FxRoutingBar: exists, positive bounds, ◀ ▶ topology steppers ----
             auto* routeBar = findFirst<FxRoutingBar> (ed);
             check (routeBar != nullptr, "an FxRoutingBar is present (FX tab)");
             if (routeBar != nullptr)
             {
                 check (routeBar->getWidth() > 0 && routeBar->getHeight() > 0,
                        "FxRoutingBar has positive width + height");
-                check (findFirst<juce::ComboBox> (routeBar) != nullptr,
-                       "FxRoutingBar has a FLOW (topology) ComboBox");
+                // FLOW topology is now a ◀ diagram ▶ stepper UI (no ComboBox); the
+                // global wet/dry is a Slider. Confirm the Mix Slider + the two
+                // topology stepper TextButtons ("<", ">") are present.
+                check (findFirst<juce::Slider> (routeBar) != nullptr,
+                       "FxRoutingBar has a global Mix Slider");
+                bool hasPrev = false, hasNext = false;
+                for (auto* c : routeBar->getChildren())
+                    if (auto* b = dynamic_cast<juce::TextButton*> (c))
+                    {
+                        if (b->getButtonText() == "<") hasPrev = true;
+                        if (b->getButtonText() == ">") hasNext = true;
+                    }
+                check (hasPrev && hasNext,
+                       "FxRoutingBar has the ◀ ▶ topology steppers");
             }
 
             // ---- Dynamic knob visibility: fx1_type = Reverb -> 4 active + Mix ----

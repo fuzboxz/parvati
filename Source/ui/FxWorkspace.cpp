@@ -178,35 +178,46 @@ void FxWorkspace::resized()
     auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);
     auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
-    // ---- Upper region: routing bar on top, then FX1 | FX2 | FX3 (equal thirds) ----
-    // The full-width FxRoutingBar eats a fixed-height slice off the top of the
-    // upper region; the remaining height fills three equal-width FxSlotCard
-    // columns. The TOTAL upper height (mainH) is unchanged from SynthWorkspace,
-    // so the FX upper region matches the Synth page's OSC/MIXER/FILTER footprint
-    // exactly. Each card lays out its own header / visualizer / param grid.
-    // Floor for the card CONTENT when clamping the routing bar at short window
-    // heights: roughly the card's header + type row + visualizer floor + gaps
-    // (~80px), so the cards stay usable even when the upper region is squeezed.
-    // Same value as before, now named for clarity.
-    constexpr int kMinCardContentH = 80;
-    const int routeH = juce::jmin (FxRoutingBar::kBarHeight,
-                                   juce::jmax (0, mainRow.getHeight() - kMinCardContentH));
-    if (fxRoutingBar_ != nullptr)
-        fxRoutingBar_->setBounds (mainRow.removeFromTop (routeH));
-
-    const int fullW = mainRow.getWidth();
-    auto fx1Col = mainRow.removeFromLeft (fullW / 3);
-    auto fx2Col = mainRow.removeFromLeft (fullW / 3);
-    auto fx3Col = mainRow;                       // remaining third (+ 0..2px remainder)
-
-    auto sizeCard = [] (FxSlotCard* card, const juce::Rectangle<int>& b)
+    // ---- Upper region: 4 columns [ ROUTING | FX1 | FX2 | FX3 ] ----
+    // A slim ROUTING column (FLOW topology + MIX + keep-tails) on the left, then
+    // three equal-width FX-slot cards. SPACIOUS layout (synth-page parity): a
+    // uniform kGap margin is taken off ALL FOUR sides of the top row AND placed
+    // between every column, so the borderless card panels sit in generous
+    // whitespace (page backgroundBase) instead of butting each other and the
+    // workspace edges — mirroring how the synth page's kMargin insets its
+    // GroupComponent cards. Each card gets the remaining height and sizes its
+    // knobs/visualizer internally.
+    constexpr int kGap = 10;
+    auto inner = mainRow.reduced (kGap);
+    if (! inner.isEmpty())
     {
-        if (card != nullptr)
-            card->setBounds (b);
-    };
-    sizeCard (fxSlotCards_[0], fx1Col);
-    sizeCard (fxSlotCards_[1], fx2Col);
-    sizeCard (fxSlotCards_[2], fx3Col);
+        const int innerW = inner.getWidth();
+        const int routeW = juce::jlimit (210, 320, (innerW - 3 * kGap) * 20 / 100);
+        const int cardsRegionW = juce::jmax (0, innerW - routeW - 3 * kGap);
+        const int cardW = cardsRegionW / 3;
+
+        const int x0 = inner.getX();
+        const int y0 = inner.getY();
+        const int h0 = inner.getHeight();
+
+        const juce::Rectangle<int> routeCol (x0, y0, routeW, h0);
+        const juce::Rectangle<int> fx1Col   (x0 + routeW + kGap,                    y0, cardW, h0);
+        const juce::Rectangle<int> fx2Col   (x0 + routeW + kGap + cardW + kGap,     y0, cardW, h0);
+        const int fx3x = x0 + routeW + 2 * kGap + 2 * cardW;
+        const juce::Rectangle<int> fx3Col   (fx3x, y0, juce::jmax (0, x0 + innerW - fx3x), h0);
+
+        if (fxRoutingBar_ != nullptr)
+            fxRoutingBar_->setBounds (routeCol);
+
+        auto sizeCard = [] (FxSlotCard* card, const juce::Rectangle<int>& b)
+        {
+            if (card != nullptr)
+                card->setBounds (b);
+        };
+        sizeCard (fxSlotCards_[0], fx1Col);
+        sizeCard (fxSlotCards_[1], fx2Col);
+        sizeCard (fxSlotCards_[2], fx3Col);
+    }
 
     // ---- Middle seam: full-width bar ----
     modBar_->setBounds (barRow);

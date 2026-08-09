@@ -524,6 +524,12 @@ public:
     void setFxMode (bool fx);
 
 private:
+    // Unified 4-way top-level page selector (Synth/FX/Global/Multi). Each header
+    // page button calls showTopPage(idx): exclusive page visibility + button
+    // states; reparents the shared generator only on a Synth<->FX change.
+    void showTopPage (int pageIndex);      // 0=Synth 1=FX 2=Global 3=Multi
+    void reparentGeneratorTo (bool toFx);  // move the shared generator between workspaces
+
     // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL files.
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
@@ -643,7 +649,8 @@ private:
     // multiButton_ in the header cluster: Part [Part 1] [Synth] [FX] [Multi].
     juce::TextButton synthModeButton_ { "Synth" };
     juce::TextButton fxModeButton_    { "FX" };
-    bool             fxModeActive_    = false;   // mirrors which workspace pageSelector_ shows
+    bool             fxModeActive_    = false;   // which workspace (Synth/FX) hosts the generator
+    int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Global 3=Multi
     juce::TextButton multiButton_ { "Multi" };   // header button -> Multi/Setup overlay (not a patch param)
     juce::TextButton globalButton_ { "Global" }; // header button -> Global ParamPage overlay (not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard

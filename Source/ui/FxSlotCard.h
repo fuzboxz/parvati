@@ -5,27 +5,33 @@
 // owns the per-slot effect's entire control surface, replacing the prior
 // generic ParamPage knob grid with a structured modular layout:
 //
-//   HEADER  (~22px):  FX N (upper-left, bold uppercase 11px) + a compact
-//       power/bypass toggle in the TOP-RIGHT corner. The Enable/Bypass control
-//       is a POWER toggle button (the IEC glyph), NOT a rotary knob: it reads
-//       accentSecondary (orange) when the slot is enabled and dimmed when bypassed.
-//   ROW 1  (~20px):  a "Type:" label + the fx{N}_type juce::ComboBox (the
-//       algorithm selector, auto-populated with the effect list) beside it.
-//   VISUALIZER (generously sized band): an FxSlotVisualizer canvas (the same
-//       visual family as the OSC waveform box and the Filter curve box). Dimmed
-//       grid + outline when the type is None; a live per-algorithm graphic
-//       otherwise. Now LARGE: the SINGLE knob row freed the height a 2-row grid
-//       consumed. Floored (kVisMin); grows with any surplus body height (the knob
-//       dial caps at 52px, so extra height goes here, not the knobs).
+//   HEADER  (~16px):  FX N (upper-left, bold uppercase 14px — synth GroupComponent
+//       header parity) + a compact power/bypass toggle in the TOP-RIGHT corner.
+//       The Enable/Bypass control is a POWER toggle button (the IEC glyph), NOT a
+//       rotary knob: it reads accentSecondary (orange) when the slot is enabled
+//       and dimmed when bypassed.
+//   ROW 1  (~28px):  the fx{N}_type juce::ComboBox (the algorithm selector,
+//       auto-populated with the effect list) sized as a STYLED combo — 28px
+//       tall, fit-to-text width, centred — matching the Osc "Shape" / Filter
+//       "Mode" selectors (it inherits the same editor-wide ComboBox theme
+//       colours via the LookAndFeel). The card panel is BORDERLESS
+//       (containerFill, 7px corners — a sibling of the synth GroupComponent cards).
+//   VISUALIZER (compact band): an FxSlotVisualizer canvas (the same visual
+//       family as the OSC waveform box and the Filter curve box). Dimmed grid +
+//       outline when the type is None; a live per-algorithm graphic otherwise.
+//       Capped at kVisMax (synth kDecorationH parity — the OSC/Filter preview
+//       height); floored at kVisMin. Sits above the knob grid.
 //   Bypass: a disabled slot recesses its knobs/visualizer/type-combo to a
 //       reduced alpha so it reads as inactive; the panel + title + power glyph
 //       stay full-alpha (legible state + identity).
-//   PARAM ROW (bottom): a SINGLE horizontal row of knobs. The ACTIVE
-//       fx{N}_param1..4 knobs fill left-to-right; the fx{N}_drywet knob is
-//       ALWAYS the RIGHTMOST knob, labelled "Mix". The count varies by type
-//       (None=1 / GainPan,Chorus=3 / Delay=4 / Reverb=5). Inactive params are
-//       hidden. The row is fixed tall enough for the full 52px dial (synth
-//       parity); the freed height grows the visualizer.
+//   PARAM GRID (bottom): a Mixer-style knob GRID (kCellH = the synth cell
+//       height) — 3 columns for Delay/Reverb, 2 for Chorus/Gain-Pan so every
+//       multi-knob type forms ~2 rows. The ACTIVE fx{N}_param1..4 knobs fill row-major; the
+//       fx{N}_drywet knob is ALWAYS the LAST cell (labelled "Mix") — bottom-right
+//       for Reverb / Delay. The count varies by type (None=1 / GainPan,Chorus=3
+//       / Delay=4 / Reverb=5), so the grid is 1 or 2 rows. Inactive params are
+//       hidden. The grid block centres vertically in its region; cells render the
+//       full 52px dial (synth parity).
 //
 // Dynamic parameter labels: on a type change the active param knobs are
 // relabelled to the active DSP algorithm's semantic names (Time / Feedback /
@@ -106,8 +112,9 @@ private:
     // Sync the power-toggle button's on/off state to the bound enable Value.
     void refreshEnabled();
 
-    // Lay the active param knobs + the dry/wet (Mix) into a SINGLE horizontal
-    // row: active params left-to-right, Mix rightmost. Inactive params hidden.
+    // Lay the active param knobs + the dry/wet (Mix) into a Mixer-style
+    // 3-column GRID (row-major): active params first, Mix as the last cell.
+    // Inactive params are hidden. The knob block centres vertically in @p gridArea.
     void layoutParamGrid (const juce::Rectangle<int>& gridArea);
 
     ParvatiAudioProcessor& processor_;
@@ -120,7 +127,6 @@ private:
 
     std::unique_ptr<juce::ComboBox> typeCombo_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAttach_;
-    std::unique_ptr<juce::Label> typeLabel_;   // "Type:" prefix beside the combo
 
     std::unique_ptr<juce::Button> powerToggle_;   // PowerToggle (defined in the .cpp)
 

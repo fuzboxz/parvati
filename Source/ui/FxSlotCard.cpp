@@ -143,29 +143,62 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
     return { 0, 0, { 0, 0, 0, 0 } };
 }
 
-// Layout constants (px). The card sits in a compact upper row (~220px tall at
-// the default 620px editor height). With a SINGLE knob row (not a 2-row grid),
-// the vertical budget is generous: the type row + a large visualizer band + one
-// knob row all fit, and the knobs reach their full 52px diameter (synth parity).
-// Fixed heights keep the three cards' header / type-row / visualizer-top /
-// knob-row baseline aligned.
-constexpr int kPad           = 6;    // card edge inset (tight: maximises knob height)
-constexpr int kHeaderH       = 22;   // header row height (title + power toggle)
-constexpr int kTypeRowH      = 20;   // Row 1: "Type:" label + algorithm dropdown
-constexpr int kTypeLabelW    = 36;   // "Type:" prefix label width
-constexpr int kHalfGap       = 2;    // gap below the header divider + between rows
-constexpr int kVisMin        = 30;   // visualizer band floor (readable at the min size)
-// A single knob-row cell tall enough to render the FULL 52px dial (the synth
-// parity target): the rotary dial is capped at 52px inside ParamControl, so a
-// cell needs 52 (dial) + 18 (label band) + 4 (ParamControl self-inset) = 74px.
-// The knob row is FIXED at this height; any surplus body height grows the
-// visualizer (the dial never exceeds 52, so taller knobs would only waste space).
-constexpr int kKnobRowH      = 52 + 18 + 4;
+// Layout constants (px). The card sits in the FX top row (~261..271px tall at
+// the 600..620px editor height). The layout mirrors the synth OSC/Mixer/Filter
+// sections: a header band, a STYLED algorithm dropdown (Shape/Mode parity), a
+// COMPACT visualizer band (synth decoration parity, <= kVisMax), and a
+// Mixer-style 3-column knob GRID (kCellH = the synth cell height). Fixed
+// header / dropdown / visualizer heights keep the three cards' baselines
+// aligned; the grid centres vertically in its remainder so a short row-set
+// reads balanced + spacious.
+constexpr int kPad         = 6;      // card edge inset
+constexpr int kHeaderH     = 16;     // header row (title + power toggle; synth kGroupTitleH parity)
+constexpr int kHalfGap     = 2;      // gap below the header + between bands
+constexpr int kTypeRowH    = 28;     // algorithm dropdown row (styled combo height, Shape/Mode parity)
+constexpr int kComboH      = 28;     // dropdown height (ParamControl combo parity)
+constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron + slack
+constexpr int kComboMinW   = 80;     // dropdown floor width
+constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
+constexpr int kCellH       = 64;     // knob cell height (synth cellH parity: label band + 52px dial)
+constexpr int kVisMin      = 40;     // visualizer band floor (legible at the min size)
+constexpr int kVisMax      = 80;     // visualizer band cap (synth kDecorationH parity)
 // Bypass affordance: a bypassed slot's live controls (knobs + visualizer + type
-// combo + "Type:" label) are recessed to this alpha so the slot reads as inactive
-// at a glance.
-constexpr float kBypassedAlpha = 0.4f;
-constexpr float kCorner        = 6.0f; // card panel corner radius
+// combo) are recessed to this alpha so the slot reads as inactive at a glance
+// (0.5 matches the synth GroupComponent / knob disabled alpha).
+constexpr float kBypassedAlpha = 0.5f;
+constexpr float kCorner        = 7.0f; // card panel corner radius (synth GroupComponent parity)
+
+// Fit-to-text width of a ComboBox's longest item, measured in the active
+// LookAndFeel combo font (mirrors ParamControl::maxChoiceTextWidth) so the FX
+// type dropdown sizes itself exactly like the Osc "Shape" / Filter "Mode"
+// selectors (widest choice + kComboChrome, centred in its row).
+int maxComboItemWidth (const juce::ComboBox& combo)
+{
+    const auto f = [&]() -> juce::Font
+    {
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&combo.getLookAndFeel()))
+            return lnf->appFont (14.0f, juce::Font::plain);
+        return juce::Font (juce::FontOptions (14.0f));
+    }();
+
+    int widest = 0;
+    for (int i = 0; i < combo.getNumItems(); ++i)
+        widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, combo.getItemText (i)));
+    widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, combo.getText()));
+    return widest;
+}
+
+// Knob-grid column count for a given visible-knob count. Delay (4) / Reverb (5)
+// use the full 3 columns (the approved 2-row look); a 3-knob type (Chorus /
+// Gain-Pan) drops to 2 columns so it forms a 2-row grid instead of a single
+// sparse row; a lone knob (None => Mix only) gets 1 column. Kept in one place so
+// resized()'s row/height budget and layoutParamGrid()'s placement stay in sync.
+int knobGridCols (int count) noexcept
+{
+    if (count <= 1) return 1;
+    if (count <= 3) return 2;
+    return kGridCols;
+}
 } // namespace
 
 //==============================================================================
@@ -199,11 +232,6 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     addAndMakeVisible (*typeCombo_);
     typeAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         processor_.getApvts (), prefix_ + "type", *typeCombo_);
-
-    // ---- "Type:" label prefix beside the algorithm combo ----
-    typeLabel_ = std::make_unique<juce::Label> (prefix_ + "type_lbl", "Type:");
-    typeLabel_->setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (*typeLabel_);
 
     // ---- Power/bypass toggle (bound to the 0..1 enable Int via a Value) ----
     powerToggle_ = std::make_unique<PowerToggle> ();
@@ -308,8 +336,7 @@ void FxSlotCard::refreshEnabled()
     // editable even while bypassed.
     const float contentAlpha = on ? 1.0f : kBypassedAlpha;
     juce::Component* content[] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(),
-                                   drywet_.get(), visualizer_.get(), typeCombo_.get(),
-                                   typeLabel_.get() };
+                                   drywet_.get(), visualizer_.get(), typeCombo_.get() };
     for (auto* c : content)
         if (c != nullptr)
             c->setAlpha (contentAlpha);
@@ -370,37 +397,53 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
 
     ParamControl* params[4] = { p1_.get(), p2_.get(), p3_.get(), p4_.get() };
 
-    // The single-row knob sequence: ACTIVE algorithm params (param1..N) left-to-
-    // right, then the Mix (dry/wet) knob as the RIGHTMOST knob. Count varies by
-    // type: None=1 (Mix only), GainPan/Chorus=3, Delay=4, Reverb=5.
-    juce::Array<ParamControl*> row;
+    // The knob sequence: ACTIVE algorithm params (param1..N) in row-major order,
+    // then the Mix (dry/wet) knob as the LAST cell (bottom-right for Reverb /
+    // Delay). Count varies by type: None=1 (Mix only), GainPan/Chorus=3,
+    // Delay=4, Reverb=5.
+    juce::Array<ParamControl*> knobs;
     for (int i = 0; i < active; ++i)
         if (params[i] != nullptr)
-            row.add (params[i]);
+            knobs.add (params[i]);
     if (drywet_ != nullptr)
-        row.add (drywet_.get());
+        knobs.add (drywet_.get());
 
-    // Hide every owned knob NOT in the row (inactive algorithm params).
+    // Hide every owned knob NOT in the grid (inactive algorithm params).
     for (auto* pc : params)
-        if (pc != nullptr && row.indexOf (pc) < 0)
+        if (pc != nullptr && knobs.indexOf (pc) < 0)
             pc->setVisible (false);
 
-    const int count = row.size();
+    const int count = knobs.size();
     if (count <= 0)
         return;
 
-    // Equal horizontal cells across the row; the LAST cell absorbs the integer
-    // remainder so the row fills the full width. Each cell is the FULL knob-row
-    // height so the rotary dial reaches its 52px cap (centred in the cell by
-    // ParamControl, which adds its own 2px inset + 18px label band).
-    const int cw = gridArea.getWidth() / count;
+    // Mixer-style grid. Columns adapt to the knob count (3 for Delay/Reverb,
+    //    2 for Chorus/Gain-Pan so they read as a 2-row grid, not a single row):
+    //    every multi-knob type lands on ~2 rows. Equal-width cells; the rightmost
+    // the rightmost column absorbs the integer remainder so the grid fills the
+    // full width. Cell height is the synth kCellH parity (label band + 52px
+    // dial, centred by ParamControl), shrunk only if the grid region is shorter
+    // than rows * kCellH. The knob block is centred VERTICALLY in the region so
+    // a short row-set (None / GainPan / Chorus = 1 row) reads balanced.
+    const int cols   = knobGridCols (count);
+    const int rows   = (count + cols - 1) / cols;
+    const int cellH  = juce::jmin (kCellH, gridArea.getHeight() / juce::jmax (1, rows));
+    const int cellW  = gridArea.getWidth() / cols;
+    const int blockH = rows * cellH;
+    const int y0     = gridArea.getY() + (gridArea.getHeight() - blockH) / 2;
+
     for (int i = 0; i < count; ++i)
     {
-        auto* pc = row[i];
-        const int x = gridArea.getX() + i * cw;
-        const int w = (i == count - 1) ? (gridArea.getRight() - x) : cw;
+        const int col = i % cols;
+        const int row = i / cols;
+        auto* pc = knobs[i];
+        const int x = gridArea.getX() + col * cellW;
+        // Rightmost column absorbs the integer width remainder (consistent
+        // across every row).
+        const int w = (col == cols - 1) ? (gridArea.getRight() - x) : cellW;
+        const int y = y0 + row * cellH;
         pc->setVisible (true);
-        pc->setBounds (juce::Rectangle<int> (x, gridArea.getY(), w, gridArea.getHeight()));
+        pc->setBounds (juce::Rectangle<int> (x, y, w, cellH));
     }
 }
 
@@ -421,35 +464,63 @@ void FxSlotCard::resized()
         return;
     area.removeFromTop (kHalfGap);   // gap below the header divider
 
-    // ---- Row 1: "Type:" label + full-width algorithm dropdown ----
+    // ---- Type row: the algorithm dropdown as a STYLED combo (Osc "Shape" /
+    //      Filter "Mode" parity) — 28px tall, fit-to-text width, centred. The
+    //      combo already inherits the editor-wide ComboBox theme colours
+    //      (backgroundInput fill, amber accentPrimary chevron, borderless) via
+    //      the LookAndFeel — identical to the synth selectors — so only the SIZE
+    //      is set here (was previously full-width / 20px). ----
     if (typeCombo_ != nullptr && area.getHeight() > kTypeRowH)
     {
         auto typeRow = area.removeFromTop (kTypeRowH);
-        if (typeLabel_ != nullptr)
-            typeLabel_->setBounds (typeRow.removeFromLeft (kTypeLabelW));
-        typeCombo_->setBounds (typeRow);
+        const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
+        const int comboW = juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth()), textW);
+        const int comboX = typeRow.getX() + (typeRow.getWidth() - comboW) / 2;
+        typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
         area.removeFromTop (kHalfGap);
     }
 
-    // ---- Body: visualizer (upper, absorbs the freed single-row height) +
-    //         a SINGLE knob row (lower). The knob row is FIXED at kKnobRowH so
-    //         the rotary dials reach their full 52px cap; any surplus body height
-    //         grows the visualizer (the dial never exceeds 52, so taller knobs
-    //         would only waste space). On a short editor the knob row shrinks
-    //         (dials < 52) but the visualizer never drops below kVisMin.
-    //         Geometry @220px (kPad=6): body 162 -> knob row 74 -> vis 86 ->
-    //         dial = min(52, 74 - 18(label) - 4(inset)) = 52px.
+    // ---- Body: a COMPACT visualizer band (<= kVisMax, synth decoration parity)
+    //      on top + a Mixer-style 3-column knob GRID below. The grid is the
+    //      primary control surface, so it claims its ideal height (rows *
+    //      kCellH) first; the band fills the rest down to kVisMin. If even the
+    //      band floor cannot fit alongside the ideal grid, the band holds at
+    //      kVisMin and the grid shrinks. (Was: a large ~2/3-body band + a single
+    //      knob row.) ----
+    const auto t     = static_cast<FxType> (currentTypeIndex());
+    const int active = activeParamCount (t);
+    int count = active;
+    if (drywet_ != nullptr) ++count;              // the Mix knob is always present
+    count = juce::jmax (1, count);
+    const int cols = knobGridCols (count);
+    const int rows = (count + cols - 1) / cols;
+    const int gridIdealH = rows * kCellH;
+
     const int bodyH = area.getHeight();
-    const int knobRowH = juce::jlimit (0, kKnobRowH, bodyH - kHalfGap - kVisMin);
-    auto gridArea = area.removeFromBottom (knobRowH);
-    if (knobRowH > 0 && ! area.isEmpty())
-        area.removeFromBottom (kHalfGap);
-    auto visArea = area;
+    int visH  = kVisMax;
+    int gridH = gridIdealH;
+    if (visH + gridH + kHalfGap > bodyH)          // ideal grid + max band does not fit
+    {
+        if (gridIdealH + kVisMin + kHalfGap <= bodyH)   // band can shrink to its floor
+        {
+            visH  = juce::jmax (0, bodyH - gridIdealH - kHalfGap);
+            gridH = gridIdealH;
+        }
+        else                                            // grid must shrink; band holds kVisMin
+        {
+            visH  = juce::jmin (kVisMin, juce::jmax (0, bodyH - kHalfGap));
+            gridH = juce::jmax (0, bodyH - visH - kHalfGap);
+        }
+    }
 
-    if (visualizer_ != nullptr)
-        visualizer_->setBounds (visArea.reduced (1));
+    if (visualizer_ != nullptr && visH > 0)
+    {
+        visualizer_->setBounds (area.removeFromTop (visH));
+        if (! area.isEmpty())
+            area.removeFromTop (kHalfGap);
+    }
 
-    layoutParamGrid (gridArea);
+    layoutParamGrid (area);
 }
 
 //==============================================================================
@@ -458,31 +529,23 @@ void FxSlotCard::paint (juce::Graphics& g)
     auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel ());
     const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme () : nullptr;
 
-    const juce::Colour panel   = t ? t->backgroundPanel : juce::Colour (0xff202028);
-    const juce::Colour outline = t ? t->outline         : juce::Colour (0xff3a3a44);
-    const juce::Colour divider = t ? t->divider         : juce::Colour (0xff2e2e38);
+    const juce::Colour panel   = t ? t->containerFill   : juce::Colour (0xff202028);
     const juce::Colour title   = t ? t->textSecondary   : juce::Colour (0xffb0b0bc);
     const juce::Colour accent  = t ? t->accentSecondary : juce::Colour (0xffe8b84b);
 
     const auto r = getLocalBounds ().toFloat ();
 
-    // ---- Card panel ----
+    // ---- Card panel: BORDERLESS (synth GroupComponent parity). Depth comes from
+    //      the tonal lift of containerFill over the page backgroundBase — no
+    //      outline, no under-header divider (the title band alone separates). ----
     g.setColour (panel);
     g.fillRoundedRectangle (r, kCorner);
-    g.setColour (outline);
-    g.drawRoundedRectangle (r.reduced (0.5f), kCorner, 1.0f);
 
-    // ---- Header divider (under the title / power-toggle row) ----
-    const int divY = kPad + kHeaderH;
-    g.setColour (divider);
-    g.drawHorizontalLine (divY, static_cast<float> (kPad),
-                          static_cast<float> (getWidth () - kPad));
-
-    // ---- Title "FX N" upper-left: BOLD + UPPERCASE (11px), mirroring the synth
+    // ---- Title "FX N" upper-left: BOLD + UPPERCASE (14px), mirroring the synth
     //      card GroupComponent header. An accent tick sits just left of the text
     //      (the FX-slot accent marker); the power toggle lives top-right. ----
-    juce::Font font = lnf != nullptr ? lnf->appFont (11.0f, juce::Font::bold)
-                                    : juce::Font (juce::FontOptions (11.0f, juce::Font::bold));
+    juce::Font font = lnf != nullptr ? lnf->appFont (14.0f, juce::Font::bold)
+                                    : juce::Font (juce::FontOptions (14.0f, juce::Font::bold));
     const juce::String name = "FX" + juce::String (slot_ + 1);   // "FX1" (uppercase)
     const int tickX  = kPad + 2;
     const int titleX = tickX + 6;
@@ -502,17 +565,15 @@ void FxSlotCard::paint (juce::Graphics& g)
 //==============================================================================
 void FxSlotCard::applyThemeColors()
 {
-    // Push the live theme tokens onto the visualizer trace + the "Type:" label so
-    // a theme switch re-tints them immediately (the visualizer otherwise reads
-    // accentSecondary live each paint; the label uses textSecondary).
+    // Push the live theme token onto the visualizer trace so a theme switch
+    // re-tints it immediately (the visualizer otherwise reads accentSecondary
+    // live each paint).
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel ()))
     {
         if (const auto* th = lnf->getTheme ())
         {
             if (visualizer_ != nullptr)
                 visualizer_->setCategoryColour (th->accentSecondary);
-            if (typeLabel_ != nullptr)
-                typeLabel_->setColour (juce::Label::textColourId, th->textSecondary);
         }
     }
 

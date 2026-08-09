@@ -95,12 +95,9 @@ void FxSlotVisualizer::timerCallback()
     dispP3_     = p3;
     dispDryWet_ = dw;
 
-    // Chorus animates in real time (its sine phase advances every tick), so it
-    // repaints continuously; every other type only repaints on a param/type
-    // change.
-    const bool animate = typeIndex (t) == static_cast<int> (FxType::Chorus);
-
-    if (changed || animate)
+    // Every type is STATIC: the repaint gate fires only on a param/type change
+    // (no constant repaint when idle).
+    if (changed)
         repaint();
 }
 
@@ -335,14 +332,14 @@ void FxSlotVisualizer::drawChorus (juce::Graphics& g, juce::Rectangle<float> plo
 {
     const float a = wetAlpha (wet);
 
-    // Two delayed traces (L/R) that wobble with a sine whose RATE scales with
-    // `rate` and whose AMPLITUDE scales with `depth`. The phase advances in real
-    // time so the graphic animates (the 30 Hz timer drives the repaints).
-    const float rateHz = 0.25f + rate * 6.0f;                 // ~0.25..6.25 Hz
+    // Two delayed traces (L/R) that wobble with a sine whose AMPLITUDE scales
+    // with `depth` and whose spatial WOBBLE COUNT scales with `rate` (more rate
+    // => more wiggles across the plot). STATIC: the phase is frozen (no
+    // real-time animation) so the L/R traces only re-draw on a rate/depth/type
+    // change, exactly like Delay/Reverb.
     const float amp    = (0.18f + 0.62f * depth);             // bipolar amplitude 0..1
-    const float cycles = 3.0f;                                // wobbles across the plot
-    const float phase  = static_cast<float> (juce::Time::getMillisecondCounter()) * 0.001f
-                       * rateHz * juce::MathConstants<float>::twoPi;
+    const float cycles = 1.5f + rate * 4.5f;                  // ~1.5..6 wobbles across the plot
+    constexpr float phase = 0.0f;                             // frozen (static preview)
 
     auto wob = [&] (float xf, float phaseOffset) -> float
     {
