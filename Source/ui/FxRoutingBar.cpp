@@ -5,7 +5,7 @@
 #include "PluginProcessor.h"   // ParvatiAudioProcessor complete type (getApvts)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
-#include "ParvatiLookAndFeel.h"   // dynamic_cast + appFont() in FxFlowDiagram / FxBypassSwitch
+#include "ParvatiLookAndFeel.h"   // dynamic_cast + appFont() in FxFlowDiagram
 
 //==============================================================================
 namespace
@@ -21,7 +21,7 @@ namespace
     constexpr int kStepBtnW   = 24;   // ◀ ▶ topology stepper width
     constexpr int kStepBtnH   = 28;   // ◀ ▶ topology stepper height
     constexpr int kFlowRowH   = 56;   // [◀][flow diagram][▶] row height
-    constexpr int kCtrlRowH   = 70;   // [Mix knob] | [Bypass switch] row height
+    constexpr int kCtrlRowH   = 70;   // [Mix knob] row height
     constexpr int kEqRowH     = 58;   // [Low][Mid][High] EQ knob row height
     constexpr int kEqKnobSize = 42;   // EQ rotary dial (compact)
 }
@@ -232,63 +232,6 @@ private:
 };
 
 //==============================================================================
-// FxBypassSwitch — a modern pill toggle-switch for the "Keep FX Tails" option
-// (fx_keep_tails). The track fills with accentPrimary (the rotary-arc
-// yellow/orange) when ON and recedes to trackEmpty when OFF; the knob slides
-// L->R; the label is drawn to the right of the switch. Reads the active
-// ParvatiTheme via its LookAndFeel every paint (theme switches are free).
-class FxBypassSwitch : public juce::Button
-{
-public:
-    explicit FxBypassSwitch (juce::String label) : juce::Button ({}), label_ (std::move (label))
-    {
-        setClickingTogglesState (true);
-    }
-
-    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool /*isButtonDown*/) override
-    {
-        const ParvatiTheme* t = nullptr;
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            t = lnf->getTheme();
-        const juce::Colour accent = t ? t->accentPrimary : juce::Colour (0xffe8b84b);
-        const juce::Colour trackC = t ? t->trackEmpty    : juce::Colour (0xff3a3a46);
-        const juce::Colour text   = t ? t->textSecondary : juce::Colour (0xffb0b0bc);
-
-        const bool on = getToggleState();
-
-        // Switch pill (left).
-        const float sh = juce::jlimit (14.0f, 18.0f, static_cast<float> (getHeight()) * 0.5f);
-        const float sw = sh * 1.85f;
-        const juce::Rectangle<float> pill (0.0f, (static_cast<float> (getHeight()) - sh) * 0.5f, sw, sh);
-        juce::Colour trackCol = on ? accent : trackC;
-        if (! on && isMouseOverButton) trackCol = trackC.brighter (0.20f);
-        g.setColour (trackCol);
-        g.fillRoundedRectangle (pill, sh * 0.5f);
-
-        // Knob (slides L -> R).
-        const float knobR = sh * 0.34f;
-        const float kx = on ? pill.getRight() - knobR : pill.getX() + knobR;
-        g.setColour (juce::Colours::white.withAlpha (on ? 0.95f : 0.72f));
-        g.fillEllipse (kx - knobR, pill.getCentreY() - knobR, knobR * 2.0f, knobR * 2.0f);
-
-        // Label to the right of the switch.
-        g.setColour (text);
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            g.setFont (lnf->appFont (11.0f, juce::Font::plain));
-        else
-            g.setFont (juce::Font (juce::FontOptions (11.0f)));
-        g.drawText (label_, juce::Rectangle<float> (sw + 6.0f, 0.0f,
-                                                     juce::jmax (0.0f, (float) getWidth() - sw - 6.0f),
-                                                     (float) getHeight()),
-                    juce::Justification::centredLeft, true);
-    }
-
-private:
-    juce::String label_;
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxBypassSwitch)
-};
-
-//==============================================================================
 FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
     : processor_ (processor), themeManager_ (themeManager)
 {
@@ -343,35 +286,11 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
         eqAttach_[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor_.getApvts(), eqIds[i], eqKnobs_[i]);
     }
-
-    // ---- "Keep FX Tails" pill switch (fx_keep_tails is an Int 0/1, bound via a
-    //      Value + Value::Listener — NOT a ButtonAttachment) ----
-    bypassSwitch_ = std::make_unique<FxBypassSwitch> (TRANS ("Keep FX Tails"));
-    bypassSwitch_->setTooltip (TRANS ("Let delay/reverb tails ring out when an FX slot is bypassed"));
-    addAndMakeVisible (*bypassSwitch_);
-    keepTailsValue_ = processor_.getApvts ().getParameterAsValue ("fx_keep_tails");
-    keepTailsValue_.addListener (this);
-    bypassSwitch_->onClick = [this]
-    {
-        // Write 0/1 (the Int param's denormalized value via getParameterAsValue).
-        keepTailsValue_ = bypassSwitch_->getToggleState () ? 1.0f : 0.0f;
-    };
-    syncKeepTails ();
 }
 
-FxRoutingBar::~FxRoutingBar()
-{
-    keepTailsValue_.removeListener (this);
-}
+FxRoutingBar::~FxRoutingBar() = default;
 
 //==============================================================================
-void FxRoutingBar::syncKeepTails()
-{
-    if (bypassSwitch_ != nullptr)
-        bypassSwitch_->setToggleState (juce::roundToInt (keepTailsValue_.getValue()) != 0,
-                                       juce::dontSendNotification);
-}
-
 void FxRoutingBar::stepTopology (int direction)
 {
     // Cycle fx_topo by ±1 (wrap) by writing the choice index directly. The
@@ -385,13 +304,6 @@ void FxRoutingBar::stepTopology (int direction)
     const int cur = juce::jlimit (0, n - 1, juce::roundToInt (v.getValue()));
     v = static_cast<float> ((cur + direction + n) % n);
 }
-
-void FxRoutingBar::valueChanged (juce::Value& v)
-{
-    if (v.refersToSameSourceAs (keepTailsValue_))
-        syncKeepTails();
-}
-
 //==============================================================================
 void FxRoutingBar::paint (juce::Graphics& g)
 {
@@ -421,9 +333,9 @@ void FxRoutingBar::resized()
 {
     // The bar is the slim column 0 of the 4-column FX top row. Layout (top to
     // bottom): a painted "FX ROUTING" header band, then the [◀][flow diagram][▶]
-    // row (a FlexBox, horizontally centred), then the [Mix knob | Bypass switch]
-    // row. The flow + controls rows are vertically centred as a block in the
-    // remaining height so a tall column breathes evenly.
+    // row (a FlexBox, horizontally centred), then the [Mix knob] row. The flow
+    // + controls rows are vertically centred as a block in the remaining height
+    // so a tall column breathes evenly.
     auto area = getLocalBounds().reduced (kPad);
     if (area.isEmpty())
         return;
@@ -473,20 +385,15 @@ void FxRoutingBar::resized()
         if (ctrlH > 0 && area.getHeight() > kGap) area.removeFromTop (kGap);
     }
 
-    // ---- Controls row: [Mix knob + label] | [Bypass switch], side by side ----
+    // ---- Controls row: [Mix knob + label], centred in the full row width ----
     if (ctrlH > 0)
     {
-        auto row   = area.removeFromTop (ctrlH);
-        auto left  = row.removeFromLeft (row.getWidth() / 2);
-        auto right = row;   // remainder
+        auto row = area.removeFromTop (ctrlH);
         // Mix: "Mix" caption above a centred synth-parity dial.
-        mixLabel_.setBounds (left.removeFromTop (kLabelH));
-        left.removeFromTop (2);
-        const int ks = juce::jmin (kKnobSize, left.getWidth(), left.getHeight());
-        mixKnob_.setBounds (left.withSizeKeepingCentre (ks, ks));
-        // Bypass pill switch fills its half (switch left, label right).
-        if (bypassSwitch_ != nullptr)
-            bypassSwitch_->setBounds (right);
+        mixLabel_.setBounds (row.removeFromTop (kLabelH));
+        row.removeFromTop (2);
+        const int ks = juce::jmin (kKnobSize, row.getWidth(), row.getHeight());
+        mixKnob_.setBounds (row.withSizeKeepingCentre (ks, ks));
     }
 }
 
@@ -500,8 +407,6 @@ void FxRoutingBar::applyThemeColors()
 
     if (flowDiagram_ != nullptr)
         flowDiagram_->repaint();   // re-resolve trace/block colours from the new theme
-    if (bypassSwitch_ != nullptr)
-        bypassSwitch_->repaint();  // re-resolve the switch track/knob colours
 
     repaint();
 }

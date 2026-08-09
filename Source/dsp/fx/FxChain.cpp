@@ -33,13 +33,37 @@ void FxChain::prepare (double rate, int maxBlock)
     dryL_.assign (n, 0.0f);
     dryR_.assign (n, 0.0f);
 
-    // Master-section state: clear the EQ filters + tail fades, recompute EQ
-    // coeffs for the (possibly new) sample rate.
+    // Master-section state: clear the EQ biquad z-state (invalidated by a
+    // sample-rate change) and recompute the per-sample fade coefficients + EQ
+    // coeffs for the (possibly new) sample rate. The tail fades (wetFade_) and
+    // the smoothed currents (dryWetCur_/masterMixCur_) are unitless 0..1 state
+    // independent of sample rate, so they are PRESERVED across a re-prepare:
+    // a host mid-session sample-rate / buffer-size change must NOT truncate a
+    // ringing tail (by zeroing wetFade_) nor dip an enabled effect toward dry
+    // (by zeroing wetFade_ / snapping dryWetCur_). Only the rate-dependent
+    // coefficients and the EQ z-state are refreshed here (B7).
     for (auto& b : eqLow_)  b.reset();
     for (auto& b : eqMid_)  b.reset();
     for (auto& b : eqHigh_) b.reset();
-    prevEnabled_.fill (false);
-    wetFade_.fill (0.0f);
+
+    // Per-sample one-pole fade coefficients from rate_:
+    //   coef = 1 - exp(-1 / (tau * sampleRate)).
+    // Fade-OUT (0.30 s) is long enough for a bypassed slot's reverb/delay tail
+    // to ring out (B1); fade-IN (5 ms) is short enough to hide the engage click
+    // of a just-engaged / freshly type-changed slot (B3/B4).
+    const double sr = rate_ > 0.0 ? rate_ : 44100.0;
+    coefOut_ = 1.0f - (float) std::exp (-1.0 / ((double) kFadeOutTauSec * sr));
+    coefIn_  = 1.0f - (float) std::exp (-1.0 / ((double) kFadeInTauSec  * sr));
+
+    // Per-sample dry/wet + masterMix smoothing coeff (B2-engine, B6). 20 ms tau:
+    // fast enough to feel instant on a knob move, slow enough to hide a block-
+    // rate step and to preserve slow LFO wet modulation. The smoothed currents
+    // (dryWetCur_/masterMixCur_) are NOT snapped to target here: they default to
+    // 0/1.0 at construction and any target set before the first prepare ramps in
+    // naturally (a gentle 5-20 ms fade-in on first audio, no click); on a re-
+    // prepare they are preserved so an enabled effect does not dip (B7).
+    smoothCoef_ = 1.0f - (float) std::exp (-1.0 / (kParamSmoothTauSec * sr));
+
     updateEqCoeffs();
 }
 
@@ -62,6 +86,12 @@ void FxChain::setSlotType (int slot, FxType t)
             slots_[(size_t) slot]->reset();
         }
     }
+    // The freshly-created effect starts from zero state; force its wet fade to
+    // 0 so it FADES IN (B4) instead of slamming in at full wet. (The old
+    // processor's tail is unavoidably lost on a module change — the user-
+    // accepted "module turned off" exception; only the new module's engage
+    // must be click-free.)
+    wetFade_[(size_t) slot] = 0.0f;
 }
 
 void FxChain::setSlotEnabled (int slot, bool e) noexcept
@@ -95,11 +125,6 @@ void FxChain::setOrder (const std::array<int, 3>& ord) noexcept
 void FxChain::setMasterMix (float g01) noexcept
 {
     masterMix_ = juce::jlimit (0.0f, 1.0f, g01);
-}
-
-void FxChain::setKeepTails (bool keep) noexcept
-{
-    keepTails_ = keep;
 }
 
 void FxChain::setMasterEqLow (uint8_t v) noexcept
@@ -139,44 +164,34 @@ void FxChain::EqBiquad::process (float* io, int numSamples) noexcept
     }
 }
 
-void FxChain::updateTailState (int numSamples) noexcept
+void FxChain::blendSlotWetFade (float* outL, float* outR, int numSamples, int s) noexcept
 {
-    if (! keepTails_)
+    // Per-sample dry/wet blend + two one-pole advances for a single series-style
+    // slot. dryWet_[s] is the block-constant target; the per-sample-smoothed
+    // dryWetCur_[s] AND the wet fade (wetFade_[s]) are each read + advanced one
+    // sample per iteration and persisted back, so both are continuous across
+    // blocks (B2-engine smoothing + the Step-1 wet fade). The pre-process dry
+    // snapshot lives in dryL_/dryR_ (captured by the caller before the in-place
+    // process() overwrote outL/outR with the wet).
+    const float dwTarget = dryWet_[(size_t) s];
+    float dwCur = dryWetCur_[(size_t) s];
+    const float target = enabled_[(size_t) s] ? 1.0f : 0.0f;
+    float fade = wetFade_[(size_t) s];
+    for (int i = 0; i < numSamples; ++i)
     {
-        // Hard-cut (default): wetFade is binary; prevEnabled tracks enabled.
-        for (int s = 0; s < kNumFxSlots; ++s)
-        {
-            wetFade_[(size_t) s] = enabled_[(size_t) s] ? 1.0f : 0.0f;
-            prevEnabled_[(size_t) s] = enabled_[(size_t) s];
-        }
-        return;
+        // Two independent per-sample one-poles in the same loop: the dry/wet
+        // smoother (smoothCoef_) advances dwCur toward dryWet_[s] (target), and
+        // the wet fade (coefIn_/coefOut_) advances fade toward 1/0. dw = dwCur*fade.
+        const float dw = dwCur * fade;
+        const float dry = 1.0f - dw;
+        outL[i] = dryL_[(size_t) i] * dry + outL[i] * dw;
+        outR[i] = dryR_[(size_t) i] * dry + outR[i] * dw;
+        dwCur += (dwTarget - dwCur) * smoothCoef_;
+        const float c = (target > fade) ? coefIn_ : coefOut_;
+        fade += (target - fade) * c;
     }
-    // Fade a just-bypassed slot's wet over ~40 ms (one-pole block decay) so
-    // delay/reverb tails ring out instead of cutting. perSample maps 1.0 ->
-    // ~0.001 across a 40 ms window; blockDecay applies it for this block.
-    const double tauSamples = 0.040 * rate_;
-    const float perSample = tauSamples > 1.0
-        ? std::pow (0.001f, 1.0f / static_cast<float> (tauSamples)) : 0.0f;
-    const float blockDecay = std::pow (perSample, static_cast<float> (numSamples));
-    for (int s = 0; s < kNumFxSlots; ++s)
-    {
-        const bool en = enabled_[(size_t) s];
-        if (en)
-        {
-            wetFade_[(size_t) s] = 1.0f;
-        }
-        else if (slots_[(size_t) s] != nullptr && prevEnabled_[(size_t) s])
-        {
-            wetFade_[(size_t) s] *= blockDecay;
-            if (wetFade_[(size_t) s] < 5.0e-4f)
-                wetFade_[(size_t) s] = 0.0f;   // tail spent -> stop rendering
-        }
-        else
-        {
-            wetFade_[(size_t) s] = 0.0f;
-        }
-        prevEnabled_[(size_t) s] = en || wetFade_[(size_t) s] > 0.0f;
-    }
+    wetFade_[(size_t) s] = fade;
+    dryWetCur_[(size_t) s] = dwCur;
 }
 
 void FxChain::updateEqCoeffs() noexcept
@@ -260,10 +275,11 @@ bool FxChain::anyEnabled() const noexcept
 void FxChain::process (const float* inL, const float* inR,
                        float* outL, float* outR, int numSamples)
 {
-    // Advance per-slot tail fades (keepTails) so a just-bypassed slot keeps
-    // rendering; in hard-cut mode (default) wetFade is binary (= enabled).
-    updateTailState (numSamples);
-
+    // Tail fades are advanced per sample inside the blend loops below (one
+    // advance per rendered slot per block), not here. A slot that just got
+    // disabled is still slotActive (its wetFade_ is > epsilon) so its blend
+    // loop keeps running and decays the fade toward 0; once the fade drops
+    // below epsilon the slot stops rendering entirely.
     const bool anyAct = slotActive (0) || slotActive (1) || slotActive (2);
 
     // Fast bypass: nothing active AND master section at no-op defaults => the
@@ -306,13 +322,8 @@ void FxChain::process (const float* inL, const float* inR,
             proc->setParams (params_[(size_t) s].data());
             proc->process (outL, outR, numSamples);   // outL/outR now hold WET
 
-            const float dw  = dryWet_[(size_t) s] * wetFade_[(size_t) s];
-            const float dry = 1.0f - dw;
-            for (int i = 0; i < numSamples; ++i)
-            {
-                outL[i] = dryL_[(size_t) i] * dry + outL[i] * dw;
-                outR[i] = dryR_[(size_t) i] * dry + outR[i] * dw;
-            }
+            // Per-sample dry/wet blend + one-pole fade advance for this slot.
+            blendSlotWetFade (outL, outR, numSamples, s);
         }
     }
     else if (topology_ == static_cast<uint8_t> (FxTopology::Parallel12to3))
@@ -338,13 +349,8 @@ void FxChain::process (const float* inL, const float* inR,
             procC->setParams (params_[(size_t) C].data());
             procC->process (outL, outR, numSamples);   // outL/outR now hold WET
 
-            const float dw  = dryWet_[(size_t) C] * wetFade_[(size_t) C];
-            const float dry = 1.0f - dw;
-            for (int i = 0; i < numSamples; ++i)
-            {
-                outL[i] = dryL_[(size_t) i] * dry + outL[i] * dw;
-                outR[i] = dryR_[(size_t) i] * dry + outR[i] * dw;
-            }
+            // Per-sample dry/wet blend + one-pole fade advance for slot C.
+            blendSlotWetFade (outL, outR, numSamples, C);
         }
         // C disabled => passthrough: outL/outR keep parallelOut unchanged.
     }
@@ -371,13 +377,8 @@ void FxChain::process (const float* inL, const float* inR,
             procA->setParams (params_[(size_t) A].data());
             procA->process (outL, outR, numSamples);   // outL/outR now hold WET
 
-            const float dw  = dryWet_[(size_t) A] * wetFade_[(size_t) A];
-            const float dry = 1.0f - dw;
-            for (int i = 0; i < numSamples; ++i)
-            {
-                outL[i] = dryL_[(size_t) i] * dry + outL[i] * dw;
-                outR[i] = dryR_[(size_t) i] * dry + outR[i] * dw;
-            }
+            // Per-sample dry/wet blend + one-pole fade advance for slot A.
+            blendSlotWetFade (outL, outR, numSamples, A);
         }
 
         // Stage 2 (parallel {B,C} over stage1). Snapshot stage1 into dryL_/dryR_
@@ -388,15 +389,26 @@ void FxChain::process (const float* inL, const float* inR,
         renderParallel (dryL_.data(), dryR_.data(), outL, outR, numSamples, B, C);
     }
 
-    // ---- Global wet/dry mix (no-op at masterMix_ == 1.0) ----
-    if (masterMix_ < 1.0f)
+    // ---- Global wet/dry mix (per-sample one-pole toward masterMix_; B6) ----
+    // Runs whenever the target is below unity OR the smoothed current has not
+    // yet settled at unity, so a knob move / automation / FX-mod master-mix
+    // destination ramps continuously instead of stepping once per block. At
+    // steady-state unity (target AND current == 1.0) the blend is an exact
+    // no-op and is skipped. The fast-bypass dry-copy path at the top of
+    // process() stays keyed on the TARGET masterMix_ >= 1.0f, which is what
+    // makes the master blend a no-op there.
+    if (masterMix_ < 1.0f || masterMixCur_ < 1.0f)
     {
-        const float g = masterMix_, dry = 1.0f - g;
+        const float target = masterMix_;
+        float g = masterMixCur_;
         for (int i = 0; i < numSamples; ++i)
         {
+            const float dry = 1.0f - g;
             outL[i] = inL[i] * dry + outL[i] * g;
             outR[i] = inR[i] * dry + outR[i] * g;
+            g += (target - g) * smoothCoef_;
         }
+        masterMixCur_ = g;
     }
 
     // ---- Master EQ (skipped entirely when flat) ----
@@ -411,7 +423,9 @@ void FxChain::renderParallel (const float* inL, const float* inR,
     // Equal-gain parallel blend of TWO slots over @p inL/inR into @p outL/outR,
     // reusing the former full-sum Parallel formula: sum the wet outputs of the
     // active slots, divide by the active count, and blend against the dry input
-    // by the mean dry/wet W (out = dry*(1-W) + (sum wet)/activeCount * W).
+    // by the per-sample mean dry/wet W (out = dry*(1-W) + (sum wet)/activeCount
+    // * W). Each active slot's one-pole wetFade_ is advanced per sample within
+    // the blend loop and persisted back so the fade is continuous across blocks.
     // outL/outR are CLEARED first; with BOTH slots disabled/None the input is
     // copied through unchanged. Allocation-free (uses pre-sized wetL_/wetR_).
     juce::FloatVectorOperations::clear (outL, numSamples);
@@ -419,7 +433,10 @@ void FxChain::renderParallel (const float* inL, const float* inR,
 
     const int pair[2] = { slotA, slotB };
     int activeCount = 0;
-    float dwSum = 0.0f;
+    int actSlot[2]       = { 0, 0 };
+    float actDwTarget[2] = { 0.0f, 0.0f };
+    float actDwCur[2]    = { 0.0f, 0.0f };
+    float actFade[2]     = { 0.0f, 0.0f };
 
     for (int p = 0; p < 2; ++p)
     {
@@ -435,19 +452,46 @@ void FxChain::renderParallel (const float* inL, const float* inR,
 
         juce::FloatVectorOperations::add (outL, wetL_[(size_t) s].data(), numSamples);
         juce::FloatVectorOperations::add (outR, wetR_[(size_t) s].data(), numSamples);
+        actSlot[activeCount]     = s;
+        actDwTarget[activeCount]  = dryWet_[(size_t) s];
+        actDwCur[activeCount]     = dryWetCur_[(size_t) s];
+        actFade[activeCount]      = wetFade_[(size_t) s];
         ++activeCount;
-        dwSum += dryWet_[(size_t) s] * wetFade_[(size_t) s];
     }
 
     if (activeCount > 0)
     {
         const float inv = 1.0f / (float) activeCount;
-        const float W   = (dwSum * inv);   // mean dry/wet, 0..1
-        const float dry = 1.0f - W;
         for (int i = 0; i < numSamples; ++i)
         {
+            // Per-sample mean dry/wet from each active slot's one-pole fade AND
+            // one-pole dry/wet smoother (dw = dwCur * fade per slot).
+            float dwSum = 0.0f;
+            for (int a = 0; a < activeCount; ++a)
+                dwSum += actDwCur[a] * actFade[a];
+            const float W   = dwSum * inv;   // mean dry/wet, 0..1
+            const float dry = 1.0f - W;
+            // outL/outR currently hold the summed wet outputs of the active
+            // slots; blend the mean wet against the dry input.
             outL[i] = inL[i] * dry + outL[i] * inv * W;
             outR[i] = inR[i] * dry + outR[i] * inv * W;
+            // Advance each active slot's two per-sample one-poles: the dry/wet
+            // smoother (smoothCoef_) toward dryWet_[s] (target), and the wet
+            // fade (coefIn_/coefOut_) toward 1/0 (1 if enabled, else 0).
+            for (int a = 0; a < activeCount; ++a)
+            {
+                actDwCur[a] += (actDwTarget[a] - actDwCur[a]) * smoothCoef_;
+                const int s = actSlot[a];
+                const float target = enabled_[(size_t) s] ? 1.0f : 0.0f;
+                const float c = (target > actFade[a]) ? coefIn_ : coefOut_;
+                actFade[a] += (target - actFade[a]) * c;
+            }
+        }
+        // Persist the advanced fades + dry/wet currents so they are continuous across blocks.
+        for (int a = 0; a < activeCount; ++a)
+        {
+            wetFade_[(size_t) actSlot[a]] = actFade[a];
+            dryWetCur_[(size_t) actSlot[a]] = actDwCur[a];
         }
     }
     else

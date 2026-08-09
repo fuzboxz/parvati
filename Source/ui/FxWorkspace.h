@@ -6,7 +6,7 @@
 // verified byte-bridge survive unchanged:
 //
 //   TOP row:    4 columns [ ROUTING | FX1 | FX2 | FX3 ]. A slim FxRoutingBar
-//               column (topology dropdown + global MIX + keep-tails toggle) on
+//               column (topology dropdown + global MIX + master EQ) on
 //               the left, then 3 equal-width columns of self-contained
 //               FxSlotCards (FX1/FX2/FX3) — each a modular card (power/bypass
 //               toggle + type combo + a per-algorithm visualizer + a param knob
@@ -56,7 +56,7 @@ public:
     void setFxSlotCard (int slot, FxSlotCard* card);
 
     // TOP-row slim ROUTING column (FLOW topology dropdown + global MIX +
-    // keep-tails toggle), now the leftmost of the 4-column top row. Editor-owned,
+    // master EQ), now the leftmost of the 4-column top row. Editor-owned,
     // hosted NON-owned.
     void setFxRoutingBar (FxRoutingBar* bar);
 

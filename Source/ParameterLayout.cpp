@@ -459,9 +459,9 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         }
 
         // ---- Per-part FX (Parvati-exclusive; no Ambika patch byte; per-part) ----
-        // 76 params: 3 slots x (type/enabled/drywet/param1..4) = 21, + fx_topo +
-        // fx_order = 2, + 16 x (fxmod source/dest/amount) = 48, + 5 master section
-        // (fx_mix/fx_keep_tails/fx_eq_low/mid/high, engine-state v3). All isFx=true,
+        // 75 params: 3 slots x (type/enabled/drywet/param1..4) = 21, + fx_topo +
+        // fx_order = 2, + 16 x (fxmod source/dest/amount) = 48, + 4 master section
+        // (fx_mix/fx_eq_low/mid/high, engine-state v3). All isFx=true,
         // byteOffset=-1 (never touch patch/part bytes). Routed via
         // applyFxParameter; loaded per-part in loadPartIntoApvts. Reuses the
         // synth mod-source choice list (makeModSources) for fxmod sources.
@@ -503,14 +503,14 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             }
             addFx ("fx_topo", "FX Topology", &kFxTopologies, 0);   // Series
             addFx ("fx_order", "FX Order",    nullptr,        0, 0, 5);   // orderIdx 0..5
-            // Master section (engine-state v3): global chain wet/dry + bypass
-            // tails + 3-band master EQ. Defaults preserve prior audio (mix fully
-            // wet, hard-cut bypass, EQ unity/no-cut) so existing patches unchanged.
-            addFx ("fx_mix",        "FX Mix",        nullptr, 127, 0, 127);  // global wet/dry (127 = fully wet)
-            addFx ("fx_keep_tails", "FX Keep Tails", nullptr,   0, 0,   1);  // 0/1 keep tails on bypass
-            addFx ("fx_eq_low",     "FX EQ Low",     nullptr,   0, 0, 127);  // low-cut (high-pass)
-            addFx ("fx_eq_mid",     "FX EQ Mid",     nullptr,  64, 0, 127);  // mid peaking gain (64 = 0 dB)
-            addFx ("fx_eq_high",    "FX EQ High",    nullptr,  64, 0, 127);  // high-shelf gain (64 = 0 dB)
+            // Master section (engine-state v3): global chain wet/dry + 3-band
+            // master EQ. Tail retention is now unconditional (no user control).
+            // Defaults preserve prior audio (mix fully wet, EQ unity/no-cut) so
+            // existing patches unchanged.
+            addFx ("fx_mix",     "FX Mix",     nullptr, 127, 0, 127);  // global wet/dry (127 = fully wet)
+            addFx ("fx_eq_low",  "FX EQ Low",  nullptr,   0, 0, 127);  // low-cut (high-pass)
+            addFx ("fx_eq_mid",  "FX EQ Mid",  nullptr,  64, 0, 127);  // mid peaking gain (64 = 0 dB)
+            addFx ("fx_eq_high", "FX EQ High", nullptr,  64, 0, 127);  // high-shelf gain (64 = 0 dB)
             for (int m = 1; m <= 16; ++m)
             {
                 addFx ("fxmod" + std::to_string (m) + "_source", "FX Mod " + std::to_string (m) + " Src",    &kFxModSources, 0);

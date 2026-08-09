@@ -20,6 +20,12 @@
 //                                   is the dry summed signal (audibly-identical
 //                                   to the pre-FX path).
 //
+// Tail retention is ALWAYS ON (no toggle): a bypassed slot's wet decays toward
+// 0 over ~0.30 s so its delay/reverb tail rings out instead of hard-cutting
+// (B1), and a just-engaged / freshly type-changed slot fades in over ~5 ms so it
+// does not slam in at full wet (B3/B4). The fade is a per-sample one-pole
+// (wetFade_), advanced inside each blend loop, not a block multiplier.
+//
 // The two-branch parallel blend is shared via renderParallel(). FxType/FxTopology are forward-declared via FxProcessor.h; the chain caches
 // the current slot types as uint8_t to avoid requiring the enum to be complete
 // in this header (SynthEngine.h includes this file before defining the enum).
@@ -56,11 +62,8 @@ public:
 
     // ---- Master section (v3) ----
     // Global chain wet/dry (0..1; 1 = fully wet = the pre-master default, a
-    // no-op). keepTails: when true, a slot that is bypassed (enabled 1->0) fades
-    // its wet out over ~40 ms while still rendering, so delay/reverb tails ring
-    // out instead of cutting; false (default) = instant passthrough.
+    // no-op).
     void setMasterMix (float g01) noexcept;
-    void setKeepTails (bool keep) noexcept;
     // Master EQ bands (uint8 params): low = 0..127 low-cut amount (0 = off);
     // mid/high = 0..127 where 64 = unity (0 dB).
     void setMasterEqLow  (uint8_t v) noexcept;
@@ -82,7 +85,8 @@ private:
     std::array<std::unique_ptr<FxProcessor>, kNumFxSlots> slots_;
     std::array<uint8_t, kNumFxSlots> slotType_ {};   // FxType as uint8_t (cache)
     std::array<bool,  kNumFxSlots> enabled_  {};     // filled false
-    std::array<float, kNumFxSlots> dryWet_   {};     // filled 0.0f
+    std::array<float, kNumFxSlots> dryWet_   {};     // TARGET dry/wet 0..1 (set by setSlotDryWet); block-constant target
+    std::array<float, kNumFxSlots> dryWetCur_ {};    // per-sample-smoothed current dry/wet (B2-engine/B6)
     std::array<std::array<float, kNumFxSlotParams>, kNumFxSlots> params_ {};   // 0.0f
 
     uint8_t topology_ = 0;   // FxTopology::Series
@@ -111,16 +115,46 @@ private:
     uint8_t eqLowV_ = 0, eqMidV_ = 64, eqHighV_ = 64;   // cached params (detect change)
     bool eqActive_ = false;                             // false => skip EQ entirely (bit-identical default)
 
-    float masterMix_ = 1.0f;          // 0..1 (1 = no-op default)
-    bool  keepTails_ = false;         // default off = hard-cut (current behaviour)
-    std::array<bool,  kNumFxSlots> prevEnabled_ {};    // tail transition detection
-    std::array<float, kNumFxSlots> wetFade_ {};        // 0..1 effective wet mult (1=enabled; decays while tailing)
+    float masterMix_ = 1.0f;          // TARGET master mix 0..1 (set by setMasterMix; 1 = no-op default)
+    float masterMixCur_ = 1.0f;       // per-sample-smoothed current master mix (B6)
 
-    // Per-block: advance per-slot tail fades (keepTails) so a just-bypassed
-    // slot keeps rendering its tail. Updates prevEnabled_/wetFade_.
-    void updateTailState (int numSamples) noexcept;
-    // True if slot @p s should render this block (enabled OR still tailing).
-    bool slotActive (int s) const noexcept { return enabled_[(size_t) s] || wetFade_[(size_t) s] > 0.0f; }
+    // ---- Tail retention + click-free enable/disable (always on) ----
+    // Tails are now ALWAYS retained (no toggle). Each slot's wet is governed by
+    // a per-sample one-pole fade wetFade_[s] in 0..1, driven every sample toward
+    // (enabled_[s] ? 1 : 0): a just-bypassed slot's wet decays over the fade-OUT
+    // tau so its reverb/delay tail rings out instead of hard-cutting (B1), and a
+    // just-engaged / freshly type-changed slot fades IN so it does not slam in
+    // at full wet (B3/B4). The fade is advanced per sample inside each blend
+    // loop (blendSlotWetFade / renderParallel), NOT as a block multiplier.
+    // dryWet_[s] stays a block constant in this step (its smoothing is later).
+    static constexpr float kFadeOutTauSec = 0.30f;   // ~0.30 s: long enough for real tails
+    static constexpr float kFadeInTauSec  = 0.005f;  // ~5 ms: fast enough to hide the engage click
+    float coefIn_  = 1.0f;   // one-pole per-sample coeff while rising toward 1
+    float coefOut_ = 1.0f;   // one-pole per-sample coeff while falling toward 0
+    std::array<float, kNumFxSlots> wetFade_ {};   // per-sample one-pole wet mult (0..1)
+
+    // ---- Per-sample smoothing of dryWet / masterMix gain-style params (B2-engine, B6) ----
+    // The per-slot dry/wet target (dryWet_[s]) and the global master-mix target
+    // (masterMix_) are set once per block by setSlotDryWet / setMasterMix (which
+    // also fire for FX-mod-matrix dryWet/masterMix destinations). Applying them
+    // as block constants makes a knob move / parameter automation / FX-mod
+    // modulation step once per block — zipper noise / clicks. These one-pole
+    // smoothers ramp the *current* value (dryWetCur_[s] / masterMixCur_) toward
+    // the target per sample inside the blend loops, so gain-style transitions
+    // are continuous. Per-EFFECT-param smoothing (gain, feedback, reverb size,
+    // etc.) is deliberately OUT OF SCOPE here — that lives in FxProcessors.cpp.
+    static constexpr double kParamSmoothTauSec = 0.020;   // 20 ms: fast enough to feel instant on knob moves, slow enough to hide block-rate steps and preserve slow LFO wet modulation
+    float smoothCoef_ = 1.0f;   // per-sample one-pole coeff toward the target (computed in prepare)
+
+    // Per-sample dry/wet blend for a single series-style slot: blends the
+    // pre-process dry snapshot (dryL_/dryR_) against the wet signal in outL/outR
+    // and advances this slot's one-pole fade one sample per iteration (persisted
+    // back into wetFade_[s]). dryWet_[s] is the block-constant target; the
+    // per-sample-smoothed dryWetCur_[s] AND the wet fade are each read +
+    // advanced one sample per iteration (both persisted back).
+    void blendSlotWetFade (float* outL, float* outR, int numSamples, int s) noexcept;
+    // True if slot @p s should render this block (enabled OR still tailing out).
+    bool slotActive (int s) const noexcept { return enabled_[(size_t) s] || wetFade_[(size_t) s] > 5.0e-4f; }
     // Recompute the EQ biquad coeffs from eqLowV_/eqMidV_/eqHighV_ (call on change).
     void updateEqCoeffs() noexcept;
     // Apply the 3-band master EQ in place to L+R (skipped when !eqActive_).
@@ -128,11 +162,13 @@ private:
 
     // Render the equal-gain parallel blend of TWO slots over @p inL/inR into
     // @p outL/outR, reusing the blend formula of the former full-sum Parallel
-    // path: each ENABLED slot (with a live processor) processes a copy of the
-    // input; the wet outputs are summed, divided by the active count, and
-    // blended against the dry input by the mean dry/wet W (out = dry*(1-W) +
-    // (sum wet)/activeCount * W). outL/outR are CLEARED first. With BOTH slots
-    // disabled/None the input is copied through unchanged. Allocation-free.
+    // path: each active slot (enabled OR still tailing, with a live processor)
+    // processes a copy of the input; the wet outputs are summed, divided by the
+    // active count, and blended against the dry input by the per-sample mean
+    // dry/wet W (out = dry*(1-W) + (sum wet)/activeCount * W). Each active slot's
+    // one-pole wetFade_ is advanced per sample within the blend loop and
+    // persisted back. outL/outR are CLEARED first. With BOTH slots disabled/None
+    // the input is copied through unchanged. Allocation-free.
     void renderParallel (const float* inL, const float* inR,
                          float* outL, float* outR, int numSamples,
                          int slotA, int slotB);

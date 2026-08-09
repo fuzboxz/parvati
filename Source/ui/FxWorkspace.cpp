@@ -179,7 +179,7 @@ void FxWorkspace::resized()
     auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
     // ---- Upper region: 4 columns [ ROUTING | FX1 | FX2 | FX3 ] ----
-    // A slim ROUTING column (FLOW topology + MIX + keep-tails) on the left, then
+    // A slim ROUTING column (FLOW topology + MIX + master EQ) on the left, then
     // three equal-width FX-slot cards. SPACIOUS layout (synth-page parity): a
     // uniform kGap margin is taken off ALL FOUR sides of the top row AND placed
     // between every column, so the borderless card panels sit in generous

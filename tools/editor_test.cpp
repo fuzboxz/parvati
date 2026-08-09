@@ -150,9 +150,9 @@ int main()
         if (d.paramID.size() > 5 && d.paramID.compare (0, 5, "fxmod") == 0)
             continue;   // fxmod{N}_... == an FxMatrixView slot param (per-part FX mod matrix)
         if (d.paramID == "fx_topo" || d.paramID == "fx_order"
-            || d.paramID == "fx_mix" || d.paramID == "fx_keep_tails"
+            || d.paramID == "fx_mix"
             || d.paramID == "fx_eq_low" || d.paramID == "fx_eq_mid" || d.paramID == "fx_eq_high")
-            continue;   // fx_topo/fx_order + the master section (fx_mix/keep_tails/eq_*) -> FxRoutingBar controls, not ParamPage ParamControls
+            continue;   // fx_topo/fx_order + the master section (fx_mix/eq_*) -> FxRoutingBar controls, not ParamPage ParamControls
         if (d.paramID.size() > 4
             && d.paramID.compare (0, 2, "fx") == 0
             && (d.paramID[2] == '1' || d.paramID[2] == '2' || d.paramID[2] == '3')

@@ -135,7 +135,7 @@ int main()
                 c.setSlotParam (0, k, 0.5f);
         };
 
-        // (a) Defaults are a no-op (mix=127=>1.0, keepTails=0, EQ flat).
+        // (a) Defaults are a no-op (mix=127=>1.0, EQ flat).
         FxChain defChain;
         buildWetChain (defChain);
         float defL[kBlock], defR[kBlock];
@@ -165,30 +165,114 @@ int main()
         check (differsFrom (eqL, defL, kBlock) || differsFrom (eqR, defR, kBlock),
                "master EQ mid boost: differs from flat");
 
-        // (d) keepTails=0 => hard cut on bypass (dry next block).
+        // (d) Tails are now ALWAYS retained: after bypassing an enabled Delay,
+        //     the next block is NOT a bit-identical dry copy — the wet is still
+        //     fading out (one-pole, ~0.30 s), so the slot keeps rendering its
+        //     tail instead of hard-cutting.
         {
             FxChain c;
-            buildWetChain (c);
-            c.setKeepTails (false);
+            c.prepare (48000.0, kBlock);
+            c.setSlotType (0, FxType::Delay);
+            c.setSlotEnabled (0, true);
+            c.setSlotDryWet (0, 1.0f);
+            // Short delay time + feedback so the feedback loop charges within a
+            // few blocks and the bypassed tail has real energy.
+            c.setSlotParam (0, 0, 0.01f);   // time  ~10 ms
+            c.setSlotParam (0, 1, 0.7f);    // feedback (loud tail)
+            c.setSlotParam (0, 2, 0.0f);    // spread
+            c.setSlotParam (0, 3, 0.0f);
             float oL[kBlock], oR[kBlock];
-            c.process (inL, inR, oL, oR, kBlock);          // wet frame
-            c.setSlotEnabled (0, false);
-            c.process (inL, inR, oL, oR, kBlock);          // bypassed frame
-            check (! differsFrom (oL, inL, kBlock) && ! differsFrom (oR, inR, kBlock),
-                   "keepTails=0: bypassed slot => hard cut (dry) next block");
-        }
-        // (e) keepTails=1 => the tail still rings on bypass (not dry next block).
-        {
-            FxChain c;
-            buildWetChain (c);
-            c.setKeepTails (true);
-            float oL[kBlock], oR[kBlock];
-            c.process (inL, inR, oL, oR, kBlock);          // wet frame (tank charges)
-            c.setSlotEnabled (0, false);
-            c.process (inL, inR, oL, oR, kBlock);          // bypassed frame: tail rings
+            for (int b = 0; b < 16; ++b)                    // charge the feedback loop + let the fade settle to ~1
+                c.process (inL, inR, oL, oR, kBlock);
+            c.setSlotEnabled (0, false);                    // bypass
+            c.process (inL, inR, oL, oR, kBlock);           // first bypassed block
             check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
-                   "keepTails=1: bypassed slot => tail rings (not dry) next block");
+                   "bypassed slot => wet fades out (not hard-cut) next block");
         }
+        // (e) Engage fades IN (~5 ms): on the first block after enabling a
+        //     previously-disabled slot the wet contribution is strictly less than
+        //     at steady state (it ramps from 0, never slams in at full wet).
+        //     GainPan is memoryless + deterministic, so the only thing changing
+        //     block-to-block here is the fade.
+        {
+            FxChain c;
+            c.prepare (48000.0, kBlock);
+            c.setSlotType (0, FxType::GainPan);
+            c.setSlotEnabled (0, false);                    // disabled: dry passthrough, fade ~0
+            c.setSlotDryWet (0, 1.0f);
+            c.setSlotParam (0, 0, 0.5f);                    // gain = 0 dB (1.0)
+            c.setSlotParam (0, 1, 0.5f);                    // centred pan => wet = 0.707 * dry (!= dry)
+            c.setSlotParam (0, 2, 0.0f);
+            c.setSlotParam (0, 3, 0.0f);
+            float oL[kBlock], oR[kBlock];
+            for (int b = 0; b < 4; ++b)                     // settle while disabled (fade stays ~0)
+                c.process (inL, inR, oL, oR, kBlock);
+            c.setSlotEnabled (0, true);                     // engage
+            float b1L[kBlock], b1R[kBlock];
+            c.process (inL, inR, b1L, b1R, kBlock);         // block 1 after engage: fade ramps 0 -> ~0.66
+            float ssL[kBlock], ssR[kBlock];
+            for (int b = 0; b < 24; ++b)                    // reach steady state (fade ~= 1)
+                c.process (inL, inR, ssL, ssR, kBlock);
+            // Wet contribution = max|out - dry| over the block.
+            float wet1 = 0.0f, wetSS = 0.0f;
+            for (int i = 0; i < kBlock; ++i)
+            {
+                wet1  = std::fmax (wet1,  std::fabs (b1L[i] - inL[i]));
+                wetSS = std::fmax (wetSS, std::fabs (ssL[i] - inL[i]));
+            }
+            check (wet1 > 0.0f && wet1 < wetSS,
+                   "engage => block-1 wet < steady-state wet (fade-in, no full-wet slam)");
+        }
+    }
+
+    // ---- B7: a mid-session re-prepare (host sample-rate / buffer-size change,
+    //         or some hosts on a plugin-bypass toggle) must NOT truncate an
+    //         enabled slot's wet state. prepare() previously did
+    //         wetFade_.fill(0) and snapped dryWetCur_/masterMixCur_ to target,
+    //         which on re-prepare zeroed an enabled slot's wetFade_ => dw=0 =>
+    //         pure dry for the first ~5 ms (an audible wet dip on an otherwise-
+    //         inaudible config change). A memoryless GainPan isolates this: the
+    //         only state crossing the re-prepare is wetFade_/dryWetCur_/
+    //         masterMixCur_ (all now preserved), so the post-reprepare output
+    //         must equal the pre-reprepare steady wet, not the dry input. ----
+    {
+        FxChain c;
+        c.prepare (48000.0, kBlock);
+        c.setSlotType (0, FxType::GainPan);
+        c.setSlotEnabled (0, true);
+        c.setSlotDryWet (0, 1.0f);
+        // GainPan: param0 gain 0..1 -> -12..+12 dB (0.5 => 0 dB => unity gain);
+        // param1 pan 0..1 equal-power (0.5 => centre => L=R=cos45 ~= 0.7071).
+        float p[4] = { 0.5f, 0.5f, 0.0f, 0.0f };
+        for (int k = 0; k < kNumFxSlotParams; ++k)
+            c.setSlotParam (0, k, p[k]);
+
+        // Constant 0.5 tone on both channels.
+        float tone[kBlock];
+        for (int i = 0; i < kBlock; ++i)
+            tone[i] = 0.5f;
+
+        // Render enough blocks for wetFade_ (~1.0) and dryWetCur_ to settle.
+        float oL[kBlock], oR[kBlock];
+        for (int b = 0; b < 24; ++b)
+            c.process (tone, tone, oL, oR, kBlock);
+
+        // Steady wet: unity gain + centre pan + dw~1 + fade~1 => 0.5 * 0.7071.
+        const float steadyWet = oL[0];
+
+        // Simulate the host mid-session re-prepare. The fix preserves
+        // wetFade_/dryWetCur_/masterMixCur_; the bug zeroed them.
+        c.prepare (48000.0, kBlock);
+        c.process (tone, tone, oL, oR, kBlock);   // first block after re-prepare
+
+        check (differsFrom (oL, tone, kBlock),
+               "B7: re-prepare preserves an enabled slot's wet state (output still wet, not dry)");
+        // The decisive check: with the bug, wetFade_ was zeroed => dw=0 on the
+        // first post-prepare sample => outL[0] == tone[0] (pure dry), which is
+        // ~0.15 away from the steady wet (~0.35). Preserving wetFade_ keeps
+        // outL[0] bit-identical to the pre-reprepare steady wet.
+        check (std::fabs (oL[0] - steadyWet) < 0.05f,
+               "B7: re-prepare preserves an enabled slot's wet state (wetFade not zeroed)");
     }
 
     std::printf ("\n%s (%d failure%s)\n",

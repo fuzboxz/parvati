@@ -24,6 +24,30 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   older (v1-only) Parvati build — the engine blob is rejected and it falls back
   to the legacy APVTS restore.
 
+### Fixed
+- **FX tails & clicks.** The per-part FX chain now keeps effect tails by
+  default and is click-free across all state transitions. Previously
+  bypassing/engaging a slot or changing its type hard-cut the wet signal
+  (audible pop) and truncated reverb/delay tails, and every dry/wet +
+  master-mix value stepped once per block (zipper noise on knob moves and
+  FX-mod-matrix modulation). Fixes: (1) always-on per-sample one-pole tail
+  fades in `FxChain` (≈0.30 s fade-out on bypass so tails ring out, ≈5 ms
+  fade-in on engage/type-swap so the new effect doesn't slam in); (2)
+  per-sample one-pole smoothing of per-slot dry/wet and the global FX mix
+  (20 ms tau); (3) `FxChain::prepare()` no longer zeroes tail fades or snaps
+  smoothers, so a host sample-rate/buffer-size change mid-session no longer
+  truncates ringing tails or dips enabled effects. Per-effect param smoothing
+  (gain/feedback/etc. inside each effect) is intentionally not included yet.
+
+### Removed
+- **`fx_keep_tails` parameter.** Tail retention is now always on, so the
+  per-part "Keep FX Tails on Bypass" toggle — and its APVTS param, engine
+  field, serialization, and routing-bar UI control — is removed. APVTS
+  descriptor count 257 → 256. The DAW host-state blob bumps to **version 4**
+  (the keepTails byte is dropped); v1/v2/v3 blobs still load (a v3 blob's
+  legacy keepTails byte is consumed and discarded). Older `.parvati` files
+  are unaffected.
+
 ### Changed
 - **FX page: 4-column synth-style top row + routing/slot overhaul.** The
   FX page's top row is a single 4-column row `[ ROUTING | FX1 | FX2 | FX3 ]`, so

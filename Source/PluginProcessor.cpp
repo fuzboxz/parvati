@@ -427,9 +427,8 @@ void ParvatiAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, flo
 
     if (id == "fx_topo")  { engine_.setFxTopology (static_cast<uint8_t> (juce::jlimit (0, 2, v))); return; }
     if (id == "fx_order") { engine_.setFxOrder    (static_cast<uint8_t> (juce::jlimit (0, 5, v))); return; }
-    // Master section (v3): global wet/dry + bypass tails + 3-band master EQ.
+    // Master section (v3): global wet/dry + 3-band master EQ.
     if (id == "fx_mix")        { engine_.setFxMix       (static_cast<uint8_t> (juce::jlimit (0, 127, v))); return; }
-    if (id == "fx_keep_tails") { engine_.setFxKeepTails (static_cast<uint8_t> (juce::jlimit (0, 1, v)));   return; }
     if (id == "fx_eq_low")     { engine_.setFxEqLow     (static_cast<uint8_t> (juce::jlimit (0, 127, v))); return; }
     if (id == "fx_eq_mid")     { engine_.setFxEqMid     (static_cast<uint8_t> (juce::jlimit (0, 127, v))); return; }
     if (id == "fx_eq_high")    { engine_.setFxEqHigh    (static_cast<uint8_t> (juce::jlimit (0, 127, v))); return; }
@@ -553,7 +552,6 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
             else if (id == "fx_topo")           value = (float) fx.topology.load();
             else if (id == "fx_order")          value = (float) fx.orderIdx.load();
             else if (id == "fx_mix")        value = (float) fx.mix.load();
-            else if (id == "fx_keep_tails") value = (float) fx.keepTails.load();
             else if (id == "fx_eq_low")     value = (float) fx.eqLow.load();
             else if (id == "fx_eq_mid")     value = (float) fx.eqMid.load();
             else if (id == "fx_eq_high")    value = (float) fx.eqHigh.load();

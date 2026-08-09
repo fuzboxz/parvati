@@ -84,7 +84,6 @@ int countFxMismatches (const PartFxState& a, const PartFxState& b)
     if (a.orderIdx.load()  != b.orderIdx.load())  ++m;
     // Master section (v3).
     if (a.mix.load()       != b.mix.load())       ++m;
-    if (a.keepTails.load() != b.keepTails.load()) ++m;
     if (a.eqLow.load()     != b.eqLow.load())     ++m;
     if (a.eqMid.load()     != b.eqMid.load())     ++m;
     if (a.eqHigh.load()    != b.eqHigh.load())    ++m;
@@ -264,32 +263,32 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX (sanity)");
 
-        // Capture the v3 host state and derive a v1 engine blob from its
-        // engine_state. A v3 blob interleaves an 80-byte FX block per Part
-        // (4-byte length prefix + 76 FX bytes) AFTER the routing bytes, so a
+        // Capture the v4 host state and derive a v1 engine blob from its
+        // engine_state. A v4 blob interleaves a 79-byte FX block per Part
+        // (4-byte length prefix + 75 FX bytes) AFTER the routing bytes, so a
         // naive truncation is NOT a valid v1 blob -- we must extract each Part's
         // core (patch112 + part84 + routing4 = 200 bytes) and skip the FX block.
         constexpr size_t kV1Core = 6 + 6 * (112 + 84 + 4);          // 1206
-        constexpr size_t kV3PartStride = 112 + 84 + 4 + 4 + 76;    // 280 (core + fxlen + fx)
+        constexpr size_t kV4PartStride = 112 + 84 + 4 + 4 + 75;    // 279 (core + fxlen + fx)
         juce::MemoryBlock v1Engine;
         {
-            juce::MemoryBlock v3Host;
-            a.getStateInformation (v3Host);
-            auto xml = juce::AudioProcessor::getXmlFromBinary (v3Host.getData(), (int) v3Host.getSize());
-            juce::MemoryBlock v3Engine;
-            v3Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v3Engine.getSize() >= 6 + 6 * kV3PartStride && ((const uint8_t*) v3Engine.getData())[4] == 3,
-                   "captured engine_state is a v3 blob large enough to derive v1");
+            juce::MemoryBlock v4Host;
+            a.getStateInformation (v4Host);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (v4Host.getData(), (int) v4Host.getSize());
+            juce::MemoryBlock v4Engine;
+            v4Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
+            check (v4Engine.getSize() >= 6 + 6 * kV4PartStride && ((const uint8_t*) v4Engine.getData())[4] == 4,
+                   "captured engine_state is a v4 blob large enough to derive v1");
             v1Engine.ensureSize (kV1Core);
-            const auto* v3 = (const uint8_t*) v3Engine.getData();
+            const auto* v4 = (const uint8_t*) v4Engine.getData();
             auto* v1 = (uint8_t*) v1Engine.getData();
-            std::memcpy (v1, v3, 6);                 // magic + version + currentpart
-            v1[4] = 1;                               // rewrite version 3 -> 1
+            std::memcpy (v1, v4, 6);                 // magic + version + currentpart
+            v1[4] = 1;                               // rewrite version 4 -> 1
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v3off = 6 + (size_t) p * kV3PartStride;   // Part's core in v3
+                const size_t v4off = 6 + (size_t) p * kV4PartStride;   // Part's core in v4
                 const size_t v1off = 6 + (size_t) p * 200;             // Part's core in v1
-                std::memcpy (v1 + v1off, v3 + v3off, 200);             // patch + part + routing (no FX)
+                std::memcpy (v1 + v1off, v4 + v4off, 200);             // patch + part + routing (no FX)
             }
         }
 
@@ -314,7 +313,7 @@ int main()
 
     // ---------------------------------------------------------------------
     // [5] Backward compat: a v2 engine-state blob (pre-master-section: FX block
-    //     present but WITHOUT the 5 master fields) loads with the master section
+    //     present but WITHOUT the 4 master fields) loads with the master section
     //     at its audio-preserving defaults, while the v2-era FX round-trips.
     // ---------------------------------------------------------------------
     std::printf ("\n[5] v2 engine-state blob loads with master section at defaults\n");
@@ -324,9 +323,8 @@ int main()
         selectPart (a, 1);
         paintFx (a);                       // Part 1 non-default v2-era FX
         // Paint the master section non-default too, so a v2 load (which drops
-        // these 5 fields) is detectable as exactly-5 mismatches vs defaults.
+        // these 4 fields) is detectable as exactly-4 mismatches vs defaults.
         setParam (a, "fx_mix",        90);
-        setParam (a, "fx_keep_tails", 1);
         setParam (a, "fx_eq_low",     40);
         setParam (a, "fx_eq_mid",     80);
         setParam (a, "fx_eq_high",   100);
@@ -334,35 +332,35 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX incl. master (sanity)");
 
-        // Derive a v2 blob from the v3 capture: per Part, copy core(200) + the
-        // 4-byte fxlen prefix (rewritten 76 -> 71) + the FIRST 71 FX bytes (the
-        // v2-era fields), dropping the trailing 5 master bytes. Version 3 -> 2.
-        constexpr size_t kV3PartStride = 112 + 84 + 4 + 4 + 76;   // 280
+        // Derive a v2 blob from the v4 capture: per Part, copy core(200) + the
+        // 4-byte fxlen prefix (rewritten 75 -> 71) + the FIRST 71 FX bytes (the
+        // v2-era fields), dropping the trailing 4 master bytes. Version 4 -> 2.
+        constexpr size_t kV4PartStride = 112 + 84 + 4 + 4 + 75;   // 279
         constexpr size_t kV2PartStride = 112 + 84 + 4 + 4 + 71;   // 275
         juce::MemoryBlock v2Engine;
         {
-            juce::MemoryBlock v3Host;
-            a.getStateInformation (v3Host);
-            auto xml = juce::AudioProcessor::getXmlFromBinary (v3Host.getData(), (int) v3Host.getSize());
-            juce::MemoryBlock v3Engine;
-            v3Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v3Engine.getSize() >= 6 + 6 * kV3PartStride && ((const uint8_t*) v3Engine.getData())[4] == 3,
-                   "captured engine_state is a v3 blob large enough to derive v2");
+            juce::MemoryBlock v4Host;
+            a.getStateInformation (v4Host);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (v4Host.getData(), (int) v4Host.getSize());
+            juce::MemoryBlock v4Engine;
+            v4Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
+            check (v4Engine.getSize() >= 6 + 6 * kV4PartStride && ((const uint8_t*) v4Engine.getData())[4] == 4,
+                   "captured engine_state is a v4 blob large enough to derive v2");
             v2Engine.ensureSize (6 + 6 * kV2PartStride);
-            const auto* v3 = (const uint8_t*) v3Engine.getData();
+            const auto* v4 = (const uint8_t*) v4Engine.getData();
             auto* v2 = (uint8_t*) v2Engine.getData();
-            std::memcpy (v2, v3, 6);                       // magic + version + currentpart
-            v2[4] = 2;                                     // rewrite version 3 -> 2
+            std::memcpy (v2, v4, 6);                       // magic + version + currentpart
+            v2[4] = 2;                                     // rewrite version 4 -> 2
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v3off = 6 + (size_t) p * kV3PartStride;
+                const size_t v4off = 6 + (size_t) p * kV4PartStride;
                 const size_t v2off = 6 + (size_t) p * kV2PartStride;
-                std::memcpy (v2 + v2off, v3 + v3off, 200 + 4);   // core + 4-byte fxlen prefix
-                v2[v2off + 200] = 71;                            // rewrite fxlen 76 -> 71 (LE)
+                std::memcpy (v2 + v2off, v4 + v4off, 200 + 4);   // core + 4-byte fxlen prefix
+                v2[v2off + 200] = 71;                            // rewrite fxlen 75 -> 71 (LE)
                 v2[v2off + 201] = 0;
                 v2[v2off + 202] = 0;
                 v2[v2off + 203] = 0;
-                std::memcpy (v2 + v2off + 204, v3 + v3off + 204, 71);  // 71 v2-era FX bytes (drop 5 master)
+                std::memcpy (v2 + v2off + 204, v4 + v4off + 204, 71);  // 71 v2-era FX bytes (drop 4 master)
             }
         }
 
@@ -372,11 +370,11 @@ int main()
                "restoreState accepts the hand-crafted v2 blob");
         renderOnce (c);
 
-        // The v2-era FX round-trips exactly; ONLY the 5 master fields differ
+        // The v2-era FX round-trips exactly; ONLY the 4 master fields differ
         // (they are absent in v2, so c has them at defaults while a had them painted).
         check (countFxMismatches (a.getEngine().getPart (1).fxState,
-                                  c.getEngine().getPart (1).fxState) == 5,
-               "v2 blob: only the 5 master fields differ from source (absent in v2)");
+                                  c.getEngine().getPart (1).fxState) == 4,
+               "v2 blob: only the 4 master fields differ from source (absent in v2)");
         // Every Part's master section sits at the audio-preserving defaults.
         const PartFxState def {};
         bool masterAtDefault = true;
@@ -384,7 +382,6 @@ int main()
         {
             const auto& fx = c.getEngine().getPart (i).fxState;
             if (fx.mix.load()       != def.mix.load()
-                || fx.keepTails.load() != def.keepTails.load()
                 || fx.eqLow.load()     != def.eqLow.load()
                 || fx.eqMid.load()     != def.eqMid.load()
                 || fx.eqHigh.load()    != def.eqHigh.load())

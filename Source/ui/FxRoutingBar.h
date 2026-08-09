@@ -8,8 +8,7 @@
 //   | ROUTING                       |   bold 14px header (sibling-card style)
 //   | FLOW: [ Series ...        |v] |   juce::ComboBox bound to `fx_topo`
 //   | MIX:        ( dial )          |   rotary knob bound to `fx_mix`
-//   |                               |
-//   | [x] Keep FX Tails on Bypass   |   juce::ToggleButton bound to `fx_keep_tails`
+//   | [ Low ][ Mid ][ High ]        |   3-band master EQ bound to fx_eq_*
 //   +-------------------------------+
 //
 // Rendered as a borderless sibling card (containerFill, 7px corners, no outline)
@@ -32,12 +31,10 @@
 
 class ParvatiAudioProcessor;
 class FxFlowDiagram;
-class FxBypassSwitch;
 
 //==============================================================================
 class FxRoutingBar : public juce::Component,
-                     public juce::DragAndDropContainer,
-                     private juce::Value::Listener
+                     public juce::DragAndDropContainer
 {
 public:
     FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
@@ -46,15 +43,15 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /** Re-resolve theme colours onto the diagram / Mix knob / Bypass switch +
-        repaint (theme switch). */
+    /** Re-resolve theme colours onto the diagram / Mix knob + repaint (theme
+        switch). */
     void applyThemeColors();
 
 private:
     ParvatiAudioProcessor& processor_;
     ThemeManager&          themeManager_;
 
-    // ---- Routing: flow diagram + ◀ ▶ steppers + Mix knob + Bypass switch ----
+    // ---- Routing: flow diagram + ◀ ▶ steppers + Mix knob ----
     juce::TextButton prevButton_, nextButton_;                 // ◀ ▶ topology steppers (cycle fx_topo)
     std::unique_ptr<FxFlowDiagram> flowDiagram_;               // in->out signal-flow block chart (fx_topo)
 
@@ -67,14 +64,7 @@ private:
     std::array<juce::Label, 3>            eqLabels_;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> eqAttach_;
 
-    std::unique_ptr<FxBypassSwitch> bypassSwitch_;   // "Keep FX Tails" pill switch (fx_keep_tails)
-    juce::Value keepTailsValue_;
-    void syncKeepTails();                  // push param -> switch state
     void stepTopology (int direction);     // ◀ ▶ : cycle fx_topo directly
-
-    // juce::Value::Listener: keep the toggle state in sync with the param value
-    // (preset load / host automation / programmatic set).
-    void valueChanged (juce::Value&) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxRoutingBar)
 };

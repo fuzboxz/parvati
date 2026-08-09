@@ -58,8 +58,7 @@ int countFxMismatches (const PartFxState& a, const PartFxState& b)
     if (a.orderIdx.load()  != b.orderIdx.load())  ++m;
     // Master section (v3).
     if (a.mix.load()       != b.mix.load())       ++m;
-    if (a.keepTails.load() != b.keepTails.load()) ++m;
-    if (a.eqLow.load()     != b.eqLow.load())     ++m;
+    if (a.eqLow.load()     != b.eqLow.load())     ++m;;
     if (a.eqMid.load()     != b.eqMid.load())     ++m;
     if (a.eqHigh.load()    != b.eqHigh.load())    ++m;
     for (int i = 0; i < kNumFxMatrixSlots; ++i)
@@ -103,7 +102,6 @@ void paintDiverseFx (ParvatiAudioProcessor& proc)
     setParam (proc, "fx_order", 3);      // perm {1,2,0}
     // Master section (v3): non-default values so they round-trip distinctly.
     setParam (proc, "fx_mix",        90);   // ~71% global wet
-    setParam (proc, "fx_keep_tails", 1);    // keep tails
     setParam (proc, "fx_eq_low",     40);
     setParam (proc, "fx_eq_mid",     80);   // +mid
     setParam (proc, "fx_eq_high",    100);  // +high
