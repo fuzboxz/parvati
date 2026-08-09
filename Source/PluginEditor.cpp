@@ -7,6 +7,7 @@
 #include "ui/ModDestMap.h"
 #include "ui/ModMatrixHighlight.h"
 #include "ui/OscPreviewDisplay.h"
+#include "ui/PatchPage.h"
 #include "ui/ParamHelp.h"
 #include "ui/SynthWorkspace.h"
 #include "ui/FxWorkspace.h"
@@ -569,7 +570,7 @@ void ParamControl::applyModSourceTint()
     if (comboBox_ == nullptr || ! isModSourceCombo_)
         return;
     // Guard against any re-entrant path (setColour does not itself change the
-    // param, but the flag keeps the contract explicit, like MultiPage).
+    // param, but the flag keeps the contract explicit, like the Patch page).
     if (refreshingModTint_)
         return;
     const juce::ScopedValueSetter<bool> guard (refreshingModTint_, true);
@@ -1769,7 +1770,7 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
 {
     // Honour the page's declared column count (PageInfo::cols) as a cap on the
     // number of group panels per row (whichever wraps first: width overflow or
-    // the cap). 0 => width-only wrap (Multi page is not a ParamPage).
+    // the cap). 0 => width-only wrap (Patch page is not a ParamPage).
     pageCols_ = juce::jmax (0, columns);
 
     buildGroups (descriptors);
@@ -1873,161 +1874,6 @@ void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
     applyLayout();
     if (getWidth() != targetWidth || getHeight() != contentHeight_)
         setSize (targetWidth, contentHeight_);
-}
-
-//==============================================================================
-MultiPage::MultiPage (ParvatiAudioProcessor& p, ThemeManager& themeManager)
-    : proc_ (p), themeManager_ (themeManager)
-{
-    heading_.setText (TRANS ("Multi / Setup"), juce::dontSendNotification);
-    heading_.setJustificationType (juce::Justification::centredLeft);
-    heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
-    addAndMakeVisible (heading_);
-
-    partLabel_.setFont (juce::FontOptions (14.0f));
-    // partLabel_ text colour from the L&F (dim).
-    addAndMakeVisible (partLabel_);
-
-    auto addCaption = [this] (juce::Label& l, const juce::String& t) {
-        l.setText (t, juce::dontSendNotification);
-        l.setJustificationType (juce::Justification::centred);
-        l.setFont (juce::FontOptions (13.0f));
-        // Caption text colour from the L&F (dim).
-        addAndMakeVisible (l);
-    };
-    addCaption (chLabel_, TRANS ("MIDI Channel"));
-    addCaption (loLabel_, TRANS ("Key Zone Low"));
-    addCaption (hiLabel_, TRANS ("Key Zone High"));
-
-    // MIDI channel: Omni (0) + 1..16.
-    channelCombo_.addItem (TRANS ("Omni"), 1);
-    for (int c = 1; c <= 16; ++c)
-        channelCombo_.addItem (juce::String (c), c + 1);
-    // Combo + popup colours from the L&F.
-    channelCombo_.onChange = [this] {
-        if (refreshing_) return;
-        const int part = proc_.getEngine().getCurrentPart();
-        proc_.getEngine().setPartMidiChannel (part, channelCombo_.getSelectedId() - 1);
-    };
-    addAndMakeVisible (channelCombo_);
-
-    auto setupZoneSlider = [this] (juce::Slider& s) {
-        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        // No value box: the readout is drawn in the centre of the arc-ring by the L&F.
-        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        s.setRange (0.0, 127.0, 1.0);
-        // Slider colours from the L&F.
-        addAndMakeVisible (s);
-    };
-    setupZoneSlider (loSlider_);
-    setupZoneSlider (hiSlider_);
-    auto onZone = [this] {
-        if (refreshing_) return;
-        const int part = proc_.getEngine().getCurrentPart();
-        proc_.getEngine().setPartKeyZone (part,
-                                          static_cast<int> (loSlider_.getValue()),
-                                          static_cast<int> (hiSlider_.getValue()));
-    };
-    loSlider_.onValueChange = onZone;
-    hiSlider_.onValueChange = onZone;
-
-    // Voice allocation: 6 toggles, one per firmware voicecard (vc1..vc6).
-    addCaption (allocLabel_, TRANS ("Voice Allocation (voicecards)"));
-    auto reapplyAlloc = [this] {
-        if (refreshing_) return;
-        const int part = proc_.getEngine().getCurrentPart();
-        uint8_t mask = 0;
-        for (int b = 0; b < 6; ++b)
-            if (allocBits_[b].getToggleState())
-                mask |= static_cast<uint8_t> (1 << b);
-        proc_.getEngine().setPartVoiceAllocation (part, mask);
-    };
-    for (int b = 0; b < 6; ++b)
-    {
-        allocBits_[b].setButtonText ("VC" + juce::String (b + 1));
-        // Toggle text + tick colours from the L&F.
-        allocBits_[b].onClick = reapplyAlloc;
-        addAndMakeVisible (allocBits_[b]);
-    }
-
-    setSize (640, 320);
-    refresh();
-}
-
-void MultiPage::applyThemeColors()
-{
-    heading_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
-    repaint();
-}
-
-void MultiPage::refreshLanguage()
-{
-    // Re-apply the static chrome captions through the active LocalisedStrings,
-    // then rebuild the dynamic "Editing Part X of Y" line (refresh()) so it
-    // follows a live language switch too.
-    heading_.setText (TRANS ("Multi / Setup"), juce::dontSendNotification);
-    chLabel_.setText (TRANS ("MIDI Channel"), juce::dontSendNotification);
-    loLabel_.setText (TRANS ("Key Zone Low"), juce::dontSendNotification);
-    hiLabel_.setText (TRANS ("Key Zone High"), juce::dontSendNotification);
-    allocLabel_.setText (TRANS ("Voice Allocation (voicecards)"), juce::dontSendNotification);
-    refresh();
-    repaint();
-}
-
-void MultiPage::paint (juce::Graphics& g) { g.fillAll (themeManager_.getCurrentTheme().backgroundBase); }
-
-void MultiPage::resized()
-{
-    auto area = getLocalBounds().reduced (16);
-    heading_.setBounds (area.removeFromTop (30));
-    area.removeFromTop (8);
-    partLabel_.setBounds (area.removeFromTop (24));
-    area.removeFromTop (20);
-
-    auto row = area.removeFromTop (130);
-    const int colW = juce::jmax (140, row.getWidth() / 3);
-    auto cell = row.removeFromLeft (colW);
-    chLabel_.setBounds (cell.removeFromTop (18));
-    channelCombo_.setBounds (cell.removeFromTop (30).withSizeKeepingCentre (cell.getWidth(), 24));
-    cell = row.removeFromLeft (colW);
-    loLabel_.setBounds (cell.removeFromTop (18));
-    loSlider_.setBounds (cell.withSizeKeepingCentre (44, juce::jmin (44, cell.getHeight())));
-    cell = row.removeFromLeft (colW);
-    hiLabel_.setBounds (cell.removeFromTop (18));
-    hiSlider_.setBounds (cell.withSizeKeepingCentre (44, juce::jmin (44, cell.getHeight())));
-
-    area.removeFromTop (12);
-    auto allocRow = area.removeFromTop (56);
-    allocLabel_.setBounds (allocRow.removeFromTop (18));
-    auto bits = allocRow.removeFromTop (34);
-    const int bw = juce::jmax (52, bits.getWidth() / 6);
-    for (int b = 0; b < 6; ++b)
-        allocBits_[b].setBounds (bits.removeFromLeft (bw).reduced (3));
-}
-
-void MultiPage::refresh()
-{
-    refreshing_ = true;
-    const int part = proc_.getEngine().getCurrentPart();
-    const auto& prt = proc_.getEngine().getPart (part);
-    partLabel_.setText (TRANS ("Editing Part") + " " + juce::String (part + 1) + " "
-                            + TRANS ("of") + " " + juce::String (SynthEngine::getNumParts()),
-                        juce::dontSendNotification);
-    channelCombo_.setSelectedId (static_cast<int> (prt.midiChannel.load()) + 1);
-    loSlider_.setValue (static_cast<double> (prt.keyrangeLow.load()),  juce::dontSendNotification);
-    hiSlider_.setValue (static_cast<double> (prt.keyrangeHigh.load()), juce::dontSendNotification);
-    const uint8_t alloc = prt.voiceAllocation.load (std::memory_order_relaxed);
-    for (int b = 0; b < 6; ++b)
-        allocBits_[b].setToggleState ((alloc & (1u << b)) != 0, juce::dontSendNotification);
-    refreshing_ = false;
-    lastPart_ = part;
-}
-
-void MultiPage::refreshIfPartChanged()
-{
-    if (proc_.getEngine().getCurrentPart() != lastPart_)
-        refresh();
 }
 
 //==============================================================================
@@ -2166,7 +2012,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 64 },   // cellH overridden per-group (configureGroupLayouts); ref only
         { "Sequencer",   "SEQ",        Section::Sequencer,   6, 150, 80 },
         { "Arp",         "ARP",        Section::Arp,         3, 214, 76 },
-        { "Global",      "GLOBAL",     Section::Global,      3, 214, 76 },
+        { "Patch",       "PATCH",      Section::Global,      3, 214, 76 },
     };
 
     // Generator pages captured by section during the loop, then registered with
@@ -2312,18 +2158,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         generatedPages_.push_back (std::move (page));
 
         // Route the editor-owned page into the integrated workspace by section.
-        // The Global page is routed to the top-level GLOBAL tab after the loop.
+        // The Global page is hosted inside the Patch page after the loop.
         // Pages are reparented — NOT regenerated — so every APVTS attachment and
         // the verified byte-bridge survive the reorganization unchanged. Dense
         // sections paginate by group via a GroupPager (one sub-tab = one group
-        // subset) so each visible slice fits its cell with NO scrollbar. (Multi
+        // subset) so each visible slice fits its cell with NO scrollbar. (Patch
         // is never a generated page; if/else avoids switch/enum + branch-clone
         // Route the editor-owned page by section. Main-row pages (MIX/OSC/
         // FILTER) are hosted directly. Generator pages (ENV/LFO/MODIFIERS/ARP/
         // SEQ) are captured here and registered with the CentralModBar's
         // active-generator editor AFTER the loop (one pill -> one page+group).
         // Pages are reparented — NOT regenerated — so every APVTS attachment and
-        // the verified byte-bridge survive unchanged. (Multi/ModMatrix never
+        // the verified byte-bridge survive unchanged. (Patch/ModMatrix never
         // reach here; the if/else avoids switch/enum + branch-clone warnings.)
         if (pg.s == Section::Mixer)
             synthWorkspace_->setMainLeft (rawPage);
@@ -2342,8 +2188,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         else if (pg.s == Section::Sequencer)
             seqPage = rawPage;
         // Section::ModMatrix is handled by the early-continue above (ModMatrixView).
-        // Section::Global (-> GLOBAL tab below) and Section::Multi (never
-        // generated) intentionally fall through here.
+        // Section::Global (-> hosted inside the Patch page after the loop)
+        // intentionally falls through here.
     }
 
     // ---- Central Modulation Bar wiring (Phase 2) ----
@@ -2479,9 +2325,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // ---- Top-level page selector [SYNTH | FX] ----
     // Two NON-owned tab contents (synthWorkspace_ at index 0, fxWorkspace_ at
     // index 1). The tab bar is HIDDEN (depth 0) — the header [Synth]/[FX]
-    // buttons are the UI (setFxMode swaps the current tab). GLOBAL is a header
-    // overlay (globalPage_), not a tab. Both tab contents are editor-owned
-    // (synthWorkspace_ / fxWorkspace_), so the teardown order stays deterministic.
+    // buttons are the UI (setFxMode swaps the current tab). PATCH is a header
+    // overlay (patchPage_, which hosts globalPage_), not a tab. Both tab
+    // contents are editor-owned (synthWorkspace_ / fxWorkspace_), so the teardown
+    // order stays deterministic.
     pageSelector_.setTabBarDepth (0);          // hide the tab bar — [Synth]/[FX] header buttons are the UI
     pageSelector_.setOutline (0);
     pageSelector_.addTab (TRANS ("SYNTH"), theme.backgroundBase, synthWorkspace_.get(), false);
@@ -2489,35 +2336,30 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
     addAndMakeVisible (pageSelector_);
 
-    // Global ParamPage: a direct-child overlay toggled by the header "Global"
-    // button (mirrors the Multi overlay). The editor retains ownership via
-    // generatedPages_ (deletion stays there; addChildComponent only reparents).
+    // ---- Patch page overlay (custom component, not descriptor-generated) ----
+    // The Patch page replaces the old separate Multi/Setup + Global pages: it
+    // hosts the editor-owned Section::Global ParamPage (patch-wide knobs + the
+    // voice-activity meter decoration) below its 6 part rows. A header "Patch"
+    // button (next to the Part dropdown) toggles this page as an overlay over
+    // the tab area. globalPage_ ownership stays in generatedPages_; hostParamPage
+    // only reparents it into the Patch page.
+    patchPage_ = std::make_unique<PatchPage> (processorRef_, themeManager_);
+    addChildComponent (patchPage_.get());   // owned here; invisible until toggled
+    patchPage_->setVisible (false);
     if (globalPage_ != nullptr)
-    {
-        addChildComponent (globalPage_);
-        globalPage_->setVisible (false);
-    }
+        patchPage_->hostParamPage (globalPage_);   // reparents the Section::Global ParamPage into the Patch page
 
-    // ---- Multi / Setup overlay (custom page, not descriptor-generated) ----
-    // Multi/Setup is the multitimbral routing config — NOT part of the patch —
-    // so it is NOT a synth tab; a header "Multi" button (next to the Part
-    // dropdown) toggles this page as an overlay over the tab area.
-    multiPage_ = std::make_unique<MultiPage> (processorRef_, themeManager_);
-    addChildComponent (multiPage_.get());   // owned here; invisible until toggled
-    multiPage_->setVisible (false);
-
-    // ---- Unified 4-way top-level page selector: [Synth][FX][Global][Multi] ----
-    // All four header buttons are radio-group peers; each selects its PAGE via
-    // showTopPage(idx), which sets EXCLUSIVE visibility (Global/Multi are now
-    // FULL pages — pageSelector_ is hidden while they are active, so they are
-    // the sole content, not floating overlays) and syncs every button. Synth/FX
+    // ---- Unified 3-way top-level page selector: [Synth][FX][Patch] ----
+    // All three header buttons are radio-group peers; each selects its PAGE via
+    // showTopPage(idx), which sets EXCLUSIVE visibility (Patch is now a FULL
+    // page — pageSelector_ is hidden while it is active, so it is the sole
+    // content, not a floating overlay) and syncs every button. Synth/FX
     // additionally reparent the shared generator (only on a real Synth<->FX
     // change). NOT APVTS params — view-state only.
     synthModeButton_.setTooltip (TRANS ("Synth page"));
     fxModeButton_.setTooltip    (TRANS ("FX page"));
-    globalButton_.setTooltip    (TRANS ("Global page"));
-    multiButton_.setTooltip     (TRANS ("Multi / Setup page"));
-    for (auto* b : { &synthModeButton_, &fxModeButton_, &globalButton_, &multiButton_ })
+    globalButton_.setTooltip    (TRANS ("Patch / arrangement page"));
+    for (auto* b : { &synthModeButton_, &fxModeButton_, &globalButton_ })
     {
         b->setClickingTogglesState (true);
         b->setRadioGroupId (1, juce::dontSendNotification);
@@ -2526,7 +2368,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     synthModeButton_.onClick = [this] { showTopPage (0); };
     fxModeButton_.onClick    = [this] { showTopPage (1); };
     globalButton_.onClick    = [this] { showTopPage (2); };
-    multiButton_.onClick     = [this] { showTopPage (3); };
     showTopPage (0);   // SYNTH is the default page (sets visibility + button states)
 
     // ---- [KBD] header toggle: show/hide the bottom virtual keyboard ----
@@ -2672,7 +2513,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (*settingsPanelHost_);
 
-    // Refresh the Multi page (~30 Hz) so it tracks the edited part.
+    // Refresh the Patch page (~30 Hz) so it tracks the edited part.
     startTimerHz (30);
 
     // Re-apply the UI font family (system default sans-serif) to every cached
@@ -2779,7 +2620,7 @@ void ParvatiEditor::timerCallback()
         tooltipWindow_->hideTip();
 
     // Mirror the UndoManager's undo/redo availability onto the top-bar buttons
-    // (~30 Hz, same cadence as the Multi-page part-sync below). Cheap O(1)
+    // (~30 Hz, same cadence as the Patch-page refresh below). Cheap O(1)
     // canUndo/canRedo checks; setEnabled() is a no-op when unchanged.
     undoButton_.setEnabled (processorRef_.getUndoManager().canUndo());
     redoButton_.setEnabled (processorRef_.getUndoManager().canRedo());
@@ -2819,11 +2660,9 @@ void ParvatiEditor::timerCallback()
             statusTooltipLabel_.setText (tip, juce::dontSendNotification);
     }
 
-    // Only re-read the Multi page when the edited part actually changes (plus a
-    // forced refresh after a .MUL load). This avoids re-setting the controls
-    // ~30x/sec and any chance of fighting a user mid-drag.
-    if (multiPage_ != nullptr)
-        multiPage_->refreshIfPartChanged();
+    // NOTE: the Patch page shows ALL 6 parts (it is not part-relative), so there
+    // is nothing to re-sync on a part switch here. External state changes (a
+    // .MUL load) are covered by the forced refresh in applyPatchFile.
 
     // ---- Keyboard latching: mirror sounding notes across all voices ----
     if (keyboardView_ == nullptr)
@@ -2907,44 +2746,34 @@ void ParvatiEditor::setFxMode (bool fx)
 
 void ParvatiEditor::showTopPage (int idx)
 {
-    // idx: 0=Synth 1=FX 2=Global 3=Multi — four PEER top-level pages. Global and
-    // Multi are FULL pages now (pageSelector_ is hidden while they are active so
-    // they are the sole content), not floating overlays.
+    // idx: 0=Synth 1=FX 2=Patch — three PEER top-level pages. Patch is a FULL
+    // page (pageSelector_ is hidden while it is active so it is the sole
+    // content), not a floating overlay.
     currentTopPage_ = idx;
 
     // Reparent the shared generator only when landing on Synth/FX and it is
-    // currently hosted by the OTHER workspace. Going to/from Global/Multi leaves
-    // the generator where it was (its workspace is just hidden, not torn down).
+    // currently hosted by the OTHER workspace. Going to/from Patch leaves the
+    // generator where it was (its workspace is just hidden, not torn down).
     if (idx == 0 && fxModeActive_)        { fxModeActive_ = false; reparentGeneratorTo (false); }
     else if (idx == 1 && ! fxModeActive_) { fxModeActive_ = true;  reparentGeneratorTo (true); }
 
     // Exclusive page visibility: exactly one of the synth/fx tabbed selector or
-    // the Global/Multi full-page children is shown.
+    // the Patch full-page child is shown.
     pageSelector_.setVisible (idx == 0 || idx == 1);
     if (idx == 0 || idx == 1)
         pageSelector_.setCurrentTabIndex (idx, false);
-    if (globalPage_ != nullptr) globalPage_->setVisible (idx == 2);
-    if (multiPage_  != nullptr) multiPage_->setVisible  (idx == 3);
+    if (patchPage_ != nullptr) patchPage_->setVisible (idx == 2);
 
-    // The full-page children cover the content area; bring the active one to the
-    // front (above the keyboard overlay) and reflow the Global ParamPage to its
-    // bounds for vertical centring.
-    if (idx == 2 && globalPage_ != nullptr)
-    {
-        globalPage_->toFront (true);
-        globalPage_->reflowToWidth (juce::jmax (200, globalPage_->getWidth() - 16),
-                                    juce::jmax (0, globalPage_->getHeight()));
-    }
-    else if (idx == 3 && multiPage_ != nullptr)
-    {
-        multiPage_->toFront (true);
-    }
+    // The full-page child covers the content area; bring it to the front (above
+    // the keyboard overlay). PatchPage::resized lays out its rows + hosts /
+    // reflows the globalPage_, so no reflow is needed here.
+    if (idx == 2 && patchPage_ != nullptr)
+        patchPage_->toFront (true);
 
-    // Sync all four header page buttons to the active page.
+    // Sync all three header page buttons to the active page.
     synthModeButton_.setToggleState (idx == 0, juce::dontSendNotification);
     fxModeButton_.setToggleState    (idx == 1, juce::dontSendNotification);
     globalButton_.setToggleState    (idx == 2, juce::dontSendNotification);
-    multiButton_.setToggleState     (idx == 3, juce::dontSendNotification);
 }
 
 void ParvatiEditor::applyAllColoursFromTheme()
@@ -2968,8 +2797,8 @@ void ParvatiEditor::applyAllColoursFromTheme()
         fxWorkspace_->applyThemeColors();      // FX workspace: slot pages + bar + active editor + FxMatrixView
     if (fxMatrixView_ != nullptr)
         fxMatrixView_->applyThemeColors();     // bottom-right FxMatrixView (direct child of the FX workspace)
-    if (multiPage_ != nullptr)
-        multiPage_->applyThemeColors();
+    if (patchPage_ != nullptr)
+        patchPage_->applyThemeColors();
     // Re-resolve + re-push every control's category arc colour / mod-source tint
     // and the ENV/LFO graph trace from the active theme. Component-level
     // setColour overrides survive a theme switch but keep the OLD theme's value
@@ -3095,10 +2924,8 @@ void ParvatiEditor::applyChromeTranslations()
     undoButton_.setTooltip (TRANS ("Undo"));
     redoButton_.setTooltip (TRANS ("Redo"));
     settingsButton_.setTooltip (TRANS ("Settings"));
-    multiButton_.setButtonText (TRANS ("Multi"));
-    multiButton_.setTooltip (TRANS ("Multi / Setup"));
-    globalButton_.setButtonText (TRANS ("Global"));
-    globalButton_.setTooltip (TRANS ("Global settings"));
+    globalButton_.setButtonText (TRANS ("Patch"));
+    globalButton_.setTooltip (TRANS ("Patch / arrangement"));
     synthModeButton_.setButtonText (TRANS ("Synth"));
     fxModeButton_.setButtonText (TRANS ("FX"));
 
@@ -3112,8 +2939,8 @@ void ParvatiEditor::applyChromeTranslations()
     for (auto& page : generatedPages_)
         page->refreshLanguage();
 
-    if (multiPage_ != nullptr)
-        multiPage_->refreshLanguage();
+    if (patchPage_ != nullptr)
+        patchPage_->refreshLanguage();
     if (settingsPanel_ != nullptr)
         settingsPanel_->refreshLanguage();
     // NOTE: the SidePanel's own title-bar text ("Settings") has no public setter,
@@ -3243,26 +3070,23 @@ void ParvatiEditor::resized()
         const int partCapW  = 40;
         const int partComboW = 88;
         const int gapW = 6;
-        const int multiW = 64;
         const int globalW = 64;
         const int modeW = 50;   // [Synth]/[FX] toggle buttons (radio group)
-        // Centre cluster: [Patch:][preset][gap][Global][Part:][Part n][Synth][FX][gap][Multi]
+        // Centre cluster: [Patch:][preset][gap][Patch][Part:][Part n][Synth][FX]
         const int clusterW = patchCapW + presetW + gapW + globalW + partCapW + partComboW
-                             + modeW + modeW + gapW + multiW;
+                             + modeW + modeW;
 
         auto cluster = bar.withSizeKeepingCentre (juce::jmin (clusterW, bar.getWidth()), bar.getHeight());
         patchCaption_.setBounds (cluster.removeFromLeft (patchCapW));
         if (presetBrowser_ != nullptr)
             presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
-        cluster.removeFromLeft (gapW);   // small gap between the Patch dropdown and Global
-        globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Global overlay toggle (between Patch dropdown and Part)
+        cluster.removeFromLeft (gapW);   // small gap between the Patch dropdown and the Patch button
+        globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Patch page overlay toggle (between Patch dropdown and Part)
         partCaption_.setBounds (cluster.removeFromLeft (partCapW));
         partCombo_.setBounds (cluster.removeFromLeft (partComboW));
-        // Synth/FX mode toggle (radio group) between Part and Multi.
+        // Synth/FX mode toggle (radio group) after Part.
         synthModeButton_.setBounds (cluster.removeFromLeft (modeW));
         fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
-        cluster.removeFromLeft (gapW);   // small gap between the Part dropdown and Multi
-        multiButton_.setBounds (cluster.removeFromLeft (multiW));   // Multi/Setup overlay toggle
     }
 
     // ---- Page selector [SYNTH] + integrated content (no void) ----
@@ -3272,19 +3096,11 @@ void ParvatiEditor::resized()
     // tab groups in its own resized().
     pageSelector_.setBounds (area);
 
-    // The Multi/Setup + Global overlays cover exactly the content area when
-    // toggled on (mutually exclusive). Global is a ParamPage, so reflow it to
-    // the overlay width/height (its short content is vertically centred within
-    // the full area, covering the whole content region).
-    if (multiPage_ != nullptr)
-        multiPage_->setBounds (area);
-
-    if (globalPage_ != nullptr)
-    {
-        globalPage_->setBounds (area);
-        globalPage_->reflowToWidth (juce::jmax (200, area.getWidth() - 16),
-                                    juce::jmax (0, area.getHeight()));
-    }
+    // The Patch page overlay covers exactly the content area when toggled on.
+    // PatchPage::resized lays out its rows + hosts / reflows the globalPage_, so
+    // only its bounds are set here (no direct globalPage_ setBounds / reflow).
+    if (patchPage_ != nullptr)
+        patchPage_->setBounds (area);
 
     // ---- Keyboard OVERLAY: floats over the bottom of the content area ----
     // `area` is the full content rect (status strip + header already trimmed);
@@ -3293,7 +3109,7 @@ void ParvatiEditor::resized()
     // positioned absolutely over the bottom kKeyboardH pixels of that rect and
     // shown/hidden purely via setVisible() — toggling [KBD] never resizes the
     // content above. Z-order: keyboardView_ is added AFTER pageSelector_ so it
-    // already paints above the workspace; the Multi/Global overlays call
+    // already paints above the workspace; the Patch overlay calls
     // toFront() when shown so they cover the keyboard, and the Settings side
     // panel (added last) stays above it too. No toFront() is called here so a
     // resize while a modal is open never lifts the keyboard above it.
@@ -3420,11 +3236,11 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
     {
         if (presetBrowser_ != nullptr)
             presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
-        // A multi rewrites every part's channel / key zone / voice allocation,
-        // so force the Multi page to re-read even though the edited part is
-        // unchanged.
-        if (isMulti && multiPage_ != nullptr)
-            multiPage_->forceRefresh();
+        // A multi rewrites every part's channel / key zone / voice allocation /
+        // polyphony, so force the Patch page to re-read (and re-infer the
+        // arrangement) even though the edited part is unchanged.
+        if (isMulti && patchPage_ != nullptr)
+            patchPage_->refresh();
     }
 }
 

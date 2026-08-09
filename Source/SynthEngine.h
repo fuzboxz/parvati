@@ -379,6 +379,11 @@ public:
     uint8_t getPartKeyrangeLow  (int part) const { return ok (part) ? parts_[(size_t) part].keyrangeLow.load()  : 0; }
     uint8_t getPartKeyrangeHigh (int part) const { return ok (part) ? parts_[(size_t) part].keyrangeHigh.load() : 127; }
 
+    // PartData byte 15 = polyphony mode (MONO=0, POLY=1, UNISON_2X=2, CYCLIC=3,
+    // CHAIN=4). Additive const read so callers (e.g. arrangement inference) can
+    // stay const-correct. Default POLY (1) for an out-of-range part.
+    uint8_t getPartPolyphony (int part) const { return ok (part) ? parts_[(size_t) part].partBytes[15] : 1; }
+
     // ---- Voice allocation (firmware 6-voicecard bitmask) ----
     // Each firmware voicecard maps to exactly one Parvati voice (voice i ==
     // voicecard i). A Part owns the voicecards whose bits it sets; a voicecard

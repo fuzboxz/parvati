@@ -1,0 +1,590 @@
+// Phase 2 of the "Patch page" feature: the Patch juce::Component implementation.
+// See PatchPage.h for the design summary and /tmp/parvati_patch_design.md
+// ("Phase 2") for the full spec. Phase 1 (PatchArrangement.{h,cpp}) supplies
+// applyArrangement / inferArrangement; this component drives the engine purely
+// through its EXISTING public setters.
+
+#include "PatchPage.h"
+
+#include "PatchArrangement.h"
+
+#include "PluginProcessor.h"   // ParvatiAudioProcessor::getEngine()
+#include "PluginEditor.h"      // ParamPage complete type (reflowToWidth/getContentHeight)
+
+#include <cstdint>
+
+//==============================================================================
+namespace
+{
+// popcount over the 6-bit voicecard bitmask (a Part's voiceAllocation).
+int cardPopcount (uint8_t mask)
+{
+    int n = 0;
+    for (; mask; mask >>= 1)
+        n += mask & 1;
+    return n;
+}
+
+// Alpha applied to an inactive Part row (0 cards) so the split is legible while
+// the row stays visible AND interactive (the user can still raise its card count
+// to activate it).
+constexpr float kInactiveRowAlpha = 0.4f;
+
+// Number of selectable cards per Part / total cards (authentic hardware = 6).
+constexpr int kMaxCards = 6;
+}  // namespace
+
+//==============================================================================
+// One Part row: "Part N" + card-count combo + MIDI-channel combo + key-zone
+// knobs (Lo/Hi) + polyphony combo. Every control binds DIRECTLY to the engine's
+// existing per-part setters (no APVTS). Inactive parts (0 cards) are dimmed but
+// remain visible + interactive.
+class PatchPage::PartRow : public juce::Component
+{
+public:
+    PartRow (PatchPage& owner, int partIndex)
+        : owner_ (owner), partIndex_ (partIndex), engine_ (owner.proc_.getEngine())
+    {
+        // ---- chrome ----
+        partLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        partLabel_.setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (partLabel_);
+
+        auto setupCaption = [this] (juce::Label& l) {
+            l.setJustificationType (juce::Justification::centredLeft);
+            l.setFont (juce::FontOptions (11.0f));
+            addAndMakeVisible (l);
+        };
+        setupCaption (cardsCaption_);
+        setupCaption (chCaption_);
+        setupCaption (zoneLoCaption_);
+        setupCaption (zoneHiCaption_);
+        setupCaption (polyCaption_);
+
+        // ---- Cards: count 0..6 (id = count + 1). Sum across rows capped at 6
+        // (enforced by PatchPage::recomputeCardAllocation). ----
+        for (int n = 0; n <= kMaxCards; ++n)
+            cardsCombo_.addItem (juce::String (n), n + 1);
+        cardsCombo_.onChange = [this] { onCardsChanged(); };
+        addAndMakeVisible (cardsCombo_);
+
+        // ---- Ch: Omni (0) + 1..16 (id = channel + 1). ----
+        channelCombo_.addItem (TRANS ("Omni"), 1);
+        for (int c = 1; c <= 16; ++c)
+            channelCombo_.addItem (juce::String (c), c + 1);
+        channelCombo_.onChange = [this] { onChannelChanged(); };
+        addAndMakeVisible (channelCombo_);
+
+        // ---- Zone: two compact knobs (Lo/Hi, 0..127). NoTextBox — the L&F
+        // draws the readout in the centre of the arc-ring (no value box). ----
+        auto setupKnob = [this] (juce::Slider& s) {
+            s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            s.setRange (0.0, 127.0, 1.0);
+            addAndMakeVisible (s);
+        };
+        setupKnob (loSlider_);
+        setupKnob (hiSlider_);
+        const auto onZone = [this] { onZoneChanged(); };
+        loSlider_.onValueChange = onZone;
+        hiSlider_.onValueChange = onZone;
+
+        // ---- Poly: Mono/Poly/Unison 2x/Cyclic/Chain (id = mode + 1).
+        // Written via the same idiom PatchArrangement uses (setCurrentPart +
+        // applyPartByte(15,mode) + restore), because PartData byte 15 has no
+        // dedicated setter. ----
+        polyCombo_.addItem (TRANS ("Mono"), 1);
+        polyCombo_.addItem (TRANS ("Poly"), 2);
+        polyCombo_.addItem (TRANS ("Unison 2x"), 3);
+        polyCombo_.addItem (TRANS ("Cyclic"), 4);
+        polyCombo_.addItem (TRANS ("Chain"), 5);
+        polyCombo_.onChange = [this] { onPolyChanged(); };
+        addAndMakeVisible (polyCombo_);
+
+        refreshLanguage();
+    }
+
+    //----------------------------------------------------------------------
+    // Layout: a horizontal strip of labelled columns.
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced (4);
+
+        partLabel_.setBounds (b.removeFromLeft (62));
+        b.removeFromLeft (6);
+
+        // Cards
+        {
+            auto col = b.removeFromLeft (92);
+            cardsCaption_.setBounds (col.removeFromTop (14));
+            cardsCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (24, col.getHeight())));
+        }
+        // Ch
+        {
+            auto col = b.removeFromLeft (92);
+            chCaption_.setBounds (col.removeFromTop (14));
+            channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (24, col.getHeight())));
+        }
+        b.removeFromLeft (4);
+        // Zone Low knob
+        {
+            auto col = b.removeFromLeft (64);
+            zoneLoCaption_.setBounds (col.removeFromTop (14));
+            loSlider_.setBounds (col.withSizeKeepingCentre (40, juce::jmin (40, col.getHeight())));
+        }
+        // Zone High knob
+        {
+            auto col = b.removeFromLeft (64);
+            zoneHiCaption_.setBounds (col.removeFromTop (14));
+            hiSlider_.setBounds (col.withSizeKeepingCentre (40, juce::jmin (40, col.getHeight())));
+        }
+        b.removeFromLeft (8);
+        // Poly (remaining width)
+        {
+            auto col = b;
+            polyCaption_.setBounds (col.removeFromTop (14));
+            polyCombo_.setBounds (col.withSizeKeepingCentre (juce::jmin (140, col.getWidth()), juce::jmin (24, col.getHeight())));
+        }
+    }
+
+    //----------------------------------------------------------------------
+    // Re-read this Part's engine state into the controls WITHOUT firing onChange.
+    void refresh()
+    {
+        refreshing_ = true;
+        const int cardN = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
+        cardsCombo_.setSelectedId (cardN + 1, juce::dontSendNotification);
+
+        channelCombo_.setSelectedId (static_cast<int> (engine_.getPartChannel (partIndex_)) + 1,
+                                     juce::dontSendNotification);
+
+        loSlider_.setValue (static_cast<double> (engine_.getPartKeyrangeLow (partIndex_)),
+                            juce::dontSendNotification);
+        hiSlider_.setValue (static_cast<double> (engine_.getPartKeyrangeHigh (partIndex_)),
+                            juce::dontSendNotification);
+
+        const uint8_t poly = engine_.getPart (partIndex_).partBytes[15];   // PartData byte 15 = polyphony
+        polyCombo_.setSelectedId (static_cast<int> (poly) + 1, juce::dontSendNotification);
+
+        refreshing_ = false;
+        updateDimState();
+    }
+
+    // Re-apply every chrome string through TRANS() (called by the editor after a
+    // live language switch) and rebuild the channel/poly combo items (the Omni
+    // + mode names are translated), preserving each selection.
+    void refreshLanguage()
+    {
+        partLabel_.setText (TRANS ("Part") + " " + juce::String (partIndex_ + 1), juce::dontSendNotification);
+        cardsCaption_.setText (TRANS ("Cards"), juce::dontSendNotification);
+        chCaption_.setText (TRANS ("Ch"), juce::dontSendNotification);
+        zoneLoCaption_.setText (TRANS ("Zone Low"), juce::dontSendNotification);
+        zoneHiCaption_.setText (TRANS ("Zone High"), juce::dontSendNotification);
+        polyCaption_.setText (TRANS ("Polyphony"), juce::dontSendNotification);
+
+        {
+            const int prev = channelCombo_.getSelectedId();
+            channelCombo_.clear();
+            channelCombo_.addItem (TRANS ("Omni"), 1);
+            for (int c = 1; c <= 16; ++c)
+                channelCombo_.addItem (juce::String (c), c + 1);
+            channelCombo_.setSelectedId (prev, juce::dontSendNotification);
+        }
+        {
+            const int prev = polyCombo_.getSelectedId();
+            polyCombo_.clear();
+            polyCombo_.addItem (TRANS ("Mono"), 1);
+            polyCombo_.addItem (TRANS ("Poly"), 2);
+            polyCombo_.addItem (TRANS ("Unison 2x"), 3);
+            polyCombo_.addItem (TRANS ("Cyclic"), 4);
+            polyCombo_.addItem (TRANS ("Chain"), 5);
+            polyCombo_.setSelectedId (prev, juce::dontSendNotification);
+        }
+        repaint();
+    }
+
+    // Colours come from the inherited L&F (read at paint time) — just repaint.
+    void applyThemeColors() { repaint(); }
+
+    // The currently-displayed card count (0..6) from the combo.
+    int cardCount() const
+    {
+        const int id = cardsCombo_.getSelectedId();
+        return id > 0 ? id - 1 : 0;
+    }
+
+    // Highest card count this row's combo currently offers (0..6). With the
+    // dynamic per-row cap this is 6 minus the cards used by the OTHER rows, so
+    // the GUI never offers a count that would exceed the 6-card total.
+    int cardCountMax() const
+    {
+        const int n = cardsCombo_.getNumItems();
+        return n > 0 ? cardsCombo_.getItemId (n - 1) - 1 : 0;
+    }
+
+    // Rebuild the card-count combo to offer 0..@p maxCount, then select the
+    // engine's actual count for this Part (@p displayCount, clamped into range).
+    // Sourcing the selection from the engine (not the combo's stale cardCount())
+    // is what keeps the displayed count correct after an arrangement change
+    // widens this Part's allocation beyond what its (previously-narrowed) combo
+    // still offered. Called by PatchPage::rebuildCardCombos so each row only
+    // offers budget-legal counts AND mirrors the engine.
+    void rebuildCardItems (int maxCount, int displayCount)
+    {
+        maxCount = juce::jlimit (0, 6, maxCount);
+        refreshing_ = true;
+        cardsCombo_.clear();
+        for (int n = 0; n <= maxCount; ++n)
+            cardsCombo_.addItem (juce::String (n), n + 1);
+        cardsCombo_.setSelectedId (juce::jlimit (0, maxCount, displayCount) + 1,
+                                   juce::dontSendNotification);
+        refreshing_ = false;
+    }
+
+    // Test/automation hook: set the card-count combo to @p n WITHOUT firing
+    // onChange, clamped to what the combo currently offers (a row whose budget
+    // is spent offers only 0, so asking for more yields 0 — exactly as a user
+    // who can only pick from the offered items). PatchPage::chooseCardCount
+    // then drives the cap-check + write path explicitly (JUCE does not fire a
+    // combo's onChange for a programmatic setSelectedId in a headless test).
+    void setCardCountDisplay (int n)
+    {
+        n = juce::jlimit (0, cardCountMax(), n);
+        cardsCombo_.setSelectedId (n + 1, juce::dontSendNotification);
+    }
+
+    // Revert the card combo to the engine's actual count (used when an edit
+    // would push the total over 6). No onChange fired.
+    void revertCardDisplay()
+    {
+        const int n = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
+        refreshing_ = true;
+        cardsCombo_.setSelectedId (n + 1, juce::dontSendNotification);
+        refreshing_ = false;
+    }
+
+    // Dim the row when its Part has 0 cards (inactive). setAlpha keeps the row
+    // visible AND interactive so the user can still raise its card count.
+    void updateDimState()
+    {
+        const int n = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
+        setAlpha (n == 0 ? kInactiveRowAlpha : 1.0f);
+    }
+
+private:
+    PatchPage& owner_;
+    const int partIndex_;
+    SynthEngine& engine_;
+    bool refreshing_ = false;
+
+    juce::Label partLabel_, cardsCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_;
+    juce::ComboBox cardsCombo_, channelCombo_, polyCombo_;
+    juce::Slider loSlider_, hiSlider_;
+
+    void onCardsChanged()
+    {
+        if (refreshing_) return;
+        owner_.recomputeCardAllocation (partIndex_);
+    }
+
+    void onChannelChanged()
+    {
+        if (refreshing_) return;
+        engine_.setPartMidiChannel (partIndex_, channelCombo_.getSelectedId() - 1);
+        owner_.postPartEdit();
+    }
+
+    void onZoneChanged()
+    {
+        if (refreshing_) return;
+        engine_.setPartKeyZone (partIndex_,
+                                static_cast<int> (loSlider_.getValue()),
+                                static_cast<int> (hiSlider_.getValue()));
+        owner_.postPartEdit();
+    }
+
+    void onPolyChanged()
+    {
+        if (refreshing_) return;
+        // Same idiom PatchArrangement uses: PartData byte 15 has no dedicated
+        // setter, so switch currentPart, write byte 15, then restore.
+        const int saved = engine_.getCurrentPart();
+        engine_.setCurrentPart (partIndex_);
+        engine_.applyPartByte (15, static_cast<uint8_t> (polyCombo_.getSelectedId() - 1));
+        engine_.setCurrentPart (saved);
+        owner_.postPartEdit();
+        // The polyphony knob in the hosted globalPage_ reads the CURRENT part's
+        // value from the APVTS, which goes stale after this engine-direct write.
+        // Re-sync the current part (engine->APVTS) so the knob + a save stay
+        // correct (same staleness reason as the arrangement-combo path above).
+        owner_.proc_.loadPartIntoApvts (engine_.getCurrentPart());
+    }
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PartRow)
+};
+
+//==============================================================================
+PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
+    : proc_ (processor), themeManager_ (themeManager)
+{
+    heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
+    heading_.setJustificationType (juce::Justification::centredLeft);
+    heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
+    addAndMakeVisible (heading_);
+
+    buildArrangementCombo();
+    arrangementCombo_.onChange = [this] { onArrangementChanged(); };
+    addAndMakeVisible (arrangementCombo_);
+
+    cardsTotalLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    cardsTotalLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
+    cardsTotalLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (cardsTotalLabel_);
+
+    for (int i = 0; i < kMaxCards; ++i)
+    {
+        rows_[ (size_t) i] = std::make_unique<PartRow> (*this, i);
+        addAndMakeVisible (*rows_[ (size_t) i]);
+    }
+
+    setSize (640, 540);
+    refresh();
+}
+
+PatchPage::~PatchPage() = default;
+
+void PatchPage::paint (juce::Graphics& g)
+{
+    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
+}
+
+void PatchPage::applyThemeColors()
+{
+    const auto accent = themeManager_.getCurrentTheme().accentPrimary;
+    heading_.setColour (juce::Label::textColourId, accent);
+    cardsTotalLabel_.setColour (juce::Label::textColourId, accent);
+    repaint();
+}
+
+void PatchPage::refreshLanguage()
+{
+    heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
+    buildArrangementCombo();
+    for (auto& r : rows_)
+        r->refreshLanguage();
+    repaint();
+}
+
+void PatchPage::buildArrangementCombo()
+{
+    const int prev = arrangementCombo_.getSelectedId();
+    arrangementCombo_.clear();
+    arrangementCombo_.setTextWhenNothingSelected (TRANS ("Custom"));
+    arrangementCombo_.addItem (TRANS ("Single"), 1);
+    arrangementCombo_.addItem (TRANS ("Stack"), 2);
+    arrangementCombo_.addItem (TRANS ("Split 2"), 3);
+    arrangementCombo_.addItem (TRANS ("Layer 2"), 4);
+    arrangementCombo_.addItem (TRANS ("Multi 6"), 5);
+    arrangementCombo_.setSelectedId (prev, juce::dontSendNotification);
+}
+
+void PatchPage::setArrangementFromEngine()
+{
+    const Arrangement a = inferArrangement (proc_.getEngine());
+    refreshing_ = true;
+    if (a == Arrangement::Custom)
+        arrangementCombo_.setSelectedId (0, juce::dontSendNotification);   // shows "Custom"
+    else
+        arrangementCombo_.setSelectedId (static_cast<int> (a) + 1, juce::dontSendNotification);
+    refreshing_ = false;
+}
+
+void PatchPage::onArrangementChanged()
+{
+    if (refreshing_) return;
+    const int id = arrangementCombo_.getSelectedId();
+    if (id < 1 || id > 5) return;
+    applyArrangement (proc_.getEngine(), static_cast<Arrangement> (id - 1));
+    refresh();
+    // applyArrangement writes each part's polyphony ENGINE-DIRECT (setCurrentPart
+    // + applyPartByte(15,...)). The hosted globalPage_ knob for `part_polyphony`
+    // reads from the APVTS, so the current part's APVTS value goes stale after an
+    // apply. Re-sync the current part's engine state into the APVTS (existing
+    // public machinery) so the knob + an APVTS-based save reflect the new mode.
+    proc_.loadPartIntoApvts (proc_.getEngine().getCurrentPart());
+}
+
+int PatchPage::getDisplayedCardCount (int part) const
+{
+    if (part < 0 || part >= kMaxCards) return -1;
+    return rows_[(size_t) part]->cardCount();
+}
+
+Arrangement PatchPage::getDisplayedArrangement() const
+{
+    const int id = arrangementCombo_.getSelectedId();
+    return (id >= 1 && id <= 5) ? static_cast<Arrangement> (id - 1) : Arrangement::Custom;
+}
+
+void PatchPage::chooseCardCount (int part, int count)
+{
+    if (part < 0 || part >= kMaxCards || count < 0 || count > kMaxCards) return;
+    // Mirror a user edit: set the combo to the requested count, then run the
+    // exact cap-check + contiguous-bitmask write path (recomputeCardAllocation).
+    rows_[(size_t) part]->setCardCountDisplay (count);
+    recomputeCardAllocation (part);
+}
+
+int PatchPage::getCardCountMax (int part) const
+{
+    if (part < 0 || part >= kMaxCards) return -1;
+    return rows_[(size_t) part]->cardCountMax();
+}
+
+void PatchPage::rebuildCardCombos()
+{
+    // Source of truth = the ENGINE, not the combos: a row's combo may still hold
+    // a stale/narrowed selection from a previous arrangement (e.g. only "0"), so
+    // reading cardCount() here would compute the per-row caps against the wrong
+    // total and leave the displayed count stuck. Reading the engine popcounts
+    // makes both the caps and the displayed counts always track the engine.
+    int counts[kMaxCards] {};
+    int total = 0;
+    for (int p = 0; p < kMaxCards; ++p)
+    {
+        counts[p] = cardPopcount (proc_.getEngine().getPartVoiceAllocation (p));
+        total += counts[p];
+    }
+
+    // Each row may offer 0..(6 - cards used by the OTHER rows), so the GUI never
+    // offers a count that would exceed the 6-card total, and each row's selection
+    // mirrors its engine allocation.
+    for (int p = 0; p < kMaxCards; ++p)
+    {
+        const int usedByOthers = total - counts[p];
+        const int maxForThis = juce::jlimit (0, kMaxCards, kMaxCards - usedByOthers);
+        rows_[(size_t) p]->rebuildCardItems (maxForThis, counts[p]);
+    }
+}
+
+void PatchPage::updateCardsTotal()
+{
+    int used = 0;
+    for (int p = 0; p < kMaxCards; ++p)
+        used += cardPopcount (proc_.getEngine().getPartVoiceAllocation (p));
+    cardsTotalLabel_.setText (TRANS ("Cards") + " " + juce::String (used) + "/"
+                                  + juce::String (kMaxCards),
+                              juce::dontSendNotification);
+}
+
+void PatchPage::refresh()
+{
+    refreshing_ = true;
+    for (auto& r : rows_)
+        r->refresh();
+    refreshing_ = false;
+    rebuildCardCombos();
+    updateCardsTotal();
+    setArrangementFromEngine();
+}
+
+void PatchPage::postPartEdit()
+{
+    for (auto& r : rows_)
+        r->updateDimState();
+    rebuildCardCombos();
+    updateCardsTotal();
+    setArrangementFromEngine();
+}
+
+void PatchPage::recomputeCardAllocation (int changedPart)
+{
+    if (refreshing_) return;
+
+    // Read all 6 counts from the combos (the just-edited one already holds its
+    // new value).
+    int counts[kMaxCards] {};
+    int sum = 0;
+    for (int p = 0; p < kMaxCards; ++p)
+    {
+        counts[p] = rows_[ (size_t) p]->cardCount();
+        sum += counts[p];
+    }
+
+    if (sum > kMaxCards)
+    {
+        // Reject: the edit would exceed the 6-card total. Revert the changed
+        // row's display to the engine's actual (pre-edit) count; the engine is
+        // untouched. The displayed counts therefore always satisfy sum <= 6.
+        rows_[ (size_t) changedPart]->revertCardDisplay();
+        return;
+    }
+
+    // Recompute the 6 contiguous bitmasks in part order (part 0 takes the first
+    // count0 cards, part 1 the next count1, ...) and write ALL of them.
+    //
+    // Deviation from the spec's "for each changed part" hint: contiguous
+    // reassignment shifts the card cursor for EVERY part from the first changed
+    // one onward, so a part whose own count is unchanged can still need a
+    // different bitmask position. Comparing new vs old masks is therefore unsafe
+    // under the engine's exclusive-ownership steal. Writing all 6 disjoint
+    // contiguous masks in order is the simplest correct contract (each write is
+    // idempotent for a disjoint mask), and is exactly what applyArrangement does.
+    auto& engine = proc_.getEngine();
+    const int saved = engine.getCurrentPart();
+    int cursor = 0;
+    for (int p = 0; p < kMaxCards; ++p)
+    {
+        uint8_t mask = 0;
+        for (int c = 0; c < counts[p]; ++c)
+            mask |= static_cast<uint8_t> (1u << (cursor + c));
+        cursor += counts[p];
+        engine.setPartVoiceAllocation (p, mask);
+    }
+    engine.setCurrentPart (saved);
+
+    postPartEdit();
+}
+
+void PatchPage::resized()
+{
+    auto area = getLocalBounds().reduced (16);
+
+    heading_.setBounds (area.removeFromTop (30));
+    area.removeFromTop (6);
+    {
+        auto topRow = area.removeFromTop (26);
+        arrangementCombo_.setBounds (topRow.removeFromLeft (220));
+        topRow.removeFromLeft (12);
+        cardsTotalLabel_.setBounds (topRow.removeFromLeft (170));
+    }
+    area.removeFromTop (10);
+
+    // 6 part rows (horizontal strips).
+    constexpr int rowH = 56;
+    constexpr int rowGap = 4;
+    for (int i = 0; i < kMaxCards; ++i)
+    {
+        rows_[ (size_t) i]->setBounds (area.removeFromTop (rowH));
+        area.removeFromTop (rowGap);
+    }
+
+    // Hosted patch-wide ParamPage below the rows: reflow to the row width, then
+    // position at the remaining area's top-left. The voice-activity meter stays
+    // attached to it as a decoration (it is not moved here).
+    if (hostedParamPage_ != nullptr)
+    {
+        const int w = juce::jmax (200, area.getWidth());
+        hostedParamPage_->reflowToWidth (w, 0);
+        const int h = hostedParamPage_->getContentHeight();
+        hostedParamPage_->setBounds (area.getX(), area.getY(), w, h);
+    }
+}
+
+void PatchPage::hostParamPage (juce::Component* paramPage)
+{
+    hostedParamPage_ = dynamic_cast<ParamPage*> (paramPage);
+    if (hostedParamPage_ != nullptr)
+        addAndMakeVisible (paramPage);   // editor retains ownership; reparent only
+    resized();
+}

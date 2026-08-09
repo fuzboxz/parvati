@@ -361,6 +361,21 @@ target_link_libraries(parvati_lfo_retrigger_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Patch page (Phase 1) arrangement-template verification: apply each built-in
+# arrangement, assert the engine state matches the design-spec template table
+# (per-part voicecard count, MIDI channel, key zone, polyphony), then assert
+# inferArrangement round-trips. Built by default.
+# Run with: ./build/parvati_patch_arrangement_test
+add_executable(parvati_patch_arrangement_test
+    tests/patch_arrangement_test.cpp
+)
+target_include_directories(parvati_patch_arrangement_test PRIVATE Source)
+target_compile_features(parvati_patch_arrangement_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_patch_arrangement_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Ambika .MUL (multi) loading verification. Built by default.
 # Run with: ./build/parvati_multi_load_test
 add_executable(parvati_multi_load_test

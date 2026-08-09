@@ -14,6 +14,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ui/ParvatiTheme.h"
+#include "ui/PatchPage.h"
+#include "ui/PatchArrangement.h"
 
 namespace
 {
@@ -182,6 +184,92 @@ int main()
         check (! filterCardOnFilter, "filter_card is NOT on the Filter page");
         check (vcaCurveOnGlobal,    "vca_curve stays on the Global page");
         check (filterDriveOnGlobal, "filter_drive stays on the Global page");
+    }
+
+    // ---- [6] Patch page is present in the editor ----
+    std::printf ("\n[6] Patch page present\n");
+    PatchPage* patchPage = nullptr;
+    {
+        juce::Array<juce::Component*> nodes;
+        nodes.add (editor);
+        for (int i = 0; i < nodes.size() && patchPage == nullptr; ++i)
+        {
+            auto* c = nodes.getUnchecked (i);
+            if (auto* p = dynamic_cast<PatchPage*> (c)) patchPage = p;
+            for (auto* child : c->getChildren())
+                nodes.add (child);
+        }
+    }
+    check (patchPage != nullptr, "PatchPage found in the editor component tree");
+
+    if (patchPage != nullptr)
+    {
+        // ---- [7] Voice-card allocation manipulation via the Patch page ----
+        // Drives the REAL UI code path (combo onChange -> cap-check ->
+        // contiguous-bitmask write) and the engine->GUI reflection path, then
+        // asserts against the engine (the source of truth).
+        std::printf ("\n[7] Voice-card allocation via PatchPage\n");
+        auto& engine = proc.getEngine();
+        auto popcount = [] (uint8_t m) { int n = 0; for (int b = 0; b < 6; ++b) if (m & (1u << b)) ++n; return n; };
+
+        // Start from a known arrangement: Single = all 6 cards on part 0.
+        applyArrangement (engine, Arrangement::Single);
+        patchPage->refresh();
+        check (patchPage->getDisplayedCardCount (0) == 6, "Single: part 0 shows 6 cards");
+        check (patchPage->getDisplayedCardCount (1) == 0, "Single: part 1 shows 0 cards");
+        check (patchPage->getDisplayedArrangement() == Arrangement::Single,
+               "Single: arrangement inferred as Single");
+
+        // Manipulate via the UI path: redistribute to 3 + 3.
+        patchPage->chooseCardCount (0, 3);
+        patchPage->chooseCardCount (1, 3);
+        check (popcount (engine.getPartVoiceAllocation (0)) == 3, "UI 3+3: part 0 owns 3 cards (engine)");
+        check (popcount (engine.getPartVoiceAllocation (1)) == 3, "UI 3+3: part 1 owns 3 cards (engine)");
+        check (patchPage->getDisplayedCardCount (0) == 3 && patchPage->getDisplayedCardCount (1) == 3,
+               "UI 3+3: displayed counts reflect 3/3");
+        int totalCards = 0;
+        for (int p = 0; p < 6; ++p) totalCards += popcount (engine.getPartVoiceAllocation (p));
+        check (totalCards == 6, "UI 3+3: total cards across parts == 6 (no leak)");
+
+        // Cap enforcement: 6 cards already spent, so raising any other part
+        // must be REJECTED (total cannot exceed 6; engine + combo untouched).
+        const uint8_t p2Before = engine.getPartVoiceAllocation (2);
+        patchPage->chooseCardCount (2, 2);   // would make 3 + 3 + 2 = 8 > 6
+        check (popcount (engine.getPartVoiceAllocation (2)) == 0, "Cap: part 2 rejected (stays 0 cards)");
+        check (engine.getPartVoiceAllocation (2) == p2Before, "Cap: part 2 engine bitmask unchanged");
+        check (patchPage->getDisplayedCardCount (2) == 0, "Cap: part 2 combo reverted to 0");
+
+        // Engine -> GUI reflection: load Multi6 directly, refresh, confirm the
+        // page mirrors it (1 card each) and re-infers Multi6.
+        applyArrangement (engine, Arrangement::Multi6);
+        patchPage->refresh();
+        bool oneEach = true;
+        for (int p = 0; p < 6; ++p)
+            if (patchPage->getDisplayedCardCount (p) != 1) oneEach = false;
+        check (oneEach, "Multi6: every part shows 1 card (engine->GUI reflection)");
+        check (patchPage->getDisplayedArrangement() == Arrangement::Multi6,
+               "Multi6: arrangement inferred as Multi6");
+
+        // ---- [8] 6-card budget is self-enforcing (no 6x6) ----
+        std::printf ("\n[8] 6-card budget self-enforces\n");
+        applyArrangement (engine, Arrangement::Single);   // part 0 = all 6
+        patchPage->refresh();
+        check (patchPage->getCardCountMax (0) == 6, "Single: part 0 combo offers up to 6");
+        check (patchPage->getCardCountMax (1) == 0, "Single: part 1 combo offers only 0 (budget spent)");
+        // Freeing cards widens another row's budget: part 0 -> 3 lets part 1 reach 3.
+        patchPage->chooseCardCount (0, 3);
+        check (patchPage->getCardCountMax (1) == 3, "After part0=3: part 1 combo offers up to 3");
+        // Spend the rest: part 1 -> 3 (total 6) collapses part 2's budget to 0.
+        patchPage->chooseCardCount (1, 3);
+        check (patchPage->getCardCountMax (2) == 0, "After 3+3: part 2 combo offers only 0");
+        // No sequence of UI edits can push the engine past 6 total cards: the
+        // dynamic per-row cap stops over-budget values even being offered.
+        patchPage->chooseCardCount (0, 6);
+        patchPage->chooseCardCount (2, 6);
+        int total6 = 0;
+        for (int p = 0; p < 6; ++p)
+            total6 += popcount (engine.getPartVoiceAllocation (p));
+        check (total6 == 6, "Over-budget edits rejected: engine total stays exactly 6");
     }
 
     // ---- teardown ----

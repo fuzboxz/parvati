@@ -5,6 +5,18 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Unified Patch page (merges Multi/Setup + Global).** A single **Patch**
+  page replaces the separate Multi/Setup and Global pages. A high-level
+  **Arrangement** selector — Single / Stack / Split 2 / Layer 2 / Multi 6 —
+  auto-configures voice allocation, MIDI channels, key zones and polyphony
+  across all 6 parts in one click; each part is then fine-tuned through a card
+  **count** (not a voicecard bitmask), MIDI channel, key zone and polyphony. A
+  live **"Cards X / 6"** readout and dynamic per-row combo capping make the
+  fixed 6-voicecard budget self-evident and impossible to exceed (the GUI never
+  offers a count it would reject). The arrangement is **inferred** from engine
+  state on load and never stored, so Ambika `.PRO` / `.MUL` interchange stays
+  byte-exact; engine internals, file formats and the audio thread are unchanged
+  (one additive `const` polyphony getter aside).
 - **Per-part FX section (Parvati-exclusive).** Each of the 6 Parts now has its
   own stereo FX chain: 3 reorderable FX slots (Gain+Pan / Delay / Reverb /
   Chorus placeholders), a Series/Parallel topology + slot-order control, and a

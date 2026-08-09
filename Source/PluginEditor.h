@@ -40,7 +40,7 @@ void refreshFontsIn (juce::Component* root, const ParvatiLookAndFeel& lnf);
 #include "ui/IconButton.h"
 #include "ui/PresetBrowser.h"
 
-class MultiPage;
+class PatchPage;
 class SynthWorkspace;
 class FxWorkspace;
 class FxMatrixView;
@@ -427,49 +427,6 @@ private:
 };
 
 //==============================================================================
-// Multi / Setup page: edits the CURRENT part's MIDI channel + key zone directly
-// on the engine (these are Part routing fields, not APVTS patch params). Refreshed
-// by the editor's timer whenever the edited part changes.
-class MultiPage : public juce::Component
-{
-public:
-    MultiPage (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-    // Re-read the current part's channel/keyzone from the engine and update the
-    // controls (without firing onChange).
-    void refresh();
-    // Cheap timer hook: no-op unless the edited part changed since the last refresh.
-    void refreshIfPartChanged();
-    // Force a full refresh on the next call (e.g. after a .MUL load rewrites
-    // every part's routing while the edited part stays the same).
-    void forceRefresh() { lastPart_ = -1; }
-
-    // Re-apply theme-derived colours and repaint (page fill is read at paint
-    // time, the heading accent is explicit).
-    void applyThemeColors();
-
-    // Re-apply every chrome string through TRANS() (called by the editor after
-    // a live language switch). The dynamic "Editing Part X of Y" line is
-    // rebuilt by refresh().
-    void refreshLanguage();
-
-private:
-    ParvatiAudioProcessor& proc_;
-    ThemeManager& themeManager_;
-    juce::Label heading_, partLabel_, chLabel_, loLabel_, hiLabel_, allocLabel_;
-    juce::ComboBox channelCombo_;
-    juce::Slider   loSlider_, hiSlider_;
-    juce::ToggleButton allocBits_[6];   // one per firmware voicecard (vc1..6)
-    bool refreshing_ = false;
-    int  lastPart_ = -1;   // last part shown; -1 forces the first refresh
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultiPage)
-};
-
-//==============================================================================
 class ParvatiEditor : public juce::AudioProcessorEditor,
                      public juce::DragAndDropContainer,
                      private juce::FileDragAndDropTarget,
@@ -524,10 +481,10 @@ public:
     void setFxMode (bool fx);
 
 private:
-    // Unified 4-way top-level page selector (Synth/FX/Global/Multi). Each header
+    // Unified 3-way top-level page selector (Synth/FX/Patch). Each header
     // page button calls showTopPage(idx): exclusive page visibility + button
     // states; reparents the shared generator only on a Synth<->FX change.
-    void showTopPage (int pageIndex);      // 0=Synth 1=FX 2=Global 3=Multi
+    void showTopPage (int pageIndex);      // 0=Synth 1=FX 2=Patch
     void reparentGeneratorTo (bool toFx);  // move the shared generator between workspaces
 
     // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL files.
@@ -544,7 +501,8 @@ private:
     void dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details) override;
     void dragOperationEnded   (const juce::DragAndDropTarget::SourceDetails&) override;
 
-    // juce::Timer — keep the Multi page in sync with the edited part (~30 Hz).
+    // juce::Timer — keep the Patch page (arrangement + part rows) reflecting the
+    // live engine state (~30 Hz); a forced refresh also runs after a .MUL load.
     void timerCallback() override;
 
     // juce::ChangeListener — re-apply the L&F theme + repaint when the
@@ -557,13 +515,15 @@ private:
     void applyPatchFile (const juce::File&);
 
     // Re-apply every editor-chrome string through TRANS() (buttons, captions,
-    // tab names, page headings) and refresh the settings panel + multi page,
+    // tab names, page headings) and refresh the settings panel + patch page,
     // so a live language switch updates immediately. Called once after the UI
     // is built and again on every language change.
     void applyChromeTranslations();
 
-    // The Multi page is owned here and shown as an overlay over the content area.
-    std::unique_ptr<MultiPage> multiPage_;
+    // The Patch page is owned here and shown as an overlay over the content
+    // area. It hosts the editor-owned Section::Global ParamPage (patch-wide
+    // knobs + the voice-activity meter decoration) below its 6 part rows.
+    std::unique_ptr<PatchPage> patchPage_;
     // Generated ParamPages — EDITOR-OWNED. Every page is created here so every
     // APVTS attachment and the verified byte-bridge survive the layout
     // unchanged: the 3 top-row direct pages (OSC/Mixer/Filter), the generator
@@ -616,7 +576,7 @@ private:
     std::unique_ptr<FxWorkspace>  fxWorkspace_;
     // Two-tab page selector (bar hidden via depth 0). Index 0 = synthWorkspace_,
     // index 1 = fxWorkspace_; the header [Synth]/[FX] buttons swap the current
-    // tab (setFxMode). GLOBAL is a header-button overlay (globalPage_), not a
+    // tab (setFxMode). PATCH is a header-button overlay (patchPage_), not a
     // tab. Non-owned tab content (editor-owned via generatedPages_).
     juce::TabbedComponent pageSelector_ { juce::TabbedButtonBar::TabsAtTop };
 
@@ -644,15 +604,14 @@ private:
     // Top bar: Part selector (bound to the `part_select` APVTS param).
     juce::Label    partCaption_;
     juce::ComboBox partCombo_;
-    // Synth<->FX mode toggle (a view-mode selector, like the Multi/Global
-    // overlays — NOT an APVTS param). Inserted between partCombo_ and
-    // multiButton_ in the header cluster: Part [Part 1] [Synth] [FX] [Multi].
+    // Synth<->FX mode toggle (a view-mode selector, like the Patch overlay —
+    // NOT an APVTS param). Inserted between partCombo_ and the Patch button in
+    // the header cluster: Part [Part 1] [Synth] [FX] [Patch].
     juce::TextButton synthModeButton_ { "Synth" };
     juce::TextButton fxModeButton_    { "FX" };
     bool             fxModeActive_    = false;   // which workspace (Synth/FX) hosts the generator
-    int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Global 3=Multi
-    juce::TextButton multiButton_ { "Multi" };   // header button -> Multi/Setup overlay (not a patch param)
-    juce::TextButton globalButton_ { "Global" }; // header button -> Global ParamPage overlay (not a patch param)
+    int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Patch
+    juce::TextButton globalButton_ { "Patch" }; // header button -> Patch page overlay (hosts the Section::Global ParamPage; not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
@@ -703,7 +662,7 @@ private:
     void reapplyGraphCategoryColours();
 
     // Re-apply every theme-derived colour across the whole editor tree
-    // (sendLookAndFeelChange + per-page/workspace/multi applyThemeColors +
+    // (sendLookAndFeelChange + per-page/workspace/patch applyThemeColors +
     // category arc/mod tints + ENV/LFO graph traces + status labels +
     // keyboard/voice-meter refresh). Shared by the theme-CHANGE path
     // (changeListenerCallback) AND called once at the end of the ctor so knobs,
