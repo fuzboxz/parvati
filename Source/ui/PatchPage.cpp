@@ -10,6 +10,7 @@
 
 #include "PluginProcessor.h"   // ParvatiAudioProcessor::getEngine()
 #include "PluginEditor.h"      // ParamPage complete type (reflowToWidth/getContentHeight)
+#include "ui/NoteName.h"       // midiNoteName (key-zone knob readouts)
 
 #include <cstdint>
 
@@ -81,6 +82,10 @@ public:
             s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
             s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
             s.setRange (0.0, 127.0, 1.0);
+            // Show the MIDI note name ("C4") instead of the raw 0..127 number.
+            s.textFromValueFunction = [] (double v) {
+                return midiNoteName (juce::roundToInt (v));
+            };
             addAndMakeVisible (s);
         };
         setupKnob (loSlider_);

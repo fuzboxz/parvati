@@ -9,6 +9,7 @@
 #include "ui/OscPreviewDisplay.h"
 #include "ui/PatchPage.h"
 #include "ui/ParamHelp.h"
+#include "ui/SynthParamLabels.h"
 #include "ui/SynthWorkspace.h"
 #include "ui/FxWorkspace.h"
 #include "ui/FxRoutingBar.h"
@@ -1853,6 +1854,14 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
     {
         controls_.emplace_back (std::make_unique<ParamControl> (processor, *d));
         addAndMakeVisible (*controls_.back());
+        // User-friendly readout (Hz / ms / semitones / % / note names / ...) on
+        // raw-numeric SYNTH knobs only. Choice params already show their text;
+        // FX params use their own formatter (FxSlotCard). Display-only.
+        if (! d->isFx && d->choices == nullptr)
+            controls_.back()->setDisplayValueText (
+                [id = juce::String (d->paramID)] (double v) {
+                    return paramValueTextSynth (id, v);
+                });
     }
 
     // Seed the content size at a sensible default width; the editor reflows to

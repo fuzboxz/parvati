@@ -5,6 +5,21 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **User-friendly synth readouts.** The SYNTH-page knob readouts (OSC / MIX /
+  FILTER / ENV / LFO / MOD / SEQ / ARP / GLOBAL) now show human-readable units
+  instead of raw 0–127 numbers — e.g. an LFO rate shows `"2.4 Hz"` (free-running)
+  or `"1/16"` (tempo-synced); an envelope time shows `"173 ms"` / `"1.50 s"`;
+  filter cutoff shows Hz; oscillator range/detune show semitones/cents; mod
+  amounts, sustain, resonance and mix levels show `%`; sequencer note-steps show
+  note names (+ gate glyph) and the patch-page key-zone knobs show note names
+  instead of MIDI numbers. Choice params and the FX section were already
+  friendly and are untouched. The formatting is **display-only** — a pure
+  value→string function (`Source/ui/SynthParamLabels.cpp`) wired through the
+  existing `ParamControl::setDisplayValueText` hook (the same pattern the FX
+  section uses), so stored values, APVTS, serialization and the shared knob
+  painter are never touched. Note: a few knobs whose DSP mapping is non-trivial
+  (part portamento/volume, mix crush) intentionally show a `%` fallback, marked
+  for a later verify pass.
 - **Warps Wavefolder FX.** A per-slot **Wavefolder** ported from the Mutable
   Instruments Warps bipolar wavefolder (memoryless LUT waveshaper) — `FxType`
   value `Wavefolder` (7), append-only so existing presets keep their effect

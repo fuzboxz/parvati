@@ -510,6 +510,19 @@ target_link_libraries(parvati_fx_voice_mod_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Synth readout formatter (SynthParamLabels::paramValueTextSynth): pure-function
+# input->output checks for every raw-numeric synth knob family. Built by default.
+# Run with: ./build/parvati_synth_paramtext_test
+add_executable(parvati_synth_paramtext_test
+    tests/parvati_synth_paramtext_test.cpp
+)
+target_include_directories(parvati_synth_paramtext_test PRIVATE Source)
+target_compile_features(parvati_synth_paramtext_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_synth_paramtext_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # FX pop diagnostic — measures sample-to-sample discontinuities (pops) when
 # modulating FX params, to find the root cause. Diagnostic only (prints a table).
 # Run with: ./build/parvati_fx_popdiag_test
