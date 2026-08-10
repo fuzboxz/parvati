@@ -2,9 +2,16 @@
 //
 // Proves FxChain::process() produces FINITE output for every topology
 // (Series / Parallel12to3 / Parallel1to23) x every order permutation (0..5),
-// and that an enabled Delay in slot C is actually applied (output differs from
+// and that an enabled effect in slot C is actually applied (output differs from
 // the dry input). This guards the 3-topology signal-flow graph introduced when
 // the plain full-sum Parallel was replaced by the two split-parallel routings.
+//
+// The placeholder juce::dsp effects (GainPan/Delay/Reverb/Chorus) were removed;
+// the chain-internal checks (master mix/EQ, tail retention, engage fade-in,
+// re-prepare state preservation) now ride on the Clouds ports (Diffuser /
+// CloudsReverb / PitchShifter), which are the real effect set. CloudsReverb is
+// used for the state/fade checks because it responds to both DC and impulse
+// input (Diffuser passes DC unchanged) and has a long tail.
 //
 // Built by default. Run with: ./build/parvati_fx_routing_test
 
@@ -49,8 +56,8 @@ int main()
 {
     constexpr int kBlock = 256;
 
-    // A nonzero impulse train input (so a Delay / Reverb / Chorus produces
-    // audible wet energy that must survive every routing graph).
+    // A nonzero impulse train input (so every effect produces audible wet energy
+    // that must survive every routing graph).
     float inL[kBlock], inR[kBlock];
     for (int i = 0; i < kBlock; ++i)
     {
@@ -68,17 +75,17 @@ int main()
             FxChain chain;
             chain.prepare (48000.0, kBlock);
 
-            // Slot A (order_[0]) = GainPan, B = Reverb, C = Delay. Enable ALL
-            // three with a mid dry/wet so every branch of every topology has at
-            // least one active contributor (the Delay lives in slot C = 2).
+            // Slot A (order_[0]) = Diffuser, B = CloudsReverb, C = PitchShifter.
+            // Enable ALL three with a mid dry/wet so every branch of every
+            // topology has at least one active contributor. All three are pure
+            // in->out Clouds dsp/fx effects, so each produces immediate wet.
             const auto perm = fxOrderPermutation ((uint8_t) ord);
             chain.setOrder (perm);
             chain.setTopology ((FxTopology) topo);
 
-            // Physical slot 2 (C in the default order) carries a Delay.
-            chain.setSlotType (0, FxType::GainPan);
-            chain.setSlotType (1, FxType::Reverb);
-            chain.setSlotType (2, FxType::Delay);
+            chain.setSlotType (0, FxType::Diffuser);
+            chain.setSlotType (1, FxType::CloudsReverb);
+            chain.setSlotType (2, FxType::PitchShifter);
             for (int s = 0; s < kNumFxSlots; ++s)
             {
                 chain.setSlotEnabled (s, true);
@@ -113,7 +120,7 @@ int main()
     {
         FxChain chain;
         chain.prepare (48000.0, kBlock);
-        chain.setSlotType (2, FxType::Delay);
+        chain.setSlotType (2, FxType::Diffuser);
         chain.setTopology (FxTopology::Parallel12to3);
         float outL[kBlock], outR[kBlock];
         chain.process (inL, inR, outL, outR, kBlock);
@@ -123,12 +130,13 @@ int main()
 
     // ---- Master section: global mix / keep-tails / master EQ ----
     {
-        // Helper: slot 0 = Reverb, fully wet, others off. (Reverb's broadband
-        // output guarantees the master EQ + global mix have something to act on.)
+        // Helper: slot 0 = CloudsReverb, fully wet, others off. (The reverb's
+        // broadband output guarantees the master EQ + global mix have something
+        // to act on.)
         auto buildWetChain = [] (FxChain& c)
         {
             c.prepare (48000.0, kBlock);
-            c.setSlotType (0, FxType::Reverb);
+            c.setSlotType (0, FxType::CloudsReverb);
             c.setSlotEnabled (0, true);
             c.setSlotDryWet (0, 1.0f);
             for (int k = 0; k < kNumFxSlotParams; ++k)
@@ -165,24 +173,23 @@ int main()
         check (differsFrom (eqL, defL, kBlock) || differsFrom (eqR, defR, kBlock),
                "master EQ mid boost: differs from flat");
 
-        // (d) Tails are now ALWAYS retained: after bypassing an enabled Delay,
-        //     the next block is NOT a bit-identical dry copy — the wet is still
-        //     fading out (one-pole, ~0.30 s), so the slot keeps rendering its
-        //     tail instead of hard-cutting.
+        // (d) Tails are now ALWAYS retained: after bypassing an enabled
+        //     CloudsReverb, the next block is NOT a bit-identical dry copy — the
+        //     wet is still fading out (one-pole, ~0.30 s) AND the reverb tail is
+        //     still ringing, so the slot keeps rendering instead of hard-cutting.
         {
             FxChain c;
             c.prepare (48000.0, kBlock);
-            c.setSlotType (0, FxType::Delay);
+            c.setSlotType (0, FxType::CloudsReverb);
             c.setSlotEnabled (0, true);
             c.setSlotDryWet (0, 1.0f);
-            // Short delay time + feedback so the feedback loop charges within a
-            // few blocks and the bypassed tail has real energy.
-            c.setSlotParam (0, 0, 0.01f);   // time  ~10 ms
-            c.setSlotParam (0, 1, 0.7f);    // feedback (loud tail)
-            c.setSlotParam (0, 2, 0.0f);    // spread
-            c.setSlotParam (0, 3, 0.0f);
+            // A long, loud reverb tail so the bypassed block has real energy.
+            c.setSlotParam (0, 0, 0.9f);   // amount (strong wet)
+            c.setSlotParam (0, 1, 0.8f);   // time -> long decay
+            c.setSlotParam (0, 2, 0.5f);   // tone
+            c.setSlotParam (0, 3, 0.5f);   // diffusion
             float oL[kBlock], oR[kBlock];
-            for (int b = 0; b < 16; ++b)                    // charge the feedback loop + let the fade settle to ~1
+            for (int b = 0; b < 16; ++b)                    // let the tank fill + fade settle to ~1
                 c.process (inL, inR, oL, oR, kBlock);
             c.setSlotEnabled (0, false);                    // bypass
             c.process (inL, inR, oL, oR, kBlock);           // first bypassed block
@@ -192,18 +199,14 @@ int main()
         // (e) Engage fades IN (~5 ms): on the first block after enabling a
         //     previously-disabled slot the wet contribution is strictly less than
         //     at steady state (it ramps from 0, never slams in at full wet).
-        //     GainPan is memoryless + deterministic, so the only thing changing
-        //     block-to-block here is the fade.
         {
             FxChain c;
             c.prepare (48000.0, kBlock);
-            c.setSlotType (0, FxType::GainPan);
+            c.setSlotType (0, FxType::CloudsReverb);
             c.setSlotEnabled (0, false);                    // disabled: dry passthrough, fade ~0
             c.setSlotDryWet (0, 1.0f);
-            c.setSlotParam (0, 0, 0.5f);                    // gain = 0 dB (1.0)
-            c.setSlotParam (0, 1, 0.5f);                    // centred pan => wet = 0.707 * dry (!= dry)
-            c.setSlotParam (0, 2, 0.0f);
-            c.setSlotParam (0, 3, 0.0f);
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+                c.setSlotParam (0, k, 0.5f);
             float oL[kBlock], oR[kBlock];
             for (int b = 0; b < 4; ++b)                     // settle while disabled (fade stays ~0)
                 c.process (inL, inR, oL, oR, kBlock);
@@ -230,49 +233,84 @@ int main()
     //         enabled slot's wet state. prepare() previously did
     //         wetFade_.fill(0) and snapped dryWetCur_/masterMixCur_ to target,
     //         which on re-prepare zeroed an enabled slot's wetFade_ => dw=0 =>
-    //         pure dry for the first ~5 ms (an audible wet dip on an otherwise-
-    //         inaudible config change). A memoryless GainPan isolates this: the
-    //         only state crossing the re-prepare is wetFade_/dryWetCur_/
-    //         masterMixCur_ (all now preserved), so the post-reprepare output
-    //         must equal the pre-reprepare steady wet, not the dry input. ----
+    //         pure dry for the first ~5 ms. The decisive check: with the fix the
+    //         first post-reprepare block is still WET (not a pure-dry copy),
+    //         proving wetFade_ was preserved. (The original bit-identical
+    //         variant relied on GainPan being memoryless + prepare() a no-op;
+    //         the Clouds effects re-Init their engine on prepare(), so only the
+    //         wet/dry distinction — not sample-identity — is portable.) ----
     {
         FxChain c;
         c.prepare (48000.0, kBlock);
-        c.setSlotType (0, FxType::GainPan);
+        c.setSlotType (0, FxType::CloudsReverb);
         c.setSlotEnabled (0, true);
         c.setSlotDryWet (0, 1.0f);
-        // GainPan: param0 gain 0..1 -> -12..+12 dB (0.5 => 0 dB => unity gain);
-        // param1 pan 0..1 equal-power (0.5 => centre => L=R=cos45 ~= 0.7071).
-        float p[4] = { 0.5f, 0.5f, 0.0f, 0.0f };
         for (int k = 0; k < kNumFxSlotParams; ++k)
-            c.setSlotParam (0, k, p[k]);
+            c.setSlotParam (0, k, 0.5f);
 
-        // Constant 0.5 tone on both channels.
-        float tone[kBlock];
-        for (int i = 0; i < kBlock; ++i)
-            tone[i] = 0.5f;
-
-        // Render enough blocks for wetFade_ (~1.0) and dryWetCur_ to settle.
+        // Render enough blocks for wetFade_ (~1.0) and dryWetCur_ to settle and
+        // the reverb tank to fill.
         float oL[kBlock], oR[kBlock];
         for (int b = 0; b < 24; ++b)
-            c.process (tone, tone, oL, oR, kBlock);
-
-        // Steady wet: unity gain + centre pan + dw~1 + fade~1 => 0.5 * 0.7071.
-        const float steadyWet = oL[0];
+            c.process (inL, inR, oL, oR, kBlock);
 
         // Simulate the host mid-session re-prepare. The fix preserves
         // wetFade_/dryWetCur_/masterMixCur_; the bug zeroed them.
         c.prepare (48000.0, kBlock);
-        c.process (tone, tone, oL, oR, kBlock);   // first block after re-prepare
+        c.process (inL, inR, oL, oR, kBlock);   // first block after re-prepare
 
-        check (differsFrom (oL, tone, kBlock),
+        // If wetFade_ were zeroed (bug) this block would be a pure-dry copy of
+        // the input; preserved wetFade_ (~1) keeps it wet.
+        check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
                "B7: re-prepare preserves an enabled slot's wet state (output still wet, not dry)");
-        // The decisive check: with the bug, wetFade_ was zeroed => dw=0 on the
-        // first post-prepare sample => outL[0] == tone[0] (pure dry), which is
-        // ~0.15 away from the steady wet (~0.35). Preserving wetFade_ keeps
-        // outL[0] bit-identical to the pre-reprepare steady wet.
-        check (std::fabs (oL[0] - steadyWet) < 0.05f,
-               "B7: re-prepare preserves an enabled slot's wet state (wetFade not zeroed)");
+    }
+
+    // ---- D1/D2 latency-compensation coverage: OS effects through FxChain ----
+    // Exercises the new per-slot dry-delay (series, D1) and the wet-align +
+    // parallel-dry-delay (renderParallel, D2) rings through the FULL chain for
+    // the two 6x-OS effects (Wavefolder/RingModulator, latency 8). These confirm
+    // the compensation plumbing runs end-to-end without OOB/corruption; the
+    // comb-null fix itself is verified by code inspection (dry delayed by the
+    // slot's latency aligns dry[i-L] with the latency-L wet).
+    {
+        float oL[kBlock], oR[kBlock];
+
+        // Series: Wavefolder (OS, latency 8) at dw=0.5 -> blendSlotWetFade dry-delay.
+        {
+            FxChain chain;
+            chain.prepare (48000.0, kBlock);
+            chain.setSlotType (0, FxType::Wavefolder);
+            chain.setSlotEnabled (0, true);
+            chain.setSlotDryWet (0, 0.5f);
+            chain.setSlotParam (0, 0, 0.8f);   // fold 0.8
+            chain.process (inL, inR, oL, oR, kBlock);
+            check (allFinite (oL, kBlock) && allFinite (oR, kBlock),
+                   "D1 series: Wavefolder (OS) dry-delay blend is finite");
+            check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
+                   "D1 series: Wavefolder (OS) output differs from dry (fold engaged)");
+        }
+
+        // Parallel (12to3): Wavefolder (OS, latency 8) || Diffuser (latency 0),
+        // dw=0.5 -> renderParallel wet-align (delay the latency-0 wet to 8) + dry-delay.
+        {
+            FxChain chain;
+            chain.prepare (48000.0, kBlock);
+            chain.setTopology (FxTopology::Parallel12to3);
+            chain.setSlotType (0, FxType::Wavefolder);   // A: OS, latency 8
+            chain.setSlotType (1, FxType::Diffuser);     // B: latency 0
+            chain.setSlotType (2, FxType::None);         // C: passthrough
+            chain.setSlotEnabled (0, true);
+            chain.setSlotEnabled (1, true);
+            chain.setSlotDryWet (0, 0.5f);
+            chain.setSlotDryWet (1, 0.5f);
+            chain.setSlotParam (0, 0, 0.8f);
+            chain.setSlotParam (1, 0, 0.8f);
+            chain.process (inL, inR, oL, oR, kBlock);
+            check (allFinite (oL, kBlock) && allFinite (oR, kBlock),
+                   "D2 parallel: Wavefolder(OS)||Diffuser wet-align blend is finite");
+            check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
+                   "D2 parallel: Wavefolder(OS)||Diffuser output differs from dry");
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n",

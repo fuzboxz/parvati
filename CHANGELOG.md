@@ -5,6 +5,74 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Warps Wavefolder FX.** A per-slot **Wavefolder** ported from the Mutable
+  Instruments Warps bipolar wavefolder (memoryless LUT waveshaper) — `FxType`
+  value `Wavefolder` (7), append-only so existing presets keep their effect
+  assignments. Unlike the Clouds FX it runs NATIVELY at the host sample rate (no
+  32 kHz resampling). Knobs: Fold + Bias (asymmetric fold). Anti-aliases via the
+  Warps hardware's OWN 6× polyphase-FIR oversampling
+  (SampleRateConverter<SRC_UP/DOWN,6,48>, kOversampling=6): the fold runs at 6×
+  the host rate internally (native base rate), so the sharp fold corners alias
+  exactly as little as the hardware (~8 samples of group delay). Frequency
+  Shifter + Ring Modulator (the other two Warps effects) follow.
+- **Warps Frequency Shifter + Ring Modulator FX.** Two more per-slot effects
+  ported from the Mutable Instruments Warps DSP — **Frequency Shifter** (the
+  quadrature/Hilbert "easter-egg" shifter: true single-sideband frequency
+  shifting, not pitch scaling; `FxType` 8) and **Ring Modulator** (the Warps
+  analog diode-model ring mod against an internal sine/harmonics/buzzy carrier;
+  `FxType` 9). Both run NATIVELY at the host sample rate (the Hilbert allpass
+  network is normalized-frequency so its ~90° band scales with the host rate;
+  the carrier oscillators init at the host rate — no 32 kHz resampling, which
+  would move further from the 96 kHz design point). New values are append-only.
+  Freq Shifter knobs: Shift / Feedback / Spread (right-channel sideband blend for
+  stereo width); Ring Mod knobs: Carrier / Shape / Amount. Ring Mod anti-aliases
+  via the same Warps 6× polyphase-FIR oversampling (kOversampling=6): the internal
+  carrier renders at the 6× rate and the signal is upsampled 6×, so the diode
+  product (signal ± carrier) happens entirely in the oversampled domain (mirrors
+  upstream src_up_[0]=carrier, src_up_[1]=modulator). The Freq Shifter is linear
+  and needs no oversampling.
+- **Rings Resonator FX.** A per-slot **Resonator** ported from the Mutable
+  Instruments Rings modal resonator (a bank of up to 64 resonant band-pass SVFs
+  tuned to harmonic/inharmonic partials) — `FxType` value `Resonator` (10),
+  append-only so existing presets keep their effect assignments. Runs NATIVELY at
+  the host sample rate (the SVF coefficients are computed from the normalized
+  frequency `freqHz / sampleRate` each block, so they track the host rate — no
+  resampler or oversampling needed, unlike Clouds/Warps). Rings-faithful stereo:
+  ONE resonator processes a mono sum (0.5*(L+R)); its out (odd modes) -> L and aux
+  (even modes) -> R, matching Rings' mono path (part.cc). Position rebalances
+  odd vs even (pickup position + stereo width); structure is fixed at the Rings
+  default (0.25, slightly inharmonic). Knobs: Pitch (base pitch C1–C7) / Decay
+  (ring time) / Bright (brightness) / Position (odd/even mode balance).
+  latency()==0 (LTI filter group delay is the effect's sound, not processing
+  latency).
+- **Clouds FX modules.** Three new per-slot FX algorithms ported from the
+  Mutable Instruments Clouds `dsp/fx` chain — **Diffuser** (AP diffusion
+  network), **Pitch Shifter** (dual-tap, ±12 st), and **Clouds Reverb**
+  (Griesinger/Dattorro tank) — selectable alongside the existing Gain+Pan /
+  Delay / Reverb / Chorus placeholders. The vendored Clouds + stmlib DSP runs at
+  a fixed 32 kHz and is linear-resampled at the FX boundary, so its tuning is
+  bit-faithful to upstream at any host rate. New `FxType` values are append-only
+  (`Diffuser`/`PitchShifter`/`CloudsReverb` = 1/2/3), so existing presets keep
+  their effect assignments. A `parvati_clouds_fx_test` covers build, finite
+  output and audible wet output for each module.
+
+- **Clouds "mode" FX (buffer-based).** Three more per-slot effects ported from
+  the Mutable Instruments Clouds playback modes — **Looping Delay**, **WSOLA
+  Stretch** (time/pitch via waveform-similarity overlap-add), and **Spectral**
+  (4096-point phase vocoder / STFT) — selectable alongside the Clouds
+  `dsp/fx` chain. Unlike the pure in→out FX these are buffer-based (they record
+  the dry input and play back from the recorded past, so they re-texture the
+  sound constantly) except Spectral, which runs an in-place FFT pipeline. Each
+  runs the vendored DSP at the fixed 32 kHz (HostRateBridge) chunked at ≤32
+  samples, and runs the firmware's per-block "background tick" inline (the WSOLA
+  correlator splice-point search and the phase-vocoder frame drain) since Parvati
+  FX slots have no background thread. New `FxType` values are append-only
+  (`LoopingDelay`/`WSOLAStretch`/`Spectral` = 4/5/6), each 3–4 knobs (Pitch /
+  Position / Size / Warp / Blur / Freeze); existing presets keep their
+  assignments. `parvati_clouds_fx_test` extended to cover all six Clouds modules.
+  A latent upstream bug in `window.h` (`Window::Start()` never cleared `done_`,
+  silencing WSOLA) was patched faithfully (`// PARVATI PATCH`).
+
 - **Unified Patch page (merges Multi/Setup + Global).** A single **Patch**
   page replaces the separate Multi/Setup and Global pages. A high-level
   **Arrangement** selector — Single / Stack / Split 2 / Layer 2 / Multi 6 —
@@ -37,6 +105,24 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   to the legacy APVTS restore.
 
 ### Fixed
+- **FX effect-param smoothing.** The four per-slot effect params (Pitch, Decay,
+  Fold, etc.) are now one-pole-smoothed at BLOCK rate (8 ms tau) in `FxChain`
+  before being passed to each processor, so fast FX-mod-matrix modulation / host
+  automation on a retuning param (Resonator Pitch, Freq Shifter, Pitch Shifter,
+  Ring Mod carrier) no longer zippers or clicks. The sole gate param
+  (LoopingDelay Freeze) is SNAPPED, not smoothed, so it still engages in the next
+  block. (Supersedes the earlier "per-effect param smoothing not included yet"
+  note — it now lives centrally in FxChain, benefiting all 10 FX types.)
+- **Resonator output limiter + stereo fix.** The Rings modal resonator now ports
+  upstream's output `Limiter` (drive = 1.4, the modal `model_gains_`), bounding
+  the sustained on-resonance build-up to ~0.8 peak (SoftLimit toward ~1.0) —
+  previously the unbounded ×3 makeup hard-clipped at ~16× (defaults) to ~4850×
+  (extreme Decay/Bright). Stereo routing corrected to Rings-faithful Option A:
+  ONE resonator processes a mono sum `0.5*(L+R)`; its out (odd modes) → L and aux
+  (even modes) → R (the two genuinely-different hardware outputs, not a fake
+  stereo pair). At Position ≈0.5 the even-mode (R) channel vanishes — the
+  center-pluck node (textbook modal physics, identical to hardware Rings); the
+  default 0.25 keeps both channels active.
 - **FX tails & clicks.** The per-part FX chain now keeps effect tails by
   default and is click-free across all state transitions. Previously
   bypassing/engaging a slot or changing its type hard-cut the wet signal

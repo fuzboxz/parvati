@@ -3,6 +3,7 @@
 #include "ModMatrixView.h"
 
 #include "ModMatrixHighlight.h"
+#include "ModDestMap.h"   // kFxModDstOffset (synth/FX dest-domain guard)
 #include "PluginProcessor.h"   // ParvatiAudioProcessor (complete type)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
@@ -779,6 +780,12 @@ void ModMatrixView::addSlot()
 
 bool ModMatrixView::assignNextFreeSlot (int sourceEnum, int destEnum, int amount)
 {
+    // Defensive: a dest in the FX domain (offset >= kFxModDstOffset) is never a
+    // synth target — reject it rather than let convertTo0to1 clamp it into a
+    // bogus synth slot. The FX handler owns FX-dest drops.
+    if (destEnum >= parvati::ModDestMap::kFxModDstOffset)
+        return false;
+
     const int s = firstFreeSlot();
     if (s < 0)
         return false;   // matrix full — caller (button / drop) is a no-op

@@ -11,24 +11,18 @@
 // the FX/bypass accent token).
 //
 // The graphic is chosen by the slot's FxType (fx{N}_type):
-//   None     (0) — dimmed grid + a passive centred outline (the empty-slot state).
-//   GainPan  (1) — an L<->R pan track with a position dot + a vertical gain meter.
-//   Delay    (2) — a left source pulse followed by DECAYING echo taps repeating
-//                  to the right (tap spacing = time, decay = feedback); a faint
-//                  ghost row offset by the stereo-spread param conveys width.
-//   Reverb   (3) — a decaying impulse-response tail envelope (length = size,
-//                  steepness = damp) + a wet-level band + a stereo-width bracket.
-//   Chorus   (4) — two wobbling delayed traces (L/R) whose sine amplitude tracks
-//                  `depth` and whose spatial wobble count tracks `rate`. STATIC
-//                  (frozen phase): it redraws only on a rate/depth/type change.
+//   None               (0) — dimmed grid + a passive centred outline (empty slot).
+//   Diffuser..Resonator (1..10) — per-type Clouds/Warps/Rings graphics
+//                               (drawDiffuser / drawPitchShifter / drawCloudsReverb /
+//                                drawLoopingDelay / drawWSOLAStretch / drawSpectral /
+//                                drawWavefolder / drawFrequencyShifter /
+//                                drawRingModulator / drawResonator).
 //
 // The slot's Dry/Wet (getDryWet) scales the overall trace vividness: a fully-dry
 // slot reads dimmer, a fully-wet slot reads vivid (the knob is visible here).
 //
 // All values are tracked EXACTLY to the live APVTS target each 30 Hz tick (no
-// smoothing lag); the repaint gate fires on a change vs the previous tick. The
-// Chorus graphic is STATIC (its phase is frozen) so it too only redraws on a
-// rate/depth/type change.
+// smoothing lag); the repaint gate fires on a change vs the previous tick.
 
 #pragma once
 
@@ -46,7 +40,7 @@ public:
     using Getter = std::function<float()>;
 
     /** Construct a per-slot FX graphic.
-        @param getType   NORMALIZED 0..1 value of fx{N}_type (choice None..Chorus).
+        @param getType   NORMALIZED 0..1 value of fx{N}_type (choice None..Resonator).
         @param getP0..3  NORMALIZED 0..1 values of fx{N}_param1..4.
         @param getDryWet NORMALIZED 0..1 value of fx{N}_drywet (0 = fully dry). */
     FxSlotVisualizer (Getter getType, Getter getP0, Getter getP1,
@@ -73,21 +67,48 @@ private:
     void drawNone    (juce::Graphics& g, juce::Rectangle<float> plot,
                       ParvatiLookAndFeel* lnf,
                       juce::Colour passive, juce::Colour dimText);
-    void drawGainPan (juce::Graphics& g, juce::Rectangle<float> plot,
-                      ParvatiLookAndFeel* lnf,
-                      juce::Colour trace, juce::Colour dimText,
-                      float gain, float pan, float wet);
-    void drawDelay   (juce::Graphics& g, juce::Rectangle<float> plot,
-                      ParvatiLookAndFeel* lnf,
-                      juce::Colour trace, juce::Colour dimText,
-                      float time, float feedback, float spread, float wet);
-    void drawReverb  (juce::Graphics& g, juce::Rectangle<float> plot,
-                      ParvatiLookAndFeel* lnf,
-                      juce::Colour trace, juce::Colour accent, juce::Colour dimText,
-                      float size, float damp, float level, float width, float wet);
-    void drawChorus  (juce::Graphics& g, juce::Rectangle<float> plot,
-                      juce::Colour trace,
-                      float rate, float depth, float wet);
+
+    // Clouds FX-mode graphics (parametric, APVTS-only, allocation-free per paint).
+    void drawDiffuser     (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour dimText,
+                           float amount, float wet);
+    void drawPitchShifter (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour dimText,
+                           float ratio, float size, float wet);
+    void drawCloudsReverb (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                           float amount, float time, float tone, float diffusion, float wet);
+    void drawLoopingDelay (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                           float position, float size, float pitch, float freeze, float wet);
+    void drawWSOLAStretch (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour dimText,
+                           float pitch, float position, float size, float wet);
+    void drawSpectral     (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                           float pitch, float warp, float position, float blur, float wet);
+    void drawWavefolder    (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour dimText,
+                           float fold, float bias, float wet);
+    void drawFrequencyShifter (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                           float shift, float feedback, float spread, float wet);
+    void drawRingModulator (juce::Graphics& g, juce::Rectangle<float> plot,
+                           ParvatiLookAndFeel* lnf,
+                           juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                           float carrier, float shape, float amount, float wet);
+    void drawResonator (juce::Graphics& g, juce::Rectangle<float> plot,
+                        ParvatiLookAndFeel* lnf,
+                        juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                        float pitch, float decay, float bright, float timbre, float wet);
 
     // Wetness vividness: dry => dimmer trace, wet => vivid (0.42..1.0 alpha).
     static float wetAlpha (float wet) noexcept;

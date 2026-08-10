@@ -132,6 +132,21 @@ public:
         return voice_.modulation_source (idx);
     }
 
+    // ---- Per-internal-block mod-source capture ring (FX mod matrix @ 980 Hz) ----
+    // fillInternalBlock() pushes this voice's MOD_SRC_LAST mod sources into a
+    // small ring ONCE per 40-sample internal block (right after
+    // Voice::ProcessBlock advances them). SynthEngine::renderPartFx reads the
+    // first-active voice's ring at internal-block host-sample boundaries so the
+    // FX mod matrix evaluates at the ~980 Hz internal control rate instead of
+    // host-block rate. PURE OBSERVATION — does not touch out/filter/VCA, so the
+    // synth audio path stays byte-identical.
+    int modRingCount() const noexcept { return modRingCount_; }
+    const uint8_t* modRingEntry (int i) const noexcept
+    {
+        return modRing_[(size_t) juce::jlimit (0, kModRingCap - 1, i)].data();
+    }
+    void clearModRing() noexcept { modRingCount_ = 0; }
+
     // VCA response curve: false = linearized (gain=vca/255), true = exponential OTA taper.
     void setVcaExponential (bool e) { vcaExponential_ = e; }
 
@@ -290,6 +305,13 @@ private:
     // read position (Lagrange is a short polynomial filter).
     static constexpr int kMaxChunk  = 256;
     static constexpr int kLookahead = 16;
+
+    // Per-internal-block mod-source capture ring (read by renderPartFx to drive
+    // the FX mod matrix at ~980 Hz). kModRingCap covers the worst-case
+    // internal-blocks-per-host-block (512 @ 44.1k ≈ 11.4 → 12; guarded on fill).
+    static constexpr int kModRingCap = 12;
+    std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kModRingCap> modRing_ {};
+    int modRingCount_ = 0;
 
     // De-click: a one-shot per-voice gain ramp (0 -> 1) applied over the first
     // ~1 ms of a FRESH (non-legato) note start, so the oscillator/envelope

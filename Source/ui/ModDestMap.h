@@ -17,10 +17,27 @@
 
 #include <vector>
 
+#include "dsp/fx/FxTypes.h"   // FxModDestination (FX_DST_*), kNumFxMatrixSlots (FX domain)
+
 namespace parvati::ModDestMap
 {
-// A ModulationDestination enum value (ambika::dsp::MOD_DST_*), or -1 for "none".
+// A ModulationDestination enum value (ambika::dsp::MOD_DST_*), an FX-dest
+// offset (FX_DST_* + kFxModDstOffset), or -1 for "none".
 using ModDst = int;
+
+// ---- FX-dest domain (drag-and-drop modulation on the FX page) ----
+// Synth MOD_DST_* dests occupy 0..kFxModDstOffset-1 (== MOD_DST_LAST entries);
+// FX FX_DST_* dests are offset above them to a NON-OVERLAPPING range so a single
+// ModDst int carries its domain (one range check routes synth vs FX). Pinned by
+// a static_assert in the .cpp against MOD_DST_LAST. FX dests are
+// kFxModDstOffset + FX_DST_* (== 19..33); 16 fxmod slots drive them.
+constexpr int kFxModDstOffset = 19;                  // == ambika::dsp::MOD_DST_LAST
+constexpr int kFxNumSlots     = kNumFxMatrixSlots;   // 16 fxmod slots (FxTypes.h)
+
+// True if @p dest is in the FX domain (an FX_DST_* offset). Used by the editor to
+// pick the slot param prefix ("mod" vs "fxmod") and by each assign handler to
+// ignore the other domain's drops.
+bool isFxDest (ModDst dest) noexcept;
 
 // Returns the MOD_DST_* destination that the given knob paramID is the base
 // value of (and therefore the target of), or -1 if @p paramID is not a

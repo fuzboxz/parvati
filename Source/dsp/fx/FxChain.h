@@ -46,6 +46,19 @@ public:
     FxChain();
     ~FxChain();
 
+#ifndef NDEBUG
+    // Test-only: process() call counter (proves renderPartFx sub-chunks at the
+    // ~980 Hz internal-block cadence). Incremented at the top of process().
+    void resetProcessCallCountForTest() noexcept { processCallCountForTest_ = 0; }
+    int  getProcessCallCountForTest() const noexcept { return processCallCountForTest_; }
+    // Test-only: read the live param value stored for @p slot/@p idx (the value
+    // the DSP actually consumes in setParams). Used by the engine-level audio-
+    // rate depth test to verify the mod reaches the FX at full depth through
+    // the FULL path (engine -> setSlotParam -> params_ -> setParams). Catches a
+    // smoother injected anywhere between effParam and the DSP.
+    float debugGetParam (int slot, int idx) const noexcept { return params_[(size_t) slot][(size_t) idx]; }
+#endif
+
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
     // Safe to call on a sample-rate / block-size change.
     void prepare (double rate, int maxBlock);
@@ -73,6 +86,12 @@ public:
     // Fast bypass test: true if at least one enabled slot with a non-None type.
     bool anyEnabled() const noexcept;
 
+    // N1: the chain's OUTPUT latency in samples (topology + slot-type aware).
+    // Invariant across enable/bypass (latency() ignores enabled_), so the
+    // masterMix dry-delay and any external blend never snap on a bypass.
+    // Changes only on slot TYPE change (which has a fade-in/out).
+    int latency() const noexcept;
+
     // Render the mono-in / stereo-out block. When !anyEnabled(), copies in->out
     // (dry). numSamples <= the maxBlock passed to prepare().
     void process (const float* inL, const float* inR,
@@ -87,7 +106,7 @@ private:
     std::array<bool,  kNumFxSlots> enabled_  {};     // filled false
     std::array<float, kNumFxSlots> dryWet_   {};     // TARGET dry/wet 0..1 (set by setSlotDryWet); block-constant target
     std::array<float, kNumFxSlots> dryWetCur_ {};    // per-sample-smoothed current dry/wet (B2-engine/B6)
-    std::array<std::array<float, kNumFxSlotParams>, kNumFxSlots> params_ {};   // 0.0f
+    std::array<std::array<float, kNumFxSlotParams>, kNumFxSlots> params_ {};   // 0.0f   TARGET 0..1 params (set by setSlotParam); block-constant target
 
     uint8_t topology_ = 0;   // FxTopology::Series
     std::array<int, 3> order_ { 0, 1, 2 };
@@ -99,6 +118,31 @@ private:
     //    and as the parallel stage's input reference.
     std::array<std::vector<float>, kNumFxSlots> wetL_, wetR_;
     std::vector<float> dryL_, dryR_;
+
+    // ---- Latency compensation (D1/D2): align dry/wet to OS slots ----
+    // The two 6x-OS effects (Wavefolder, RingModulator) report latency()==8;
+    // all others report 0. The dry used in a slot's series dry/wet blend is
+    // delayed by that latency so dry and wet are sample-aligned (kills the
+    // fs/16 comb at dw=0.5, D1); in parallel topologies the two slot wets are
+    // aligned to the max latency before the equal-gain sum, and the parallel
+    // dry is delayed by that max (D2). Fixed-capacity rings (max OS latency is
+    // 8; 16 covers any future setting). L==0 (every non-OS effect) takes the
+    // direct path — these rings are untouched and the blend is bit-identical.
+    static constexpr int kDelayCap = 16;
+    std::array<std::array<float, kDelayCap>, kNumFxSlots> dryDelayL_ {}, dryDelayR_ {};  // per-slot series dry delay
+    std::array<int, kNumFxSlots> dryDelayPos_ {};
+    std::array<std::array<float, kDelayCap>, kNumFxSlots> wetDelayL_ {}, wetDelayR_ {};  // per-slot parallel wet delay
+    std::array<int, kNumFxSlots> wetDelayPos_ {};
+    std::array<float, kDelayCap> parDryL_ {}, parDryR_ {};                                // parallel dry delay
+    int parDryPos_ = 0;
+
+    // ---- Chain-level masterMix dry delay (N1) ----
+    // Delays the chain INPUT by latency() so the masterMix blend is sample-aligned
+    // with the (latency-delayed) chain output. Sized to the max chain latency
+    // (3 OS slots in series = 24; 32 gives headroom).
+    static constexpr int kChainDelayCap = 32;
+    std::array<float, kChainDelayCap> masterDryL_ {}, masterDryR_ {};
+    int masterDryPos_ = 0;
 
     // ---- Master section (v3) state ----
     // A hand-rolled biquad (RBJ cookbook, Direct Form II Transposed) keeps this
@@ -141,10 +185,25 @@ private:
     // modulation step once per block — zipper noise / clicks. These one-pole
     // smoothers ramp the *current* value (dryWetCur_[s] / masterMixCur_) toward
     // the target per sample inside the blend loops, so gain-style transitions
-    // are continuous. Per-EFFECT-param smoothing (gain, feedback, reverb size,
-    // etc.) is deliberately OUT OF SCOPE here — that lives in FxProcessors.cpp.
-    static constexpr double kParamSmoothTauSec = 0.020;   // 20 ms: fast enough to feel instant on knob moves, slow enough to hide block-rate steps and preserve slow LFO wet modulation
+    // are continuous. Per-EFFECT-param smoothing (pitch, decay, fold, etc.) is
+    // deliberately NOT applied: params_ is passed RAW to each processor's
+    // setParams (true parity with the synth voice path, which applies its
+    // modulation targets raw at the 980 Hz internal-block cadence). The FX mod
+    // matrix now updates params_ at that same ~980 Hz cadence (renderPartFx
+    // sub-chunks the host block), so continuous modulation (LFO, gradual knob)
+    // produces per-sub-chunk deltas small enough that raw application does not
+    // zipper — and a per-block one-pole would only SLEW (band-limit) audio-rate
+    // modulation, which the user does not want. (If abrupt manual jumps ever
+    // click, a jump-detecting de-click — not a blanket low-pass — is the future
+    // refinement.)
+    static constexpr double kParamSmoothTauSec     = 0.020;   // 20 ms: dry/wet + master-mix (per-sample)
     float smoothCoef_ = 1.0f;   // per-sample one-pole coeff toward the target (computed in prepare)
+
+#ifndef NDEBUG
+    // Test-only: counts process() calls so a test can prove renderPartFx
+    // sub-chunks the host block at the ~980 Hz internal-block cadence.
+    mutable int processCallCountForTest_ = 0;
+#endif
 
     // Per-sample dry/wet blend for a single series-style slot: blends the
     // pre-process dry snapshot (dryL_/dryR_) against the wet signal in outL/outR
@@ -172,4 +231,13 @@ private:
     void renderParallel (const float* inL, const float* inR,
                          float* outL, float* outR, int numSamples,
                          int slotA, int slotB);
+
+    // N2: impose a slot's latency on its bypass/passthrough output (delay the
+    // running signal by L through the per-slot dryDelay ring). No-op for L==0.
+    // Keeps the slot's output latency constant across enable/bypass -> no snap.
+    void delayPassthrough (float* outL, float* outR, int numSamples, int s) noexcept;
+
+    // N3: zero all delay-ring history + positions (call on topology/order/type
+    // change so stale old-routing audio does not replay).
+    void clearDelayRings() noexcept;
 };

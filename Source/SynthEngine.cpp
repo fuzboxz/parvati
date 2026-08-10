@@ -89,6 +89,15 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
     fxMonoScratch_.setSize (1, fxBlock, false, true, true);
     for (auto& srcs : lastModSources_)
         srcs.fill (0);
+    fxSubPhase_.fill (0.0);   // reset the FX mod-matrix sub-chunk phase
+
+    // Reset the base-only de-click state: zero the smoothed bases + type-change
+    // tracking so the first fxDirty_ service snaps (no ramp-from-stale).
+    for (auto& part : smoothedBase_)
+        for (auto& slot : part)
+            slot.fill (0.0f);
+    for (auto& part : prevSlotType_)
+        part.fill (0);
 
     for (auto* v : voices)
         if (auto* av = dynamic_cast<AmbikaVoice*> (v))
@@ -1170,6 +1179,15 @@ void SynthEngine::renderVoices (juce::AudioBuffer<float>& outputAudio,
     for (auto& b : voiceCardBuffers_)
         b.clear (startSample, numSamples);
 
+    // Clear every voice's mod-source capture ring ONCE per host block (the first
+    // sub-split starts at 0). Each voice then re-fills its ring during its lazy
+    // FIFO refill (one entry per 40-sample internal block); renderPartFx reads
+    // the first-active voice's ring at the ~980 Hz internal-block cadence.
+    if (startSample == 0)
+        for (auto* v : voices)
+            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+                av->clearModRing();
+
     // Route each voice to its FIXED voicecard buffer (Ambika hardware: 6
     // individual voicecard outputs). The master outputAudio is left untouched
     // here; the processor fills the main + aux buses from these buffers after
@@ -1217,11 +1235,21 @@ void SynthEngine::renderPartFx (int numSamples)
 
             for (int s = 0; s < kNumFxSlots; ++s)
             {
-                chain.setSlotType    (s, static_cast<FxType> (part.fxState.slotType   [(size_t) s].load (std::memory_order_relaxed)));
+                const uint8_t newType = part.fxState.slotType[(size_t) s].load (std::memory_order_relaxed);
+                chain.setSlotType    (s, static_cast<FxType> (newType));
                 chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
                 cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
                 for (int k = 0; k < kNumFxSlotParams; ++k)
                     cache.baseParam[(size_t) s][(size_t) k] = (float) part.fxState.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
+                // On a type change the param MEANINGS change entirely — snap the
+                // smoothed base to the new values so it does not ramp through the
+                // old effect's stale param values (which would be audibly wrong).
+                if (newType != prevSlotType_[(size_t) p][(size_t) s])
+                {
+                    for (int k = 0; k < kNumFxSlotParams; ++k)
+                        smoothedBase_[(size_t) p][(size_t) s][(size_t) k] = cache.baseParam[(size_t) s][(size_t) k];
+                    prevSlotType_[(size_t) p][(size_t) s] = newType;
+                }
             }
             for (int m = 0; m < kNumFxMatrixSlots; ++m)
             {
@@ -1251,60 +1279,120 @@ void SynthEngine::renderPartFx (int numSamples)
                 juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vi].getReadPointer (0), numSamples);
         // (voiceIndices empty => silence, which is correct.)
 
-        // ---- 3. Sample the first active voice's mod sources ----
-        // Sources are control-rate (~1 ms); a per-host-block read suffices. Hold
-        // the last snapshot while no voice is active so tails still modulate.
+        // ---- 3. Pick the representative (first-active) voice + its capture ring ----
+        // The mod sources advance once per 40-sample internal block inside each
+        // voice (980 Hz); fillInternalBlock pushes them into a per-voice ring.
+        // We read the first-active voice's ring at internal-block boundaries
+        // (step 4) so the FX mod matrix evaluates at ~980 Hz, not host-block
+        // rate. When no voice is active the ring is empty and we hold the last
+        // snapshot (lastModSources_) so tails still modulate — exactly today's
+        // behaviour.
+        AmbikaVoice* repVoice = nullptr;
         for (int vi : part.voiceIndices)
         {
-            if (auto* av = getAmbikaVoice (vi))
+            if (auto* av = getAmbikaVoice (vi); av != nullptr && av->isVoiceActive())
             {
-                if (av->isVoiceActive())
-                {
-                    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                        lastModSources_[(size_t) p][(size_t) src] = av->getModulationSource (static_cast<uint8_t> (src));
-                    break;   // first active voice only
-                }
+                repVoice = av;
+                break;
             }
         }
+        const int ringCount = repVoice != nullptr ? repVoice->modRingCount() : 0;
+#ifndef NDEBUG
+        debugLastFxRingCount_[(size_t) p] = ringCount;
+#endif
 
-        // ---- 4. Evaluate the FX mod matrix (block-rate) -> effective values ----
-        // modOffset[dest] += amount/63 * srcValue/255 (dest = slot*5 + field:
-        // 0=dryWet, 1..4=param 0..3). Combine with the cached base, clamp 0..1.
-        float modOffset[kNumFxSlots * 5] {};   // 15 destinations (slot dryWet + 4 params)
-        const auto& srcs = lastModSources_[(size_t) p];
-        for (int m = 0; m < kNumFxMatrixSlots; ++m)
-        {
-            const int8_t amt = cache.modAmt[(size_t) m];
-            if (amt == 0) continue;
-            const int dst = (int) cache.modDst[(size_t) m];
-            if (dst < 0 || dst >= (int) (sizeof (modOffset) / sizeof (float))) continue;
-            const uint8_t sIdx = cache.modSrc[(size_t) m];
-            const float srcValue = (sIdx < ambika::dsp::MOD_SRC_LAST) ? (float) srcs[sIdx] / 255.0f : 0.0f;
-            modOffset[dst] += ((float) amt / 63.0f) * srcValue;
-        }
-
-        // Effective slot values = base + mod, clamped 0..1.
-        float effDryWet[kNumFxSlots] {};
-        float effParam [kNumFxSlots][kNumFxSlotParams] {};
-        for (int s = 0; s < kNumFxSlots; ++s)
-        {
-            effDryWet[(size_t) s] = juce::jlimit (0.0f, 1.0f, cache.baseDryWet[(size_t) s] + modOffset[s * 5 + 0]);
-            for (int k = 0; k < kNumFxSlotParams; ++k)
-                effParam[(size_t) s][(size_t) k] = juce::jlimit (0.0f, 1.0f, cache.baseParam[(size_t) s][(size_t) k] + modOffset[s * 5 + 1 + k]);
-        }
-        // Push effective values to the chain (every block; the chain re-applies
-        // them to its processors at the next process()).
-        for (int s = 0; s < kNumFxSlots; ++s)
-        {
-            chain.setSlotDryWet (s, effDryWet[(size_t) s]);
-            for (int k = 0; k < kNumFxSlotParams; ++k)
-                chain.setSlotParam (s, k, effParam[(size_t) s][(size_t) k]);
-        }
-
-        // ---- 5. Duplicate mono to L+R, run the chain into the FX-output buffer ----
+        // ---- 4–5. Sub-chunk the host block at internal-block boundaries ----
+        // An internal block (40 samples @ 39216 Hz) spans 40*sr/39216 host
+        // samples (non-integer). A drift-free fractional phase tracks the
+        // boundary across blocks so the ~980 Hz cadence is exact over time. For
+        // each sub-chunk: read this internal block's mod sources (ring entry, or
+        // held lastModSources_), evaluate the 16-slot FX mod matrix, push the
+        // effective dryWet/param, and run the chain on just that sub-chunk.
+        // Because every FX processor is block-size-invariant (state carries
+        // across calls), this is bit-identical to one full-block call when the
+        // params are constant.
+        const double step = 40.0 * getSampleRate() / ambika::dsp::kInternalSampleRate;
+        double nextBoundary = fxSubPhase_[(size_t) p];
         auto& out = fxOutputBuffers_[(size_t) p];
-        chain.process (mono, mono,
-                       out.getWritePointer (0), out.getWritePointer (1),
-                       numSamples);
+        float* outL = out.getWritePointer (0);
+        float* outR = out.getWritePointer (1);
+
+        int written = 0;
+        int ringIdx = 0;
+        while (written < numSamples)
+        {
+            int sub = (int) (nextBoundary - (double) written);
+            if (sub <= 0) sub = 1;                                   // rounding guard
+            if (sub > numSamples - written) sub = numSamples - written;
+
+            // Mod sources for THIS internal block (ring entry, or held last).
+            const uint8_t* srcs = (ringCount > 0)
+                ? repVoice->modRingEntry (juce::jmin (ringIdx, ringCount - 1))
+                : lastModSources_[(size_t) p].data();
+            // Mirror into lastModSources_ so held tails / later sub-chunks keep
+            // the freshest value when no further internal block advances.
+            for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                lastModSources_[(size_t) p][(size_t) src] = srcs[src];
+
+            // ---- FX mod matrix (verbatim logic, now per sub-chunk) ----
+            // modOffset[dest] += amount/63 * srcValue/255 (dest = slot*5 +
+            // field: 0=dryWet, 1..4=param 0..3). Combine with the cached base.
+            float modOffset[kNumFxSlots * 5] {};
+            for (int m = 0; m < kNumFxMatrixSlots; ++m)
+            {
+                const int8_t amt = cache.modAmt[(size_t) m];
+                if (amt == 0) continue;
+                const int dst = (int) cache.modDst[(size_t) m];
+                if (dst < 0 || dst >= (int) (sizeof (modOffset) / sizeof (float))) continue;
+                const uint8_t sIdx = cache.modSrc[(size_t) m];
+                const float srcValue = (sIdx < ambika::dsp::MOD_SRC_LAST)
+                    ? (float) srcs[sIdx] / 255.0f : 0.0f;
+                modOffset[dst] += ((float) amt / 63.0f) * srcValue;
+            }
+
+            // De-click coefficient for the BASE param (N-adaptive: computed from
+            // the sub-chunk size so the 3 ms tau is correct at any block size).
+            const float dcPc = 1.0f - std::exp (-static_cast<float> (sub)
+                / static_cast<float> (kBaseDeClickTauSec * getSampleRate()));
+
+            // Effective slot values = SMOOTHED base + RAW mod, clamped 0..1.
+            // The base is one-pole-smoothed (de-clicks knob/preset jumps); the
+            // mod-matrix offset passes through RAW (no slew on LFO/env/seq
+            // modulation — audio-rate parity with the synth voice path). dryWet
+            // keeps its own per-sample smoother in FxChain (smoothCoef_, 20 ms).
+            for (int s = 0; s < kNumFxSlots; ++s)
+            {
+                chain.setSlotDryWet (s, juce::jlimit (0.0f, 1.0f,
+                    cache.baseDryWet[(size_t) s] + modOffset[s * 5 + 0]));
+                for (int k = 0; k < kNumFxSlotParams; ++k)
+                {
+                    float& sb = smoothedBase_[(size_t) p][(size_t) s][(size_t) k];
+                    sb += (cache.baseParam[(size_t) s][(size_t) k] - sb) * dcPc;
+                    const float eff = juce::jlimit (0.0f, 1.0f,
+                        sb + modOffset[s * 5 + 1 + k]);
+                    chain.setSlotParam (s, k, eff);
+#ifndef NDEBUG
+                    if (debugEffParamTracking_ && s == 0 && k == 0)
+                    {
+                        // Read what FxChain actually stored (params_), not the
+                        // local eff — so a smoother injected between eff and the
+                        // DSP (engine-side or via setSlotParam) IS caught.
+                        const float pv = chain.debugGetParam (0, 0);
+                        debugEffParamMin_[(size_t) p] = juce::jmin (debugEffParamMin_[(size_t) p], pv);
+                        debugEffParamMax_[(size_t) p] = juce::jmax (debugEffParamMax_[(size_t) p], pv);
+                    }
+#endif
+                }
+            }
+
+            // Run the chain on this sub-chunk (params_ is pushed raw at ~980 Hz).
+            chain.process (mono + written, mono + written,
+                           outL + written, outR + written, sub);
+
+            written += sub;
+            nextBoundary += step;
+            if (ringIdx < ringCount - 1) ++ringIdx;   // hold last entry for any extra sub-chunks
+        }
+        fxSubPhase_[(size_t) p] = nextBoundary - (double) numSamples;   // drift-free carry
     }
 }

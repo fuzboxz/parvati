@@ -382,13 +382,17 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     if (isModDestKnob_)
     {
         // A source change recolours an arc, a dest change adds/removes an arc,
-        // and an amount change resizes one, so listen to ALL 42 mod params.
-        for (int slot = 1; slot <= 14; ++slot)
+        // and an amount change resizes one, so listen to ALL of this knob's
+        // domain's matrix params (14 synth mod slots, or 16 FX fxmod slots).
+        const bool        fx       = parvati::ModDestMap::isFxDest (modDest_);
+        const int         numSlots = fx ? parvati::ModDestMap::kFxNumSlots : 14;
+        const juce::String prefix  = fx ? "fxmod" : "mod";
+        for (int slot = 1; slot <= numSlots; ++slot)
         {
             const auto s = juce::String (slot);
-            processor_.getApvts().addParameterListener ("mod" + s + "_source", this);
-            processor_.getApvts().addParameterListener ("mod" + s + "_dest", this);
-            processor_.getApvts().addParameterListener ("mod" + s + "_amount", this);
+            processor_.getApvts().addParameterListener (prefix + s + "_source", this);
+            processor_.getApvts().addParameterListener (prefix + s + "_dest", this);
+            processor_.getApvts().addParameterListener (prefix + s + "_amount", this);
         }
         refreshModRing();
 
@@ -417,12 +421,15 @@ ParamControl::~ParamControl()
         processor_.getApvts().removeParameterListener (paramIDStr_, this);
     if (isModDestKnob_)
     {
-        for (int slot = 1; slot <= 14; ++slot)
+        const bool        fx       = parvati::ModDestMap::isFxDest (modDest_);
+        const int         numSlots = fx ? parvati::ModDestMap::kFxNumSlots : 14;
+        const juce::String prefix  = fx ? "fxmod" : "mod";
+        for (int slot = 1; slot <= numSlots; ++slot)
         {
             const auto s = juce::String (slot);
-            processor_.getApvts().removeParameterListener ("mod" + s + "_source", this);
-            processor_.getApvts().removeParameterListener ("mod" + s + "_dest", this);
-            processor_.getApvts().removeParameterListener ("mod" + s + "_amount", this);
+            processor_.getApvts().removeParameterListener (prefix + s + "_source", this);
+            processor_.getApvts().removeParameterListener (prefix + s + "_dest", this);
+            processor_.getApvts().removeParameterListener (prefix + s + "_amount", this);
         }
         if (label_ != nullptr)
             label_->removeMouseListener (this);
@@ -467,8 +474,9 @@ void ParamControl::parameterChanged (const juce::String& id, float)
         applyModSourceTint();
     // A mod-destination knob refreshes its per-source rings on ANY matrix edit:
     // a slot's SOURCE change recolours an arc, a DEST change adds/removes an
-    // arc, an AMOUNT change resizes one (listeners cover all 42 mod params).
-    if (isModDestKnob_ && id.startsWith ("mod"))
+    // arc, an AMOUNT change resizes one (listeners cover all 42 synth mod params,
+    // or 48 fxmod params for an FX knob).
+    if (isModDestKnob_ && (id.startsWith ("mod") || id.startsWith ("fxmod")))
         refreshModRing();
 }
 
@@ -681,7 +689,8 @@ void ParamControl::refreshModRing()
         if (n >= kMaxModRings)
             break;
 
-        const auto slotPrefix = "mod" + juce::String (slot + 1);
+        const auto slotPrefix = (parvati::ModDestMap::isFxDest (modDest_) ? "fxmod" : "mod")
+                                + juce::String (slot + 1);
 
         int amount = 0;
         if (auto* raw = apvts.getRawParameterValue (slotPrefix + "_amount"))
@@ -882,12 +891,20 @@ void ParamControl::mouseDoubleClick (const juce::MouseEvent&)
     // the matrix). slotsForDest lists every routed slot; pick the first whose
     // amount is non-zero so the scroll lands on a shown row.
     const auto slots = parvati::ModDestMap::slotsForDest (apvts, modDest_);
+    // Domain-aware: an FX knob's slots are fxmod indices (0..15), read from the
+    // "fxmod{N}_amount" param and encoded on the slot-select bus as slot +
+    // kFxModDstOffset so only the FX matrix reacts; a synth knob's slots are mod
+    // indices (0..13), read from "mod{N}_amount" and sent raw (synth-only). The
+    // synth onSelectSlot guard (>= 14) rejects the FX-encoded 19..34 and vice-versa.
+    const bool fx = parvati::ModDestMap::isFxDest (modDest_);
+    const juce::String prefix = fx ? "fxmod" : "mod";
     for (int s : slots)
     {
-        if (auto* raw = apvts.getRawParameterValue ("mod" + juce::String (s + 1) + "_amount"))
+        if (auto* raw = apvts.getRawParameterValue (prefix + juce::String (s + 1) + "_amount"))
             if (juce::roundToInt (raw->load()) != 0)
             {
-                parvati::ModMatrixHighlight::instance().selectSlot (s);
+                parvati::ModMatrixHighlight::instance().selectSlot (
+                    fx ? s + parvati::ModDestMap::kFxModDstOffset : s);
                 return;
             }
     }
@@ -941,10 +958,12 @@ void ParamControl::itemDropped (const juce::DragAndDropTarget::SourceDetails& dr
     if (sourceEnum < 0)
         return;
 
-    // requestAssign fans out to the ModMatrixView's registered handler, which
-    // writes the source/dest/amount APVTS params (byte-bridged + undoable). The
-    // knob's mod{1..14}_amount listeners (STEP 2) then refresh the ring on their
-    // own, so no manual repaint is needed here. A full matrix is a silent no-op.
+    // requestAssign fans out to every registered handler — the synth ModMatrixView
+    // (synth dest) or the FX FxMatrixView (FX dest), each ignoring the other's
+    // domain — which writes the source/dest/amount APVTS params (byte-bridged +
+    // undoable). The knob's mod{1..14}_amount / fxmod{1..16}_amount listeners
+    // (STEP 2) then refresh the ring on their own, so no manual repaint is needed
+    // here. A full matrix is a silent no-op.
     parvati::ModMatrixHighlight::instance().requestAssign (sourceEnum, modDest_);
 }
 

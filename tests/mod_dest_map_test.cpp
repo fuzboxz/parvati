@@ -48,6 +48,14 @@ void setMod (ParvatiAudioProcessor& proc, int slot, int dest, int amount)
     std::snprintf (id, sizeof (id), "mod%d_dest", slot + 1);   setParam (proc, id, dest);
     std::snprintf (id, sizeof (id), "mod%d_amount", slot + 1); setParam (proc, id, amount);
 }
+
+// Route an FX-mod slot (0-based) -> raw FX_DST index with amount.
+void setFxMod (ParvatiAudioProcessor& proc, int slot, int fxDest, int amount)
+{
+    char id[32];
+    std::snprintf (id, sizeof (id), "fxmod%d_dest", slot + 1);   setParam (proc, id, fxDest);
+    std::snprintf (id, sizeof (id), "fxmod%d_amount", slot + 1); setParam (proc, id, amount);
+}
 }  // namespace
 
 int main()
@@ -133,6 +141,39 @@ int main()
 
     const auto invalidSlots = slotsForDest (apvts, -1);
     check (invalidSlots.empty(), "invalid dest -> empty slot list");
+
+    std::printf ("\n[4] FX-dest domain (offset encoding + fxmod aggregation)\n");
+    // FX param-id -> encoded dest (FX_DST_* + kFxModDstOffset == 19).
+    check (destForParamID ("fx1_drywet") == kFxModDstOffset + 0,  "fx1_drywet -> 19 (FX_DST_FX1_DRYWET + offset)");
+    check (destForParamID ("fx1_param1") == kFxModDstOffset + 1,  "fx1_param1 -> 20 (FX_DST_FX1_P1 + offset)");
+    check (destForParamID ("fx2_param2") == kFxModDstOffset + 7,  "fx2_param2 -> 26");
+    check (destForParamID ("fx3_param4") == kFxModDstOffset + 14, "fx3_param4 -> 33 (FX_DST_FX3_P4 + offset)");
+    check (destForParamID ("fx_nonexistent") == -1,               "unknown FX paramID -> -1");
+
+    // Domain boundary (the single range check the assign handlers + editor use):
+    // synth dests < offset; FX dests >= offset. This is what makes a synth drop
+    // ignored by the FX handler and vice-versa.
+    check (isFxDest (kFxModDstOffset),        "isFxDest(19) == true (first FX dest)");
+    check (! isFxDest (kFxModDstOffset - 1),  "isFxDest(18) == false (last synth dest)");
+    check (isFxDest (kFxModDstOffset + 14),   "isFxDest(33) == true (last FX dest)");
+    check (! isFxDest (-1),                   "isFxDest(-1) == false");
+
+    // fxmod-driven aggregation (mirror of [3] over the 16 fxmod slots).
+    constexpr int kFxSlots = kFxNumSlots;
+    for (int s = 0; s < kFxSlots; ++s)
+        setFxMod (proc, s, 0 /*FX_DST_FX1_DRYWET*/, 0);
+    setFxMod (proc, 0, 1 /*FX_DST_FX1_P1*/, 25);
+    setFxMod (proc, 5, 1 /*FX_DST_FX1_P1*/, -15);
+    setFxMod (proc, 2, 0 /*FX_DST_FX1_DRYWET*/, 8);
+    proc.syncAllParamsToEngine();
+
+    const ModDst fxP1 = kFxModDstOffset + 1;   // encoded FX_DST_FX1_P1
+    check (aggregateAmount (apvts, fxP1) == 10,         "fx1_param1 aggregate == 25 + (-15) = 10");
+    check (aggregateAmount (apvts, fxP1, 0) == -15,      "fx1_param1 aggregate excluding fxmod slot 0 == -15");
+    check (aggregateAmount (apvts, kFxModDstOffset + 0) == 8, "fx1_drywet aggregate == 8");
+    const auto fxP1Slots = slotsForDest (apvts, fxP1);
+    check (fxP1Slots.size() == 2 && fxP1Slots[0] == 0 && fxP1Slots[1] == 5,
+           "fx1_param1 fxmod slots == {0, 5}");
 
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",

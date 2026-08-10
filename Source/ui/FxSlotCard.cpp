@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxSlotCard.h.
 
 #include "FxSlotCard.h"
+#include "FxSlotLabels.h"   // declarations for the activeParamCount/paramLabel defined below
 
 #include "FxSlotVisualizer.h"
 #include "ParvatiLookAndFeel.h"
@@ -71,54 +72,6 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PowerToggle)
 };
 
-//==============================================================================
-// Per-type active-parameter count + semantic short labels (the labels that
-// replace the static "FX{N} Param K" descriptor text on the live knobs). idx is
-// 0..3 (param1..4). Inactive params (idx >= activeParamCount) are hidden.
-int activeParamCount (FxType t) noexcept
-{
-    switch (t)
-    {
-        case FxType::GainPan: return 2;
-        case FxType::Delay:   return 3;
-        case FxType::Reverb:  return 4;
-        case FxType::Chorus:  return 2;
-        case FxType::None:
-        case FxType::Count:   return 0;
-    }
-    return 0;   // unreachable; keeps -Wreturn-type calm
-}
-
-const char* paramLabel (FxType t, int idx) noexcept
-{
-    switch (t)
-    {
-        case FxType::GainPan:
-            if (idx == 0) return "Gain";
-            if (idx == 1) return "Pan";
-            break;
-        case FxType::Delay:
-            if (idx == 0) return "Time";
-            if (idx == 1) return "Feedback";
-            if (idx == 2) return "Spread";
-            break;
-        case FxType::Reverb:
-            if (idx == 0) return "Size";
-            if (idx == 1) return "Damp";
-            if (idx == 2) return "Level";
-            if (idx == 3) return "Width";
-            break;
-        case FxType::Chorus:
-            if (idx == 0) return "Rate";
-            if (idx == 1) return "Depth";
-            break;
-        case FxType::None:
-        case FxType::Count:
-            break;
-    }
-    return "-";
-}
-
 // Per-type ENGAGEMENT defaults applied the moment a user selects an effect
 // type. The generic slot params all default to 0 — silent (Delay time=0,
 // drywet=0 = fully dry, enabled=0 = bypassed) — so picking a type otherwise
@@ -133,10 +86,16 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 {
     switch (t)
     {
-        case FxType::Delay:   return { 1,  80, { 50, 50, 40,  0 } }; // Time / Feedback / Spread
-        case FxType::Reverb:  return { 1,  80, { 64, 50, 64, 64 } }; // Size / Damp / Level / Width
-        case FxType::Chorus:  return { 1,  80, { 50, 64,  0,  0 } }; // Rate / Depth
-        case FxType::GainPan: return { 1, 127, { 64, 64,  0,  0 } }; // Gain(0 dB) / Pan(centre)
+        case FxType::Diffuser:     return { 1,  80, { 64,  0,  0,  0 } }; // Amount
+        case FxType::PitchShifter: return { 1, 100, { 50, 50,  0,  0 } }; // Ratio(unison) / Size
+        case FxType::CloudsReverb: return { 1,  80, { 80, 60, 70, 64 } }; // Amount / Time / Tone / Diffusion
+        case FxType::LoopingDelay:  return { 1,  80, { 50, 50, 50,  0 } }; // Position / Size / Pitch(unison) / Freeze(off)
+        case FxType::WSOLAStretch:  return { 1,  80, { 50, 50, 50,  0 } }; // Pitch(unison) / Position / Size
+        case FxType::Spectral:      return { 1,  80, { 50, 50, 50, 50 } }; // Pitch(unison) / Warp / Position / Blur
+        case FxType::Wavefolder:    return { 1,  80, { 50, 50,  0,  0 } }; // Fold(mid) / Bias(centre, symmetric)
+        case FxType::FrequencyShifter: return { 1, 80, { 50, 30,  0,  0 } }; // Shift(0 Hz) / Feedback(low) / Spread(none)
+        case FxType::RingModulator:  return { 1,  80, { 30,  0, 50,  0 } }; // Carrier(low) / Shape(sine) / Amount(mid)
+        case FxType::Resonator:    return { 1,  80, { 50, 30, 50, 25 } }; // Pitch(C4) / Decay / Bright / Position(0.25: half-cosine mode envelope)
         case FxType::None:
         case FxType::Count:   break;
     }
@@ -346,38 +305,42 @@ void FxSlotCard::parameterChanged (const juce::String& id, float /*newValue*/)
 {
     if (id != prefix_ + "type" && id != prefix_ + "enabled")
         return;
-    // On the message thread refresh immediately (so a synchronous render / preset
-    // load is reflected at once); otherwise defer to the message thread.
-    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
-    if (mm == nullptr || ! mm->isThisTheMessageThread())
-    {
-        triggerAsyncUpdate();
-        return;
-    }
 
-    // Selecting an effect TYPE (None -> effect, or effect -> effect): seed the
-    // slot with that effect's audible per-type defaults so it is immediately
-    // engaging (enabled + a characteristic wet level + sensible params). Writing
-    // these re-fires parameterChanged(enabled) synchronously (harmless: just
-    // refreshes the toggle); param writes fire no card listener. A preset/part
-    // load sets type BEFORE these params (descriptor order), so loaded values
-    // override the defaults — saved patches are preserved.
+    // The per-type ENGAGEMENT defaults must be seeded SYNCHRONOUSLY on the
+    // message thread for a TYPE change, BEFORE a preset/part load's subsequent
+    // param writes (descriptor order: type, enabled, drywet, param1..4) override
+    // them — so saved patches keep their own values. (Seeding writes 'enabled',
+    // which re-fires parameterChanged("enabled") re-entrantly; that just re-
+    // requests the deferred refresh below — harmless.)
     if (id == prefix_ + "type")
     {
-        const auto t = static_cast<FxType> (currentTypeIndex());
-        if (t != FxType::None)
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm != nullptr && mm->isThisTheMessageThread())
         {
-            const auto d = fxTypeDefaults (t);
-            auto& apvts  = processor_.getApvts();
-            apvts.getParameterAsValue (prefix_ + "enabled") = (float) d.enabled;
-            apvts.getParameterAsValue (prefix_ + "drywet")  = (float) d.drywet;
-            for (int k = 0; k < 4; ++k)
-                apvts.getParameterAsValue (prefix_ + "param" + juce::String (k + 1)) = (float) d.p[k];
+            const auto t = static_cast<FxType> (currentTypeIndex());
+            if (t != FxType::None)
+            {
+                const auto d = fxTypeDefaults (t);
+                auto& apvts  = processor_.getApvts();
+                apvts.getParameterAsValue (prefix_ + "enabled") = (float) d.enabled;
+                apvts.getParameterAsValue (prefix_ + "drywet")  = (float) d.drywet;
+                for (int k = 0; k < 4; ++k)
+                    apvts.getParameterAsValue (prefix_ + "param" + juce::String (k + 1)) = (float) d.p[k];
+            }
         }
     }
 
-    refreshFromType();
-    refreshEnabled();
+    // The visual REFRESH (refreshFromType / refreshEnabled -> resized() ->
+    // setBounds on the type combo) is ALWAYS DEFERRED to handleAsyncUpdate.
+    // Running it synchronously would execute resized() re-entrantly INSIDE the
+    // ComboBox's own onChange (combo edit -> ComboBoxAttachment writes the type
+    // param -> this listener fires), which disrupts the ComboBoxAttachment's
+    // selection-display sync (the combo ends up showing nothing selected) and
+    // re-lays-out the combo mid-event. Deferring lets the combo's change-
+    // handling + the attachment's self-sync complete first; the knob layout then
+    // refreshes cleanly on the next message loop. (The ~1-frame delay is
+    // imperceptible; preset loads are still reflected promptly.)
+    triggerAsyncUpdate();
 }
 
 void FxSlotCard::handleAsyncUpdate()

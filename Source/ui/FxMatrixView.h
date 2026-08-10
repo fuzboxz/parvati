@@ -14,16 +14,20 @@
 //   * Drag payload "parvatiModSrc:<enum>" is unchanged, so a drag from an FX row
 //     grip drops onto a synth destination knob exactly like a synth matrix row.
 //
-// ISOLATION NOTE: this view deliberately does NOT subscribe to the editor-scoped
-// ModMatrixHighlight bus. That bus is keyed on synth MOD_DST_* values and is
-// shared with ModMatrixView; an FX row subscribing would both (a) grab a free
-// slot in BOTH matrices on every drop (requestAssign fans out to every handler)
-// and (b) falsely highlight rows when a synth knob is hovered (FX_DST values
-// 0..14 overlap MOD_DST values 0..14). The FX matrix is instead edited through
-// its own combos / Add button / drag grip, and a hovered FX row highlights
-// itself locally (no broadcast). The transient source-flash (flashRowsForSource)
-// is driven directly by the FX workspace's CentralModBar (drag-only pill click),
-// not via the bus.
+// BUS INTEGRATION NOTE: this view DOES subscribe to the editor-scoped
+// ModMatrixHighlight bus, now that FX destinations are OFFSET-ENCODED above the
+// synth range (FX_DST_* + kFxModDstOffset == 19..33, disjoint from synth
+// MOD_DST_* 0..18). Every cross-domain signal guards on isFxDest(), so the
+// synth and FX matrices never bleed into each other:
+//   * onAssignRequest   - drag-drop onto an FX knob assigns the next free FX slot
+//     (synth dests < 19 are ignored by the FX handler; the synth handler rejects
+//     >= 19).
+//   * onDestHighlighted - hovering an FX knob / FX row highlights every FX row +
+//     FX knob routed to that dest (synth broadcasts 0..18 are rejected).
+//   * onSlotSelected    - double-clicking an FX knob scrolls + flashes its FX row
+//     (the slot is offset-encoded; synth-encoded slots 0..13 are rejected).
+// The transient source-flash (flashRowsForSource) is also driven directly by the
+// FX workspace's CentralModBar (drag-only pill click).
 
 #pragma once
 
@@ -115,10 +119,24 @@ private:
     void rebuildLayout();
     juce::String buildSignature() const;             // compact "active set" fingerprint
 
+    // The current per-slot FX types (fx1/2/3_type), read live from the APVTS.
+    // When these change (a type edit or a part switch) every row's FX-dest combo
+    // is rebuilt to the slots' ACTUAL parameter names (e.g. "FX1 Position" for a
+    // Looping Delay) instead of the static "FX{N} Param K" labels.
+    std::array<FxType, 3> currentSlotTypes() const;
+
     // Scroll the Viewport so @p slot's row is fully visible.
     void ensureRowVisible (int slot);
     // Advance/clear the transient selection flash (driven from timerCallback).
     void flashTick();
+
+    // ---- ModMatrixHighlight bus (hover + double-click-to-row) ----
+    // React to a dest-highlight broadcast (FX-offset encoded): emphasise every
+    // row whose dest matches @p modDst. A synth dest or -1 clears all rows.
+    void onHighlightDest (int modDst);
+    // React to a slot-selection broadcast (offset-encoded slot) from double-
+    // clicking an FX knob's ring: scroll the row into view and flash it. Clears.
+    void onSelectSlot (int slotIndex);
 
     ParvatiAudioProcessor& processor_;
     ThemeManager&          themeManager_;
@@ -145,11 +163,21 @@ private:
 
     juce::String lastSignature_;   // skip relayout when the active set is unchanged
 
+    // Last-seen per-slot FX types; initialised to FxType::Count so the first
+    // refresh() always (re)builds the dynamic FX-dest combo labels. Compared
+    // against currentSlotTypes() each tick to trigger a rebuild only on change.
+    std::array<FxType, 3> lastSlotTypes_ { FxType::Count, FxType::Count, FxType::Count };
+
     // The transient source-flash state: a SET of slots that share one timed
     // expiry (driven from the FX workspace's CentralModBar drag-only pill click).
     juce::Array<int> flashSlots_;
     juce::uint32 flashStartMs_ = 0;
     static constexpr int kFlashMs = 1200;
+
+    // ModMatrixHighlight bus subscription ids (FX-domain guarded). -1 when not subscribed.
+    int destHighlightSub_ = -1;   // onDestHighlighted (hover/drag row highlight)
+    int slotSelectSub_    = -1;   // onSlotSelected (knob double-click -> jump to row)
+    int assignSub_        = -1;   // onAssignRequest (drag-and-drop -> fxmod slot)
 
     static constexpr int kRowHeight = 34;
 

@@ -26,8 +26,8 @@
 //
 // The FX-slot order / series-parallel topology controls live on the full-width
 // FxRoutingBar (fx_topo / fx_order params); each FxSlotCard binds its own
-// fx{N}_type / fx{N}_enabled / params. The placeholder is a structural clone
-// of the synth layout's row skeleton; the card visual design is tuned here.
+// fx{N}_type / fx{N}_enabled / params. It is a structural clone of the synth
+// layout's row skeleton; the card visual design is tuned here.
 
 #pragma once
 

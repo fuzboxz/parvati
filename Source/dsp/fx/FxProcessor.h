@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // FxProcessor — abstract base for one per-part FX-slot effect instance. The
-// concrete placeholder effects live in FxProcessors.h/.cpp. Each effect renders
+// concrete effects live in FxProcessors.h/.cpp. Each effect renders
 // an in-place STEREO block (L/R interleaved at block granularity); the per-slot
 // dry/wet blend + topology routing is applied by FxChain, NOT here, so an effect
 // only produces its "wet" output.
@@ -44,6 +44,13 @@ public:
     // controls. Called single-threaded on the audio thread when the FX state is
     // serviced (fxDirty_), before process().
     virtual void setParams (const float param[4]) = 0;
+
+    // Processing latency this effect introduces (in BASE-rate samples), so the
+    // chain can delay-compensate its dry/wet + parallel blends. 0 for all
+    // effects except the oversampled ones (Wavefolder/RingModulator report the
+    // 6x SRC group delay). MUSICAL delays (a reverb's pre-delay, a delay's
+    // time) are NOT reported here — only uncompensated PROCESSING latency.
+    virtual int latency() const noexcept { return 0; }
 
     virtual FxType type() const = 0;
 };

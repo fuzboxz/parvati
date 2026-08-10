@@ -1,23 +1,51 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// FxProcessors — the four placeholder per-slot effects (GainPan / Delay / Reverb
-// / Chorus) built on juce::dsp. Each maps the four generic 0..1 slot params to
+// FxProcessors — the per-slot FX effects: six ports of the Mutable Instruments
+// Clouds DSP — Diffuser / Pitch Shifter / Clouds Reverb (the dsp/fx chain) and
+// Looping Delay / WSOLA Stretch / Spectral (the buffer-based playback modes) —
+// plus three ports of the Mutable Instruments Warps DSP — Wavefolder (memoryless
+// waveshaper) / Frequency Shifter (quadrature Hilbert) / Ring Modulator (diode
+// model). None is the no-op slot. Each maps the four generic 0..1 slot params to
 // its own controls in setParams() and renders an in-place stereo wet block in
 // process(). Dry/wet + topology routing live in FxChain.
 //
-// Placeholder set (v1): functional but simple. A richer effect library is an
-// explicit non-goal for this phase. All effects are allocation-free on the audio
-// thread (prepare reserves; juce::dsp objects are prepared once).
+// The Clouds modules run their vendored DSP at a fixed 32 kHz and resample at
+// the FxProcessor boundary (HostRateBridge), so their tuning is bit-faithful to
+// upstream at any host rate. The Warps modules run NATIVELY at the host rate (no
+// bridge): the Wavefolder is memoryless, and the Frequency Shifter / Ring
+// Modulator oscillators init at the host rate (the Hilbert allpass network is
+// normalized-frequency, valid at any rate). All effects are allocation-free on
+// the audio thread (prepare reserves; the clouds engines' fixed-size buffers and
+// the warps per-block scratch live in the object).
 
 #pragma once
 
 #include <juce_dsp/juce_dsp.h>
 
 #include "dsp/fx/FxProcessor.h"
+#include "dsp/fx/HostRateBridge.h"
 
-// Gain + stereo pan. param0 = gain (0..1 -> -12..+12 dB), param1 = pan
-// (0..1 -> hard-left..hard-right, equal-power). Output stays stereo.
-class FxGainPan : public FxProcessor
+#include "clouds/dsp/fx/diffuser.h"
+#include "clouds/dsp/fx/pitch_shifter.h"
+#include "clouds/dsp/fx/reverb.h"
+#include "clouds/dsp/looping_sample_player.h"
+#include "clouds/dsp/pvoc/phase_vocoder.h"
+#include "clouds/dsp/wsola_sample_player.h"
+#include "warps/dsp/quadrature_oscillator.h"
+#include "warps/dsp/quadrature_transform.h"
+#include "warps/dsp/sample_rate_converter.h"   // 6x oversampling SRC (Wavefolder/RingMod anti-aliasing)
+#include "rings/dsp/resonator.h"     // Rings modal resonator (Resonator FX)
+#include "rings/dsp/limiter.h"        // Rings output limiter (bounds resonator build-up)
+
+//==========================================================================
+// Clouds FX modules — ports of the Mutable Instruments Clouds `dsp/fx` chain.
+// Each owns its clouds engine + a fixed-size delay buffer (passed to Init) + a
+// HostRateBridge. setParams() caches the 0..1 params; process() applies them to
+// the engine (keeps the engines' internal smoothing advancing) then resamples.
+//
+// Diffuser — the Clouds AP diffusion network (FxEngine<2048, 32-bit float>).
+// param0 = Amount (0..1). The only knob upstream offers.
+class FxDiffuser : public FxProcessor
 {
 public:
     void prepare (double sampleRate, int maxBlock) override;
@@ -27,14 +55,15 @@ public:
     FxType type() const override;
 
 private:
-    float gainLinear_ = 1.0f;   // applied equally to L+R
-    float panLGain_   = 0.7071f;   // equal-power L coefficient
-    float panRGain_   = 0.7071f;   // equal-power R coefficient
+    clouds::Diffuser diffuser_;
+    HostRateBridge   bridge_;
+    float            diffuserBuffer_[2048] {};   // FxEngine<2048, FORMAT_32_BIT>
+    float            amount_ = 0.0f;
 };
 
-// Feedback delay. param0 = time (0..1 -> 0..1 s), param1 = feedback (0..1),
-// param2 = stereo spread (0..1 -> 0..50% offset between L/R delay times).
-class FxDelay : public FxProcessor
+// Pitch Shifter — the Clouds dual-tap pitch shifter (FxEngine<4096, 16-bit>).
+// param0 = Ratio (0..1 -> -12..+12 semitones, 0.5 = unison), param1 = Size.
+class FxPitchShifter : public FxProcessor
 {
 public:
     void prepare (double sampleRate, int maxBlock) override;
@@ -44,17 +73,17 @@ public:
     FxType type() const override;
 
 private:
-    double rate_ = 44100.0;
-    juce::dsp::DelayLine<float> delayL_;
-    juce::dsp::DelayLine<float> delayR_;
-    float timeSec_    = 0.0f;   // 0..1
-    float feedback_   = 0.0f;   // 0..1
-    float spreadFrac_ = 0.0f;   // 0..1
-    float lastWetL_   = 0.0f, lastWetR_ = 0.0f;   // feedback state
+    clouds::PitchShifter pitch_;
+    HostRateBridge       bridge_;
+    uint16_t             pitchBuffer_[4096] {};   // FxEngine<4096, FORMAT_16_BIT>
+    float                ratioParam_ = 0.5f;       // cached 0..1
+    float                sizeParam_  = 0.5f;
 };
 
-// Algorithmic reverb. param0..3 -> roomSize / damping / wetLevel / width.
-class FxReverb : public FxProcessor
+// Clouds Reverb — the Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
+// param0 = Amount, param1 = Time, param2 = Tone (LP/damping), param3 = Diffusion.
+// input_gain is fixed internally (0.5) to prevent the L+R sum from clipping.
+class FxCloudsReverb : public FxProcessor
 {
 public:
     void prepare (double sampleRate, int maxBlock) override;
@@ -64,14 +93,30 @@ public:
     FxType type() const override;
 
 private:
-    double rate_ = 44100.0;
-    juce::dsp::Reverb reverb_;
-    juce::dsp::Reverb::Parameters params_ {};
-    bool dirty_ = true;   // re-apply parameters on the next process()
+    clouds::Reverb  reverb_;
+    HostRateBridge  bridge_;
+    uint16_t        reverbBuffer_[16384] {};   // FxEngine<16384, FORMAT_12_BIT>
+    float           amount_    = 0.0f;
+    float           timeParam_ = 0.0f;
+    float           lpParam_   = 0.0f;
+    float           diffParam_ = 0.0f;
 };
 
-// Modulated chorus. param0 = rate (0..1 -> 0.1..8 Hz), param1 = depth (0..1).
-class FxChorus : public FxProcessor
+//==========================================================================
+// Clouds "mode" effects — ports of the Clouds playback modes (NOT synthesis:
+// granular is excluded). Unlike the dsp/fx chain these are BUFFER-BASED: each
+// records its dry input into a clouds::AudioBuffer (the Clouds "tape loop") and
+// plays back from the recorded past, so they re-texture the sound constantly.
+// They run the vendored DSP at the fixed 32 kHz (HostRateBridge) and chunk the
+// internal block at <=32 samples (the players' per-call state is tuned for
+// kMaxBlockSize=32). Dry/wet + topology stay the chain's job.
+//
+// Looping Delay — the Clouds looping sample player. Records stereo dry into a
+// ~4 s AudioBuffer, then plays overlapping loops (Hermite-interpolated) from the
+// recorded past; freeze holds the loop. Pure sample-by-sample (no background
+// tick). param0 = Position, param1 = Size, param2 = Pitch (+/-24 st, 0.5 =
+// unison), param3 = Freeze (>0.5 holds the loop).
+class FxLoopingDelay : public FxProcessor
 {
 public:
     void prepare (double sampleRate, int maxBlock) override;
@@ -81,9 +126,243 @@ public:
     FxType type() const override;
 
 private:
-    double rate_ = 44100.0;
-    juce::dsp::Chorus<float> chorus_;
-    float rateHz_  = 0.0f;
-    float depth_   = 0.0f;
-    bool dirty_    = true;
+    // ~4 s of stereo capture at the 32 kHz internal rate. AudioBuffer::Init wants
+    // size = usable + kInterpolationTail(8); the crossfade tail is kCrossFadeSize(256).
+    static constexpr int kBufferSamples = 128000;
+
+    clouds::AudioBuffer<clouds::RESOLUTION_16_BIT> buf_[2];
+    clouds::LoopingSamplePlayer                     looper_;
+    clouds::Parameters                              params_ {};
+    HostRateBridge                                  bridge_;
+    int16_t bufMem_[2][kBufferSamples + 8] {};   // usable + kInterpolationTail
+    int16_t tailMem_[2][256] {};                // kCrossFadeSize
+
+    float positionParam_ = 0.5f;
+    float sizeParam_     = 0.5f;
+    float pitchParam_    = 0.5f;   // 0.5 = unison
+    float freezeParam_   = 0.0f;
+};
+
+// WSOLA Stretch — the Clouds WSOLA (waveform-similarity overlap-add) sample
+// player: time/pitch manipulation of the recorded past by splicing at
+// correlation-maximizing points. Records stereo dry into a ~4 s AudioBuffer
+// (like the looper) and plays overlapping windows from the recorded past.
+// REQUIRES a per-chunk "background tick": the firmware runs the correlator
+// splice-point search in its background main loop, but Parvati FX slots have no
+// such thread, so after each Play we run it inline (LoadCorrelator +
+// EvaluateSomeCandidates); without it the search stalls and WSOLA never
+// advances. param0 = Pitch (+/-24 st, 0.5 = unison), param1 = Position,
+// param2 = Size.
+class FxWSOLAStretch : public FxProcessor
+{
+public:
+    void prepare (double sampleRate, int maxBlock) override;
+    void reset() override;
+    void process (float* L, float* R, int numSamples) override;
+    void setParams (const float param[4]) override;
+    FxType type() const override;
+
+private:
+    static constexpr int kBufferSamples   = 128000;
+    // Correlator sign-bit scratch, sized as the firmware allocates it:
+    // (kMaxWSOLASize/32 + 2) words, x3 (source | destination | unused tail).
+    static constexpr int kCorrelatorWords = (4096 / 32) + 2;
+
+    clouds::AudioBuffer<clouds::RESOLUTION_16_BIT> buf_[2];
+    clouds::WSOLASamplePlayer                          ws_;
+    clouds::Correlator                                 correlator_;
+    clouds::Parameters                                 params_ {};
+    HostRateBridge                                     bridge_;
+
+    uint32_t corr_[kCorrelatorWords * 3] {};      // correlator source/destination
+    int16_t  bufMem_[2][kBufferSamples + 8] {};   // usable + kInterpolationTail
+    int16_t  tailMem_[2][256] {};                // kCrossFadeSize
+
+    float pitchParam_    = 0.5f;   // 0.5 = unison
+    float positionParam_ = 0.5f;
+    float sizeParam_     = 0.5f;
+};
+
+// Spectral — the Clouds phase vocoder (STFT + overlap-add + spectral frame
+// transformation). Unlike the looper/WSOLA it is NOT buffer-based: it processes
+// the live signal in place through an FFT pipeline (analysis/synthesis are
+// separate internal buffers, so in-place Process is safe). REQUIRES a per-chunk
+// "background tick": the firmware drains the STFT pipeline in its background
+// main loop, but Parvati FX slots have no such thread, so after each Process we
+// call Buffer() inline; without it the FFT frames never drain -> silence.
+// freeze/gate are off and spectral quantization/phase-randomization are zero
+// (Blur = spectral.refresh_rate). param0 = Pitch (+/-24 st, 0.5 = unison),
+// param1 = Warp, param2 = Position, param3 = Blur (refresh_rate).
+class FxSpectral : public FxProcessor
+{
+public:
+    void prepare (double sampleRate, int maxBlock) override;
+    void reset() override;
+    void process (float* L, float* R, int numSamples) override;
+    void setParams (const float param[4]) override;
+    FxType type() const override;
+
+private:
+    // Per-channel workspace for PhaseVocoder's BufferAllocator. Each channel must
+    // hold the FFT buffer, the analysis/synthesis buffer, and the texture memory
+    // for the full kMaxNumTextures(7); the engine self-limits num_textures to
+    // free space, so 128 KiB/ch comfortably yields all 7 textures.
+    static constexpr int kPvocWorkspaceBytes = 131072;
+
+    void initPvoc();
+
+    clouds::PhaseVocoder pvoc_;
+    clouds::Parameters   params_ {};
+    HostRateBridge       bridge_;
+    uint8_t              workspace_[2][kPvocWorkspaceBytes] {};
+
+    float pitchParam_    = 0.5f;   // 0.5 = unison
+    float warpParam_     = 0.5f;
+    float positionParam_ = 0.5f;
+    float blurParam_     = 0.5f;
+};
+
+// Wavefolder — the Mutable Instruments Warps bipolar wavefolder (memoryless LUT
+// waveshaper). Runs NATIVELY at the host base rate (no HostRateBridge) but wraps
+// the fold in the Warps hardware's OWN 6x polyphase-FIR oversampling
+// (SampleRateConverter<SRC_UP/DOWN,6,48>, kOversampling=6) so the sharp fold
+// corners anti-alias exactly as the hardware does. Per channel: upsample 6x ->
+// fold each oversampled sample -> downsample 6x. param0 = Fold (fold amount),
+// param1 = Bias (a small constant second input into the Warps fold sum, giving an
+// asymmetric fold). ~8 base samples of group delay from the SRC filters.
+class FxWavefolder : public FxProcessor
+{
+public:
+    void prepare (double sampleRate, int maxBlock) override;
+    void reset() override;
+    void process (float* L, float* R, int numSamples) override;
+    void setParams (const float param[4]) override;
+    int latency() const noexcept override;
+    FxType type() const override;
+
+private:
+    warps::SampleRateConverter<warps::SRC_UP, 6, 48>   srcUp_[2];    // [0]=L, [1]=R
+    warps::SampleRateConverter<warps::SRC_DOWN, 6, 48> srcDown_[2];
+    std::vector<float> osL_;   // oversampled scratch (maxBlock*6 + headroom)
+    std::vector<float> osR_;
+
+    float foldParam_ = 0.0f;   // 0..1 (fold amount)
+    float biasParam_ = 0.5f;   // 0..1 (0.5 = no bias / symmetric fold)
+};
+
+// Frequency Shifter — the Warps quadrature (Hilbert) frequency shifter (the
+// Warps "easter-egg" algorithm). NATIVE host rate (the Hilbert allpass network
+// is normalized-frequency, so its 90 deg band scales with the host rate; the
+// carrier QuadratureOscillator inits at the host rate). True-stereo: each channel
+// through its own QuadratureTransform, one shared sine carrier; the Spread knob
+// blends the right channel toward the opposite sideband for width. param0 = Shift
+// (center 0.5 = 0 Hz; reuses the upstream frequency_shift_pot Hz formula),
+// param1 = Feedback, param2 = Spread (0..1 sideband blend for stereo width).
+class FxFrequencyShifter : public FxProcessor
+{
+public:
+    void prepare (double sampleRate, int maxBlock) override;
+    void reset() override;
+    void process (float* L, float* R, int numSamples) override;
+    void setParams (const float param[4]) override;
+    FxType type() const override;
+
+private:
+    warps::QuadratureOscillator osc_;
+    warps::QuadratureTransform   qtL_;
+    warps::QuadratureTransform   qtR_;
+
+    std::vector<float> carrierI_;   // sine carrier I/Q (reserved in prepare)
+    std::vector<float> carrierQ_;
+
+    float feedbackL_ = 0.0f;        // smoothed shifted output (feedback path)
+    float feedbackR_ = 0.0f;
+
+    float shiftParam_    = 0.5f;    // 0..1 (0.5 = 0 Hz)
+    float feedbackParam_ = 0.0f;    // 0..1
+    float spreadParam_   = 0.0f;    // 0..1 (R sideband blend)
+};
+
+// Ring Modulator — the Warps analog (diode-model) ring modulator against an
+// internal QuadratureOscillator carrier. NATIVE host base rate, but the diode
+// product runs inside the Warps hardware's OWN 6x polyphase-FIR oversampling
+// (SampleRateConverter<SRC_UP/DOWN,6,48>, kOversampling=6): BOTH the signal and
+// the internal carrier are rendered at the base rate then upsampled 6x through
+// src_up_, so the Diode() product (signal +/- carrier) happens entirely in the
+// oversampled domain with the carrier band-limited to fs/2 and time-aligned with
+// the signal (faithful to upstream src_up_[0]=carrier, src_up_[1]=modulator).
+// Uses the Parker DAFx-11 diode model. param0 = Carrier (Hz), param1 = Shape
+// (osc shape 0..1.9999: sine -> harmonics -> buzzy), param2 = Amount (ring
+// intensity).
+class FxRingModulator : public FxProcessor
+{
+public:
+    void prepare (double sampleRate, int maxBlock) override;
+    void reset() override;
+    void process (float* L, float* R, int numSamples) override;
+    void setParams (const float param[4]) override;
+    int latency() const noexcept override;
+    FxType type() const override;
+
+private:
+    warps::QuadratureOscillator                        carrier_;
+    warps::SampleRateConverter<warps::SRC_UP, 6, 48>   srcUp_[2];        // [0]=L, [1]=R (signal)
+    warps::SampleRateConverter<warps::SRC_UP, 6, 48>   srcUpCarrier_;    // mono (carrier) — D3
+    warps::SampleRateConverter<warps::SRC_DOWN, 6, 48> srcDown_[2];
+
+    std::vector<float> carrierBaseI_;   // carrier at the BASE rate (n) — rendered then upsampled (D3)
+    std::vector<float> carrierBaseQ_;   // Q (Render writes both; unused by the diode, base-rate waste only — D5)
+    std::vector<float> carrierOs_;      // carrier upsampled to the 6x rate (n*6)
+    std::vector<float> osL_;            // oversampled signal scratch (maxBlock*6 + headroom)
+    std::vector<float> osR_;
+
+    float carrierParam_ = 0.0f;     // 0..1 (-> Hz)
+    float shapeParam_   = 0.0f;     // 0..1 (-> osc shape)
+    float amountParam_  = 0.5f;     // 0..1
+};
+
+// Resonator — the Mutable Instruments Rings modal resonator (a bank of up to
+// 64 resonant band-pass SVFs tuned to harmonic/inharmonic partials). NATIVE host
+// rate (the SVF coefficients are computed from the normalized frequency each
+// block via set_f_q, so they track the host rate — no resampler/oversampling).
+// Rings-faithful stereo: ONE resonator processes a mono sum (0.5*(L+R)) of the
+// input; its two outputs — out (odd modes) and aux (even modes) — map to L and R
+// (matching Rings' mono path: part.cc out->L, aux->R). The position parameter
+// rebalances odd vs even modes, acting as both a timbral "pickup position"
+// control and a stereo-width control. Structure is fixed at the Rings default
+// (0.25, slightly inharmonic). The resonator's Process attenuates input by 0.125
+// (-18 dB); the Rings output limiter (drive = 1.4, the modal model_gains_) bounds
+// the sustained on-resonance build-up to ~0.8 peak (SoftLimit toward ~1.0),
+// exactly as upstream Rings (part.cc applies limiter_.Process with
+// model_gains_[MODAL]=1.4). param0 = Pitch (base pitch C1..C7), param1 = Decay
+// (damping / ring time), param2 = Bright (brightness), param3 = Position
+// (odd/even mode balance = pickup position + stereo width). Note: at Position
+// ~=0.5 the even-mode (R) channel vanishes — the center-pluck node (a string
+// picked at its centre excites only odd harmonics); textbook modal physics,
+// identical to hardware Rings. The default 0.25 keeps both channels active.
+// latency()==0 (LTI filter group delay is the effect's sound, not processing
+// latency).
+class FxResonator : public FxProcessor
+{
+public:
+    void prepare (double sampleRate, int maxBlock) override;
+    void reset() override;
+    void process (float* L, float* R, int numSamples) override;
+    void setParams (const float param[4]) override;
+    FxType type() const override;
+
+private:
+    rings::Resonator res_;    // single modal resonator (mono in, out/aux stereo out)
+    rings::Limiter  limiter_; // Rings output limiter (bounds resonant build-up)
+
+    std::vector<float> inMono_;   // mono-sum excitation (reserved in prepare)
+    std::vector<float> wetL_;     // out (odd modes) -> L  (reserved in prepare)
+    std::vector<float> wetR_;     // aux (even modes) -> R (reserved in prepare)
+
+    double sampleRate_ = 44100.0;
+
+    float pitchParam_    = 0.5f;   // 0..1 (-> C1..C7)
+    float decayParam_    = 0.3f;   // 0..1 (-> damping)
+    float brightParam_   = 0.5f;   // 0..1 (-> brightness)
+    float positionParam_ = 0.25f;   // 0..1 (-> odd/even mode balance; 0.5 = even-mode null)
 };

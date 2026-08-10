@@ -67,6 +67,29 @@ juce::String slotAmountParamID (int slot) // slot is 0-based
 {
     return "mod" + juce::String (slot + 1) + "_amount";
 }
+
+// ---- FX-dest domain (mirrors the synth table/slots, offset by kFxModDstOffset) ----
+// 15 FX param ids in makeFxDests()/FX_DST_* order: per slot (drywet, param1..4).
+constexpr DestEntry kFxDestTable[] = {
+    { "fx1_drywet" }, { "fx1_param1" }, { "fx1_param2" }, { "fx1_param3" }, { "fx1_param4" },
+    { "fx2_drywet" }, { "fx2_param1" }, { "fx2_param2" }, { "fx2_param3" }, { "fx2_param4" },
+    { "fx3_drywet" }, { "fx3_param1" }, { "fx3_param2" }, { "fx3_param3" }, { "fx3_param4" },
+};
+constexpr int kNumFxDests = static_cast<int> (FX_DST_LAST);   // 15
+static_assert (sizeof (kFxDestTable) / sizeof (kFxDestTable[0]) == kNumFxDests,
+               "kFxDestTable must have exactly one entry per FX_DST_* value");
+static_assert (kFxModDstOffset == kNumDests,
+               "FX dest offset must equal the synth dest count (MOD_DST_LAST)");
+
+juce::String fxSlotDestParamID (int slot)   // slot is 0-based
+{
+    return "fxmod" + juce::String (slot + 1) + "_dest";
+}
+
+juce::String fxSlotAmountParamID (int slot) // slot is 0-based
+{
+    return "fxmod" + juce::String (slot + 1) + "_amount";
+}
 }  // namespace
 
 //==============================================================================
@@ -75,6 +98,9 @@ ModDst destForParamID (const juce::String& paramID)
     for (int d = 0; d < kNumDests; ++d)
         if (nonEmpty (kDestTable[d].paramID) && paramID == kDestTable[d].paramID)
             return d;
+    for (int d = 0; d < kNumFxDests; ++d)
+        if (nonEmpty (kFxDestTable[d].paramID) && paramID == kFxDestTable[d].paramID)
+            return kFxModDstOffset + d;
     return -1;
 }
 
@@ -92,6 +118,23 @@ bool hasVisibleKnob (ModDst dest)
 
 int aggregateAmount (juce::AudioProcessorValueTreeState& apvts, ModDst dest, int excludeSlot)
 {
+    if (dest >= kFxModDstOffset)
+    {
+        // FX domain: aggregate the 16 fxmod slots whose raw FX_DST index matches.
+        const int fxDest = dest - kFxModDstOffset;
+        int sum = 0;
+        for (int slot = 0; slot < kFxNumSlots; ++slot)
+        {
+            if (slot == excludeSlot)
+                continue;
+            if (auto* d = apvts.getRawParameterValue (fxSlotDestParamID (slot)))
+                if (static_cast<int> (d->load()) == fxDest)
+                    if (auto* a = apvts.getRawParameterValue (fxSlotAmountParamID (slot)))
+                        sum += static_cast<int> (a->load());
+        }
+        return sum;
+    }
+
     if (! validDest (dest))
         return 0;
 
@@ -112,6 +155,18 @@ int aggregateAmount (juce::AudioProcessorValueTreeState& apvts, ModDst dest, int
 std::vector<int> slotsForDest (juce::AudioProcessorValueTreeState& apvts, ModDst dest)
 {
     std::vector<int> slots;
+
+    if (dest >= kFxModDstOffset)
+    {
+        // FX domain: the fxmod slots whose raw FX_DST index matches.
+        const int fxDest = dest - kFxModDstOffset;
+        for (int slot = 0; slot < kFxNumSlots; ++slot)
+            if (auto* d = apvts.getRawParameterValue (fxSlotDestParamID (slot)))
+                if (static_cast<int> (d->load()) == fxDest)
+                    slots.push_back (slot);
+        return slots;
+    }
+
     if (! validDest (dest))
         return slots;
 
@@ -121,5 +176,10 @@ std::vector<int> slotsForDest (juce::AudioProcessorValueTreeState& apvts, ModDst
                 slots.push_back (slot);
 
     return slots;
+}
+
+bool isFxDest (ModDst dest) noexcept
+{
+    return dest >= kFxModDstOffset;
 }
 }  // namespace parvati::ModDestMap

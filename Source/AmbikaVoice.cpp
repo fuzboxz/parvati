@@ -269,6 +269,19 @@ void AmbikaVoice::fillInternalBlock()
 
     voice_.ProcessBlock();   // renders exactly kAudioBlockSize (40) uint8 samples
 
+    // ---- FX mod matrix @ 980 Hz: capture this voice's mod sources into the ----
+    // ---- per-internal-block ring (PURE OBSERVATION — no audio mutation).  ----
+    // SynthEngine::renderPartFx reads the first-active voice's ring at the
+    // internal-block cadence so the FX params modulate at ~980 Hz, not host-
+    // block rate. Byte-identical to the audio path without this block.
+    if (modRingCount_ < kModRingCap)
+    {
+        auto& entry = modRing_[(size_t) modRingCount_];
+        for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+            entry[(size_t) src] = voice_.modulation_source (static_cast<uint8_t> (src));
+        ++modRingCount_;
+    }
+
     const uint8_t* out = voice_.output();
 
     // Crush (sample-and-hold decimator): the firmware voicecard DAC updates its

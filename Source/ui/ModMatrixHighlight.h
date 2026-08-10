@@ -14,9 +14,10 @@
 //     matrix scrolls that slot's row into view and transiently emphasises it.
 //     -1 clears the selection.
 //   * ASSIGN request — fired by dropping a dragged mod source onto a destination
-//     knob. The ModMatrixView (the sole registered handler) consumes the next
-//     free slot for (source -> dest) and returns true, or false if the matrix is
-//     full. The bus fans the request out so the drop does not need a direct ref.
+//     knob. The registered handler(s) consume the next free slot for
+//     (source -> dest) and return true, or false if the matrix is full. Both the
+//     synth ModMatrixView and the FX FxMatrixView register here (each ignores the
+//     other's dest domain); the bus fans the request out so the drop needs no ref.
 //
 // CAVEAT (multi-editor): the bus is a static singleton, so it is SHARED across
 // simultaneous plugin windows. A highlight set in one window would glow the
@@ -109,11 +110,12 @@ public:
     //--------------------------------------------------------------------
     // ASSIGN request (drag-and-drop)
     //--------------------------------------------------------------------
-    // Register the handler that consumes a (source -> dest) assignment into the
-    // next free matrix slot. Returns a subscription id for unsubscribe(). The
-    // ModMatrixView registers its assignNextFreeSlot() here (one handler is the
-    // norm; the bus still snapshots the list so a mid-dispatch unsubscribe is
-    // safe — see the multi-editor caveat below).
+    // Register a handler that consumes a (source -> dest) assignment into the
+    // next free matrix slot. Returns a subscription id for unsubscribe(). Both
+    // the synth ModMatrixView and the FX FxMatrixView register here; each guards
+    // its own dest domain (synth 0..MOD_DST_LAST-1, FX FX_DST+kFxModDstOffset)
+    // so only the matching handler consumes a drop (the bus still snapshots the
+    // list so a mid-dispatch unsubscribe is safe — see the caveat below).
     int onAssignRequest (std::function<bool (int, int)> cb)
     {
         const int id = nextId_++;

@@ -405,6 +405,33 @@ public:
         return nullptr;
     }
 
+#ifndef NDEBUG
+    // Test-only: the number of times FxChain::process() was called for @p part
+    // since the last reset (proves renderPartFx sub-chunks at ~980 Hz).
+    int debugFxProcessCallCount (int part) const
+    {
+        return fxChains_[(size_t) part].getProcessCallCountForTest();
+    }
+    void debugResetFxProcessCallCount (int part)
+    {
+        fxChains_[(size_t) part].resetProcessCallCountForTest();
+    }
+    // Test-only: the capture-ring count from the last renderPartFx for @p part.
+    int debugLastFxRingCount (int part) const { return debugLastFxRingCount_[(size_t) part]; }
+
+    // Test-only: begin tracking the effective param (slot 0 param 0) min/max
+    // swing during renderPartFx. Call before rendering; read min/max after.
+    void debugResetEffParamTracking (int part)
+    {
+        debugEffParamMin_[(size_t) part] = 1.0f;
+        debugEffParamMax_[(size_t) part] = 0.0f;
+        debugEffParamTracking_ = true;
+    }
+    float debugEffParamMin (int part) const { return debugEffParamMin_[(size_t) part]; }
+    float debugEffParamMax (int part) const { return debugEffParamMax_[(size_t) part]; }
+    void debugStopEffParamTracking() { debugEffParamTracking_ = false; }
+#endif
+
     // ---- Multi-output (Ambika hardware: 6 individual voicecard outputs) ----
     // Each voice renders into its FIXED voicecard buffer (mono). The processor
     // sums all six into the main stereo bus (audible-identical to the pre-
@@ -478,6 +505,42 @@ private:
     // getModulationSource); reused while no voice is active so tails still
     // modulate. AT-only (written + read in renderPartFx).
     std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kNumParts> lastModSources_ {};
+
+    // Drift-free fractional internal-block boundary position (host-sample
+    // units), carried across blocks, for the FX mod-matrix sub-chunking loop in
+    // renderPartFx. At host-rate, an internal block (40 @ 39216) spans
+    // 40*sr/39216 ≈ 48.96 host samples (non-integer); this phase tracks the
+    // fractional boundary so the ~980 Hz cadence is exact over time.
+    std::array<double, kNumParts> fxSubPhase_ {};
+
+    // ---- Base-only param de-click (Task: smooth knob/preset jumps, pass LFO
+    // modulation RAW). FX param knobs are 7-bit (0..127); the LFO mod source is
+    // 8-bit (0..255) and ramps continuously at the 980 Hz cadence, so continuous
+    // modulation does NOT need smoothing (it would only SLEW/band-limit audio-
+    // rate modulation). Only abrupt BASE changes (manual knob jumps, preset
+    // loads, double-click-to-default) produce discontinuous steps that click.
+    // The de-click one-pole is applied to the BASE ONLY; the mod-matrix offset
+    // is added RAW. This gives audio-rate modulation parity with the synth voice
+    // path (which applies CV raw at 980 Hz) + de-clicked manual jumps.
+    static constexpr double kBaseDeClickTauSec = 0.003;   // 3 ms: de-clicks a jump over ~5 ms
+    std::array<std::array<std::array<float, kNumFxSlotParams>, kNumFxSlots>, kNumParts>
+        smoothedBase_ {};   // per-part per-slot per-param smoothed base value (AT-only)
+    std::array<std::array<uint8_t, kNumFxSlots>, kNumParts> prevSlotType_ {};   // type-change detection
+
+#ifndef NDEBUG
+    // Test-only: the capture-ring entry count used by the last renderPartFx for
+    // @p part (proves the per-internal-block mod-source capture is populated, so
+    // the FX mod matrix runs at ~980 Hz rather than falling back to a single
+    // held snapshot at host-block rate).
+    std::array<int, kNumParts> debugLastFxRingCount_ {};
+    // Test-only: peak-to-peak swing of the EFFECTIVE param (smoothed base + raw
+    // mod) for slot 0 param 0 of @p part during the last renderPartFx. Proves the
+    // mod reaches the FX at full depth with no slew (a blanket smoother would
+    // attenuate high-rate modulation, shrinking this swing).
+    std::array<float, kNumParts> debugEffParamMin_ {};
+    std::array<float, kNumParts> debugEffParamMax_ {};
+    bool debugEffParamTracking_ = false;
+#endif
     // AT-side cache of each Part's base FX values + mod-matrix config, read from
     // fxState when fxDirty_ is serviced and reused every block (mod sources
     // change block-to-block, but the base values + matrix routing are stable

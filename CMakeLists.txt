@@ -138,6 +138,27 @@ file(GLOB_RECURSE PARVATI_SOURCES CONFIGURE_DEPENDS
     "Source/*.h")
 target_sources(Parvati PRIVATE ${PARVATI_SOURCES})
 target_include_directories(Parvati PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+# Vendored Mutable Instruments clouds/stmlib DSP (the Clouds FX modules). Marked
+# SYSTEM so the upstream headers' C-style conversions do not trip Parvati's
+# strict warning set (these are third-party sources kept verbatim for upstream
+# sync; the one required portability patch is in stmlib/dsp/dsp.h).
+target_include_directories(Parvati SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+
+# The vendored Clouds/stmlib sources also include compiled .cc files (units.cc,
+# mu_law.cc, and later correlator/pvoc/etc.) kept VERBATIM from upstream. They
+# predate Parvati's strict -Werror hygiene (upstream uses double literals in
+# float LUTs, sign/int conversions, etc.); exempt them from warnings rather than
+# patching the upstream data. (Headers are already suppressed via the SYSTEM
+# include root above; this covers the compiled .cc sources.)
+file(GLOB_RECURSE _parvati_clouds_cc
+    "${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds/*.cc")
+if(_parvati_clouds_cc)
+    if(NOT MSVC)
+        set_source_files_properties(${_parvati_clouds_cc} PROPERTIES COMPILE_OPTIONS "-w")
+    else()
+        set_source_files_properties(${_parvati_clouds_cc} PROPERTIES COMPILE_OPTIONS "/w")
+    endif()
+endif()
 
 # ------------------------------------------------------------------------------
 # Factory presets (Ambika "goldencard" GPL-3.0 banks), organized under presets/
@@ -441,6 +462,75 @@ add_executable(parvati_fx_routing_test
 target_include_directories(parvati_fx_routing_test PRIVATE Source)
 target_compile_features(parvati_fx_routing_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_fx_routing_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Clouds FX module (Diffuser / Pitch Shifter / Clouds Reverb) port verification.
+# Each vendored module builds via the factory, reports the correct FxType, renders
+# a finite in-place stereo block at host rate, and produces audible wet output.
+# Built by default. Run with: ./build/parvati_clouds_fx_test
+add_executable(parvati_clouds_fx_test
+    tests/parvati_clouds_fx_test.cpp
+)
+target_include_directories(parvati_clouds_fx_test PRIVATE Source)
+target_compile_features(parvati_clouds_fx_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_clouds_fx_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# FX mod-matrix @ 980 Hz (internal control rate) verification: proves the FX
+# mod matrix now sub-chunks the host block at the ~980 Hz internal-block cadence
+# (FxChain::process ~6x per 256-block @48k), that every FX (incl. the 6x-OS
+# Wavefolder/RingMod + HostRateBridge Clouds) survives variable sub-block sizes
+# (1..512), and the dry path stays bit-identical. Built by default.
+# Run with: ./build/parvati_fx_modrate_test
+add_executable(parvati_fx_modrate_test
+    tests/parvati_fx_modrate_test.cpp
+)
+target_include_directories(parvati_fx_modrate_test PRIVATE Source)
+target_compile_features(parvati_fx_modrate_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_modrate_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# FX pop diagnostic — measures sample-to-sample discontinuities (pops) when
+# modulating FX params, to find the root cause. Diagnostic only (prints a table).
+# Run with: ./build/parvati_fx_popdiag_test
+add_executable(parvati_fx_popdiag_test
+    tests/parvati_fx_popdiag_test.cpp
+)
+target_include_directories(parvati_fx_popdiag_test PRIVATE Source)
+target_compile_features(parvati_fx_popdiag_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_popdiag_test PRIVATE
+    Parvati
+)
+
+# Run with: ./build/parvati_fx_diffuser_diag_test
+add_executable(parvati_fx_diffuser_diag_test EXCLUDE_FROM_ALL
+    tests/parvati_fx_diffuser_diag.cpp
+)
+target_include_directories(parvati_fx_diffuser_diag_test PRIVATE Source)
+target_include_directories(parvati_fx_diffuser_diag_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_diffuser_diag_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_diffuser_diag_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# HostRateBridge sub-chunk pop regression — asserts every Clouds (bridge) FX is
+# pop-clean when processed in 980 Hz sub-chunks (the engine's normal cadence).
+# FAILS if the bridge head-overlap fix is reverted. Built by default.
+# Run with: ./build/parvati_fx_bridge_pop_test
+add_executable(parvati_fx_bridge_pop_test
+    tests/parvati_fx_bridge_pop_test.cpp
+)
+target_include_directories(parvati_fx_bridge_pop_test PRIVATE Source)
+target_include_directories(parvati_fx_bridge_pop_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_bridge_pop_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_bridge_pop_test PRIVATE
     Parvati
 )
 

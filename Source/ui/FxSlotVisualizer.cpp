@@ -23,6 +23,14 @@ namespace
                              juce::roundToInt (juce::jlimit (0.0f, 1.0f, t)
                                                * static_cast<float> (static_cast<int> (FxType::Count) - 1)));
     }
+
+    // Deterministic 0..1 hash for paint-time scatter (Diffuser smear / Clouds-reverb
+    // diffusion texture) — reproducible + allocation-free (no heap, no state).
+    inline float hash01 (int n) noexcept
+    {
+        const float x = std::sin (static_cast<float> (n) * 127.1f + 311.7f) * 43758.5453f;
+        return x - std::floor (x);
+    }
 }
 
 //==============================================================================
@@ -150,17 +158,35 @@ void FxSlotVisualizer::paint (juce::Graphics& g)
 
     switch (ti)
     {
-        case static_cast<int> (FxType::GainPan):
-            drawGainPan (g, plot, lnf, trace, dimText, p0, p1, wet);
+        case static_cast<int> (FxType::Diffuser):
+            drawDiffuser (g, plot, lnf, trace, dimText, p0, wet);
             break;
-        case static_cast<int> (FxType::Delay):
-            drawDelay (g, plot, lnf, trace, dimText, p0, p1, p2, wet);
+        case static_cast<int> (FxType::PitchShifter):
+            drawPitchShifter (g, plot, lnf, trace, dimText, p0, p1, wet);
             break;
-        case static_cast<int> (FxType::Reverb):
-            drawReverb (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
+        case static_cast<int> (FxType::CloudsReverb):
+            drawCloudsReverb (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
             break;
-        case static_cast<int> (FxType::Chorus):
-            drawChorus (g, plot, trace, p0, p1, wet);
+        case static_cast<int> (FxType::LoopingDelay):
+            drawLoopingDelay (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
+            break;
+        case static_cast<int> (FxType::WSOLAStretch):
+            drawWSOLAStretch (g, plot, lnf, trace, dimText, p0, p1, p2, wet);
+            break;
+        case static_cast<int> (FxType::Spectral):
+            drawSpectral (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
+            break;
+        case static_cast<int> (FxType::Wavefolder):
+            drawWavefolder (g, plot, lnf, trace, dimText, p0, p1, wet);
+            break;
+        case static_cast<int> (FxType::FrequencyShifter):
+            drawFrequencyShifter (g, plot, lnf, trace, accent, dimText, p0, p1, p2, wet);
+            break;
+        case static_cast<int> (FxType::RingModulator):
+            drawRingModulator (g, plot, lnf, trace, accent, dimText, p0, p1, p2, wet);
+            break;
+        case static_cast<int> (FxType::Resonator):
+            drawResonator (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
             break;
         case static_cast<int> (FxType::None):
         default:
@@ -188,186 +214,495 @@ void FxSlotVisualizer::drawNone (juce::Graphics& g, juce::Rectangle<float> plot,
 }
 
 //==============================================================================
-void FxSlotVisualizer::drawGainPan (juce::Graphics& g, juce::Rectangle<float> plot,
-                                    ParvatiLookAndFeel* lnf,
-                                    juce::Colour trace, juce::Colour dimText,
-                                    float gain, float pan, float wet)
+void FxSlotVisualizer::drawDiffuser (juce::Graphics& g, juce::Rectangle<float> plot,
+                                     ParvatiLookAndFeel* lnf,
+                                     juce::Colour trace, juce::Colour dimText,
+                                     float amount, float wet)
 {
-    const float a = wetAlpha (wet);
-
-    // ---- Right-edge vertical GAIN meter (filled from the bottom to `gain`) ----
-    const float meterW = juce::jmax (3.0f, plot.getWidth() * 0.06f);
-    auto meter = plot.removeFromRight (meterW + 4.0f).reduced (2.0f);
-    g.setColour (trace.withAlpha (0.18f * a));
-    g.drawRoundedRectangle (meter, 2.0f, 1.0f);
-    auto fill = meter.withTop (meter.getY() + meter.getHeight() * (1.0f - gain));
-    g.setColour (trace.withAlpha (0.85f * a));
-    g.fillRoundedRectangle (fill, 2.0f);
-
-    // ---- Lower pan track with a position dot ----
-    auto track = plot.removeFromBottom (juce::jmin (plot.getHeight() * 0.42f, 22.0f));
-    const float ty = track.getCentre().y;
-
-    // Tick marks L / R + the track line.
-    g.setColour (dimText.withAlpha (0.65f));
-    g.setFont (lnf ? lnf->appFont (8.5f, juce::Font::plain) : juce::Font (juce::FontOptions (8.5f)));
-    g.drawText ("L", track.removeFromLeft (10.0f), juce::Justification::centredLeft);
-    g.drawText ("R", track.removeFromRight (10.0f), juce::Justification::centredRight);
-
-    g.setColour (trace.withAlpha (0.25f * a));
-    g.drawHorizontalLine (juce::roundToInt (ty), track.getX(), track.getRight());
-    // Centre tick (pan = centre).
-    g.setColour (trace.withAlpha (0.35f * a));
-    g.drawVerticalLine (juce::roundToInt (track.getCentre().x), ty - 3.0f, ty + 3.0f);
-
-    // Pan position dot: pan 0 => far left, 0.5 => centre, 1 => far right.
-    const float dotX = track.getX() + pan * track.getWidth();
-    g.setColour (trace.withAlpha (0.95f * a));
-    g.fillEllipse (dotX - 3.5f, ty - 3.5f, 7.0f, 7.0f);
-}
-
-//==============================================================================
-void FxSlotVisualizer::drawDelay (juce::Graphics& g, juce::Rectangle<float> plot,
-                                  ParvatiLookAndFeel* lnf,
-                                  juce::Colour trace, juce::Colour dimText,
-                                  float time, float feedback, float spread, float wet)
-{
-    const float a   = wetAlpha (wet);
-    const float midY = plot.getCentre().y;
+    const float a     = wetAlpha (wet);
+    const float midY  = plot.getCentre().y;
     const float halfH = plot.getHeight() * 0.46f;
 
-    // Source pulse on the left edge (the dry impulse entering the delay line).
+    // Dry impulse entering the diffusion network (left edge), like the Delay.
     const float srcX = plot.getX() + 2.0f;
     g.setColour (trace.withAlpha (0.9f * a));
     g.drawVerticalLine (juce::roundToInt (srcX), midY - halfH, midY + halfH);
 
-    // Tap spacing scales with TIME (more time => wider gaps => fewer taps).
-    // Base gap covers ~1/6 of the plot at full time, shrinking toward 0.
-    const float usableW = plot.getRight() - srcX - 4.0f;
-    const float gap = juce::jmax (3.0f, usableW * (0.05f + 0.16f * time));
-
-    // Feedback scales the per-tap amplitude decay (0 => dies instantly,
-    // 1 => near-constant). Kept strictly < 1 so the train always decays.
-    const float fb = 0.06f + 0.90f * feedback;
-
-    // Stereo SPREAD offsets a fainter ghost row (R) to the right of the main (L)
-    // train so width is visible (spread 0 => mono, trains overlap).
-    const float spreadShift = spread * gap * 0.6f;
-
-    // Draw the main (L) tap train + the ghost (R) train.
-    auto drawTrain = [&] (float xShift, float alpha)
+    // A DIFFUSION SMEAR: a deterministic cloud of translucent vertical streaks
+    // spread across the whole plot (energy scattered, NOT a decaying train like
+    // Delay). The streak COUNT and per-streak alpha grow with Amount (0 => just
+    // the impulse, 1 => a dense smeared cloud).
+    const int   nStreaks = juce::roundToInt (amount * 16.0f);
+    const float baseA    = 0.12f + 0.55f * amount;
+    for (int k = 0; k < nStreaks; ++k)
     {
-        for (int k = 1; k <= 12; ++k)
-        {
-            const float x  = srcX + static_cast<float> (k) * gap + xShift;
-            if (x > plot.getRight() - 1.0f)
-                break;
-            const float amp = halfH * std::pow (fb, static_cast<float> (k));
-            if (amp < 0.75f)
-                break;   // below ~1px: stop
-            g.setColour (trace.withAlpha (juce::jlimit (0.0f, 1.0f, alpha * (0.35f + 0.65f * (amp / halfH)))));
-            g.drawVerticalLine (juce::roundToInt (x), midY - amp, midY + amp);
-        }
-    };
+        const float xf = 0.06f + 0.92f * hash01 (k * 7 + 3);            // spread 0.06..0.98
+        const float h  = halfH * (0.28f + 0.72f * hash01 (k * 13 + 5)); // varied heights
+        const float x  = plot.getX() + xf * plot.getWidth();
+        const float aa = baseA * (0.4f + 0.6f * hash01 (k * 19 + 1)) * a;
+        g.setColour (trace.withAlpha (juce::jlimit (0.0f, 1.0f, aa)));
+        g.drawVerticalLine (juce::roundToInt (x), midY - h, midY + h);
+    }
 
-    drawTrain (0.0f, 0.95f * a);
-    if (spreadShift > 0.5f)
-        drawTrain (spreadShift, 0.45f * a);
-
-    // Left/Right row hint labels.
     g.setColour (dimText.withAlpha (0.55f));
     g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
-    g.drawText ("delay", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+    g.drawText ("diffuse", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+void FxSlotVisualizer::drawWavefolder (juce::Graphics& g, juce::Rectangle<float> plot,
+                                       ParvatiLookAndFeel* lnf,
+                                       juce::Colour trace, juce::Colour dimText,
+                                       float fold, float bias, float wet)
+{
+    const float a     = wetAlpha (wet);
+    const float midY  = plot.getCentre().y;
+    const float halfH = plot.getHeight() * 0.46f;
+    const float x0    = plot.getX();
+    const float w     = plot.getWidth();
+
+    // Parametric approximation of the bipolar-fold TRANSFER CURVE: input x sweeps
+    // left..right; the output zig-zags (folds) more as Fold grows, skewed by Bias.
+    auto foldOf = [] (float x) {
+        // reflect the real line into [-1, 1] (a clean bipolar fold / triangle wave)
+        x = std::fmod (x, 4.0f);
+        if (x < 0.0f) x += 4.0f;                 // x in [0,4)
+        if (x > 3.0f) return x - 4.0f;           // 3..4 -> -1..0
+        if (x > 1.0f) return 2.0f - x;           // 1..3 -> 1..-1
+        return x;                                // 0..1 -> 0..1
+    };
+    const float scale   = 1.0f + fold * 6.0f;     // more folds as Fold grows
+    const float biasOff = (bias - 0.5f) * 2.0f;   // horizontal skew
+
+    juce::Path p;
+    const int N = juce::jmax (1, juce::roundToInt (w));
+    for (int i = 0; i <= N; ++i)
+    {
+        const float xn = -1.0f + 2.0f * static_cast<float> (i) / static_cast<float> (N);
+        const float yn = foldOf (xn * scale + biasOff);
+        const float px = x0 + static_cast<float> (i);
+        const float py = midY - yn * halfH;
+        if (i == 0) p.startNewSubPath (px, py);
+        else        p.lineTo (px, py);
+    }
+    g.setColour (trace.withAlpha (0.95f * a));
+    g.strokePath (p, juce::PathStrokeType (1.4f));
+
+    // faint identity (y = x) reference line.
+    g.setColour (dimText.withAlpha (0.22f * a));
+    g.drawLine (x0, midY + halfH, x0 + w, midY - halfH, 0.8f);
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("fold", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
 }
 
 //==============================================================================
-void FxSlotVisualizer::drawReverb (juce::Graphics& g, juce::Rectangle<float> plot,
-                                   ParvatiLookAndFeel* lnf,
-                                   juce::Colour trace, juce::Colour accent,
-                                   juce::Colour dimText,
-                                   float size, float damp, float level, float width, float wet)
+void FxSlotVisualizer::drawPitchShifter (juce::Graphics& g, juce::Rectangle<float> plot,
+                                         ParvatiLookAndFeel* lnf,
+                                         juce::Colour trace, juce::Colour dimText,
+                                         float ratio, float size, float wet)
 {
     const float a = wetAlpha (wet);
 
-    // Impulse-response tail: an exponential decay envelope across the plot.
-    // SIZE lengthens the visible tail (slower decay), DAMP steepens it. The
-    // effective decay rate blends the two so both knobs move the curve.
-    const float decay = juce::jlimit (0.4f, 9.0f, (0.6f + damp * 5.0f) / (0.25f + size * 1.4f));
+    // A dual-tap pitch shifter: two parallel signal traces (the two delayed
+    // taps) offset vertically by the pitch AMOUNT (|ratio-0.5|*2; 0.5 = unison
+    // => the taps overlap on the centre line). They span a window whose width
+    // scales with Size (small size => a short concentrated window).
+    const float shift = std::fabs (ratio - 0.5f) * 2.0f;            // 0..1 pitch magnitude
+    const float dcOff = shift * 0.46f;                              // bipolar DC offset per tap
+    const float winW  = plot.getWidth() * (0.32f + 0.68f * size);
+    const auto  win   = plot.withSizeKeepingCentre (winW, plot.getHeight());
 
-    auto envLevel = [&] (float xf) -> float
+    const float amp    = 0.10f + 0.16f * (1.0f - shift);            // less wiggle at extreme shift
+    const float cycles = 3.5f;                                     // a few signal cycles across the window
+    const int   sampleCount = juce::jmax (48, juce::roundToInt (win.getWidth() * 2.0f));
+
+    auto drawTap = [&] (float dc, float ph, float alpha)
     {
-        return std::exp (-xf * decay);
+        auto levelAt = [&, dc, ph] (float xf) -> float
+        {
+            return juce::jlimit (-1.0f, 1.0f,
+                                 dc + amp * std::sin (juce::MathConstants<float>::twoPi * cycles * xf + ph));
+        };
+        juce::Path p = parvati::vectorTrace::buildTrace (win, sampleCount, levelAt,
+                                                         parvati::vectorTrace::Mode::bipolar, false);
+        g.setColour (trace.withAlpha (alpha * a));
+        g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     };
+    drawTap (+dcOff, 0.0f, 0.9f);
+    drawTap (-dcOff, juce::MathConstants<float>::pi, 0.5f);
 
-    // Smooth unipolar vector trace + translucent gradient fill (the reverb tail).
+    // Centre reference line so the vertical offset reads.
+    g.setColour (trace.withAlpha (0.18f * a));
+    g.drawHorizontalLine (juce::roundToInt (plot.getCentre().y), plot.getX(), plot.getRight());
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("pitch", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+//==============================================================================
+void FxSlotVisualizer::drawCloudsReverb (juce::Graphics& g, juce::Rectangle<float> plot,
+                                         ParvatiLookAndFeel* lnf,
+                                         juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                                         float amount, float time, float tone, float diffusion, float wet)
+{
+    const float a = wetAlpha (wet);
+
+    // Decaying impulse-response TAIL (Reverb-style): Time lengthens it, Tone (LP)
+    // brightens it (a brighter tank rings longer => slower decay). Amount scales
+    // the tail's peak vividness.
+    const float decay = juce::jlimit (0.4f, 9.0f, (0.6f + (1.0f - tone) * 4.0f) / (0.25f + time * 1.4f));
+    auto envLevel = [&] (float xf) -> float { return amount * std::exp (-xf * decay); };
     const int sampleCount = juce::jmax (48, juce::roundToInt (plot.getWidth() * 2.0f));
     parvati::vectorTrace::render (g, plot, sampleCount, envLevel,
                                   trace.withMultipliedAlpha (a),
                                   parvati::vectorTrace::Mode::unipolar,
                                   false, 1.5f, 0.14f * a);
 
-    // WET-LEVEL band: a faint horizontal line at the reverb wet-level height.
-    const float levelY = plot.getY() + (1.0f - level) * plot.getHeight();
-    g.setColour (accent.withAlpha (0.45f * a));
-    g.drawHorizontalLine (juce::roundToInt (levelY), plot.getX(), plot.getRight());
+    // Diffusion SMEAR overlay: a faint cloud of vertical streaks clustered at the
+    // tail's start (the input diffuser) whose DENSITY scales with Diffusion.
+    const float midY  = plot.getCentre().y;
+    const float halfH = plot.getHeight() * 0.46f;
+    const int   nStreaks = juce::roundToInt (diffusion * 10.0f);
+    for (int k = 0; k < nStreaks; ++k)
+    {
+        const float xf = 0.04f + 0.30f * hash01 (k * 7 + 2);          // clustered near the start
+        const float h  = halfH * (0.20f + 0.50f * hash01 (k * 11 + 4)) * amount;
+        const float x  = plot.getX() + xf * plot.getWidth();
+        g.setColour (accent.withAlpha (0.10f * diffusion * a));
+        g.drawVerticalLine (juce::roundToInt (x), midY - h, midY + h);
+    }
 
-    // STEREO-WIDTH bracket at the top: a small bracket spanning `width` of the
-    // plot (narrow => mono-ish, full => wide).
-    const float bw = juce::jmax (8.0f, plot.getWidth() * (0.12f + 0.8f * width));
-    const float bx = plot.getCentre().x - bw * 0.5f;
-    const float by = plot.getY() + 1.5f;
-    g.setColour (dimText.withAlpha (0.6f));
-    g.drawHorizontalLine (juce::roundToInt (by), bx, bx + bw);
-    g.drawVerticalLine (juce::roundToInt (bx), by, by + 3.0f);
-    g.drawVerticalLine (juce::roundToInt (bx + bw), by, by + 3.0f);
-
-    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
     g.setColour (dimText.withAlpha (0.55f));
-    g.drawText ("reverb", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("clouds", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
 }
 
 //==============================================================================
-void FxSlotVisualizer::drawChorus (juce::Graphics& g, juce::Rectangle<float> plot,
-                                   juce::Colour trace, float rate, float depth, float wet)
+void FxSlotVisualizer::drawLoopingDelay (juce::Graphics& g, juce::Rectangle<float> plot,
+                                         ParvatiLookAndFeel* lnf,
+                                         juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                                         float position, float size, float pitch, float freeze, float wet)
+{
+    const float a      = wetAlpha (wet);
+    const bool  frozen = freeze >= 0.5f;
+    const float midY   = plot.getCentre().y;
+
+    // Loop-buffer RAIL: a faint line spanning the plot (the recording buffer).
+    g.setColour (trace.withAlpha (0.22f * a));
+    g.drawHorizontalLine (juce::roundToInt (midY), plot.getX(), plot.getRight());
+
+    // The loop WINDOW: width scales with Size, horizontal position with Position
+    // (it slides L<->R). Filled translucent; accent-bordered when frozen.
+    const float winW = juce::jmax (10.0f, plot.getWidth() * (0.14f + 0.5f * size));
+    const float lo = plot.getX() + winW * 0.5f;
+    const float hi = plot.getRight() - winW * 0.5f;
+    const float cx = lo + (hi - lo) * juce::jlimit (0.0f, 1.0f, position);
+    const auto  win = juce::Rectangle<float> (cx - winW * 0.5f, plot.getY() + 2.0f, winW, plot.getHeight() - 4.0f);
+    g.setColour (trace.withAlpha ((frozen ? 0.30f : 0.18f) * a));
+    g.fillRoundedRectangle (win, 3.0f);
+    g.setColour ((frozen ? accent : trace).withAlpha (0.75f * a));
+    g.drawRoundedRectangle (win, 3.0f, 1.0f);
+
+    // PLAYHEAD dot at the window's left edge.
+    g.setColour ((frozen ? accent : trace).withAlpha (0.95f * a));
+    g.fillEllipse (cx - winW * 0.5f - 2.5f, midY - 2.5f, 5.0f, 5.0f);
+
+    // PITCH: a diagonal stroke inside the window whose slope tracks the pitch
+    // shift (rising => higher playback, falling => lower).
+    const float slope = (pitch - 0.5f) * 2.0f;   // -1..1
+    g.setColour (trace.withAlpha (0.5f * a));
+    juce::Path sl;
+    sl.startNewSubPath (win.getX() + 2.0f, midY + slope * win.getHeight() * 0.32f);
+    sl.lineTo (win.getRight() - 2.0f, midY - slope * win.getHeight() * 0.32f);
+    g.strokePath (sl, juce::PathStrokeType (1.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // FROZEN indicator: a small locked-square glyph at the window's top-right.
+    if (frozen)
+    {
+        constexpr float gs = 5.0f;
+        const auto glyph = juce::Rectangle<float> (win.getRight() - gs - 2.0f, win.getY() + 2.0f, gs, gs);
+        g.setColour (accent.withAlpha (0.9f * a));
+        g.drawRoundedRectangle (glyph, 1.0f, 1.0f);
+    }
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("loop", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+//==============================================================================
+void FxSlotVisualizer::drawWSOLAStretch (juce::Graphics& g, juce::Rectangle<float> plot,
+                                         ParvatiLookAndFeel* lnf,
+                                         juce::Colour trace, juce::Colour dimText,
+                                         float pitch, float position, float size, float wet)
 {
     const float a = wetAlpha (wet);
 
-    // Two delayed traces (L/R) that wobble with a sine whose AMPLITUDE scales
-    // with `depth` and whose spatial WOBBLE COUNT scales with `rate` (more rate
-    // => more wiggles across the plot). STATIC: the phase is frozen (no
-    // real-time animation) so the L/R traces only re-draw on a rate/depth/type
-    // change, exactly like Delay/Reverb.
-    const float amp    = (0.18f + 0.62f * depth);             // bipolar amplitude 0..1
-    const float cycles = 1.5f + rate * 4.5f;                  // ~1.5..6 wobbles across the plot
-    constexpr float phase = 0.0f;                             // frozen (static preview)
+    // Overlapping Hann-window GRAIN bumps: the count grows with Size (more grains
+    // => more overlap => more stretch). Position slides the cluster, Pitch tilts
+    // the envelope (rising => higher). Rendered as one summed unipolar trace.
+    const int   nGrains = juce::jmax (2, juce::roundToInt (2.0f + size * 5.0f));
+    const float spacing = 1.0f / static_cast<float> (nGrains);
+    const float gw      = spacing * 1.7f;                          // overlap factor
+    const float offset  = (position - 0.5f) * spacing;             // cluster slide
+    const float tilt    = (pitch - 0.5f) * 2.0f;                   // -1..1
 
-    auto wob = [&] (float xf, float phaseOffset) -> float
+    auto hann = [] (float t)   // Hann window, 0 outside [0,1].
     {
-        return amp * std::sin (juce::MathConstants<float>::twoPi * cycles * xf + phase + phaseOffset);
+        return (t > 0.0f && t < 1.0f) ? (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * t)) : 0.0f;
     };
 
-    // Stroke two smooth bipolar traces (L solid, R phase-shifted); NO area fill
-    // (two overlapping fills would clutter the compact canvas).
+    auto levelAt = [&] (float xf) -> float
+    {
+        float sum = 0.0f;
+        for (int i = 0; i < nGrains; ++i)
+        {
+            const float centre = (static_cast<float> (i) + 0.5f) * spacing + offset;
+            sum += hann ((xf - centre) / gw + 0.5f);
+        }
+        const float ramp = 0.55f + 0.45f * (1.0f + tilt * (xf - 0.5f));   // pitch tilt
+        return juce::jlimit (0.0f, 1.0f, sum * ramp);
+    };
+
     const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
+    parvati::vectorTrace::render (g, plot, sampleCount, levelAt,
+                                  trace.withMultipliedAlpha (a),
+                                  parvati::vectorTrace::Mode::unipolar,
+                                  false, 1.5f, 0.16f * a);
 
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("stretch", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+//==============================================================================
+void FxSlotVisualizer::drawSpectral (juce::Graphics& g, juce::Rectangle<float> plot,
+                                     ParvatiLookAndFeel* lnf,
+                                     juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                                     float pitch, float warp, float position, float blur, float wet)
+{
+    const float a = wetAlpha (wet);
+    constexpr int kBins = 28;
+    const float barSlot = plot.getWidth() / static_cast<float> (kBins);
+    const float barW    = juce::jmax (2.0f, barSlot * 0.66f);
+
+    // A deterministic decaying magnitude shape with seeded formant peaks.
+    auto baseMag = [] (float idx)
     {
-        juce::Path pL = parvati::vectorTrace::buildTrace (plot, sampleCount,
-                          [&] (float xf) { return wob (xf, 0.0f); },
-                          parvati::vectorTrace::Mode::bipolar, false);
-        g.setColour (trace.withAlpha (0.9f * a));
-        g.strokePath (pL, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
+        const float decay = std::exp (-idx / static_cast<float> (kBins) * 2.4f);
+        return decay * (0.55f + 0.45f * std::pow (std::sin (idx * 1.27f + 0.8f), 2.0f));
+    };
+
+    const float pitchShift = (pitch - 0.5f) * static_cast<float> (kBins);  // bins shifted by pitch
+    const float warpPow    = (warp - 0.5f) * 2.4f;                         // <0.5 emphasize lows, >0.5 highs
+    const float blurAmt    = juce::jlimit (0.0f, 1.0f, blur);
+
+    for (int i = 0; i < kBins; ++i)
     {
-        juce::Path pR = parvati::vectorTrace::buildTrace (plot, sampleCount,
-                          [&] (float xf) { return wob (xf, juce::MathConstants<float>::pi); },
-                          parvati::vectorTrace::Mode::bipolar, false);
-        g.setColour (trace.withAlpha (0.45f * a));
-        g.strokePath (pR, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // PITCH shifts the spectrum content (sample a neighbour bin).
+        const float idx = juce::jlimit (0.0f, static_cast<float> (kBins - 1),
+                                        static_cast<float> (i) + pitchShift);
+        float m = baseMag (idx);
+        // WARP skews the distribution (tilt magnitudes low<->high).
+        m *= std::pow ((static_cast<float> (i) + 1.0f) / static_cast<float> (kBins), warpPow);
+        // POSITION pans a moving spectral highlight (a Gaussian peak).
+        const float d = (static_cast<float> (i) + 0.5f) / static_cast<float> (kBins) - position;
+        m += 0.5f * std::exp (-d * d * 60.0f);
+        // BLUR compresses toward the mean (softens contrast / smears edges).
+        m = 0.18f + (1.0f - blurAmt * 0.7f) * (m - 0.18f);
+        m = juce::jlimit (0.0f, 1.0f, m);
+
+        const float h = m * plot.getHeight() * 0.92f;
+        const float x = plot.getX() + static_cast<float> (i) * barSlot + (barSlot - barW) * 0.5f;
+        const auto bar = juce::Rectangle<float> (x, plot.getBottom() - h, barW, h);
+        g.setColour (trace.withAlpha ((0.35f + 0.55f * m) * a));
+        g.fillRoundedRectangle (bar, blurAmt * barW * 0.5f);   // blur rounds the tops
     }
 
-    // Centre midline reference so the bipolar centre reads.
-    g.setColour (trace.withAlpha (0.18f * a));
-    g.drawHorizontalLine (juce::roundToInt (plot.getCentre().y), plot.getX(), plot.getRight());
+    // A faint position marker line at the highlight pan.
+    const float px = plot.getX() + position * plot.getWidth();
+    g.setColour (accent.withAlpha (0.35f * a));
+    g.drawVerticalLine (juce::roundToInt (px), plot.getY(), plot.getBottom());
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("spectral", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+//==========================================================================
+// FxFrequencyShifter — two sideband sines (up/down) with a shift arrow.
+void FxSlotVisualizer::drawFrequencyShifter (juce::Graphics& g, juce::Rectangle<float> plot,
+                                             ParvatiLookAndFeel* lnf,
+                                             juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                                             float shift, float feedback, float spread, float wet)
+{
+    const float a     = wetAlpha (wet);
+    const float midY  = plot.getCentre().y;
+    const float halfH = plot.getHeight() * 0.40f;
+    const float x0    = plot.getX();
+    const float w     = plot.getWidth();
+    const int   N     = juce::jmax (2, juce::roundToInt (w));
+
+    // shift 0.5 = 0 Hz; bipolar signed offset drives the up/down sines apart.
+    const float sOff  = (shift - 0.5f) * 6.0f;
+    const float fbAmp = 0.5f + feedback * 0.6f;            // feedback grows the lobes
+    const float spr   = juce::jlimit (0.0f, 1.0f, spread); // 0..1: blend toward the opposite sideband
+
+    auto sine = [] (float ph) { return std::sin (ph); };
+    juce::Path upP, downP;
+    for (int i = 0; i <= N; ++i)
+    {
+        const float t = static_cast<float> (i) / static_cast<float> (N);
+        const float ph = t * 2.0f * 3.14159265f * (3.0f + sOff);
+        const float yU = sine (ph) * fbAmp;
+        const float yD = sine (-ph) * fbAmp * (0.4f + 0.6f * spr);   // down sideband, grows with spread
+        const float px = x0 + static_cast<float> (i);
+        if (i == 0) { upP.startNewSubPath (px, midY - yU * halfH); downP.startNewSubPath (px, midY + yD * halfH); }
+        else        { upP.lineTo (px, midY - yU * halfH); downP.lineTo (px, midY + yD * halfH); }
+    }
+    g.setColour (accent.withAlpha (0.92f * a));
+    g.strokePath (upP, juce::PathStrokeType (1.4f));
+    g.setColour (trace.withAlpha (0.75f * a));
+    g.strokePath (downP, juce::PathStrokeType (1.2f));
+
+    // centre baseline + a shift-direction arrow (left for -, right for +).
+    g.setColour (dimText.withAlpha (0.20f * a));
+    g.drawLine (x0, midY, x0 + w, midY, 0.7f);
+    const float ax = x0 + w * 0.5f;
+    const float adir = shift >= 0.5f ? 1.0f : -1.0f;
+    g.setColour (dimText.withAlpha (0.6f * a));
+    g.drawLine (ax - 5.0f * adir, midY, ax + 5.0f * adir, midY, 1.0f);
+    g.drawLine (ax + 5.0f * adir, midY, ax + 2.0f * adir, midY - 2.5f, 1.0f);
+    g.drawLine (ax + 5.0f * adir, midY, ax + 2.0f * adir, midY + 2.5f, 1.0f);
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("shift", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+//==========================================================================
+// FxRingModulator — carrier x signal sines with a ring-mod ("x") node.
+void FxSlotVisualizer::drawRingModulator (juce::Graphics& g, juce::Rectangle<float> plot,
+                                          ParvatiLookAndFeel* lnf,
+                                          juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                                          float carrier, float shape, float amount, float wet)
+{
+    const float a     = wetAlpha (wet);
+    const float midY  = plot.getCentre().y;
+    const float halfH = plot.getHeight() * 0.40f;
+    const float x0    = plot.getX();
+    const float w     = plot.getWidth();
+    const int   N     = juce::jmax (2, juce::roundToInt (w));
+
+    const float cFreq = 4.0f + carrier * 10.0f;       // carrier cycles across the plot
+    const float sFreq = 2.0f;                          // signal sine
+    const float amt   = juce::jlimit (0.0f, 1.0f, amount);
+    const float shp   = juce::jlimit (0.0f, 1.0f, shape);
+
+    auto sig = [shp] (float ph)
+    {
+        // sine -> richer harmonics as Shape grows (parametric, not a real wavetable)
+        const float s = std::sin (ph);
+        return s + shp * 0.30f * std::sin (3.0f * ph);
+    };
+
+    // carrier trace (accent) + the ring-modulated product (trace, the carrier x signal envelope).
+    juce::Path cP, prodP;
+    for (int i = 0; i <= N; ++i)
+    {
+        const float t = static_cast<float> (i) / static_cast<float> (N);
+        const float pc = t * 2.0f * 3.14159265f * cFreq;
+        const float ps = t * 2.0f * 3.14159265f * sFreq;
+        const float carrierY = 0.5f * std::sin (pc);
+        const float prodY     = 0.85f * amt * sig (ps) * std::sin (pc);   // product (ring mod)
+        const float px = x0 + static_cast<float> (i);
+        if (i == 0) { cP.startNewSubPath (px, midY - carrierY * halfH); prodP.startNewSubPath (px, midY - prodY * halfH); }
+        else        { cP.lineTo (px, midY - carrierY * halfH); prodP.lineTo (px, midY - prodY * halfH); }
+    }
+    g.setColour (accent.withAlpha (0.55f * a));
+    g.strokePath (cP, juce::PathStrokeType (1.0f));
+    g.setColour (trace.withAlpha (0.92f * a));
+    g.strokePath (prodP, juce::PathStrokeType (1.4f));
+
+    // a small ring-mod "x" node at the centre to convey the multiplication.
+    const float cx = x0 + w * 0.5f;
+    g.setColour (dimText.withAlpha (0.7f * a));
+    const float r = 3.0f;
+    g.drawLine (cx - r, midY - r, cx + r, midY + r, 1.0f);
+    g.drawLine (cx - r, midY + r, cx + r, midY - r, 1.0f);
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("ring", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
+}
+
+//==========================================================================
+void FxSlotVisualizer::drawResonator (juce::Graphics& g, juce::Rectangle<float> plot,
+                                     ParvatiLookAndFeel* lnf,
+                                     juce::Colour trace, juce::Colour accent, juce::Colour dimText,
+                                     float pitch, float decay, float bright, float timbre, float wet)
+{
+    const float a     = wetAlpha (wet);
+    const float midY  = plot.getCentre().y;
+    const float halfH = plot.getHeight() * 0.42f;
+    const float x0    = plot.getX();
+    const float w     = plot.getWidth();
+
+    // The resonator is a bank of tuned band-pass filters. Visualize it as a
+    // comb of vertical "modal" bars: the fundamental + its partials. Higher
+    // Pitch packs more partials into the plot; Timbre (structure/inharmonicity)
+    // spreads their spacing; Bright controls the tallest peak height; Decay
+    // shapes an exponential ring envelope drawn as a curve overlay.
+    const float p   = juce::jlimit (0.0f, 1.0f, pitch);
+    const float d   = juce::jlimit (0.0f, 1.0f, decay);
+    const float b   = juce::jlimit (0.0f, 1.0f, bright);
+    const float t   = juce::jlimit (0.0f, 1.0f, timbre);
+
+    // Number of visible modes grows with Pitch (more partials fit at higher pitch).
+    const int numBars = juce::jlimit (3, 12, juce::roundToInt (3.0f + p * 9.0f));
+
+    // Inharmonicity: Timbre above 0.5 stretches the partials; below compresses.
+    const float stretch = 1.0f + (t - 0.5f) * 0.6f;
+
+    // Draw the modal comb.
+    for (int i = 0; i < numBars; ++i)
+    {
+        // Harmonic-ish positions with stretch; the fundamental is tallest.
+        const float pos  = std::pow (static_cast<float> (i + 1) / numBars, stretch);
+        const float px   = x0 + pos * w;
+        const float bw   = juce::jmax (1.0f, w / numBars * 0.35f);
+
+        // Peak height: fundamental is full, higher modes decay; Bright lifts
+        // the upper modes (more energy in the harmonics).
+        const float heightFrac = (1.0f - static_cast<float> (i) / numBars)
+                                 * (0.4f + 0.6f * b);
+        const float bh = heightFrac * halfH;
+
+        juce::Rectangle<float> bar (px - bw * 0.5f, midY - bh, bw, bh * 2.0f);
+        g.setColour ((i == 0 ? accent : trace).withAlpha ((0.9f - 0.05f * i) * a));
+        g.fillRoundedRectangle (bar, bw * 0.3f);
+    }
+
+    // Decay envelope curve (exponential ring-down overlay).
+    const float tau = 0.1f + d * 0.8f;   // longer ring with more Decay
+    juce::Path env;
+    const int N = juce::jmax (2, juce::roundToInt (w));
+    for (int i = 0; i <= N; ++i)
+    {
+        const float u = static_cast<float> (i) / N;
+        const float envY = std::exp (-u / tau) * halfH;
+        const float px = x0 + u * w;
+        if (i == 0) env.startNewSubPath (px, midY - envY);
+        else        env.lineTo (px, midY - envY);
+    }
+    g.setColour (dimText.withAlpha (0.45f * a));
+    g.strokePath (env, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved));
+
+    g.setColour (dimText.withAlpha (0.55f));
+    g.setFont (lnf ? lnf->appFont (8.0f, juce::Font::plain) : juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("modes", plot.withTrimmedRight (2).withTrimmedBottom (1), juce::Justification::bottomRight);
 }
 
 //==========================================================================

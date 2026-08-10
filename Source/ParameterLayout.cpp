@@ -96,10 +96,12 @@ juce::StringArray makeModifierOps()
     return { "None", "Sum", "Product", "Attenuate", "Max", "Min", "XOR", "GE", "LE", "Quantize", "Lag" };
 }
 
-// FxType choice list (FxType::None..Chorus). Matches the enum order.
+// FxType choice list (FxType::None..RingModulator). Matches the enum order.
 juce::StringArray makeFxTypes()
 {
-    return { "None", "Gain+Pan", "Delay", "Reverb", "Chorus" };
+    return { "None", "Diffuser", "Pitch Shifter", "Clouds Reverb",
+             "Looping Delay", "WSOLA Stretch", "Spectral",
+             "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator" };
 }
 
 // FxTopology choice list (Series / Parallel12to3 / Parallel1to23), shown as

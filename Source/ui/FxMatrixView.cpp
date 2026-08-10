@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxMatrixView.h.
 
 #include "FxMatrixView.h"
+#include "FxSlotLabels.h"   // activeParamCount / paramLabel (dynamic FX-dest labels)
+#include "ModDestMap.h"        // isFxDest / kFxModDstOffset (FX-dest domain)
+#include "ModMatrixHighlight.h" // onAssignRequest bus (drag-and-drop -> fxmod slot)
 
 #include "PluginProcessor.h"   // ParvatiAudioProcessor (complete type)
 #include "ThemeManager.h"
@@ -18,6 +21,12 @@ static_assert (kNumFxMatrixSlots == 16, "FxMatrixView assumes a 16-slot FX mod m
 //==============================================================================
 namespace
 {
+// Per-slot Dry/Wet FX_DST_* index (slot 0/1/2 -> FX_DST_FX{1,2,3}_DRYWET). Used
+// by FxMatrixRow::rebuildDestItems to build the dynamic FX-dest combo with a
+// stable itemId == FX_DST_* index + 1 (the stored fxmod{N}_dest value is the
+// index itself, so presets/serialization are unaffected by the relabelling).
+constexpr int kDryWetDestIdx[3] = { FX_DST_FX1_DRYWET, FX_DST_FX2_DRYWET, FX_DST_FX3_DRYWET };
+
 // Category colour for a mod-source display name, mirroring the STRICT family
 // palette (and ModSourceCatalog::clusterAccent): Env=teal, LFO=magenta,
 // Seq/Arp=mint, Op(modifier)=purple, Const=indigo, keyboard/Perf=amber,
@@ -138,11 +147,12 @@ private:
 // A small drag-grip (six-dot handle) rendered left of a row's source combo.
 // mouseDrag (past a small threshold) starts an INTERNAL DragAndDropContainer
 // drag carrying "parvatiModSrc:<sourceEnum>" and a themed drag image — the SAME
-// payload the synth matrix grip / CentralModBar emit, so dropping it on a synth
-// destination knob assigns the next free SYNTH slot for that source (the FX
-// matrix's own rows cannot be a drop target today; the drop just doesn't feed
-// back into the FX matrix — acceptable for the placeholder FX UI). Clicking (no
-// drag) is a no-op so the grip never competes with the adjacent source combo.
+// payload the synth matrix grip / CentralModBar emit. Dropping it on a
+// destination knob assigns the next free slot for that source on the matching
+// matrix — an FX knob (offset-encoded FX dest) takes an FX-mod slot, a synth
+// knob takes a synth slot; each matrix's handler ignores the other's domain.
+// Matrix rows themselves are not drop targets. Clicking (no drag) is a no-op so
+// the grip never competes with the adjacent source combo.
 struct FxSourceDragGrip : public juce::Component,
                               public juce::SettableTooltipClient
 {
@@ -242,17 +252,16 @@ struct FxMatrixRow : public juce::Component,
     {
         auto& apvts = owner_.processor().getApvts();
         const juce::String srcId = FxMatrixView::slotParam (slot, "_source");
-        const juce::String dstId = FxMatrixView::slotParam (slot, "_dest");
         const juce::String amtId = FxMatrixView::slotParam (slot, "_amount");
 
-        // Populate the combos from the (already-registered) choice params so the
-        // row stays in lock-step with makeModSources / makeFxDests without
-        // duplicating the string lists. The dest combo thus shows the FX
-        // destinations ("FX1 Dry/Wet" ...) automatically.
+        // The SOURCE combo is populated from its (static) APVTS choice param so it
+        // stays in lock-step with makeModSources. The DEST combo is NOT: its labels
+        // are DYNAMIC (each slot's actual parameter names from paramLabel()) and it
+        // is index-bound manually instead of via a ComboBoxAttachment (the stored
+        // fxmod{N}_dest value stays the stable FX_DST_* index 0..14). Its items are
+        // first built from the live slot types in FxMatrixView::refresh().
         if (auto* sp = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (srcId)))
             sourceCombo_.addItemList (sp->choices, 1);
-        if (auto* dp = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (dstId)))
-            destCombo_.addItemList (dp->choices, 1);
 
         indexLabel_.setText (juce::String (slot + 1), juce::dontSendNotification);
         indexLabel_.setJustificationType (juce::Justification::centred);
@@ -284,22 +293,48 @@ struct FxMatrixRow : public juce::Component,
         clearButton_.onClick = [this] { owner_.clearSlot (slot_); };
         addAndMakeVisible (clearButton_);
 
-        // Bind to the APVTS AFTER the widgets are populated.
+        // Bind to the APVTS AFTER the widgets are populated. Only the SOURCE combo
+        // uses a ComboBoxAttachment; the DEST combo is manually index-bound (see
+        // comboBoxChanged / syncDestFromParam).
         srcAttach_   = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, srcId, sourceCombo_);
-        dstAttach_   = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, dstId, destCombo_);
         depthAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>  (apvts, amtId, depthSlider_);
 
         depthSlider_.addListener (this);
         // Re-resolve the row's category colour (row tint + slider fill + combo
         // tint) whenever a new source is picked so it follows live.
         sourceCombo_.addListener (this);
+        // The dest combo is manually index-bound (no ComboBoxAttachment): listen
+        // here so a user pick writes the FX_DST_* index back to fxmod{N}_dest.
+        destCombo_.addListener (this);
         refreshValueDisplay();
+
+        // Register this row as a MouseListener on every child so a hover anywhere
+        // over the row (combos / slider / buttons / labels) drives the highlight
+        // (local + the ModMatrixHighlight broadcast), not just the bare gaps.
+        // `false` => child events only (no recursion into popup children).
+        indexLabel_.addMouseListener (this, false);
+        dragGrip_->addMouseListener (this, false);
+        sourceCombo_.addMouseListener (this, false);
+        destCombo_.addMouseListener (this, false);
+        depthSlider_.addMouseListener (this, false);
+        valueLabel_.addMouseListener (this, false);
+        muteButton_.addMouseListener (this, false);
+        clearButton_.addMouseListener (this, false);
     }
 
     ~FxMatrixRow() override
     {
         depthSlider_.removeListener (this);
         sourceCombo_.removeListener (this);
+        destCombo_.removeListener (this);
+        indexLabel_.removeMouseListener (this);
+        dragGrip_->removeMouseListener (this);
+        sourceCombo_.removeMouseListener (this);
+        destCombo_.removeMouseListener (this);
+        depthSlider_.removeMouseListener (this);
+        valueLabel_.removeMouseListener (this);
+        muteButton_.removeMouseListener (this);
+        clearButton_.removeMouseListener (this);
         // Drop the custom L&F before the slider is destroyed (the L&F is owned by
         // the view and outlives this row, but unsetting keeps the contract clean).
         depthSlider_.setLookAndFeel (nullptr);
@@ -307,8 +342,24 @@ struct FxMatrixRow : public juce::Component,
 
     void sliderValueChanged (juce::Slider*) override { refreshValueDisplay(); }
 
-    void comboBoxChanged (juce::ComboBox*) override
+    void comboBoxChanged (juce::ComboBox* c) override
     {
+        if (c == &destCombo_)
+        {
+            // Manual index-binding for the (dynamically-labelled) dest combo: a
+            // user pick writes the FX_DST_* index (itemId-1) back to fxmod{N}_dest.
+            // Mirrors how assignNextFreeSlot writes the dest choice (convertTo0to1
+            // + setValueNotifyingHost). The STORED value stays the index, so
+            // presets/serialization are unaffected by the relabelling.
+            const int id = destCombo_.getSelectedId();
+            if (id > 0)
+            {
+                auto& apvts = owner_.processor().getApvts();
+                if (auto* p = apvts.getParameter (FxMatrixView::slotParam (slot_, "_dest")))
+                    p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (id - 1)));
+            }
+            return;
+        }
         // A new source was picked: re-resolve this row's category colour (the
         // full-row tint, the depth-slider fill and the source-combo tint all
         // live in applyThemeColors).
@@ -316,19 +367,30 @@ struct FxMatrixRow : public juce::Component,
         repaint();
     }
 
-    // ---- Local hover emphasis (no broadcast to the shared highlight bus) ----
-    // An FX row highlights only ITSELF on hover; it never publishes on the
-    // editor-scoped ModMatrixHighlight bus (keyed on synth MOD_DST_*), so a
-    // hovered FX row never falsely glows a synth knob / synth matrix row.
-    void mouseEnter (const juce::MouseEvent&) override { setHighlighted (true); }
+    // ---- Hover emphasis (local + shared ModMatrixHighlight bus) ----
+    // A hovered FX row highlights itself AND broadcasts its dest (offset-encoded
+    // as FX_DST_* + kFxModDstOffset, disjoint from synth MOD_DST_* 0..18) so
+    // every OTHER FX row routed to the same dest highlights and the matching FX
+    // knobs glow. The offset keeps synth knobs/rows from ever matching an FX
+    // broadcast (applyModHighlight compares the broadcast to each knob's modDest_).
+    void mouseEnter (const juce::MouseEvent&) override
+    {
+        setHighlighted (true);
+        const int d = owner_.destForSlot (slot_);
+        parvati::ModMatrixHighlight::instance().setHighlightedDest (
+            d < 0 ? -1 : d + parvati::ModDestMap::kFxModDstOffset);
+    }
 
     void mouseExit (const juce::MouseEvent& e) override
     {
         // Only clear when the mouse has actually left the row: moving between the
-        // row's child widgets also fires mouseExit.
+        // row's child widgets also fires mouseExit (this row is their MouseListener).
         const auto rel = e.getEventRelativeTo (this);
         if (! getLocalBounds().contains (rel.position.toInt()))
+        {
             setHighlighted (false);
+            parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+        }
     }
 
     // Hovered: this row's dest is the highlighted target.
@@ -343,6 +405,55 @@ struct FxMatrixRow : public juce::Component,
         const int amt = owner_.isSlotMuted (slot_) ? owner_.stashedAmount (slot_)
                                                     : owner_.amountForSlot (slot_);
         valueLabel_.setText (formatPercent (amt), juce::dontSendNotification);
+    }
+
+    // (Re)build the dest combo's items from the three slots' current FX types so
+    // it shows each slot's ACTUAL parameter names ("FX1 Position" ...) instead of
+    // the static "FX1 Param K". itemId == FX_DST_* index + 1 keeps the stored
+    // fxmod{N}_dest value (the index) stable. Inactive params are omitted for a
+    // clean list (a dest routed to a now-absent param is handled by sync below).
+    void rebuildDestItems (FxType t0, FxType t1, FxType t2)
+    {
+        const FxType types[3] = { t0, t1, t2 };
+        destCombo_.clear (juce::dontSendNotification);
+        for (int s = 0; s < 3; ++s)
+        {
+            const int dryWet = kDryWetDestIdx[s];
+            destCombo_.addItem ("FX" + juce::String (s + 1) + " Dry/Wet", dryWet + 1);
+            const FxType t = types[s];
+            const int active = (t != FxType::None && t < FxType::Count)
+                                   ? activeParamCount (t) : 0;
+            for (int idx = 0; idx < kNumFxSlotParams; ++idx)
+            {
+                if (idx < active)
+                {
+                    const int pIdx = dryWet + 1 + idx;
+                    destCombo_.addItem ("FX" + juce::String (s + 1) + " "
+                                         + juce::String (paramLabel (t, idx)), pIdx + 1);
+                }
+            }
+        }
+    }
+
+    // Sync the dest combo's selection from the live fxmod{N}_dest value (the
+    // FX_DST_* index). Called every refresh() tick (preset load / undo /
+    // assignNextFreeSlot / automation can change the value without the combo). If
+    // the index is absent from the current list — e.g. the dest points at a param
+    // the slot's current type no longer exposes — the stored value is LEFT INTACT
+    // (the effect ignores inactive params) and the combo is cleared.
+    void syncDestFromParam()
+    {
+        const int destIdx = owner_.destForSlot (slot_);
+        const int wantId = destIdx + 1;
+        if (destIdx >= 0 && destCombo_.indexOfItemId (wantId) >= 0)
+        {
+            if (destCombo_.getSelectedId() != wantId)
+                destCombo_.setSelectedId (wantId, juce::dontSendNotification);
+        }
+        else if (destCombo_.getSelectedId() != 0)
+        {
+            destCombo_.setSelectedId (0, juce::dontSendNotification);
+        }
     }
 
     void setMutedLook (bool muted)
@@ -468,7 +579,7 @@ struct FxMatrixRow : public juce::Component,
     juce::TextButton muteButton_;
     juce::TextButton clearButton_;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> srcAttach_, dstAttach_;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> srcAttach_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   depthAttach_;
 };
 
@@ -502,13 +613,48 @@ FxMatrixView::FxMatrixView (ParvatiAudioProcessor& processor, ThemeManager& them
     startTimerHz (30);   // stay live across preset load / undo / automation (message thread)
     refresh();
 
-    // NOTE: deliberately NO ModMatrixHighlight bus subscription — see the header
-    // (ISOLATION NOTE). The FX matrix is edited through its own controls.
+    // Register the FX-domain assign handler on the ModMatrixHighlight bus so a
+    // drag-and-drop onto an FX parameter knob (which calls requestAssign with an
+    // FX-offset dest) assigns the next free FX mod slot. The dest arrives encoded
+    // (FX_DST_* + kFxModDstOffset); decode + guard here so synth dests
+    // (< kFxModDstOffset) are ignored (the synth handler owns those). The guard
+    // also keeps a hovered-synth-knob drop from grabbing an FX slot.
+    // assignNextFreeSlot keeps its RAW FX_DST index contract (0..14).
+    juce::Component::SafePointer<FxMatrixView> safe (this);
+    assignSub_ = parvati::ModMatrixHighlight::instance().onAssignRequest (
+        [safe] (int source, int dest) -> bool
+        {
+            if (safe == nullptr || ! parvati::ModDestMap::isFxDest (dest))
+                return false;   // ignore synth-dest drops
+            const int raw = dest - parvati::ModDestMap::kFxModDstOffset;   // FX_DST_* index
+            if (raw >= FX_DST_LAST)
+                return false;   // defensive: out-of-range FX dest (unreachable via modDest_)
+            return safe->assignNextFreeSlot (source, raw);
+        });
+
+    // GAP 1: react to a dest-highlight broadcast (hover/drag over an FX knob or
+    // another FX row) by highlighting every FX row routed to that dest. The
+    // broadcast carries an FX-offset dest (FX_DST_* + kFxModDstOffset); synth
+    // broadcasts (0..18) are rejected by onHighlightDest's isFxDest guard.
+    destHighlightSub_ = parvati::ModMatrixHighlight::instance().onDestHighlighted (
+        [safe] (int modDst) { if (safe != nullptr) safe->onHighlightDest (modDst); });
+    // GAP 2: react to a knob double-click (an offset-encoded slot index) by
+    // scrolling the row into view and flashing it. Synth-encoded slots (0..13)
+    // are rejected by onSelectSlot's isFxDest guard.
+    slotSelectSub_ = parvati::ModMatrixHighlight::instance().onSlotSelected (
+        [safe] (int slot) { if (safe != nullptr) safe->onSelectSlot (slot); });
 }
 
 FxMatrixView::~FxMatrixView()
 {
     stopTimer();
+
+    if (destHighlightSub_ >= 0)
+        parvati::ModMatrixHighlight::instance().unsubscribe (destHighlightSub_);
+    if (slotSelectSub_ >= 0)
+        parvati::ModMatrixHighlight::instance().unsubscribe (slotSelectSub_);
+    if (assignSub_ >= 0)
+        parvati::ModMatrixHighlight::instance().unsubscribe (assignSub_);
 
     // Mute is SESSION-ONLY: restore every stashed amount so the persisted APVTS
     // state never contains the mute-induced zeros (mirrors ModMatrixView's
@@ -584,6 +730,63 @@ int FxMatrixView::destForSlot (int slot) const
     if (auto* raw = processor_.getApvts().getRawParameterValue (slotParam (slot, "_dest")))
         return juce::roundToInt (raw->load());
     return -1;
+}
+
+void FxMatrixView::onHighlightDest (int modDst)
+{
+    // FX-domain guard: synth broadcasts (0..18) and the -1 clear never match an
+    // FX dest. Decode the offset to a raw FX_DST_* index and highlight every row
+    // whose current dest matches (read live so a just-edited dest combo follows).
+    const bool active = modDst >= 0 && parvati::ModDestMap::isFxDest (modDst);
+    const int raw = active ? modDst - parvati::ModDestMap::kFxModDstOffset : -1;
+    for (const auto& r : rows_)
+        if (r)
+            r->setHighlighted (active && destForSlot (r->slot_) == raw);
+}
+
+void FxMatrixView::onSelectSlot (int slotIndex)
+{
+    // Clear any prior flash, then (for an FX-encoded slot) flash + scroll that
+    // row in. Synth-encoded slots (0..13) are rejected by the isFxDest guard so
+    // a synth knob double-click never flashes an FX row.
+    for (const auto& r : rows_)
+        if (r)
+            r->setFlashed (false);
+    flashSlots_.clearQuick();
+
+    if (slotIndex < 0 || ! parvati::ModDestMap::isFxDest (slotIndex))
+        return;
+
+    const int s = slotIndex - parvati::ModDestMap::kFxModDstOffset;
+    if (s < 0 || s >= kNumFxMatrixSlots)
+        return;
+
+    flashSlots_.add (s);
+    flashStartMs_ = juce::Time::getMillisecondCounter();
+
+    if (rows_[(size_t) s] != nullptr)
+    {
+        rows_[(size_t) s]->setFlashed (true);
+        ensureRowVisible (s);
+    }
+}
+
+std::array<FxType, 3> FxMatrixView::currentSlotTypes() const
+{
+    // The per-slot FX types (fx1/2/3_type), read live so a type edit / preset
+    // load / part switch is picked up on the next refresh() tick. getRawParameterValue
+    // on an AudioParameterChoice returns the choice index directly (= the FxType).
+    std::array<FxType, 3> types { FxType::None, FxType::None, FxType::None };
+    auto& apvts = processor_.getApvts();
+    constexpr int kLast = static_cast<int> (FxType::Count) - 1;
+    for (int s = 0; s < 3; ++s)
+    {
+        const juce::String id = "fx" + juce::String (s + 1) + "_type";
+        if (auto* raw = apvts.getRawParameterValue (id))
+            types[(size_t) s] = static_cast<FxType> (
+                juce::jlimit (0, kLast, juce::roundToInt (raw->load())));
+    }
+    return types;
 }
 
 void FxMatrixView::ensureRowVisible (int slot)
@@ -730,6 +933,23 @@ void FxMatrixView::refresh()
     for (int i = 0; i < kNumFxMatrixSlots; ++i)
         if (muted_[(size_t) i] && amountForSlot (i) != 0)
             muted_[(size_t) i] = false;
+
+    // Dynamic FX-dest labels: when a slot's FX type changes (a type edit or a
+    // part switch, which reloads fx{N}_type) rebuild every row's dest combo to
+    // the slots' actual parameter names. The dest combo has NO APVTS attachment
+    // (it is index-bound manually), so its item list + selection are reconciled
+    // here every tick regardless of the active-set signature below.
+    const auto types = currentSlotTypes();
+    if (types != lastSlotTypes_)
+    {
+        lastSlotTypes_ = types;
+        for (const auto& r : rows_)
+            if (r)
+                r->rebuildDestItems (types[0], types[1], types[2]);
+    }
+    for (const auto& r : rows_)
+        if (r)
+            r->syncDestFromParam();
 
     const auto sig = buildSignature();
     if (sig == lastSignature_)
