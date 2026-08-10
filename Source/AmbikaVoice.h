@@ -195,6 +195,10 @@ public:
     // (MOD_SRC_PITCH_BEND / AFTERTOUCH / EXPRESSION) so user routings
     // (Pitch Bend -> osc, Aftertouch -> cutoff, ...) work per-voice. CC74
     // (MPE "slide") maps to MOD_SRC_EXPRESSION.
+    // Stamp this voice as the most-recently-triggered (engine-side counter).
+    void setTriggerSeq (uint64_t s) noexcept { triggerSeq_.store (s, std::memory_order_relaxed); }
+    uint64_t triggerSeq() const noexcept { return triggerSeq_.load (std::memory_order_relaxed); }
+
     void setMpePitchBendSemitones (float semis) { mpePitchBendSemitones_ = semis; applyMpeToVoice(); }
     void setMpePressure           (float p01)   { mpePressure_ = p01;            applyMpeToVoice(); }
     void setMpeSlide              (float s01)   { mpeSlide_ = s01;               applyMpeToVoice(); }
@@ -299,6 +303,14 @@ private:
     // suffices (a single stale frame is cosmetically harmless).
     std::atomic<int>  displayedNote_   { -1 };
     std::atomic<bool> displayedActive_ { false };
+
+    // Monotonic trigger sequence (stamped by SynthEngine at every note-on via
+    // setTriggerSeq). Read by renderPartFx's FX mod-source representative-voice
+    // tracker to pick the MOST-RECENTLY-TRIGGERED active voice per part (so
+    // per-voice sources like VELOCITY/NOTE/per-note MPE follow the latest note).
+    // Relaxed atomic: written at note-on (audio or message thread), read on the
+    // audio thread. 0 = never triggered (loses to any real seq in the comparison).
+    std::atomic<uint64_t> triggerSeq_ { 0 };
 
     // Resampler chunking: produce at most this many host samples per process()
     // call, and always keep at least kLookahead internal samples ahead of the

@@ -65,6 +65,11 @@ SynthEngine::SynthEngine()
     }
 
     rebuildVoiceAllocation();
+
+    // FX representative-voice tracker defaults: no tracked voice, crossfades
+    // settled (so the very first tracked voice is used live, no fade from zero).
+    fxTrackedVoice_.fill (-1);
+    fxFadePhase_.fill (1.0f);
 }
 
 void SynthEngine::prepare (double sampleRate, int blockSize)
@@ -662,6 +667,28 @@ void SynthEngine::initAllocator (Part& p)
     }
 }
 
+// triggerVoice / retriggerVoice — wrap juce::Synthesiser::startVoice and
+// AmbikaVoice::retriggerNote to stamp each triggered voice as the most-recently-
+// triggered (a monotonic seq), so the FX representative-voice tracker in
+// renderPartFx can pick the newest active voice per part. Centralising the
+// stamp here keeps every trigger site in sync with the tracker without
+// per-call boilerplate (and future note-on paths stay correct automatically).
+void SynthEngine::triggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
+                                int channel, int note, float velocity)
+{
+    if (av == nullptr) return;
+    startVoice (av, sound, channel, note, velocity);
+    av->setTriggerSeq (nextTriggerSeq());
+}
+
+void SynthEngine::retriggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
+                                  int note, float velocity)
+{
+    if (av == nullptr) return;
+    av->retriggerNote (sound, note, velocity);
+    av->setTriggerSeq (nextTriggerSeq());
+}
+
 void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int incomingChannel)
 {
     if (! ok (part)) return;
@@ -696,9 +723,9 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
                 // would then render silence). The first note (voice idle) still
                 // uses startVoice for a fresh attack.
                 if (legato && av->isVoiceActive())
-                    av->retriggerNote (sound, note, velocity);
+                    retriggerVoice (av, sound, note, velocity);
                 else
-                    startVoice (av, sound, channel, note, velocity);
+                    triggerVoice (av, sound, channel, note, velocity);
                 drift += spread;
             }
         return;
@@ -714,8 +741,8 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         const int v1 = (v0 + 1 < n) ? v0 + 1 : 0;        // firmware GetNextVoice wrap
         // Firmware part.cc:703: the pair is detuned by data_.spread (2nd voice +spread).
         const uint8_t spread = p.partBytes[3];
-        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v0])) { av->setSpreadDrift (0);      startVoice (av, sound, channel, note, velocity); }
-        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v1])) { av->setSpreadDrift (spread); startVoice (av, sound, channel, note, velocity); }
+        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v0])) { av->setSpreadDrift (0);      triggerVoice (av, sound, channel, note, velocity); }
+        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v1])) { av->setSpreadDrift (spread); triggerVoice (av, sound, channel, note, velocity); }
     }
     else if (p.polyphonyMode == 4 /*CHAIN*/)  // internal 2x doubling (Option A)
     {
@@ -726,7 +753,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) idx]))
         {
             av->setSpreadDrift (static_cast<uint8_t> (idx * p.partBytes[3]));
-            startVoice (av, sound, channel, note, velocity);
+            triggerVoice (av, sound, channel, note, velocity);
         }
     }
     else  // POLY / CYCLIC
@@ -736,7 +763,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
             if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) idx]))
             {
                 av->setSpreadDrift (static_cast<uint8_t> (idx * p.partBytes[3]));
-                startVoice (av, sound, channel, note, velocity);
+                triggerVoice (av, sound, channel, note, velocity);
             }
     }
 }
@@ -775,9 +802,9 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
                     // Legato slide-back to the prior held note on release: same
                     // no-kill retrigger (a kill would silence the legato Trigger).
                     if (av->isVoiceActive())
-                        av->retriggerNote (sound, newNote, newVel);
+                        retriggerVoice (av, sound, newNote, newVel);
                     else
-                        startVoice (av, sound, channel, newNote, newVel);
+                        triggerVoice (av, sound, channel, newNote, newVel);
                     drift += spread;
                 }
         }
@@ -1279,22 +1306,49 @@ void SynthEngine::renderPartFx (int numSamples)
                 juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vi].getReadPointer (0), numSamples);
         // (voiceIndices empty => silence, which is correct.)
 
-        // ---- 3. Pick the representative (first-active) voice + its capture ring ----
+        // ---- 3. Representative voice = the MOST-RECENTLY-TRIGGERED active voice ----
+        // ---- + crossfade on any voice change.                                  ----
         // The mod sources advance once per 40-sample internal block inside each
         // voice (980 Hz); fillInternalBlock pushes them into a per-voice ring.
-        // We read the first-active voice's ring at internal-block boundaries
-        // (step 4) so the FX mod matrix evaluates at ~980 Hz, not host-block
-        // rate. When no voice is active the ring is empty and we hold the last
-        // snapshot (lastModSources_) so tails still modulate — exactly today's
-        // behaviour.
+        // The FX stage is per-part but sources are per-voice, so we sample ONE
+        // voice per part: among the part's active voices, the one with the
+        // highest triggerSeq() (the "last" note). A monotonic seq makes the pick
+        // STABLE between note-on events (no churn), it follows the latest note-
+        // on automatically, and on a release it falls back to the next-most-
+        // recent active voice. On any voice IDENTITY change a short (~5 ms)
+        // crossfade bridges the old voice's last effective source values
+        // (lastModSources_) to the new voice's live values, so per-voice sources
+        // (VELOCITY / NOTE / per-note MPE) glide instead of clicking. Global /
+        // part-global sources are identical across voices so the crossfade is a
+        // no-op there. When no voice is active we hold the last snapshot so
+        // tails still modulate.
         AmbikaVoice* repVoice = nullptr;
+        int newestIdx = -1;
+        uint64_t newestSeq = 0;
         for (int vi : part.voiceIndices)
         {
-            if (auto* av = getAmbikaVoice (vi); av != nullptr && av->isVoiceActive())
+            auto* av = getAmbikaVoice (vi);
+            if (av == nullptr || ! av->isVoiceActive()) continue;
+            const uint64_t s = av->triggerSeq();
+            if (repVoice == nullptr || s > newestSeq)
             {
-                repVoice = av;
-                break;
+                repVoice = av; newestIdx = vi; newestSeq = s;
             }
+        }
+        if (repVoice != nullptr && newestIdx != fxTrackedVoice_[(size_t) p])
+        {
+            // Identity changed (a new note-on landed on a different voice, or
+            // the tracked voice released and another active voice is now the
+            // most recent). Arm the crossfade from the last effective values.
+            // The very first selection (fxTrackedVoice_ < 0) has no prior values
+            // to fade from, so the crossfade stays settled and the new voice is
+            // used live directly (no fade-in from zero).
+            if (fxTrackedVoice_[(size_t) p] >= 0)
+            {
+                fxFadeStart_[(size_t) p] = lastModSources_[(size_t) p];
+                fxFadePhase_[(size_t) p] = 0.0f;
+            }
+            fxTrackedVoice_[(size_t) p] = newestIdx;
         }
         const int ringCount = repVoice != nullptr ? repVoice->modRingCount() : 0;
 #ifndef NDEBUG
@@ -1325,18 +1379,55 @@ void SynthEngine::renderPartFx (int numSamples)
             if (sub <= 0) sub = 1;                                   // rounding guard
             if (sub > numSamples - written) sub = numSamples - written;
 
-            // Mod sources for THIS internal block (ring entry, or held last).
-            const uint8_t* srcs = (ringCount > 0)
+            // Mod sources for THIS internal block: the tracked voice's live
+            // ring entry (or the held lastModSources_ when no voice is active /
+            // the ring is empty), CROSSFADED from fxFadeStart_ when a voice
+            // change is in progress. The lerp is a no-op for global/part-global
+            // sources (identical across voices) and only blends the per-voice
+            // ones (VELOCITY / NOTE / per-note MPE) so they glide on a switch.
+            const uint8_t* liveSrcs = (ringCount > 0)
                 ? repVoice->modRingEntry (juce::jmin (ringIdx, ringCount - 1))
                 : lastModSources_[(size_t) p].data();
-            // Mirror into lastModSources_ so held tails / later sub-chunks keep
-            // the freshest value when no further internal block advances.
+            const float fade = fxFadePhase_[(size_t) p];
+            uint8_t effSrcs[ambika::dsp::MOD_SRC_LAST];
+            if (fade >= 1.0f)
+            {
+                // Settled (the steady-state path): copy live directly, no lerp.
+                for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                    effSrcs[src] = liveSrcs[src];
+            }
+            else
+            {
+                const auto& start = fxFadeStart_[(size_t) p];
+                for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                {
+                    const float v = juce::jmap (fade,
+                        static_cast<float> (start[(size_t) src]),
+                        static_cast<float> (liveSrcs[src]));
+                    effSrcs[src] = static_cast<uint8_t> (juce::jlimit (0.0f, 255.0f, v));
+                }
+            }
+            const uint8_t* srcs = effSrcs;
+            // Mirror EFFECTIVE into lastModSources_ so held tails / later
+            // sub-chunks keep the freshest value AND a subsequent voice change
+            // crossfades from here.
             for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                lastModSources_[(size_t) p][(size_t) src] = srcs[src];
+                lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
+            // Advance the crossfade phase for the next sub-chunk (drift-free:
+            // tau in seconds => sample-rate independent).
+            if (fade < 1.0f)
+                fxFadePhase_[(size_t) p] = juce::jmin (1.0f, fade
+                    + static_cast<float> (sub)
+                        / static_cast<float> (kFxCrossfadeTauSec * getSampleRate()));
 
-            // ---- FX mod matrix (verbatim logic, now per sub-chunk) ----
-            // modOffset[dest] += amount/63 * srcValue/255 (dest = slot*5 +
-            // field: 0=dryWet, 1..4=param 0..3). Combine with the cached base.
+            // ---- FX mod matrix (per sub-chunk) ----
+            // modOffset[dest] += amount/63 * norm (dest = slot*5 + field:
+            // 0=dryWet, 1..4=param 0..3). AC/DC coupling mirrors the SYNTH voice
+            // mod matrix (voice.cpp ProcessModulationMatrix): LFO_1..4 /
+            // PITCH_BEND / NOTE are AC-coupled (128 = neutral, bipolar ±1); all
+            // other sources are DC-coupled (0 = neutral, unipolar 0..1). Without
+            // the AC branch an LFO/bend/note at rest (128) injected a static
+            // +0.126 offset (at amount 63) instead of zero modulation.
             float modOffset[kNumFxSlots * 5] {};
             for (int m = 0; m < kNumFxMatrixSlots; ++m)
             {
@@ -1345,9 +1436,14 @@ void SynthEngine::renderPartFx (int numSamples)
                 const int dst = (int) cache.modDst[(size_t) m];
                 if (dst < 0 || dst >= (int) (sizeof (modOffset) / sizeof (float))) continue;
                 const uint8_t sIdx = cache.modSrc[(size_t) m];
-                const float srcValue = (sIdx < ambika::dsp::MOD_SRC_LAST)
-                    ? (float) srcs[sIdx] / 255.0f : 0.0f;
-                modOffset[dst] += ((float) amt / 63.0f) * srcValue;
+                if (sIdx >= ambika::dsp::MOD_SRC_LAST) continue;
+                const bool ac = (sIdx >= ambika::dsp::MOD_SRC_LFO_1 && sIdx <= ambika::dsp::MOD_SRC_LFO_4)
+                             || sIdx == ambika::dsp::MOD_SRC_PITCH_BEND
+                             || sIdx == ambika::dsp::MOD_SRC_NOTE;
+                const float norm = ac
+                    ? ((static_cast<float> (srcs[sIdx]) - 128.0f) * (1.0f / 128.0f))
+                    :  (static_cast<float> (srcs[sIdx]) * (1.0f / 255.0f));
+                modOffset[dst] += ((float) amt / 63.0f) * norm;
             }
 
             // De-click coefficient for the BASE param (N-adaptive: computed from

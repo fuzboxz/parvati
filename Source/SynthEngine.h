@@ -430,6 +430,14 @@ public:
     float debugEffParamMin (int part) const { return debugEffParamMin_[(size_t) part]; }
     float debugEffParamMax (int part) const { return debugEffParamMax_[(size_t) part]; }
     void debugStopEffParamTracking() { debugEffParamTracking_ = false; }
+
+    // Test-only: the FX representative-voice tracker state for @p part.
+    // trackedVoice = the index of the sticky most-recently-triggered active
+    // voice (-1 = none), fadePhase = the per-voice-change source crossfade
+    // (0..1; 1 = settled). Lets a test prove the tracker switches to the newest
+    // voice and arms the de-click crossfade on a voice change.
+    int debugFxTrackedVoice (int part) const { return fxTrackedVoice_[(size_t) part]; }
+    float debugFxFadePhase (int part) const { return fxFadePhase_[(size_t) part]; }
 #endif
 
     // ---- Multi-output (Ambika hardware: 6 individual voicecard outputs) ----
@@ -505,6 +513,25 @@ private:
     // getModulationSource); reused while no voice is active so tails still
     // modulate. AT-only (written + read in renderPartFx).
     std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kNumParts> lastModSources_ {};
+
+    // ---- FX representative-voice tracker (per part) ----
+    // The FX stage is per-part but modulation sources are per-voice, so
+    // renderPartFx samples ONE voice per part: the MOST-RECENTLY-TRIGGERED
+    // active voice (via the per-voice triggerSeq_), so per-voice sources
+    // (VELOCITY / NOTE / per-note MPE) follow the latest note. On any voice
+    // IDENTITY change a short crossfade bridges the old voice's last effective
+    // source values (lastModSources_) to the new voice's live values, so those
+    // per-voice sources glide instead of clicking. Global/part-global sources
+    // are identical across voices so the crossfade is a no-op there. AT-only.
+    std::array<int, kNumParts> fxTrackedVoice_ {};        // sticky tracked voice index (-1 via .fill in ctor)
+    std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kNumParts> fxFadeStart_ {};  // crossfade "from" snapshot
+    std::array<float, kNumParts> fxFadePhase_ {};         // 0..1 (1 = settled; live values used directly)
+    static constexpr double kFxCrossfadeTauSec = 0.005;   // ~5 ms de-click on a voice change
+
+    // Monotonic trigger counter for the per-voice triggerSeq_ stamps. Bumped at
+    // every note-on (audio thread via render, or message thread via a direct
+    // noteOn); renderPartFx reads it on the audio thread. Relaxed ordering
+    // suffices (only the relative recency across voices matters).
 
     // Drift-free fractional internal-block boundary position (host-sample
     // units), carried across blocks, for the FX mod-matrix sub-chunking loop in
@@ -618,11 +645,25 @@ private:
     void handleChannelPressure (int midiChannel, int channelPressureValue) override;
     void handleController      (int midiChannel, int controllerNumber, int controllerValue) override;
 
+    // Trigger a voice for a note-on, stamping it as the most-recently-triggered
+    // (so the FX representative-voice tracker picks it). Wraps juce::Synthesiser
+    // ::startVoice / AmbikaVoice::retriggerNote so EVERY trigger site stays in
+    // sync with the FX tracker without per-call boilerplate.
+    void triggerVoice   (AmbikaVoice* av, juce::SynthesiserSound* sound,
+                         int channel, int note, float velocity);
+    void retriggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
+                         int note, float velocity);
+    uint64_t nextTriggerSeq() noexcept { return triggerSeqCounter_.fetch_add (1, std::memory_order_relaxed) + 1; }
+
     // GLOBAL continuous-controller (mod wheel CC1 / breath CC2 / foot CC4)
     // mod-matrix write — sets the given mod source on EVERY voice (faithful to
     // firmware Part::WriteToAllVoices over all allocated voicecards). See the
     // .cpp for why this also gives new notes current-wheel pickup for free.
     void applyGlobalModSource (int modSrcEnum, uint8_t value0to254);
+
+    // Monotonic trigger counter backing nextTriggerSeq() / the per-voice
+    // triggerSeq_ stamps (see the FX representative-voice tracker above).
+    std::atomic<uint64_t> triggerSeqCounter_ { 0 };
 
     // juce::Synthesiser audio hook: route each voice's mono render into its
     // FIXED voicecard buffer instead of the master buffer. The processor fills

@@ -496,6 +496,20 @@ target_link_libraries(parvati_fx_modrate_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# FX mod-matrix voice-source handling: AC/DC coupling (mirrors the synth voice
+# path) + representative-voice tracking (most-recently-triggered active voice)
+# with a de-click crossfade on voice change. Built by default.
+# Run with: ./build/parvati_fx_voice_mod_test
+add_executable(parvati_fx_voice_mod_test
+    tests/parvati_fx_voice_mod_test.cpp
+)
+target_include_directories(parvati_fx_voice_mod_test PRIVATE Source)
+target_compile_features(parvati_fx_voice_mod_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_voice_mod_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # FX pop diagnostic — measures sample-to-sample discontinuities (pops) when
 # modulating FX params, to find the root cause. Diagnostic only (prints a table).
 # Run with: ./build/parvati_fx_popdiag_test

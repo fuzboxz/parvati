@@ -105,6 +105,27 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   to the legacy APVTS restore.
 
 ### Fixed
+- **FX mod-matrix: synth-voice modulation sources now couple correctly + track
+  the latest note.** Two fixes to how per-voice modulation sources reach the FX
+  section:
+  - **AC/DC coupling mirrors the synth voice path.** The FX mod matrix now
+    treats the same sources as bipolar (AC-coupled, 128 = neutral) as the synth
+    mod matrix (`voice.cpp`): `LFO_1..4`, `PITCH_BEND`, `NOTE`. Previously
+    every source was read as unipolar 0..1, so an LFO / pitch-bend / note at
+    rest (value 128) injected a static offset (~+0.126 at amount 63) instead of
+    zero modulation — e.g. an LFO routed to an FX dry/wet sat above its base
+    and only used its upper half. Now a centered LFO contributes nothing at rest
+    and swings symmetrically (true tremolo). All other sources (`VELOCITY`,
+    `AFTERTOUCH`, `WHEEL`, …) keep their existing unipolar depth.
+  - **Representative voice tracks the most-recently-triggered note, with a
+    de-click crossfade.** The FX stage is per-part but sources are per-voice, so
+    it samples one voice per part. It now follows the latest note-on (not an
+    arbitrary first-active voice), and on any voice change a ~5 ms crossfade
+    bridges the old voice's last source values to the new one — so per-voice
+    sources (`VELOCITY`, `NOTE`, per-note MPE bend/pressure/slide) glide
+    instead of jumping/clicking when the tracked voice rotates. Global / part-
+    global sources are identical across voices so the crossfade is a no-op
+    there; tails keep modulating on the last held values when all voices release.
 - **FX effect-param smoothing.** The four per-slot effect params (Pitch, Decay,
   Fold, etc.) are now one-pole-smoothed at BLOCK rate (8 ms tau) in `FxChain`
   before being passed to each processor, so fast FX-mod-matrix modulation / host
