@@ -520,6 +520,39 @@ target_link_libraries(parvati_fx_diffuser_diag_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Full-engine Clouds-FX continuity regression — renders a sustained note through
+# the real processBlock path with each Clouds FX (no mod) and asserts the main
+# bus is click-free. This is the ONLY test that exercises renderPartFx's drift-
+# corrected sub-chunking end-to-end, so it catches the HostRateBridge m==0
+# dropout (and any future orchestration glitch) that isolated fx->process tests
+# miss. Built by default. Run with: ./build/parvati_fx_engine_continuity_test
+add_executable(parvati_fx_engine_continuity_test
+    tests/parvati_fx_engine_continuity.cpp
+)
+target_include_directories(parvati_fx_engine_continuity_test PRIVATE Source)
+target_include_directories(parvati_fx_engine_continuity_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_engine_continuity_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_engine_continuity_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# HostRateBridge tiny-chunk (m==0) dropout regression — asserts a 1-sample
+# block (renderPartFx's drift-corrected sub-chunking periodically emits one)
+# does NOT zero the output (the audible Clouds-FX crackle root cause). Built by
+# default. FAILS if the m==0 hold fix in HostRateBridge is reverted.
+# Run with: ./build/parvati_fx_bridge_tinychunk_test
+add_executable(parvati_fx_bridge_tinychunk_test
+    tests/parvati_fx_bridge_tinychunk.cpp
+)
+target_include_directories(parvati_fx_bridge_tinychunk_test PRIVATE Source)
+target_include_directories(parvati_fx_bridge_tinychunk_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_bridge_tinychunk_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_bridge_tinychunk_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # HostRateBridge sub-chunk pop regression — asserts every Clouds (bridge) FX is
 # pop-clean when processed in 980 Hz sub-chunks (the engine's normal cadence).
 # FAILS if the bridge head-overlap fix is reverted. Built by default.

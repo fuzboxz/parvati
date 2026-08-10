@@ -174,11 +174,15 @@ public:
         const int m = m_;
         if (m <= 0)
         {
-            for (int i = 0; i < n; ++i)
-            {
-                L[i] = 0.0f;
-                R[i] = 0.0f;
-            }
+            // No internal sample was produced this call (can happen when the
+            // caller passes a 1-sample block whose phase carry didn't cross an
+            // internal boundary -- e.g. renderPartFx's drift-corrected sub-
+            // chunking emits a 1-sample sub-chunk). Zeroing here would be a
+            // full-amplitude dropout (the bug); instead HOLD the last processed
+            // internal sample (zero-order hold) so the output is continuous.
+            const float hl = hasTail_ ? prevTail_.l : 0.0f;
+            const float hr = hasTail_ ? prevTail_.r : 0.0f;
+            for (int i = 0; i < n; ++i) { L[i] = hl; R[i] = hr; }
             return;
         }
         const int lastM = m - 1;

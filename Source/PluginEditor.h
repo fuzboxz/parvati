@@ -690,7 +690,17 @@ private:
     int  activeGeneratorModSrc_ { 0 };   // current active generator (MOD_SRC_*); default ENV 1
 
     juce::Label statusCountLabel_;              // bottom-left "n/denom" active-voice count
+    juce::Label statusLoadLabel_;               // realtime audio-load % + overrun count (overrun probe)
     juce::Label statusTooltipLabel_;            // bottom hover-tooltip bar (fills the rest)
+
+    // Right-click on statusLoadLabel_ resets the overrun probe's peak/count
+    // (so you can reset -> reproduce -> read the peak for a specific episode).
+    struct LoadLabelMouseListener : juce::MouseListener
+    {
+        ParvatiAudioProcessor& proc;
+        explicit LoadLabelMouseListener (ParvatiAudioProcessor& p) : proc (p) {}
+        void mouseDown (const juce::MouseEvent& e) override { if (e.mods.isRightButtonDown()) proc.resetAudioLoadProbe(); }
+    } loadMouseListener_;
 
     // Keyboard latching state: notes currently lit on the virtual keyboard so
     // we only fire latchNoteOn/Off on actual transitions (avoids stuck lamps).

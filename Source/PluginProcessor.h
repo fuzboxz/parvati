@@ -128,6 +128,19 @@ public:
     // and replaceState() clears the undo history on restore.
     juce::UndoManager& getUndoManager() noexcept { return undoManager_; }
 
+    // ---- Realtime overrun probe (diagnostic) ----
+    // Measures each processBlock's wall-clock time against its real-time budget
+    // (numSamples / sampleRate). audioLoadCurrent_ is the latest block's ratio
+    // (1.0 = fully saturated = an xrun); audioLoadPeak_ is the worst seen since
+    // the last reset; audioOverrunCount_ counts blocks that exceeded budget.
+    // Read from the GUI timer (message thread); reset via resetAudioLoadProbe().
+    // Used to confirm whether audible crackle correlates with audio-thread
+    // overruns (e.g. GUI render load starving the RT thread).
+    double   getAudioLoadCurrent() const noexcept { return audioLoadCurrent_.load (std::memory_order_relaxed); }
+    double   getAudioLoadPeak() const noexcept    { return audioLoadPeak_.load (std::memory_order_relaxed); }
+    uint64_t getAudioOverrunCount() const noexcept { return audioOverrunCount_.load (std::memory_order_relaxed); }
+    void     resetAudioLoadProbe() noexcept       { audioLoadResetReq_.store (true, std::memory_order_relaxed); }
+
     // Push the current value of every APVTS parameter into all voices.
     // Public so the GUI / preset loader can deterministically apply a freshly
     // loaded set of parameters. (Live host/GUI edits also apply automatically
@@ -279,6 +292,12 @@ private:
     // the audio thread dereferencing the probe's unique_ptr while the message
     // thread rebuilds it (a data race).
     std::atomic<int> stagedOsLatencyInputSamples_ { 0 };
+
+    // ---- Realtime overrun probe state (see getAudioLoad* in the public section) ----
+    std::atomic<double>   audioLoadCurrent_  { 0.0 };   // latest block's render/budget ratio (1.0 = saturated)
+    std::atomic<double>   audioLoadPeak_     { 0.0 };   // worst ratio since last reset
+    std::atomic<uint64_t> audioOverrunCount_ { 0 };     // blocks whose render time exceeded the budget
+    std::atomic<bool>     audioLoadResetReq_ { false }; // message thread requests a peak/overrun reset
 
     // Master DC blocker (one IIR high-pass ~15 Hz per main-bus channel). The
     // engine's analog filter + VCA are DC-coupled, so any sub-audio/DC offset

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PluginProcessor.h.
 
 #include <array>
+#include <chrono>
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -148,6 +149,13 @@ void ParvatiAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
 
 void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    // ---- Realtime overrun probe: capture the wall-clock cost of this block so
+    // it can be compared to its real-time budget (numSamples/sampleRate). RT-
+    // safe (steady_clock is lock/allocation-free; stores are relaxed atomics).
+    // See getAudioLoad* / getAudioOverrunCount in the header.
+    const auto probeStart = std::chrono::steady_clock::now();
+    const int  probeNumSamples = buffer.getNumSamples();
+
     juce::ScopedNoDenormals noDenormals;
 
     // Keep the offline-render flag warm: some hosts change realtime state
@@ -265,6 +273,37 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         auto auxBus = getBusBuffer (buffer, false, busIdx);
         if (auxBus.getNumChannels() > 0)
             auxBus.copyFrom (0, 0, vcBuffers[(size_t) vc].getReadPointer (0), numSamples);
+    }
+
+    // ---- Realtime overrun probe: record this block's render/budget ratio. ----
+    // 1.0 = the block used its entire real-time window (an xrun is imminent/has
+    // occurred); >1.0 = it overran (the host missed the deadline -> glitch/
+    // crackle). Peak + overrun-count are surfaced to the GUI so we can see
+    // whether audible crackle correlates with the audio thread being starved
+    // (e.g. by GUI render load sharing a core).
+    {
+        const auto probeEnd = std::chrono::steady_clock::now();
+        const double elapsedSec = std::chrono::duration<double> (probeEnd - probeStart).count();
+        if (probeNumSamples > 0 && hostSampleRate_ > 0.0)
+        {
+            const double budgetSec = static_cast<double> (probeNumSamples) / hostSampleRate_;
+            const double r = elapsedSec / budgetSec;
+            audioLoadCurrent_.store (r, std::memory_order_relaxed);
+            if (audioLoadResetReq_.exchange (false, std::memory_order_acq_rel))
+            {
+                audioLoadPeak_.store (r, std::memory_order_relaxed);
+                audioOverrunCount_.store (r > 1.0 ? 1 : 0, std::memory_order_relaxed);
+            }
+            else
+            {
+                // lock-free peak update (CAS loop; no mutex on the audio thread).
+                double peak = audioLoadPeak_.load (std::memory_order_relaxed);
+                while (r > peak && ! audioLoadPeak_.compare_exchange_weak (
+                           peak, r, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+                if (r > 1.0)
+                    audioOverrunCount_.fetch_add (1, std::memory_order_relaxed);
+            }
+        }
     }
 }
 

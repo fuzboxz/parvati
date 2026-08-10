@@ -1936,7 +1936,7 @@ void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
 
 //==============================================================================
 ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
-    : juce::AudioProcessorEditor (&p), processorRef_ (p)
+    : juce::AudioProcessorEditor (&p), processorRef_ (p), loadMouseListener_ (p)
 {
     // Install the persisted chrome language BEFORE building the UI, so every
     // TRANS() below resolves to the right language at construction. English (and
@@ -2540,6 +2540,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
                                juce::dontSendNotification);
     addAndMakeVisible (statusCountLabel_);
+    // Realtime audio-load / overrun probe readout (see ParvatiAudioProcessor::
+    // getAudioLoadCurrent/Peak/getAudioOverrunCount). Shows "CPU 42%" in green,
+    // amber near the limit, red on an overrun ("CPU 98% !3"). Updated at 30 Hz
+    // in timerCallback(). Pure read of the processor's atomics (message thread).
+    statusLoadLabel_.setJustificationType (juce::Justification::centred);
+    statusLoadLabel_.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    statusLoadLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
+    statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
+    statusLoadLabel_.setTooltip ("Audio-thread realtime load (peak since reset) + overrun count. "
+                                 "Approaching 100% means xruns/crackle. Right-click to reset the peak.");
+    addAndMakeVisible (statusLoadLabel_);
+    statusLoadLabel_.addMouseListener (&loadMouseListener_, false);   // right-click resets the probe
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
     statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
     statusTooltipLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
@@ -2695,6 +2707,39 @@ void ParvatiEditor::timerCallback()
         const juce::String countText = juce::String (active) + "/" + juce::String (denom);
         if (statusCountLabel_.getText() != countText)
             statusCountLabel_.setText (countText, juce::dontSendNotification);
+
+        // ---- Realtime audio-load probe readout (overrun diagnosis) ----
+        // Shows the current block's CPU% (render-time / real-time-budget) and,
+        // if any block overran its budget, a "!N" overrun count. Colour flips to
+        // amber above 70%, red above 90% or on any overrun — so a glance at the
+        // strip tells you whether audible crackle coincides with the audio
+        // thread being starved (e.g. by GUI render load on a shared core).
+        {
+            const double cur = processorRef_.getAudioLoadCurrent();
+            const double peak = processorRef_.getAudioLoadPeak();
+            const uint64_t over = processorRef_.getAudioOverrunCount();
+            const int curPct = juce::jlimit (0, 999, juce::roundToInt (cur * 100.0));
+            const int peakPct = juce::jlimit (0, 999, juce::roundToInt (peak * 100.0));
+            juce::String loadText = "CPU " + juce::String (curPct) + "%";
+            if (over > 0) loadText += " !" + juce::String ((int) over);   // overrun count
+            if (statusLoadLabel_.getText() != loadText)
+                statusLoadLabel_.setText (loadText, juce::dontSendNotification);
+            // Colour by headroom (peak drives the colour; overruns force red).
+            auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+            const ParvatiTheme* th = lnf ? lnf->getTheme() : nullptr;
+            const juce::Colour ok     = th ? th->textSecondary : juce::Colour (0xff9a9aa8);
+            const juce::Colour warn   = th ? th->accentPrimary  : juce::Colour (0xffe0b341);
+            const juce::Colour danger = juce::Colour (0xffe0584a);
+            const juce::Colour c = (over > 0 || peak >= 0.90) ? danger
+                                  : peak >= 0.70                ? warn
+                                                                : ok;
+            statusLoadLabel_.setColour (juce::Label::textColourId, c);
+            // Keep the tooltip current with the peak (so the hovered help shows
+            // the worst-case seen, not just the live value).
+            statusLoadLabel_.setTooltip ("Audio-thread realtime load: now " + juce::String (curPct)
+                + "%, peak " + juce::String (peakPct) + "%" + (over > 0 ? (", " + juce::String ((int) over) + " overruns") : juce::String())
+                + ". Near/over 100% = xruns/crackle. Right-click to reset the peak.");
+        }
 
         // Tooltip bar: the help text of the control under the mouse (walks up
         // to the first ancestor carrying a tooltip). Empty when tooltips are
@@ -3067,6 +3112,7 @@ void ParvatiEditor::resized()
     {
         auto strip = area.removeFromBottom (kVoiceStripH).reduced (6, 1);
         statusCountLabel_.setBounds (strip.removeFromLeft (48));
+        statusLoadLabel_.setBounds (strip.removeFromLeft (96));
         statusTooltipLabel_.setBounds (strip);
     }
 
