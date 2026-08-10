@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // FxProcessors — the per-slot FX effects: six ports of the Mutable Instruments
-// Clouds DSP — Diffuser / Pitch Shifter / Clouds Reverb (the dsp/fx chain) and
+// Clouds DSP — Diffuser / Pitch Shifter / Reverb (the dsp/fx chain) and
 // Looping Delay / WSOLA Stretch / Spectral (the buffer-based playback modes) —
 // plus three ports of the Mutable Instruments Warps DSP — Wavefolder (memoryless
 // waveshaper) / Frequency Shifter (quadrature Hilbert) / Ring Modulator (diode
@@ -44,7 +44,8 @@
 // the engine (keeps the engines' internal smoothing advancing) then resamples.
 //
 // Diffuser — the Clouds AP diffusion network (FxEngine<2048, 32-bit float>).
-// param0 = Amount (0..1). The only knob upstream offers.
+// No user params: the internal amount is pinned full-wet (1.0). The wet/dry
+// mix is the chain Dry/Wet (the old Amount knob was a duplicate of it).
 class FxDiffuser : public FxProcessor
 {
 public:
@@ -80,10 +81,12 @@ private:
     float                sizeParam_  = 0.5f;
 };
 
-// Clouds Reverb — the Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
-// param0 = Amount, param1 = Time, param2 = Tone (LP/damping), param3 = Diffusion.
+// Reverb — the Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
+// param0 = Time, param1 = Tone (LP/damping), param2 = Diffusion. The internal
+// amount is pinned full-wet (1.0); the wet/dry mix is the chain Dry/Wet (the old
+// Amount knob was a duplicate of it).
 // input_gain is fixed internally (0.5) to prevent the L+R sum from clipping.
-class FxCloudsReverb : public FxProcessor
+class FxReverb : public FxProcessor
 {
 public:
     void prepare (double sampleRate, int maxBlock) override;

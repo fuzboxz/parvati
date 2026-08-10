@@ -9,7 +9,7 @@
 // The placeholder juce::dsp effects (GainPan/Delay/Reverb/Chorus) were removed;
 // the chain-internal checks (master mix/EQ, tail retention, engage fade-in,
 // re-prepare state preservation) now ride on the Clouds ports (Diffuser /
-// CloudsReverb / PitchShifter), which are the real effect set. CloudsReverb is
+// Reverb / PitchShifter), which are the real effect set. Reverb is
 // used for the state/fade checks because it responds to both DC and impulse
 // input (Diffuser passes DC unchanged) and has a long tail.
 //
@@ -75,7 +75,7 @@ int main()
             FxChain chain;
             chain.prepare (48000.0, kBlock);
 
-            // Slot A (order_[0]) = Diffuser, B = CloudsReverb, C = PitchShifter.
+            // Slot A (order_[0]) = Diffuser, B = Reverb, C = PitchShifter.
             // Enable ALL three with a mid dry/wet so every branch of every
             // topology has at least one active contributor. All three are pure
             // in->out Clouds dsp/fx effects, so each produces immediate wet.
@@ -84,7 +84,7 @@ int main()
             chain.setTopology ((FxTopology) topo);
 
             chain.setSlotType (0, FxType::Diffuser);
-            chain.setSlotType (1, FxType::CloudsReverb);
+            chain.setSlotType (1, FxType::Reverb);
             chain.setSlotType (2, FxType::PitchShifter);
             for (int s = 0; s < kNumFxSlots; ++s)
             {
@@ -130,13 +130,13 @@ int main()
 
     // ---- Master section: global mix / keep-tails / master EQ ----
     {
-        // Helper: slot 0 = CloudsReverb, fully wet, others off. (The reverb's
+        // Helper: slot 0 = Reverb, fully wet, others off. (The reverb's
         // broadband output guarantees the master EQ + global mix have something
         // to act on.)
         auto buildWetChain = [] (FxChain& c)
         {
             c.prepare (48000.0, kBlock);
-            c.setSlotType (0, FxType::CloudsReverb);
+            c.setSlotType (0, FxType::Reverb);
             c.setSlotEnabled (0, true);
             c.setSlotDryWet (0, 1.0f);
             for (int k = 0; k < kNumFxSlotParams; ++k)
@@ -174,13 +174,13 @@ int main()
                "master EQ mid boost: differs from flat");
 
         // (d) Tails are now ALWAYS retained: after bypassing an enabled
-        //     CloudsReverb, the next block is NOT a bit-identical dry copy — the
+        //     Reverb, the next block is NOT a bit-identical dry copy — the
         //     wet is still fading out (one-pole, ~0.30 s) AND the reverb tail is
         //     still ringing, so the slot keeps rendering instead of hard-cutting.
         {
             FxChain c;
             c.prepare (48000.0, kBlock);
-            c.setSlotType (0, FxType::CloudsReverb);
+            c.setSlotType (0, FxType::Reverb);
             c.setSlotEnabled (0, true);
             c.setSlotDryWet (0, 1.0f);
             // A long, loud reverb tail so the bypassed block has real energy.
@@ -202,7 +202,7 @@ int main()
         {
             FxChain c;
             c.prepare (48000.0, kBlock);
-            c.setSlotType (0, FxType::CloudsReverb);
+            c.setSlotType (0, FxType::Reverb);
             c.setSlotEnabled (0, false);                    // disabled: dry passthrough, fade ~0
             c.setSlotDryWet (0, 1.0f);
             for (int k = 0; k < kNumFxSlotParams; ++k)
@@ -242,7 +242,7 @@ int main()
     {
         FxChain c;
         c.prepare (48000.0, kBlock);
-        c.setSlotType (0, FxType::CloudsReverb);
+        c.setSlotType (0, FxType::Reverb);
         c.setSlotEnabled (0, true);
         c.setSlotDryWet (0, 1.0f);
         for (int k = 0; k < kNumFxSlotParams; ++k)

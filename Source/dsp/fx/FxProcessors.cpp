@@ -33,9 +33,12 @@ void FxDiffuser::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxDiffuser::setParams (const float param[4])
+void FxDiffuser::setParams (const float /*param*/[4])
 {
-    amount_ = juce::jlimit (0.0f, 1.0f, param[0]);
+    // Amount is no longer a user param: the internal amount is pinned full-wet
+    // (1.0) so the diffuser always emits a fully diffused signal. The chain
+    // Dry/Wet is the sole wet/dry mix (it was a duplicate of this crossfade).
+    amount_ = 1.0f;
 }
 
 FxType FxDiffuser::type() const { return FxType::Diffuser; }
@@ -76,40 +79,45 @@ void FxPitchShifter::setParams (const float param[4])
 FxType FxPitchShifter::type() const { return FxType::PitchShifter; }
 
 //==========================================================================
-// FxCloudsReverb — Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
-void FxCloudsReverb::prepare (double sampleRate, int maxBlock)
+// FxReverb — Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
+void FxReverb::prepare (double sampleRate, int maxBlock)
 {
     reverb_.Init (reverbBuffer_);
     bridge_.prepare (sampleRate, maxBlock);
 }
 
-void FxCloudsReverb::reset()
+void FxReverb::reset()
 {
     bridge_.reset();
     reverb_.Init (reverbBuffer_);   // Reverb exposes no Clear(); Init() zeroes the tank
 }
 
-void FxCloudsReverb::process (float* L, float* R, int numSamples)
+void FxReverb::process (float* L, float* R, int numSamples)
 {
+    // Reverb-only. For the full Clouds reverb chain (diffuser -> [pitch] -> reverb),
+    // put a standalone Diffuser (and optional PitchShifter) in earlier series slots —
+    // this keeps the diffuser as a single shared block, not duplicated internally.
     reverb_.set_amount (amount_);
     reverb_.set_input_gain (0.5f);                            // fixed: prevents the L+R sum clipping
     reverb_.set_time (juce::jmap (timeParam_, 0.30f, 0.95f));
     reverb_.set_lp (lpParam_);
-    reverb_.set_diffusion (diffParam_);
+    reverb_.set_diffusion (diffParam_);                      // reverb's internal allpass diffusion
     const int m = bridge_.hostToInternal (L, R, numSamples);
     reverb_.Process (bridge_.internal(), static_cast<size_t> (m));
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxCloudsReverb::setParams (const float param[4])
+void FxReverb::setParams (const float param[4])
 {
-    amount_    = juce::jlimit (0.0f, 1.0f, param[0]);
-    timeParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
-    lpParam_   = juce::jlimit (0.0f, 1.0f, param[2]);
-    diffParam_ = juce::jlimit (0.0f, 1.0f, param[3]);
+    // Amount is no longer a user param: pinned full-wet (1.0) so the chain
+    // Dry/Wet is the sole wet/dry mix. Time/Tone/Diffusion shift to p0/p1/p2.
+    amount_    = 1.0f;
+    timeParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
+    lpParam_   = juce::jlimit (0.0f, 1.0f, param[1]);
+    diffParam_ = juce::jlimit (0.0f, 1.0f, param[2]);
 }
 
-FxType FxCloudsReverb::type() const { return FxType::CloudsReverb; }
+FxType FxReverb::type() const { return FxType::Reverb; }
 
 //==========================================================================
 // FxLoopingDelay — Clouds looping sample player.
@@ -639,7 +647,7 @@ std::unique_ptr<FxProcessor> createFxProcessor (FxType t)
     {
         case FxType::Diffuser:     return std::make_unique<FxDiffuser>();
         case FxType::PitchShifter: return std::make_unique<FxPitchShifter>();
-        case FxType::CloudsReverb: return std::make_unique<FxCloudsReverb>();
+        case FxType::Reverb: return std::make_unique<FxReverb>();
         case FxType::LoopingDelay:  return std::make_unique<FxLoopingDelay>();
         case FxType::WSOLAStretch:  return std::make_unique<FxWSOLAStretch>();
         case FxType::Spectral:      return std::make_unique<FxSpectral>();

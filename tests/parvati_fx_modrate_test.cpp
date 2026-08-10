@@ -123,7 +123,7 @@ static void testVariableSubBlock()
     const int sizes[] = { 1, 32, 64, 128, 256, 512 };
     const FxType osEffects[] = { FxType::Wavefolder, FxType::RingModulator };   // 6x OS
     const FxType nativeEffects[] = {
-        FxType::Diffuser, FxType::PitchShifter, FxType::CloudsReverb,
+        FxType::Diffuser, FxType::PitchShifter, FxType::Reverb,
         FxType::FrequencyShifter, FxType::Resonator,
     };
 

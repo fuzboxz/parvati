@@ -159,13 +159,13 @@ void FxSlotVisualizer::paint (juce::Graphics& g)
     switch (ti)
     {
         case static_cast<int> (FxType::Diffuser):
-            drawDiffuser (g, plot, lnf, trace, dimText, p0, wet);
+            drawDiffuser (g, plot, lnf, trace, dimText, 1.0f, wet);   // amount hardcoded full-wet post-dedup; Dry/Wet gates visibility
             break;
         case static_cast<int> (FxType::PitchShifter):
             drawPitchShifter (g, plot, lnf, trace, dimText, p0, p1, wet);
             break;
-        case static_cast<int> (FxType::CloudsReverb):
-            drawCloudsReverb (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
+        case static_cast<int> (FxType::Reverb):
+            drawReverb (g, plot, lnf, trace, accent, dimText, 1.0f, p0, p1, p2, wet);   // amount=full-wet (dedup); time=p0, tone=p1, diffusion=p2
             break;
         case static_cast<int> (FxType::LoopingDelay):
             drawLoopingDelay (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
@@ -342,7 +342,7 @@ void FxSlotVisualizer::drawPitchShifter (juce::Graphics& g, juce::Rectangle<floa
 }
 
 //==============================================================================
-void FxSlotVisualizer::drawCloudsReverb (juce::Graphics& g, juce::Rectangle<float> plot,
+void FxSlotVisualizer::drawReverb (juce::Graphics& g, juce::Rectangle<float> plot,
                                          ParvatiLookAndFeel* lnf,
                                          juce::Colour trace, juce::Colour accent, juce::Colour dimText,
                                          float amount, float time, float tone, float diffusion, float wet)

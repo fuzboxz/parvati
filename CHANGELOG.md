@@ -47,12 +47,12 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   latency).
 - **Clouds FX modules.** Three new per-slot FX algorithms ported from the
   Mutable Instruments Clouds `dsp/fx` chain — **Diffuser** (AP diffusion
-  network), **Pitch Shifter** (dual-tap, ±12 st), and **Clouds Reverb**
+  network), **Pitch Shifter** (dual-tap, ±12 st), and **Reverb**
   (Griesinger/Dattorro tank) — selectable alongside the existing Gain+Pan /
   Delay / Reverb / Chorus placeholders. The vendored Clouds + stmlib DSP runs at
   a fixed 32 kHz and is linear-resampled at the FX boundary, so its tuning is
   bit-faithful to upstream at any host rate. New `FxType` values are append-only
-  (`Diffuser`/`PitchShifter`/`CloudsReverb` = 1/2/3), so existing presets keep
+  (`Diffuser`/`PitchShifter`/`Reverb` = 1/2/3), so existing presets keep
   their effect assignments. A `parvati_clouds_fx_test` covers build, finite
   output and audible wet output for each module.
 

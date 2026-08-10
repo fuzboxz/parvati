@@ -43,7 +43,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /** Re-resolve theme colours onto the diagram / Mix knob + repaint (theme
+    /** Re-resolve theme colours onto the diagram / Dry/Wet knob + repaint (theme
         switch). */
     void applyThemeColors();
 
@@ -51,11 +51,11 @@ private:
     ParvatiAudioProcessor& processor_;
     ThemeManager&          themeManager_;
 
-    // ---- Routing: flow diagram + ◀ ▶ steppers + Mix knob ----
+    // ---- Routing: flow diagram + ◀ ▶ steppers + Dry/Wet knob ----
     juce::TextButton prevButton_, nextButton_;                 // ◀ ▶ topology steppers (cycle fx_topo)
     std::unique_ptr<FxFlowDiagram> flowDiagram_;               // in->out signal-flow block chart (fx_topo)
 
-    juce::Label  mixLabel_;         // "Mix" caption above the Mix knob
+    juce::Label  mixLabel_;         // "Dry/Wet" caption above the Dry/Wet knob
     juce::Slider mixKnob_;          // bound to fx_mix (synth-style rotary, value drawn in-ring)
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttach_;
 

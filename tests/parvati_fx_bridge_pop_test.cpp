@@ -40,7 +40,7 @@ const char* fxTypeName (FxType t)
     {
         case FxType::Diffuser:        return "Diffuser";
         case FxType::PitchShifter:    return "PitchShifter";
-        case FxType::CloudsReverb:    return "CloudsReverb";
+        case FxType::Reverb:    return "Reverb";
         case FxType::LoopingDelay:    return "LoopingDelay";
         case FxType::WSOLAStretch:    return "WSOLAStretch";
         case FxType::Spectral:        return "Spectral";
@@ -123,7 +123,7 @@ constexpr int kSubVsSingleMargin = 1;
 void testRate (double sr, int subChunk, int blocks, int singleChunk, int singleBlocks)
 {
     const FxType cloudsFx[] = {
-        FxType::Diffuser, FxType::CloudsReverb, FxType::PitchShifter,
+        FxType::Diffuser, FxType::Reverb, FxType::PitchShifter,
         FxType::LoopingDelay, FxType::WSOLAStretch, FxType::Spectral,
     };
     const FxType nativeFx[] = { FxType::Resonator, FxType::FrequencyShifter };

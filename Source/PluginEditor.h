@@ -150,6 +150,14 @@ public:
     // descriptor-derived label (displayLabelFor). Stored even when the control
     // has no visible label so a later re-show honours it.
     void setDisplayLabel (const juce::String& label);
+    // Display the knob value as 0..100% (from stored 0..127). FX slot knobs use
+    // this for a friendlier readout. Display-only; stored value unchanged.
+    void setDisplayValuePercent (bool percent);
+    // Display the knob value via a custom text formatter (e.g. note names,
+    // +/-semitones, Hz, On/Off). Used by FX slot params for meaningful-unit
+    // readouts. Display-only; stored value unchanged. The knob is drag-only
+    // (NoTextBox), so no valueFromTextFunction is installed.
+    void setDisplayValueText (std::function<juce::String (double)> toText);
     // True for the Seq1/2/3 length controls (marked "Length").
     bool isLengthControl() const noexcept { return paramIDStr_.startsWith ("seq_length_"); }
     // 0-based step index for a seq*_step* / seqnote_* control, else -1.

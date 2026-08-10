@@ -16,12 +16,12 @@ namespace
     constexpr float kCorner   = 7.0f; // card panel corner radius (synth GroupComponent parity)
     constexpr int kHeaderH    = 16;   // header band (painted "FX ROUTING" title)
     constexpr int kGap        = 8;    // vertical gap between sections
-    constexpr int kLabelH     = 14;   // "Mix" caption height
+    constexpr int kLabelH     = 14;   // "Dry/Wet" caption height
     constexpr int kKnobSize   = 52;   // Mix rotary dial (synth-parity)
     constexpr int kStepBtnW   = 24;   // ◀ ▶ topology stepper width
     constexpr int kStepBtnH   = 28;   // ◀ ▶ topology stepper height
     constexpr int kFlowRowH   = 56;   // [◀][flow diagram][▶] row height
-    constexpr int kCtrlRowH   = 70;   // [Mix knob] row height
+    constexpr int kCtrlRowH   = 70;   // [Dry/Wet knob] row height
     constexpr int kEqRowH     = 58;   // [Low][Mid][High] EQ knob row height
     constexpr int kEqKnobSize = 42;   // EQ rotary dial (compact)
 }
@@ -248,10 +248,10 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     prevButton_.onClick = [this] { stepTopology (-1); };
     nextButton_.onClick = [this] { stepTopology (+1); };
 
-    // ---- "Mix" caption + the global wet/dry knob (synth-style rotary: the
+    // ---- "Dry/Wet" caption + the global wet/dry knob (synth-style rotary: the
     //      value is drawn centred in the ring by the editor-wide LookAndFeel,
     //      identical to the Mixer / Oscillator knobs). ----
-    mixLabel_.setText (TRANS ("Mix"), juce::dontSendNotification);
+    mixLabel_.setText (TRANS ("Dry/Wet"), juce::dontSendNotification);
     mixLabel_.setJustificationType (juce::Justification::centred);
     mixLabel_.setFont (juce::FontOptions (12.0f));
     mixLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
@@ -267,7 +267,7 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
 
     // ---- 3-band master EQ (Low / Mid / High): synth-style rotaries bound to
     //      fx_eq_low / fx_eq_mid / fx_eq_high (0..127). The value renders in-ring
-    //      via the editor-wide LookAndFeel, identical to the Mix knob. ----
+    //      via the editor-wide LookAndFeel, identical to the Dry/Wet knob. ----
     const char* const eqIds[3]   = { "fx_eq_low", "fx_eq_mid", "fx_eq_high" };
     const char* const eqNames[3] = { "Low", "Mid", "High" };
     for (std::size_t i = 0; i < 3; ++i)
@@ -333,7 +333,7 @@ void FxRoutingBar::resized()
 {
     // The bar is the slim column 0 of the 4-column FX top row. Layout (top to
     // bottom): a painted "FX ROUTING" header band, then the [◀][flow diagram][▶]
-    // row (a FlexBox, horizontally centred), then the [Mix knob] row. The flow
+    // row (a FlexBox, horizontally centred), then the [Dry/Wet knob] row. The flow
     // + controls rows are vertically centred as a block in the remaining height
     // so a tall column breathes evenly.
     auto area = getLocalBounds().reduced (kPad);
@@ -385,11 +385,11 @@ void FxRoutingBar::resized()
         if (ctrlH > 0 && area.getHeight() > kGap) area.removeFromTop (kGap);
     }
 
-    // ---- Controls row: [Mix knob + label], centred in the full row width ----
+    // ---- Controls row: [Dry/Wet knob + label], centred in the full row width ----
     if (ctrlH > 0)
     {
         auto row = area.removeFromTop (ctrlH);
-        // Mix: "Mix" caption above a centred synth-parity dial.
+        // Mix: "Dry/Wet" caption above a centred synth-parity dial.
         mixLabel_.setBounds (row.removeFromTop (kLabelH));
         row.removeFromTop (2);
         const int ks = juce::jmin (kKnobSize, row.getWidth(), row.getHeight());

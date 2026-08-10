@@ -99,7 +99,7 @@ juce::StringArray makeModifierOps()
 // FxType choice list (FxType::None..RingModulator). Matches the enum order.
 juce::StringArray makeFxTypes()
 {
-    return { "None", "Diffuser", "Pitch Shifter", "Clouds Reverb",
+    return { "None", "Diffuser", "Pitch Shifter", "Reverb",
              "Looping Delay", "WSOLA Stretch", "Spectral",
              "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator" };
 }

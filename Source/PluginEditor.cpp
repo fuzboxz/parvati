@@ -521,6 +521,45 @@ void ParamControl::setDisplayLabel (const juce::String& label)
     }
 }
 
+void ParamControl::setDisplayValuePercent (bool percent)
+{
+    // Display-only: converts the stored 0..127 value to a 0..100% readout via the
+    // slider's textFromValueFunction (the LookAndFeel renders it at
+    // slider.getTextFromValue()). Stored value stays 0..127 (serialization
+    // unchanged). FX slot knobs use this for a friendlier readout.
+    if (slider_ == nullptr)
+        return;
+    if (percent)
+    {
+        slider_->textFromValueFunction = [] (double v)
+        {
+            return juce::String (juce::roundToInt (v / 127.0 * 100.0)) + "%";
+        };
+        slider_->valueFromTextFunction = [] (const juce::String& s)
+        {
+            return s.retainCharacters ("0123456789").getDoubleValue() / 100.0 * 127.0;
+        };
+    }
+    else
+    {
+        slider_->textFromValueFunction = {};
+        slider_->valueFromTextFunction = {};
+    }
+    slider_->repaint();
+}
+
+void ParamControl::setDisplayValueText (std::function<juce::String (double)> toText)
+{
+    // Display-only: installs a custom value->text formatter on the slider (note
+    // names, +/-semitones, Hz, On/Off, ...). The stored value is unchanged. The
+    // knob is drag-only (NoTextBox) so no valueFromTextFunction is wired (typed
+    // entry would need a per-param inverter — omitted; falls back to raw drag).
+    if (slider_ == nullptr)
+        return;
+    slider_->textFromValueFunction = std::move (toText);
+    slider_->repaint();
+}
+
 int ParamControl::maxChoiceTextWidth() const
 {
     // Measure every choice (plus the combo's current text) in the active L&F

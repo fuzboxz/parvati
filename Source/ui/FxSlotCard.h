@@ -27,7 +27,7 @@
 //   PARAM GRID (bottom): a Mixer-style knob GRID (kCellH = the synth cell
 //       height) — 3 columns for Delay/Reverb, 2 for Chorus/Gain-Pan so every
 //       multi-knob type forms ~2 rows. The ACTIVE fx{N}_param1..4 knobs fill row-major; the
-//       fx{N}_drywet knob is ALWAYS the LAST cell (labelled "Mix") — bottom-right
+//       fx{N}_drywet knob is ALWAYS the LAST cell (labelled "Dry/Wet") — bottom-right
 //       for Reverb / Delay. The count varies by type (None=1 / GainPan,Chorus=3
 //       / Delay=4 / Reverb=5), so the grid is 1 or 2 rows. Inactive params are
 //       hidden. The grid block centres vertically in its region; cells render the
@@ -75,7 +75,7 @@ public:
         @param slot  0..2 (-> fx1_ / fx2_ / fx3_).
         @param p1Desc..p4Desc  descriptors for fx{N}_param1..4 (the card creates +
                owns the ParamControls; they are full modulation-destination knobs).
-        @param drywetDesc  descriptor for fx{N}_drywet (the rightmost "Mix" knob). */
+        @param drywetDesc  descriptor for fx{N}_drywet (the rightmost "Dry/Wet" knob). */
     FxSlotCard (ParvatiAudioProcessor& processor, int slot,
                 const PatchParamDescriptor* p1Desc, const PatchParamDescriptor* p2Desc,
                 const PatchParamDescriptor* p3Desc, const PatchParamDescriptor* p4Desc,

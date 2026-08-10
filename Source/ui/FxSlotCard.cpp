@@ -86,9 +86,9 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 {
     switch (t)
     {
-        case FxType::Diffuser:     return { 1,  80, { 64,  0,  0,  0 } }; // Amount
+        case FxType::Diffuser:     return { 1,  40, {  0,  0,  0,  0 } }; // (amount fixed 1.0; chain Dry/Wet is the mix)
         case FxType::PitchShifter: return { 1, 100, { 50, 50,  0,  0 } }; // Ratio(unison) / Size
-        case FxType::CloudsReverb: return { 1,  80, { 80, 60, 70, 64 } }; // Amount / Time / Tone / Diffusion
+        case FxType::Reverb: return { 1,  50, { 60, 70, 64,  0 } }; // Time / Tone / Diffusion (amount fixed 1.0; chain Dry/Wet is the mix)
         case FxType::LoopingDelay:  return { 1,  80, { 50, 50, 50,  0 } }; // Position / Size / Pitch(unison) / Freeze(off)
         case FxType::WSOLAStretch:  return { 1,  80, { 50, 50, 50,  0 } }; // Pitch(unison) / Position / Size
         case FxType::Spectral:      return { 1,  80, { 50, 50, 50, 50 } }; // Pitch(unison) / Warp / Position / Blur
@@ -150,7 +150,7 @@ int maxComboItemWidth (const juce::ComboBox& combo)
 // Knob-grid column count for a given visible-knob count. Delay (4) / Reverb (5)
 // use the full 3 columns (the approved 2-row look); a 3-knob type (Chorus /
 // Gain-Pan) drops to 2 columns so it forms a 2-row grid instead of a single
-// sparse row; a lone knob (None => Mix only) gets 1 column. Kept in one place so
+// sparse row; a lone knob (None => Dry/Wet only) gets 1 column. Kept in one place so
 // resized()'s row/height budget and layoutParamGrid()'s placement stay in sync.
 int knobGridCols (int count) noexcept
 {
@@ -179,6 +179,18 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     for (auto* pc : { p1_.get(), p2_.get(), p3_.get(), p4_.get(), drywet_.get() })
         if (pc != nullptr)
             addAndMakeVisible (*pc);
+
+    // FX slot param knobs: per-param meaningful-unit readout (note names /
+    // +/-semitones / Hz / On-Off / %) via paramValueText. dry/wet stays %.
+    // Display-only (stored 0..127 unchanged). Re-installed on type change in
+    // refreshFromType() (the formatter depends on the live type).
+    const auto t0 = static_cast<FxType> (currentTypeIndex());
+    ParamControl* initParams[4] = { p1_.get(), p2_.get(), p3_.get(), p4_.get() };
+    for (int i = 0; i < 4; ++i)
+        if (initParams[i] != nullptr)
+            initParams[i]->setDisplayValueText ([t0, i] (double v) { return paramValueText (t0, i, v); });
+    if (drywet_ != nullptr)
+        drywet_->setDisplayValuePercent (true);
 
     // ---- Type combo (ComboBoxAttachment auto-uses the param's choices) ----
     typeCombo_ = std::make_unique<juce::ComboBox> ();
@@ -271,9 +283,12 @@ void FxSlotCard::refreshFromType()
         // Relabel to the active algorithm's semantic name (or revert to the
         // descriptor label for an inactive param so a future show is correct).
         pc->setDisplayLabel (i < active ? juce::String (paramLabel (t, i)) : juce::String());
+        // Re-install the per-param value formatter for the NEW type (the param
+        // index i is fixed, but the unit depends on the type).
+        pc->setDisplayValueText ([t, i] (double v) { return paramValueText (t, i, v); });
     }
     if (drywet_ != nullptr)
-        drywet_->setDisplayLabel ("Mix");
+        drywet_->setDisplayLabel ("Dry/Wet");
 
     resized();   // reflow the visible-set + anchored dry/wet
 }
@@ -362,7 +377,7 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
 
     // The knob sequence: ACTIVE algorithm params (param1..N) in row-major order,
     // then the Mix (dry/wet) knob as the LAST cell (bottom-right for Reverb /
-    // Delay). Count varies by type: None=1 (Mix only), GainPan/Chorus=3,
+    // Delay). Count varies by type: None=1 (Dry/Wet only), GainPan/Chorus=3,
     // Delay=4, Reverb=5.
     juce::Array<ParamControl*> knobs;
     for (int i = 0; i < active; ++i)
@@ -453,7 +468,7 @@ void FxSlotCard::resized()
     const auto t     = static_cast<FxType> (currentTypeIndex());
     const int active = activeParamCount (t);
     int count = active;
-    if (drywet_ != nullptr) ++count;              // the Mix knob is always present
+    if (drywet_ != nullptr) ++count;              // the Dry/Wet knob is always present
     count = juce::jmax (1, count);
     const int cols = knobGridCols (count);
     const int rows = (count + cols - 1) / cols;

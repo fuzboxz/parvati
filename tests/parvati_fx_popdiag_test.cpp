@@ -110,7 +110,7 @@ const char* fxName (FxType t)
     {
         case FxType::Diffuser:         return "Diffuser";
         case FxType::PitchShifter:     return "PitchShifter";
-        case FxType::CloudsReverb:     return "CloudsReverb";
+        case FxType::Reverb:     return "Reverb";
         case FxType::Resonator:        return "Resonator";
         default: return "?";
     }
@@ -151,14 +151,11 @@ int main()
     std::printf ("  Stepping param per 49-sample sub-chunk (~980 Hz) with 10 Hz square wave.\n");
     std::printf ("  ratio = modulatedMaxDelta / staticMaxDelta. Before fix: 9-21x. After: <2x.\n\n");
 
-    // ---- CloudsReverb: amount (p0) + diffusion (p3) ----
-    std::printf ("-- CloudsReverb amount (p0) + diffusion (p3) --\n");
-    testPopRatio (FxType::CloudsReverb, 0, 0.2f, 0.8f, 2.0);
-    testPopRatio (FxType::CloudsReverb, 3, 0.2f, 0.8f, 2.0);
+    // ---- Reverb: diffusion (p2; amount collapsed, no longer a param) ----
+    std::printf ("-- Reverb diffusion (p2) --\n");
+    testPopRatio (FxType::Reverb, 2, 0.2f, 0.8f, 2.0);
 
-    // ---- Diffuser: amount (p0) ----
-    std::printf ("\n-- Diffuser amount (p0) --\n");
-    testPopRatio (FxType::Diffuser, 0, 0.2f, 0.8f, 2.0);
+    // (Diffuser amount (p0) removed: amount is now hardcoded 1.0, not a param.)
 
     // ---- PitchShifter: size (p1) ----
     // size_ is per-sample interpolated (ParameterInterpolator) so the read

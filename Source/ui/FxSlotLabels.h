@@ -12,6 +12,7 @@
 #pragma once
 
 #include "dsp/fx/FxTypes.h"   // FxType
+#include <juce_core/juce_core.h>   // juce::String
 
 // Number of active (visible) generic params for an effect type (0..4). idx
 // 0..activeParamCount-1 are real; idx >= activeParamCount are inactive/hidden.
@@ -20,3 +21,9 @@ int activeParamCount (FxType t) noexcept;
 // Semantic short label for generic param @p idx (0..3) of effect type @p t
 // ("Amount", "Position", "Pitch", ...). Returns "-" for an inactive idx.
 const char* paramLabel (FxType t, int idx) noexcept;
+
+// Meaningful-unit value readout for generic param @p idx of effect type @p t,
+// given the raw stored 0..127 value (e.g. "C4", "+12.0 st", "440 Hz", "On",
+// or "50%"). DISPLAY-ONLY — the stored value is unchanged; this just formats
+// the knob's popup readout. Dimensionless params fall back to 0..100%.
+juce::String paramValueText (FxType t, int idx, double value0to127);

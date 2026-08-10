@@ -253,9 +253,9 @@ int main()
     printResult ("FreqShifter, sub-chunk(49), 220Hz", renderSlotType (FxType::FrequencyShifter, Input::Tone220, subChunk, blocksSub), subChunk * blocksSub);
     printResult ("FreqShifter, single(256),  220Hz", renderSlotType (FxType::FrequencyShifter, Input::Tone220, singleBlock, blocksSingle), singleBlock * blocksSingle);
 
-    std::printf ("\n-- ISOLATION: CloudsReverb (also HostRateBridge) sub vs single --\n");
-    printResult ("CloudsReverb, sub-chunk(49), 220Hz", renderSlotType (FxType::CloudsReverb, Input::Tone220, subChunk, blocksSub), subChunk * blocksSub);
-    printResult ("CloudsReverb, single(256),  220Hz", renderSlotType (FxType::CloudsReverb, Input::Tone220, singleBlock, blocksSingle), singleBlock * blocksSingle);
+    std::printf ("\n-- ISOLATION: Reverb (also HostRateBridge) sub vs single --\n");
+    printResult ("Reverb, sub-chunk(49), 220Hz", renderSlotType (FxType::Reverb, Input::Tone220, subChunk, blocksSub), subChunk * blocksSub);
+    printResult ("Reverb, single(256),  220Hz", renderSlotType (FxType::Reverb, Input::Tone220, singleBlock, blocksSingle), singleBlock * blocksSingle);
 
     std::printf ("\n=== Done. Correlate the measured period with the boundary table above. ===\n");
     return 0;

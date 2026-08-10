@@ -1,4 +1,4 @@
-// Clouds + Warps + Rings FX module (Diffuser / Pitch Shifter / Clouds Reverb /
+// Clouds + Warps + Rings FX module (Diffuser / Pitch Shifter / Reverb /
 // Looping Delay / WSOLA Stretch / Spectral / Wavefolder / Frequency Shifter /
 // Ring Modulator / Resonator) port verification.
 //
@@ -14,10 +14,12 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "dsp/fx/FxProcessor.h"
 #include "dsp/fx/FxChain.h"
+#include "ui/FxSlotLabels.h"
 
 namespace
 {
@@ -108,7 +110,7 @@ int main()
 
     float outL[kBlock], outR[kBlock];
 
-    // ---- FxDiffuser (amount is the only knob) ----
+    // ---- FxDiffuser (no user params; amount is fixed full-wet; chain Dry/Wet is the mix) ----
     {
         auto fx = createFxProcessor (FxType::Diffuser);
         check (fx != nullptr, "Diffuser: factory returns non-null");
@@ -117,13 +119,13 @@ int main()
         fx->prepare (kRate, kBlock);
         fx->reset();
         check (fx->latency() == 0, "Diffuser: latency()==0 (no oversampling)");
-        const float p[4] = { 0.8f, 0.0f, 0.0f, 0.0f };   // amount 0.8 (strong diffusion)
+        const float p[4] = { 0.0f, 0.0f, 0.0f, 0.0f };   // amount fixed 1.0; params unused
         fx->setParams (p);
         const auto r = runFx (*fx, inL, inR, outL, outR, kBlock);
 
         check (r.finite, "Diffuser: finite output");
         check (r.nonSilent, "Diffuser: non-silent output");
-        check (r.differs, "Diffuser: wet output differs from dry (amount > 0)");
+        check (r.differs, "Diffuser: wet output differs from dry (full-wet diffusion)");
     }
 
     // ---- FxPitchShifter (ratio + size) ----
@@ -145,23 +147,23 @@ int main()
         check (r.differs, "PitchShifter: output differs from dry (shift engaged)");
     }
 
-    // ---- FxCloudsReverb (amount / time / tone / diffusion) ----
+    // ---- FxReverb (time / tone / diffusion; amount fixed full-wet) ----
     {
-        auto fx = createFxProcessor (FxType::CloudsReverb);
-        check (fx != nullptr, "CloudsReverb: factory returns non-null");
-        check (fx->type() == FxType::CloudsReverb, "CloudsReverb: type() matches");
+        auto fx = createFxProcessor (FxType::Reverb);
+        check (fx != nullptr, "Reverb: factory returns non-null");
+        check (fx->type() == FxType::Reverb, "Reverb: type() matches");
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.8f, 0.6f, 0.7f, 0.6f };   // amount/time/tone/diffusion
+        const float p[4] = { 0.6f, 0.7f, 0.6f, 0.0f };   // time/tone/diffusion (amount fixed 1.0)
         fx->setParams (p);
         // Render several blocks so the reverb tank charges and the wet tail is
         // unmistakably present (the first block alone is mostly pre-delay).
         const auto r = runFx (*fx, inL, inR, outL, outR, kBlock, 8);
 
-        check (r.finite, "CloudsReverb: finite output");
-        check (r.nonSilent, "CloudsReverb: non-silent output");
-        check (r.differs, "CloudsReverb: wet tail differs from dry (amount > 0)");
+        check (r.finite, "Reverb: finite output");
+        check (r.nonSilent, "Reverb: non-silent output");
+        check (r.differs, "Reverb: wet tail differs from dry (full-wet reverb)");
     }
 
     // ---- FxLoopingDelay (position / size / pitch / freeze) ----
@@ -709,6 +711,135 @@ int main()
                "HARDEN-4a: Position 0.25 -> R (even modes) non-silent");
         check (edgeLevel < midLevel * 0.1f,
                "HARDEN-4b: Position 0.5 -> R (even modes) near-silent (center-pluck node)");
+    }
+
+    // ---- DEDUP-1: amount=mix collapsed (counts + labels) ----
+    // Diffuser now has 0 user params (amount was a duplicate of chain Dry/Wet);
+    // Reverb dropped its Amount knob -> 3 params (Time/Tone/Diffusion).
+    {
+        check (activeParamCount (FxType::Diffuser) == 0,
+               "DEDUP-1a: Diffuser exposes 0 param knobs (amount collapsed)");
+        check (activeParamCount (FxType::Reverb) == 3,
+               "DEDUP-1b: Reverb exposes 3 param knobs (amount collapsed)");
+        check (std::strcmp (paramLabel (FxType::Reverb, 0), "Time") == 0,
+               "DEDUP-1c: Reverb p0 is 'Time' (was 'Amount')");
+        check (std::strcmp (paramLabel (FxType::Diffuser, 0), "-") == 0,
+               "DEDUP-1d: Diffuser p0 label is '-' (no 'Amount')");
+    }
+
+    // ---- DEDUP-2: Diffuser amount is fixed (param[0] ignored) ----
+    // Two different param[0] values must produce identical output because the
+    // amount is now hardcoded to 1.0 (param slots are all ignored).
+    {
+        float outA[kBlock] = {}, outB[kBlock] = {};
+        {
+            auto fx = createFxProcessor (FxType::Diffuser);
+            fx->prepare (kRate, kBlock);
+            fx->reset();
+            const float p[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            fx->setParams (p);
+            float tmpR[kBlock];
+            for (int i = 0; i < kBlock; ++i) { outA[i] = inL[i]; tmpR[i] = inR[i]; }
+            fx->process (outA, tmpR, kBlock);
+        }
+        {
+            auto fx = createFxProcessor (FxType::Diffuser);
+            fx->prepare (kRate, kBlock);
+            fx->reset();
+            const float p[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+            fx->setParams (p);
+            float tmpR[kBlock];
+            for (int i = 0; i < kBlock; ++i) { outB[i] = inL[i]; tmpR[i] = inR[i]; }
+            fx->process (outB, tmpR, kBlock);
+        }
+        float maxErr = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            maxErr = std::fmax (maxErr, std::fabs (outA[i] - outB[i]));
+        check (maxErr < 1.0e-6f,
+               "DEDUP-2: Diffuser param[0] is ignored (amount fixed 1.0)");
+    }
+
+    // ---- DEDUP-3: chain Dry/Wet is the sole wet/dry mix (FxChain-level) ----
+    // With Dry/Wet=0 the output should equal the dry input; with Dry/Wet=1 it
+    // should be the full-wet diffused signal (differs from dry). This proves the
+    // collapsed amount knob's function is fully covered by the chain Dry/Wet.
+    {
+        float outDry[kBlock] = {}, outWet[kBlock] = {};
+        {
+            FxChain chain;
+            chain.prepare (kRate, kBlock);
+            chain.setTopology (FxTopology::Series);
+            chain.setSlotType (0, FxType::Diffuser);
+            chain.setSlotEnabled (0, true);
+            chain.setSlotDryWet (0, 0.0f);
+            float tmpL[kBlock], tmpR[kBlock], dummyR[kBlock];
+            for (int i = 0; i < kBlock; ++i) { tmpL[i] = inL[i]; tmpR[i] = inR[i]; }
+            chain.process (tmpL, tmpR, outDry, dummyR, kBlock);
+        }
+        {
+            FxChain chain;
+            chain.prepare (kRate, kBlock);
+            chain.setTopology (FxTopology::Series);
+            chain.setSlotType (0, FxType::Diffuser);
+            chain.setSlotEnabled (0, true);
+            chain.setSlotDryWet (0, 1.0f);
+            float tmpL[kBlock], tmpR[kBlock], dummyR[kBlock];
+            for (int i = 0; i < kBlock; ++i) { tmpL[i] = inL[i]; tmpR[i] = inR[i]; }
+            chain.process (tmpL, tmpR, outWet, dummyR, kBlock);
+        }
+        // Dry/Wet=0 => output ≈ dry input (the diffused signal is fully blended out)
+        float dryErr = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            dryErr = std::fmax (dryErr, std::fabs (outDry[i] - inL[i]));
+        check (dryErr < 1.0e-4f,
+               "DEDUP-3a: chain Dry/Wet=0 -> output ≈ dry (diffuser fully bypassed)");
+        // Dry/Wet=1 => output is the full-wet diffused signal (differs from dry)
+        check (differsFrom (outWet, inL, kBlock),
+               "DEDUP-3b: chain Dry/Wet=1 -> full-wet diffused output (differs from dry)");
+    }
+
+    // ---- DEDUP-4: 0..100% display conversion ----
+    // The stored 0..127 maps to 0%..100% via roundToInt(v/127.0*100.0). Spot-checks.
+    {
+        auto pct = [] (double v) { return (int) std::round (v / 127.0 * 100.0); };
+        check (pct (0.0)   == 0,   "DEDUP-4a: 0 -> 0%");
+        check (pct (127.0) == 100, "DEDUP-4b: 127 -> 100%");
+        check (pct (64.0)  == 50,  "DEDUP-4c: 64 -> ~50%");
+    }
+
+    // ---- UNITS: per-param meaningful-unit value readout (paramValueText) ----
+    // Display-only formatter: raw 0..127 -> note names / +/-semitones / Hz /
+    // On-Off / %. Mirrors the DSP normalization (p = v/127.0).
+    {
+        auto eq = [] (const juce::String& got, const char* want) {
+            return got == juce::String (want);
+        };
+        // Resonator Pitch -> MIDI note 24..96 = C1..C7
+        check (eq (paramValueText (FxType::Resonator, 0, 0.0),    "C1"), "UNITS: Resonator 0 -> C1");
+        check (eq (paramValueText (FxType::Resonator, 0, 63.5),  "C4"), "UNITS: Resonator 63.5 -> C4");
+        check (eq (paramValueText (FxType::Resonator, 0, 127.0), "C7"), "UNITS: Resonator 127 -> C7");
+        // PitchShifter Pitch (was 'Ratio') -> +/-12 st
+        check (eq (paramValueText (FxType::PitchShifter, 0, 0.0),    "-12.0 st"), "UNITS: PitchShifter 0 -> -12.0 st");
+        check (eq (paramValueText (FxType::PitchShifter, 0, 63.5),  "+0.0 st"),  "UNITS: PitchShifter 63.5 -> +0.0 st");
+        check (eq (paramValueText (FxType::PitchShifter, 0, 127.0), "+12.0 st"), "UNITS: PitchShifter 127 -> +12.0 st");
+        check (eq (paramValueText (FxType::PitchShifter, 0, 101.0), "+7.0 st"),  "UNITS: PitchShifter 101 -> +7.0 st (integer-snap; was 6.9..7.1 with no 7.0)");
+        // WSOLA/Spectral/LoopingDelay pitch -> +/-24 st
+        check (eq (paramValueText (FxType::WSOLAStretch, 0, 127.0),  "+24.0 st"), "UNITS: WSOLA 127 -> +24.0 st");
+        check (eq (paramValueText (FxType::Spectral, 0, 0.0),         "-24.0 st"), "UNITS: Spectral 0 -> -24.0 st");
+        check (eq (paramValueText (FxType::LoopingDelay, 2, 127.0),  "+24.0 st"), "UNITS: LoopingDelay p2 127 -> +24.0 st");
+        // FrequencyShifter Shift -> Hz (non-linear; 0 at centre)
+        check (eq (paramValueText (FxType::FrequencyShifter, 0, 63.5), "0 Hz"),   "UNITS: FreqShifter 63.5 -> 0 Hz");
+        check (paramValueText (FxType::FrequencyShifter, 0, 0.0).contains ("-2048 Hz"), "UNITS: FreqShifter 0 -> -2048 Hz");
+        check (paramValueText (FxType::FrequencyShifter, 0, 127.0).contains ("+2048 Hz"), "UNITS: FreqShifter 127 -> +2048 Hz");
+        // RingModulator Carrier -> Hz/kHz (20..4000, log)
+        check (eq (paramValueText (FxType::RingModulator, 0, 0.0),   "20 Hz"),    "UNITS: RingMod 0 -> 20 Hz");
+        check (eq (paramValueText (FxType::RingModulator, 0, 127.0), "4.00 kHz"), "UNITS: RingMod 127 -> 4.00 kHz");
+        // LoopingDelay Freeze -> On/Off (threshold p > 0.5)
+        check (eq (paramValueText (FxType::LoopingDelay, 3, 63.0), "Off"), "UNITS: LoopingDelay freeze 63 -> Off");
+        check (eq (paramValueText (FxType::LoopingDelay, 3, 64.0), "On"),  "UNITS: LoopingDelay freeze 64 -> On");
+        // Dimensionless -> % (Reverb Diffusion; also the rename check via Reverb==3)
+        check (eq (paramValueText (FxType::Reverb, 2, 64.0), "50%"), "UNITS: Reverb Diffusion 64 -> 50%");
+        check (static_cast<int> (FxType::Reverb) == 3, "UNITS: FxType::Reverb == 3 (rename preserved index)");
     }
 
     std::printf ("\n%s (%d failure%s)\n",

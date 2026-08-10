@@ -13,7 +13,7 @@
 // The graphic is chosen by the slot's FxType (fx{N}_type):
 //   None               (0) — dimmed grid + a passive centred outline (empty slot).
 //   Diffuser..Resonator (1..10) — per-type Clouds/Warps/Rings graphics
-//                               (drawDiffuser / drawPitchShifter / drawCloudsReverb /
+//                               (drawDiffuser / drawPitchShifter / drawReverb /
 //                                drawLoopingDelay / drawWSOLAStretch / drawSpectral /
 //                                drawWavefolder / drawFrequencyShifter /
 //                                drawRingModulator / drawResonator).
@@ -77,7 +77,7 @@ private:
                            ParvatiLookAndFeel* lnf,
                            juce::Colour trace, juce::Colour dimText,
                            float ratio, float size, float wet);
-    void drawCloudsReverb (juce::Graphics& g, juce::Rectangle<float> plot,
+    void drawReverb (juce::Graphics& g, juce::Rectangle<float> plot,
                            ParvatiLookAndFeel* lnf,
                            juce::Colour trace, juce::Colour accent, juce::Colour dimText,
                            float amount, float time, float tone, float diffusion, float wet);

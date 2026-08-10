@@ -23,17 +23,17 @@ constexpr int kNumFxSlotParams  = 4;    // generic params 1..4 per slot
 // Effect type per slot (drives fx{N}_type choice).
 enum class FxType : uint8_t {
     None = 0,
-    Diffuser = 1, PitchShifter = 2, CloudsReverb = 3,
+    Diffuser = 1, PitchShifter = 2, Reverb = 3,
     LoopingDelay = 4, WSOLAStretch = 5, Spectral = 6,
     Wavefolder = 7, FrequencyShifter = 8, RingModulator = 9,
     Resonator = 10,
     Count
 };
-// choice list string: { "None", "Diffuser", "Pitch Shifter", "Clouds Reverb",
+// choice list string: { "None", "Diffuser", "Pitch Shifter", "Reverb",
 //                       "Looping Delay", "WSOLA Stretch", "Spectral",
 //                       "Wavefolder", "Frequency Shifter", "Ring Modulator",
 //                       "Resonator" }
-//   (Diffuser / PitchShifter / CloudsReverb are ports of the Mutable Instruments
+//   (Diffuser / PitchShifter / Reverb are ports of the Mutable Instruments
 //    Clouds `dsp/fx` chain; LoopingDelay / WSOLAStretch / Spectral are the Clouds
 //    looping / WSOLA / phase-vocoder modes; Wavefolder / FrequencyShifter /
 //    RingModulator are ports of the Mutable Instruments Warps DSP; Resonator is a
