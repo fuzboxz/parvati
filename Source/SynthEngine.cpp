@@ -1052,6 +1052,7 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
             if (wasActive && ! part.arp.isActive())
             {
                 part.arp.stop();
+                part.seq.stop();   // release the note SEQUENCE's sounding note too
                 part.killGeneratedNotes_.store (true, std::memory_order_release);
             }
         }
@@ -1089,7 +1090,7 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     }
     else if (! isPlaying && wasPlaying_)
     {
-        for (auto& part : parts_) part.arp.stop();
+        for (auto& part : parts_) { part.arp.stop(); part.seq.stop(); }
     }
     wasPlaying_ = isPlaying;
 
@@ -1115,7 +1116,15 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         {
             const int p = findPartForNote (channel, note);
             if (p >= 0 && parts_[(size_t) p].arp.isActive())
+            {
                 parts_[(size_t) p].arp.noteOff (note);   // stripped
+                // If that emptied the held-key stack the arp already killed its
+                // own note; also release the note SEQUENCE's sounding note
+                // (firmware Part::NoteOff -> AllNotesOff on empty stack; the
+                // arp's allNotesOff does not touch the seq's previousNote_).
+                if (! parts_[(size_t) p].arp.hasHeldKeys())
+                    parts_[(size_t) p].seq.allNotesOff();
+            }
             else
                 processedMidi_.addEvent (msg, meta.samplePosition);
         }
@@ -1127,12 +1136,15 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     midi.swapWith (processedMidi_);
 
     // Advance the shared 24-PPQN clock; each Part's arp self-prescales (own
-    // clockCounter_/resolution) and drives its own arp + sequencer. Run the
-    // clock while the host transport plays, OR while any Part has its arp /
-    // note-sequencer active with held keys — the firmware runs the internal
-    // clock on note activity, so the arpeggiator keeps running in a stopped
-    // DAW (the note-sequencer shares this clock and needs a held key for
-    // transpose, so isActive()+hasHeldKeys() covers both).
+    // clockCounter_/resolution) and drives its own arp + sequencer. The arp's
+    // clockTick() returns true when a prescaled STEP fired — we gate the
+    // Sequencer on it so BOTH run at the same rate (firmware part.cc:590-601
+    // runs ClockSequencer + ClockArpeggiator in the SAME prescaled branch;
+    // previously seq.clockTick ran every raw 24-PPQN tick = 24x too fast at the
+    // default resolution). The arp prescaler still advances every call when its
+    // mode is off, so the Sequencer's modulation seqs keep stepping under a
+    // running transport. Run the clock while the host transport plays, OR while
+    // any Part has its arp / note-sequencer active with held keys.
     auto anyPartClockActive = [this]() -> bool
     {
         return std::any_of (parts_.begin(), parts_.end(), [] (const Part& part) {
@@ -1148,10 +1160,12 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
             for (int p = 0; p < kNumParts; ++p)
             {
                 auto& part = parts_[(size_t) p];
-                part.arp.clockTick();
-                const uint8_t heldNote = part.arp.mostRecentNote();
-                const bool keyHeld = part.arp.hasHeldKeys();
-                part.seq.clockTick (heldNote, keyHeld);
+                if (part.arp.clockTick())   // a prescaled step fired -> advance the seq too
+                {
+                    const uint8_t heldNote = part.arp.mostRecentNote();
+                    const bool keyHeld = part.arp.hasHeldKeys();
+                    part.seq.clockTick (heldNote, keyHeld);
+                }
             }
         }
     }

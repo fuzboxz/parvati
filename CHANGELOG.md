@@ -120,6 +120,23 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   to the legacy APVTS restore.
 
 ### Fixed
+- **Arpeggiator / note-sequencer ran ~24× too fast + stuck notes.** Two
+  pre-existing engine bugs (not a regression from the recent sequencer-UI work):
+  - *Speed:* the Sequencer's `clockTick` was called every raw transport tick
+    (24 PPQN) while only the Arpeggiator self-prescales, so the note sequence
+    (and the two modulation sequences) ran ~24× too fast at the default 1/4
+    resolution — a buzzy trill instead of one note per arp step. Fixed by gating
+    `seq.clockTick` on the arp's prescaled step (the Arp's `clockTick` now returns
+    whether it fired), matching the firmware which runs `ClockSequencer()` and
+    `ClockArpeggiator()` from the same prescaled branch. The modulation sequences
+    now also advance at the correct rate.
+  - *Stuck note:* `Sequencer::clockTick` had no cleanup when the last held key was
+    released, and there was no `Sequencer::allNotesOff()`, so the sounding note
+    was stranded (and `seq.start()` orphaned it permanently across transport
+    restarts). Added `Sequencer::allNotesOff()`/`stop()` and wired it to every
+    strand point — key-release-empty-stack (fires even when the clock has
+    stopped), transport stop, before `start()`, and mode→OFF — plus a defensive
+    self-clean branch in `clockTick`.
 - **Note sequencer "only works from 50% of the range" + length control + a
   velocity clip.** The note-step knob crammed (note | gate) into one 0..255 byte,
   so the lower half (0..127, gate off) was a silent dead zone — only 128..255

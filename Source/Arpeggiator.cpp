@@ -23,14 +23,19 @@ void Arpeggiator::start()
     startArpeggio();
 }
 
-void Arpeggiator::clockTick()
+bool Arpeggiator::clockTick()
 {
-    // Mirrors Part::Clock(): prescale the 24-PPQN ticks into arp steps.
+    // Mirrors Part::Clock(): prescale the 24-PPQN ticks into arp steps. Returns
+    // true when a step fired (the prescaler rolled over) so the engine can gate
+    // the Sequencer onto the same prescaled rate. The prescaler advances every
+    // call regardless of arp mode (clockArpeggiator early-returns when disabled).
     if (++clockCounter_ >= prescaler_)
     {
         clockCounter_ = 0;
         clockArpeggiator();
+        return true;
     }
+    return false;
 }
 
 void Arpeggiator::startArpeggio()

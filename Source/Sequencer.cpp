@@ -52,6 +52,16 @@ void Sequencer::clockTick (uint8_t heldNote, bool keyHeld)
             previousNote_ = un;
         }
     }
+    else if (previousNote_ != 0xff)
+    {
+        // Defensive self-clean (PATH A / D): the note-block guard is false (key
+        // released, length set to 0, or mode != NOTE) but a note is still held.
+        // Release it so it can't strand. (The engine ALSO calls allNotesOff() on
+        // key-release / transport stop, which fires even when the clock has
+        // stopped — this branch covers the case where the clock is still running.)
+        internalNoteOff (previousNote_);
+        previousNote_ = 0xff;
+    }
 
     // Advance every sequence's step (firmware advances all kNumSequences;
     // a 0-length sequence wraps back to 0 immediately).

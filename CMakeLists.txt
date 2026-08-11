@@ -717,6 +717,20 @@ target_link_libraries(parvati_sequencer_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Arp/Sequencer timing + note-lifecycle unit tests (direct, no engine). Proves
+# the prescaler-gating fix (seq runs at the arp's step rate, not 24x) and the
+# allNotesOff / defensive self-clean (no stuck note). Built by default.
+# Run with: ./build/parvati_arp_seq_timing_test
+add_executable(parvati_arp_seq_timing_test
+    tests/parvati_arp_seq_timing_test.cpp
+)
+target_include_directories(parvati_arp_seq_timing_test PRIVATE Source)
+target_compile_features(parvati_arp_seq_timing_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_arp_seq_timing_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Layer-3b verification: the APVTS parameter bridge drives the engine. Built by
 # default. Run with: ./build/parvati_apvts_test
 add_executable(parvati_apvts_test

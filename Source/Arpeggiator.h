@@ -102,8 +102,14 @@ public:
     void start();
     void stop() { allNotesOff(); }
 
-    // Feed one 24-PPQN clock tick. Internally prescaled by the divider.
-    void clockTick();
+    // Feed one 24-PPQN clock tick. Internally prescaled by the divider. Returns
+    // true when the prescaler rolled over and a step fired (clockArpeggiator ran)
+    // — the engine gates the Sequencer on this so BOTH run at the same prescaled
+    // rate (firmware part.cc:590-601 runs ClockSequencer + ClockArpeggiator in
+    // the SAME prescaled branch). The prescaler advances every call regardless
+    // of arp mode, so the Sequencer's modulation seqs keep stepping when the arp
+    // is off but the transport is running.
+    bool clockTick();
 
     bool isEnabled() const { return mode_ == static_cast<uint8_t> (ArpMode::Arp); }
 

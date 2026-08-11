@@ -8,7 +8,8 @@
 //      PartData sequence_data step (16-step sequences) -> emitted to the engine,
 //      which writes them into every voice's modulation_sources_[MOD_SRC_SEQ_1/2].
 //      These run whenever the clock advances and sequence_length[i] > 0,
-//      independent of arp mode (firmware ClockSequencer runs every tick).
+//      independent of arp mode (firmware ClockSequencer runs every prescaled
+//      tick — Parvati gates seq.clockTick on the arp's prescaled step).
 //
 //  (B) The NOTE sequence (ArpSequencerMode == NOTE): when sequence_length[2] > 0
 //      and a key is held, generates notes from sequence_data bytes 32..63
@@ -61,12 +62,27 @@ public:
     }
     uint8_t getSequenceDataByte (int offset) const { return (offset >= 0 && offset < 64) ? sequenceData_[offset] : 0; }
 
-    // Reset on transport start (mirrors Part::Start()).
+    // Reset on transport start (mirrors Part::Start()). Releases any sounding
+    // note FIRST so a stranded previousNote_ can never be orphaned by the reset
+    // (firmware Part::Start runs after Part::Stop -> AllNotesOff has released it).
     void start()
     {
+        allNotesOff();
         sequencerStep_[0] = sequencerStep_[1] = sequencerStep_[2] = 0;
+    }
+
+    // Release the currently-sounding note sequence note (twin of
+    // Arpeggiator::allNotesOff). Called by the engine wherever the arp's notes
+    // are killed: key-release emptying the held-key stack, transport stop, and
+    // before start(). Idempotent (no-op when previousNote_ == 0xff).
+    void allNotesOff()
+    {
+        internalNoteOff (previousNote_);
         previousNote_ = 0xff;
     }
+
+    // Transport stop (twin of Arpeggiator::stop).
+    void stop() { allNotesOff(); }
 
     // Advance one (prescaled) clock step. `heldNote`/`keyHeld` feed the note
     // sequence transpose (most-recently-played key).
