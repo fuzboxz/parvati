@@ -18,8 +18,10 @@ SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
         slider_->onValueChange = [this] { refreshNumberLabel(); };
     }
 
-    minusBtn_ = std::make_unique<juce::TextButton> ("seqLenMinus", "-");
-    plusBtn_  = std::make_unique<juce::TextButton> ("seqLenPlus",  "+");
+    // juce::TextButton's 2-arg ctor is (buttonName=displayed text, toolTip):
+    // the first arg is what's painted on the button, the second is the tooltip.
+    minusBtn_ = std::make_unique<juce::TextButton> ("-", TRANS ("Decrease sequence length"));
+    plusBtn_  = std::make_unique<juce::TextButton> ("+", TRANS ("Increase sequence length"));
     minusBtn_->onClick = [this] { nudge (-1); };
     plusBtn_->onClick  = [this] { nudge (+1); };
     addAndMakeVisible (*minusBtn_);
@@ -68,13 +70,15 @@ void SeqLengthStepper::resized()
     b.removeFromTop (15);
     b.removeFromTop (3);
 
-    constexpr int btnW = 22, numW = 30, gap = 4;
-    const int totalW = btnW + gap + numW + gap + btnW;
-    auto row = b.withSizeKeepingCentre (juce::jmin (totalW, b.getWidth()),
-                                        juce::jmin (28, b.getHeight()));
-    if (minusBtn_ != nullptr) minusBtn_->setBounds (row.removeFromLeft (btnW));
-    row.removeFromLeft (gap);
-    if (numberLabel_ != nullptr) numberLabel_->setBounds (row.removeFromLeft (numW));
-    row.removeFromLeft (gap);
-    if (plusBtn_ != nullptr) plusBtn_->setBounds (row.removeFromLeft (btnW));
+    // Number on top (FULL cell width -> the value can never truncate to "..."),
+    // − and + side by side below. A horizontal −[n]+ row in this ~62px cell
+    // starved the + button and crammed the number; this vertical stack is
+    // robust to the cell size and keeps both buttons fully visible.
+    const int numH = juce::jmin (b.getHeight() - 18, 20);
+    if (numberLabel_ != nullptr)
+        numberLabel_->setBounds (b.removeFromTop (juce::jmax (14, numH)));
+    auto btnRow = b;   // remainder goes to the buttons
+    const int half = btnRow.getWidth() / 2;
+    if (minusBtn_ != nullptr) minusBtn_->setBounds (btnRow.removeFromLeft (half).reduced (1));
+    if (plusBtn_  != nullptr) plusBtn_->setBounds  (btnRow.reduced (1));
 }
