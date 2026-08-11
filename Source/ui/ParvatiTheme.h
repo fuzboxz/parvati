@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ParvatiTheme — a self-contained colour-palette struct plus the 5 built-in
-// themes (Carbon, Midnight, Obsidian, Paper, Crimson). The palette is a clean
+// ParvatiTheme — a self-contained colour-palette struct plus the 6 built-in
+// themes (Carbon, Midnight, Obsidian, Paper, Crimson, Legacy). The palette is a clean
 // 3-layer semantic scheme so every LookAndFeel / paint call reads its colours
 // from a single ParvatiTheme (switching themes is one pointer change):
 //
@@ -11,7 +11,7 @@
 //
 // A handful of auxiliary tokens (borders, separators, keyboard white, tab
 // chrome) and the modulation-routing palette round the struct out. Selecting
-// Carbon reproduces the original dark/gold look byte-for-byte.
+// Carbon reproduces the default dark look (cyan brand accent, was gold).
 
 #pragma once
 
@@ -21,7 +21,7 @@
 
 //==============================================================================
 // One complete colour palette for the Parvati UI, organised in three semantic
-// layers plus the auxiliary + modulation-routing tokens. The 5 factories in
+// layers plus the auxiliary + modulation-routing tokens. The 6 factories in
 // ParvatiTheme.cpp initialise this struct POSITIONALLY (brace init in field
 // order), so a missed / extra / mis-ordered value silently misaligns every
 // later field with NO compile error — keep every factory in lockstep with the
@@ -76,17 +76,18 @@ struct ParvatiTheme
 
 //==============================================================================
 // Stable builtin list order: Carbon(0), Midnight(1), Obsidian(2), Paper(3),
-// Crimson(4). Each factory returns a reference to a function-local static, so
+// Crimson(4), Legacy(5). Each factory returns a reference to a function-local static, so
 // the theme objects live for the whole program and are safe to hold pointers to.
 
 // All built-in themes, in the order above. Stable for the program's lifetime.
 const std::vector<ParvatiTheme>& getBuiltinThemes();
 
-// Number of built-in themes (== 5).
+// Number of built-in themes (== 6).
 int kNumBuiltinThemes();
 
-const ParvatiTheme& carbonTheme();     // default = current look (dark / gold)
+const ParvatiTheme& carbonTheme();     // default = current look (dark / cyan)
 const ParvatiTheme& midnightTheme();   // dark blue / teal
 const ParvatiTheme& obsidianTheme();   // near-black / violet
 const ParvatiTheme& paperTheme();      // light
 const ParvatiTheme& crimsonTheme();    // dark red
+const ParvatiTheme& legacyTheme();     // light gray / magenta (reference adoption)

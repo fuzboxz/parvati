@@ -58,7 +58,7 @@ int main()
     check ((int) viaStruct == 5, msg);
 
     // ---- [4] Theme category tokens (positional-init alignment guard) ----
-    // The 5 factories use POSITIONAL brace init, so a missed/extra/misordered
+    // The 6 factories use POSITIONAL brace init, so a missed/extra/misordered
     // value silently misaligns every later field with no compile error. This
     // guard catches that: every category colour is opaque + pairwise-distinct,
     // isDark is correct per theme, and the dark themes use the exact spec hues.
@@ -81,6 +81,7 @@ int main()
             { "Obsidian", obsidianTheme(), true,  true  },
             { "Paper",    paperTheme(),    false, false },
             { "Crimson",  crimsonTheme(),  true,  false },
+            { "Legacy",   legacyTheme(),   false, false },
         };
 
         char buf[160];
