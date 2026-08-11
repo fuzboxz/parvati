@@ -143,6 +143,33 @@ int main()
         check (nonzero, "rate bridge round-trip passes 1 kHz tone");
     }
 
+    // ---- RateBridge BW-limit stability across host rates (regression) ----
+    // The steep 15 kHz biquad must stay stable even when the host rate is below
+    // ~30 kHz (where 15 kHz > fs/2). Before the fc<=0.49*fs clamp the biquad went
+    // UNSTABLE at 22050 Hz and emitted inf/NaN. Tone well within the (clamped)
+    // cutoff must survive finite at every rate.
+    {
+        for (double sr : { 22050.0, 32000.0, 44100.0, 48000.0, 96000.0 })
+        {
+            constexpr int n = 512;
+            RateBridge rb;
+            rb.prepare (sr, n);
+            float L[n], R[n];
+            const double f = std::min (1000.0, 0.3 * sr);   // tone below any clamped cutoff
+            for (int i = 0; i < n; ++i)
+            {
+                const float v = 0.4f * std::sin (6.28318530718f * static_cast<float> (f) * static_cast<float> (i) / static_cast<float> (sr));
+                L[i] = v; R[i] = v;
+            }
+            (void) rb.hostToInternal (L, R, n);
+            rb.internalToHost (L, R, n);
+            bool finite = true;
+            for (int i = 0; i < n; ++i)
+                if (! std::isfinite (L[i]) || ! std::isfinite (R[i])) finite = false;
+            check (finite, "rate bridge stable + finite across host rates (22.05k..96k)");
+        }
+    }
+
     // ---- Fv1FxProcessor base: halving passthrough ----
     {
         PassthroughFx fx;

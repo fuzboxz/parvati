@@ -20,8 +20,8 @@ namespace parvati::fv1
 {
 
 // Params (generic 0..1 slot params; param[4] is the chain dry/wet, never read):
-//   param[0] Compress : threshold th = 1 - 0.9*p (lowers), makeup mg = 1 + p
-//                       (max 2.0). Ratio fixed ~4:1; feed-forward peak.
+//   param[0] Compress : threshold th = 1 - 0.9*p (lowers), makeup mg = 1 + 3*p
+//                       (max 4.0). Ratio fixed ~4:1; feed-forward peak.
 //   param[1] Pitch    : dual sine-LFO (0.5 Hz + 4.0 Hz) depth 0..~3 samples on
 //                       the 50 ms (= 1638 sample) delay read pointer.
 //   param[2] Crackle  : output level of an LCG crackle (click when value > 0.98).
@@ -49,7 +49,7 @@ private:
     // Compressor sidechain (float detector; the gain is applied in fixed-point).
     float env_     = 0.0f;
     float th_      = 1.0f;   // 1 - 0.9*pCompress
-    float makeup_  = 1.0f;   // 1 + pCompress  (max 2.0)
+    float makeup_  = 1.0f;   // 1 + 3*pCompress  (max 4.0)
     // Attack/release one-pole coefficients (fixed at the FV-1 internal rate).
     float attackA_  = 0.0f;  // 1 - exp(-1/(0.002*32768))   (2 ms attack)
     float releaseA_ = 0.0f;  // 1 - exp(-1/(0.150*32768))   (150 ms release)

@@ -96,10 +96,11 @@ void Fv1PlateReverb::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lou
     comb2_.write (f24_addSat (pd, f24_mulk (d2, g14_)));
     comb3_.write (f24_addSat (pd, f24_mulk (d3, g14_)));
 
-    // Sum the raw comb outputs (pre-damping) and average by 0.25.
-    int32_t sum = f24_sat (o0 + o1);
-    sum = f24_sat (sum + o2);
-    sum = f24_sat (sum + o3);
+    // Sum the raw comb outputs (pre-damping) and average by 0.25. Sum the four
+    // Q.23 values in a plain int32 FIRST (4x <= 2^25 fits comfortably, no wrap)
+    // then a SINGLE f24_mulk(0.25); per-add f24_sat here would clip prematurely
+    // (four combs at 0.6 each would clip at 1.0 -> 0.25 instead of 0.6).
+    const int32_t sum = o0 + o1 + o2 + o3;
     int32_t in = f24_mulk (sum, quarter14_);
 
     // ---- Two series Schroeder allpasses with slow delay-length modulation ----

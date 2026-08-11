@@ -31,7 +31,7 @@ namespace parvati::fv1
 class Fv1Phaser : public Fv1FxProcessor
 {
 public:
-    void processSampleFx (int32_t lin, int32_t rin, int32_t& lout, int32_t& rout) noexcept override;
+    void processSampleFx (int32_t lin, int32_t rin, int32_t& lout, int32_t& rout) override;
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;
     void setParams (const float param[5]) override;

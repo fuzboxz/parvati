@@ -96,6 +96,14 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
         case FxType::FrequencyShifter: return { 1, 80, { 50,  0, 30,  0,  0 } }; // Shift(0 Hz) / Shape(sine) / Feedback(low) / Spread(none)
         case FxType::RingModulator:  return { 1,  80, { 30,  0, 50,  0,  0 } }; // Carrier(low) / Shape(sine) / Amount(mid)
         case FxType::Resonator:    return { 1,  80, { 50, 30, 50, 25, 32 } }; // Pitch(C4) / Decay / Bright / Position(0.25) / Structure(0.25 = Rings default)
+        // FV-1 hardware-emulation family (Source/dsp/fx/fv1/). enabled=1 + an
+        // audible Dry/Wet so selecting one is immediately hearable; characteristic
+        // mid params. param[4] unused (Mix is the chain Dry/Wet).
+        case FxType::ClockedDelay:    return { 1, 80, { 54, 38, 25,  0, 0 } }; // Sync(1/4) / Feedback(0.3) / TapeAge(0.2) / Grit(off=24-bit)
+        case FxType::Ensemble:        return { 1, 70, { 40, 60, 30, 50, 0 } }; // Rate(~1 Hz) / Depth(7 ms) / Center(7 ms) / Feedback(gentle)
+        case FxType::PlateReverb:     return { 1, 60, { 25, 62, 70, 30, 0 } }; // Predelay(20 ms) / Decay(~2 s) / Damping(~5 kHz) / Mod(light)
+        case FxType::VinylCompressor: return { 1, 80, { 51, 38, 25, 57, 0 } }; // Compress(0.4) / Pitch(0.3) / Crackle(0.2) / Age(6 kHz)
+        case FxType::Phaser:          return { 1, 60, { 47, 89, 85, 76, 0 } }; // Rate(~0.5 Hz) / Depth(0.7) / Feedback(0.3) / Center(800 Hz)
         case FxType::None:
         case FxType::Count:   break;
     }

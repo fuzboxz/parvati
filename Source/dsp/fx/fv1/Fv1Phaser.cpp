@@ -66,7 +66,7 @@ void Fv1Phaser::resetInternal()
 }
 
 void
-Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t& rout) noexcept
+Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t& rout)
 {
     // --- Triangle LFO (table-driven; no per-sample trig) ---
     const float lfo = lutTri32 (phase_);                    // [-1, 1]

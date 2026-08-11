@@ -21,6 +21,7 @@
 #ifndef PARVATI_DSP_FX_FV1_FV1ENGINE_H
 #define PARVATI_DSP_FX_FV1_FV1ENGINE_H
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -208,7 +209,7 @@ public:
     static constexpr int capacity = N;
     void clear() noexcept { buf_.fill (0); wpos_ = 0; }
 
-    void write (int32_t x) noexcept { buf_[wpos_] = x; wpos_ = (wpos_ + 1) & (N - 1); }
+    void write (int32_t x) noexcept { buf_[static_cast<size_t> (wpos_)] = x; wpos_ = (wpos_ + 1) & (N - 1); }
 
     // Integer read at delay d (1..N). d==1 is the most recent write.
     int32_t read (int d) const noexcept
@@ -364,12 +365,19 @@ public:
         prevL_ = prevR_ = 0.0f;
 
         // Steep 15 kHz BW-limit biquads (2 cascaded each -> 4th-order Butterworth).
+        // CLAMP the cutoff below the host Nyquist: at host rates < ~30 kHz the
+        // 15 kHz target exceeds fs/2 and a digital biquad there is UNSTABLE
+        // (poles leave the unit circle -> inf/NaN). At e.g. 22050 Hz this drops
+        // the cutoff to ~10.8 kHz, still a sane ADC/DAC emulation. Also clear the
+        // z-state so a re-prepare on a live rate change never keeps stale history
+        // (mirrors HostRateBridge, which re-Inits its Svfs in prepare).
+        const double bwFc = std::min (kBwCutoffHz, 0.49 * hostRate_);
         for (int i = 0; i < 2; ++i)
         {
-            inLpL_[i].design (kBwCutoffHz, hostRate_);
-            inLpR_[i].design (kBwCutoffHz, hostRate_);
-            outLpL_[i].design (kBwCutoffHz, hostRate_);
-            outLpR_[i].design (kBwCutoffHz, hostRate_);
+            inLpL_[i].design (bwFc, hostRate_);  inLpR_[i].design (bwFc, hostRate_);
+            outLpL_[i].design (bwFc, hostRate_); outLpR_[i].design (bwFc, hostRate_);
+            inLpL_[i].clear();  inLpR_[i].clear();
+            outLpL_[i].clear(); outLpR_[i].clear();
         }
         hostTmpL_.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0f);
         hostTmpR_.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0f);
@@ -434,7 +442,19 @@ public:
     void internalToHost (float* L, float* R, int n) noexcept
     {
         const int m = m_;
-        const int lastM = (m > 0) ? m - 1 : 0;
+        if (m <= 0)
+        {
+            // No internal sample was produced this call (a 1-sample sub-chunk
+            // whose phase carry didn't cross an internal boundary can hit this).
+            // Zero-order-hold the last internal sample so the output is
+            // continuous instead of a full-amplitude dropout (mirrors
+            // HostRateBridge). No OOB: iL_/iR_ are untouched.
+            const float hl = hasTail_ ? prevL_ : 0.0f;
+            const float hr = hasTail_ ? prevR_ : 0.0f;
+            for (int i = 0; i < n; ++i) { L[i] = hl; R[i] = hr; }
+            return;
+        }
+        const int lastM = m - 1;
         for (int i = 0; i < n; ++i)
         {
             const float vj = (static_cast<float> (i) - phaseStart_) * ratio_;
