@@ -2479,7 +2479,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     addAndMakeVisible (kbdToggleButton_);
 
     // ---- Header: brand icon + white "Parvati" wordmark (painted, left) + version (inline, right of logo) ----
-    versionLabel_.setText ("by 805 Labs - v" PARVATI_VERSION, juce::dontSendNotification);
+    versionLabel_.setText ("by 805Labs - v" PARVATI_VERSION, juce::dontSendNotification);
     versionLabel_.setFont (juce::FontOptions (10.0f));
     versionLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     versionLabel_.setJustificationType (juce::Justification::centredLeft);
@@ -3198,7 +3198,7 @@ void ParvatiEditor::resized()
         juce::GlyphArrangement vga;
         vga.addLineOfText (versionFont, versionLabel_.getText(), 0.0f, 0.0f);
         const int versionW = juce::roundToInt (vga.getBoundingBox (0, vga.getNumGlyphs(), true).getWidth()) + 8;
-        versionLabel_.setBounds (bar.removeFromLeft (versionW));   // "by 805 Labs - v…" inline right of the logo
+        versionLabel_.setBounds (bar.removeFromLeft (versionW));   // "by 805Labs - v…" inline right of the logo
     }
 
     // Centre the Global/Patch/Part menu cluster in the remaining middle space.

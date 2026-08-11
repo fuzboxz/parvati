@@ -35,13 +35,19 @@ const char* const kSyncedDivisions[15] = {
     "1/1", "1/2.", "1/1T", "1/2", "1/4.", "1/2T", "1/4", "1/4T",
     "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64T" };
 
-// Frequency -> "0.XXHz" / "NHz" / "N.NkHz" (Style X: no space; kHz 1 sig-fig
-// so the longest readout "1.2kHz" fits a 36px dial above the painter's 9px floor).
+// Frequency -> "0.XXHz" / "NHz" / electronic-component "NkN" (e.g. 15.6kHz ->
+// "15k6"). In the kHz range the multiplier letter replaces the decimal point
+// and the "Hz" suffix is elided, so the longest readout ("16k0") fits a 36px
+// dial above the painter's 9px floor. The filter cutoff is the only synth knob
+// that reaches kHz; LFO rates top out ~980 Hz -> "NHz".
 juce::String hzToString (double hz)
 {
     if (hz < 1.0)    return juce::String (hz, 2) + "Hz";
     if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";
-    return juce::String (hz / 1000.0, 1) + "kHz";
+    // 15.6kHz -> "15k6": round to the nearest 100 Hz (15589 Hz -> 156), then
+    // split into the integer kHz (15) and the single decimal digit (6) joined by 'k'.
+    const int tens = juce::roundToInt (hz / 100.0);
+    return juce::String (tens / 10) + "k" + juce::String (tens % 10);
 }
 
 // LFO 16-bit phase advanced once per internal block (kAudioBlockSize samples @
@@ -112,12 +118,14 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
         {
             // Range 0..63, centre 32 (init). Per-side denominator by EACH side's
             // own max distance (L spans 0..31 -> max dist 32; R spans 33..63 ->
-            // max dist 31) so both rails read 100%: L0->"L100%", R63->"R100%".
+            // max dist 31) so both rails read 100: L0->"L100", R63->"R100". The
+            // "%" is elided — the bounds are strictly 100L..100R, so the unit is
+            // implied and the 4-char "R100" fits the dial arc.
             if (std::abs (iv - 32) <= 1) return "Ctr";
             const int dist  = std::abs (iv - 32);
             const int denom = (iv < 32) ? 32 : 31;
             const int p = juce::roundToInt (juce::jlimit (0.0, 100.0, dist / (double) denom * 100.0));
-            return (iv < 32 ? "L" : "R") + juce::String (p) + "%";
+            return (iv < 32 ? "L" : "R") + juce::String (p);
         }
         if (id == "mix_crush")   // sample-rate decimator, not bit-depth -> %
             return iv == 0 ? "Off" : pct (value, 31.0);   // display fallback; verify
