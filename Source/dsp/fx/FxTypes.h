@@ -18,7 +18,7 @@
 
 constexpr int kNumFxSlots       = 3;    // FX1/FX2/FX3
 constexpr int kNumFxMatrixSlots = 16;   // separate FX mod matrix (no 14 cap)
-constexpr int kNumFxSlotParams  = 4;    // generic params 1..4 per slot
+constexpr int kNumFxSlotParams  = 5;    // generic params 1..5 per slot
 
 // Effect type per slot (drives fx{N}_type choice).
 enum class FxType : uint8_t {
@@ -56,14 +56,16 @@ enum class FxTopology : uint8_t {
 // choice list string: { "Series", "Parallel 1+2->3", "Parallel 1->2+3" }
 
 // FX mod-matrix destinations (drives fxmod{N}_dest choice). Distinct from
-// MOD_DST_* (synth destinations). One dry/wet + four generic params per slot.
+// MOD_DST_* (synth destinations). One dry/wet + five generic params per slot.
+// Layout is CONSECUTIVE per slot (dryWet then P1..P5) so dest = slot*(kNumFxSlotParams+1)
+// + field, matching the modOffset indexing in SynthEngine::renderPartFx.
 enum FxModDestination : int {
     FX_DST_NONE = -1,
-    FX_DST_FX1_DRYWET = 0, FX_DST_FX1_P1, FX_DST_FX1_P2, FX_DST_FX1_P3, FX_DST_FX1_P4,
-    FX_DST_FX2_DRYWET,     FX_DST_FX2_P1, FX_DST_FX2_P2, FX_DST_FX2_P3, FX_DST_FX2_P4,
-    FX_DST_FX3_DRYWET,     FX_DST_FX3_P1, FX_DST_FX3_P2, FX_DST_FX3_P3, FX_DST_FX3_P4,
+    FX_DST_FX1_DRYWET = 0, FX_DST_FX1_P1, FX_DST_FX1_P2, FX_DST_FX1_P3, FX_DST_FX1_P4, FX_DST_FX1_P5,
+    FX_DST_FX2_DRYWET,     FX_DST_FX2_P1, FX_DST_FX2_P2, FX_DST_FX2_P3, FX_DST_FX2_P4, FX_DST_FX2_P5,
+    FX_DST_FX3_DRYWET,     FX_DST_FX3_P1, FX_DST_FX3_P2, FX_DST_FX3_P3, FX_DST_FX3_P4, FX_DST_FX3_P5,
     FX_DST_LAST
-};   // 15 destinations
+};   // 18 destinations (3 slots x (1 dry/wet + 5 params))
 
 // orderIdx 0..5 -> permutation of {0,1,2} (the FX slot process order).
 inline std::array<int, 3> fxOrderPermutation (uint8_t idx)

@@ -649,6 +649,18 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     // Apply the full patch atomically (the per-param listener writes may be
     // ValueTree/timer-deferred, so an explicit sync guarantees correctness).
     syncAllParamsToEngine();
+
+    // An Ambika program carries NO FX information, so the previously-loaded
+    // patch's FX would otherwise remain active. The reset runs AFTER
+    // syncAllParamsToEngine() below (which re-applies EVERY param incl. fx from
+    // the APVTS, so a pre-sync reset would be clobbered by the stale fx values):
+    // reset the CURRENT part's FX directly in the engine, then refresh the fx*
+    // APVTS params so the UI shows the clean state (all slots None / bypassed /
+    // dry, Series topology, flat EQ, cleared mod matrix).
+    engine_.resetPartFx (engine_.getCurrentPart());
+    for (const auto& d : getPatchParamDescriptors())
+        if (d.isFx)
+            apvts.getParameterAsValue (d.paramID) = (float) d.defaultValue;
     return true;
 }
 
@@ -742,6 +754,11 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
         auto& part = engine_.getPart (i);
         if (multi.parts[(size_t) i].hasPatch) part.patchBytes = multi.parts[(size_t) i].patch;
         if (multi.parts[(size_t) i].hasPart)  part.partBytes  = multi.parts[(size_t) i].part;
+
+        // An Ambika multi carries NO FX information -> reset every Part's FX to
+        // a clean slate so the previously-loaded multi's FX does not survive the
+        // load. (Part 0 is reflected into the APVTS by loadPartIntoApvts below.)
+        engine_.resetPartFx (i);
 
         if (multi.hasMultiData)
         {

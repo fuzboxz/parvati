@@ -2336,8 +2336,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // Generate the 3 FX-slot CARDS (FX1/FX2/FX3) — self-contained modular cards
     // (power/bypass toggle + type combo + visualizer + a param knob grid with the
-    // dry/wet anchored bottom-right). Each card CREATES + OWNS its 5 full
-    // ParamControls from the fx{N}_param1..4 + fx{N}_drywet descriptors (so they
+    // dry/wet anchored bottom-right). Each card CREATES + OWNS its 6 full
+    // ParamControls from the fx{N}_param1..5 + fx{N}_drywet descriptors (so they
     // keep EVERY modulation behaviour: FX-mod-matrix drag-drop + mod rings +
     // tooltips + category arc). fx_topo / fx_order now ride on the full-width
     // FxRoutingBar (set below), NOT on a slot page. Cards are editor-owned
@@ -2346,7 +2346,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     {
         const juce::String prefix = "fx" + juce::String (slot + 1) + "_";
         const PatchParamDescriptor *p1 = nullptr, *p2 = nullptr, *p3 = nullptr,
-                                   *p4 = nullptr, *dw = nullptr;
+                                   *p4 = nullptr, *p5 = nullptr, *dw = nullptr;
         for (const auto& d : getPatchParamDescriptors())
         {
             if (! (d.isFx && juce::String (d.paramID).startsWith (prefix)))
@@ -2355,12 +2355,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             else if (d.paramID == prefix + "param2") p2 = &d;
             else if (d.paramID == prefix + "param3") p3 = &d;
             else if (d.paramID == prefix + "param4") p4 = &d;
+            else if (d.paramID == prefix + "param5") p5 = &d;
             else if (d.paramID == prefix + "drywet") dw = &d;
         }
         jassert (p1 != nullptr && p2 != nullptr && p3 != nullptr
-                 && p4 != nullptr && dw != nullptr);
+                 && p4 != nullptr && p5 != nullptr && dw != nullptr);
         auto card = std::make_unique<FxSlotCard> (processorRef_, slot,
-                                                  p1, p2, p3, p4, dw);
+                                                  p1, p2, p3, p4, p5, dw);
         FxSlotCard* raw = card.get();
         fxSlotCards_[slot] = std::move (card);
         fxWorkspace_->setFxSlotCard (slot, raw);

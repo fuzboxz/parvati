@@ -258,7 +258,7 @@ struct FxMatrixRow : public juce::Component,
         // stays in lock-step with makeModSources. The DEST combo is NOT: its labels
         // are DYNAMIC (each slot's actual parameter names from paramLabel()) and it
         // is index-bound manually instead of via a ComboBoxAttachment (the stored
-        // fxmod{N}_dest value stays the stable FX_DST_* index 0..14). Its items are
+        // fxmod{N}_dest value stays the stable FX_DST_* index 0..17). Its items are
         // first built from the live slot types in FxMatrixView::refresh().
         if (auto* sp = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (srcId)))
             sourceCombo_.addItemList (sp->choices, 1);
@@ -619,7 +619,7 @@ FxMatrixView::FxMatrixView (ParvatiAudioProcessor& processor, ThemeManager& them
     // (FX_DST_* + kFxModDstOffset); decode + guard here so synth dests
     // (< kFxModDstOffset) are ignored (the synth handler owns those). The guard
     // also keeps a hovered-synth-knob drop from grabbing an FX slot.
-    // assignNextFreeSlot keeps its RAW FX_DST index contract (0..14).
+    // assignNextFreeSlot keeps its RAW FX_DST index contract (0..17).
     juce::Component::SafePointer<FxMatrixView> safe (this);
     assignSub_ = parvati::ModMatrixHighlight::instance().onAssignRequest (
         [safe] (int source, int dest) -> bool

@@ -35,12 +35,13 @@ namespace
 
 //==============================================================================
 FxSlotVisualizer::FxSlotVisualizer (Getter getType, Getter getP0, Getter getP1,
-                                    Getter getP2, Getter getP3, Getter getDryWet)
+                                    Getter getP2, Getter getP3, Getter getP4, Getter getDryWet)
     : getType_   (std::move (getType)),
       getP0_     (std::move (getP0)),
       getP1_     (std::move (getP1)),
       getP2_     (std::move (getP2)),
       getP3_     (std::move (getP3)),
+      getP4_     (std::move (getP4)),
       getDryWet_ (std::move (getDryWet))
 {
     if (! getType_)   getType_   = [] { return 0.0f; };
@@ -48,6 +49,7 @@ FxSlotVisualizer::FxSlotVisualizer (Getter getType, Getter getP0, Getter getP1,
     if (! getP1_)     getP1_     = [] { return 0.0f; };
     if (! getP2_)     getP2_     = [] { return 0.0f; };
     if (! getP3_)     getP3_     = [] { return 0.0f; };
+    if (! getP4_)     getP4_     = [] { return 0.0f; };
     if (! getDryWet_) getDryWet_ = [] { return 0.0f; };
 
     juce::Component::setTitle ("FX Slot Visualizer");
@@ -60,6 +62,7 @@ FxSlotVisualizer::FxSlotVisualizer (Getter getType, Getter getP0, Getter getP1,
     dispP1_     = fetch (getP1_);
     dispP2_     = fetch (getP2_);
     dispP3_     = fetch (getP3_);
+    dispP4_     = fetch (getP4_);
     dispDryWet_ = fetch (getDryWet_);
 
     startTimerHz (30);
@@ -79,11 +82,12 @@ float FxSlotVisualizer::fetch (const Getter& f) const
 
 void FxSlotVisualizer::timerCallback()
 {
-    const float t = fetch (getType_);
+    const float t  = fetch (getType_);
     const float p0 = fetch (getP0_);
     const float p1 = fetch (getP1_);
     const float p2 = fetch (getP2_);
     const float p3 = fetch (getP3_);
+    const float p4 = fetch (getP4_);
     const float dw = fetch (getDryWet_);
 
     // Track the live APVTS target EXACTLY so the preview is accurate under
@@ -94,6 +98,7 @@ void FxSlotVisualizer::timerCallback()
                       || std::fabs (p1 - dispP1_)     > kEps
                       || std::fabs (p2 - dispP2_)     > kEps
                       || std::fabs (p3 - dispP3_)     > kEps
+                      || std::fabs (p4 - dispP4_)     > kEps
                       || std::fabs (dw - dispDryWet_) > kEps;
 
     dispType_   = t;
@@ -101,6 +106,7 @@ void FxSlotVisualizer::timerCallback()
     dispP1_     = p1;
     dispP2_     = p2;
     dispP3_     = p3;
+    dispP4_     = p4;
     dispDryWet_ = dw;
 
     // Every type is STATIC: the repaint gate fires only on a param/type change

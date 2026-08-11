@@ -69,13 +69,13 @@ juce::String slotAmountParamID (int slot) // slot is 0-based
 }
 
 // ---- FX-dest domain (mirrors the synth table/slots, offset by kFxModDstOffset) ----
-// 15 FX param ids in makeFxDests()/FX_DST_* order: per slot (drywet, param1..4).
+// 18 FX param ids in makeFxDests()/FX_DST_* order: per slot (drywet, param1..5).
 constexpr DestEntry kFxDestTable[] = {
-    { "fx1_drywet" }, { "fx1_param1" }, { "fx1_param2" }, { "fx1_param3" }, { "fx1_param4" },
-    { "fx2_drywet" }, { "fx2_param1" }, { "fx2_param2" }, { "fx2_param3" }, { "fx2_param4" },
-    { "fx3_drywet" }, { "fx3_param1" }, { "fx3_param2" }, { "fx3_param3" }, { "fx3_param4" },
+    { "fx1_drywet" }, { "fx1_param1" }, { "fx1_param2" }, { "fx1_param3" }, { "fx1_param4" }, { "fx1_param5" },
+    { "fx2_drywet" }, { "fx2_param1" }, { "fx2_param2" }, { "fx2_param3" }, { "fx2_param4" }, { "fx2_param5" },
+    { "fx3_drywet" }, { "fx3_param1" }, { "fx3_param2" }, { "fx3_param3" }, { "fx3_param4" }, { "fx3_param5" },
 };
-constexpr int kNumFxDests = static_cast<int> (FX_DST_LAST);   // 15
+constexpr int kNumFxDests = static_cast<int> (FX_DST_LAST);   // 18
 static_assert (sizeof (kFxDestTable) / sizeof (kFxDestTable[0]) == kNumFxDests,
                "kFxDestTable must have exactly one entry per FX_DST_* value");
 static_assert (kFxModDstOffset == kNumDests,

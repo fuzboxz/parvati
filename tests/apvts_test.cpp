@@ -184,7 +184,7 @@ int main()
     for (const auto& [k, v] : groups)
         std::printf (" %s=%d", k.c_str(), v);
     std::printf ("\n");
-    check (descs.size() == 256, "exposes exactly 256 parameters (105 patch/part + 5 arp + 4 options + 67 sequencer + 75 fx)");
+    check (descs.size() == 259, "exposes exactly 259 parameters (105 patch/part + 5 arp + 4 options + 67 sequencer + 78 fx)");
     check (groups["osc"] == 8, "8 oscillator params");
     check (groups["mix"] == 8, "8 mixer params");
     check (groups["filter"] == 7, "7 filter params (filter1 cutoff/reso/mode + env + lfo + filter_card + filter_drive)");

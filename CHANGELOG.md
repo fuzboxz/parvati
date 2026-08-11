@@ -5,6 +5,37 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Per-slot FX now expose up to 5 params + a fixed Dry/Wet.** Each FX slot's
+  generic param count rose from 4 to 5 (`kNumFxSlotParams` 4→5; a new
+  `fx{N}_param5` parameter + `FX_DST_FX{N}_P5` mod-matrix destination per slot).
+  Two effects gained a meaningful 5th control by un-hardcoding previously fixed
+  DSP constants: **Spectral** adds **Freeze** (was hardcoded off — holds the
+  current spectral frame) and **Resonator** adds **Structure** (was fixed at the
+  Rings default 0.25 — modal inharmonicity/layout). The card's knob grid is now a
+  FIXED 3-column × 2-row layout, so the **Dry/Wet knob is anchored in the
+  bottom-right corner consistently** regardless of effect type, and it is
+  **hidden entirely when the slot type is None** (a None slot has no mix). The
+  FX mod-matrix offset table grew accordingly (`kNumFxSlots * 5` →
+  `kNumFxSlots * (kNumFxSlotParams + 1)`).
+
+### Changed
+- **Host state format v5.** The per-part FX engine-state blob is re-versioned
+  4 → 5 to carry the 5th param per slot (78 bytes/Part, was 75). Restore is
+  back-compatible: a v4 (or earlier) blob loads with the 5th param at its neutral
+  default, version-gated so legacy field offsets are read correctly. Parallel FX
+  routing is **already true-parallel** (both branches process the full stereo
+  signal and are summed — NOT a left/right split); a headless measurement test
+  (`tests/parvati_fx_stereo_balance_test.cpp`) confirms the Spectral effect has
+  no systematic L/R bias (only a stochastic, by-design texture-freeze variance at
+  blur < 0.5), so no DSP change was needed for stereo.
+- **Ambika patch/multi load resets the FX section to a clean slate.** Loading a
+  legacy Ambika `.PRO` (single program) or `.MUL` (multi) — which carry no FX
+  information — now resets every affected Part's FX to the defaults (all slots
+  `None` / bypassed / dry, Series topology, flat master EQ, cleared FX mod
+  matrix) instead of leaving the previously-loaded patch's FX active. The
+  `.parvati` native formats are unaffected (they carry their own FX).
+
+### Added
 - **User-friendly synth readouts.** The SYNTH-page knob readouts (OSC / MIX /
   FILTER / ENV / LFO / MOD / SEQ / ARP / GLOBAL) now show human-readable units
   instead of raw 0–127 numbers — e.g. an LFO rate shows `"2.4 Hz"` (free-running)

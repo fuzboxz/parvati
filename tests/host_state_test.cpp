@@ -263,32 +263,32 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX (sanity)");
 
-        // Capture the v4 host state and derive a v1 engine blob from its
-        // engine_state. A v4 blob interleaves a 79-byte FX block per Part
-        // (4-byte length prefix + 75 FX bytes) AFTER the routing bytes, so a
+        // Capture the v5 host state and derive a v1 engine blob from its
+        // engine_state. A v5 blob interleaves an 82-byte FX block per Part
+        // (4-byte length prefix + 78 FX bytes) AFTER the routing bytes, so a
         // naive truncation is NOT a valid v1 blob -- we must extract each Part's
         // core (patch112 + part84 + routing4 = 200 bytes) and skip the FX block.
         constexpr size_t kV1Core = 6 + 6 * (112 + 84 + 4);          // 1206
-        constexpr size_t kV4PartStride = 112 + 84 + 4 + 4 + 75;    // 279 (core + fxlen + fx)
+        constexpr size_t kV5PartStride = 112 + 84 + 4 + 4 + 78;    // 282 (core + fxlen + fx)
         juce::MemoryBlock v1Engine;
         {
-            juce::MemoryBlock v4Host;
-            a.getStateInformation (v4Host);
-            auto xml = juce::AudioProcessor::getXmlFromBinary (v4Host.getData(), (int) v4Host.getSize());
-            juce::MemoryBlock v4Engine;
-            v4Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v4Engine.getSize() >= 6 + 6 * kV4PartStride && ((const uint8_t*) v4Engine.getData())[4] == 4,
-                   "captured engine_state is a v4 blob large enough to derive v1");
+            juce::MemoryBlock v5Host;
+            a.getStateInformation (v5Host);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (v5Host.getData(), (int) v5Host.getSize());
+            juce::MemoryBlock v5Engine;
+            v5Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
+            check (v5Engine.getSize() >= 6 + 6 * kV5PartStride && ((const uint8_t*) v5Engine.getData())[4] == 5,
+                   "captured engine_state is a v5 blob large enough to derive v1");
             v1Engine.ensureSize (kV1Core);
-            const auto* v4 = (const uint8_t*) v4Engine.getData();
+            const auto* v5 = (const uint8_t*) v5Engine.getData();
             auto* v1 = (uint8_t*) v1Engine.getData();
-            std::memcpy (v1, v4, 6);                 // magic + version + currentpart
-            v1[4] = 1;                               // rewrite version 4 -> 1
+            std::memcpy (v1, v5, 6);                 // magic + version + currentpart
+            v1[4] = 1;                               // rewrite version 5 -> 1
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v4off = 6 + (size_t) p * kV4PartStride;   // Part's core in v4
+                const size_t v5off = 6 + (size_t) p * kV5PartStride;   // Part's core in v5
                 const size_t v1off = 6 + (size_t) p * 200;             // Part's core in v1
-                std::memcpy (v1 + v1off, v4 + v4off, 200);             // patch + part + routing (no FX)
+                std::memcpy (v1 + v1off, v5 + v5off, 200);             // patch + part + routing (no FX)
             }
         }
 
@@ -332,35 +332,51 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX incl. master (sanity)");
 
-        // Derive a v2 blob from the v4 capture: per Part, copy core(200) + the
-        // 4-byte fxlen prefix (rewritten 75 -> 71) + the FIRST 71 FX bytes (the
-        // v2-era fields), dropping the trailing 4 master bytes. Version 4 -> 2.
-        constexpr size_t kV4PartStride = 112 + 84 + 4 + 4 + 75;   // 279
+        // Derive a v2 blob from the v5 capture. The v5 FX block has 5 params/slot
+        // (param5 interleaved BEFORE topo/order), while v2 has 4 params/slot and
+        // NO master section, so a naive memcpy of the first 71 FX bytes would
+        // mis-map fields. Reassemble field-by-field instead: core + fxlen prefix
+        // (rewritten 78 -> 71), then each FX field at its v2 offset. Version 5 -> 2.
+        constexpr size_t kV5PartStride = 112 + 84 + 4 + 4 + 78;   // 282
         constexpr size_t kV2PartStride = 112 + 84 + 4 + 4 + 71;   // 275
+        // FX-field offsets WITHIN the per-Part FX block (after the 4-byte fxlen).
+        // v5: type0 enabled3 drywet6 param9(15) topo24 order25 modSrc26 modDst42 modAmt58 master74.
+        // v2: type0 enabled3 drywet6 param9(12) topo21 order22 modSrc23 modDst39 modAmt55.
         juce::MemoryBlock v2Engine;
         {
-            juce::MemoryBlock v4Host;
-            a.getStateInformation (v4Host);
-            auto xml = juce::AudioProcessor::getXmlFromBinary (v4Host.getData(), (int) v4Host.getSize());
-            juce::MemoryBlock v4Engine;
-            v4Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v4Engine.getSize() >= 6 + 6 * kV4PartStride && ((const uint8_t*) v4Engine.getData())[4] == 4,
-                   "captured engine_state is a v4 blob large enough to derive v2");
+            juce::MemoryBlock v5Host;
+            a.getStateInformation (v5Host);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (v5Host.getData(), (int) v5Host.getSize());
+            juce::MemoryBlock v5Engine;
+            v5Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
+            check (v5Engine.getSize() >= 6 + 6 * kV5PartStride && ((const uint8_t*) v5Engine.getData())[4] == 5,
+                   "captured engine_state is a v5 blob large enough to derive v2");
             v2Engine.ensureSize (6 + 6 * kV2PartStride);
-            const auto* v4 = (const uint8_t*) v4Engine.getData();
+            const auto* v5 = (const uint8_t*) v5Engine.getData();
             auto* v2 = (uint8_t*) v2Engine.getData();
-            std::memcpy (v2, v4, 6);                       // magic + version + currentpart
-            v2[4] = 2;                                     // rewrite version 4 -> 2
+            std::memcpy (v2, v5, 6);                       // magic + version + currentpart
+            v2[4] = 2;                                     // rewrite version 5 -> 2
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v4off = 6 + (size_t) p * kV4PartStride;
+                const size_t v5off = 6 + (size_t) p * kV5PartStride;
                 const size_t v2off = 6 + (size_t) p * kV2PartStride;
-                std::memcpy (v2 + v2off, v4 + v4off, 200 + 4);   // core + 4-byte fxlen prefix
-                v2[v2off + 200] = 71;                            // rewrite fxlen 75 -> 71 (LE)
+                std::memcpy (v2 + v2off, v5 + v5off, 200 + 4);   // core + 4-byte fxlen prefix
+                v2[v2off + 200] = 71;                            // rewrite fxlen 78 -> 71 (LE)
                 v2[v2off + 201] = 0;
                 v2[v2off + 202] = 0;
                 v2[v2off + 203] = 0;
-                std::memcpy (v2 + v2off + 204, v4 + v4off + 204, 71);  // 71 v2-era FX bytes (drop 4 master)
+                const size_t v5fx = v5off + 204;                 // v5 FX block start
+                const size_t v2fx = v2off + 204;                 // v2 FX block start
+                std::memcpy (v2 + v2fx + 0,  v5 + v5fx + 0,  9);  // type + enabled + drywet (9 bytes)
+                for (int s = 0; s < 3; ++s)                       // params: 4/slot, dropping each slot's param5
+                    std::memcpy (v2 + v2fx + 9 + (size_t) s * 4,
+                                 v5 + v5fx + 9 + (size_t) s * 5, 4);
+                v2[v2fx + 21] = v5[v5fx + 24];                   // topo
+                v2[v2fx + 22] = v5[v5fx + 25];                   // order
+                std::memcpy (v2 + v2fx + 23, v5 + v5fx + 26, 16); // modSource
+                std::memcpy (v2 + v2fx + 39, v5 + v5fx + 42, 16); // modDest
+                std::memcpy (v2 + v2fx + 55, v5 + v5fx + 58, 16); // modAmount
+                // (no master section in v2)
             }
         }
 

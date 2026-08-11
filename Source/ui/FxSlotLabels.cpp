@@ -12,7 +12,7 @@
 #include <cmath>
 
 //==============================================================================
-// idx is 0..3 (param1..4). Inactive params (idx >= activeParamCount) are
+// idx is 0..4 (param1..5). Inactive params (idx >= activeParamCount) are
 // hidden on the slot card and omitted from the FX-mod dest combo.
 int activeParamCount (FxType t) noexcept
 {
@@ -23,11 +23,11 @@ int activeParamCount (FxType t) noexcept
         case FxType::Reverb: return 3;
         case FxType::LoopingDelay:  return 4;
         case FxType::WSOLAStretch:  return 3;
-        case FxType::Spectral:      return 4;
+        case FxType::Spectral:      return 5;
         case FxType::Wavefolder:    return 2;
         case FxType::FrequencyShifter: return 3;
         case FxType::RingModulator:  return 3;
-        case FxType::Resonator:      return 4;
+        case FxType::Resonator:      return 5;
         case FxType::None:
         case FxType::Count:   return 0;
     }
@@ -65,6 +65,7 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 1) return "Warp";
             if (idx == 2) return "Position";
             if (idx == 3) return "Blur";
+            if (idx == 4) return "Freeze";
             break;
         case FxType::Wavefolder:
             if (idx == 0) return "Fold";
@@ -85,6 +86,7 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 1) return "Decay";
             if (idx == 2) return "Bright";
             if (idx == 3) return "Position";
+            if (idx == 4) return "Structure";
             break;
         case FxType::None:
         case FxType::Count:
@@ -132,7 +134,6 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             break;
 
         case FxType::WSOLAStretch:
-        case FxType::Spectral:
             if (idx == 0)   // Pitch -> +/-24 semitones
                 return formatSemis ((p - 0.5) * 48.0, 48.0);
             break;
@@ -141,6 +142,13 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 2)   // Pitch -> +/-24 semitones
                 return formatSemis ((p - 0.5) * 48.0, 48.0);
             if (idx == 3)   // Freeze -> On/Off (threshold at p > 0.5)
+                return p > 0.5 ? "On" : "Off";
+            break;
+
+        case FxType::Spectral:
+            if (idx == 0)   // Pitch -> +/-24 semitones
+                return formatSemis ((p - 0.5) * 48.0, 48.0);
+            if (idx == 4)   // Freeze -> On/Off (threshold at p > 0.5)
                 return p > 0.5 ? "On" : "Off";
             break;
 

@@ -33,7 +33,7 @@ void FxDiffuser::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxDiffuser::setParams (const float /*param*/[4])
+void FxDiffuser::setParams (const float /*param*/[5])
 {
     // Amount is no longer a user param: the internal amount is pinned full-wet
     // (1.0) so the diffuser always emits a fully diffused signal. The chain
@@ -70,7 +70,7 @@ void FxPitchShifter::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxPitchShifter::setParams (const float param[4])
+void FxPitchShifter::setParams (const float param[5])
 {
     ratioParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
     sizeParam_  = juce::jlimit (0.0f, 1.0f, param[1]);
@@ -107,7 +107,7 @@ void FxReverb::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxReverb::setParams (const float param[4])
+void FxReverb::setParams (const float param[5])
 {
     // Amount is no longer a user param: pinned full-wet (1.0) so the chain
     // Dry/Wet is the sole wet/dry mix. Time/Tone/Diffusion shift to p0/p1/p2.
@@ -170,7 +170,7 @@ void FxLoopingDelay::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxLoopingDelay::setParams (const float param[4])
+void FxLoopingDelay::setParams (const float param[5])
 {
     positionParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
     sizeParam_     = juce::jlimit (0.0f, 1.0f, param[1]);
@@ -235,7 +235,7 @@ void FxWSOLAStretch::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxWSOLAStretch::setParams (const float param[4])
+void FxWSOLAStretch::setParams (const float param[5])
 {
     pitchParam_    = juce::jlimit (0.0f, 1.0f, param[0]);
     positionParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
@@ -279,7 +279,7 @@ void FxSpectral::process (float* L, float* R, int numSamples)
     params_.position                       = positionParam_;
     params_.spectral.warp                  = warpParam_;
     params_.spectral.refresh_rate          = blurParam_;
-    params_.freeze                         = false;
+    params_.freeze                         = freezeParam_ > 0.5f;
     params_.trigger                        = false;
     params_.gate                           = false;
     params_.spectral.quantization          = 0.0f;
@@ -304,12 +304,13 @@ void FxSpectral::process (float* L, float* R, int numSamples)
     bridge_.internalToHost (L, R, numSamples);
 }
 
-void FxSpectral::setParams (const float param[4])
+void FxSpectral::setParams (const float param[5])
 {
     pitchParam_    = juce::jlimit (0.0f, 1.0f, param[0]);
     warpParam_     = juce::jlimit (0.0f, 1.0f, param[1]);
     positionParam_ = juce::jlimit (0.0f, 1.0f, param[2]);
     blurParam_     = juce::jlimit (0.0f, 1.0f, param[3]);
+    freezeParam_   = juce::jlimit (0.0f, 1.0f, param[4]);
 }
 
 FxType FxSpectral::type() const { return FxType::Spectral; }
@@ -362,7 +363,7 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     srcDown_[1].Process (osR_.data(), R, static_cast<size_t> (os));
 }
 
-void FxWavefolder::setParams (const float param[4])
+void FxWavefolder::setParams (const float param[5])
 {
     foldParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
     biasParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
@@ -453,7 +454,7 @@ void FxFrequencyShifter::process (float* L, float* R, int numSamples)
     }
 }
 
-void FxFrequencyShifter::setParams (const float param[4])
+void FxFrequencyShifter::setParams (const float param[5])
 {
     shiftParam_    = juce::jlimit (0.0f, 1.0f, param[0]);
     feedbackParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
@@ -545,7 +546,7 @@ void FxRingModulator::process (float* L, float* R, int numSamples)
     srcDown_[1].Process (osR_.data(), R, static_cast<size_t> (os));
 }
 
-void FxRingModulator::setParams (const float param[4])
+void FxRingModulator::setParams (const float param[5])
 {
     carrierParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
     shapeParam_   = juce::jlimit (0.0f, 1.0f, param[1]);
@@ -604,7 +605,7 @@ void FxResonator::process (float* L, float* R, int numSamples)
                                           static_cast<float> (freqHz / sampleRate_));
 
     res_.set_frequency (freqNorm);
-    res_.set_structure (0.25f);       // fixed at Rings default (slightly inharmonic)
+    res_.set_structure (structureParam_);   // inharmonicity / modal layout (0.25 = Rings default)
     res_.set_brightness (brightParam_);
     res_.set_damping (decayParam_);
     res_.set_position (positionParam_);  // odd/even mode balance (pickup position)
@@ -629,12 +630,13 @@ void FxResonator::process (float* L, float* R, int numSamples)
     }
 }
 
-void FxResonator::setParams (const float param[4])
+void FxResonator::setParams (const float param[5])
 {
-    pitchParam_    = juce::jlimit (0.0f, 1.0f, param[0]);
-    decayParam_    = juce::jlimit (0.0f, 1.0f, param[1]);
-    brightParam_   = juce::jlimit (0.0f, 1.0f, param[2]);
-    positionParam_ = juce::jlimit (0.0f, 1.0f, param[3]);
+    pitchParam_     = juce::jlimit (0.0f, 1.0f, param[0]);
+    decayParam_     = juce::jlimit (0.0f, 1.0f, param[1]);
+    brightParam_    = juce::jlimit (0.0f, 1.0f, param[2]);
+    positionParam_  = juce::jlimit (0.0f, 1.0f, param[3]);
+    structureParam_ = juce::jlimit (0.0f, 1.0f, param[4]);
 }
 
 FxType FxResonator::type() const { return FxType::Resonator; }

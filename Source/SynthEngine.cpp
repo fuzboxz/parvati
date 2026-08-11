@@ -329,6 +329,39 @@ void SynthEngine::setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t 
 }
 #undef PARVATI_FX_CURRENT_PART
 
+void SynthEngine::resetPartFx (int part)
+{
+    // Reset every field of this Part's fxState to the clean defaults (the same
+    // values a default-constructed PartFxState holds: all slots None / bypassed /
+    // dry, Series topology, order 0, master mix fully wet, EQ flat, cleared mod
+    // matrix). Relaxed stores published as one frame by the fxDirty_ release-
+    // store. PartFxState holds atomics (non-copyable), so assign field-by-field.
+    if (part < 0 || part >= kNumParts)
+        return;
+    auto& fx = parts_[(size_t) part].fxState;
+    for (int s = 0; s < kNumFxSlots; ++s)
+    {
+        fx.slotType   [(size_t) s].store (0, std::memory_order_relaxed);   // FxType::None
+        fx.slotEnabled[(size_t) s].store (0, std::memory_order_relaxed);
+        fx.slotDryWet [(size_t) s].store (0, std::memory_order_relaxed);   // fully dry
+        for (int k = 0; k < kNumFxSlotParams; ++k)
+            fx.slotParam[(size_t) s][(size_t) k].store (0, std::memory_order_relaxed);
+    }
+    fx.topology.store (0,   std::memory_order_relaxed);   // Series
+    fx.orderIdx.store (0,   std::memory_order_relaxed);
+    fx.mix.store      (127, std::memory_order_relaxed);    // fully wet (no-op)
+    fx.eqLow.store    (0,   std::memory_order_relaxed);    // flat
+    fx.eqMid.store    (64,  std::memory_order_relaxed);    // 0 dB
+    fx.eqHigh.store   (64,  std::memory_order_relaxed);    // 0 dB
+    for (int m = 0; m < kNumFxMatrixSlots; ++m)
+    {
+        fx.modSource[(size_t) m].store (0, std::memory_order_relaxed);
+        fx.modDest  [(size_t) m].store (0, std::memory_order_relaxed);
+        fx.modAmount[(size_t) m].store (0, std::memory_order_relaxed);
+    }
+    fx.fxDirty_.store (true, std::memory_order_release);
+}
+
 //==========================================================================
 // Host plugin-state capture/restore (full 6-Part multitimbral persistence).
 static const char kEngineStateMagic[4] = { 'P','V','S','T' };
@@ -344,10 +377,11 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     // so legacy v1 hosts reject the v2 blob and fall back to legacy APVTS restore
     // (acceptable; documented in CHANGELOG).
     //
-    // FX block layout (fixed, 75 bytes): slotType[3], slotEnabled[3],
-    // slotDryWet[3], slotParam[3][4], topology, orderIdx, modSource[16],
+    // FX block layout (fixed, 78 bytes): slotType[3], slotEnabled[3],
+    // slotDryWet[3], slotParam[3][5], topology, orderIdx, modSource[16],
     // modDest[16], modAmount[16]. Length-prefixed (4 bytes LE) for forward-safety
-    // (a future version may grow the block without re-versioning).
+    // (a future version may grow the block without re-versioning). v5 grew the
+    // per-slot param count 4->5 (78 bytes, was 75 in v4).
     constexpr uint32_t kFxBlobLen = (uint32_t) (kNumFxSlots * 3            // type+enabled+drywet
                                               + kNumFxSlots * kNumFxSlotParams   // slot params
                                               + 2                              // topology + orderIdx
@@ -355,7 +389,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
                                               + 4);                            // master section (v3): mix + eqLow/mid/high
     juce::MemoryOutputStream out (dest, false);
     out.write (kEngineStateMagic, 4);
-    out.writeByte (4);                                                       // version (4 = per-part FX + master section; keepTails removed, always-on)
+    out.writeByte (5);                                                       // version (5 = per-slot 5th param; v4 = per-part FX + master section; keepTails removed, always-on)
     out.writeByte ((char) currentPart_);
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -409,7 +443,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     if (in.read (magic, 4) != 4 || std::memcmp (magic, kEngineStateMagic, 4) != 0)
         return false;
     const int version = in.readByte();
-    if (version != 1 && version != 2 && version != 3 && version != 4)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
+    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
         return false;
     const int savedCurrent = in.readByte();
     for (int p = 0; p < kNumParts; ++p)
@@ -435,9 +469,9 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             // forward-compat (trailing bytes skipped); a short/truncated read is
             // rejected like the core payload above. Absent in v1 -> fxState stays
             // at its default-initialized values. The master-section fields
-            // (mix/eqLow/mid/high) are v3/v4-only: a v1/v2 blob lacks them, so
+            // (mix/eqLow/mid/high) are v3..v5-only: a v1/v2 blob lacks them, so
             // they are reset to their preserving-audio defaults below (not 0-
-            // filled by take()) and only overwritten for a v3/v4 save.
+            // filled by take()) and only overwritten for a v3+ save.
             uint8_t lenBytes[4];
             if (in.read (lenBytes, 4) != 4) return false;
             const uint32_t fxLen = (uint32_t) lenBytes[0]
@@ -454,9 +488,18 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             for (int s = 0; s < kNumFxSlots; ++s) fx.slotType   [(size_t) s].store (take(), std::memory_order_relaxed);
             for (int s = 0; s < kNumFxSlots; ++s) fx.slotEnabled[(size_t) s].store (take(), std::memory_order_relaxed);
             for (int s = 0; s < kNumFxSlots; ++s) fx.slotDryWet [(size_t) s].store (take(), std::memory_order_relaxed);
+            // Per-slot param count is version-dependent: v5+ carries 5 params
+            // per slot (param1..5); v1..v4 carry only 4 (param1..4). Reading the
+            // wrong count would shift every subsequent byte (topology/order/mods),
+            // so gate on the version. param5 is zeroed first so a legacy blob
+            // loads with its 5th param at the neutral default, not a stale value.
+            const int nParams = (version >= 5) ? kNumFxSlotParams : 4;
             for (int s = 0; s < kNumFxSlots; ++s)
-                for (int k = 0; k < kNumFxSlotParams; ++k)
+            {
+                fx.slotParam[(size_t) s][(size_t) (kNumFxSlotParams - 1)].store (0, std::memory_order_relaxed);
+                for (int k = 0; k < nParams; ++k)
                     fx.slotParam[(size_t) s][(size_t) k].store (take(), std::memory_order_relaxed);
+            }
             fx.topology.store (take(), std::memory_order_relaxed);
             fx.orderIdx.store  (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modSource[(size_t) m].store (take(), std::memory_order_relaxed);
@@ -464,7 +507,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modAmount[(size_t) m].store ((int8_t) take(), std::memory_order_relaxed);
             // Master section (v3): reset to the audio-preserving defaults first
             // (so a v1/v2 blob -- which lacks these -- loads at defaults, not
-            // 0-filled by take()), then overwrite from the blob for a v3/v4 save.
+            // 0-filled by take()), then overwrite from the blob for a v3+ save.
             fx.mix.store (127, std::memory_order_relaxed);
             fx.eqLow.store (0, std::memory_order_relaxed);
             fx.eqMid.store (64, std::memory_order_relaxed);
@@ -1449,14 +1492,15 @@ void SynthEngine::renderPartFx (int numSamples)
                         / static_cast<float> (kFxCrossfadeTauSec * getSampleRate()));
 
             // ---- FX mod matrix (per sub-chunk) ----
-            // modOffset[dest] += amount/63 * norm (dest = slot*5 + field:
-            // 0=dryWet, 1..4=param 0..3). AC/DC coupling mirrors the SYNTH voice
-            // mod matrix (voice.cpp ProcessModulationMatrix): LFO_1..4 /
-            // PITCH_BEND / NOTE are AC-coupled (128 = neutral, bipolar ±1); all
-            // other sources are DC-coupled (0 = neutral, unipolar 0..1). Without
+            // modOffset[dest] += amount/63 * norm (dest = slot*(kNumFxSlotParams+1)
+            // + field: 0=dryWet, 1..kNumFxSlotParams=param 0..N-1). AC/DC coupling
+            // mirrors the SYNTH voice mod matrix (voice.cpp ProcessModulationMatrix):
+            // LFO_1..4 / PITCH_BEND / NOTE are AC-coupled (128 = neutral, bipolar ±1);
+            // all other sources are DC-coupled (0 = neutral, unipolar 0..1). Without
             // the AC branch an LFO/bend/note at rest (128) injected a static
             // +0.126 offset (at amount 63) instead of zero modulation.
-            float modOffset[kNumFxSlots * 5] {};
+            constexpr int kFxFields = kNumFxSlotParams + 1;   // 1 dry/wet + N params per slot
+            float modOffset[kNumFxSlots * kFxFields] {};
             for (int m = 0; m < kNumFxMatrixSlots; ++m)
             {
                 const int8_t amt = cache.modAmt[(size_t) m];
@@ -1487,13 +1531,13 @@ void SynthEngine::renderPartFx (int numSamples)
             for (int s = 0; s < kNumFxSlots; ++s)
             {
                 chain.setSlotDryWet (s, juce::jlimit (0.0f, 1.0f,
-                    cache.baseDryWet[(size_t) s] + modOffset[s * 5 + 0]));
+                    cache.baseDryWet[(size_t) s] + modOffset[s * kFxFields + 0]));
                 for (int k = 0; k < kNumFxSlotParams; ++k)
                 {
                     float& sb = smoothedBase_[(size_t) p][(size_t) s][(size_t) k];
                     sb += (cache.baseParam[(size_t) s][(size_t) k] - sb) * dcPc;
                     const float eff = juce::jlimit (0.0f, 1.0f,
-                        sb + modOffset[s * 5 + 1 + k]);
+                        sb + modOffset[s * kFxFields + 1 + k]);
                     chain.setSlotParam (s, k, eff);
 #ifndef NDEBUG
                     if (debugEffParamTracking_ && s == 0 && k == 0)

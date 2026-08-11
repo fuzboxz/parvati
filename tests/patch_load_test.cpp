@@ -98,9 +98,9 @@ int main()
 
         // Load a different template while the note is still held.
         const auto tdir = ParvatiAudioProcessor::getTemplatesDir();
-        const juce::File poly6 = tdir.getChildFile ("Poly 6.parvati");
+        const juce::File poly6 = tdir.getChildFile ("Poly.parvati");
         bool loaded = poly6.existsAsFile() && proc.loadParvatiMultiFile (poly6);
-        check (loaded, "Poly 6 template loaded mid-note");
+        check (loaded, "Poly template loaded mid-note");
         renderIdle (proc, 6);   // let the reset + release settle
 
         const int stuck = countActiveVoices (proc);

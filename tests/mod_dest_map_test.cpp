@@ -146,8 +146,8 @@ int main()
     // FX param-id -> encoded dest (FX_DST_* + kFxModDstOffset == 19).
     check (destForParamID ("fx1_drywet") == kFxModDstOffset + 0,  "fx1_drywet -> 19 (FX_DST_FX1_DRYWET + offset)");
     check (destForParamID ("fx1_param1") == kFxModDstOffset + 1,  "fx1_param1 -> 20 (FX_DST_FX1_P1 + offset)");
-    check (destForParamID ("fx2_param2") == kFxModDstOffset + 7,  "fx2_param2 -> 26");
-    check (destForParamID ("fx3_param4") == kFxModDstOffset + 14, "fx3_param4 -> 33 (FX_DST_FX3_P4 + offset)");
+    check (destForParamID ("fx2_param2") == kFxModDstOffset + 8,  "fx2_param2 -> 27");
+    check (destForParamID ("fx3_param4") == kFxModDstOffset + 16, "fx3_param4 -> 35 (FX_DST_FX3_P4 + offset)");
     check (destForParamID ("fx_nonexistent") == -1,               "unknown FX paramID -> -1");
 
     // Domain boundary (the single range check the assign handlers + editor use):
@@ -155,7 +155,7 @@ int main()
     // ignored by the FX handler and vice-versa.
     check (isFxDest (kFxModDstOffset),        "isFxDest(19) == true (first FX dest)");
     check (! isFxDest (kFxModDstOffset - 1),  "isFxDest(18) == false (last synth dest)");
-    check (isFxDest (kFxModDstOffset + 14),   "isFxDest(33) == true (last FX dest)");
+    check (isFxDest (kFxModDstOffset + 17),   "isFxDest(36) == true (last FX dest)");
     check (! isFxDest (-1),                   "isFxDest(-1) == false");
 
     // fxmod-driven aggregation (mirror of [3] over the 16 fxmod slots).

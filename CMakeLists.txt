@@ -480,6 +480,24 @@ target_link_libraries(parvati_clouds_fx_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# FX stereo-balance investigation: (1) proves parallel FX routing is TRUE
+# parallel (each branch processes the full stereo pair), and (2) measures whether
+# the Spectral effect (Clouds phase vocoder) produces a systematic L/R energy
+# imbalance, with Resonator (known odd/even split) and Diffuser (symmetric) as
+# controls. Headless: feeds mono-correlated and uncorrelated stereo noise,
+# measures R/L RMS ratio over the param sweep. Built by default.
+# Run with: ./build_release/parvati_fx_stereo_balance_test
+add_executable(parvati_fx_stereo_balance_test
+    tests/parvati_fx_stereo_balance_test.cpp
+)
+target_include_directories(parvati_fx_stereo_balance_test PRIVATE Source)
+target_include_directories(parvati_fx_stereo_balance_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_stereo_balance_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_stereo_balance_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # FX mod-matrix @ 980 Hz (internal control rate) verification: proves the FX
 # mod matrix now sub-chunks the host block at the ~980 Hz internal-block cadence
 # (FxChain::process ~6x per 256-block @48k), that every FX (incl. the 6x-OS

@@ -41,10 +41,10 @@ public:
 
     /** Construct a per-slot FX graphic.
         @param getType   NORMALIZED 0..1 value of fx{N}_type (choice None..Resonator).
-        @param getP0..3  NORMALIZED 0..1 values of fx{N}_param1..4.
+        @param getP0..4  NORMALIZED 0..1 values of fx{N}_param1..5.
         @param getDryWet NORMALIZED 0..1 value of fx{N}_drywet (0 = fully dry). */
     FxSlotVisualizer (Getter getType, Getter getP0, Getter getP1,
-                      Getter getP2, Getter getP3, Getter getDryWet);
+                      Getter getP2, Getter getP3, Getter getP4, Getter getDryWet);
 
     ~FxSlotVisualizer() override;
 
@@ -113,7 +113,7 @@ private:
     // Wetness vividness: dry => dimmer trace, wet => vivid (0.42..1.0 alpha).
     static float wetAlpha (float wet) noexcept;
 
-    Getter getType_, getP0_, getP1_, getP2_, getP3_, getDryWet_;
+    Getter getType_, getP0_, getP1_, getP2_, getP3_, getP4_, getDryWet_;
 
     juce::Colour categoryColour_;
     bool hasCategoryColour_ = false;
@@ -122,7 +122,7 @@ private:
     // so the preview is accurate under automation; the repaint gate fires on a
     // change vs the previous tick. -1.0f => first tick (paint fetches fresh).
     float dispType_   = -1.0f;
-    float dispP0_     = -1.0f, dispP1_ = -1.0f, dispP2_ = -1.0f, dispP3_ = -1.0f;
+    float dispP0_     = -1.0f, dispP1_ = -1.0f, dispP2_ = -1.0f, dispP3_ = -1.0f, dispP4_ = -1.0f;
     float dispDryWet_ = -1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxSlotVisualizer)

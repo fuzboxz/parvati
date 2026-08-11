@@ -25,12 +25,13 @@
 //       reduced alpha so it reads as inactive; the panel + title + power glyph
 //       stay full-alpha (legible state + identity).
 //   PARAM GRID (bottom): a Mixer-style knob GRID (kCellH = the synth cell
-//       height) — 3 columns for Delay/Reverb, 2 for Chorus/Gain-Pan so every
-//       multi-knob type forms ~2 rows. The ACTIVE fx{N}_param1..4 knobs fill row-major; the
-//       fx{N}_drywet knob is ALWAYS the LAST cell (labelled "Dry/Wet") — bottom-right
-//       for Reverb / Delay. The count varies by type (None=1 / GainPan,Chorus=3
-//       / Delay=4 / Reverb=5), so the grid is 1 or 2 rows. Inactive params are
-//       hidden. The grid block centres vertically in its region; cells render the
+//       height) — a FIXED 3-column x 2-row layout (6 cells = up to 5 params +
+//       Dry/Wet). The ACTIVE fx{N}_param1..5 knobs fill row-major from the top-
+//       left; the fx{N}_drywet knob is FIXED in the BOTTOM-RIGHT cell (cell 5)
+//       so it never moves when the effect type changes. Inactive param cells are
+//       simply empty (the knob is hidden). When the slot type is None the Dry/Wet
+//       knob is HIDDEN too (the whole grid collapses — a None slot has no mix).
+//       The grid block centres vertically in its region; cells render the
 //       full 52px dial (synth parity).
 //
 // Dynamic parameter labels: on a type change the active param knobs are
@@ -39,7 +40,7 @@
 // method is added to ParamControl by the editor during integration; this card
 // only CALLS it (the file does not compile standalone until that lands).
 //
-// The five knobs are full ParamControl instances (created here from the
+// The six knobs are full ParamControl instances (created here from the
 // descriptor table + owned here) so they keep EVERY modulation behaviour the
 // synth knobs have: FX-mod-matrix drag-and-drop assignment, per-source concentric
 // mod rings, tooltips, and the category arc. The toggle + combo are bound to the
@@ -73,12 +74,14 @@ public:
         @param processor  the audio processor (APVTS access).
         @param themeManager  the editor theme manager.
         @param slot  0..2 (-> fx1_ / fx2_ / fx3_).
-        @param p1Desc..p4Desc  descriptors for fx{N}_param1..4 (the card creates +
+        @param p1Desc..p5Desc  descriptors for fx{N}_param1..5 (the card creates +
                owns the ParamControls; they are full modulation-destination knobs).
-        @param drywetDesc  descriptor for fx{N}_drywet (the rightmost "Dry/Wet" knob). */
+        @param drywetDesc  descriptor for fx{N}_drywet (the fixed "Dry/Wet" knob,
+               anchored bottom-right; hidden when the slot type is None). */
     FxSlotCard (ParvatiAudioProcessor& processor, int slot,
                 const PatchParamDescriptor* p1Desc, const PatchParamDescriptor* p2Desc,
                 const PatchParamDescriptor* p3Desc, const PatchParamDescriptor* p4Desc,
+                const PatchParamDescriptor* p5Desc,
                 const PatchParamDescriptor* drywetDesc);
 
     ~FxSlotCard() override;
@@ -122,8 +125,9 @@ private:
     const juce::String prefix_;   // "fx{N}_"
 
     // ---- Owned controls --------------------------------------------------
-    // Five full ParamControl knobs (keep FX-mod-matrix drag-drop + mod rings).
-    std::unique_ptr<ParamControl> p1_, p2_, p3_, p4_, drywet_;
+    // Six full ParamControl knobs (keep FX-mod-matrix drag-drop + mod rings):
+    // fx{N}_param1..5 + the fixed fx{N}_drywet (bottom-right; hidden on None).
+    std::unique_ptr<ParamControl> p1_, p2_, p3_, p4_, p5_, drywet_;
 
     std::unique_ptr<juce::ComboBox> typeCombo_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAttach_;

@@ -40,10 +40,10 @@ public:
     // effect's wet output. Dry/wet is NOT applied here (the chain does it).
     virtual void process (float* L, float* R, int numSamples) = 0;
 
-    // Map the four generic 0..1 slot params (param[0..3]) to this effect's
+    // Map the five generic 0..1 slot params (param[0..4]) to this effect's
     // controls. Called single-threaded on the audio thread when the FX state is
     // serviced (fxDirty_), before process().
-    virtual void setParams (const float param[4]) = 0;
+    virtual void setParams (const float param[5]) = 0;
 
     // Processing latency this effect introduces (in BASE-rate samples), so the
     // chain can delay-compensate its dry/wet + parallel blends. 0 for all

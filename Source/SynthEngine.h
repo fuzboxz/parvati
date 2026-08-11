@@ -496,6 +496,13 @@ public:
     // amount: -63..+63.
     void setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount);
 
+    // Reset a Part's entire FX state to the clean defaults (all slots None /
+    // bypassed / dry, Series topology, order 0, master mix fully wet, EQ flat,
+    // cleared mod matrix). Used when loading a legacy Ambika patch (.PRO/.MUL)
+    // that carries no FX information, so the FX section is a clean slate instead
+    // of retaining the previously-loaded patch's FX. Publishes via fxDirty_.
+    void resetPartFx (int part);
+
 private:
     std::array<Part, kNumParts> parts_;
 

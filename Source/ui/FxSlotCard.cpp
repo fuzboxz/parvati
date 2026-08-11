@@ -79,27 +79,27 @@ private:
 // characteristic starting point. Applied from parameterChanged() ONLY on a real
 // fx{N}_type change (never at construction). Because APVTS listener dispatch is
 // synchronous on the message thread AND the descriptor order is type, enabled,
-// drywet, param1..4, a preset/part load that sets type THEN params overrides
+// drywet, param1..5, a preset/part load that sets type THEN params overrides
 // these — so saved patches keep their own values.
-struct FxTypeDefaults { uint8_t enabled; uint8_t drywet; uint8_t p[4]; };
+struct FxTypeDefaults { uint8_t enabled; uint8_t drywet; uint8_t p[5]; };
 FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 {
     switch (t)
     {
-        case FxType::Diffuser:     return { 1,  40, {  0,  0,  0,  0 } }; // (amount fixed 1.0; chain Dry/Wet is the mix)
-        case FxType::PitchShifter: return { 1, 100, { 50, 50,  0,  0 } }; // Ratio(unison) / Size
-        case FxType::Reverb: return { 1,  50, { 60, 70, 64,  0 } }; // Time / Tone / Diffusion (amount fixed 1.0; chain Dry/Wet is the mix)
-        case FxType::LoopingDelay:  return { 1,  80, { 50, 50, 50,  0 } }; // Position / Size / Pitch(unison) / Freeze(off)
-        case FxType::WSOLAStretch:  return { 1,  80, { 50, 50, 50,  0 } }; // Pitch(unison) / Position / Size
-        case FxType::Spectral:      return { 1,  80, { 50, 50, 50, 50 } }; // Pitch(unison) / Warp / Position / Blur
-        case FxType::Wavefolder:    return { 1,  80, { 50, 50,  0,  0 } }; // Fold(mid) / Bias(centre, symmetric)
-        case FxType::FrequencyShifter: return { 1, 80, { 50, 30,  0,  0 } }; // Shift(0 Hz) / Feedback(low) / Spread(none)
-        case FxType::RingModulator:  return { 1,  80, { 30,  0, 50,  0 } }; // Carrier(low) / Shape(sine) / Amount(mid)
-        case FxType::Resonator:    return { 1,  80, { 50, 30, 50, 25 } }; // Pitch(C4) / Decay / Bright / Position(0.25: half-cosine mode envelope)
+        case FxType::Diffuser:     return { 1,  40, {  0,  0,  0,  0,  0 } }; // (amount fixed 1.0; chain Dry/Wet is the mix)
+        case FxType::PitchShifter: return { 1, 100, { 50, 50,  0,  0,  0 } }; // Ratio(unison) / Size
+        case FxType::Reverb: return { 1,  50, { 60, 70, 64,  0,  0 } }; // Time / Tone / Diffusion (amount fixed 1.0; chain Dry/Wet is the mix)
+        case FxType::LoopingDelay:  return { 1,  80, { 50, 50, 50,  0,  0 } }; // Position / Size / Pitch(unison) / Freeze(off)
+        case FxType::WSOLAStretch:  return { 1,  80, { 50, 50, 50,  0,  0 } }; // Pitch(unison) / Position / Size
+        case FxType::Spectral:      return { 1,  80, { 50, 50, 50, 50,  0 } }; // Pitch(unison) / Warp / Position / Blur / Freeze(off)
+        case FxType::Wavefolder:    return { 1,  80, { 50, 50,  0,  0,  0 } }; // Fold(mid) / Bias(centre, symmetric)
+        case FxType::FrequencyShifter: return { 1, 80, { 50, 30,  0,  0,  0 } }; // Shift(0 Hz) / Feedback(low) / Spread(none)
+        case FxType::RingModulator:  return { 1,  80, { 30,  0, 50,  0,  0 } }; // Carrier(low) / Shape(sine) / Amount(mid)
+        case FxType::Resonator:    return { 1,  80, { 50, 30, 50, 25, 32 } }; // Pitch(C4) / Decay / Bright / Position(0.25) / Structure(0.25 = Rings default)
         case FxType::None:
         case FxType::Count:   break;
     }
-    return { 0, 0, { 0, 0, 0, 0 } };
+    return { 0, 0, { 0, 0, 0, 0, 0 } };
 }
 
 // Layout constants (px). The card sits in the FX top row (~261..271px tall at
@@ -147,36 +147,29 @@ int maxComboItemWidth (const juce::ComboBox& combo)
     return widest;
 }
 
-// Knob-grid column count for a given visible-knob count. Delay (4) / Reverb (5)
-// use the full 3 columns (the approved 2-row look); a 3-knob type (Chorus /
-// Gain-Pan) drops to 2 columns so it forms a 2-row grid instead of a single
-// sparse row; a lone knob (None => Dry/Wet only) gets 1 column. Kept in one place so
-// resized()'s row/height budget and layoutParamGrid()'s placement stay in sync.
-int knobGridCols (int count) noexcept
-{
-    if (count <= 1) return 1;
-    if (count <= 3) return 2;
-    return kGridCols;
-}
+// (The knob grid is a FIXED 3-column x 2-row layout in layoutParamGrid(); no
+// column-count adaptation is needed, so the former knobGridCols() helper is gone.)
 } // namespace
 
 //==============================================================================
 FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
                         const PatchParamDescriptor* p1Desc, const PatchParamDescriptor* p2Desc,
                         const PatchParamDescriptor* p3Desc, const PatchParamDescriptor* p4Desc,
+                        const PatchParamDescriptor* p5Desc,
                         const PatchParamDescriptor* drywetDesc)
     : processor_ (processor),
       slot_ (juce::jlimit (0, 2, slot)),
       prefix_ ("fx" + juce::String (slot_ + 1) + "_")
 {
-    // ---- Five full ParamControl knobs (modulation-destination parity) ----
+    // ---- Six full ParamControl knobs (modulation-destination parity) ----
     if (p1Desc     != nullptr) p1_     = std::make_unique<ParamControl> (processor_, *p1Desc);
     if (p2Desc     != nullptr) p2_     = std::make_unique<ParamControl> (processor_, *p2Desc);
     if (p3Desc     != nullptr) p3_     = std::make_unique<ParamControl> (processor_, *p3Desc);
     if (p4Desc     != nullptr) p4_     = std::make_unique<ParamControl> (processor_, *p4Desc);
+    if (p5Desc     != nullptr) p5_     = std::make_unique<ParamControl> (processor_, *p5Desc);
     if (drywetDesc != nullptr) drywet_ = std::make_unique<ParamControl> (processor_, *drywetDesc);
 
-    for (auto* pc : { p1_.get(), p2_.get(), p3_.get(), p4_.get(), drywet_.get() })
+    for (auto* pc : { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get(), drywet_.get() })
         if (pc != nullptr)
             addAndMakeVisible (*pc);
 
@@ -185,8 +178,8 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // Display-only (stored 0..127 unchanged). Re-installed on type change in
     // refreshFromType() (the formatter depends on the live type).
     const auto t0 = static_cast<FxType> (currentTypeIndex());
-    ParamControl* initParams[4] = { p1_.get(), p2_.get(), p3_.get(), p4_.get() };
-    for (int i = 0; i < 4; ++i)
+    ParamControl* initParams[5] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get() };
+    for (int i = 0; i < 5; ++i)
         if (initParams[i] != nullptr)
             initParams[i]->setDisplayValueText ([t0, i] (double v) { return paramValueText (t0, i, v); });
     if (drywet_ != nullptr)
@@ -238,6 +231,7 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
         [norm] { return norm ("param2"); },
         [norm] { return norm ("param3"); },
         [norm] { return norm ("param4"); },
+        [norm] { return norm ("param5"); },
         [norm] { return norm ("drywet"); });
     addAndMakeVisible (*visualizer_);
 
@@ -274,8 +268,8 @@ void FxSlotCard::refreshFromType()
     const auto t = static_cast<FxType> (currentTypeIndex());
     const int active = activeParamCount (t);
 
-    ParamControl* params[4] = { p1_.get(), p2_.get(), p3_.get(), p4_.get() };
-    for (int i = 0; i < 4; ++i)
+    ParamControl* params[5] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get() };
+    for (int i = 0; i < 5; ++i)
     {
         auto* pc = params[i];
         if (pc == nullptr)
@@ -309,7 +303,7 @@ void FxSlotCard::refreshEnabled()
     // compositing-only (it does NOT disable interaction), so the values remain
     // editable even while bypassed.
     const float contentAlpha = on ? 1.0f : kBypassedAlpha;
-    juce::Component* content[] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(),
+    juce::Component* content[] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get(),
                                    drywet_.get(), visualizer_.get(), typeCombo_.get() };
     for (auto* c : content)
         if (c != nullptr)
@@ -323,7 +317,7 @@ void FxSlotCard::parameterChanged (const juce::String& id, float /*newValue*/)
 
     // The per-type ENGAGEMENT defaults must be seeded SYNCHRONOUSLY on the
     // message thread for a TYPE change, BEFORE a preset/part load's subsequent
-    // param writes (descriptor order: type, enabled, drywet, param1..4) override
+    // param writes (descriptor order: type, enabled, drywet, param1..5) override
     // them — so saved patches keep their own values. (Seeding writes 'enabled',
     // which re-fires parameterChanged("enabled") re-entrantly; that just re-
     // requests the deferred refresh below — harmless.)
@@ -339,7 +333,7 @@ void FxSlotCard::parameterChanged (const juce::String& id, float /*newValue*/)
                 auto& apvts  = processor_.getApvts();
                 apvts.getParameterAsValue (prefix_ + "enabled") = (float) d.enabled;
                 apvts.getParameterAsValue (prefix_ + "drywet")  = (float) d.drywet;
-                for (int k = 0; k < 4; ++k)
+                for (int k = 0; k < 5; ++k)
                     apvts.getParameterAsValue (prefix_ + "param" + juce::String (k + 1)) = (float) d.p[k];
             }
         }
@@ -367,62 +361,60 @@ void FxSlotCard::handleAsyncUpdate()
 //==============================================================================
 void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
 {
-    if (gridArea.isEmpty())
+    const auto t = static_cast<FxType> (currentTypeIndex());
+    ParamControl* params[5] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get() };
+
+    // Hide every owned knob first; only the placed ones are re-shown below.
+    for (auto* pc : params)
+        if (pc != nullptr)
+            pc->setVisible (false);
+    if (drywet_ != nullptr)
+        drywet_->setVisible (false);
+
+    // None => NO Dry/Wet, NO params (the grid collapses; the card shows just the
+    // header + type combo + visualizer). This is the explicit "Dry/Wet hidden
+    // when None" rule.
+    if (t == FxType::None || gridArea.isEmpty())
         return;
 
-    const auto t = static_cast<FxType> (currentTypeIndex());
     const int active = activeParamCount (t);
 
-    ParamControl* params[4] = { p1_.get(), p2_.get(), p3_.get(), p4_.get() };
+    // FIXED 3-column x 2-row grid (6 cells = up to 5 params + Dry/Wet). The
+    // ACTIVE params (param1..N) fill row-major from the top-left (cells
+    // 0..active-1); the fx{N}_drywet knob is FIXED in the BOTTOM-RIGHT cell
+    // (cell index 5 of the 3x2 grid) so it never moves when the effect type
+    // changes — consistent placement across all three cards. Cells between the
+    // last active param and the Dry/Wet are simply left empty. Equal-width
+    // columns; the rightmost column absorbs the integer width remainder so the
+    // grid fills the full width. Cell height is the synth kCellH parity (label
+    // band + 52px dial), shrunk only if the grid region is shorter than 2*kCellH.
+    // The block centres VERTICALLY in the region.
+    constexpr int cols        = kGridCols;   // 3
+    constexpr int rows        = 2;
+    constexpr int kDryWetCell = 5;           // bottom-right of the 3x2 grid
 
-    // The knob sequence: ACTIVE algorithm params (param1..N) in row-major order,
-    // then the Mix (dry/wet) knob as the LAST cell (bottom-right for Reverb /
-    // Delay). Count varies by type: None=1 (Dry/Wet only), GainPan/Chorus=3,
-    // Delay=4, Reverb=5.
-    juce::Array<ParamControl*> knobs;
-    for (int i = 0; i < active; ++i)
-        if (params[i] != nullptr)
-            knobs.add (params[i]);
-    if (drywet_ != nullptr)
-        knobs.add (drywet_.get());
-
-    // Hide every owned knob NOT in the grid (inactive algorithm params).
-    for (auto* pc : params)
-        if (pc != nullptr && knobs.indexOf (pc) < 0)
-            pc->setVisible (false);
-
-    const int count = knobs.size();
-    if (count <= 0)
-        return;
-
-    // Mixer-style grid. Columns adapt to the knob count (3 for Delay/Reverb,
-    //    2 for Chorus/Gain-Pan so they read as a 2-row grid, not a single row):
-    //    every multi-knob type lands on ~2 rows. Equal-width cells; the rightmost
-    // the rightmost column absorbs the integer remainder so the grid fills the
-    // full width. Cell height is the synth kCellH parity (label band + 52px
-    // dial, centred by ParamControl), shrunk only if the grid region is shorter
-    // than rows * kCellH. The knob block is centred VERTICALLY in the region so
-    // a short row-set (None / GainPan / Chorus = 1 row) reads balanced.
-    const int cols   = knobGridCols (count);
-    const int rows   = (count + cols - 1) / cols;
-    const int cellH  = juce::jmin (kCellH, gridArea.getHeight() / juce::jmax (1, rows));
+    const int cellH  = juce::jmin (kCellH, gridArea.getHeight() / rows);
     const int cellW  = gridArea.getWidth() / cols;
     const int blockH = rows * cellH;
     const int y0     = gridArea.getY() + (gridArea.getHeight() - blockH) / 2;
 
-    for (int i = 0; i < count; ++i)
+    auto placeCell = [&] (ParamControl* pc, int cell)
     {
-        const int col = i % cols;
-        const int row = i / cols;
-        auto* pc = knobs[i];
+        if (pc == nullptr)
+            return;
+        const int col = cell % cols;
+        const int row = cell / cols;
         const int x = gridArea.getX() + col * cellW;
-        // Rightmost column absorbs the integer width remainder (consistent
-        // across every row).
         const int w = (col == cols - 1) ? (gridArea.getRight() - x) : cellW;
         const int y = y0 + row * cellH;
         pc->setVisible (true);
         pc->setBounds (juce::Rectangle<int> (x, y, w, cellH));
-    }
+    };
+
+    for (int i = 0; i < active; ++i)
+        placeCell (params[i], i);
+    if (drywet_ != nullptr)
+        placeCell (drywet_.get(), kDryWetCell);
 }
 
 //==============================================================================
@@ -465,14 +457,11 @@ void FxSlotCard::resized()
     //      band floor cannot fit alongside the ideal grid, the band holds at
     //      kVisMin and the grid shrinks. (Was: a large ~2/3-body band + a single
     //      knob row.) ----
-    const auto t     = static_cast<FxType> (currentTypeIndex());
-    const int active = activeParamCount (t);
-    int count = active;
-    if (drywet_ != nullptr) ++count;              // the Dry/Wet knob is always present
-    count = juce::jmax (1, count);
-    const int cols = knobGridCols (count);
-    const int rows = (count + cols - 1) / cols;
-    const int gridIdealH = rows * kCellH;
+    const auto t = static_cast<FxType> (currentTypeIndex());
+    // The knob grid is a FIXED 3x2 layout (up to 5 params + Dry/Wet) whenever the
+    // slot has an effect; for None the grid collapses entirely (Dry/Wet hidden).
+    const bool hasGrid = (t != FxType::None);
+    const int gridIdealH = hasGrid ? (2 * kCellH) : 0;
 
     const int bodyH = area.getHeight();
     int visH  = kVisMax;

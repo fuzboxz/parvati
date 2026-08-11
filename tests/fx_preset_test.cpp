@@ -186,7 +186,7 @@ int main()
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[3] .PRO (single-part) DROPS FX -- fxState stays default\n");
+    std::printf ("\n[3] .PRO (single-part) RESETS a pre-existing fxState to default\n");
     {
         ParvatiAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
@@ -197,18 +197,25 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (0).fxState),
                "source Part 0 actually has non-default FX (sanity)");
 
+        // Target b STARTS with non-default FX on Part 0 too, so the load must
+        // actively RESET it (not merely leave a fresh processor untouched).
+        selectPart (b, 0);
+        paintDiverseFx (b);
+        check (! allFxAtDefaults (b.getEngine().getPart (0).fxState),
+               "target Part 0 has non-default FX before the .PRO load (sanity)");
+
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
                              .getChildFile ("parvati_fx_preset.PRO");
         check (a.saveProgramFile (tmp), ".PRO saved");
         check (b.loadProgramFile (tmp), ".PRO loaded");
 
         check (allFxAtDefaults (b.getEngine().getPart (0).fxState),
-               ".PRO load leaves fxState at defaults (FX dropped -- Ambika format)");
+               ".PRO load RESETS a previously-painted fxState to defaults (Ambika format carries no FX)");
         tmp.deleteFile();
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[4] .MUL (multi) DROPS FX -- fxState stays default\n");
+    std::printf ("\n[4] .MUL (multi) RESETS every Part's pre-existing fxState to default\n");
     {
         ParvatiAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
@@ -218,6 +225,18 @@ int main()
         selectPart (a, 3);  paintDiverseFx (a);
         check (! allFxAtDefaults (a.getEngine().getPart (0).fxState),
                "source Part 0 actually has non-default FX (sanity)");
+
+        // Target b STARTS with non-default FX on several Parts, so the multi
+        // load must actively RESET all of them (not merely leave a fresh
+        // processor untouched).
+        selectPart (b, 0);  paintDiverseFx (b);
+        selectPart (b, 2);  paintDiverseFx (b);
+        selectPart (b, 5);  paintDiverseFx (b);
+        bool bHadFx = false;
+        for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+            if (! allFxAtDefaults (b.getEngine().getPart (i).fxState))
+                bHadFx = true;
+        check (bHadFx, "target has non-default FX before the .MUL load (sanity)");
 
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
                              .getChildFile ("parvati_fx_preset.MUL");
@@ -229,7 +248,7 @@ int main()
             if (! allFxAtDefaults (b.getEngine().getPart (i).fxState))
                 allDefault = false;
         check (allDefault,
-               ".MUL load leaves every Part's fxState at defaults (FX dropped)");
+               ".MUL load RESETS every Part's previously-painted fxState to defaults (Ambika format carries no FX)");
         tmp.deleteFile();
     }
 

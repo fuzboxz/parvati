@@ -5,7 +5,7 @@
 // Looping Delay / WSOLA Stretch / Spectral (the buffer-based playback modes) —
 // plus three ports of the Mutable Instruments Warps DSP — Wavefolder (memoryless
 // waveshaper) / Frequency Shifter (quadrature Hilbert) / Ring Modulator (diode
-// model). None is the no-op slot. Each maps the four generic 0..1 slot params to
+// model). None is the no-op slot. Each maps the five generic 0..1 slot params to
 // its own controls in setParams() and renders an in-place stereo wet block in
 // process(). Dry/wet + topology routing live in FxChain.
 //
@@ -52,7 +52,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -70,7 +70,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -92,7 +92,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -125,7 +125,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -162,7 +162,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -195,14 +195,15 @@ private:
 // call Buffer() inline; without it the FFT frames never drain -> silence.
 // freeze/gate are off and spectral quantization/phase-randomization are zero
 // (Blur = spectral.refresh_rate). param0 = Pitch (+/-24 st, 0.5 = unison),
-// param1 = Warp, param2 = Position, param3 = Blur (refresh_rate).
+// param1 = Warp, param2 = Position, param3 = Blur (refresh_rate),
+// param4 = Freeze (>0.5 holds the current spectral frame).
 class FxSpectral : public FxProcessor
 {
 public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -223,6 +224,7 @@ private:
     float warpParam_     = 0.5f;
     float positionParam_ = 0.5f;
     float blurParam_     = 0.5f;
+    float freezeParam_   = 0.0f;   // >0.5 holds the current spectral frame
 };
 
 // Wavefolder — the Mutable Instruments Warps bipolar wavefolder (memoryless LUT
@@ -239,7 +241,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     int latency() const noexcept override;
     FxType type() const override;
 
@@ -267,7 +269,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -303,7 +305,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     int latency() const noexcept override;
     FxType type() const override;
 
@@ -339,7 +341,8 @@ private:
 // exactly as upstream Rings (part.cc applies limiter_.Process with
 // model_gains_[MODAL]=1.4). param0 = Pitch (base pitch C1..C7), param1 = Decay
 // (damping / ring time), param2 = Bright (brightness), param3 = Position
-// (odd/even mode balance = pickup position + stereo width). Note: at Position
+// (odd/even mode balance = pickup position + stereo width), param4 = Structure
+// (inharmonicity / modal layout 0..1; 0.25 = the Rings default). Note: at Position
 // ~=0.5 the even-mode (R) channel vanishes — the center-pluck node (a string
 // picked at its centre excites only odd harmonics); textbook modal physics,
 // identical to hardware Rings. The default 0.25 keeps both channels active.
@@ -351,7 +354,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[4]) override;
+    void setParams (const float param[5]) override;
     FxType type() const override;
 
 private:
@@ -368,4 +371,5 @@ private:
     float decayParam_    = 0.3f;   // 0..1 (-> damping)
     float brightParam_   = 0.5f;   // 0..1 (-> brightness)
     float positionParam_ = 0.25f;   // 0..1 (-> odd/even mode balance; 0.5 = even-mode null)
+    float structureParam_ = 0.25f;   // 0..1 (-> inharmonicity/modal layout; 0.25 = Rings default)
 };

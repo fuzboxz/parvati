@@ -112,16 +112,16 @@ juce::StringArray makeFxTopologies()
     return { "FX1 -> FX2 -> FX3", "FX1 + FX2 -> FX3", "FX1 -> FX2 + FX3" };
 }
 
-// FxModDestination choice list (FX_DST_FX1_DRYWET .. FX_DST_FX3_P4). 15 entries
-// (one dry/wet + four generic params per slot); matches the FxModDestination
+// FxModDestination choice list (FX_DST_FX1_DRYWET .. FX_DST_FX3_P5). 18 entries
+// (one dry/wet + five generic params per slot); matches the FxModDestination
 // enum order. FX_DST_NONE (-1) is NOT a choice entry — an inactive mod slot is
 // signalled by amount=0, not a special dest.
 juce::StringArray makeFxDests()
 {
     return {
-        "FX1 Dry/Wet", "FX1 Param 1", "FX1 Param 2", "FX1 Param 3", "FX1 Param 4",
-        "FX2 Dry/Wet", "FX2 Param 1", "FX2 Param 2", "FX2 Param 3", "FX2 Param 4",
-        "FX3 Dry/Wet", "FX3 Param 1", "FX3 Param 2", "FX3 Param 3", "FX3 Param 4"
+        "FX1 Dry/Wet", "FX1 Param 1", "FX1 Param 2", "FX1 Param 3", "FX1 Param 4", "FX1 Param 5",
+        "FX2 Dry/Wet", "FX2 Param 1", "FX2 Param 2", "FX2 Param 3", "FX2 Param 4", "FX2 Param 5",
+        "FX3 Dry/Wet", "FX3 Param 1", "FX3 Param 2", "FX3 Param 3", "FX3 Param 4", "FX3 Param 5"
     };
 }
 
@@ -461,7 +461,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         }
 
         // ---- Per-part FX (Parvati-exclusive; no Ambika patch byte; per-part) ----
-        // 75 params: 3 slots x (type/enabled/drywet/param1..4) = 21, + fx_topo +
+        // 78 params: 3 slots x (type/enabled/drywet/param1..5) = 24, + fx_topo +
         // fx_order = 2, + 16 x (fxmod source/dest/amount) = 48, + 4 master section
         // (fx_mix/fx_eq_low/mid/high, engine-state v3). All isFx=true,
         // byteOffset=-1 (never touch patch/part bytes). Routed via
@@ -502,6 +502,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
                 addFx ("fx" + std::to_string (s) + "_param2",  "FX" + std::to_string (s) + " Param 2", nullptr,   0, 0, 127);
                 addFx ("fx" + std::to_string (s) + "_param3",  "FX" + std::to_string (s) + " Param 3", nullptr,   0, 0, 127);
                 addFx ("fx" + std::to_string (s) + "_param4",  "FX" + std::to_string (s) + " Param 4", nullptr,   0, 0, 127);
+                addFx ("fx" + std::to_string (s) + "_param5",  "FX" + std::to_string (s) + " Param 5", nullptr,   0, 0, 127);
             }
             addFx ("fx_topo", "FX Topology", &kFxTopologies, 0);   // Series
             addFx ("fx_order", "FX Order",    nullptr,        0, 0, 5);   // orderIdx 0..5

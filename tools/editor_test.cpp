@@ -135,7 +135,7 @@ int main()
     // [3c]: a ModMatrixView is present in the tree). "modif*" is NOT matched
     // (modifiers stay on a paginated ParamPage). Likewise the per-part FX-slot
     // params (fx{1,2,3}_type/enabled/drywet/param1-4) are now hosted by the
-    // self-contained FxSlotCards (5 owned ParamControls each), and fx_topo /
+    // self-contained FxSlotCards (6 owned ParamControls each), and fx_topo /
     // fx_order live on the FxRoutingBar (fx_topo via the compact FLOW ComboBox;
     // fx_order is no longer user-exposed) — none are ParamControls on a
     // ParamPage, so they are excluded here too.
@@ -157,7 +157,7 @@ int main()
             && d.paramID.compare (0, 2, "fx") == 0
             && (d.paramID[2] == '1' || d.paramID[2] == '2' || d.paramID[2] == '3')
             && d.paramID[3] == '_')
-            continue;   // fx{1,2,3}_... -> an FxSlotCard's 5 owned ParamControls
+            continue;   // fx{1,2,3}_... -> an FxSlotCard's 6 owned ParamControls
         ++expectedCells;
     }
 
@@ -659,14 +659,14 @@ int main()
             {
                 auto* card = cards[i];
 
-                // Exactly 5 owned ParamControls (param1..4 + drywet), parented
+                // Exactly 6 owned ParamControls (param1..5 + drywet), parented
                 // or not (counted across the card's whole subtree).
                 std::vector<ParamControl*> knobControls;
                 collectParamControls (card, knobControls);
                 std::snprintf (msg, sizeof (msg),
-                               "FX%d card owns 5 ParamControls (param1..4 + drywet) [found %zu]",
+                               "FX%d card owns 6 ParamControls (param1..5 + drywet) [found %zu]",
                                (int) i + 1, knobControls.size());
-                check (knobControls.size() == 5, msg);
+                check (knobControls.size() == 6, msg);
 
                 // DIRECT children: a type ComboBox, a power/bypass Button, + an
                 // FxSlotVisualizer. (Direct-child checks avoid matching the
@@ -739,11 +739,14 @@ int main()
                        "FxRoutingBar has the ◀ ▶ topology steppers");
             }
 
-            // ---- Dynamic knob visibility: fx1_type = Reverb -> 4 active + Mix ----
+            // ---- Dynamic knob visibility: fx{N}_type = None -> Dry/Wet HIDDEN ----
+            // (The user requirement: the Dry/Wet knob must not show for a None slot.)
+            // The construction default is None, so the card's first layout already
+            // hid every knob; verify that directly (synchronous, no async pump).
             if (! cards.empty())
             {
                 auto& apvts = processor.getApvts();
-                apvts.getParameterAsValue ("fx1_type") = 3.0f;   // FxType::Reverb (choice idx 3); the card's APVTS listener refreshes knob visibility synchronously on this (message) thread
+                apvts.getParameterAsValue ("fx1_type") = 0.0f;   // FxType::None (choice idx 0)
 
                 int visibleKnobs = 0;
                 std::vector<ParamControl*> fx1Controls;
@@ -752,9 +755,9 @@ int main()
                     if (pc->isVisible())
                         ++visibleKnobs;
                 std::snprintf (msg, sizeof (msg),
-                               "fx1_type=Reverb => 5 visible knobs (4 active + Mix) [found %d]",
+                               "fx1_type=None => 0 visible knobs (Dry/Wet hidden on None) [found %d]",
                                visibleKnobs);
-                check (visibleKnobs == 5, msg);
+                check (visibleKnobs == 0, msg);
 
                 // Engagement defaults: selecting a type seeds audible per-type
                 // param defaults (the card's parameterChanged applies them on the
@@ -787,9 +790,9 @@ int main()
                         if ((typeCombo = dynamic_cast<juce::ComboBox*> (c)))
                             break;
                     std::snprintf (msg, sizeof (msg),
-                                   "FX1 type combo has 5 items [got %d]",
+                                   "FX1 type combo has 11 items [got %d]",
                                    typeCombo ? typeCombo->getNumItems() : -1);
-                    check (typeCombo != nullptr && typeCombo->getNumItems() == 5, msg);
+                    check (typeCombo != nullptr && typeCombo->getNumItems() == 11, msg);
                     // (Selection -> APVTS propagation is async via the attachment and
                     // isn't pumpable in this headless test; the identical addItemList +
                     // ComboBoxAttachment pattern already powers the working osc-shape
