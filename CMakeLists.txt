@@ -480,6 +480,39 @@ target_link_libraries(parvati_clouds_fx_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# FV-1 hardware-emulation FX family verification (Clocked Delay / Ensemble /
+# Plate Reverb / Vinyl Compressor / Phaser) + the shared FV-1 framework.
+# Each effect is a JUCE-FREE Fv1FxProcessor; these tests compile the effect
+# .cpp directly (no JUCE link) and run under ASan+UBSan. Built by default.
+# Run with: ./build/parvati_fv1_engine_test  ...and the five per-effect binaries.
+set(_parvati_fv1_tests
+    fv1_engine_test
+    fv1_clocked_delay_test
+    fv1_ensemble_test
+    fv1_plate_reverb_test
+    fv1_vinyl_compressor_test
+    fv1_phaser_test
+)
+foreach(_t ${_parvati_fv1_tests})
+    add_executable(parvati_${_t} tests/${_t}.cpp)
+    target_include_directories(parvati_${_t} PRIVATE Source)
+    target_compile_features(parvati_${_t} PRIVATE cxx_std_17)
+    # The framework + every effect is JUCE-free, so each effect test compiles its
+    # effect .cpp directly (no Parvati/JUCE link) and stays a fast build.
+    if(_t STREQUAL "fv1_clocked_delay_test")
+        target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1ClockedDelay.cpp)
+    elseif(_t STREQUAL "fv1_ensemble_test")
+        target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1Ensemble.cpp)
+    elseif(_t STREQUAL "fv1_plate_reverb_test")
+        target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1PlateReverb.cpp)
+    elseif(_t STREQUAL "fv1_vinyl_compressor_test")
+        target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1VinylCompressor.cpp)
+    elseif(_t STREQUAL "fv1_phaser_test")
+        target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1Phaser.cpp)
+    endif()
+endforeach()
+
+# ------------------------------------------------------------------------------
 # FX stereo-balance investigation: (1) proves parallel FX routing is TRUE
 # parallel (each branch processes the full stereo pair), and (2) measures whether
 # the Spectral effect (Clouds phase vocoder) produces a systematic L/R energy

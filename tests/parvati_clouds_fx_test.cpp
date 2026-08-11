@@ -6,13 +6,14 @@
 // correct FxType, renders a FINITE in-place stereo block at host rate (48000 Hz,
 // 256 samples), and produces audible wet output that DIFFERS from the dry input
 // (amount/ratio/delay/stretch/spectral/fold engaged). Also guards the FxType count
-// (None + 6 Clouds + 3 Warps + 1 Rings == 11); together with the jassert in
-// ParameterLayout.cpp this keeps the fx{N}_type choice list and the enum in sync
-// (serialization safety).
+// (None + 6 Clouds + 3 Warps + 1 Rings + 5 FV-1 == 16); together with the jassert
+// in ParameterLayout.cpp this keeps the fx{N}_type choice list and the enum in
+// sync (serialization safety).
 //
 // Built by default. Run with: ./build/parvati_clouds_fx_test
 
 #include <cmath>
+#include <string>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -92,9 +93,9 @@ int main()
     constexpr int kBlock = 256;
     constexpr double kRate = 48000.0;
 
-    // Enum sanity: None + 6 Clouds + 3 Warps + 1 Rings == 11.
-    check (static_cast<int> (FxType::Count) == 11,
-           "FxType::Count == 11 (None + 6 Clouds + 3 Warps + 1 Rings)");
+    // Enum sanity: None + 6 Clouds + 3 Warps + 1 Rings + 5 FV-1 == 16.
+    check (static_cast<int> (FxType::Count) == 16,
+           "FxType::Count == 16 (None + 6 Clouds + 3 Warps + 1 Rings + 5 FV-1)");
 
     // A non-trivial input: a decaying 220 Hz tone burst on both channels so every
     // module has broadband energy to act on (repeats each block so a multi-block
@@ -851,6 +852,45 @@ int main()
         check (eq (paramLabel (FxType::FrequencyShifter, 1), "Shape"), "UNITS: FreqShifter p1 label is 'Shape'");
         check (eq (paramLabel (FxType::PitchShifter, 2), "Spread"), "UNITS: PitchShifter p2 label is 'Spread'");
         check (static_cast<int> (FxType::Reverb) == 3, "UNITS: FxType::Reverb == 3 (rename preserved index)");
+    }
+
+    // ---- FV-1 family: factory wiring + end-to-end process (32.768 kHz core) ----
+    // Each new FV-1 effect must build via the factory, report its FxType, and
+    // render a FINITE, non-silent, dry-differing block through the real Parvati
+    // build (the per-effect standalone tests cover the DSP core in detail).
+    {
+        struct Ent { FxType t; const char* name; };
+        const Ent fv1[] = {
+            { FxType::ClockedDelay,    "ClockedDelay" },
+            { FxType::Ensemble,        "Ensemble" },
+            { FxType::PlateReverb,     "PlateReverb" },
+            { FxType::VinylCompressor, "VinylCompressor" },
+            { FxType::Phaser,          "Phaser" },
+        };
+        for (const auto& e : fv1)
+        {
+            auto fx = createFxProcessor (e.t);
+            std::string m = std::string (e.name) + ": factory returns non-null";
+            check (fx != nullptr, m.c_str());
+            if (! fx) continue;
+            m = std::string (e.name) + ": type() matches";
+            check (fx->type() == e.t, m.c_str());
+            m = std::string (e.name) + ": latency()==0";
+            check (fx->latency() == 0, m.c_str());
+
+            fx->prepare (kRate, kBlock);
+            fx->reset();
+            const float p[5] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+            fx->setParams (p);
+            if (e.t == FxType::ClockedDelay)
+                fx->setTransport (120.0, true);   // clocked delay needs host BPM
+
+            const auto r = runFx (*fx, inL, inR, outL, outR, kBlock, 4);
+            m = std::string (e.name) + ": finite output";
+            check (r.finite, m.c_str());
+            m = std::string (e.name) + ": output differs from dry";
+            check (r.differs, m.c_str());
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n",

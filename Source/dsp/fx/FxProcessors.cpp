@@ -7,6 +7,12 @@
 #include "warps/resources.h"        // warps::lut_bipolar_fold / lut_ap_poles (Wavefolder/FreqShifter)
 #include "stmlib/dsp/units.h"       // stmlib::SemitonesToRatio (FreqShifter/Resonator Hz mapping)
 
+#include "dsp/fx/fv1/Fv1ClockedDelay.h"     // FV-1 hardware-emulation family
+#include "dsp/fx/fv1/Fv1Ensemble.h"
+#include "dsp/fx/fv1/Fv1PlateReverb.h"
+#include "dsp/fx/fv1/Fv1VinylCompressor.h"
+#include "dsp/fx/fv1/Fv1Phaser.h"
+
 #include "SynthEngine.h"   // FxType enumerators (factory switch)
 
 //==========================================================================
@@ -775,6 +781,12 @@ std::unique_ptr<FxProcessor> createFxProcessor (FxType t)
         case FxType::FrequencyShifter:  return std::make_unique<FxFrequencyShifter>();
         case FxType::RingModulator:     return std::make_unique<FxRingModulator>();
         case FxType::Resonator:           return std::make_unique<FxResonator>();
+        // FV-1 hardware-emulation family (Source/dsp/fx/fv1/).
+        case FxType::ClockedDelay:    return std::make_unique<parvati::fv1::Fv1ClockedDelay>();
+        case FxType::Ensemble:        return std::make_unique<parvati::fv1::Fv1Ensemble>();
+        case FxType::PlateReverb:     return std::make_unique<parvati::fv1::Fv1PlateReverb>();
+        case FxType::VinylCompressor: return std::make_unique<parvati::fv1::Fv1VinylCompressor>();
+        case FxType::Phaser:          return std::make_unique<parvati::fv1::Fv1Phaser>();
         case FxType::None:
         case FxType::Count:   break;
     }
