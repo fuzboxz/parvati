@@ -878,11 +878,12 @@ void ParamControl::resized()
 
     if (slider_)
     {
-        // Every rotary dial is a fixed diameter, centred in the cell. The
-        // value readout is drawn inside the arc-ring by the LookAndFeel.
-        constexpr int kKnobDiameter = 52;
-        slider_->setBounds (b.withSizeKeepingCentre (kKnobDiameter,
-                                                     juce::jmin (kKnobDiameter, b.getHeight())));
+        // CAP only — the real dial height is min(this, cellH-28), so raising
+        // this constant alone is a no-op. To grow the dials, raise the group /
+        // page cellH (configureGroupLayouts / PageInfo), NOT this cap.
+        constexpr int kKnobDiameterCap = 52;
+        slider_->setBounds (b.withSizeKeepingCentre (kKnobDiameterCap,
+                                                     juce::jmin (kKnobDiameterCap, b.getHeight())));
     }
     else if (comboBox_)
     {
@@ -1331,7 +1332,7 @@ void ParamPage::configureGroupLayouts()
             g.stepGrid = true;
             g.internalCols = 8;
             g.cellW = 72;
-            g.cellH = 56;
+            g.cellH = 64;   // was 56: step dial 28px -> 36px (note names fit; 2 rows still <= 262 budget)
         }
         // Mod-matrix slots: source / dest / amount, one row each. Two slots fit
         // side-by-side in the 50% right-mod column; a GroupPager shows 4 per page.
@@ -1356,7 +1357,7 @@ void ParamPage::configureGroupLayouts()
         {
             g.internalCols = juce::jmax (1, n);
             g.cellW = 150;
-            g.cellH = 64;
+            g.cellH = 76;   // was 64: dial 36px -> 48px (matches ARP/Global; ~68px slack vs 262 budget)
         }
         // Mixer column (narrow 20%): ONE merged "Mixer" panel holds
         // all 8 mix controls, laid out in 3 logical sub-sections (one row each)

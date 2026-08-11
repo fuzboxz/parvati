@@ -2,6 +2,8 @@
 
 #include "FxRoutingBar.h"
 
+#include <cmath>
+
 #include "PluginProcessor.h"   // ParvatiAudioProcessor complete type (getApvts)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
@@ -24,6 +26,26 @@ namespace
     constexpr int kCtrlRowH   = 70;   // [Dry/Wet knob] row height
     constexpr int kEqRowH     = 58;   // [Low][Mid][High] EQ knob row height
     constexpr int kEqKnobSize = 42;   // EQ rotary dial (compact)
+
+// FX master-EQ / mix readout strings (compact, <=5 chars, no space -> fit the
+// 42px EQ dial above the painter's 9px floor). Self-contained here so the FX
+// routing bar stays independent of the synth formatter (ui/SynthParamLabels).
+//   fx_eq_low  0..127 (0=off, else HP 20..1500 Hz) — FxChain.cpp:308-312.
+//   fx_eq_mid/high 0..127 (64=unity, +-12 dB)      — FxChain.cpp:319/330.
+juce::String eqLowToString (double v)
+{
+    const int iv = juce::roundToInt (v);
+    if (iv <= 0) return "Off";
+    const double t = static_cast<double> (iv - 1) / 126.0;
+    const double hz = 20.0 * std::pow (1500.0 / 20.0, t);
+    if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";   // "20Hz".."999Hz"
+    return juce::String (hz / 1000.0, 1) + "kHz";                          // "1.5kHz"
+}
+juce::String eqDbToString (double v)
+{
+    const int db = juce::roundToInt ((v - 64.0) / 64.0 * 12.0);
+    return (db > 0 ? "+" : juce::String()) + juce::String (db) + "dB";     // "+6dB","0dB","-12dB"
+}
 }
 
 //==============================================================================
@@ -262,6 +284,9 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     mixKnob_.setScrollWheelEnabled (false);
     mixKnob_.setTooltip (TRANS ("Global FX wet/dry"));
     addAndMakeVisible (mixKnob_);
+    mixKnob_.textFromValueFunction = [] (double v) {
+        return juce::String (juce::roundToInt (juce::jlimit (0.0, 127.0, v) / 127.0 * 100.0)) + "%";
+    };
     mixAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         processor_.getApvts(), "fx_mix", mixKnob_);
 
@@ -283,6 +308,9 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
         eqKnobs_[i].setScrollWheelEnabled (false);
         eqKnobs_[i].setTooltip (TRANS ("FX master EQ ") + eqNames[i]);
         addAndMakeVisible (eqKnobs_[i]);
+        eqKnobs_[i].textFromValueFunction = (i == 0)
+            ? [] (double v) { return eqLowToString (v); }
+            : [] (double v) { return eqDbToString (v); };
         eqAttach_[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor_.getApvts(), eqIds[i], eqKnobs_[i]);
     }

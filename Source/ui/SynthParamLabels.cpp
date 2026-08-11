@@ -35,12 +35,13 @@ const char* const kSyncedDivisions[15] = {
     "1/1", "1/2.", "1/1T", "1/2", "1/4.", "1/2T", "1/4", "1/4T",
     "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64T" };
 
-// Frequency -> "0.XX Hz" / "N Hz" / "N.NN kHz".
+// Frequency -> "0.XXHz" / "NHz" / "N.NkHz" (Style X: no space; kHz 1 sig-fig
+// so the longest readout "1.2kHz" fits a 36px dial above the painter's 9px floor).
 juce::String hzToString (double hz)
 {
-    if (hz < 1.0)    return juce::String (hz, 2) + " Hz";
-    if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + " Hz";
-    return juce::String (hz / 1000.0, 2) + " kHz";
+    if (hz < 1.0)    return juce::String (hz, 2) + "Hz";
+    if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";
+    return juce::String (hz / 1000.0, 1) + "kHz";
 }
 
 // LFO 16-bit phase advanced once per internal block (kAudioBlockSize samples @
@@ -60,9 +61,9 @@ juce::String envTimeToString (uint16_t inc)
     constexpr double kSr    = ambika::dsp::kInternalSampleRate;
     constexpr double kBlock = static_cast<double> (ambika::dsp::kAudioBlockSize);
     const double t = (65536.0 * kBlock) / (static_cast<double> (inc) * kSr);
-    if (t < 0.001) return "<1 ms";
-    if (t < 1.0)   return juce::String (juce::roundToInt (t * 1000.0)) + " ms";
-    return juce::String (t, 2) + " s";
+    if (t < 0.001) return "<1ms";
+    if (t < 1.0)   return juce::String (juce::roundToInt (t * 1000.0)) + "ms";
+    return juce::String (t, 1) + "s";
 }
 
 // Signed amount -63..+63 -> "+100%" / "0%" / "-50%" (mirrors ModMatrixView::formatPercent).
@@ -80,7 +81,7 @@ juce::String pct (double v, double max)
 
 juce::String formatSemis (int semis)
 {
-    return (semis > 0 ? "+" : juce::String()) + juce::String (semis) + " st";
+    return (semis > 0 ? "+" : juce::String()) + juce::String (semis) + "st";
 }
 }  // namespace
 
@@ -99,7 +100,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
         {
             // display fallback; verify against DSP (detune byte is 1/128-st units)
             const int ct = juce::roundToInt (value * 100.0 / 128.0);
-            return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + " ct";
+            return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + "ct";
         }
         return pct (value, 127.0);   // osc_param (shape-dependent) -> %
     }
@@ -109,11 +110,14 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
     {
         if (id == "mix_balance")
         {
-            // display fallback; verify centre/L-R polarity against DSP (init = 32)
+            // Range 0..63, centre 32 (init). Per-side denominator by EACH side's
+            // own max distance (L spans 0..31 -> max dist 32; R spans 33..63 ->
+            // max dist 31) so both rails read 100%: L0->"L100%", R63->"R100%".
             if (std::abs (iv - 32) <= 1) return "Ctr";
-            const int dist = std::abs (iv - 32);
-            const int p = juce::roundToInt (juce::jlimit (0.0, 100.0, dist / 32.0 * 100.0));
-            return (iv < 32 ? "L " : "R ") + juce::String (p) + "%";
+            const int dist  = std::abs (iv - 32);
+            const int denom = (iv < 32) ? 32 : 31;
+            const int p = juce::roundToInt (juce::jlimit (0.0, 100.0, dist / (double) denom * 100.0));
+            return (iv < 32 ? "L" : "R") + juce::String (p) + "%";
         }
         if (id == "mix_crush")   // sample-rate decimator, not bit-depth -> %
             return iv == 0 ? "Off" : pct (value, 31.0);   // display fallback; verify
@@ -175,7 +179,8 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
     // ---- Sequencer ----
     if (id.startsWith ("seq"))
     {
-        if (id.startsWith ("seq_length_")) return juce::String (iv) + " steps";
+        // 28px SEQ dial can't fit "16 steps"; the "Length" label disambiguates.
+        if (id.startsWith ("seq_length_")) return juce::String (iv);
         if (id.startsWith ("seqnote_step"))                                   // note | gate
         {
             const bool gate = (iv & 0x80) != 0;
@@ -186,27 +191,27 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
         {
             const int vel = iv & 0x7f;
             const bool leg = (iv & 0x80) != 0;
-            return pct (static_cast<double> (vel), 127.0) + (leg ? " L" : "");
+            return pct (static_cast<double> (vel), 127.0) + (leg ? "L" : "");
         }
         // seq1/2_step (modulation value, 0..127) -> %
         return pct (value, 127.0);
     }
 
     // ---- Arpeggiator (arp_octave; mode/dir/pattern/resolution are choices) ----
-    if (id == "arp_octave") return juce::String (iv) + " oct";
+    if (id == "arp_octave") return juce::String (iv) + "oct";
 
     // ---- Global / Part ----
     if (id.startsWith ("part"))
     {
         if (id == "part_octave")
-            return (iv > 0 ? "+" : juce::String()) + juce::String (iv) + " oct";   // -2..2 octaves
+            return (iv > 0 ? "+" : juce::String()) + juce::String (iv) + "oct";   // -2..2 octaves
         if (id == "part_tuning")
         {
             // DSP adds tuning to the 14-bit pitch in 1/128-semitone units
             // (AmbikaVoice startNote: note14 = n*128 + partTuning_), i.e. the
             // same unit as osc detune -> cents = value * 100/128 (range +-99 ct).
             const int ct = juce::roundToInt (value * 100.0 / 128.0);
-            return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + " ct";
+            return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + "ct";
         }
         if (id == "part_spread")   return pct (value, 40.0);
         if (id == "part_portamento") return pct (value, 63.0);   // display fallback; verify (rate, not time)

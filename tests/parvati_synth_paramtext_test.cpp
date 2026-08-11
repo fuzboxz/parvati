@@ -46,11 +46,11 @@ juce::String T (const char* id, double value)
 static void testOscillators()
 {
     std::printf ("(oscillators)\n");
-    checkEqual (T ("osc1_range", 12.0),  "+12 st", "osc1_range 12");
-    checkEqual (T ("osc1_range", -3.0),  "-3 st",  "osc1_range -3");
-    checkEqual (T ("osc1_range", 0.0),   "0 st",   "osc1_range 0");
-    checkEqual (T ("osc1_detune", 64.0), "+50 ct", "osc1_detune 64");
-    checkEqual (T ("osc1_detune", -64.0),"-50 ct", "osc1_detune -64");
+    checkEqual (T ("osc1_range", 12.0),  "+12st", "osc1_range 12");
+    checkEqual (T ("osc1_range", -3.0),  "-3st",  "osc1_range -3");
+    checkEqual (T ("osc1_range", 0.0),   "0st",   "osc1_range 0");
+    checkEqual (T ("osc1_detune", 64.0), "+50ct", "osc1_detune 64");
+    checkEqual (T ("osc1_detune", -64.0),"-50ct", "osc1_detune -64");
     checkEqual (T ("osc1_param", 64.0),  "50%",    "osc1_param 64");
 }
 
@@ -58,7 +58,8 @@ static void testMixer()
 {
     std::printf ("(mixer)\n");
     checkEqual (T ("mix_balance", 32.0), "Ctr",    "mix_balance 32 (centre)");
-    checkEqual (T ("mix_balance", 0.0),  "L 100%", "mix_balance 0 (full L)");
+    checkEqual (T ("mix_balance", 0.0),  "L100%", "mix_balance 0 (full L)");
+    checkEqual (T ("mix_balance", 63.0), "R100%", "mix_balance 63 (full R, symmetric)");
     checkEqual (T ("mix_crush", 0.0),    "Off",    "mix_crush 0");
     checkEqual (T ("mix_fuzz", 63.0),    "100%",   "mix_fuzz 63");
 }
@@ -96,12 +97,12 @@ static void testModSeqArpPart()
     checkEqual (T ("seqnote_step0", 60.0),
                 juce::String (juce::CharPointer_UTF8 ("\xE2\x80\x94")),
                 "seqnote_step0 60 (gate off -> em dash)");
-    checkEqual (T ("arp_octave", 2.0),   "2 oct",  "arp_octave 2");
-    checkEqual (T ("part_octave", -1.0), "-1 oct", "part_octave -1");
-    checkEqual (T ("part_tuning", 64.0), "+50 ct", "part_tuning 64 (1/128-st units -> 50 ct)");
-    checkEqual (T ("part_tuning", 127.0), "+99 ct", "part_tuning 127 (max -> 99 ct)");
-    checkEqual (T ("part_tuning", -127.0), "-99 ct", "part_tuning -127 (min -> -99 ct)");
-    checkEqual (T ("seq_length_1", 16.0),"16 steps", "seq_length_1 16");
+    checkEqual (T ("arp_octave", 2.0),   "2oct",  "arp_octave 2");
+    checkEqual (T ("part_octave", -1.0), "-1oct", "part_octave -1");
+    checkEqual (T ("part_tuning", 64.0), "+50ct", "part_tuning 64 (1/128-st units -> 50 ct)");
+    checkEqual (T ("part_tuning", 127.0), "+99ct", "part_tuning 127 (max -> 99 ct)");
+    checkEqual (T ("part_tuning", -127.0), "-99ct", "part_tuning -127 (min -> -99 ct)");
+    checkEqual (T ("seq_length_1", 16.0),"16", "seq_length_1 16");
 }
 
 static void testFallback()
