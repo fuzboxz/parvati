@@ -284,11 +284,14 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     mixKnob_.setScrollWheelEnabled (false);
     mixKnob_.setTooltip (TRANS ("Global FX wet/dry"));
     addAndMakeVisible (mixKnob_);
+    mixAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        processor_.getApvts(), "fx_mix", mixKnob_);
+    // NOTE: install the value->text formatter AFTER the SliderAttachment: its
+    // constructor overwrites slider.textFromValueFunction with param.getText()
+    // (raw 0..127), which is why the readout showed a bare 0..127 here.
     mixKnob_.textFromValueFunction = [] (double v) {
         return juce::String (juce::roundToInt (juce::jlimit (0.0, 127.0, v) / 127.0 * 100.0)) + "%";
     };
-    mixAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        processor_.getApvts(), "fx_mix", mixKnob_);
 
     // ---- 3-band master EQ (Low / Mid / High): synth-style rotaries bound to
     //      fx_eq_low / fx_eq_mid / fx_eq_high (0..127). The value renders in-ring
@@ -308,11 +311,14 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
         eqKnobs_[i].setScrollWheelEnabled (false);
         eqKnobs_[i].setTooltip (TRANS ("FX master EQ ") + eqNames[i]);
         addAndMakeVisible (eqKnobs_[i]);
+        eqAttach_[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            processor_.getApvts(), eqIds[i], eqKnobs_[i]);
+        // Install AFTER the SliderAttachment (it overwrites textFromValueFunction
+        // with raw param.getText() -> 0..127); otherwise the EQ readouts show a
+        // bare 0..127 instead of Hz / dB.
         eqKnobs_[i].textFromValueFunction = (i == 0)
             ? [] (double v) { return eqLowToString (v); }
             : [] (double v) { return eqDbToString (v); };
-        eqAttach_[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            processor_.getApvts(), eqIds[i], eqKnobs_[i]);
     }
 }
 
