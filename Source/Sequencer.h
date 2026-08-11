@@ -84,6 +84,9 @@ public:
     // Transport stop (twin of Arpeggiator::stop).
     void stop() { allNotesOff(); }
 
+    // Test/debug: the currently-sounding (last generated) note, or 0xff if none.
+    uint8_t debugPreviousNote() const noexcept { return previousNote_; }
+
     // Advance one (prescaled) clock step. `heldNote`/`keyHeld` feed the note
     // sequence transpose (most-recently-played key).
     void clockTick (uint8_t heldNote, bool keyHeld);

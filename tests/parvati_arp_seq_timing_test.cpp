@@ -14,9 +14,17 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <set>
+#include <vector>
 
 #include "Arpeggiator.h"
 #include "Sequencer.h"
+
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_events/juce_events.h>
+#include <juce_gui_basics/juce_gui_basics.h>  // ScopedJuceInitialiser_GUI
+#include "PluginProcessor.h"
 
 namespace
 {
@@ -129,11 +137,108 @@ static void testNoteLifecycle()
     }
 }
 
+static void testEngineNoteSeqNoStuck()
+{
+    std::printf ("(C) engine: NOTE seq releases on key-release (no stuck note)\n");
+
+    juce::ScopedJuceInitialiser_GUI guiInit;
+    juce::MessageManager::getInstance();
+
+    // Minimal play head at 120 BPM, playing.
+    class FakePlayHead : public juce::AudioPlayHead
+    {
+    public:
+        FakePlayHead (double bpm, bool playing) : bpm_ (bpm), playing_ (playing) {}
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo info;
+            info.setBpm (bpm_);
+            info.setIsPlaying (playing_);
+            return info;
+        }
+    private:
+        double bpm_; bool playing_;
+    };
+
+    ParvatiAudioProcessor proc;
+    FakePlayHead playHead (120.0, true);
+    proc.setPlayHead (&playHead);
+    proc.prepareToPlay (48000.0, 256);
+    proc.syncAllParamsToEngine();
+
+    // NOTE/Sequencer mode (arp_mode choice: 0=Off,1=Arp,2=Sequencer).
+    proc.getApvts().getParameterAsValue ("arp_mode") = 2.0f;
+    proc.getApvts().getParameterAsValue ("seq_length_3") = 4.0f;       // 4-step note seq
+    // Program 4 gated notes: C4/E4/G4/C5 (byte = 0x80 | note).
+    const int notes[4] = { 60, 64, 67, 72 };
+    for (int i = 0; i < 4; ++i)
+        proc.getApvts().getParameterAsValue (juce::String ("seqnote_step") + juce::String (i)) = static_cast<float> (0x80 | notes[i]);
+
+    auto peakOf = [] (const juce::AudioBuffer<float>& b) {
+        float pk = 0.0f;
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                pk = juce::jmax (pk, std::fabs (b.getSample (ch, i)));
+        return pk;
+    };
+
+    // Press key 60 (C4) -> the seq transposes by it; render ~2.2s so the 4-step
+    // seq cycles a couple of times at the default 1/4 resolution (0.5s/step).
+    float peakDuring = 0.0f;
+    std::set<int> distinctSeqNotes;
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 60, static_cast<uint8_t> (100)), 0);
+        proc.processBlock (buf, midi);
+        peakDuring = juce::jmax (peakDuring, peakOf (buf));
+        distinctSeqNotes.insert (proc.getEngine().getPart (0).seq.debugPreviousNote());
+    }
+    for (int blk = 0; blk < 400; ++blk)   // ~2.1s
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer empty;
+        proc.processBlock (buf, empty);
+        peakDuring = juce::jmax (peakDuring, peakOf (buf));
+        distinctSeqNotes.insert (proc.getEngine().getPart (0).seq.debugPreviousNote());
+    }
+
+    // Release the key; render ~1.5s and measure the LATE peak (past any release tail).
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+        proc.processBlock (buf, midi);
+    }
+    float peakAfter = 0.0f;
+    for (int blk = 0; blk < 250; ++blk)   // ~1.3s after release
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer empty;
+        proc.processBlock (buf, empty);
+        if (blk > 200)   // last ~0.26s, well past the release tail
+            peakAfter = juce::jmax (peakAfter, peakOf (buf));
+    }
+
+    char msg[160];
+    std::snprintf (msg, sizeof (msg), "seq produced audio while key held (peakDuring=%.4f)", peakDuring);
+    check (peakDuring > 0.01f, msg);
+    std::snprintf (msg, sizeof (msg), "seq cycled through >=2 distinct notes (got %d) -- not frozen on one", (int) distinctSeqNotes.size());
+    check (distinctSeqNotes.size() >= 2, msg);
+    std::snprintf (msg, sizeof (msg), "audio silent after key-release (peakAfter=%.4f, must be < 0.002) -- stuck note if high", peakAfter);
+    check (peakAfter < 0.002f, msg);
+}
+
 int main()
 {
     std::printf ("=== arp/seq timing + note lifecycle ===\n\n");
     testPrescalerGating();
     testNoteLifecycle();
+    testEngineNoteSeqNoStuck();
 
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures == 0 ? "ALL PASS" : "FAILURES",
