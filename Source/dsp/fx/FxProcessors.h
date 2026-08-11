@@ -63,7 +63,8 @@ private:
 };
 
 // Pitch Shifter — the Clouds dual-tap pitch shifter (FxEngine<4096, 16-bit>).
-// param0 = Ratio (0..1 -> -12..+12 semitones, 0.5 = unison), param1 = Size.
+// param0 = Pitch (Ratio 0..1 -> -12..+12 semitones, 0.5 = unison), param1 = Size,
+// param2 = Spread (0..1 offsets the right-channel tap for stereo width).
 class FxPitchShifter : public FxProcessor
 {
 public:
@@ -79,13 +80,17 @@ private:
     uint16_t             pitchBuffer_[4096] {};   // FxEngine<4096, FORMAT_16_BIT>
     float                ratioParam_ = 0.5f;       // cached 0..1
     float                sizeParam_  = 0.5f;
+    float                spreadParam_ = 0.0f;      // 0..1 (R tap offset)
 };
 
 // Reverb — the Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
-// param0 = Time, param1 = Tone (LP/damping), param2 = Diffusion. The internal
-// amount is pinned full-wet (1.0); the wet/dry mix is the chain Dry/Wet (the old
-// Amount knob was a duplicate of it).
+// Signal path: Pre-Delay -> input diffusers (Diffusion) -> tank loop (Time) ->
+// LP damping (Tone) -> post Low-Cut (HP) to shed mud. param0 = Pre-Delay
+// (0..200 ms), param1 = Diffusion, param2 = Time, param3 = Tone (LP/damping),
+// param4 = Low-Cut (post HP). The internal amount is pinned full-wet (1.0); the
+// wet/dry mix is the chain Dry/Wet (the old Amount knob was a duplicate of it).
 // input_gain is fixed internally (0.5) to prevent the L+R sum from clipping.
+// Pre-Delay is a MUSICAL delay (not reported via latency()).
 class FxReverb : public FxProcessor
 {
 public:
@@ -103,6 +108,18 @@ private:
     float           timeParam_ = 0.0f;
     float           lpParam_   = 0.0f;
     float           diffParam_ = 0.0f;
+    float           preDelayParam_ = 0.0f;   // 0..1 (-> 0..200 ms)
+    float           lowCutParam_   = 0.0f;   // 0..1 (-> post HP cutoff)
+    double          sampleRate_     = 44100.0;
+    // Pre-delay ring (host rate): capacity = ceil(0.2*sr)+1, sized in prepare().
+    std::vector<float> preDelayL_;
+    std::vector<float> preDelayR_;
+    int             preDelaySamples_ = 0;     // 0..(capacity-1), from preDelayParam_
+    int             preDelayCap_     = 0;     // ring capacity (set in prepare)
+    int             preDelayPos_     = 0;     // ring write position
+    // Post low-cut one-pole HP state (L/R).
+    float           lowCutLpL_ = 0.0f;
+    float           lowCutLpR_ = 0.0f;
 };
 
 //==========================================================================
@@ -154,8 +171,10 @@ private:
 // splice-point search in its background main loop, but Parvati FX slots have no
 // such thread, so after each Play we run it inline (LoadCorrelator +
 // EvaluateSomeCandidates); without it the search stalls and WSOLA never
-// advances. param0 = Pitch (+/-24 st, 0.5 = unison), param1 = Position,
-// param2 = Size.
+// advances. Signal path: Pitch -> Position -> Size -> Freeze -> Tone.
+// param0 = Pitch (+/-24 st, 0.5 = unison), param1 = Position, param2 = Size,
+// param3 = Freeze (>0.5 holds the recorded loop — the same WriteFade write-gate
+// the looper uses), param4 = Tone (post one-pole LP).
 class FxWSOLAStretch : public FxProcessor
 {
 public:
@@ -184,6 +203,11 @@ private:
     float pitchParam_    = 0.5f;   // 0.5 = unison
     float positionParam_ = 0.5f;
     float sizeParam_     = 0.5f;
+    float freezeParam_   = 0.0f;   // >0.5 holds the recorded loop (no buffer write)
+    float toneParam_     = 1.0f;   // 1 = bright (near-bypass); 0 = dark one-pole LP
+    double sampleRate_   = 44100.0;
+    float toneLpL_       = 0.0f;   // post one-pole LP state (L/R)
+    float toneLpR_       = 0.0f;
 };
 
 // Spectral — the Clouds phase vocoder (STFT + overlap-add + spectral frame
@@ -232,9 +256,13 @@ private:
 // the fold in the Warps hardware's OWN 6x polyphase-FIR oversampling
 // (SampleRateConverter<SRC_UP/DOWN,6,48>, kOversampling=6) so the sharp fold
 // corners anti-alias exactly as the hardware does. Per channel: upsample 6x ->
-// fold each oversampled sample -> downsample 6x. param0 = Fold (fold amount),
-// param1 = Bias (a small constant second input into the Warps fold sum, giving an
-// asymmetric fold). ~8 base samples of group delay from the SRC filters.
+// (Drive pre-gain x) fold each oversampled sample -> downsample 6x -> Tone LP.
+// Signal path: Drive (pre-gain into the fold) -> Fold -> Bias -> Tone (post-fold
+// one-pole LP that tames the harsh upper harmonics the fold generates).
+// param0 = Drive (1x..4x pre-gain), param1 = Fold (fold amount), param2 = Bias
+// (a small constant second input for an asymmetric fold), param3 = Tone
+// (post-fold LP; 1 = bright/near-bypass). ~8 base samples of group delay from
+// the SRC filters.
 class FxWavefolder : public FxProcessor
 {
 public:
@@ -251,18 +279,27 @@ private:
     std::vector<float> osL_;   // oversampled scratch (maxBlock*6 + headroom)
     std::vector<float> osR_;
 
-    float foldParam_ = 0.0f;   // 0..1 (fold amount)
-    float biasParam_ = 0.5f;   // 0..1 (0.5 = no bias / symmetric fold)
+    double sampleRate_  = 44100.0;   // for the post-fold Tone one-pole LP
+    float  toneLpL_     = 0.0f;      // post-fold one-pole LP state (L/R)
+    float  toneLpR_     = 0.0f;
+
+    float driveParam_ = 0.0f;   // 0..1 (1x..4x pre-gain; 0 = unity = bit-identical)
+    float foldParam_  = 0.0f;   // 0..1 (fold amount)
+    float biasParam_  = 0.5f;   // 0..1 (0.5 = no bias / symmetric fold)
+    float toneParam_  = 1.0f;   // 0..1 (1 = bright/near-bypass; 0 = dark LP)
 };
 
 // Frequency Shifter — the Warps quadrature (Hilbert) frequency shifter (the
 // Warps "easter-egg" algorithm). NATIVE host rate (the Hilbert allpass network
 // is normalized-frequency, so its 90 deg band scales with the host rate; the
 // carrier QuadratureOscillator inits at the host rate). True-stereo: each channel
-// through its own QuadratureTransform, one shared sine carrier; the Spread knob
-// blends the right channel toward the opposite sideband for width. param0 = Shift
-// (center 0.5 = 0 Hz; reuses the upstream frequency_shift_pot Hz formula),
-// param1 = Feedback, param2 = Spread (0..1 sideband blend for stereo width).
+// through its own QuadratureTransform, one shared carrier; the Spread knob
+// blends the right channel toward the opposite sideband for width. Signal path:
+// Shift (carrier freq) -> Shape (carrier wavetable timbre, sine->harmonics) ->
+// Feedback (regen) -> Spread (R sideband blend).
+// param0 = Shift (center 0.5 = 0 Hz; reuses the upstream frequency_shift_pot Hz
+// formula), param1 = Shape (osc shape 0..1, fed straight to Render — 0 = sine,
+// the original hardcoded carrier), param2 = Feedback, param3 = Spread
 class FxFrequencyShifter : public FxProcessor
 {
 public:
@@ -284,6 +321,7 @@ private:
     float feedbackR_ = 0.0f;
 
     float shiftParam_    = 0.5f;    // 0..1 (0.5 = 0 Hz)
+    float shapeParam_    = 0.0f;    // 0..1 (0 = sine = the original hardcoded carrier)
     float feedbackParam_ = 0.0f;    // 0..1
     float spreadParam_   = 0.0f;    // 0..1 (R sideband blend)
 };

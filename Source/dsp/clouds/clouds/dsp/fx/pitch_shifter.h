@@ -46,6 +46,7 @@ class PitchShifter {
     phase_ = 0;
     size_ = 2047.0f;
     target_size_ = 2047.0f;
+    spread_ = 0.0f;
   }
   
   void Clear() {
@@ -95,10 +96,20 @@ class PitchShifter {
     c.Interpolate(left, half, 1.0f - tri);
     c.Write(input_output->l, 0.0f);
 
+    // Optional stereo SPREAD (Parvati add): offset the right channel's two
+    // read taps by a fraction of the window so L and R read different points in
+    // the buffer -> instant chorusy stereo width. spread_=0 reproduces the
+    // original mono-window behaviour bit-for-bit (phaseR/halfR == phase/half).
+    const float rOff = spread_ * size_;
+    float phaseR = phase + rOff;
+    if (phaseR >= size_) phaseR -= size_;
+    float halfR = half + rOff;
+    if (halfR >= size_) halfR -= size_;
+
     c.Read(input_output->r, 1.0f);
     c.Write(right, 0.0f);
-    c.Interpolate(right, phase, tri);
-    c.Interpolate(right, half, 1.0f - tri);
+    c.Interpolate(right, phaseR, tri);
+    c.Interpolate(right, halfR, 1.0f - tri);
     c.Write(input_output->r, 0.0f);
   }
   
@@ -109,6 +120,12 @@ class PitchShifter {
   inline void set_size(float size) {
     target_size_ = 128.0f + (2047.0f - 128.0f) * size * size * size;
   }
+
+  // Stereo spread: 0 = both channels share the read window (mono); 1 = the
+  // right channel's taps are offset by up to one window length. (Parvati add.)
+  inline void set_spread(float spread) {
+    spread_ = spread;
+  }
   
  private:
   typedef FxEngine<4096, FORMAT_16_BIT> E;
@@ -117,6 +134,7 @@ class PitchShifter {
   float ratio_;
   float size_;
   float target_size_;
+  float spread_;   // right-channel tap offset (0..1 of window) — Parvati add
   
   DISALLOW_COPY_AND_ASSIGN(PitchShifter);
 };

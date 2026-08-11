@@ -65,6 +65,7 @@ void FxPitchShifter::process (float* L, float* R, int numSamples)
     const float semis = (ratioParam_ - 0.5f) * 24.0f;             // -12..+12 st, 0.5 = unison
     pitch_.set_ratio (std::pow (2.0f, semis / 12.0f));
     pitch_.set_size (sizeParam_);
+    pitch_.set_spread (spreadParam_);   // R-tap offset for stereo width (Parvati add)
     const int m = bridge_.hostToInternal (L, R, numSamples);
     pitch_.Process (bridge_.internal(), static_cast<size_t> (m));
     bridge_.internalToHost (L, R, numSamples);
@@ -72,8 +73,9 @@ void FxPitchShifter::process (float* L, float* R, int numSamples)
 
 void FxPitchShifter::setParams (const float param[5])
 {
-    ratioParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
-    sizeParam_  = juce::jlimit (0.0f, 1.0f, param[1]);
+    ratioParam_  = juce::jlimit (0.0f, 1.0f, param[0]);
+    sizeParam_   = juce::jlimit (0.0f, 1.0f, param[1]);
+    spreadParam_ = juce::jlimit (0.0f, 1.0f, param[2]);
 }
 
 FxType FxPitchShifter::type() const { return FxType::PitchShifter; }
@@ -82,14 +84,26 @@ FxType FxPitchShifter::type() const { return FxType::PitchShifter; }
 // FxReverb — Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
 void FxReverb::prepare (double sampleRate, int maxBlock)
 {
+    sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     reverb_.Init (reverbBuffer_);
     bridge_.prepare (sampleRate, maxBlock);
+    // Pre-delay ring (host rate): capacity for up to 200 ms — a MUSICAL delay,
+    // not reported via latency(). +1 so a delay of cap-1 still reads in range.
+    preDelayCap_ = static_cast<int> (std::ceil (0.20 * sampleRate_)) + 1;
+    preDelayL_.assign (static_cast<size_t> (preDelayCap_), 0.0f);
+    preDelayR_.assign (static_cast<size_t> (preDelayCap_), 0.0f);
+    preDelayPos_ = 0;
 }
 
 void FxReverb::reset()
 {
     bridge_.reset();
     reverb_.Init (reverbBuffer_);   // Reverb exposes no Clear(); Init() zeroes the tank
+    std::fill (preDelayL_.begin(), preDelayL_.end(), 0.0f);
+    std::fill (preDelayR_.begin(), preDelayR_.end(), 0.0f);
+    preDelayPos_ = 0;
+    lowCutLpL_ = 0.0f;
+    lowCutLpR_ = 0.0f;
 }
 
 void FxReverb::process (float* L, float* R, int numSamples)
@@ -102,19 +116,67 @@ void FxReverb::process (float* L, float* R, int numSamples)
     reverb_.set_time (juce::jmap (timeParam_, 0.30f, 0.95f));
     reverb_.set_lp (lpParam_);
     reverb_.set_diffusion (diffParam_);                      // reverb's internal allpass diffusion
+
+    // PRE-DELAY: delay the input feeding the tank by preDelaySamples_ (host
+    // rate). A musical delay (not processing latency; latency()==0). Bypassed
+    // entirely at 0 for bit-identical behaviour. Read-before-write on a fixed
+    // ring: ring[wp-D] is the sample written D steps ago. The chain's dry path
+    // uses the UN-delayed signal, so the wet onset lags the dry by preDelay.
+    if (preDelaySamples_ > 0 && preDelayCap_ > preDelaySamples_)
+    {
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float inL = L[i];
+            const float inR = R[i];
+            int rp = preDelayPos_ - preDelaySamples_;
+            if (rp < 0) rp += preDelayCap_;
+            L[i] = preDelayL_[static_cast<size_t> (rp)];
+            R[i] = preDelayR_[static_cast<size_t> (rp)];
+            preDelayL_[static_cast<size_t> (preDelayPos_)] = inL;
+            preDelayR_[static_cast<size_t> (preDelayPos_)] = inR;
+            preDelayPos_ = (preDelayPos_ + 1 < preDelayCap_) ? preDelayPos_ + 1 : 0;
+        }
+    }
+
     const int m = bridge_.hostToInternal (L, R, numSamples);
     reverb_.Process (bridge_.internal(), static_cast<size_t> (m));
     bridge_.internalToHost (L, R, numSamples);
+
+    // LOW-CUT: one-pole HP on the tail to shed mud (HP = input - one-pole LP).
+    // lowCut=0 ~ flat (15 Hz, inaudible); increasing raises the cutoff
+    // (15..450 Hz). Bypassed near 0.
+    if (lowCutParam_ > 0.001f)
+    {
+        const float fc = 15.0f * std::pow (30.0f, lowCutParam_);   // 15..450 Hz
+        const float a  = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate_));
+        for (int i = 0; i < numSamples; ++i)
+        {
+            lowCutLpL_ += a * (L[i] - lowCutLpL_);
+            L[i] -= lowCutLpL_;
+            lowCutLpR_ += a * (R[i] - lowCutLpR_);
+            R[i] -= lowCutLpR_;
+        }
+    }
 }
 
 void FxReverb::setParams (const float param[5])
 {
-    // Amount is no longer a user param: pinned full-wet (1.0) so the chain
-    // Dry/Wet is the sole wet/dry mix. Time/Tone/Diffusion shift to p0/p1/p2.
-    amount_    = 1.0f;
-    timeParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
-    lpParam_   = juce::jlimit (0.0f, 1.0f, param[1]);
-    diffParam_ = juce::jlimit (0.0f, 1.0f, param[2]);
+    // Signal path: Pre-Delay -> Diffusion -> Time -> Tone(LP) -> Low-Cut(HP).
+    // Amount is pinned full-wet (1.0) so the chain Dry/Wet is the sole wet/dry.
+    amount_        = 1.0f;
+    preDelayParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
+    diffParam_     = juce::jlimit (0.0f, 1.0f, param[1]);
+    timeParam_     = juce::jlimit (0.0f, 1.0f, param[2]);
+    lpParam_       = juce::jlimit (0.0f, 1.0f, param[3]);
+    lowCutParam_   = juce::jlimit (0.0f, 1.0f, param[4]);
+
+    // Map pre-delay 0..1 to 0..200 ms in samples (clamped to the ring capacity).
+    if (preDelayCap_ > 1)
+    {
+        const int maxD = preDelayCap_ - 1;
+        preDelaySamples_ = juce::jlimit (0, maxD,
+            static_cast<int> (std::round (preDelayParam_ * 0.20 * sampleRate_)));
+    }
 }
 
 FxType FxReverb::type() const { return FxType::Reverb; }
@@ -184,6 +246,7 @@ FxType FxLoopingDelay::type() const { return FxType::LoopingDelay; }
 // FxWSOLAStretch
 void FxWSOLAStretch::prepare (double sampleRate, int maxBlock)
 {
+    sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     bridge_.prepare (sampleRate, maxBlock);
     buf_[0].Init (bufMem_[0], kBufferSamples + 8, tailMem_[0]);
     buf_[1].Init (bufMem_[1], kBufferSamples + 8, tailMem_[1]);
@@ -200,6 +263,8 @@ void FxWSOLAStretch::reset()
     ws_.Init (&correlator_, 2);
     bridge_.reset();
     params_ = {};
+    toneLpL_ = 0.0f;
+    toneLpR_ = 0.0f;
 }
 
 void FxWSOLAStretch::process (float* L, float* R, int numSamples)
@@ -210,6 +275,11 @@ void FxWSOLAStretch::process (float* L, float* R, int numSamples)
     params_.position = positionParam_;
     params_.size     = sizeParam_;
     params_.trigger  = false;
+
+    // Freeze (>0.5): stop recording into the buffer so the player keeps looping
+    // the last captured material — the same WriteFade write-gate the looper uses
+    // (Tier-1 un-hardcode; zero new DSP).
+    const bool write = ! (freezeParam_ > 0.5f);
 
     const int           m   = bridge_.hostToInternal (L, R, numSamples);
     clouds::FloatFrame* scr = bridge_.internal();
@@ -225,14 +295,30 @@ void FxWSOLAStretch::process (float* L, float* R, int numSamples)
     while (off < m)
     {
         const int sz = std::min (32, m - off);
-        buf_[0].WriteFade (&scr[off].l, sz, 2, true);
-        buf_[1].WriteFade (&scr[off].r, sz, 2, true);
+        buf_[0].WriteFade (&scr[off].l, sz, 2, write);
+        buf_[1].WriteFade (&scr[off].r, sz, 2, write);
         ws_.Play (buf_, params_, &scr[off].l, static_cast<size_t> (sz));
         ws_.LoadCorrelator (buf_);
         correlator_.EvaluateSomeCandidates();
         off += sz;
     }
     bridge_.internalToHost (L, R, numSamples);
+
+    // Post Tone: one-pole LP on the stretched output. tone=1 (bright) ~ bypass;
+    // tone=0 (dark) heavy LP. Bypassed at full-bright to stay bit-identical to
+    // the original WSOLA.
+    if (toneParam_ < 0.999f)
+    {
+        const float fc = 200.0f * std::pow (100.0f, toneParam_);   // 200 Hz..20 kHz
+        const float a  = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate_));
+        for (int i = 0; i < numSamples; ++i)
+        {
+            toneLpL_ += a * (L[i] - toneLpL_);
+            L[i] = toneLpL_;
+            toneLpR_ += a * (R[i] - toneLpR_);
+            R[i] = toneLpR_;
+        }
+    }
 }
 
 void FxWSOLAStretch::setParams (const float param[5])
@@ -240,6 +326,8 @@ void FxWSOLAStretch::setParams (const float param[5])
     pitchParam_    = juce::jlimit (0.0f, 1.0f, param[0]);
     positionParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
     sizeParam_     = juce::jlimit (0.0f, 1.0f, param[2]);
+    freezeParam_   = juce::jlimit (0.0f, 1.0f, param[3]);
+    toneParam_     = juce::jlimit (0.0f, 1.0f, param[4]);
 }
 
 FxType FxWSOLAStretch::type() const { return FxType::WSOLAStretch; }
@@ -317,8 +405,9 @@ FxType FxSpectral::type() const { return FxType::Spectral; }
 
 //==========================================================================
 // FxWavefolder — Warps bipolar wavefolder (memoryless LUT; NATIVE host rate).
-void FxWavefolder::prepare (double, int maxBlock)
+void FxWavefolder::prepare (double sampleRate, int maxBlock)
 {
+    sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     // Init the per-channel 6x SRC (Warps' polyphase FIR). The fold itself is
     // memoryless; the SRC filter history is the only state.
     srcUp_[0].Init();   srcUp_[1].Init();
@@ -335,18 +424,24 @@ void FxWavefolder::reset()
     srcDown_[0].Init(); srcDown_[1].Init();
     std::fill (osL_.begin(), osL_.end(), 0.0f);
     std::fill (osR_.begin(), osR_.end(), 0.0f);
+    toneLpL_ = 0.0f;
+    toneLpR_ = 0.0f;
 }
 
 void FxWavefolder::process (float* L, float* R, int numSamples)
 {
     // Faithful to Warps Xmod<ALGORITHM_FOLD>, with the Bias wired as a small
     // CONSTANT second input (x_2) for an asymmetric fold: sum = x_1 + x_2 +
-    // x_1*x_2*0.25; sum *= (0.02 + fold); lut_bipolar_fold lookup. Wrapped in the
-    // Warps 6x oversampling (kOversampling=6) so the sharp fold corners
-    // anti-alias exactly as the hardware does. Native host base rate; the 6x is
-    // internal to the fold (upsample 6x -> fold each os sample -> downsample 6x).
-    const float x2   = (biasParam_ - 0.5f) * 0.4f;          // bipolar bias (-0.2..+0.2)
-    const float gain = 0.02f + foldParam_;                  // fold amount
+    // x_1*x_2*0.25; sum *= (0.02 + fold); lut_bipolar_fold lookup. Drive scales
+    // x_1 BEFORE the fold sum (1x..4x pre-gain; 1 = unity = bit-identical to the
+    // original). Wrapped in the Warps 6x oversampling (kOversampling=6) so the
+    // sharp fold corners anti-alias exactly as the hardware does. Native host
+    // base rate; the 6x is internal to the fold (upsample 6x -> fold each os
+    // sample -> downsample 6x). A post-fold one-pole Tone LP tames the harsh
+    // upper harmonics the fold generates.
+    const float x2    = (biasParam_ - 0.5f) * 0.4f;          // bipolar bias (-0.2..+0.2)
+    const float gain  = 0.02f + foldParam_;                  // fold amount
+    const float drive = 1.0f + driveParam_ * 3.0f;           // pre-gain into the fold (1x..4x)
     constexpr float kScale = 2048.0f / ((1.0f + 1.0f + 0.25f) * 1.02f);
 
     srcUp_[0].Process (L, osL_.data(), static_cast<size_t> (numSamples));   // n -> n*6
@@ -354,19 +449,39 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     const int os = numSamples * 6;
     for (int i = 0; i < os; ++i)
     {
-        const float sl = (osL_[i] + x2 + osL_[i] * x2 * 0.25f) * gain;
+        const float dl = osL_[i] * drive;
+        const float sl = (dl + x2 + dl * x2 * 0.25f) * gain;
         osL_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048, sl, kScale);
-        const float sr = (osR_[i] + x2 + osR_[i] * x2 * 0.25f) * gain;
+        const float dr = osR_[i] * drive;
+        const float sr = (dr + x2 + dr * x2 * 0.25f) * gain;
         osR_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048, sr, kScale);
     }
     srcDown_[0].Process (osL_.data(), L, static_cast<size_t> (os));   // n*6 % 6 == 0
     srcDown_[1].Process (osR_.data(), R, static_cast<size_t> (os));
+
+    // Post-fold Tone: one-pole LP. tone=1 (bright) -> ~passthrough; tone=0
+    // (dark) heavy LP. Bypassed at full-bright to stay bit-identical to the
+    // original wavefolder (no LP at all).
+    if (toneParam_ < 0.999f)
+    {
+        const float fc = 200.0f * std::pow (100.0f, toneParam_);   // 200 Hz..20 kHz
+        const float a  = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate_));
+        for (int i = 0; i < numSamples; ++i)
+        {
+            toneLpL_ += a * (L[i] - toneLpL_);
+            L[i] = toneLpL_;
+            toneLpR_ += a * (R[i] - toneLpR_);
+            R[i] = toneLpR_;
+        }
+    }
 }
 
 void FxWavefolder::setParams (const float param[5])
 {
-    foldParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
-    biasParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
+    driveParam_ = juce::jlimit (0.0f, 1.0f, param[0]);
+    foldParam_  = juce::jlimit (0.0f, 1.0f, param[1]);
+    biasParam_  = juce::jlimit (0.0f, 1.0f, param[2]);
+    toneParam_  = juce::jlimit (0.0f, 1.0f, param[3]);
 }
 
 int FxWavefolder::latency() const noexcept
@@ -417,8 +532,10 @@ void FxFrequencyShifter::process (float* L, float* R, int numSamples)
                   : 4.0f * stmlib::SemitonesToRatio (180.0f * (f - 0.4f));
     const float freqHz = f * direction;
 
-    // Sine carrier I/Q (shape 0 = sine; a pure carrier gives a clean single shift).
-    osc_.Render (0.0f, freqHz, carrierI_.data(), carrierQ_.data(),
+    // Sine carrier I/Q, OR a richer carrier when Shape > 0 (the shape arg is
+    // fed straight to Render — 0 = sine, the original hardcoded carrier; >0
+    // gives triangle/saw carriers = grittier sidebands). Pure un-hardcode.
+    osc_.Render (shapeParam_, freqHz, carrierI_.data(), carrierQ_.data(),
                  static_cast<size_t> (numSamples));
 
     // Feedback amount shaping (upstream's amount *= (2-amount) twice).
@@ -457,8 +574,9 @@ void FxFrequencyShifter::process (float* L, float* R, int numSamples)
 void FxFrequencyShifter::setParams (const float param[5])
 {
     shiftParam_    = juce::jlimit (0.0f, 1.0f, param[0]);
-    feedbackParam_ = juce::jlimit (0.0f, 1.0f, param[1]);
-    spreadParam_   = juce::jlimit (0.0f, 1.0f, param[2]);
+    shapeParam_    = juce::jlimit (0.0f, 1.0f, param[1]);
+    feedbackParam_ = juce::jlimit (0.0f, 1.0f, param[2]);
+    spreadParam_   = juce::jlimit (0.0f, 1.0f, param[3]);
 }
 
 FxType FxFrequencyShifter::type() const { return FxType::FrequencyShifter; }

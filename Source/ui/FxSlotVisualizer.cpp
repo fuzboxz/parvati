@@ -171,7 +171,7 @@ void FxSlotVisualizer::paint (juce::Graphics& g)
             drawPitchShifter (g, plot, lnf, trace, dimText, p0, p1, wet);
             break;
         case static_cast<int> (FxType::Reverb):
-            drawReverb (g, plot, lnf, trace, accent, dimText, 1.0f, p0, p1, p2, wet);   // amount=full-wet (dedup); time=p0, tone=p1, diffusion=p2
+            drawReverb (g, plot, lnf, trace, accent, dimText, 1.0f, p2, p3, p1, wet);   // amount=full-wet (dedup); time=p2, tone=p3, diffusion=p1 (signal-path reorder)
             break;
         case static_cast<int> (FxType::LoopingDelay):
             drawLoopingDelay (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
@@ -183,10 +183,10 @@ void FxSlotVisualizer::paint (juce::Graphics& g)
             drawSpectral (g, plot, lnf, trace, accent, dimText, p0, p1, p2, p3, wet);
             break;
         case static_cast<int> (FxType::Wavefolder):
-            drawWavefolder (g, plot, lnf, trace, dimText, p0, p1, wet);
+            drawWavefolder (g, plot, lnf, trace, dimText, p1, p2, wet);   // fold=p1, bias=p2 (signal-path reorder: Drive,Fold,Bias,Tone)
             break;
         case static_cast<int> (FxType::FrequencyShifter):
-            drawFrequencyShifter (g, plot, lnf, trace, accent, dimText, p0, p1, p2, wet);
+            drawFrequencyShifter (g, plot, lnf, trace, accent, dimText, p0, p2, p3, wet);   // shift=p0, feedback=p2, spread=p3 (signal-path reorder: Shift,Shape,Feedback,Spread)
             break;
         case static_cast<int> (FxType::RingModulator):
             drawRingModulator (g, plot, lnf, trace, accent, dimText, p0, p1, p2, wet);

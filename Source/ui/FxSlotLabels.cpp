@@ -19,13 +19,13 @@ int activeParamCount (FxType t) noexcept
     switch (t)
     {
         case FxType::Diffuser:     return 0;
-        case FxType::PitchShifter: return 2;
-        case FxType::Reverb: return 3;
+        case FxType::PitchShifter: return 3;
+        case FxType::Reverb: return 5;
         case FxType::LoopingDelay:  return 4;
-        case FxType::WSOLAStretch:  return 3;
+        case FxType::WSOLAStretch:  return 5;
         case FxType::Spectral:      return 5;
-        case FxType::Wavefolder:    return 2;
-        case FxType::FrequencyShifter: return 3;
+        case FxType::Wavefolder:    return 4;
+        case FxType::FrequencyShifter: return 4;
         case FxType::RingModulator:  return 3;
         case FxType::Resonator:      return 5;
         case FxType::None:
@@ -43,11 +43,14 @@ const char* paramLabel (FxType t, int idx) noexcept
         case FxType::PitchShifter:
             if (idx == 0) return "Pitch";
             if (idx == 1) return "Size";
+            if (idx == 2) return "Spread";
             break;
         case FxType::Reverb:
-            if (idx == 0) return "Time";
-            if (idx == 1) return "Tone";
-            if (idx == 2) return "Diffusion";
+            if (idx == 0) return "Predelay";
+            if (idx == 1) return "Diffusion";
+            if (idx == 2) return "Time";
+            if (idx == 3) return "Tone";
+            if (idx == 4) return "Low-Cut";
             break;
         case FxType::LoopingDelay:
             if (idx == 0) return "Position";
@@ -59,6 +62,8 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 0) return "Pitch";
             if (idx == 1) return "Position";
             if (idx == 2) return "Size";
+            if (idx == 3) return "Freeze";
+            if (idx == 4) return "Tone";
             break;
         case FxType::Spectral:
             if (idx == 0) return "Pitch";
@@ -68,13 +73,16 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 4) return "Freeze";
             break;
         case FxType::Wavefolder:
-            if (idx == 0) return "Fold";
-            if (idx == 1) return "Bias";
+            if (idx == 0) return "Drive";
+            if (idx == 1) return "Fold";
+            if (idx == 2) return "Bias";
+            if (idx == 3) return "Tone";
             break;
         case FxType::FrequencyShifter:
             if (idx == 0) return "Shift";
-            if (idx == 1) return "Feedback";
-            if (idx == 2) return "Spread";
+            if (idx == 1) return "Shape";
+            if (idx == 2) return "Feedback";
+            if (idx == 3) return "Spread";
             break;
         case FxType::RingModulator:
             if (idx == 0) return "Carrier";
@@ -133,9 +141,16 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
                 return formatSemis ((p - 0.5) * 24.0, 24.0);
             break;
 
+        case FxType::Reverb:
+            if (idx == 0)   // Predelay -> 0..200 ms (mirrors FxReverb's 0.2 s cap)
+                return juce::String (juce::roundToInt (p * 200.0)) + " ms";
+            break;
+
         case FxType::WSOLAStretch:
             if (idx == 0)   // Pitch -> +/-24 semitones
                 return formatSemis ((p - 0.5) * 48.0, 48.0);
+            if (idx == 3)   // Freeze -> On/Off (threshold at p > 0.5)
+                return p > 0.5 ? "On" : "Off";
             break;
 
         case FxType::LoopingDelay:

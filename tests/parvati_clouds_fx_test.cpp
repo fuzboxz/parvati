@@ -147,7 +147,7 @@ int main()
         check (r.differs, "PitchShifter: output differs from dry (shift engaged)");
     }
 
-    // ---- FxReverb (time / tone / diffusion; amount fixed full-wet) ----
+    // ---- FxReverb (predelay / diffusion / time / tone / low-cut; amount fixed full-wet) ----
     {
         auto fx = createFxProcessor (FxType::Reverb);
         check (fx != nullptr, "Reverb: factory returns non-null");
@@ -155,7 +155,7 @@ int main()
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.6f, 0.7f, 0.6f, 0.0f };   // time/tone/diffusion (amount fixed 1.0)
+        const float p[5] = { 0.0f, 0.6f, 0.6f, 0.7f, 0.0f };   // predelay 0 / diffusion / time / tone / low-cut off (amount fixed 1.0)
         fx->setParams (p);
         // Render several blocks so the reverb tank charges and the wet tail is
         // unmistakably present (the first block alone is mostly pre-delay).
@@ -219,7 +219,7 @@ int main()
         // window then plays ~2048 samples -> non-silent output only emerges around
         // block ~40-50. So render plenty of blocks (runFx flags nonSilent if ANY
         // block exceeds the threshold).
-        const float p[4] = { 0.5f, 0.0f, 0.5f, 0.0f };
+        const float p[5] = { 0.5f, 0.0f, 0.5f, 0.0f, 1.0f };   // pitch unison / position 0 / size mid / freeze off / tone bright
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 120);
 
@@ -245,7 +245,7 @@ int main()
         fx->reset();
         // pitch ~unison, warp/position/blur mid -> the resynthesis alters the
         // signal (windowing + overlap-add + spectral warp), so it differs from dry.
-        const float p[4] = { 0.5f, 0.6f, 0.5f, 0.5f };
+        const float p[5] = { 0.5f, 0.6f, 0.5f, 0.5f, 0.0f };   // pitch/warp/position/blur mid, freeze off
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 120);
 
@@ -254,7 +254,7 @@ int main()
         check (r.differs, "Spectral: output differs from dry (spectral engaged)");
     }
 
-    // ---- FxWavefolder (Warps bipolar fold + bias) — NATIVE host rate ----
+    // ---- FxWavefolder (Warps bipolar drive/fold/bias/tone) — NATIVE host rate ----
     {
         auto fx = createFxProcessor (FxType::Wavefolder);
         check (fx != nullptr, "Wavefolder: factory returns non-null");
@@ -263,7 +263,7 @@ int main()
         fx->prepare (kRate, kBlock);
         fx->reset();
         check (fx->latency() == 8, "Wavefolder: latency()==8 (6x OS group delay)");
-        const float p[4] = { 0.8f, 0.5f, 0.0f, 0.0f };   // fold 0.8, bias centred (symmetric)
+        const float p[5] = { 0.0f, 0.8f, 0.5f, 1.0f, 0.0f };   // drive unity / fold 0.8 / bias centred / tone bright
         fx->setParams (p);
         const auto r = runFx (*fx, inL, inR, outL, outR, kBlock);
 
@@ -283,7 +283,7 @@ int main()
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.65f, 0.3f, 1.0f, 0.0f };   // +shift, low feedback, full spread
+        const float p[5] = { 0.65f, 0.0f, 0.3f, 1.0f, 0.0f };   // +shift, sine shape, low feedback, full spread
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 6);
 
@@ -324,7 +324,7 @@ int main()
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.5f, 0.3f, 0.5f, 0.25f };   // C4 / decay / bright / position(0.25: half-cosine envelope)
+        const float p[5] = { 0.5f, 0.3f, 0.5f, 0.25f, 0.25f };   // C4 / decay / bright / position(0.25) / structure(Rings default)
         fx->setParams (p);
 
         // Feed several blocks so the resonator modes build up.
@@ -349,7 +349,7 @@ int main()
             auto fx = createFxProcessor (FxType::Resonator);
             fx->prepare (sr, kBlock);
             fx->reset();
-            const float p[4] = { 0.3f, 0.5f, 0.7f, 0.4f };
+            const float p[5] = { 0.3f, 0.5f, 0.7f, 0.4f, 0.25f };
             fx->setParams (p);
             float sL[kBlock], sR[kBlock];
             for (int i = 0; i < kBlock; ++i) { sL[i] = inL[i]; sR[i] = inR[i]; }
@@ -368,7 +368,7 @@ int main()
         auto fx = createFxProcessor (FxType::Resonator);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.6f, 0.4f, 0.5f, 0.25f };   // position=0.25 (both odd+even modes active)
+        const float p[5] = { 0.6f, 0.4f, 0.5f, 0.25f, 0.25f };   // position=0.25 (both odd+even modes active), structure default
         fx->setParams (p);
         // Feed identical mono input on both channels (the harness input).
         float sL[kBlock], sR[kBlock];
@@ -393,7 +393,7 @@ int main()
             auto fx = createFxProcessor (FxType::Resonator);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[4] = { 0.5f, 0.3f, 0.5f, pos };
+            const float p[5] = { 0.5f, 0.3f, 0.5f, pos, 0.25f };
             fx->setParams (p);
             float sL[kBlock], sR[kBlock];
             for (int b = 0; b < 8; ++b)
@@ -420,7 +420,7 @@ int main()
         auto fx = createFxProcessor (FxType::Wavefolder);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.1f, 0.5f, 0.0f, 0.0f };   // mild fold, centred bias
+        const float p[5] = { 0.0f, 0.1f, 0.5f, 1.0f, 0.0f };   // drive unity, mild fold, centred bias, tone bright (no LP smear)
         fx->setParams (p);
 
         float impL[kBlock] = {}, impR[kBlock] = {};
@@ -572,7 +572,7 @@ int main()
         auto fx = createFxProcessor (FxType::Resonator);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.5f, 1.0f, 1.0f, 0.25f };   // C4, max decay/bright, pos 0.25
+        const float p[5] = { 0.5f, 1.0f, 1.0f, 0.25f, 0.25f };   // C4, max decay/bright, pos 0.25, structure default
         fx->setParams (p);
 
         float mxOverall = 0.0f;
@@ -614,8 +614,10 @@ int main()
         chain.setSlotType (0, FxType::Wavefolder);
         chain.setSlotEnabled (0, true);
         chain.setSlotDryWet (0, 1.0f);
-        chain.setSlotParam (0, 0, 0.1f);   // mild fold
-        chain.setSlotParam (0, 1, 0.5f);   // centred bias
+        chain.setSlotParam (0, 0, 0.0f);   // drive unity
+        chain.setSlotParam (0, 1, 0.1f);   // mild fold
+        chain.setSlotParam (0, 2, 0.5f);   // centred bias
+        chain.setSlotParam (0, 3, 1.0f);   // tone bright (bypass — no LP transient interferes with the RAW-param check)
 
         float oL[kBlock], oR[kBlock];
         for (int b = 0; b < 40; ++b)             // settle wetFade -> 1 (at fold 0.1)
@@ -624,7 +626,7 @@ int main()
         float ref[kBlock];
         for (int i = 0; i < kBlock; ++i) ref[i] = oL[i];
 
-        chain.setSlotParam (0, 0, 0.9f);         // step fold 0.1 -> 0.9
+        chain.setSlotParam (0, 1, 0.9f);         // step fold 0.1 -> 0.9
         chain.process (win, win, oL, oR, kBlock); // b1: fold applied RAW (no lag)
         float b1[kBlock];
         for (int i = 0; i < kBlock; ++i) b1[i] = oL[i];
@@ -693,7 +695,7 @@ int main()
             auto fx = createFxProcessor (FxType::Resonator);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[4] = { 0.5f, 0.5f, 0.5f, pos };
+            const float p[5] = { 0.5f, 0.5f, 0.5f, pos, 0.25f };
             fx->setParams (p);
             float sL[kBlock], sR[kBlock];
             for (int b = 0; b < 8; ++b)
@@ -715,14 +717,14 @@ int main()
 
     // ---- DEDUP-1: amount=mix collapsed (counts + labels) ----
     // Diffuser now has 0 user params (amount was a duplicate of chain Dry/Wet);
-    // Reverb dropped its Amount knob -> 3 params (Time/Tone/Diffusion).
+    // Reverb dropped its Amount knob -> 5 params (Predelay/Diffusion/Time/Tone/Low-Cut).
     {
         check (activeParamCount (FxType::Diffuser) == 0,
                "DEDUP-1a: Diffuser exposes 0 param knobs (amount collapsed)");
-        check (activeParamCount (FxType::Reverb) == 3,
-               "DEDUP-1b: Reverb exposes 3 param knobs (amount collapsed)");
-        check (std::strcmp (paramLabel (FxType::Reverb, 0), "Time") == 0,
-               "DEDUP-1c: Reverb p0 is 'Time' (was 'Amount')");
+        check (activeParamCount (FxType::Reverb) == 5,
+               "DEDUP-1b: Reverb exposes 5 param knobs (predelay/diffusion/time/tone/low-cut)");
+        check (std::strcmp (paramLabel (FxType::Reverb, 0), "Predelay") == 0,
+               "DEDUP-1c: Reverb p0 is 'Predelay' (signal-path order)");
         check (std::strcmp (paramLabel (FxType::Diffuser, 0), "-") == 0,
                "DEDUP-1d: Diffuser p0 label is '-' (no 'Amount')");
     }
@@ -837,8 +839,17 @@ int main()
         // LoopingDelay Freeze -> On/Off (threshold p > 0.5)
         check (eq (paramValueText (FxType::LoopingDelay, 3, 63.0), "Off"), "UNITS: LoopingDelay freeze 63 -> Off");
         check (eq (paramValueText (FxType::LoopingDelay, 3, 64.0), "On"),  "UNITS: LoopingDelay freeze 64 -> On");
-        // Dimensionless -> % (Reverb Diffusion; also the rename check via Reverb==3)
-        check (eq (paramValueText (FxType::Reverb, 2, 64.0), "50%"), "UNITS: Reverb Diffusion 64 -> 50%");
+        // Reverb Predelay (idx0) -> 0..200 ms; Diffusion (idx1) -> % (signal-path reorder)
+        check (eq (paramValueText (FxType::Reverb, 0, 0.0),   "0 ms"),   "UNITS: Reverb Predelay 0 -> 0 ms");
+        check (paramValueText (FxType::Reverb, 0, 127.0).contains ("200 ms"), "UNITS: Reverb Predelay 127 -> ~200 ms");
+        check (eq (paramValueText (FxType::Reverb, 1, 64.0), "50%"), "UNITS: Reverb Diffusion 64 -> 50% (idx1 post-reorder)");
+        // WSOLA Freeze (idx3) -> On/Off
+        check (eq (paramValueText (FxType::WSOLAStretch, 3, 63.0), "Off"), "UNITS: WSOLA freeze 63 -> Off");
+        check (eq (paramValueText (FxType::WSOLAStretch, 3, 64.0), "On"),  "UNITS: WSOLA freeze 64 -> On");
+        check (eq (paramLabel (FxType::Reverb, 0), "Predelay"), "UNITS: Reverb p0 label is 'Predelay'");
+        check (eq (paramLabel (FxType::Wavefolder, 0), "Drive"), "UNITS: Wavefolder p0 label is 'Drive'");
+        check (eq (paramLabel (FxType::FrequencyShifter, 1), "Shape"), "UNITS: FreqShifter p1 label is 'Shape'");
+        check (eq (paramLabel (FxType::PitchShifter, 2), "Spread"), "UNITS: PitchShifter p2 label is 'Spread'");
         check (static_cast<int> (FxType::Reverb) == 3, "UNITS: FxType::Reverb == 3 (rename preserved index)");
     }
 

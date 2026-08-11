@@ -87,13 +87,13 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
     switch (t)
     {
         case FxType::Diffuser:     return { 1,  40, {  0,  0,  0,  0,  0 } }; // (amount fixed 1.0; chain Dry/Wet is the mix)
-        case FxType::PitchShifter: return { 1, 100, { 50, 50,  0,  0,  0 } }; // Ratio(unison) / Size
-        case FxType::Reverb: return { 1,  50, { 60, 70, 64,  0,  0 } }; // Time / Tone / Diffusion (amount fixed 1.0; chain Dry/Wet is the mix)
+        case FxType::PitchShifter: return { 1, 100, { 50, 50,  0,  0,  0 } }; // Pitch(unison) / Size / Spread(none)
+        case FxType::Reverb: return { 1,  50, {  0, 64, 60, 70,  0 } }; // Predelay(none) / Diffusion / Time / Tone / Low-Cut(off) (amount fixed 1.0; chain Dry/Wet is the mix)
         case FxType::LoopingDelay:  return { 1,  80, { 50, 50, 50,  0,  0 } }; // Position / Size / Pitch(unison) / Freeze(off)
-        case FxType::WSOLAStretch:  return { 1,  80, { 50, 50, 50,  0,  0 } }; // Pitch(unison) / Position / Size
+        case FxType::WSOLAStretch:  return { 1,  80, { 50, 50, 50,  0,127 } }; // Pitch(unison) / Position / Size / Freeze(off) / Tone(bright)
         case FxType::Spectral:      return { 1,  80, { 50, 50, 50, 50,  0 } }; // Pitch(unison) / Warp / Position / Blur / Freeze(off)
-        case FxType::Wavefolder:    return { 1,  80, { 50, 50,  0,  0,  0 } }; // Fold(mid) / Bias(centre, symmetric)
-        case FxType::FrequencyShifter: return { 1, 80, { 50, 30,  0,  0,  0 } }; // Shift(0 Hz) / Feedback(low) / Spread(none)
+        case FxType::Wavefolder:    return { 1,  80, {  0, 50, 50,127,  0 } }; // Drive(unity) / Fold(mid) / Bias(centre) / Tone(bright)
+        case FxType::FrequencyShifter: return { 1, 80, { 50,  0, 30,  0,  0 } }; // Shift(0 Hz) / Shape(sine) / Feedback(low) / Spread(none)
         case FxType::RingModulator:  return { 1,  80, { 30,  0, 50,  0,  0 } }; // Carrier(low) / Shape(sine) / Amount(mid)
         case FxType::Resonator:    return { 1,  80, { 50, 30, 50, 25, 32 } }; // Pitch(C4) / Decay / Bright / Position(0.25) / Structure(0.25 = Rings default)
         case FxType::None:

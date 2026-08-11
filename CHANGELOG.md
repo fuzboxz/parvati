@@ -5,6 +5,37 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Five FX effects gained new parameters, reordered by signal-path flow.**
+  Each effect's generic slot params were re-mapped left→right to follow the
+  audio path (input → processing → output), and new controls were added by
+  either un-hardcoding a constant the engine already accepts (Tier-1) or a
+  one-pole Tone/HP filter (Tier-2) — no effect's core character changes
+  unexpectedly:
+  - **Wavefolder** (2→4): **Drive** (1×–4× pre-gain into the fold) → Fold →
+    Bias → **Tone** (post-fold one-pole LP that tames the harsh upper harmonics
+    the fold generates; full-bright = bit-identical to before).
+  - **Frequency Shifter** (3→4): Shift → **Shape** (carrier wavetable timbre —
+    pure un-hardcode of the `0.0` sine argument already passed to
+    `QuadratureOscillator::Render`; 0 = sine = original) → Feedback → Spread.
+  - **Reverb** (3→5): **Predelay** (0–200 ms host-rate ring before the tank; a
+    musical delay, not latency-compensated) → Diffusion → Time → Tone →
+    **Low-Cut** (post-tank one-pole HP, 15–450 Hz, to shed mud).
+  - **Pitch Shifter** (2→3): Pitch → Size → **Spread** (offsets the right
+    channel's read taps for chorusy stereo width; 0 = mono = bit-identical).
+  - **WSOLA Stretch** (3→5): Pitch → Position → Size → **Freeze** (Tier-1:
+    gates the record-buffer write, identical to the looper — holds the loop) →
+    **Tone** (post one-pole LP). _A dedicated time-stretch **ratio** was
+    deferred: the vendored WSOLA engine exposes no independent stretch rate, so
+    a true Stretch knob would need invasive correlator/window-scheduler surgery
+    (the crackle-prone area in `FX_CRACKLE_INVESTIGATION.md`); Freeze + Tone give
+    real musical value at zero risk._
+  Per-type engagement defaults (`fxTypeDefaults`) and the slot visualizer's
+  per-type param mapping were updated to the new signal-path order. Reordering
+  is an index remap of the generic `fx{N}_param1..5` slots (no new parameters
+  were added to the APVTS — they were already 5/slot); no saved Parvati presets
+  reference FX params yet, so there is no preset-remap impact.
+
+### Added
 - **Per-slot FX now expose up to 5 params + a fixed Dry/Wet.** Each FX slot's
   generic param count rose from 4 to 5 (`kNumFxSlotParams` 4→5; a new
   `fx{N}_param5` parameter + `FX_DST_FX{N}_P5` mod-matrix destination per slot).
