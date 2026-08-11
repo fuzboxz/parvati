@@ -143,6 +143,13 @@ void FxChain::setOrder (const std::array<int, 3>& ord) noexcept
     clearDelayRings();   // N3: order changed — stale ring history is meaningless
 }
 
+void FxChain::setTempo (double bpm, bool isPlaying) noexcept
+{
+    for (auto& s : slots_)
+        if (s)
+            s->setTransport (bpm, isPlaying);
+}
+
 void FxChain::setMasterMix (float g01) noexcept
 {
     masterMix_ = juce::jlimit (0.0f, 1.0f, g01);

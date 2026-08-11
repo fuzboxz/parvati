@@ -27,17 +27,26 @@ enum class FxType : uint8_t {
     LoopingDelay = 4, WSOLAStretch = 5, Spectral = 6,
     Wavefolder = 7, FrequencyShifter = 8, RingModulator = 9,
     Resonator = 10,
+    // FV-1 hardware-emulation family (Source/dsp/fx/fv1/). APPEND-ONLY like
+    // the rest: fx{N}_type is an AudioParameterChoice whose stored index IS the
+    // enum value, so inserting/reordering would remap existing presets.
+    ClockedDelay = 11, Ensemble = 12, PlateReverb = 13,
+    VinylCompressor = 14, Phaser = 15,
     Count
 };
 // choice list string: { "None", "Diffuser", "Pitch Shifter", "Reverb",
 //                       "Looping Delay", "WSOLA Stretch", "Spectral",
 //                       "Wavefolder", "Frequency Shifter", "Ring Modulator",
-//                       "Resonator" }
+//                       "Resonator",
+//                       "Clocked Delay", "Ensemble", "Plate Reverb",
+//                       "Vinyl Compressor", "Phaser" }
 //   (Diffuser / PitchShifter / Reverb are ports of the Mutable Instruments
 //    Clouds `dsp/fx` chain; LoopingDelay / WSOLAStretch / Spectral are the Clouds
 //    looping / WSOLA / phase-vocoder modes; Wavefolder / FrequencyShifter /
 //    RingModulator are ports of the Mutable Instruments Warps DSP; Resonator is a
-//    port of the Mutable Instruments Rings modal resonator. New values are
+//    port of the Mutable Instruments Rings modal resonator; ClockedDelay /
+//    Ensemble / PlateReverb / VinylCompressor / Phaser are the FV-1 hardware-
+//    emulation family in dsp/fx/fv1/. New values are
 //    APPEND-ONLY: fx{N}_type is an AudioParameterChoice whose stored index
 //    IS the enum value, so inserting or reordering would remap existing presets
 //    to the wrong effect.)

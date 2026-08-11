@@ -1141,6 +1141,12 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     transport_.setTempo (bpm);
     applyTempo (bpm);
 
+    // Push transport to every per-part FX chain so tempo-aware effects (the FV-1
+    // Clocked Delay) can sync to the host. Polled once per block; the chain fans
+    // it out to each slot's processor (default no-op).
+    for (int p = 0; p < kNumParts; ++p)
+        fxChains_[(size_t) p].setTempo (bpm, isPlaying);
+
     if (isPlaying && ! wasPlaying_)
     {  // NOLINT(bugprone-branch-clone): the true-branch starts arp+seq, the else stops arp -- different bodies, clang-tidy FP
         for (auto& part : parts_) { part.arp.start(); part.seq.start(); }

@@ -28,6 +28,11 @@ int activeParamCount (FxType t) noexcept
         case FxType::FrequencyShifter: return 4;
         case FxType::RingModulator:  return 3;
         case FxType::Resonator:      return 5;
+        case FxType::ClockedDelay:    return 4;
+        case FxType::Ensemble:        return 4;
+        case FxType::PlateReverb:     return 4;
+        case FxType::VinylCompressor: return 4;
+        case FxType::Phaser:          return 4;
         case FxType::None:
         case FxType::Count:   return 0;
     }
@@ -95,6 +100,36 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 2) return "Bright";
             if (idx == 3) return "Position";
             if (idx == 4) return "Structure";
+            break;
+        case FxType::ClockedDelay:
+            if (idx == 0) return "Sync";
+            if (idx == 1) return "Feedback";
+            if (idx == 2) return "Tape Age";
+            if (idx == 3) return "Grit";
+            break;
+        case FxType::Ensemble:
+            if (idx == 0) return "Rate";
+            if (idx == 1) return "Depth";
+            if (idx == 2) return "Center";
+            if (idx == 3) return "Feedback";
+            break;
+        case FxType::PlateReverb:
+            if (idx == 0) return "Predelay";
+            if (idx == 1) return "Decay";
+            if (idx == 2) return "Damping";
+            if (idx == 3) return "Mod";
+            break;
+        case FxType::VinylCompressor:
+            if (idx == 0) return "Compress";
+            if (idx == 1) return "Pitch";
+            if (idx == 2) return "Crackle";
+            if (idx == 3) return "Age";
+            break;
+        case FxType::Phaser:
+            if (idx == 0) return "Rate";
+            if (idx == 1) return "Depth";
+            if (idx == 2) return "Feedback";
+            if (idx == 3) return "Center";
             break;
         case FxType::None:
         case FxType::Count:
@@ -186,6 +221,64 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
                 if (hz < 1000.0)
                     return juce::String (juce::roundToInt (hz)) + " Hz";
                 return juce::String (hz / 1000.0, 2) + " kHz";
+            }
+            break;
+
+        case FxType::ClockedDelay:
+            if (idx == 0)   // Sync -> division (8 steps: 1/1..1/16)
+            {
+                static const char* const kDiv[] = { "1/1", "1/2", "1/3", "1/4", "1/6", "1/8", "1/12", "1/16" };
+                const int i = juce::jlimit (0, 7, juce::roundToInt (p * 7.0));
+                return kDiv[i];
+            }
+            if (idx == 1)   // Feedback -> 0..95 %
+                return juce::String (juce::roundToInt (p * 95.0)) + " %";
+            if (idx == 3)   // Grit -> 24-bit..8-bit
+                return juce::String (24 - juce::roundToInt (p * 16.0)) + "-bit";
+            break;
+
+        case FxType::Ensemble:
+            if (idx == 0)   // Rate -> 0.1..8 Hz (log)
+                return juce::String (0.1 * std::pow (80.0, p), 2) + " Hz";
+            if (idx == 1)   // Depth -> 0..15 ms
+                return juce::String (p * 15.0, 1) + " ms";
+            if (idx == 2)   // Center -> 2..25 ms
+                return juce::String (2.0 + p * 23.0, 1) + " ms";
+            if (idx == 3)   // Feedback -> -90..+90 %
+                return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + " %";
+            break;
+
+        case FxType::PlateReverb:
+            if (idx == 0)   // Predelay -> 0..100 ms
+                return juce::String (juce::roundToInt (p * 100.0)) + " ms";
+            if (idx == 1)   // Decay -> 0.1..4.0 s
+                return juce::String (0.1 + p * 3.9, 2) + " s";
+            if (idx == 2)   // Damping -> 500..12000 Hz (log)
+            {
+                const double hz = 500.0 * std::pow (24.0, p);
+                return hz < 1000.0 ? juce::String (juce::roundToInt (hz)) + " Hz"
+                                   : juce::String (hz / 1000.0, 2) + " kHz";
+            }
+            break;
+
+        case FxType::VinylCompressor:
+            if (idx == 3)   // Age -> 1000..15000 Hz (log)
+            {
+                const double hz = 1000.0 * std::pow (15.0, p);
+                return hz < 1000.0 ? juce::String (juce::roundToInt (hz)) + " Hz"
+                                   : juce::String (hz / 1000.0, 2) + " kHz";
+            }
+            break;
+
+        case FxType::Phaser:
+            if (idx == 0)   // Rate -> 0.1..8 Hz (log)
+                return juce::String (0.1 * std::pow (80.0, p), 2) + " Hz";
+            if (idx == 2)   // Feedback -> -90..+90 %
+                return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + " %";
+            if (idx == 3)   // Center -> 200..2000 Hz (log)
+            {
+                const double hz = 200.0 * std::pow (10.0, p);
+                return juce::String (juce::roundToInt (hz)) + " Hz";
             }
             break;
 

@@ -73,6 +73,11 @@ public:
     void setTopology (FxTopology t) noexcept;
     void setOrder (const std::array<int, 3>& ord) noexcept;
 
+    // Push host transport (BPM + play state) to every slot's processor (default
+    // no-op; the Clocked Delay overrides it to sync to host tempo). Called once
+    // per block by the engine from the AudioPlayHead.
+    void setTempo (double bpm, bool isPlaying) noexcept;
+
     // ---- Master section (v3) ----
     // Global chain wet/dry (0..1; 1 = fully wet = the pre-master default, a
     // no-op).

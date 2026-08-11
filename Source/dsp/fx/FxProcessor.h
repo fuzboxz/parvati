@@ -45,6 +45,11 @@ public:
     // serviced (fxDirty_), before process().
     virtual void setParams (const float param[5]) = 0;
 
+    // Transport (host BPM + play state). Polled once per block by the chain (fed
+    // by the engine from the AudioPlayHead). Default no-op; tempo-aware effects
+    // (e.g. the FV-1 Clocked Delay) override it to sync delay times to the host.
+    virtual void setTransport (double /*bpm*/, bool /*isPlaying*/) {}
+
     // Processing latency this effect introduces (in BASE-rate samples), so the
     // chain can delay-compensate its dry/wet + parallel blends. 0 for all
     // effects except the oversampled ones (Wavefolder/RingModulator report the

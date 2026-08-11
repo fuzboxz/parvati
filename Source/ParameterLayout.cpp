@@ -101,7 +101,9 @@ juce::StringArray makeFxTypes()
 {
     return { "None", "Diffuser", "Pitch Shifter", "Reverb",
              "Looping Delay", "WSOLA Stretch", "Spectral",
-             "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator" };
+             "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator",
+             "Clocked Delay", "Ensemble", "Plate Reverb",
+             "Vinyl Compressor", "Phaser" };
 }
 
 // FxTopology choice list (Series / Parallel12to3 / Parallel1to23), shown as
