@@ -14,6 +14,8 @@
 #include "ui/FxWorkspace.h"
 #include "ui/FxRoutingBar.h"
 #include "ui/FxSlotCard.h"
+#include "ui/NoteStepControl.h"
+#include "ui/SeqLengthStepper.h"
 #include "ui/FxMatrixView.h"
 #include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel (bar-only NOTE pill)
 #include "ui/WheelsComponent.h"
@@ -1853,12 +1855,27 @@ ParamPage::ParamPage (ParvatiAudioProcessor& processor,
     // Control cells on top of the panel borders.
     for (const auto* d : descriptors)
     {
-        controls_.emplace_back (std::make_unique<ParamControl> (processor, *d));
+        const juce::String pid = d->paramID;
+        // Sequencer step cells use purpose-built controls instead of a plain
+        // knob: the note byte (0..255, half-dead) -> a remapped rotary (one
+        // Rest stop + a full note range); the length (1..16) -> a − [n] +
+        // stepper. Both subclass ParamControl so they live in controls_ and
+        // inherit the mod ring / right-click menu / step-dimming / label.
+        if (pid.startsWith ("seqnote_step"))
+            controls_.emplace_back (std::make_unique<NoteStepControl> (processor, *d));
+        else if (pid.startsWith ("seq_length_"))
+            controls_.emplace_back (std::make_unique<SeqLengthStepper> (processor, *d));
+        else
+            controls_.emplace_back (std::make_unique<ParamControl> (processor, *d));
         addAndMakeVisible (*controls_.back());
         // User-friendly readout (Hz / ms / semitones / % / note names / ...) on
         // raw-numeric SYNTH knobs only. Choice params already show their text;
-        // FX params use their own formatter (FxSlotCard). Display-only.
-        if (! d->isFx && d->choices == nullptr)
+        // FX params use their own formatter (FxSlotCard). The note-step rotary
+        // owns its own Rest/note readout (remapped range) and the length stepper
+        // shows its own number, so both are skipped here. Display-only.
+        if (! d->isFx && d->choices == nullptr
+            && ! pid.startsWith ("seqnote_step")
+            && ! pid.startsWith ("seq_length_"))
             controls_.back()->setDisplayValueText (
                 [id = juce::String (d->paramID)] (double v) {
                     return paramValueTextSynth (id, v);
@@ -2267,9 +2284,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // ParamPage groupForId() keys (verified in groupForId). VLFO == per-voice
     // LFO (MOD_SRC_LFO_4, verified in voice.cpp). ARP shows ALL its groups
     // (EMPTY array). The Note Sequencer pill is the bar-only sentinel
-    // (parvati::kNoteSeqSentinel == -1, NOT a real MOD_SRC_*): it reveals BOTH
-    // of its groups ("Note Pitch" + "Note Velocity") from the Sequencer page,
-    // and is click-only (the bar skips its drag because enumValue < 0). The drag
+    // (parvati::kNoteSeqSentinel == -1, NOT a real MOD_SRC_*): it reveals its
+    // "Note Pitch" group from the Sequencer page (Option A: only the note
+    // pitch + gate control; velocity stays in the full Sequencer TAB), and is
+    // click-only (the bar skips its drag because enumValue < 0). The drag
     // payload ("parvatiModSrc:<enum>") is emitted by the bar itself, so the
     // destination-side rings / padlock / ModMatrixHighlight need ZERO changes.
     using namespace ambika::dsp;
@@ -2284,9 +2302,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     synthWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_2, seqPage,        juce::StringArray{ "Sequencer 2" });
     synthWorkspace_->registerGeneratorPage (MOD_SRC_ARP_STEP, arpPage,     juce::StringArray{});   // empty => all groups
     // Note Sequencer pill (bar-only sentinel): click-only, NOT draggable; opens
-    // the Sequencer page with BOTH Note Pitch + Note Velocity groups visible.
+    // the Sequencer page showing ONLY Note Pitch (the remapped note rotary +
+    // gate-at-rest). Note Velocity is NOT shown in the generator host — the
+    // ~290px non-viewport band cannot fit both 16-step groups, so stacking them
+    // clipped velocity ~75%. Velocity stays reachable in the full Sequencer TAB
+    // (its knob is unchanged). One group => no clip.
     synthWorkspace_->registerGeneratorPage (parvati::kNoteSeqSentinel, seqPage,
-                                            juce::StringArray{ "Note Pitch", "Note Velocity" });
+                                            juce::StringArray{ "Note Pitch" });
     synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_1, modifierPage,    juce::StringArray{ "Modifier 1" });
     synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_2, modifierPage,    juce::StringArray{ "Modifier 2" });
     synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_3, modifierPage,    juce::StringArray{ "Modifier 3" });
@@ -2356,7 +2378,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Register the SAME generator pages into the FX workspace (SHARED editor —
     // the pages are NOT duplicated, only reparented between workspaces on a
     // mode toggle). ARP shows all its groups (empty array); the Note Sequencer
-    // pill reveals both Note Pitch + Note Velocity from the Sequencer page.
+    // pill reveals Note Pitch (only) from the Sequencer page (Option A: one
+    // group fits the non-viewport host without clipping; velocity stays in the
+    // full Sequencer TAB).
     using namespace ambika::dsp;
     fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_1, envPage,        juce::StringArray{ "Env 1 (Mod)" });
     fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_2, envPage,        juce::StringArray{ "Env 2 (Filter)" });
@@ -2369,7 +2393,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     fxWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_2, seqPage,        juce::StringArray{ "Sequencer 2" });
     fxWorkspace_->registerGeneratorPage (MOD_SRC_ARP_STEP, arpPage,     juce::StringArray{});   // empty => all groups
     fxWorkspace_->registerGeneratorPage (parvati::kNoteSeqSentinel, seqPage,
-                                         juce::StringArray{ "Note Pitch", "Note Velocity" });
+                                         juce::StringArray{ "Note Pitch" });
     fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_1, modifierPage,    juce::StringArray{ "Modifier 1" });
     fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_2, modifierPage,    juce::StringArray{ "Modifier 2" });
     fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_3, modifierPage,    juce::StringArray{ "Modifier 3" });

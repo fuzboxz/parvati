@@ -329,8 +329,9 @@ int main()
                     check (surfaced, msg);
                 }
 
-                // NOTE pill (bar-only sentinel) -> the Sequencer page (reveals
-                // BOTH "Note Pitch" + "Note Velocity" groups).
+                // NOTE pill (bar-only sentinel) -> the Sequencer page (Option A:
+                // reveals the "Note Pitch" group only; Note Velocity stays in the
+                // full Sequencer tab).
                 ParamPage* seqNotePage = findSeqPage();
                 check (seqNotePage != nullptr, "Sequencer generator page found");
                 if (seqNotePage != nullptr)

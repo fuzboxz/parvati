@@ -120,6 +120,21 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   to the legacy APVTS restore.
 
 ### Fixed
+- **Note sequencer "only works from 50% of the range" + length control + a
+  velocity clip.** The note-step knob crammed (note | gate) into one 0..255 byte,
+  so the lower half (0..127, gate off) was a silent dead zone — only 128..255
+  played. Each note step is now a single remapped rotary where the whole dead
+  zone collapses into one **"Rest"** stop at the minimum and **1..128 = notes
+  0..127** (gate on) across the rest of the travel, so the full range is audible.
+  It bridges the existing byte param via `getParameterAsValue` +
+  `addParameterListener` (the `FxSlotCard` composite pattern) — no new params, so
+  presets/MIDI-learn/serialization are untouched. The 1..16 **sequence-length**
+  knob is replaced by a **− [n] + stepper** (a knob was the wrong control for a
+  small count). Also fixed a latent clip: the Note-Sequencer view stacked Note
+  Pitch + Note Velocity (~390px) in a ~290px non-scrolling host, so Note Velocity
+  was ~75% clipped — the view now shows Note Pitch only (Option A); Note
+  Velocity remains editable in the full Sequencer tab. Velocity itself is
+  unchanged.
 - **FX mod-matrix: synth-voice modulation sources now couple correctly + track
   the latest note.** Two fixes to how per-voice modulation sources reach the FX
   section:

@@ -180,7 +180,13 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
     if (id.startsWith ("seq"))
     {
         // 28px SEQ dial can't fit "16 steps"; the "Length" label disambiguates.
+        // (SeqLengthStepper now shows its own number; this is unused at runtime
+        // for seq_length_ but kept as a pure-formatter regression check.)
         if (id.startsWith ("seq_length_")) return juce::String (iv);
+        // NOTE: seqnote_step is now driven by NoteStepControl (its own Rest/note
+        // readout over the remapped 0..128 range), so this branch is NOT wired at
+        // runtime. Kept as a pure byte-decode regression check for the unit test
+        // (Sequencer.h:69-78: gate = bit7, note = bits0-6).
         if (id.startsWith ("seqnote_step"))                                   // note | gate
         {
             const bool gate = (iv & 0x80) != 0;

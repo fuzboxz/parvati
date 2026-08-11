@@ -225,7 +225,9 @@ private:
     // the active L&F combo font — drives the fit-to-text dropdown width.
     int maxChoiceTextWidth() const;
 
-    // ---- Sequencer step dimming ----
+protected:
+    // ---- Sequencer step dimming + subclass access (NoteStepControl /
+    // SeqLengthStepper) ----
     // APVTS::Listener callback: the sibling seq_length_* param changed, so
     // re-evaluate whether this step's slider should be enabled/dimmed.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
@@ -241,10 +243,13 @@ private:
 
     const PatchParamDescriptor& desc_;
     ParvatiAudioProcessor& processor_;   // APVTS access for reset/randomize
+    // NoteStepControl re-ranges slider_ after tearing down the byte-range
+    // sliderAttachment_; SeqLengthStepper hides slider_ and overlays -/number/+.
     std::unique_ptr<juce::Slider>    slider_;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   sliderAttachment_;
+private:
     std::unique_ptr<juce::ComboBox>  comboBox_;
     std::unique_ptr<juce::Label>     label_;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   sliderAttachment_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> comboAttachment_;
 
     // Desktop TooltipWindow active ONLY while this control's right-click context
