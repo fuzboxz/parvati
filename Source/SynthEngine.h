@@ -405,9 +405,11 @@ public:
         return nullptr;
     }
 
-#ifndef NDEBUG
     // Test-only: the number of times FxChain::process() was called for @p part
     // since the last reset (proves renderPartFx sub-chunks at ~980 Hz).
+    // (Always compiled: the instrumentation is runtime-gated by debugEffParamTracking_
+    // and the counters are trivial, so there is no release-build overhead. Keeping
+    // it always-available lets the FX diagnostic tests build in every config.)
     int debugFxProcessCallCount (int part) const
     {
         return fxChains_[(size_t) part].getProcessCallCountForTest();
@@ -438,7 +440,6 @@ public:
     // voice and arms the de-click crossfade on a voice change.
     int debugFxTrackedVoice (int part) const { return fxTrackedVoice_[(size_t) part]; }
     float debugFxFadePhase (int part) const { return fxFadePhase_[(size_t) part]; }
-#endif
 
     // ---- Multi-output (Ambika hardware: 6 individual voicecard outputs) ----
     // Each voice renders into its FIXED voicecard buffer (mono). The processor
@@ -561,7 +562,6 @@ private:
         smoothedBase_ {};   // per-part per-slot per-param smoothed base value (AT-only)
     std::array<std::array<uint8_t, kNumFxSlots>, kNumParts> prevSlotType_ {};   // type-change detection
 
-#ifndef NDEBUG
     // Test-only: the capture-ring entry count used by the last renderPartFx for
     // @p part (proves the per-internal-block mod-source capture is populated, so
     // the FX mod matrix runs at ~980 Hz rather than falling back to a single
@@ -574,7 +574,6 @@ private:
     std::array<float, kNumParts> debugEffParamMin_ {};
     std::array<float, kNumParts> debugEffParamMax_ {};
     bool debugEffParamTracking_ = false;
-#endif
     // AT-side cache of each Part's base FX values + mod-matrix config, read from
     // fxState when fxDirty_ is serviced and reused every block (mod sources
     // change block-to-block, but the base values + matrix routing are stable

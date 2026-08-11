@@ -72,6 +72,9 @@ const float lut_4_decades[] = {
    7.498942093e+03,  7.773650302e+03,  8.058421878e+03,  8.353625470e+03,
    8.659643234e+03,  8.976871324e+03,  9.305720409e+03,  9.646616199e+03,
    1.000000000e+04,
+   1.000000000e+04,   // guard: stmlib::Interpolate reads table[i+1]; at
+                        // damping_==1.0 -> index=256 -> reads table[256]&table[257],
+                        // so the array needs 258 entries (this duplicate) to stay in bounds.
 };
 
 const float lut_stiffness[] = {
@@ -140,6 +143,9 @@ const float lut_stiffness[] = {
    1.457101344e+00,  1.543758274e+00,  1.633725943e+00,  1.723520185e+00,
    1.808823654e+00,  1.884612937e+00,  1.945398753e+00,  2.000000000e+00,
    2.000000000e+00,
+   2.000000000e+00,   // guard: stmlib::Interpolate reads table[i+1]; at
+                        // structure_==1.0 -> index=256 -> reads table[256]&table[257],
+                        // so the array needs 258 entries (this duplicate) to stay in bounds.
 };
 
 }  // namespace rings

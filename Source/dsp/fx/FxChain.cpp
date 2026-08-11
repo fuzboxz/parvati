@@ -393,9 +393,7 @@ int FxChain::latency() const noexcept
 void FxChain::process (const float* inL, const float* inR,
                        float* outL, float* outR, int numSamples)
 {
-#ifndef NDEBUG
     ++processCallCountForTest_;
-#endif
     // Effect params are passed RAW to each processor (no per-block smoothing) —
     // see FxChain.h: a block-rate one-pole would SLEW audio-rate FX-param
     // modulation, which the FX mod matrix now delivers at the ~980 Hz internal-

@@ -1428,9 +1428,7 @@ void SynthEngine::renderPartFx (int numSamples)
             fxTrackedVoice_[(size_t) p] = newestIdx;
         }
         const int ringCount = repVoice != nullptr ? repVoice->modRingCount() : 0;
-#ifndef NDEBUG
         debugLastFxRingCount_[(size_t) p] = ringCount;
-#endif
 
         // ---- 4–5. Sub-chunk the host block at internal-block boundaries ----
         // An internal block (40 samples @ 39216 Hz) spans 40*sr/39216 host
@@ -1545,7 +1543,6 @@ void SynthEngine::renderPartFx (int numSamples)
                     const float eff = juce::jlimit (0.0f, 1.0f,
                         sb + modOffset[s * kFxFields + 1 + k]);
                     chain.setSlotParam (s, k, eff);
-#ifndef NDEBUG
                     if (debugEffParamTracking_ && s == 0 && k == 0)
                     {
                         // Read what FxChain actually stored (params_), not the
@@ -1555,7 +1552,6 @@ void SynthEngine::renderPartFx (int numSamples)
                         debugEffParamMin_[(size_t) p] = juce::jmin (debugEffParamMin_[(size_t) p], pv);
                         debugEffParamMax_[(size_t) p] = juce::jmax (debugEffParamMax_[(size_t) p], pv);
                     }
-#endif
                 }
             }
 

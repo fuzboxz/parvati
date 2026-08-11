@@ -46,9 +46,10 @@ public:
     FxChain();
     ~FxChain();
 
-#ifndef NDEBUG
     // Test-only: process() call counter (proves renderPartFx sub-chunks at the
     // ~980 Hz internal-block cadence). Incremented at the top of process().
+    // (Always compiled — a trivial int increment with no release overhead — so
+    // the FX diagnostic tests build in every config.)
     void resetProcessCallCountForTest() noexcept { processCallCountForTest_ = 0; }
     int  getProcessCallCountForTest() const noexcept { return processCallCountForTest_; }
     // Test-only: read the live param value stored for @p slot/@p idx (the value
@@ -57,7 +58,6 @@ public:
     // the FULL path (engine -> setSlotParam -> params_ -> setParams). Catches a
     // smoother injected anywhere between effParam and the DSP.
     float debugGetParam (int slot, int idx) const noexcept { return params_[(size_t) slot][(size_t) idx]; }
-#endif
 
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
     // Safe to call on a sample-rate / block-size change.
@@ -204,11 +204,9 @@ private:
     static constexpr double kParamSmoothTauSec     = 0.020;   // 20 ms: dry/wet + master-mix (per-sample)
     float smoothCoef_ = 1.0f;   // per-sample one-pole coeff toward the target (computed in prepare)
 
-#ifndef NDEBUG
     // Test-only: counts process() calls so a test can prove renderPartFx
     // sub-chunks the host block at the ~980 Hz internal-block cadence.
     mutable int processCallCountForTest_ = 0;
-#endif
 
     // Per-sample dry/wet blend for a single series-style slot: blends the
     // pre-process dry snapshot (dryL_/dryR_) against the wet signal in outL/outR
