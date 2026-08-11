@@ -813,7 +813,21 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
 
     const int idx = p.polyAlloc.noteOff (n8);
     const int n   = static_cast<int> (p.voiceIndices.size());
-    if (idx == 0xff) return;
+    if (idx == 0xff)
+    {
+        // Defensive fallback: the allocator lost track of this pitch (a slot
+        // was stolen + overwritten, or a generated arp/seq note whose mapping
+        // was never recorded). Without this a voice can strand in sustain --
+        // the NOTE-sequencer "single pitch held forever on key-release" symptom
+        // -- because releaseNoteInPart would otherwise bail and leave it
+        // sounding. Scan this Part's voices and release any actually sounding
+        // the released pitch. Safe: a no-op when no voice is sounding n8.
+        for (int vi : p.voiceIndices)
+            if (auto* av = getAmbikaVoice (vi))
+                if (av->isVoiceActive() && av->getCurrentlyPlayingNote() == static_cast<int> (n8))
+                    stopVoice (av, 1.0f, true);
+        return;
+    }
 
     if (p.polyphonyMode == 2 /*UNISON_2X*/)
     {

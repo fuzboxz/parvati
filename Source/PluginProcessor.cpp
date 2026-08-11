@@ -199,17 +199,23 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    // Merge UI-injected MIDI (on-screen keyboard / wheels click-play) into the
+    // buffer BEFORE processTransport so a clicked key is routed through the
+    // arpeggiator / note-sequencer exactly like hardware MIDI: it must engage
+    // the current Part's held-key stack + note generation, and — critically —
+    // the key-release hook that fires Sequencer::allNotesOff(). The old order
+    // (merge AFTER processTransport) bypassed the arp entirely: a clicked note
+    // played directly AND its note-off never reached the key-release hook,
+    // stranding the note-sequencer's sounding note on release. When the Part's
+    // arp is OFF the note still passes straight through to the synth, so direct
+    // click-play keeps its immediate sound. Additive: only adds messages queued
+    // by addMidiEvent (empty when no UI).
+    if (buffer.getNumSamples() > 0)
+        midiCollector_.removeNextBlockOfMessages (midiMessages, buffer.getNumSamples());
+
     // Advance the arpeggiator transport (routes MIDI when arp is on, generates
     // arp notes before the block renders).
     engine_.processTransport (midiMessages, buffer.getNumSamples(), bpm, isPlaying);
-
-    // Merge UI-injected MIDI (keyboard click-play) into the buffer. Placed
-    // AFTER processTransport so injected notes bypass the arpeggiator and
-    // always reach the synth voices directly — matching the expectation that a
-    // clicked key sounds immediately regardless of the current Part's arp mode.
-    // Additive: only adds messages queued by addMidiEvent (empty when no UI).
-    if (buffer.getNumSamples() > 0)
-        midiCollector_.removeNextBlockOfMessages (midiMessages, buffer.getNumSamples());
 
     // The Synthesiser consumes the (possibly note-stripped) MIDI buffer and
     // renders the active voices additively. The engine's renderVoices override
