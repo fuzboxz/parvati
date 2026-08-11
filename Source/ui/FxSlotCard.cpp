@@ -72,6 +72,51 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PowerToggle)
 };
 
+// A small themed chevron button ("<" / ">") that steps the FX slot's effect
+// TYPE selection prev/next — a shortcut alongside the algorithm ComboBox. Draws
+// a juce::Path chevron (no font/unicode dependency) in the editor-wide theme
+// colours (text dim at rest, accent on hover/press), mirroring IconButton.
+class TypeStepButton : public juce::Button
+{
+public:
+    explicit TypeStepButton (bool pointsRight) : juce::Button ({}), right_ (pointsRight)
+    {
+        setClickingTogglesState (false);
+    }
+
+    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
+    {
+        const ParvatiTheme* t = nullptr;
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            t = lnf->getTheme();
+        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
+        const juce::Colour dim    = t ? t->textDisabled   : text.withAlpha (0.45f);
+        const juce::Colour accent = t ? t->accentPrimary : juce::Colour (0xffe8b84b);
+
+        juce::Colour c = dim;
+        if (isButtonDown)           c = accent;
+        else if (isMouseOverButton) c = text.brighter (0.20f);
+        if (! isEnabled())          c = text.withAlpha (0.25f);
+
+        g.setColour (c);
+        const auto r = getLocalBounds().toFloat().reduced (3.0f);
+        const auto ctr = r.getCentre();
+        const float h = juce::jmin (r.getWidth(), r.getHeight()) * 0.30f;   // chevron half-height
+        const float dx = (right_ ? 1.0f : -1.0f) * h;                       // apex x-offset: ">" apex right, "<" apex left
+        // A "<" (left) or ">" (right) chevron: two strokes meeting at the apex.
+        juce::Path chev;
+        chev.startNewSubPath (ctr.x + dx, ctr.y);          // apex
+        chev.lineTo (ctr.x - dx, ctr.y - h);               // upper tail
+        chev.startNewSubPath (ctr.x + dx, ctr.y);          // apex
+        chev.lineTo (ctr.x - dx, ctr.y + h);               // lower tail
+        g.strokePath (chev, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved));
+    }
+
+private:
+    bool right_;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TypeStepButton)
+};
+
 // Per-type ENGAGEMENT defaults applied the moment a user selects an effect
 // type. The generic slot params all default to 0 — silent (Delay time=0,
 // drywet=0 = fully dry, enabled=0 = bypassed) — so picking a type otherwise
@@ -205,6 +250,19 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     typeAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         processor_.getApvts (), prefix_ + "type", *typeCombo_);
 
+    // ---- Prev/next ("<" ">") step buttons flanking the type combo ----
+    // A keyboard/mouse shortcut to cycle the effect TYPE without opening the
+    // dropdown. Writes through the APVTS type param (the ComboBoxAttachment
+    // syncs the combo selection; the APVTS::Listener refreshes the knob set).
+    typePrev_ = std::make_unique<TypeStepButton> (false);   // points left (prev)
+    typeNext_ = std::make_unique<TypeStepButton> (true);    // points right (next)
+    typePrev_->setTooltip ("FX " + juce::String (slot_ + 1) + " previous algorithm");
+    typeNext_->setTooltip ("FX " + juce::String (slot_ + 1) + " next algorithm");
+    addAndMakeVisible (*typePrev_);
+    addAndMakeVisible (*typeNext_);
+    typePrev_->onClick = [this] { stepType (-1); };
+    typeNext_->onClick = [this] { stepType (+1); };
+
     // ---- Power/bypass toggle (bound to the 0..1 enable Int via a Value) ----
     powerToggle_ = std::make_unique<PowerToggle> ();
     powerToggle_->setTooltip ("FX " + juce::String (slot_ + 1) + " enable / bypass");
@@ -271,6 +329,20 @@ int FxSlotCard::currentTypeIndex() const
     return juce::jlimit (0, kLast, juce::roundToInt (v * static_cast<float> (kLast)));
 }
 
+void FxSlotCard::stepType (int delta)
+{
+    // Clamp the new choice index to the FxType range and write it through the
+    // APVTS type param (Choice: getParameterAsValue holds the denormalized
+    // index). The ComboBoxAttachment syncs the combo selection; the APVTS::
+    // Listener (parameterChanged) refreshes the visible knob set + labels.
+    constexpr int kLast = static_cast<int> (FxType::Count) - 1;
+    const int cur = currentTypeIndex();
+    const int nxt = juce::jlimit (0, kLast, cur + delta);
+    if (nxt == cur)
+        return;
+    processor_.getApvts().getParameterAsValue (prefix_ + "type") = nxt;
+}
+
 void FxSlotCard::refreshFromType()
 {
     const auto t = static_cast<FxType> (currentTypeIndex());
@@ -312,7 +384,8 @@ void FxSlotCard::refreshEnabled()
     // editable even while bypassed.
     const float contentAlpha = on ? 1.0f : kBypassedAlpha;
     juce::Component* content[] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get(),
-                                   drywet_.get(), visualizer_.get(), typeCombo_.get() };
+                                   drywet_.get(), visualizer_.get(), typeCombo_.get(),
+                                   typePrev_.get(), typeNext_.get() };
     for (auto* c : content)
         if (c != nullptr)
             c->setAlpha (contentAlpha);
@@ -453,8 +526,20 @@ void FxSlotCard::resized()
         auto typeRow = area.removeFromTop (kTypeRowH);
         const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
         const int comboW = juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth()), textW);
-        const int comboX = typeRow.getX() + (typeRow.getWidth() - comboW) / 2;
+        // The prev/next ("<" ">") step buttons flank the combo as a centred
+        // cluster: [ < ][ combo ][ > ]. Small square chevrons, combo height.
+        constexpr int kStepW   = 16;                 // chevron button width
+        constexpr int kStepGap = 3;                  // gap between a chevron and the combo
+        const int clusterW = comboW + 2 * (kStepW + kStepGap);
+        const int clusterX = typeRow.getX() + (typeRow.getWidth() - clusterW) / 2;
+        const int comboX   = clusterX + kStepW + kStepGap;
         typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
+        const int stepY = typeRow.getY() + (kTypeRowH - kComboH) / 2;
+        const int stepH = kComboH;
+        if (typePrev_ != nullptr)
+            typePrev_->setBounds (clusterX, stepY, kStepW, stepH);
+        if (typeNext_ != nullptr)
+            typeNext_->setBounds (comboX + comboW + kStepGap, stepY, kStepW, stepH);
         area.removeFromTop (kHalfGap);
     }
 

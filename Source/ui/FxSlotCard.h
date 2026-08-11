@@ -108,6 +108,11 @@ private:
     // clamped to the FxType range.
     int currentTypeIndex() const;
 
+    // Step the effect TYPE by @p delta (-1 prev / +1 next), clamped to the
+    // choice range, and write it through the APVTS (the ComboBoxAttachment +
+    // the APVTS::Listener sync the combo + refresh the knob set).
+    void stepType (int delta);
+
     // Re-apply the param-knob visible set + semantic labels for the current
     // type, then reflow the grid. Idempotent.
     void refreshFromType();
@@ -131,6 +136,10 @@ private:
 
     std::unique_ptr<juce::ComboBox> typeCombo_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAttach_;
+
+    // Prev/next ("<" ">") step buttons flanking the type combo: a shortcut to
+    // cycle the effect TYPE without opening the dropdown.
+    std::unique_ptr<juce::Button> typePrev_, typeNext_;
 
     std::unique_ptr<juce::Button> powerToggle_;   // PowerToggle (defined in the .cpp)
 
