@@ -27,9 +27,10 @@ void Fv1VinylCompressor::setParams (const float param[5])
     pAge_      = std::clamp (param[3], 0.0f, 1.0f);
     // param[4] is the chain Dry/Wet — NEVER read here.
 
-    // Compressor: threshold lowers with Compress, makeup rises (max 2.0).
+    // Compressor: threshold lowers with Compress, makeup rises (max 4.0, matching
+    // docs/FX_FV1_DESIGN.md — enough to restore level under heavy compression).
     th_     = 1.0f - 0.9f * pCompress_;
-    makeup_ = 1.0f + pCompress_;
+    makeup_ = 1.0f + 3.0f * pCompress_;
 
     // Age low-pass cutoff (1000..15000 Hz). setCutoff quantizes to 14-bit.
     ageLp_.setCutoff (1000.0f * std::pow (15.0f, pAge_));
@@ -74,14 +75,19 @@ void Fv1VinylCompressor::processSampleFx (int32_t lin, int32_t /*rin*/,
         gain = std::pow (th_ / env_, 0.75f);   // ~4:1 ratio
     float g = gain * makeup_;
     if (g < 0.0f) g = 0.0f;
-    if (g > 2.0f) g = 2.0f;
+    if (g > 4.0f) g = 4.0f;
 
-    // Apply in fixed-point (the saturating clip is part of the character).
-    int32_t comp;
-    if (g <= 1.0f)
-        comp = f24_mulk (lin, q14 (g));
-    else
-        comp = f24_sat (f24_addSat (lin, f24_mulk (lin, q14 (g - 1.0f))));
+    // Apply compressor+makeup gain g (in [0,4]) as saturating fixed-point.
+    // Decompose g = ki + kf (ki in {0,1,2,3}, kf in [0,1)) so a single 14-bit
+    // fractional multiply plus up to three saturating adds cover the full range;
+    // the saturating clip on heavy makeup is part of the lo-fi character.
+    int ki = static_cast<int> (g);
+    if (ki > 3) ki = 3;
+    const float kf = g - static_cast<float> (ki);
+    int32_t comp = f24_mulk (lin, q14 (kf));   // kf*lin
+    for (int i = 0; i < ki; ++i)
+        comp = f24_addSat (comp, lin);        // + ki*lin  (saturating)
+    comp = f24_sat (comp);
 
     // ---- Pitch-warp modulated delay (50 ms = 1638 samples; +/- depth) ----
     delay_.write (comp);

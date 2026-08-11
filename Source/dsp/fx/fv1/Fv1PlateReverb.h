@@ -37,6 +37,10 @@ protected:
 
 private:
     // ---- Delay-line capacities (powers of two) & fixed delay values ----
+    // NOTE: the 7 read/write pointers below EXCEED the general FV-1 "<= 4
+    // pointers" guideline, but this is the MANDATED Schroeder/Moorer plate
+    // topology the spec calls for (predelay + 4 combs + 2 allpasses), an
+    // implicit override of the guideline exactly like the phaser's six allpass.
     static constexpr int kPredelayCap = 4096;   // >= 100 ms (3277 samples)
     static constexpr int kCombCap0 = 2048;      // delay value 1427
     static constexpr int kCombCap1 = 4096;      // delay value 2063

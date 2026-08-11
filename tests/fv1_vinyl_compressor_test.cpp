@@ -156,6 +156,25 @@ int main()
         check (maxCrackle > 1e-3f, "silent input, full crackle -> clicks present");
     }
 
+    // ---- Makeup gain restores level under heavy compression ----
+    // At full Compression the threshold drops to 0.1 and makeup rises to 4.0
+    // (docs/FX_FV1_DESIGN.md), so a loud input is compressed then boosted BACK
+    // ABOVE its no-compression level — proving the fixed-point gain path supports
+    // g>1 (the integer-shift decomposition), not just attenuation.
+    {
+        float oL0[kN], oR0[kN], oL1[kN], oR1[kN];
+        runSetting (fx, 0.0f, 0.0f, 0.0f, 1.0f, inL, inR, kN, oL0, oR0); // no compression
+        runSetting (fx, 1.0f, 0.0f, 0.0f, 1.0f, inL, inR, kN, oL1, oR1); // full comp + makeup 4.0
+        float peak0 = 0.0f, peak1 = 0.0f;
+        for (int i = 0; i < kN; ++i)
+        {
+            peak0 = std::max (peak0, std::fabs (oL0[i]));
+            peak1 = std::max (peak1, std::fabs (oL1[i]));
+        }
+        check (peak1 > peak0 + 0.05f,
+               "full Compression boosts level (makeup > compression reduction)");
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_fail ? "FV1 VINYL COMPRESSOR TEST: FAILURES"
                         : "FV1 VINYL COMPRESSOR TEST: ALL CHECKS PASSED",

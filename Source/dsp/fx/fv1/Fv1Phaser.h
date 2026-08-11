@@ -50,6 +50,9 @@ private:
     float depthHz_  = 0.0f;  // 0..1500 Hz sweep amplitude
     float fb_       = 0.0f;  // -0.9..0.9
     float centerHz_ = 200.0f;// 200..2000 Hz
+    // Block-constant derived values (precomputed in setParams, not per sample).
+    float   inc_    = 0.0f;  // LFO phase increment per internal sample = rateHz_/32768
+    int16_t fb14_   = 0;     // q14(fb_) — 14-bit feedback coefficient
 };
 
 } // namespace parvati::fv1

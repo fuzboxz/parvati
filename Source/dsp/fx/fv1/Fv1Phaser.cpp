@@ -44,6 +44,9 @@ void Fv1Phaser::setParams (const float param[5])
     depthHz_  = p1 * 1500.0f;                  // 0..1500 Hz
     fb_       = -0.9f + p2 * 1.8f;             // -0.9..0.9
     centerHz_ = 200.0f * std::pow (10.0f, p3); // 200..2000 Hz
+    // Block-constant derived values (precompute once, not per sample).
+    inc_  = rateHz_ / static_cast<float> (kInternalRate);
+    fb14_ = q14 (fb_);
 }
 
 void Fv1Phaser::prepareInternal (double /*sampleRate*/, int /*maxBlock*/)
@@ -67,10 +70,9 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
 {
     // --- Triangle LFO (table-driven; no per-sample trig) ---
     const float lfo = lutTri32 (phase_);                    // [-1, 1]
-    // Advance the phase accumulator at the internal rate (rate cycles/sec).
-    const float inc = rateHz_ / static_cast<float> (kInternalRate);   // cycles per sample
-    // Wrap the new phase into [0,1) (deterministic; no per-sample trig).
-    phase_ = phase_ + inc - std::floor (phase_ + inc);
+    // Advance the phase accumulator at the internal rate (inc_ precomputed in
+    // setParams). Wrap into [0,1) (deterministic; no per-sample trig).
+    phase_ = phase_ + inc_ - std::floor (phase_ + inc_);
 
     // --- Shared allpass coefficient, computed ONCE per sample (float control) ---
     float fc = centerHz_ + depthHz_ * lfo;
@@ -83,7 +85,7 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
 
     // --- Feedback with hard-clip saturation ---
     const int32_t fbVal = f24_sat (prevOut_);
-    const int32_t fbIn  = f24_addSat (lin, f24_mulk (fbVal, q14 (fb_)));
+    const int32_t fbIn  = f24_addSat (lin, f24_mulk (fbVal, fb14_));
 
     // --- Cascade through the six stages ---
     int32_t s = fbIn;
