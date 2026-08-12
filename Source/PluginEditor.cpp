@@ -336,6 +336,15 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         // scrolling lists / the Mod Matrix viewport). Drag + the right-click
         // context menu (Reset/Randomize) still adjust the value.
         slider_->setScrollWheelEnabled (false);
+#if JUCE_IOS
+        // Finer knob drag for touch: a larger pixelRange means a longer drag is
+        // needed to sweep the full range, so fat-finger edits are more precise.
+        // JUCE Slider drags are ALREADY screen-relative once initiated (the drag
+        // accumulates cursor delta anywhere on screen), so HIG #2's "across the
+        // entire screen" requirement is satisfied by default — this just scales
+        // the precision for touch (the HIG #2 fine-control note).
+        slider_->setMouseDragSensitivity (400);
+#endif
         if (d.isSequencer && paramIDStr_.startsWith ("seq_length_"))
         {
             // The length control is marked ("Length" label) so it reads as the
