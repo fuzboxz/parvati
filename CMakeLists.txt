@@ -209,6 +209,17 @@ if(PARVATI_IOS)
         XCODE_ATTRIBUTE_ENABLE_BITCODE NO
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati.entitlements")
+    # Standalone-app Info.plist keys (app-level; the AUv3 extension needs none):
+    #   UIBackgroundModes:audio                          -> keep rendering/playing
+    #                                                     when backgrounded (P2-2).
+    #   UIFileSharingEnabled + LSSupportsOpening-         -> the app's Documents
+    #     DocumentsInPlace                                 folder is browsable in the
+    #                                                     Files app, so saved .PRO /
+    #                                                     .parvati patches are
+    #                                                     reachable by the user
+    #                                                     (P1-6 visibility half).
+    set_target_properties(Parvati_Standalone PROPERTIES
+        JUCE_XCODE_EXTRA_PLIST_ENTRIES "")
     # AUv3 app-extension bundle: com.805labs.parvati.AUv3 (child of the app id,
     # as iOS App-Store validation requires).
     set_target_properties(Parvati_AUv3 PROPERTIES
@@ -221,6 +232,28 @@ if(PARVATI_IOS)
     if(PARVATI_IOS_DEVELOPMENT_TEAM)
         set_target_properties(Parvati_Standalone Parvati_AUv3 PROPERTIES
             XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${PARVATI_IOS_DEVELOPMENT_TEAM}")
+    endif()
+
+    # App-level Info.plist keys juce_add_plugin doesn't expose cleanly (the
+    # JUCE_XCODE_EXTRA_PLIST_ENTRIES merger drops array values + later keys), so
+    # patch the juceaide-generated Standalone plist at configure time with
+    # PlistBuddy. Idempotent: juceaide regenerates the plist each configure, so
+    # Add finds it key-less; ERROR_QUIET guards a stale re-run. App-level only.
+    #   UIBackgroundModes:audio                       -> keep playing when
+    #                                                   backgrounded (P2-2).
+    #   UIFileSharingEnabled + LSSupportsOpening-      -> the app's Documents
+    #     DocumentsInPlace                               folder browsable in the
+    #                                                   Files app (P1-6).
+    set(_parvati_ios_plist "${CMAKE_BINARY_DIR}/Parvati_artefacts/JuceLibraryCode/Parvati_Standalone/Info.plist")
+    if(EXISTS "${_parvati_ios_plist}")
+        execute_process(
+            COMMAND /usr/libexec/PlistBuddy
+                -c "Add :UIBackgroundModes array"
+                -c "Add :UIBackgroundModes:0 string audio"
+                -c "Add :UIFileSharingEnabled bool true"
+                -c "Add :LSSupportsOpeningDocumentsInPlace bool true"
+                "${_parvati_ios_plist}"
+            RESULT_VARIABLE _parvati_ios_plist_rc ERROR_QUIET OUTPUT_QUIET)
     endif()
 
     # SharedContainer.mm is the Obj-C++ resolver for the App-Group container
