@@ -182,9 +182,18 @@ void FxWorkspace::resized()
 
     // ---- 3 rows: TOP (slots) | MIDDLE (bar) | BOTTOM (generators | matrix) ----
     // Mirrors SynthWorkspace: the bar is a fixed-height full-width seam; the
-    // remaining height splits evenly between the top main row and the bottom row.
+    // remaining height splits between the top main row and the bottom row.
+#if JUCE_IOS
+    // iOS: the FX slot cards get slightly less of the remaining height
+    // (~0.42 vs the symmetric 0.5) so each card is literally shorter and the
+    // freed height goes to the bottom (matrix + generator editor). Desktop keeps
+    // the symmetric split.
+    constexpr float kTopRatio = 0.42f;
+#else
+    constexpr float kTopRatio = 0.5f;
+#endif
     const int remaining = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
-    const int mainH = remaining / 2;
+    const int mainH = juce::roundToInt (static_cast<float> (remaining) * kTopRatio);
 
     auto mainRow  = area.removeFromTop (mainH);
     auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);

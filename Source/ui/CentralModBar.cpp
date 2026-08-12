@@ -29,7 +29,11 @@ namespace
     constexpr int kPillGap         = 4;    // gap between pills within a cluster
 #endif
     constexpr int kPillHPad        = 8;    // horizontal padding inside a pill
+#if JUCE_IOS
+    constexpr int kPillMinW        = 36;   // minimum pill width (iOS HIG: wider floor for the bigger pills)
+#else
     constexpr int kPillMinW        = 30;   // minimum pill width
+#endif
     constexpr int kClusterGap      = 20;   // gap between clusters
     constexpr int kSideGap         = 40;   // larger gap splitting generators (L) from drag-only (R)
     constexpr int kEdgePad         = 6;    // left/right outer padding
@@ -155,7 +159,17 @@ struct CentralModBar::ModPill : public juce::Component,
                                                 : t.tabUnselectedBg);
             g.setColour (fill);
             g.fillRoundedRectangle (r, 5.0f);
-
+#if JUCE_IOS
+            // Strong family-colour cue: a full-width accent band across the TOP
+            // of the pill (the inverse of the underline), clipped to the rounded
+            // pill so its corners follow the radius. Restores the per-cluster
+            // colour prominence that the iOS segment background otherwise drowns.
+            g.saveState();
+            g.reduceClipRegion (r.toNearestInt());
+            g.setColour (active_ ? accent_ : accent_.withAlpha (0.85f));
+            g.fillRect (r.withHeight (3.5f));
+            g.restoreState();
+#endif
             drawFamilyUnderline (g, r);
 
             g.setColour (active_ ? t.textPrimary
@@ -174,6 +188,14 @@ struct CentralModBar::ModPill : public juce::Component,
             const juce::Colour fill = hovered_ ? inactiveFill.brighter (0.20f) : inactiveFill;
             g.setColour (fill);
             g.fillRoundedRectangle (r, 5.0f);
+#if JUCE_IOS
+            // Drag-only pills get the same family-colour top band for parity.
+            g.saveState();
+            g.reduceClipRegion (r.toNearestInt());
+            g.setColour (accent_.withAlpha (0.85f));
+            g.fillRect (r.withHeight (3.5f));
+            g.restoreState();
+#endif
 
             const float hx  = r.getX() + 2.0f;
             const float hy0 = r.getY() + 7.0f;
@@ -310,6 +332,18 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     addAndMakeVisible (*viewport_);
     for (auto& p : pills_)
         pillContent_->addAndMakeVisible (*p);
+#if JUCE_IOS
+    // Per-scrollbar override (NOT the global L&F): the mod-bar horizontal
+    // scrollbar uses a dark-grey thumb (backgroundInput) on a chassis-coloured
+    // track (backgroundBase) so it recedes instead of flashing the accent.
+    // Re-applied in applyThemeColors() after a theme switch.
+    {
+        const auto& tt = theme();
+        auto& hbar = viewport_->getHorizontalScrollBar();
+        hbar.setColour (juce::ScrollBar::thumbColourId, tt.backgroundInput);
+        hbar.setColour (juce::ScrollBar::trackColourId, tt.backgroundBase);
+    }
+#endif
 #else
     for (auto& p : pills_)
         addAndMakeVisible (*p);
@@ -346,6 +380,17 @@ void CentralModBar::applyThemeColors()
         p->accent_ = parvati::clusterAccent (p->cluster_, t);
     // (The iOS Viewport has no background-colour API; the scrolled content fills
     // its own background in paintSegments, so the bar reads as one colour.)
+#if JUCE_IOS
+    // Re-apply the per-scrollbar dark-grey override after a theme switch (the
+    // Viewport's horizontal scrollbar is otherwise left at the previous theme's
+    // thumb/track colours). Global L&F ScrollBar colours are untouched.
+    if (viewport_ != nullptr)
+    {
+        auto& hbar = viewport_->getHorizontalScrollBar();
+        hbar.setColour (juce::ScrollBar::thumbColourId, t.backgroundInput);
+        hbar.setColour (juce::ScrollBar::trackColourId, t.backgroundBase);
+    }
+#endif
     repaint();
 }
 

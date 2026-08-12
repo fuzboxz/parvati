@@ -29,12 +29,12 @@ class CentralModBar : public juce::Component
 public:
     /** Fixed total bar height (host sets the component height to this). */
 #if JUCE_IOS
-    // iOS HIG: a taller bar (52pt) hosts 44pt pills grouped into labelled
+    // iOS HIG: a taller bar (58pt) hosts 50pt pills grouped into labelled
     // category segments, and the pill row scrolls horizontally inside a
-    // juce::Viewport so 25+ 44pt pills never widen the editor. kPillH / kPillGap
+    // juce::Viewport so 25+ 50pt pills never widen the editor. kPillH / kPillGap
     // are exposed here so the HIG sizing-contract test can assert them.
-    static constexpr int kBarHeight = 52;
-    static constexpr int kPillH     = 44;   // iOS HIG touch-target height
+    static constexpr int kBarHeight = 58;
+    static constexpr int kPillH     = 50;   // iOS HIG touch-target height
     static constexpr int kPillGap   = 8;    // iOS HIG minimum spacing
 #else
     static constexpr int kBarHeight = 38;

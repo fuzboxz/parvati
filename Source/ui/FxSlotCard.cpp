@@ -211,9 +211,15 @@ constexpr int kComboH      = 28;     // dropdown height (ParamControl combo pari
 constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron + slack
 constexpr int kComboMinW   = 80;     // dropdown floor width
 constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
+#if JUCE_IOS
+constexpr int kCellH       = 58;     // knob cell height (denser on iOS: label band + dial)
+constexpr int kVisMin      = 32;     // visualizer band floor (smaller FX illustrations on iOS)
+constexpr int kVisMax      = 56;     // visualizer band cap (smaller FX illustrations on iOS)
+#else
 constexpr int kCellH       = 64;     // knob cell height (synth cellH parity: label band + 52px dial)
 constexpr int kVisMin      = 40;     // visualizer band floor (legible at the min size)
 constexpr int kVisMax      = 80;     // visualizer band cap (synth kDecorationH parity)
+#endif
 // Bypass affordance: a bypassed slot's live controls (knobs + visualizer + type
 // combo) are recessed to this alpha so the slot reads as inactive at a glance
 // (0.5 matches the synth GroupComponent / knob disabled alpha).

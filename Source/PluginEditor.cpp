@@ -3330,6 +3330,19 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // "Parvati" text uses the theme `text` token so it re-colours each paint().
     if (! logoArea_.isEmpty())
     {
+#if JUCE_IOS
+        // iOS restack: drop the logo graphic + icon border; render a two-line
+        // brand — "Parvati" (bold) over "by 805Labs \xc2\xb7 v<ver>" (10px, dim).
+        auto block = logoArea_;
+        g.setFont (lnf_.appFont (kLogoTextHeight, juce::Font::bold));
+        g.setColour (theme.textPrimary);
+        g.drawText (kLogoText, block.removeFromTop (juce::roundToInt (static_cast<float> (block.getHeight()) * 0.62f)),
+                    juce::Justification::centredLeft, false);
+        g.setFont (lnf_.appFont (10.0f, juce::Font::plain));
+        g.setColour (theme.textSecondary);
+        g.drawText ("by 805Labs \xc2\xb7 v" PARVATI_VERSION, block,
+                    juce::Justification::centredLeft, false);
+#else
         loadLogoIcon();   // idempotent: parses the SVG once, then a cheap null check
 
         auto block = logoArea_;
@@ -3347,6 +3360,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
         // Thin square white border framing the brand icon (1px stroke, 1px padding inside).
         g.setColour (theme.textPrimary);
         g.drawRect (iconArea.toFloat(), 1.0f);
+#endif
     }
 }
 
@@ -3430,6 +3444,14 @@ void ParvatiEditor::resized()
         juce::GlyphArrangement ga;
         ga.addLineOfText (textFont, kLogoText, 0.0f, 0.0f);
         const int textW = juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
+#if JUCE_IOS
+        // iOS restack: logoArea_ shrinks to the wordmark width (the subtitle
+        // "by 805Labs \xc2\xb7 v<ver>" rides beneath it in paint()). The inline
+        // version label is replaced by the painted subtitle, so it is hidden
+        // here (it stays wired on desktop).
+        logoArea_ = bar.removeFromLeft (textW);
+        versionLabel_.setVisible (false);
+#else
         const int logoW = textW + kLogoTextIconGap + kLogoIconSize;   // "Parvati" + 8px gap + icon
         logoArea_ = bar.removeFromLeft (logoW);   // paint() draws the icon + "Parvati" text here
         bar.removeFromLeft (kLogoIconGap);        // 6px gap between the icon and the version label
@@ -3438,6 +3460,7 @@ void ParvatiEditor::resized()
         vga.addLineOfText (versionFont, versionLabel_.getText(), 0.0f, 0.0f);
         const int versionW = juce::roundToInt (vga.getBoundingBox (0, vga.getNumGlyphs(), true).getWidth()) + 8;
         versionLabel_.setBounds (bar.removeFromLeft (versionW));   // "by 805Labs - v…" inline right of the logo
+#endif
     }
 
     // Centre the Global/Patch/Part menu cluster in the remaining middle space.

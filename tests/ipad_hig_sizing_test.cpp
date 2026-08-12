@@ -36,8 +36,8 @@ void check (bool cond, const char* msg)
 static_assert (ParvatiEditor::kHeaderH  == 44, "iOS header height must be 44 (HIG)");
 static_assert (ParvatiEditor::kBarHeight == 44, "iOS header icon strip must be 44 (HIG targets)");
 static_assert (ParamPage::kMargin       == 8,  "iOS page margin must be 8 (HIG spacing)");
-static_assert (CentralModBar::kBarHeight == 52, "iOS mod-bar height must be 52 (hosts 44pt pills)");
-static_assert (CentralModBar::kPillH    == 44, "iOS pill height must be 44 (HIG target)");
+static_assert (CentralModBar::kBarHeight == 58, "iOS mod-bar height must be 58 (hosts 50pt pills)");
+static_assert (CentralModBar::kPillH    == 50, "iOS pill height must be 50 (HIG target)");
 static_assert (CentralModBar::kPillGap  == 8,  "iOS pill gap must be 8 (HIG spacing)");
 static_assert (ModMatrixView::kRowHeight == 48, "iOS mod-matrix row height must be 48");
 static_assert (FxMatrixView::kRowHeight  == 48, "iOS FX-matrix row height must be 48");
@@ -65,8 +65,8 @@ int main()
     check (ParvatiEditor::kHeaderH    == 44, "header height == 44");
     check (ParvatiEditor::kBarHeight  == 44, "header icon strip == 44");
     check (ParamPage::kMargin         == 8,  "page margin == 8");
-    check (CentralModBar::kBarHeight  == 52, "mod-bar height == 52");
-    check (CentralModBar::kPillH      == 44, "pill height == 44");
+    check (CentralModBar::kBarHeight  == 58, "mod-bar height == 58");
+    check (CentralModBar::kPillH      == 50, "pill height == 50");
     check (CentralModBar::kPillGap    == 8,  "pill gap == 8");
     check (ModMatrixView::kRowHeight  == 48, "mod-matrix row == 48");
     check (FxMatrixView::kRowHeight   == 48, "FX-matrix row == 48");
