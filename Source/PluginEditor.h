@@ -57,6 +57,9 @@ class ParamControl : public juce::Component,
                      public juce::TooltipClient,
                      public juce::AudioProcessorValueTreeState::Listener,
                      public juce::DragAndDropTarget
+#if JUCE_IOS
+                   , private juce::Timer   // iOS long-press -> context menu
+#endif
 {
 public:
     ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
@@ -110,6 +113,14 @@ public:
     // so no extra base is needed) — shows a context menu (Reset to default /
     // Randomize). Non-popup clicks fall through to normal interaction.
     void mouseDown (const juce::MouseEvent& e) override;
+#if JUCE_IOS
+    // Touch long-press -> context menu. iPad has no right-click, so Reset /
+    // Randomize (the desktop right-click menu) is reached by holding a knob for
+    // ~450ms. Dragging past a small threshold or releasing cancels the pending
+    // menu; the timer is a ParamControl member (private juce::Timer base).
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp   (const juce::MouseEvent& e) override;
+#endif
 
     // Hover highlight: mousing over a mod-destination knob publishes its dest on
     // the editor-scoped ModMatrixHighlight bus so every matching matrix row
@@ -172,6 +183,12 @@ public:
 
 private:
     void showContextMenu();
+#if JUCE_IOS
+    // juce::Timer: fires ~450ms into an unmoving touch to ARM the long-press
+    // menu. The menu itself opens on finger release (mouseUp) so a modal popup
+    // never strands a mid-drag Slider. Desktop never starts the timer.
+    void timerCallback() override;
+#endif
     void resetToDefault();
     void randomize();
 
@@ -264,6 +281,10 @@ private:
     static bool modDragActive_;     // true while a parvatiModSrc drag is in flight
 
     juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
+#if JUCE_IOS
+    juce::Point<int> longPressStart_;     // screen pos where the touch began (matches MouseEvent::getScreenPosition)
+    bool longPressArmed_ = false;         // set in timerCallback; menu opens on mouseUp (see .cpp)
+#endif
     juce::String displayLabelOverride_;   // empty => use displayLabelFor (desc_.paramID, desc_.label)
     juce::String lengthParamID_;     // sibling length param; empty for non-steps
 
@@ -533,6 +554,11 @@ private:
     // is built and again on every language change.
     void applyChromeTranslations();
 
+    // Apply a user zoom step (clamps + applies the global scale + persists it +
+    // mirrors it into the Settings slider). Shared by the keyboard shortcuts and
+    // the on-screen +/-/0 buttons so both use one code path.
+    void applyZoom (double zoom);
+
     // The Patch page is owned here and shown as an overlay over the content
     // area. It hosts the editor-owned Section::Global ParamPage (patch-wide
     // knobs + the voice-activity meter decoration) below its 6 part rows.
@@ -612,6 +638,11 @@ private:
     juce::TextButton saveButton_  { "Save" };
     IconButton       undoButton_  { IconButton::Icon::Undo };   // top-bar Undo (Cmd/Ctrl+Z)
     IconButton       redoButton_  { IconButton::Icon::Redo };   // top-bar Redo (Cmd/Ctrl+Shift+Z / Y)
+    // On-screen zoom (+/-/0). Visible on every platform (iPad has no keyboard
+    // shortcuts); they call the same zoom logic as Cmd/Ctrl +/-/0 via applyZoom().
+    juce::TextButton zoomInButton_    { "+" };
+    juce::TextButton zoomOutButton_   { "-" };
+    juce::TextButton zoomResetButton_ { "0" };
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Top bar: Part selector (bound to the `part_select` APVTS param).

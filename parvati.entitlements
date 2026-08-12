@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Parvati Standalone app entitlements (iOS).
+
+      App Group `group.com.805labs.parvati` is shared with the AUv3 app-extension
+      (parvati-auv3.entitlements) so both resolve ONE presets/state container
+      (Source/ui/SharedContainer.cpp). PLACEHOLDER ids pending a product/signing
+      decision; bundle id is com.805labs.parvati.
+
+      The simulator SDK (iphonesimulator) does not enforce these, so a simulator
+      build needs no provisioning profile; a device/.ipa build does.
+    -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.805labs.parvati</string>
+    </array>
+
+    <!-- application-identifier is reconciled by Xcode signing from the App ID;
+         included explicitly for parity with JUCE's expected Standalone set.
+         (keychain-access-groups intentionally OMITTED: container sharing needs
+         only the App-Group entitlement above; declaring keychain sharing would
+         add an App-Store validation dependency Parvati doesn't use.) -->
+    <key>application-identifier</key>
+    <string>$(AppIdentifierPrefix)com.805labs.parvati</string>
+</dict>
+</plist>

@@ -8,6 +8,7 @@
 #include "ParvatiPreset.h"
 #include "PatchFile.h"
 #include "ui/FactoryPresetInstaller.h"
+#include "ui/SharedContainer.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
 
 namespace
@@ -728,7 +729,7 @@ juce::File ParvatiAudioProcessor::getFactoryPatchDir()
     // Per-user app-data location (user-writable on macOS, unlike
     // ~/Library/Audio/Presets which is often root-owned). The factory banks are
     // extracted here as subfolders: <appdata>/Parvati/FACTORY/{A,B,F,S}/.
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+    return parvati::getSharedContainerRoot()
         .getChildFile ("Parvati/FACTORY");
 }
 
@@ -802,7 +803,7 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
 
 juce::File ParvatiAudioProcessor::getFactoryMultiDir()
 {
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+    return parvati::getSharedContainerRoot()
         .getChildFile ("Parvati/FACTORY_MULTI");
 }
 
@@ -811,7 +812,7 @@ juce::File ParvatiAudioProcessor::getTemplatesDir()
     // Stock init templates (full-fidelity .parvati multis): Mono / Poly /
     // Unison / Multitimbral. Created on first run by the factory installer.
     // <appdata>/Parvati/TEMPLATES/.
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+    return parvati::getSharedContainerRoot()
         .getChildFile ("Parvati/TEMPLATES");
 }
 
@@ -819,7 +820,7 @@ juce::File ParvatiAudioProcessor::getUserPatchDir()
 {
     // User-writable area for the user's own saved patches/multis. Created on
     // first run by the factory installer. <appdata>/Parvati/USER/.
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+    return parvati::getSharedContainerRoot()
         .getChildFile ("Parvati/USER");
 }
 

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Parvati AUv3 app-extension entitlements (iOS).
+
+      Mirrors parvati.entitlements so the extension shares the SAME App Group
+      container (group.com.805labs.parvati) as the Standalone app, letting both
+      read/write one presets/state tree (Source/ui/SharedContainer.cpp). The
+      extension bundle id is com.805labs.parvati.AUv3 (a child of the app id, as
+      iOS App-Store validation requires). PLACEHOLDER ids pending a product/
+      signing decision. (keychain-access-groups intentionally OMITTED — see
+      parvati.entitlements.)
+    -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.805labs.parvati</string>
+    </array>
+
+    <key>application-identifier</key>
+    <string>$(AppIdentifierPrefix)com.805labs.parvati.AUv3</string>
+</dict>
+</plist>

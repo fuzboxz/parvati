@@ -17,6 +17,7 @@
 # --- Build artefacts (CMake / JUCE / Projucer) ---
 build/
 build_*/
+build_ios/
 Builds/
 JuceLibraryCode/
 cmake-build-*/

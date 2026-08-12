@@ -9,6 +9,25 @@ project(Parvati
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ------------------------------------------------------------------------------
+# Platform detection: iOS vs desktop. CMake sets IOS=TRUE for
+# -DCMAKE_SYSTEM_NAME=iOS; CMAKE_SYSTEM_NAME is the robust fallback. Drives the
+# plugin FORMATS, the iOS toolchain/signing block, and skips the macOS-only
+# `deploy`/codesign steps so an iOS configure never references a VST3 target.
+if(IOS OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(PARVATI_IOS ON)
+else()
+    set(PARVATI_IOS OFF)
+endif()
+# Plugin formats per platform. iOS hosts (GarageBand/AUM/BeatMaker) load an AUv3
+# app-extension; VST3 and the classic AU are desktop formats JUCE silently drops
+# on iOS, so the iOS target list is AUv3 + Standalone only.
+if(PARVATI_IOS)
+    set(PARVATI_PLUGIN_FORMATS Standalone AUv3)
+else()
+    set(PARVATI_PLUGIN_FORMATS Standalone VST3 AU)
+endif()
+
 # Use ccache when available so reconfigures / rebuilds reuse compiled objects
 # instead of recompiling the ~1161 memory-heavy JUCE + DSP translation units
 # every time. (A clean build fan-out is what thrashes a 16 GB machine; ccache
@@ -120,7 +139,9 @@ juce_add_plugin(Parvati
     BUNDLE_ID               "com.805labs.parvati"
     PLUGIN_MANUFACTURER_CODE "805L"       # >=1 uppercase letter (AU requirement)
     PLUGIN_CODE             "Prvt"        # first letter upper, rest lower (GarageBand safe)
-    FORMATS                 Standalone VST3 AU
+    # iOS targets AUv3 (app-extension) + Standalone only; VST3/AU are desktop
+    # formats JUCE drops on iOS. See PARVATI_PLUGIN_FORMATS (gated on platform).
+    FORMATS                 ${PARVATI_PLUGIN_FORMATS}
     PRODUCT_NAME            "Parvati"
     IS_SYNTH                TRUE
     NEEDS_MIDI_INPUT        TRUE
@@ -158,6 +179,55 @@ if(_parvati_clouds_cc)
     else()
         set_source_files_properties(${_parvati_clouds_cc} PROPERTIES COMPILE_OPTIONS "/w")
     endif()
+endif()
+
+# ------------------------------------------------------------------------------
+# iOS toolchain + signing (M1). Sets the iOS deployment target, distinct bundle
+# identifiers for the Standalone app and the AUv3 app-extension, App-Group
+# entitlements (so both share one presets/state container — see
+# Source/ui/SharedContainer.cpp), device family, and an Automatic signing style.
+#
+# The iOS Simulator SDK (iphonesimulator) does NOT require a signing identity or
+# a provisioning profile, so it builds with PARVATI_IOS_DEVELOPMENT_TEAM empty.
+# A real-device build or App-Store .ipa export requires the user's paid Apple
+# Developer team id:
+#   cmake -S . -B build_ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS \
+#         -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+#         -DPARVATI_IOS_DEVELOPMENT_TEAM=XXXXXXXXXX
+# (team id / bundle ids are PLACEHOLDERS pending a product/signing decision.)
+if(PARVATI_IOS)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 14.0)
+    # PLACEHOLDER team id — empty by default (simulator-only). Set on the cmake
+    # command line for device/.ipa builds (see comment above).
+    set(PARVATI_IOS_DEVELOPMENT_TEAM "" CACHE STRING
+        "Apple Developer team id for iOS device/.ipa builds (empty = simulator-only)")
+
+    # Standalone app bundle: com.805labs.parvati
+    set_target_properties(Parvati_Standalone PROPERTIES
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_ENABLE_BITCODE NO
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati.entitlements")
+    # AUv3 app-extension bundle: com.805labs.parvati.AUv3 (child of the app id,
+    # as iOS App-Store validation requires).
+    set_target_properties(Parvati_AUv3 PROPERTIES
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati.AUv3"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_ENABLE_BITCODE NO
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati-auv3.entitlements")
+
+    if(PARVATI_IOS_DEVELOPMENT_TEAM)
+        set_target_properties(Parvati_Standalone Parvati_AUv3 PROPERTIES
+            XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${PARVATI_IOS_DEVELOPMENT_TEAM}")
+    endif()
+
+    # SharedContainer.mm is the Obj-C++ resolver for the App-Group container
+    # (NSFileManager containerURLForSecurityApplicationGroupIdentifier). It is
+    # iOS-only; the desktop path lives in the globbed SharedContainer.cpp and is
+    # byte-identical to the previous getSpecialLocation(userApplicationDataDirectory).
+    target_sources(Parvati PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source/ui/SharedContainer.mm")
 endif()
 
 # ------------------------------------------------------------------------------
@@ -324,8 +394,10 @@ target_link_libraries(Parvati
 # moduleinfo.json (the VST3 manifest), which invalidates the signature seal.
 # Hosts then refuse to load it ("a sealed resource is missing or invalid") and
 # cache the failure. Re-sign AFTER JUCE's own post-build steps so moduleinfo.json
-# is sealed. (The AU has no such file and loads fine without this.) macOS-only.
-if(APPLE)
+# is sealed. (The AU has no such file and loads fine without this.) macOS-only
+# (VST3 does not exist on iOS — guard so an iOS configure never references the
+# VST3 target).
+if(APPLE AND NOT PARVATI_IOS)
     add_custom_command(TARGET Parvati_VST3 POST_BUILD
         COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:Parvati_VST3>"
         COMMENT "Re-sign Parvati.vst3 (seal moduleinfo.json)")
@@ -1014,7 +1086,9 @@ target_link_libraries(parvati_fx_param_coverage_test PRIVATE
 # AU bundles into the user plug-in folders. Use this instead of a plain build so
 # the installed plug-ins and the screenshots are never stale (a plain
 # `--target Parvati` does NOT rebuild the VST3/AU format wrappers).
+# macOS-only: iOS has no VST3/AU targets and uses `deploy_ios` instead.
 #   cmake --build build_release --target deploy
+if(NOT PARVATI_IOS)
 set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
 add_custom_target(deploy
     COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
@@ -1028,3 +1102,31 @@ add_custom_target(deploy
     COMMENT "Build all formats + render screens + install VST3/AU"
     VERBATIM
 )
+endif()
+
+# ------------------------------------------------------------------------------
+# `deploy_ios` — TEMPLATE: archive the iOS Standalone app + AUv3 app-extension
+# into an .ipa via `xcodebuild archive` + `-exportArchive`. This is a documented
+# placeholder: a real device/.ipa export REQUIRES a signing identity + provisioning
+# profile (set PARVATI_IOS_DEVELOPMENT_TEAM and supply a matching exportOptions.plist
+# with your method/provisioning profile). With no identity it will fail at the
+# codesign step — expected until the user supplies signing. iOS-only.
+#   cmake --build build_ios --target deploy_ios
+if(PARVATI_IOS)
+    add_custom_target(deploy_ios
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "deploy_ios: archive + export .ipa (requires a signing identity + PARVATI_IOS_DEVELOPMENT_TEAM)"
+        COMMAND xcodebuild -archivePath "${CMAKE_BINARY_DIR}/Parvati.xcarchive"
+                         -scheme Parvati_Standalone
+                         -sdk iphoneos
+                         -configuration Release
+                         archive
+        COMMAND xcodebuild -exportArchive
+                         -archivePath "${CMAKE_BINARY_DIR}/Parvati.xcarchive"
+                         -exportPath "${CMAKE_BINARY_DIR}/ipa"
+                         -exportOptionsPlist "${CMAKE_CURRENT_SOURCE_DIR}/ios/exportOptions.plist"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        COMMENT "Archive the iOS Standalone + AUv3 and export an .ipa (needs signing)"
+        VERBATIM
+    )
+endif()

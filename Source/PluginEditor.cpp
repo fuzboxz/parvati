@@ -1014,11 +1014,65 @@ void ParamControl::itemDropped (const juce::DragAndDropTarget::SourceDetails& dr
 // Phase 4b: right-click context menu (Reset to default / Randomize).
 void ParamControl::mouseDown (const juce::MouseEvent& e)
 {
-    // Only popup (right-click / Ctrl-click) triggers the menu; every other
-    // click falls through to normal slider/combo interaction.
+    // Desktop: only popup (right-click / Ctrl-click) triggers the menu; every
+    // other click falls through to normal slider/combo interaction.
     if (e.mods.isPopupMenu())
+    {
         showContextMenu();
+        return;
+    }
+#if JUCE_IOS
+    // Touch: there is no right-click, so Reset/Randomize is reached via a
+    // long-press. Start a ~450ms timer on press; if the finger stays put, the
+    // timer ARMS the menu (longPressArmed_) but does NOT open it mid-drag — a
+    // modal popup opened while the Slider is mid-drag would strand it (its
+    // mouseUp would land on the popup). The menu opens on finger release
+    // (mouseUp), after the Slider has cleanly ended its drag. A drag past a
+    // small threshold cancels a pending/armed long-press.
+    longPressStart_ = e.getScreenPosition();
+    longPressArmed_ = false;
+    startTimer (450);
+#endif
 }
+
+#if JUCE_IOS
+void ParamControl::mouseDrag (const juce::MouseEvent& e)
+{
+    // An intentional knob drag (finger moved past a small threshold) cancels a
+    // pending OR already-armed long-press: neither should survive a real drag.
+    if (e.getScreenPosition().getDistanceFrom (longPressStart_) > 8)
+    {
+        stopTimer();
+        longPressArmed_ = false;
+    }
+}
+
+void ParamControl::mouseUp (const juce::MouseEvent&)
+{
+    stopTimer();
+    // A long-press armed the menu (timer fired while the finger held still).
+    // Open it NOW, on release — the Slider's own mouseUp has already run (these
+    // handlers are listener-forwarded, non-consuming) so its drag ended cleanly
+    // before the modal popup appears.
+    if (longPressArmed_)
+    {
+        longPressArmed_ = false;
+        showContextMenu();
+    }
+}
+#endif
+
+#if JUCE_IOS
+void ParamControl::timerCallback()
+{
+    // The finger held still long enough for a long-press. ARM the menu but do
+    // NOT open it yet: opening a modal popup mid-drag would strand the Slider
+    // (its mouseUp would land on the popup, not the knob). The menu opens on
+    // finger release — see mouseUp.
+    stopTimer();
+    longPressArmed_ = true;
+}
+#endif
 
 void ParamControl::showContextMenu()
 {
@@ -2065,6 +2119,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     redoButton_.onClick = [this] { processorRef_.getUndoManager().redo(); };
     addAndMakeVisible (redoButton_);
 
+    // On-screen zoom +/-/0 (visible on every platform; iPad has no keyboard).
+    // Mirror the Cmd/Ctrl +/-/0 shortcuts via the shared applyZoom() helper.
+    zoomInButton_.setTooltip (TRANS ("Zoom in"));
+    zoomInButton_.onClick = [this] { applyZoom (zoom_ + 0.1); };
+    addAndMakeVisible (zoomInButton_);
+    zoomOutButton_.setTooltip (TRANS ("Zoom out"));
+    zoomOutButton_.onClick = [this] { applyZoom (zoom_ - 0.1); };
+    addAndMakeVisible (zoomOutButton_);
+    zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
+    zoomResetButton_.onClick = [this] { applyZoom (1.0); };
+    addAndMakeVisible (zoomResetButton_);
+
     // ---- Top bar: Part selector (bound to the `part_select` APVTS param) ----
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     // Caption text colour from the L&F (dim).
@@ -2981,6 +3047,16 @@ void ParvatiEditor::setZoom (double zoom)
     juce::Desktop::getInstance().setGlobalScaleFactor (static_cast<float> (zoom_));
 }
 
+void ParvatiEditor::applyZoom (double zoom)
+{
+    // Shared by the Cmd/Ctrl +/-/0 shortcuts and the on-screen zoom buttons so
+    // both use one clamping + persist + Settings-mirror path.
+    setZoom (zoom);                               // clamps to [0.75, 2.0] + applies global scale
+    processorRef_.setUiZoom (zoom_);              // persist the clamped value
+    if (settingsPanel_ != nullptr)
+        settingsPanel_->setZoomValue (zoom_);     // mirror into the slider (no re-fire)
+}
+
 std::vector<ParamPage*> ParvatiEditor::allGeneratedPages() const
 {
     std::vector<ParamPage*> out;
@@ -2996,14 +3072,6 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     // so typing in combos / text boxes is never swallowed.
     if (! (key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()))
         return false;
-
-    auto applyZoom = [this] (double z)
-    {
-        setZoom (z);                               // clamps to [0.75, 2.0] + applies global scale
-        processorRef_.setUiZoom (zoom_);           // persist the clamped value
-        if (settingsPanel_ != nullptr)
-            settingsPanel_->setZoomValue (zoom_);   // mirror into the slider (no re-fire)
-    };
 
     // Accept both '=' (un-shifted) and '+' for zoom-in across keyboard layouts.
     if (key.getKeyCode() == '+' || key.getKeyCode() == '=')
@@ -3061,6 +3129,9 @@ void ParvatiEditor::applyChromeTranslations()
     saveButton_.setButtonText (TRANS ("Save"));
     undoButton_.setTooltip (TRANS ("Undo"));
     redoButton_.setTooltip (TRANS ("Redo"));
+    zoomInButton_.setTooltip (TRANS ("Zoom in"));
+    zoomOutButton_.setTooltip (TRANS ("Zoom out"));
+    zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
     settingsButton_.setTooltip (TRANS ("Settings"));
     globalButton_.setButtonText (TRANS ("Patch"));
     globalButton_.setTooltip (TRANS ("Patch / arrangement"));
@@ -3166,19 +3237,25 @@ void ParvatiEditor::resized()
 
     // Right cluster (removeFromRight => first item ends up rightmost): system
     // icons, then the [KBD] toggle at the far right.
-    // Right cluster = a coherent toolbar grouped [Load][Save] | [Undo][Redo][Gear] | [KBD].
-    // The three 30px icon buttons share a uniform 4px gap; an 8px gap separates
-    // the history/settings icons from the file group. Save/Load are trimmed
-    // (100/80 -> 84/70) so the whole cluster (312px) stays <= the previous width
-    // and never collides with the centred Patch/Part cluster at the 1100px min.
+    // Right cluster = a coherent toolbar grouped [Load][Save] | [Undo][Redo] |
+    // [Zoom +/0/-] | [Gear] | [KBD]. The icon/zoom buttons share a uniform 4px
+    // gap; an 8px gap separates the history/zoom/view icons from the file group.
+    // Save/Load are trimmed (100/80 -> 84/70) so the cluster stays compact and
+    // never collides with the centred Patch/Part cluster at the default width.
     kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle (far right)
     bar.removeFromRight (4);
     settingsButton_.setBounds (bar.removeFromRight (30));    // gear
     bar.removeFromRight (4);
+    zoomResetButton_.setBounds (bar.removeFromRight (28));   // zoom reset (0)
+    bar.removeFromRight (3);
+    zoomOutButton_.setBounds (bar.removeFromRight (28));     // zoom out (-)
+    bar.removeFromRight (3);
+    zoomInButton_.setBounds (bar.removeFromRight (28));      // zoom in (+)
+    bar.removeFromRight (4);
     redoButton_.setBounds (bar.removeFromRight (30));        // redo
     bar.removeFromRight (4);
     undoButton_.setBounds (bar.removeFromRight (30));        // undo
-    bar.removeFromRight (8);   // separates the history/settings icons from the file group
+    bar.removeFromRight (8);   // separates the history/zoom/view icons from the file group
     saveButton_.setBounds (bar.removeFromRight (84));        // Save (carries the format popup menu)
     bar.removeFromRight (4);
     loadButton_.setBounds (bar.removeFromRight (70));        // Load
