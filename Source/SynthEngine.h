@@ -421,6 +421,18 @@ public:
     // Test-only: the capture-ring count from the last renderPartFx for @p part.
     int debugLastFxRingCount (int part) const { return debugLastFxRingCount_[(size_t) part]; }
 
+    // Test-only: the live value the chain for @p part consumes for @p slot / @p
+    // field, where field 0 = dry/wet and 1..5 = slot param 0..4. The FX param-
+    // coverage test drives every FxModDestination through the full engine path
+    // and reads this to prove the modulation reached the DSP at full depth
+    // (engine -> renderPartFx -> setSlotDryWet/setSlotParam -> params_/dryWet_).
+    float debugGetChainValue (int part, int slot, int field) const noexcept
+    {
+        if (field == 0)
+            return fxChains_[(size_t) part].debugGetDryWet (slot);
+        return fxChains_[(size_t) part].debugGetParam (slot, field - 1);
+    }
+
     // Test-only: begin tracking the effective param (slot 0 param 0) min/max
     // swing during renderPartFx. Call before rendering; read min/max after.
     void debugResetEffParamTracking (int part)

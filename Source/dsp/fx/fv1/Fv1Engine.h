@@ -25,6 +25,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace parvati::fv1
@@ -340,6 +341,16 @@ public:
         const float y = b0 * x + z1;
         z1 = b1 * x - a1 * y + z2;
         z2 = b2 * x - a2 * y;
+        // Denormal flush: a stable IIR fed silence (a reverb/delay tail, a
+        // paused track, or the gap between notes) decays its z-state toward 0
+        // but never reaches it in finite steps, passing through the subnormal
+        // range (~1e-38..1e-45) where x86 CPUs stall ~50x (a real-time audio
+        // thread killer). Subnormals are numerically indistinguishable from 0
+        // here (the biquad's target is 15 kHz BW-limiting; 1e-40 is ~280 dB
+        // below full scale), so zeroing them is inaudible and removes the
+        // stall. (Direct Form II Transposed z1/z2 are the only float state.)
+        if (std::fabs (z1) < std::numeric_limits<float>::min()) z1 = 0.0f;
+        if (std::fabs (z2) < std::numeric_limits<float>::min()) z2 = 0.0f;
         return y;
     }
 };

@@ -58,6 +58,11 @@ public:
     // the FULL path (engine -> setSlotParam -> params_ -> setParams). Catches a
     // smoother injected anywhere between effParam and the DSP.
     float debugGetParam (int slot, int idx) const noexcept { return params_[(size_t) slot][(size_t) idx]; }
+    // Test-only: read the live dry/wet TARGET stored for @p slot (the block-
+    // constant value renderPartFx sets via setSlotDryWet, before the per-sample
+    // smoother in the blend). The FX-param-coverage test uses it to prove every
+    // FX_DST_FX{N}_DRYWET mod destination reaches the chain at full depth.
+    float debugGetDryWet (int slot) const noexcept { return dryWet_[(size_t) slot]; }
 
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
     // Safe to call on a sample-rate / block-size change.

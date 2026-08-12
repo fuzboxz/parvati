@@ -974,6 +974,41 @@ target_link_libraries(parvati_gen_templates PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# COMPREHENSIVE SYNTH PARAMETER COVERAGE (consolidated, one ~6.5MB binary).
+# Sweeps EVERY synth descriptor parameter (105 patch/part + 67 sequencer +
+# 5 arp + 4 options = 181 params) and verifies the INTENDED vs REAL outcome:
+# each param routes to the correct Patch/Part byte (or engine state) AND, where
+# audio-meaningful, changes the rendered audio. Consolidates what would
+# otherwise be ~20 separate 6.5MB binaries into one. Built by default.
+# Run with: ./build_release/parvati_synth_param_coverage_test
+add_executable(parvati_synth_param_coverage_test
+    tests/synth_param_coverage_test.cpp
+)
+target_include_directories(parvati_synth_param_coverage_test PRIVATE Source)
+target_compile_features(parvati_synth_param_coverage_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_synth_param_coverage_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# COMPREHENSIVE FX PARAMETER + MODULE COVERAGE (consolidated, one ~6.5MB binary).
+# Covers every one of the 16 FX types (type/prepare/reset/finite/wet-differs),
+# every effect's 5 slot params (swept min/mid/max -> output changes), every FX
+# topology + order permutation, the master section (mix + 3-band EQ), and the
+# full 16x18 FX mod matrix (every destination reaches the DSP via debugGetParam).
+# Consolidates what would otherwise be ~15 separate 6.5MB binaries into one.
+# Built by default. Run with: ./build_release/parvati_fx_param_coverage_test
+add_executable(parvati_fx_param_coverage_test
+    tests/fx_param_coverage_test.cpp
+)
+target_include_directories(parvati_fx_param_coverage_test PRIVATE Source)
+target_include_directories(parvati_fx_param_coverage_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_param_coverage_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_param_coverage_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # `deploy` — one-command release workflow: build ALL plugin formats (VST3, AU,
 # Standalone) + render ./screens from the latest source + install the VST3 and
 # AU bundles into the user plug-in folders. Use this instead of a plain build so

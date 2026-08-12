@@ -4,6 +4,35 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **FV-1 FX family: denormal (subnormal) flush in the RateBridge BW-limit
+  biquads.** The 4th-order Butterworth input/output filters shared by all
+  five FV-1 effects (Clocked Delay / Ensemble / Plate Reverb / Vinyl
+  Compressor / Phaser) are Direct-Form-II-Transposed IIRs whose `z1`/`z2`
+  state decays toward 0 but never reaches it in finite steps when fed silence
+  (a paused track, the gap between notes, or a reverb/delay tail). The state
+  passed through the subnormal range (~1e-38..1e-45), where x86 CPUs stall
+  ~50× — a real-time audio-thread killer. Surfaced by
+  `parvati_fx_param_coverage_test` (VinylCompressor emitted ~200 subnormals on
+  a silence tail). Fix: flush `z1`/`z2` to 0.0f below `FLT_MIN` — inaudible
+  (~280 dB below the 15 kHz target) and removes the stall.
+
+### Added
+- **Comprehensive test coverage for every synth parameter and every FX
+  module/parameter**, consolidated into two ~6.3 MB binaries (instead of
+  ~35 separate ~6.5 MB binaries ≈ 220 MB):
+  - `parvati_synth_param_coverage_test` — sweeps all 181 synth parameters
+    (a generic byte-routing net over all 105 patch/part params + targeted
+    audio checks per family: oscillators, mixer, filter, envelopes, LFOs, mod
+    matrix, part, sequencer, arp, options). 48 checks.
+  - `parvati_fx_param_coverage_test` — all 16 FxType values; every effect's
+    5 slot params swept (active moves, inactive exactly inert); 3×6 topology/
+    order routing; master mix + 3-band EQ; **all 18 FX mod-matrix destinations
+    proven to reach the DSP at full depth**; condition-dependent Clouds params
+    (looper Size/Pitch under freeze; Spectral Position under freeze) verified.
+    292 checks. See `tests/COVERAGE_SPEC.md` (intended outcomes) and
+    `tests/COVERAGE_FINDINGS.md` (bugs fixed + verified behaviours).
+
 ### Added
 - **Five FX effects gained new parameters, reordered by signal-path flow.**
   Each effect's generic slot params were re-mapped left→right to follow the
