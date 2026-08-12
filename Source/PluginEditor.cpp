@@ -1082,6 +1082,13 @@ void ParamControl::mouseDown (const juce::MouseEvent& e)
     longPressStart_ = e.getScreenPosition();
     longPressArmed_ = false;
     startTimer (450);
+
+    // Touch has no hover, so surface this parameter's help text inline in the
+    // status strip on every touch (~3s). A value change needs a DRAG (not a
+    // tap), so a user can tap-to-learn what a control does without altering it.
+    // Respects the global tooltipsEnabled_ toggle; skips empty help.
+    if (tooltipsEnabled_ && helpText_.isNotEmpty())
+        postTransientStatus (helpText_, 90);
 #endif
 }
 
