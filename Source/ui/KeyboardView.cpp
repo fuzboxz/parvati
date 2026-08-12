@@ -121,47 +121,54 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         // Grab focus for the parent so musical-typing works after a click.
         owner.grabKeyboardFocus();
 
-        // If a different note was somehow still held by the mouse, release it
-        // cleanly before arming the new one (defensive; should be rare).
-        if (owner.mouseDownNote_ >= 0 && owner.mouseDownNote_ != midiNoteNumber)
-            owner.fireNoteCallback (owner.mouseDownNote_, false, 0.0f);
+        // Multitouch: each MouseInputSource (desktop mouse = 0, each finger =
+        // 1+) tracks its OWN note, so several can sound at once (chords).
+        // Release this source's previously-held note (if any) before arming.
+        const int src = e.source.getIndex();
+        const auto it = owner.mouseDownNotesBySource_.find (src);
+        if (it != owner.mouseDownNotesBySource_.end() && it->second != midiNoteNumber)
+            owner.fireNoteCallback (it->second, false, 0.0f);
 
-        owner.mouseDownNote_ = midiNoteNumber;
+        owner.mouseDownNotesBySource_[src] = midiNoteNumber;
         owner.fireNoteCallback (midiNoteNumber, true, owner.velocityFromEvent (e));
         return true;   // base lights the key via the shared state_
     }
 
     bool mouseDraggedToKey (int midiNoteNumber, const juce::MouseEvent&) override
     {
-        // Glissando: let the base re-light each dragged key (return true) but do
-        // NOT fire engine note-ons for every key swept — only the originally
-        // pressed note is sent to the engine, and its note-off arrives on
-        // mouseUp. This keeps the engine free of stuck/duplicate notes while the
-        // keyboard still shows the glissando visually.
+        // Glissando is visual-only (the base re-lights each swept key); the
+        // engine holds each source's originally-pressed note until THAT source
+        // releases. Keeps the engine free of stuck/duplicate notes per finger.
         juce::ignoreUnused (midiNoteNumber);
         return true;
     }
 
-    void mouseUpOnKey (int midiNoteNumber, const juce::MouseEvent&) override
+    void mouseUpOnKey (int midiNoteNumber, const juce::MouseEvent& e) override
     {
         juce::ignoreUnused (midiNoteNumber);
-        if (owner.mouseDownNote_ >= 0)
-            owner.fireNoteCallback (owner.mouseDownNote_, false, 0.0f);
-        owner.mouseDownNote_ = -1;
+        releaseSourceNote (e.source.getIndex());
     }
 
-    // NIT-3 stuck-note guard: the base MidiKeyboardComponent::mouseUp only calls
-    // mouseUpOnKey when the release lands on a key (note >= 0). A release off
-    // the keys — or off the component — would otherwise leave mouseDownNote_
-    // held. Route the release through the base first (so on-key releases still
-    // clear via mouseUpOnKey), then release anything still held as a fallback.
+    // Stuck-note guard: the base MidiKeyboardComponent::mouseUp only calls
+    // mouseUpOnKey when the release lands on a key. A release off the keys / off
+    // the component would otherwise leave THIS source's note held. Route through
+    // the base first (on-key releases still clear via mouseUpOnKey), then clear
+    // the source's note as a fallback. Per-source so multitouch releases don't
+    // clobber other held fingers.
     void mouseUp (const juce::MouseEvent& e) override
     {
         juce::MidiKeyboardComponent::mouseUp (e);
-        if (owner.mouseDownNote_ >= 0)
+        releaseSourceNote (e.source.getIndex());
+    }
+
+    // Release + erase one source's held note (no-op if that source holds none).
+    void releaseSourceNote (int src)
+    {
+        const auto it = owner.mouseDownNotesBySource_.find (src);
+        if (it != owner.mouseDownNotesBySource_.end())
         {
-            owner.fireNoteCallback (owner.mouseDownNote_, false, 0.0f);
-            owner.mouseDownNote_ = -1;
+            owner.fireNoteCallback (it->second, false, 0.0f);
+            owner.mouseDownNotesBySource_.erase (it);
         }
     }
 

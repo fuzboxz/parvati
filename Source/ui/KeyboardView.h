@@ -89,7 +89,10 @@ private:
     std::unique_ptr<KeyComp> keyboard_;
 
     NoteCallback noteCallback_;
-    int mouseDownNote_ = -1;   // note currently held by the mouse (for clean release)
+    // Per-MouseInputSource -> the midi note it currently holds. The desktop
+    // mouse is source 0 (identical to the old single int); on a touchscreen each
+    // finger is a separate source, so several notes can sound at once (chords).
+    std::map<int, int> mouseDownNotesBySource_;
 
     // ---- Computer-keyboard (musical-typing) playback ----
     bool computerKeyboardEnabled_ = true;
