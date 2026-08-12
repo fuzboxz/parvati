@@ -10,6 +10,9 @@
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // appFont() via the inherited editor L&F
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_*
+#if JUCE_IOS
+#include "PluginEditor.h"   // ParamControl (tap-to-assign state)
+#endif
 
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachments + AudioParameterChoice
 
@@ -200,6 +203,22 @@ struct FxSourceDragGrip : public juce::Component,
 
         ddc->startDragging ("parvatiModSrc:" + juce::String (src), this, buildDragImage(), true);
     }
+
+#if JUCE_IOS
+    // Tap-to-assign: a clean tap (no drag) selects this row's mod source for
+    // the next dest tap. Mirrors the CentralModBar pill's clean-tap detection
+    // (! dragStarted_ + small movement). The whole method is iOS-only so the
+    // desktop grip gains no new virtual override.
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (ParamControl::tapAssignActive() && ! dragStarted_ && e.getDistanceFromDragStart() <= 5)
+        {
+            const int src = owner_.sourceForSlot (slot_);
+            if (src >= 0)
+                ParamControl::setTapSelectedSource (src);
+        }
+    }
+#endif
 
 private:
     // A small themed drag image composited under the cursor: the source's

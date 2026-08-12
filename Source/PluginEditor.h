@@ -107,6 +107,26 @@ public:
     // (mirrors setTooltipsEnabled / reapplyCategoryColours). Restored (full
     // alpha, ring cleared) the instant the drag ends.
     static void   setModDragActive (bool active);
+#if JUCE_IOS
+    // ---- Tap-to-assign modulation (iPad) ----
+    // iPad has no drag-and-drop, so modulation routing is reached by toggling
+    // [MOD] ON, tapping a mod source, then tapping a destination knob. The dest
+    // tap calls the SAME assign seam itemDropped uses
+    // (ModMatrixHighlight::requestAssign(source, modDest_)) — no drag path on
+    // touch. ON reuses the existing drop-zone affordance (setModDragActive) so
+    // destination knobs show the ring + non-targets dim. The selected source is
+    // carried in a static int (mirrors the static modDragActive_ pattern).
+    static void setTapAssignActive (bool active);   // [MOD] toggle entry (sets flag + affordance)
+    static bool tapAssignActive() noexcept { return tapAssignActive_; }
+    static void setTapSelectedSource (int sourceEnum) noexcept;   // .cpp: sets + posts a selected-source status (touch has no hover)
+    static int  tapSelectedSource() noexcept { return tapSelectedSource_; }
+    // Transient status shown in the editor's status strip (e.g. "Mod Matrix
+    // full" when requestAssign finds no free slot). postTransientStatus arms a
+    // short frame budget; tickTransientStatus (drained ~30 Hz by the editor
+    // timer) returns the text while the budget lasts, or empty once expired.
+    static void        postTransientStatus (const juce::String& text, int frames);
+    static juce::String tickTransientStatus();
+#endif
 
     // Right-click (popup) on this cell — or on its child Slider/ComboBox, which
     // registers `this` as a MouseListener (Component is already a MouseListener,
@@ -279,6 +299,12 @@ private:
     juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
     static bool tooltipsEnabled_;   // toggled from the Settings panel
     static bool modDragActive_;     // true while a parvatiModSrc drag is in flight
+#if JUCE_IOS
+    static bool tapAssignActive_;       // [MOD] toggle ON -> reuse the drop-zone affordance
+    static int  tapSelectedSource_;     // MOD_SRC_* tapped on a source; -1 = none yet
+    static juce::String transientStatusText_;   // transient status-strip text (e.g. "Mod Matrix full")
+    static int  transientStatusFrames_;         // frame budget for the transient status
+#endif
 
     juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
 #if JUCE_IOS
@@ -657,6 +683,9 @@ private:
     int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Patch
     juce::TextButton globalButton_ { "Patch" }; // header button -> Patch page overlay (hosts the Section::Global ParamPage; not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
+#if JUCE_IOS
+    juce::TextButton modAssignButton_ { "MOD" };  // header toggle: tap-to-assign modulation mode (iPad)
+#endif
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
     // Top header: brand icon + white "Parvati" wordmark (painted, left) + version label (inline right).

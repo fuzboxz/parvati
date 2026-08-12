@@ -5,6 +5,9 @@
 #include "ParvatiLookAndFeel.h"
 #include "ParvatiTheme.h"
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_PITCH_BEND / MOD_SRC_WHEEL
+#if JUCE_IOS
+#include "PluginEditor.h"   // ParamControl (tap-to-assign state)
+#endif
 
 //==============================================================================
 // A vertical slider that snaps back to its midpoint (0.0) on mouse release.
@@ -72,7 +75,17 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         ddc->startDragging ("parvatiModSrc:" + juce::String (src_), this, buildDragImage(), true);
     }
 
-    void mouseUp (const juce::MouseEvent&) override { dragStarted_ = false; }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        juce::ignoreUnused (e);   // used only under #if JUCE_IOS (tap-to-assign)
+        dragStarted_ = false;
+#if JUCE_IOS
+        // Tap-to-assign: a clean tap (no drag) selects this wheel's mod source
+        // (Pitch Bend / Mod Wheel) for the next dest tap.
+        if (ParamControl::tapAssignActive() && src_ >= 0 && e.getDistanceFromDragStart() <= 5)
+            ParamControl::setTapSelectedSource (src_);
+#endif
+    }
 
     // A small themed chip (mirrors ModSourceDragGrip::buildDragImage).
     juce::Image buildDragImage() const

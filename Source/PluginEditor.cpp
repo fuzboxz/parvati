@@ -139,6 +139,12 @@ juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
 //==============================================================================
 bool ParamControl::tooltipsEnabled_ = true;
 bool ParamControl::modDragActive_    = false;
+#if JUCE_IOS
+bool        ParamControl::tapAssignActive_      = false;
+int         ParamControl::tapSelectedSource_    = -1;
+juce::String ParamControl::transientStatusText_;
+int         ParamControl::transientStatusFrames_ = 0;
+#endif
 
 namespace
 {
@@ -599,6 +605,50 @@ void ParamControl::setModDragActive (bool active)
         c->applyModDragAffordance();
 }
 
+#if JUCE_IOS
+void ParamControl::setTapAssignActive (bool active)
+{
+    // [MOD] toggle entry. Reuses the existing drop-zone affordance (ring on
+    // destination knobs, dim non-targets) so the tap mode gets the exact same
+    // visual feedback as a desktop drag, with zero LookAndFeel changes.
+    tapAssignActive_ = active;
+    tapSelectedSource_ = -1;   // clear any pending source on entry/exit
+    parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+    setModDragActive (active);
+    if (active)
+        postTransientStatus (TRANS ("Tap a mod source, then a knob"), 90);   // entry hint (~3s)
+}
+
+void ParamControl::setTapSelectedSource (int sourceEnum) noexcept
+{
+    tapSelectedSource_ = sourceEnum;
+    // Touch has no hover/cursor, so surface the armed source by name in the
+    // status strip (reuses the transient-status mechanism). Skipped on a reset
+    // (sourceEnum < 0) so a consumed/cleared selection stays silent.
+    if (sourceEnum >= 0)
+        postTransientStatus (TRANS ("Mod source: ") + parvati::entryFor (sourceEnum).fullName, 45);
+}
+
+void ParamControl::postTransientStatus (const juce::String& text, int frames)
+{
+    transientStatusText_   = text;
+    transientStatusFrames_ = juce::jmax (1, frames);
+}
+
+juce::String ParamControl::tickTransientStatus()
+{
+    // Returns the armed text while the frame budget lasts (drained ~30 Hz by
+    // the editor timer), or empty once expired so the normal hover tooltip
+    // takes back over the status strip.
+    if (transientStatusFrames_ > 0)
+    {
+        --transientStatusFrames_;
+        return transientStatusText_;
+    }
+    return {};
+}
+#endif
+
 void ParamControl::applyCategoryArcColour()
 {
     if (slider_ == nullptr)
@@ -1047,17 +1097,37 @@ void ParamControl::mouseDrag (const juce::MouseEvent& e)
     }
 }
 
-void ParamControl::mouseUp (const juce::MouseEvent&)
+void ParamControl::mouseUp (const juce::MouseEvent& e)
 {
     stopTimer();
     // A long-press armed the menu (timer fired while the finger held still).
     // Open it NOW, on release — the Slider's own mouseUp has already run (these
     // handlers are listener-forwarded, non-consuming) so its drag ended cleanly
-    // before the modal popup appears.
+    // before the modal popup appears. Long-press takes priority over a tap-assign
+    // (a held dest knob wants Reset/Randomize, not an assign).
     if (longPressArmed_)
     {
         longPressArmed_ = false;
         showContextMenu();
+        return;
+    }
+    // Tap-to-assign dest: in [MOD] mode, a CLEAN tap (<=5 px, mirroring the 5
+    // source sides) on a destination knob assigns the selected source to this
+    // dest via the SAME seam itemDropped uses (no drag on touch). A value-drag
+    // of the knob (>5 px) is NOT an assign — the slider just changes its value.
+    // Stays in mode for more routings; clears the selected source each time.
+    // (This whole mouseUp is iOS-only — see the surrounding #if JUCE_IOS.)
+    if (tapAssignActive_ && isModDestKnob_ && e.getDistanceFromDragStart() <= 5)
+    {
+        if (tapSelectedSource_ < 0)
+        {
+            postTransientStatus (TRANS ("Tap a mod source first"), 60);   // no source armed -> hint, not a silent no-op
+            return;
+        }
+        const bool ok = parvati::ModMatrixHighlight::instance().requestAssign (tapSelectedSource_, modDest_);
+        parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+        postTransientStatus (ok ? TRANS ("Assigned") : TRANS ("Mod Matrix full"), ok ? 45 : 90);
+        tapSelectedSource_ = -1;   // consumed; stay in mode for another routing
     }
 }
 #endif
@@ -2545,6 +2615,23 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (kbdToggleButton_);
 
+#if JUCE_IOS
+    // ---- [MOD] header toggle: tap-to-assign modulation (iPad) ----
+    // iPad has no drag-and-drop, so modulation routing is reached by toggling
+    // [MOD] ON, tapping a mod source, then tapping a destination knob — which
+    // calls the same requestAssign seam itemDropped uses. ON reuses the
+    // drop-zone affordance (ring on dest knobs, dim non-targets) so the touch
+    // mode mirrors the desktop drag visually. The toggled button is the "still
+    // in assign mode" indicator.
+    modAssignButton_.setTooltip (TRANS ("Tap-to-assign modulation"));
+    modAssignButton_.setClickingTogglesState (true);
+    modAssignButton_.setToggleState (false, juce::dontSendNotification);
+    modAssignButton_.onClick = [this] {
+        ParamControl::setTapAssignActive (modAssignButton_.getToggleState());
+    };
+    addAndMakeVisible (modAssignButton_);
+#endif
+
     // ---- Header: brand icon + white "Parvati" wordmark (painted, left) + version (inline, right of logo) ----
     versionLabel_.setText ("by 805Labs - v" PARVATI_VERSION, juce::dontSendNotification);
     versionLabel_.setFont (juce::FontOptions (10.0f));
@@ -2860,6 +2947,13 @@ void ParvatiEditor::timerCallback()
                     if (t.isNotEmpty()) { tip = t; break; }
                 }
         }
+#if JUCE_IOS
+        // Tap-to-assign transient status (e.g. "Mod Matrix full") takes priority
+        // over the hover tooltip for a short time after requestAssign returns
+        // false (full matrix). Drains back to the normal hover tip afterwards.
+        if (const auto ts = ParamControl::tickTransientStatus(); ts.isNotEmpty())
+            tip = ts;
+#endif
         if (statusTooltipLabel_.getText() != tip)
             statusTooltipLabel_.setText (tip, juce::dontSendNotification);
     }
@@ -3244,6 +3338,10 @@ void ParvatiEditor::resized()
     // never collides with the centred Patch/Part cluster at the default width.
     kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle (far right)
     bar.removeFromRight (4);
+#if JUCE_IOS
+    modAssignButton_.setBounds (bar.removeFromRight (40));   // [MOD] tap-to-assign toggle (iPad, left of [KBD])
+    bar.removeFromRight (4);
+#endif
     settingsButton_.setBounds (bar.removeFromRight (30));    // gear
     bar.removeFromRight (4);
     zoomResetButton_.setBounds (bar.removeFromRight (28));   // zoom reset (0)

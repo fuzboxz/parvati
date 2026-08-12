@@ -32,6 +32,18 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
     // needs no wiring here — it carries the "parvatiModSrc:<enum>" payload.
     modBar_->setOnPillClicked ([this] (int src)
     {
+#if JUCE_IOS
+        // Tap-to-assign mode: a pill tap selects this mod source for the next
+        // dest tap and SUPPRESSES the generator-page flip (assign mode is
+        // focused). Bar-only sentinels (src < 0, e.g. the Note Sequencer) are
+        // never a valid mod source and are skipped.
+        if (ParamControl::tapAssignActive())
+        {
+            if (src >= 0)
+                ParamControl::setTapSelectedSource (src);
+            return;
+        }
+#endif
         if (parvati::entryFor (src).isGenerator)
             setActiveGenerator (src);
         else if (onDragOnlyPillClicked_)

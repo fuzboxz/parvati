@@ -72,6 +72,18 @@ public:
             dragStarted_ = false;
             return;
         }
+#if JUCE_IOS
+        // Tap-to-assign: surface this tab's generator as the selected mod
+        // source and SUPPRESS the sub-tab flip (mirrors the drag guard above so
+        // an assign tap does not also switch the sub-tab).
+        if (ParamControl::tapAssignActive())
+        {
+            const int src = map_ ? map_ (getButtonText()) : -1;
+            if (src >= 0)
+                ParamControl::setTapSelectedSource (src);
+            return;
+        }
+#endif
         juce::TabBarButton::clicked (mods);
     }
 
