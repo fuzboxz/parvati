@@ -2200,6 +2200,26 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
     zoomResetButton_.onClick = [this] { applyZoom (1.0); };
     addAndMakeVisible (zoomResetButton_);
+#if JUCE_IOS
+    // iOS overflow: one "..." button opens a 44pt-row popup holding the three
+    // zoom actions, so the grown (44pt) icon cluster still fits the 1280pt
+    // editor width. The three zoom buttons above stay constructed (their logic
+    // is reused here) but are not placed on iOS (see resized()).
+    zoomOverflowButton_.setTooltip (TRANS ("Zoom"));
+    zoomOverflowButton_.onClick = [this]
+    {
+        juce::PopupMenu m;
+        m.setLookAndFeel (&lnf_);   // app-themed popup (amber accent, dark fill)
+        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom In")).setAction  ([this] { applyZoom (zoom_ + 0.1); }));
+        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom Out")).setAction ([this] { applyZoom (zoom_ - 0.1); }));
+        m.addItem (juce::PopupMenu::Item (TRANS ("Reset Zoom")).setAction ([this] { applyZoom (1.0); }));
+        m.showMenuAsync (juce::PopupMenu::Options()
+                             .withTargetComponent (&zoomOverflowButton_)
+                             .withStandardItemHeight (44),
+                         nullptr);
+    };
+    addAndMakeVisible (zoomOverflowButton_);
+#endif
 
     // ---- Top bar: Part selector (bound to the `part_select` APVTS param) ----
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
@@ -2787,11 +2807,21 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // raised to at least that minimum so the bar is uncompressed at startup too.
     // Min height 600 keeps the 3 rows (top | bar | bottom) usable. (Headless tests
     // call setSize() below the min, which bypasses setResizeLimits.)
+#if JUCE_IOS
+    // iOS: the CentralModBar scrolls internally (Viewport), so it never widens
+    // the editor — keep the 1280pt floor. Default height grows to 634pt to absorb
+    // the taller HIG header (44) + segmented mod bar (52) with the tighter (8pt)
+    // page margins; the taller mod bar eats no editor height (the matrix scrolls).
+    setSize (1280, 634);
+    setResizable (true, true);
+    setResizeLimits (1280, 600, 1800, 1100);
+#else
     const int minBarW = (synthWorkspace_ != nullptr) ? synthWorkspace_->barPreferredWidth() : 0;
     const int minWidth = minBarW + 8;
     setSize (juce::jmax (1280, minWidth), 620);
     setResizable (true, true);
     setResizeLimits (minWidth, 600, 1800, 1100);
+#endif
 
     // Apply persisted zoom (global scale; only if non-default to avoid an
     // unnecessary rescale at startup).
@@ -3336,12 +3366,28 @@ void ParvatiEditor::resized()
     // gap; an 8px gap separates the history/zoom/view icons from the file group.
     // Save/Load are trimmed (100/80 -> 84/70) so the cluster stays compact and
     // never collides with the centred Patch/Part cluster at the default width.
+#if JUCE_IOS
+    // iOS HIG: every icon is a 44x44 touch target with >=8pt gaps, and the three
+    // zoom buttons (+/-/0) are folded into one "..." overflow popup so the grown
+    // cluster still fits the 1280pt editor width. [KBD] is already 44pt wide.
+    kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] (already 44pt wide)
+    bar.removeFromRight (8);
+    modAssignButton_.setBounds (bar.removeFromRight (44));     // [MOD] tap-to-assign toggle
+    bar.removeFromRight (8);
+    settingsButton_.setBounds (bar.removeFromRight (44));      // gear
+    bar.removeFromRight (8);
+    zoomOverflowButton_.setBounds (bar.removeFromRight (44));  // "..." zoom overflow (popup)
+    bar.removeFromRight (8);
+    redoButton_.setBounds (bar.removeFromRight (44));          // redo
+    bar.removeFromRight (8);
+    undoButton_.setBounds (bar.removeFromRight (44));          // undo
+    bar.removeFromRight (8);   // separates the history/view icons from the file group
+    saveButton_.setBounds (bar.removeFromRight (84));          // Save (carries the format popup menu)
+    bar.removeFromRight (8);
+    loadButton_.setBounds (bar.removeFromRight (70));          // Load
+#else
     kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle (far right)
     bar.removeFromRight (4);
-#if JUCE_IOS
-    modAssignButton_.setBounds (bar.removeFromRight (40));   // [MOD] tap-to-assign toggle (iPad, left of [KBD])
-    bar.removeFromRight (4);
-#endif
     settingsButton_.setBounds (bar.removeFromRight (30));    // gear
     bar.removeFromRight (4);
     zoomResetButton_.setBounds (bar.removeFromRight (28));   // zoom reset (0)
@@ -3357,6 +3403,7 @@ void ParvatiEditor::resized()
     saveButton_.setBounds (bar.removeFromRight (84));        // Save (carries the format popup menu)
     bar.removeFromRight (4);
     loadButton_.setBounds (bar.removeFromRight (70));        // Load
+#endif
 
     // Left: brand icon + white "Parvati" wordmark (painted) + version label
     // inline to its right. Layout: [~14px edge] "Parvati" [6px] [icon] [6px] [version]

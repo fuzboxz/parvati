@@ -117,6 +117,41 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TypeStepButton)
 };
 
+#if JUCE_IOS
+// FxTypeCombo — the iOS effect picker. The whole "< None >" selector is one
+// 44pt-tall tap target (HIG #4); the prev/next chevron step buttons are removed
+// on iOS. JUCE's default ComboBox popup item rows (~24pt) are below the HIG
+// touch minimum, so showPopup() rebuilds the popup from the combo's OWN items
+// at a 44pt standard item height. Selecting an item writes through
+// setSelectedItemIndex, which the ComboBoxAttachment syncs to the APVTS — so the
+// byte-bridge + per-type knob refresh are unchanged from the desktop combo.
+class FxTypeCombo : public juce::ComboBox
+{
+public:
+    FxTypeCombo() : juce::ComboBox ({}) {}
+
+    void showPopup() override
+    {
+        juce::PopupMenu menu;
+        menu.setLookAndFeel (&getLookAndFeel());
+        const int current = getSelectedItemIndex();
+        for (int i = 0; i < getNumItems(); ++i)
+        {
+            juce::PopupMenu::Item item;
+            item.text     = getItemText (i);
+            item.itemID   = getItemId (i);
+            item.isTicked = (i == current);
+            item.action   = [this, i] { setSelectedItemIndex (i, juce::sendNotificationSync); };
+            menu.addItem (std::move (item));
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options()
+                                .withTargetComponent (this)
+                                .withStandardItemHeight (44),
+                            nullptr);
+    }
+};
+#endif
+
 // Per-type ENGAGEMENT defaults applied the moment a user selects an effect
 // type. The generic slot params all default to 0 — silent (Delay time=0,
 // drywet=0 = fully dry, enabled=0 = bypassed) — so picking a type otherwise
@@ -166,8 +201,13 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 constexpr int kPad         = 6;      // card edge inset
 constexpr int kHeaderH     = 16;     // header row (title + power toggle; synth kGroupTitleH parity)
 constexpr int kHalfGap     = 2;      // gap below the header + between bands
+#if JUCE_IOS
+constexpr int kTypeRowH    = 44;     // HIG: the whole algorithm selector is one 44pt tap target
+constexpr int kComboH      = 44;     // HIG: 44pt-tall combo (picker tap target)
+#else
 constexpr int kTypeRowH    = 28;     // algorithm dropdown row (styled combo height, Shape/Mode parity)
 constexpr int kComboH      = 28;     // dropdown height (ParamControl combo parity)
+#endif
 constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron + slack
 constexpr int kComboMinW   = 80;     // dropdown floor width
 constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
@@ -239,7 +279,14 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
         drywet_->setDisplayValuePercent (true);
 
     // ---- Type combo (ComboBoxAttachment auto-uses the param's choices) ----
+#if JUCE_IOS
+    // iOS: FxTypeCombo rebuilds the popup at a 44pt item height (HIG picker).
+    // It IS-A juce::ComboBox, so the ComboBoxAttachment + addItemList below are
+    // unchanged. The prev/next chevrons are not placed on iOS (see resized()).
+    typeCombo_ = std::make_unique<FxTypeCombo> ();
+#else
     typeCombo_ = std::make_unique<juce::ComboBox> ();
+#endif
     typeCombo_->setTooltip ("FX " + juce::String (slot_ + 1) + " algorithm");
     // Populate from the param's OWN choice list BEFORE the attachment:
     // AudioProcessorValueTreeState::ComboBoxAttachment does NOT add items itself,
@@ -526,6 +573,13 @@ void FxSlotCard::resized()
         auto typeRow = area.removeFromTop (kTypeRowH);
         const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
         const int comboW = juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth()), textW);
+#if JUCE_IOS
+        // iOS HIG: the whole algorithm selector is ONE 44pt-tall tap target that
+        // opens the effect picker (the prev/next chevrons are removed on iOS).
+        // Centred, fit-to-text width; the 44pt combo fills the 44pt row.
+        const int comboX = typeRow.getX() + (typeRow.getWidth() - comboW) / 2;
+        typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
+#else
         // The prev/next ("<" ">") step buttons flank the combo as a centred
         // cluster: [ < ][ combo ][ > ]. Small square chevrons, combo height.
         constexpr int kStepW   = 16;                 // chevron button width
@@ -540,6 +594,7 @@ void FxSlotCard::resized()
             typePrev_->setBounds (clusterX, stepY, kStepW, stepH);
         if (typeNext_ != nullptr)
             typeNext_->setBounds (comboX + comboW + kStepGap, stepY, kStepW, stepH);
+#endif
         area.removeFromTop (kHalfGap);
     }
 

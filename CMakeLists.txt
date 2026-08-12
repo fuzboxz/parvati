@@ -749,6 +749,21 @@ target_link_libraries(parvati_multigui_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# iPad M5 HIG sizing-contract test. Asserts the iOS layout constants equal the
+# HIG touch minimums (44/48/8) under an iOS build and the desktop constants are
+# UNCHANGED (every HIG change is #if JUCE_IOS). Static + runtime asserts guard
+# the compile-time-gated sizing contract in CI. Built by default.
+# Run with: ./build/parvati_ipad_hig_sizing_test
+add_executable(parvati_ipad_hig_sizing_test
+    tests/ipad_hig_sizing_test.cpp
+)
+target_include_directories(parvati_ipad_hig_sizing_test PRIVATE Source)
+target_compile_features(parvati_ipad_hig_sizing_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_ipad_hig_sizing_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Dev tool: render the full Parvati editor screen for each page to a PNG
 # (offscreen, via paintEntireComponent — no screen-recording permission needed)
 # so they can be fed to a UI-redesign agent. Mirrors parvati_multigui_test's link set.

@@ -565,8 +565,13 @@ struct FxMatrixRow : public juce::Component,
 
         indexLabel_.setBounds (b.removeFromLeft (18));
         b.removeFromLeft (4);
+#if JUCE_IOS
+        dragGrip_->setBounds (b.removeFromLeft (44));   // HIG drag-grip touch target
+        b.removeFromLeft (8);
+#else
         dragGrip_->setBounds (b.removeFromLeft (14));
         b.removeFromLeft (4);
+#endif
 
         // Source + dest combos: proportional, floored so the choice text stays legible.
         const int comboW = juce::jmax (70, b.getWidth() / 5);
@@ -576,13 +581,21 @@ struct FxMatrixRow : public juce::Component,
         b.removeFromLeft (8);
 
         // Right-aligned controls: Mute, Clear, value, then slider fills the rest.
+#if JUCE_IOS
+        muteButton_.setBounds (b.removeFromRight (44));   // HIG mute touch target
+        b.removeFromRight (8);
+#else
         muteButton_.setBounds (b.removeFromRight (30));
         b.removeFromRight (6);
+#endif
         clearButton_.setBounds (b.removeFromRight (juce::jmax (44, b.getWidth() / 8)));
         b.removeFromRight (8);
         valueLabel_.setBounds (b.removeFromRight (46));
         b.removeFromRight (8);
 
+        // iOS HIG: the depth slider fills the remaining row area, so on the 48pt
+        // row it is ~44pt tall -> a large invisible hit zone while the visual
+        // thumb (BipolarSliderLNF) stays small. No custom hitTest needed.
         depthSlider_.setBounds (b);
     }
 

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Parvati — iPad HIG Touch-Target Mockup</title>
+<style>
+  :root{
+    --bg:#131318; --panel:#22222b; --panel2:#2c2c36; --edge:#3a3a46;
+    --text:#e8e8ee; --dim:#8a8a98; --gold:#e8b84b; --red:#ff6b6b; --green:#6bff9e;
+    --hit:#5a8fff; /* invisible hit box */
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{background:var(--bg); color:var(--text); font-family:-apple-system,system-ui,sans-serif;
+       padding:28px; font-size:13px}
+  h1{font-size:22px; margin-bottom:2px}
+  h1 b{color:var(--gold)}
+  .sub{color:var(--dim); margin-bottom:22px; font-size:13px}
+  .scale{color:var(--gold); font-weight:600}
+  .legend{display:flex; gap:18px; margin-bottom:26px; flex-wrap:wrap; font-size:12px}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .sw{width:14px;height:14px;border-radius:3px; display:inline-block}
+  .row{display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-bottom:30px}
+  .col h3{font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:8px}
+  .tag{font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600}
+  .tag.bad{background:rgba(255,107,107,.15); color:var(--red); border:1px solid rgba(255,107,107,.4)}
+  .tag.ok{background:rgba(107,255,158,.13); color:var(--green); border:1px solid rgba(107,255,158,.4)}
+  .frame{background:var(--panel); border:1px solid var(--edge); border-radius:8px; padding:14px;
+         position:relative; overflow:hidden}
+
+  /* scale: 1 unit == 1pt  (mockup rendered ~1.7x for legibility via transform) */
+  .stage{transform:scale(1.7); transform-origin:top left; width:58.8%}  /* 100/1.7 */
+
+  /* ---- HEADER ---- */
+  .hdr{display:flex; align-items:center; height:40px; background:var(--panel2); border:1px solid var(--edge);
+       border-radius:6px; padding:0 8px; gap:6px}
+  .hdr .logo{color:var(--gold); font-weight:700; font-size:12px; padding-right:10px}
+  .hdr .center{flex:1; text-align:center; color:var(--dim); font-size:11px}
+  .ico{display:inline-flex; align-items:center; justify-content:center; background:#34343f;
+       border-radius:5px; color:var(--dim); font-size:10px}
+  .gap4{width:4px} .gap8{width:8px}
+  .w28{width:28px;height:28px} .w30{width:30px;height:30px} .w44{width:44px;height:44px}
+  .h40{height:40px} .h44{height:44px}
+
+  /* ---- MOD BAR ---- */
+  .bar{display:flex; align-items:center; height:38px; background:var(--panel2); border:1px solid var(--edge);
+       border-radius:6px; padding:0 6px; gap:4px; flex-wrap:nowrap; overflow:hidden}
+  .pill{display:inline-flex; align-items:center; justify-content:center; background:#3a3a46; border-radius:5px;
+        color:var(--dim); font-size:9px; height:28px; min-width:30px; padding:0 6px}
+  .seggroup{display:flex; align-items:center; gap:8px}
+  .seg{display:inline-flex; align-items:center; gap:6px; background:#2a2a33; border:1px solid #3d3d4a;
+       border-radius:7px; padding:2px}
+  .pill44{height:44px; min-width:44px; padding:0 8px; font-size:11px}
+  .catlbl{color:var(--gold); font-size:9px; padding:0 6px; writing-mode:horizontal-tb}
+
+  /* ---- KNOB ---- */
+  .knobwrap{display:flex; gap:26px; align-items:flex-end; padding:8px}
+  .knobcell{width:64px; height:64px; position:relative; display:flex; align-items:center; justify-content:center}
+  .knobvis{width:36px;height:36px;border-radius:50%;border:2px solid var(--gold);
+           position:relative}
+  .knobvis::after{content:""; position:absolute; top:3px; left:50%; width:2px; height:14px;
+                  background:var(--gold); transform:translateX(-50%)}
+  .hitbox{position:absolute; inset:6px; border:1.5px dashed var(--hit); border-radius:6px}
+  .knoblbl{position:absolute; bottom:-2px; width:100%; text-align:center; color:var(--dim); font-size:8px}
+  .dim-note{color:var(--hit); font-size:10px; align-self:center}
+
+  /* ---- MATRIX ---- */
+  .mtx{background:var(--panel2); border:1px solid var(--edge); border-radius:6px; overflow:hidden}
+  .mrow{display:flex; align-items:center; gap:6px; padding:0 6px; border-bottom:1px solid #2e2e38}
+  .mrow:last-child{border-bottom:none}
+  .r34{height:34px} .r48{height:48px}
+  .grip{width:14px; color:var(--dim); font-size:10px; text-align:center}
+  .grip44{width:44px;height:44px; display:flex; align-items:center; justify-content:center; color:var(--dim)}
+  .combo{background:#34343f; border-radius:4px; color:var(--dim); font-size:9px; padding:0 6px;
+         display:flex; align-items:center; height:24px}
+  .combo44{height:40px; font-size:11px; min-width:90px}
+  .mz{width:30px; height:24px; background:#34343f; border-radius:4px; color:var(--dim);
+      display:flex; align-items:center; justify-content:center; font-size:9px}
+  .mz44{width:44px; height:44px; font-size:11px}
+  .clr{min-width:44px; height:24px; background:#3a2a2a; border:1px solid #5a3a3a; border-radius:4px;
+       color:var(--red); font-size:9px; display:flex; align-items:center; justify-content:center}
+  .clr44{height:44px; font-size:11px}
+  .track{flex:1; height:6px; background:#34343f; border-radius:3px; position:relative}
+  .thumb{position:absolute; top:50%; width:10px;height:10px; background:#fff; border-radius:50%;
+         transform:translate(-50%,-50%); left:55%}
+  .thumbhit{position:absolute; top:50%; width:44px;height:44px; border:1.5px dashed var(--hit);
+            border-radius:6px; transform:translate(-50%,-50%); left:55%}
+
+  /* ---- FX SLOT ---- */
+  .fx{display:flex; align-items:center; gap:4px; height:34px; background:var(--panel2);
+      border:1px solid var(--edge); border-radius:6px; padding:0 8px}
+  .arr{width:10px; color:var(--dim); font-size:10px; display:flex; align-items:center}
+  .slot{flex:1; text-align:center; color:var(--dim); font-size:10px}
+  .fx44{height:44px}
+  .tap44{flex:1; min-height:44px; display:flex; align-items:center; justify-content:center;
+         background:#34343f; border:1px solid var(--gold); border-radius:6px; color:var(--gold); font-size:11px}
+
+  .annot{margin-top:8px; font-size:11px; color:var(--dim); line-height:1.5}
+  .annot b{color:var(--text)}
+  .v{color:var(--red)} .ok{color:var(--green)}
+</style>
+</head>
+<body>
+<h1>Parvati iPad — <b>HIG Touch-Target Mockup</b></h1>
+<div class="sub">Measured from source constants · <span class="scale">rendered at 1.7× (1 unit = 1pt)</span> · red = below 44pt / &lt;8pt gap · blue dashed = invisible hit box · green = compliant</div>
+<div class="legend">
+  <span><i class="sw" style="background:#3a3a46"></i> control</span>
+  <span><i class="sw" style="background:var(--gold)"></i> accent</span>
+  <span><i class="sw" style="background:var(--red)"></i> violates HIG</span>
+  <span><i class="sw" style="background:var(--green)"></i> meets HIG</span>
+  <span><i class="sw" style="background:var(--hit);opacity:.5"></i> invisible hit zone</span>
+</div>
+
+<!-- 1. HEADER -->
+<div class="row">
+  <div class="col">
+    <h3>① Top header <span class="tag bad">CURRENT · 40pt bar, 28–30pt icons</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="hdr h40">
+        <span class="logo">◐ Parvati</span>
+        <span class="center">Patch: Init Lead · Part 1</span>
+        <span class="ico w28">↶</span><span class="gap4"></span>
+        <span class="ico w28">↷</span><span class="gap4"></span>
+        <span class="ico w28">⚙</span><span class="gap4"></span>
+        <span class="ico w28">+</span><span class="gap4"></span>
+        <span class="ico w28">−</span><span class="ico w44" style="background:#3a3a46">KBD</span>
+      </div>
+      <div class="annot"><b>Bar 40pt</b> <span class="v">(need ≥44)</span> · icons <b>28–30pt</b> <span class="v">(need 44×44)</span> · gaps <b>3–4pt</b> <span class="v">(need ≥8)</span></div>
+    </div></div>
+  </div>
+  <div class="col">
+    <h3>① Top header <span class="tag ok">PROPOSED · 44pt bar, 44pt icons, ≥8pt gaps</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="hdr h44" style="gap:8px">
+        <span class="logo">◐ Parvati</span>
+        <span class="center">Patch: Init Lead · Part 1</span>
+        <span class="ico w44">↶</span>
+        <span class="ico w44">↷</span>
+        <span class="ico w44">⋯</span>
+        <span class="ico w44">+</span>
+        <span class="ico w44">−</span>
+        <span class="ico w44" style="background:#4a4a2a;color:var(--gold)">KBD</span>
+      </div>
+      <div class="annot"><b>Bar 44pt</b> <span class="ok">✓</span> · icons <b>44×44</b> <span class="ok">✓</span> · gaps <b>8pt</b> <span class="ok">✓</span> · zoom merged into a “⋯” overflow to keep width (slack is tight at 1280)</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- 2. MOD BAR -->
+<div class="row">
+  <div class="col">
+    <h3>② Mod-source bar <span class="tag bad">CURRENT · 28pt pills, 4pt gaps, 25+ chips</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="bar">
+        <span class="pill">E1</span><span class="pill">E2</span><span class="pill">E3</span>
+        <span class="pill">L1</span><span class="pill">L2</span><span class="pill">L3</span>
+        <span class="pill">vL</span><span class="pill">S1</span><span class="pill">S2</span>
+        <span class="pill">Arp</span><span class="pill">M1</span><span class="pill">M2</span>
+        <span class="pill">PB</span><span class="pill">MW</span><span class="pill">C1</span>
+        <span class="pill">C2</span><span class="pill">C3</span><span class="pill">C4</span>
+      </div>
+      <div class="annot"><b>Pill 28pt</b> <span class="v">(need 44)</span> · gap <b>4pt</b> <span class="v">(need 8)</span> · 25+ chips too dense & wide for 8pt gaps</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <h3>② Mod-source bar <span class="tag ok">PROPOSED · segmented by category, 44pt, scrollable</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="bar" style="height:52px; gap:10px; overflow-x:auto">
+        <div class="seg"><span class="catlbl">ENV</span><span class="pill pill44">E1</span><span class="pill pill44">E2</span><span class="pill pill44">E3</span></div>
+        <div class="seg"><span class="catlbl">LFO</span><span class="pill pill44">L1</span><span class="pill pill44">L2</span><span class="pill pill44">L3</span></div>
+        <div class="seg"><span class="catlbl">PERF</span><span class="pill pill44">PB</span><span class="pill pill44">MW</span></div>
+        <div class="seg"><span class="catlbl">MOD</span><span class="pill pill44">M1</span><span class="pill pill44">M2</span></div>
+      </div>
+      <div class="annot"><b>Pill 44pt</b> <span class="ok">✓</span> · gap <b>8pt</b> <span class="ok">✓</span> · grouped by category (HIG #1) + horizontal scroll → fits any pane width without growing the editor</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- 3. KNOB -->
+<div class="row">
+  <div class="col">
+    <h3>③ Rotary knobs <span class="tag ok">CURRENT · visual small, hit box already 52×52</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="knobwrap">
+        <div class="knobcell"><div class="hitbox"></div><div class="knobvis"></div><div class="knoblbl">Detune</div></div>
+        <div class="knobcell"><div class="hitbox"></div><div class="knobvis"></div><div class="knoblbl">Sub Lvl</div></div>
+        <div class="knobcell"><div class="hitbox"></div><div class="knobvis"></div><div class="knoblbl">Fuzz</div></div>
+        <span class="dim-note">visual dial 36pt · <b style="color:var(--hit)">invisible hit 52×52 ✓</b><br>(HIG #2 allows small visual + 44 hit)</span>
+      </div>
+      <div class="annot"><b>No change needed</b> for hit area — already ≥44. <span class="ok">✓</span> Optional: screen-relative drag delta for fine control (setMouseDragSensitivity).</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <h3>③ Rotary knobs <span class="tag ok">PROPOSED · same (confirmed compliant)</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="knobwrap">
+        <div class="knobcell"><div class="hitbox"></div><div class="knobvis"></div><div class="knoblbl">Detune</div></div>
+        <div class="knobcell"><div class="hitbox"></div><div class="knobvis"></div><div class="knoblbl">Sub Lvl</div></div>
+        <div class="knobcell"><div class="hitbox"></div><div class="knobvis"></div><div class="knoblbl">Fuzz</div></div>
+        <span class="dim-note">unchanged · hit 52×52 <span class="ok">✓</span></span>
+      </div>
+      <div class="annot">Knobs are the one element already HIG-safe. Keep visual small, hit box invisible &amp; large.</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- 4. MATRIX -->
+<div class="row">
+  <div class="col">
+    <h3>④ Mod matrix <span class="tag bad">CURRENT · 34pt rows, 30pt M, 14pt grip</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="mtx">
+        <div class="mrow r34"><span class="grip">⋮⋮</span><span class="combo">E1→Cutoff</span><span class="track"><span class="thumb"></span></span><span class="mz">M</span><span class="clr">Clear</span></div>
+        <div class="mrow r34"><span class="grip">⋮⋮</span><span class="combo">L1→Reso</span><span class="track"><span class="thumb"></span></span><span class="mz">M</span><span class="clr">Clear</span></div>
+        <div class="mrow r34"><span class="grip">⋮⋮</span><span class="combo">PB→Pitch</span><span class="track"><span class="thumb"></span></span><span class="mz">M</span><span class="clr">Clear</span></div>
+      </div>
+      <div class="annot"><b>Row 34pt</b> <span class="v">(need 44–48)</span> · M <b>30pt</b> · grip <b>14pt</b> · thumb ~10pt — all <span class="v">below 44</span></div>
+    </div></div>
+  </div>
+  <div class="col">
+    <h3>④ Mod matrix <span class="tag ok">PROPOSED · 48pt rows, 44pt M/Clear/thumb zones</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="mtx">
+        <div class="mrow r48"><span class="grip44">⋮⋮</span><span class="combo combo44">E1→Cutoff</span><span class="track" style="height:8px"><span class="thumbhit"></span><span class="thumb"></span></span><span class="mz mz44">M</span><span class="clr clr44">Clear</span></div>
+        <div class="mrow r48"><span class="grip44">⋮⋮</span><span class="combo combo44">L1→Reso</span><span class="track" style="height:8px"><span class="thumbhit"></span><span class="thumb"></span></span><span class="mz mz44">M</span><span class="clr clr44">Clear</span></div>
+      </div>
+      <div class="annot"><b>Row 48pt</b> <span class="ok">✓</span> · M/Clear/thumb <b>44×44</b> <span class="ok">✓</span> · <b>taller rows cost nothing</b> — the matrix scrolls, so it just shows fewer rows, editor height unchanged</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- 5. FX SLOT -->
+<div class="row">
+  <div class="col">
+    <h3>⑤ FX slot selector <span class="tag bad">CURRENT · 10pt &lt; &gt; arrows</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="fx">
+        <span class="arr">‹</span><span class="slot">&lt; None &gt;</span><span class="arr">›</span>
+        <span class="arr">‹</span><span class="slot">‹ Chorus ›</span><span class="arr">›</span>
+      </div>
+      <div class="annot"><b>Arrows 10pt</b> <span class="v">(need 44)</span> — nearly impossible to hit reliably with a finger</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <h3>⑤ FX slot selector <span class="tag ok">PROPOSED · whole box = one 44pt tap → picker</span></h3>
+    <div class="frame"><div class="stage">
+      <div class="fx fx44" style="gap:8px">
+        <span class="tap44">&lt; None &gt; ▾</span>
+        <span class="tap44">Chorus ▾</span>
+      </div>
+      <div class="annot"><b>Whole slot = 44pt tap</b> <span class="ok">✓</span> opens a (native or 44pt-row) picker — kills the 10pt arrows entirely (HIG #4)</div>
+    </div></div>
+  </div>
+</div>
+
+<div style="margin-top:18px; padding:14px 16px; background:#1c1c24; border:1px solid var(--edge); border-radius:8px; color:var(--dim); font-size:12px; line-height:1.6; max-width:900px">
+  <b style="color:var(--text)">Space budget:</b> header +4pt, mod bar +10pt height ≈ <b style="color:var(--green)">editor 620 → ~634pt</b> (knobs unchanged, matrix scrolls, FX arrows removed).
+  The only width pressure is the mod bar at 8pt gaps → resolved by category-segmentation + horizontal scroll (HIG #1), <b>not</b> by growing the editor.
+  → <b style="color:var(--gold)">Strategy A (HIG-compliant full-screen layout) is feasible without a touch-UI rewrite.</b>
+</div>
+</body>
+</html>

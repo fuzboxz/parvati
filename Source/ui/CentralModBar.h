@@ -28,7 +28,17 @@ class CentralModBar : public juce::Component
 {
 public:
     /** Fixed total bar height (host sets the component height to this). */
+#if JUCE_IOS
+    // iOS HIG: a taller bar (52pt) hosts 44pt pills grouped into labelled
+    // category segments, and the pill row scrolls horizontally inside a
+    // juce::Viewport so 25+ 44pt pills never widen the editor. kPillH / kPillGap
+    // are exposed here so the HIG sizing-contract test can assert them.
+    static constexpr int kBarHeight = 52;
+    static constexpr int kPillH     = 44;   // iOS HIG touch-target height
+    static constexpr int kPillGap   = 8;    // iOS HIG minimum spacing
+#else
     static constexpr int kBarHeight = 38;
+#endif
 
     explicit CentralModBar (ThemeManager& themeManager);
     ~CentralModBar() override;
@@ -65,11 +75,23 @@ private:
     /** Forwards a pill click to the registered callback. */
     void invokeClicked (int modSrcEnum);
 
+#if JUCE_IOS
+    /** The scrolled content of the horizontal Viewport (painted: segment
+        backgrounds + cluster labels), defined in the .cpp. */
+    struct PillContent;
+
+    /** Draws the per-cluster segment backgrounds + short labels on the iOS
+        scrolled content (coordinates match computeLayout's pill positions). */
+    void paintSegments (juce::Graphics&) const;
+#endif
+
     /**
         Lays the 7 clusters out left -> right. When @p positionChildren is true
         the pills are positioned; either way the total preferred width is
         returned. Clusters are separated only by the inter-cluster gap (no
         caption — the family-coloured underline identifies each cluster).
+        On iOS each cluster is wrapped in a labelled segment background and the
+        pill row scrolls inside a Viewport.
     */
     int computeLayout (bool positionChildren) const;
 
@@ -78,6 +100,20 @@ private:
 
     std::vector<std::unique_ptr<ModPill>> pills_;
     int activeEnum_ = -1;
+
+#if JUCE_IOS
+    // iOS horizontal-scroll wrapper + its viewed content (pills are children of
+    // the content, not of this bar, so the bar clips/scrolls them). PillContent
+    // is defined in the .cpp; forward-declared above.
+    std::unique_ptr<juce::Viewport> viewport_;
+    std::unique_ptr<PillContent>    pillContent_;
+
+    // Per-cluster segment background rects + short labels (populated by
+    // computeLayout on iOS, read by paintSegments). Mutable because
+    // computeLayout/preferredWidth are const.
+    mutable juce::Array<juce::Rectangle<int>> segmentRects_;
+    mutable juce::Array<juce::String>         segmentLabels_;
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CentralModBar)
 };

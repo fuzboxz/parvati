@@ -455,8 +455,16 @@ private:
 
     // Layout constants (pixels). Tight margins / gaps / insets keep every page
     // dense (high component density, minimal whitespace), matching the compact
-    // SEQ page rather than the sparse look the wider values produced.
+    // SEQ page rather than the sparse look the wider values produced. kMargin is
+    // public + iOS-gated (8pt on iOS to tighten page padding for the taller
+    // header/bar; 10pt desktop) so the HIG sizing-contract test can assert it.
+public:
+#if JUCE_IOS
+    static constexpr int kMargin      = 8;
+#else
     static constexpr int kMargin      = 10;  // page edge padding
+#endif
+private:
     static constexpr int kGroupGap    = 8;   // gap between group panels (h + v)
     static constexpr int kGroupPad    = 8;   // inset inside a group border
     static constexpr int kGroupTitleH = 16;  // room reserved for the group title
@@ -669,6 +677,13 @@ private:
     juce::TextButton zoomInButton_    { "+" };
     juce::TextButton zoomOutButton_   { "-" };
     juce::TextButton zoomResetButton_ { "0" };
+#if JUCE_IOS
+    // iOS: the three zoom buttons (+/-/0) are folded into one "..." overflow
+    // that opens a 44pt-row popup, so the grown (44pt) icon cluster still fits
+    // the 1280pt editor width. The three zoom buttons stay constructed (their
+    // logic is reused) but are not placed on iOS.
+    juce::TextButton zoomOverflowButton_ { "..." };
+#endif
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Top bar: Part selector (bound to the `part_select` APVTS param).
@@ -698,8 +713,19 @@ private:
     // theme `text` token.
     std::unique_ptr<juce::Drawable> logoDrawable_;
 
+    // iOS HIG: the header grows to 44pt with a full-height (44pt) icon strip so
+    // every header icon meets the 44x44 touch minimum; desktop stays 40/34.
+    // Exposed public (access-only; no symbol/codegen change) so the HIG sizing-
+    // contract test can static_assert these values per platform.
+public:
+#if JUCE_IOS
+    static constexpr int kBarHeight   = 44;   // full-height icon strip (44pt targets)
+    static constexpr int kHeaderH     = 44;   // HIG header height
+#else
     static constexpr int kBarHeight   = 34;
-    static constexpr int kHeaderH     = 40;  // compact header: icon + "Parvati" + version (left) | Patch/Part (centre) | icons (right)
+    static constexpr int kHeaderH     = 40;   // compact header: icon + "Parvati" + version (left) | Patch/Part (centre) | icons (right)
+#endif
+private:
     static constexpr int kPageTabsH   = 28;  // top-level [SYNTH | GLOBAL] page-selector strip
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height

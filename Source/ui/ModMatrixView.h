@@ -159,7 +159,17 @@ private:
     juce::uint32 flashStartMs_ = 0;
     static constexpr int kFlashMs = 1200;
 
+    // iOS HIG: taller (48pt) rows give 44pt touch targets; the matrix scrolls
+    // vertically so taller rows are free (it just shows fewer rows). Exposed
+    // public (access-only; no symbol/codegen change) so the HIG sizing-contract
+    // test can static_assert it per platform.
+public:
+#if JUCE_IOS
+    static constexpr int kRowHeight = 48;
+#else
     static constexpr int kRowHeight = 34;
+#endif
+private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModMatrixView)
 };
