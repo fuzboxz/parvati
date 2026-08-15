@@ -20,6 +20,16 @@ On **Windows** use the Visual Studio 17 2022 generator (Developer PowerShell):
 build --config Debug -j 8`. The sanitizer/`-Werror` CMake options are
 GCC/Clang-only and no-op under MSVC.`
 
+On **Linux** install JUCE's development packages first (see README for the
+apt list), then use the plain CMake flow. Linux builds VST3, CLAP, and
+Standalone — the classic AU is macOS-only. The CLAP format comes from
+clap-juce-extensions (fetched and pinned automatically at configure time);
+`-DPARVATI_BUILD_CLAP=OFF` disables it, and
+`-DPARVATI_CLAP_EXTENSIONS_PATH=/path/to/clap-juce-extensions` builds against
+a local checkout instead of the pin. Note the perf smoke test and the
+`profile_ui.sh` gate are macOS-only (they drive the CoreFoundation run loop
+and CGEvents).
+
 We develop and test against **Debug builds only**. Do not rely on a Release
 build for verification.
 

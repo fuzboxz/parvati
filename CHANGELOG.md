@@ -5,6 +5,26 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **CLAP plugin format + Linux build support.**
+  - CLAP via clap-juce-extensions (JUCE 9.0.0 has no native CLAP `FORMATS`
+    value; native CLAP is on the JUCE roadmap). The extension is fetched at
+    configure time from a pinned main commit (no tagged release contains the
+    JUCE 9 support); `-DPARVATI_CLAP_EXTENSIONS_PATH` swaps in a local
+    checkout. `-DPARVATI_BUILD_CLAP=OFF` disables the format (default ON on
+    desktop, forced OFF on iOS). `CLAP_ID` is `com.805labs.parvati` (aligned
+    with the AU/VST3 bundle id and stable for host identification);
+    features `instrument synthesizer stereo`.
+  - Desktop formats now split by platform: macOS keeps VST3 + AU (+CLAP);
+    Linux/Windows build VST3 + Standalone (+CLAP) — the classic AU is
+    macOS-only (a non-Apple configure with AU is a juce_add_plugin fatal
+    error). iOS is unchanged (AUv3 + Standalone).
+  - Linux configure support: `parvati_perf_smoke_test` is APPLE-gated (its
+    pump drives the CoreFoundation run loop and `#error`s off Apple); the
+    macOS-only `deploy` target is now gated `APPLE AND NOT PARVATI_IOS` and
+    also builds + installs the CLAP bundle alongside VST3/AU
+    (`~/Library/Audio/Plug-Ins/CLAP`).
+  - README/CONTRIBUTING document the CLAP format, the Linux build, and the
+    new CMake options.
 - **Per-part voice slots + part names + Drum Kit template (voice-card
   polyphony extension).**
   - Engine: each Part has a `voiceSlots` setting (0 = **Auto**: one voice
@@ -529,8 +549,8 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   mod wheel (CC1) / breath (CC2) / foot pedal (CC4) / channel pressure are
   proven wired to their mod-matrix sources and audible.
 - **Windows support** — CMake JUCE path falls back to `%USERPROFILE%\JUCE`;
-  sanitizer / `-Werror` flags are MSVC-guarded (no-op under MSVC); CI builds on
-  `windows-latest` with the VS generator. README/CONTRIBUTING document Windows.
+  sanitizer / `-Werror` flags are MSVC-guarded (no-op under MSVC).
+  README/CONTRIBUTING document Windows.
 - OSS docs: `README.md`, `CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, `LICENSE`
   (GPL-3.0), `NOTICES.md`.
 

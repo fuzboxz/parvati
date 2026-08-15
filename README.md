@@ -2,7 +2,7 @@
 
 **Parvati** is a software synthesizer — a plugin port of the
 [Mutable Instruments **Ambika**](https://github.com/pichenettes/ambika)
-hybrid polysynth, recreated as a modern VST3 / AU / Standalone plugin.
+hybrid polysynth, recreated as a modern VST3 / AU / CLAP / Standalone plugin.
 
 ## Goal
 
@@ -12,7 +12,7 @@ microcontroller / voicecard hardware.
 
 ## Tech stack
 
-- **JUCE 9** framework (VST3 / AU / Standalone targets)
+- **JUCE 9** framework (VST3 / AU / CLAP / Standalone targets)
 - C++17, CMake build system
 - Integer/bit-exact port of the Ambika voicecard DSP
 
@@ -43,7 +43,7 @@ cmake --build build -j
 ```
 
 Artifacts land in `build/Parvati_artefacts/Release/`:
-`Parvati.vst3`, `Parvati.component`, and `Parvati.app`.
+`Parvati.vst3`, `Parvati.component`, `Parvati.clap`, and `Parvati.app`.
 
 ### Install into your DAW
 
@@ -54,9 +54,15 @@ cp -R build/Parvati_artefacts/Release/VST3/Parvati.vst3 ~/Library/Audio/Plug-Ins
 # AU (Audio Unit)
 cp -R build/Parvati_artefacts/Release/AU/Parvati.component ~/Library/Audio/Plug-Ins/Components/
 
+# CLAP
+cp -R build/Parvati_artefacts/Release/CLAP/Parvati.clap ~/Library/Audio/Plug-Ins/CLAP/
+
 # Standalone app (optional)
 cp -R build/Parvati_artefacts/Release/Standalone/Parvati.app /Applications/
 ```
+
+(On macOS the one-command `cmake --build build_release --target deploy` builds
+all formats, renders `./screens`, and installs VST3 + AU + CLAP for you.)
 
 Restart your DAW and rescan plugins. To run the AU for the first time you may
 need to clear the quarantine attribute:
@@ -64,6 +70,22 @@ need to clear the quarantine attribute:
 ```bash
 xattr -cr ~/Library/Audio/Plug-Ins/Components/Parvati.component
 ```
+
+## Build (Linux)
+
+Same CMake flow, with JUCE's Linux development packages installed (X11/XInput, ALSA, JACK, freetype/fontconfig, OpenGL):
+
+```bash
+sudo apt install libasound2-dev libx11-dev libxcomposite-dev libxcursor-dev \
+  libxext-dev libxi-dev libxinerama-dev libxrandr-dev libxrender-dev \
+  libfreetype6-dev libfontconfig1-dev libglu1-mesa-dev libjack-jackd2-dev
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target Parvati_VST3 Parvati_CLAP Parvati_Standalone -j
+```
+
+Linux builds VST3, CLAP, and Standalone (the classic AU is macOS-only).
+User-level install targets are `~/.vst3` and `~/.clap`; the standalone binary
+lands in `build/Parvati_artefacts/Release/Standalone/Parvati`.
 
 ---
 

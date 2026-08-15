@@ -21,11 +21,27 @@ else()
 endif()
 # Plugin formats per platform. iOS hosts (GarageBand/AUM/BeatMaker) load an AUv3
 # app-extension; VST3 and the classic AU are desktop formats JUCE silently drops
-# on iOS, so the iOS target list is AUv3 + Standalone only.
+# on iOS, so the iOS target list is AUv3 + Standalone only. The classic AU is
+# additionally macOS-ONLY (a non-Apple configure with AU in FORMATS is a
+# juce_add_plugin FATAL_ERROR), so Linux/Windows build VST3 + Standalone. The
+# CLAP format is NOT listed here: JUCE 9.0.0 has no native CLAP FORMATS value,
+# so it is added separately via clap-juce-extensions (PARVATI_BUILD_CLAP).
 if(PARVATI_IOS)
     set(PARVATI_PLUGIN_FORMATS Standalone AUv3)
-else()
+elseif(APPLE)
     set(PARVATI_PLUGIN_FORMATS Standalone VST3 AU)
+else()
+    set(PARVATI_PLUGIN_FORMATS Standalone VST3)
+endif()
+
+# CLAP plugin format via clap-juce-extensions (see the fetch block below).
+# ON by default on every desktop platform (macOS/Linux/Windows); forced OFF on
+# iOS, where the AUv3 app-extension is the only host-loadable format and a CLAP
+# bundle inside the .ipa would be dead weight.
+option(PARVATI_BUILD_CLAP "Build the CLAP plugin format (desktop only)" ON)
+if(PARVATI_IOS)
+    set(PARVATI_BUILD_CLAP OFF CACHE BOOL
+        "Build the CLAP plugin format (desktop only)" FORCE)
 endif()
 
 # iOS-only Info.plist keys passed NATIVELY through juce_add_plugin (see the
@@ -175,6 +191,31 @@ endif()
 
 add_subdirectory("${JUCE_GLOBAL_PATH}" "${CMAKE_BINARY_DIR}/juce_build" EXCLUDE_FROM_ALL)
 
+# ------------------------------------------------------------------------------
+# CLAP format support via clap-juce-extensions (JUCE 9.0.0 has no native CLAP
+# FORMATS value — native CLAP is on the JUCE roadmap, tied to AudioProcessor
+# v2). The library must be added AFTER JUCE and BEFORE juce_add_plugin: the
+# wrapper reads JUCE_* properties off the plugin target and needs JUCE's CMake
+# helpers in scope. No tagged release contains the JUCE 9 support (PR #178,
+# 2026-07), so we pin a main commit — re-pin periodically to pick up fixes.
+#   -DPARVATI_CLAP_EXTENSIONS_PATH=/path/to/clap-juce-extensions
+# swaps the pin for a local checkout (e.g. to test an upstream fix). No
+# GIT_SHALLOW: the pin is a raw SHA, which git cannot shallow-fetch.
+if(PARVATI_BUILD_CLAP)
+    if(PARVATI_CLAP_EXTENSIONS_PATH)
+        add_subdirectory("${PARVATI_CLAP_EXTENSIONS_PATH}"
+            "${CMAKE_BINARY_DIR}/clap_juce_extensions_build" EXCLUDE_FROM_ALL)
+    else()
+        include(FetchContent)
+        FetchContent_Declare(clap_juce_extensions
+            GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+            # main @ 2026-08-05: JUCE 9 support (PR #178) + the JUCE 9 embedded
+            # editor double-scale fix (PR #183).
+            GIT_TAG c1a5ad025f95d01e03267857fa8276ebeed16500)
+        FetchContent_MakeAvailable(clap_juce_extensions)
+    endif()
+endif()
+
 juce_add_plugin(Parvati
     COMPANY_NAME            "805LABS"
     BUNDLE_ID               "com.805labs.parvati"
@@ -223,6 +264,22 @@ if(_parvati_clouds_cc)
     else()
         set_source_files_properties(${_parvati_clouds_cc} PROPERTIES COMPILE_OPTIONS "/w")
     endif()
+endif()
+
+# ------------------------------------------------------------------------------
+# CLAP registration (see the fetch block above for the JUCE 9 rationale).
+# clap_juce_extensions_plugin derives a Parvati_CLAP wrapper from the SAME
+# shared-code target, so VST3/AU/Standalone are untouched; the module must be
+# linked into Parvati itself so the shared objects can see its headers
+# (HAS_CLAP_JUCE_EXTENSIONS). (Plain target name: the pinned revision defines
+# no clap_juce_extensions:: alias.) CLAP_ID doubles as the macOS CLAP bundle's
+# GUI identifier — it must stay stable (hosts identify the plugin by it) and is
+# therefore kept aligned with BUNDLE_ID above.
+if(PARVATI_BUILD_CLAP)
+    target_link_libraries(Parvati PRIVATE clap_juce_extensions)
+    clap_juce_extensions_plugin(TARGET Parvati
+        CLAP_ID "com.805labs.parvati"
+        CLAP_FEATURES instrument synthesizer stereo)
 endif()
 
 # ------------------------------------------------------------------------------
@@ -918,6 +975,11 @@ target_link_libraries(parvati_layout_overlap_test PRIVATE
 # catches the timer/message-storm class of regression (the PartRow combo
 # ping-pong would have blown this out instantly). Built by default.
 # Run: ./build/parvati_perf_smoke_test
+# macOS-only: the pump drives the CoreFoundation run loop directly and the
+# source #errors off __APPLE__, so the target is APPLE-gated — a Linux
+# configure must not create it (the default build there would fail to compile
+# it).
+if(APPLE)
 add_executable(parvati_perf_smoke_test
     tests/perf_smoke_test.cpp
 )
@@ -926,6 +988,7 @@ target_compile_features(parvati_perf_smoke_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_perf_smoke_test PRIVATE
     Parvati
 )
+endif()
 
 # ------------------------------------------------------------------------------
 # iPad M5 HIG sizing-contract test. Asserts the iOS layout constants equal the
@@ -1323,14 +1386,31 @@ target_link_libraries(parvati_fx_param_coverage_test PRIVATE
 
 # ------------------------------------------------------------------------------
 # `deploy` — one-command release workflow: build ALL plugin formats (VST3, AU,
-# Standalone) + render ./screens from the latest source + install the VST3 and
-# AU bundles into the user plug-in folders. Use this instead of a plain build so
-# the installed plug-ins and the screenshots are never stale (a plain
-# `--target Parvati` does NOT rebuild the VST3/AU format wrappers).
-# macOS-only: iOS has no VST3/AU targets and uses `deploy_ios` instead.
+# CLAP, Standalone) + render ./screens from the latest source + install the
+# built bundles into the user plug-in folders. Use this instead of a plain
+# build so the installed plug-ins and the screenshots are never stale (a plain
+# `--target Parvati` does NOT rebuild the VST3/AU/CLAP format wrappers).
+# macOS-only (APPLE AND NOT PARVATI_IOS): the AU target only exists on macOS
+# and ~/Library/Audio/Plug-Ins is the macOS install root — Linux/Windows
+# install from Parvati_artefacts by hand, and iOS uses `deploy_ios` instead.
 #   cmake --build build_release --target deploy
-if(NOT PARVATI_IOS)
+if(APPLE AND NOT PARVATI_IOS)
 set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
+# CLAP install steps are composed separately so `deploy` stays generatable
+# when PARVATI_BUILD_CLAP=OFF (Parvati_CLAP then simply does not exist).
+set(_parvati_deploy_depends Parvati_VST3 Parvati_AU Parvati_Standalone screens)
+set(_parvati_deploy_commands "")
+if(PARVATI_BUILD_CLAP)
+    list(APPEND _parvati_deploy_depends Parvati_CLAP)
+    list(APPEND _parvati_deploy_commands
+        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install CLAP"
+        # Unlike VST3/Components, ~/Library/Audio/Plug-Ins/CLAP is not a stock
+        # macOS directory — create it so the cp below succeeds on a machine
+        # that never had a CLAP plugin installed.
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${_parvati_plugins_dir}/CLAP"
+        COMMAND rm -rf "${_parvati_plugins_dir}/CLAP/Parvati.clap"
+        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap" "${_parvati_plugins_dir}/CLAP/Parvati.clap")
+endif()
 add_custom_target(deploy
     COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
     COMMAND rm -rf "${_parvati_plugins_dir}/VST3/Parvati.vst3"
@@ -1338,9 +1418,10 @@ add_custom_target(deploy
     COMMAND ${CMAKE_COMMAND} -E echo "deploy: install AU"
     COMMAND rm -rf "${_parvati_plugins_dir}/Components/Parvati.component"
     COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component" "${_parvati_plugins_dir}/Components/Parvati.component"
-    COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed VST3 + AU"
-    DEPENDS Parvati_VST3 Parvati_AU Parvati_Standalone screens
-    COMMENT "Build all formats + render screens + install VST3/AU"
+    ${_parvati_deploy_commands}
+    COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed plug-in bundles"
+    DEPENDS ${_parvati_deploy_depends}
+    COMMENT "Build all formats + render screens + install VST3/AU/CLAP"
     VERBATIM
 )
 endif()
