@@ -7,29 +7,33 @@
 #include <cmath>
 
 //==============================================================================
-// Smooth vector rendering for the on-screen keyboard. The keys are painted with
-// clean vector primitives — multi-stop vertical depth gradients plus crisp
-// top-edge highlights and faint bottom-edge recess shadows — so the keyboard
-// reads as a sleek, modern instrument keyboard with subtle physical depth
-// rather than a flat grid, matching the smooth data-graph aesthetic. Keys stay
-// pixel-aligned: every key is snapped to a whole-pixel Rectangle<int> (via
+// Flat, panel-integrated rendering for the on-screen keyboard. The keys are
+// painted FLAT — a solid ivory natural fill and a dark recessed sharp fill, a
+// 1px hairline seam between naturals, and a solid brand-accent fill for any
+// pressed/latched key — so the keyboard reads as a calm, integrated control
+// surface that matches the plugin's flat card aesthetic (no skeuomorphic
+// gradients / sheens / shadows). The whole strip sits on a rounded-top panel
+// (see KeyboardView::paint / KeyComp::paint) so it reads as one integrated
+// bottom bar rather than a keyboard abutting the content. Keys stay pixel-
+// aligned: every key is snapped to a whole-pixel Rectangle<int> (via
 // roundedInt) so there are no fractional edges / cut-off pixels even on scaled
 // (HiDPI / zoomed) surfaces.
 // THEME-SAFE by contract: NO colour literals live here. Every colour is read
-// from ParvatiTheme tokens via resolveLcd, and the gradient / highlight /
-// shadow endpoints all derive from the single state colour only (via
-// brighter() / darker() / withAlpha()), so the whole keyboard re-tints on a
+// from ParvatiTheme tokens via resolveLcd, so the whole keyboard re-tints on a
 // theme switch with no extra wiring.
 namespace
 {
+    // Rounded-panel corner radius — matches the GroupComponent cards, rounded on
+    // the TOP corners only (the keyboard's bottom is flush with the editor edge).
+    constexpr float kPanelCorner = 7.0f;
+
     struct KeyPalette
     {
-        juce::Colour screenBase;   // panelBackground — between-key seam fill
-        juce::Colour outline;
-        juce::Colour accent;       // pressed tint + pressed top-gleam on naturals
-        juce::Colour accent2;      // hover wash + pressed sharps
-        juce::Colour blackBase;    // unlit sharp keys (darkest)
-        juce::Colour keyWhite;     // natural (white) key resting fill (piano white)
+        juce::Colour outline;    // 1px hairline seam between naturals
+        juce::Colour accent;     // pressed / latched fill (brand accent)
+        juce::Colour accent2;    // hover wash
+        juce::Colour blackBase;  // unlit sharp keys (darkest recessed fill)
+        juce::Colour keyWhite;   // natural (white) key resting fill (piano white)
     };
 
     KeyPalette resolveLcd (const juce::LookAndFeel& lnf)
@@ -39,14 +43,14 @@ namespace
             t = p->getTheme();
 
         if (t != nullptr)
-            return { t->backgroundPanel, t->outline, t->accentPrimary, t->accentSecondary,
+            return { t->outline, t->accentPrimary, t->accentSecondary,
                      t->backgroundBase, t->keyWhite };
 
         // Carbon-derived fallback (only before the editor's L&F is inherited).
         // keyWhite reuses Carbon's factory value so no new colour literal lives
         // outside the theme factories.
-        return { juce::Colour (0xff24242e), juce::Colour (0xff3c3c4a), juce::Colour (0xffe8b84b),
-                 juce::Colour (0xff5b8db8), juce::Colour (0xff141419), carbonTheme().keyWhite };
+        return { juce::Colour (0xff3c3c4a), juce::Colour (0xffe8b84b), juce::Colour (0xff5b8db8),
+                 juce::Colour (0xff141419), carbonTheme().keyWhite };
     }
 
     // Snap a float rect to the nearest whole-pixel rect (no fractional edges).
@@ -56,50 +60,6 @@ namespace
                  static_cast<int> (std::round (a.getY())),
                  static_cast<int> (std::round (a.getWidth())),
                  static_cast<int> (std::round (a.getHeight())) };
-    }
-
-    // Refined multi-stop vertical depth gradient: a lifted/brightened top edge
-    // that settles to the base colour mid-key, then a faintly darker bottom
-    // edge — i.e. a soft top-edge highlight plus a faint bottom-edge shadow.
-    // Every stop derives from the single state colour (no new hues), so a key
-    // keeps its exact state read (accent / accent2) while gaining modern
-    // physical depth. Mapped in absolute coordinates so a pixel-aligned integer
-    // fillRect / fillPath still samples the gradient correctly.
-    juce::ColourGradient keyGradient (juce::Rectangle<float> area, juce::Colour colour)
-    {
-        auto grad = juce::ColourGradient (colour.brighter (0.22f), area.getX(), area.getY(),
-                                          colour.darker (0.18f), area.getX(), area.getBottom(), false);
-        grad.addColour (0.14f, colour.brighter (0.05f));
-        grad.addColour (0.55f, colour);
-        return grad;
-    }
-
-    // Paint a key body with modern physical depth: the multi-stop gradient body
-    // plus a crisp 1px top-edge highlight (light from above) and a faint 1px
-    // bottom-edge recess shadow. Both edges derive from the state colour only
-    // (no new hues). Pressed keys lift forward — a stronger top gleam and NO
-    // bottom shadow — so the active state clearly pops above its neighbours.
-    void paintKeyBody (juce::Graphics& g, juce::Rectangle<int> ir,
-                       juce::Rectangle<float> area, juce::Colour colour, bool pressed)
-    {
-        g.setGradientFill (keyGradient (area, colour));
-        g.fillRect (ir);
-
-        // Crisp top-edge highlight (catches the light). Stronger on a pressed
-        // key so it reads as raised / energised.
-        if (ir.getWidth() > 0 && ir.getHeight() > 4)
-        {
-            g.setColour (colour.brighter (0.50f).withAlpha (pressed ? 0.70f : 0.40f));
-            g.fillRect (ir.withHeight (1));
-        }
-
-        // Faint bottom-edge recess shadow (the key's grounded edge). Suppressed
-        // on a pressed key so an active key lifts forward rather than receding.
-        if (! pressed && ir.getWidth() > 0 && ir.getHeight() > 8)
-        {
-            g.setColour (colour.darker (0.50f).withAlpha (0.35f));
-            g.fillRect (juce::Rectangle<int> (ir.getX(), ir.getBottom() - 1, ir.getWidth(), 1));
-        }
     }
 } // namespace
 
@@ -201,47 +161,43 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
     void drawWhiteNote (int midiNoteNumber, juce::Graphics& g, juce::Rectangle<float> area,
                         bool isDown, bool isOver, juce::Colour lineColour, juce::Colour textColour) override
     {
-        juce::ignoreUnused (lineColour);   // the seam replaces the separator line
+        juce::ignoreUnused (lineColour, textColour);   // flat fill + hairline seam replace them
         const auto pal = resolveLcd (getLookAndFeel());
 
-        // State colour: naturals are clean WHITE (piano convention) — the
-        // resting fill is the theme's keyWhite. Hover lays a faint accent2 wash
-        // over the white; pressed lays a stronger accent tint over the white so
-        // the active key reads warm/gold while staying clearly distinct from the
-        // resting ivory. Every colour derives from the palette tokens only — no
-        // literals.
+        // FLAT fills: naturals are clean WHITE (piano convention) — a solid
+        // keyWhite resting fill, a faint accent2 hover wash, and a SOLID brand
+        // accent fill when pressed/latched so an active key clearly pops above
+        // its resting-white neighbours. Every colour derives from the palette
+        // tokens only — no literals, no gradient.
         juce::Colour fill = pal.keyWhite;
-        if (isOver) fill = fill.overlaidWith (pal.accent2.withAlpha (0.14f));   // faint hover wash
-        if (isDown) fill = fill.overlaidWith (pal.accent.withAlpha (0.40f));    // accent tint
+        if (isOver && ! isDown) fill = fill.overlaidWith (pal.accent2.withAlpha (0.14f));
+        if (isDown)             fill = pal.accent;
 
         const auto ir = roundedInt (area);
+        g.setColour (fill);
+        g.fillRect (ir);
 
-        // Modern physical depth: the multi-stop gradient + crisp top-edge
-        // highlight + faint bottom-edge recess shadow all derive from the
-        // (white-derived) state colour. Pressed keys lift forward (stronger
-        // gleam, no bottom shadow). White keys stay rectangular / flush — only
-        // the black keys get rounded tops.
-        paintKeyBody (g, ir, area, fill, isDown);
-
-        // Pressed accent top-gleam: a crisp accent strip across the key top so
-        // an active white key clearly pops above its resting-white neighbours.
+        // Pressed accent top-gleam: a brighter-accent strip across the key top
+        // so an active key reads clearly even against an accent-coloured fill.
         if (isDown && ir.getWidth() > 0 && ir.getHeight() > 4)
         {
-            g.setColour (pal.accent);
+            g.setColour (pal.accent.brighter (0.30f));
             g.fillRect (ir.withHeight (2));
         }
 
-        // Refined 1px seam between contiguous naturals (pixel-aligned, thin):
-        // keeps adjacent white keys cleanly separated without opening gaps.
-        g.setColour (pal.screenBase);
+        // 1px HAIRLINE seam between contiguous naturals (low-alpha outline):
+        // keeps adjacent white keys cleanly separated without a heavy key border
+        // or opening a gap. Flat — no inset shadow.
+        g.setColour (pal.outline.withAlpha (0.25f));
         g.fillRect (juce::Rectangle<int> (ir.getX(), ir.getY(), 1, ir.getHeight ()));
 
-        // Octave label on each C — crisp text that contrasts with the live fill.
+        // Octave label on each C — crisp text that contrasts with the live fill
+        // (dark on ivory, dark on the bright accent).
         const auto text = getWhiteNoteText (midiNoteNumber);
         if (text.isNotEmpty() && area.getHeight() > 16.0f)
         {
             auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-            g.setColour (textColour.isTransparent() ? pal.keyWhite.contrasting() : textColour);
+            g.setColour (fill.contrasting ());
             g.setFont (lnf ? lnf->appFont (juce::jmin (11.0f, area.getWidth() * 0.6f), juce::Font::plain)
                            : juce::Font (juce::FontOptions (11.0f)));
             g.drawText (text, area.withTrimmedLeft (1.0f).withTrimmedBottom (2.0f),
@@ -255,34 +211,42 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         juce::ignoreUnused (noteFillColour);   // key colours come from the theme
         const auto pal = resolveLcd (getLookAndFeel());
 
-        // State colour: dark recessed blackBase, pressed accent2 (brightened so
-        // the active sharp pops), hover overlaid with accent2.
+        // FLAT fills: dark recessed blackBase, a faint accent2 hover wash, and a
+        // SOLID brand accent when pressed (matching the naturals' active state).
         juce::Colour fill = pal.blackBase;
-        if (isDown) fill = pal.accent2;
-        if (isOver) fill = fill.overlaidWith (pal.accent2.withAlpha (0.40f));
-        if (isDown) fill = fill.brighter (0.14f);   // active sharp reads brighter
+        if (isOver && ! isDown) fill = fill.overlaidWith (pal.accent2.withAlpha (0.30f));
+        if (isDown)             fill = pal.accent;
 
         const auto ir = roundedInt (area);
 
-        // Sleek rounded-top shape: only the playable top corners are rounded (a
-        // soft modern look that reveals the natural beneath at the shoulders);
-        // the sides/bottom stay flush against the naturals. Cosmetic only —
-        // hit-testing still uses the integer getKeyPosition geometry.
-        const float corner = juce::jlimit (1.0f, 2.5f, area.getWidth() * 0.22f);
+        // Subtle rounded-top cap (cosmetic only — hit-testing still uses the
+        // integer getKeyPosition geometry). No outline: the dark key reads
+        // against the ivory naturals by tonal contrast alone.
+        const float corner = juce::jlimit (1.0f, 2.0f, area.getWidth() * 0.20f);
         const auto fr = ir.toFloat();
         juce::Path key;
         key.addRoundedRectangle (fr.getX(), fr.getY(), fr.getWidth(), fr.getHeight(),
                                  corner, corner, true, true, false, false);
 
-        // Same multi-stop depth gradient as the naturals (top highlight -> base
-        // -> faint bottom shadow), mapped onto the rounded shape.
-        g.setGradientFill (keyGradient (fr, fill));
+        g.setColour (fill);
         g.fillPath (key);
+    }
 
-        // Crisp accent outline so the dark key reads against the lit naturals.
-        // Pressed -> accent edge so the active sharp pops.
-        g.setColour (isDown ? pal.accent : pal.outline);
-        g.strokePath (key, juce::PathStrokeType (1.0f));
+    // The owning KeyboardView paints a rounded-top panel behind this component;
+    // clip the stock keys to that same rounded shape so the square key corners
+    // don't paint over the panel's rounded top corners. The strip then reads as
+    // an integrated rounded card (matching the GroupComponent cards) instead of
+    // a keyboard abutting the content. Cosmetic only — hit-testing uses the
+    // integer getKeyPosition geometry.
+    void paint (juce::Graphics& g) override
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        const auto b = getLocalBounds().toFloat();
+        juce::Path clip;
+        clip.addRoundedRectangle (b.getX(), b.getY(), b.getWidth(), b.getHeight(),
+                                  kPanelCorner, kPanelCorner, true, true, false, false);
+        g.reduceClipRegion (clip);
+        juce::MidiKeyboardComponent::paint (g);
     }
 
     KeyboardView& owner;
@@ -349,11 +313,23 @@ void KeyboardView::lookAndFeelChanged()
 
 void KeyboardView::paint (juce::Graphics& g)
 {
+    // Rounded-TOP panel (flush bottom): the strip reads as an integrated bottom
+    // bar matching the GroupComponent cards (containerFill + 7px top corner).
+    // The bottom is square — flush with the editor edge. The inner KeyComp's
+    // own background is transparent (whiteNoteColourId set transparent in
+    // applyThemeColours, which also flips it non-opaque), so this panel shows
+    // through between/around the keys; the KeyComp's paint() clips the keys to
+    // this same rounded shape so square key corners never cover it.
     const ParvatiTheme* t = nullptr;
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         t = lnf->getTheme();
 
-    g.fillAll (t != nullptr ? t->backgroundPanel : juce::Colour (0xff24242e));
+    const auto bounds = getLocalBounds().toFloat();
+    juce::Path panel;
+    panel.addRoundedRectangle (bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(),
+                               kPanelCorner, kPanelCorner, true, true, false, false);
+    g.setColour (t != nullptr ? t->containerFill : juce::Colour (0xff24242e));
+    g.fillPath (panel);
 }
 
 void KeyboardView::resized()
@@ -389,30 +365,34 @@ void KeyboardView::applyThemeColours()
 
     if (t != nullptr)
     {
-        // The keyboard is drawn with smooth vector fills (see KeyComp's
-        // drawWhiteNote/drawBlackNote): the component background is the screen
-        // base, naturals are clean accent fills, and sharps are dark recessed
-        // fills. The override reads the theme directly for the key colours;
-        // these IDs drive the base fill plus the state/label overlays the
-        // override still consults.
-        white  = t->backgroundPanel;            // screen base (between-key seam fill)
-        black  = t->backgroundBase;           // sharp base (override reads theme directly)
-        down   = t->accentSecondary;                    // pressed-key overlay
-        over   = t->accentSecondary.withAlpha (0.45f);  // hover overlay
-        line   = t->outline;                    // keyboard bottom edge (drawKeyboardBackground)
-        text   = t->keyWhite.contrasting();     // C-label text (contrasts with the white naturals)
-        shadow = juce::Colour (0x00000000);     // flat LCD surface — no top shadow gradient
+        // The keys are drawn by the custom drawWhiteNote/drawBlackNote, which
+        // read the theme directly for every key colour. So the only
+        // MidiKeyboardComponent colour ID that MATTERS here is whiteNoteColourId:
+        // the final drawKeyboardBackground fillAll()s it, so it MUST be
+        // transparent for the owning KeyboardView's rounded panel (see
+        // KeyboardView::paint) to show through between/around the keys. A side
+        // effect of setting it transparent is colourChanged() calls
+        // setOpaque(false) on the KeyComp — exactly what lets that rounded panel
+        // show through. The remaining IDs are vestigial (the override ignores
+        // them) but set to coherent theme values for correctness.
+        white  = juce::Colour (0x00000000);              // transparent bg (panel shows through)
+        black  = t->backgroundBase;                      // sharp base (vestigial)
+        down   = t->accentPrimary;                       // vestigial (override handles press)
+        over   = t->accentSecondary.withAlpha (0.30f);   // vestigial (override handles hover)
+        line   = t->outline;                             // vestigial (override draws the seam)
+        text   = t->textSecondary;                       // vestigial (override uses fill.contrasting())
+        shadow = juce::Colour (0x00000000);              // no top shadow gradient
     }
     else
     {
         // Carbon-derived fallback (shown only before the editor's
         // ParvatiLookAndFeel is inherited).
-        white  = juce::Colour (0xff24242e);   // panelBackground (LCD screen base)
-        black  = juce::Colour (0xff141419);   // windowBackground
-        down   = juce::Colour (0xff5b8db8);   // accent2 (steel)
-        over   = juce::Colour (0xff5b8db8).withAlpha (0.45f);
-        line   = juce::Colour (0xff3c3c4a);   // outline (bottom edge)
-        text   = juce::Colour (0xff141419);
+        white  = juce::Colour (0x00000000);              // transparent bg
+        black  = juce::Colour (0xff141419);              // windowBackground
+        down   = juce::Colour (0xff38BDF8);              // accent (cyan)
+        over   = juce::Colour (0xff5b8db8).withAlpha (0.30f);
+        line   = juce::Colour (0xff3c3c4a);              // outline
+        text   = juce::Colour (0xff9a9aa8);
         shadow = juce::Colour (0x00000000);
     }
 

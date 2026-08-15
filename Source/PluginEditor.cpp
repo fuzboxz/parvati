@@ -2644,7 +2644,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // visibility toggles here). See resized() for the overlay placement + z-order.
     kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
     kbdToggleButton_.setClickingTogglesState (true);
-    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the dense no-scrollbar workspace fits 1280x620 without reserving the 104px keyboard strip (toggle [KBD] to float it on top)
+    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the dense no-scrollbar workspace fits 1280x620 without reserving the 76px keyboard strip (toggle [KBD] to float it on top)
     kbdToggleButton_.onClick = [this] {
         const bool on = kbdToggleButton_.getToggleState();
         if (keyboardView_ != nullptr) keyboardView_->setVisible (on);

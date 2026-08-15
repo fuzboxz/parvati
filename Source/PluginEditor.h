@@ -701,7 +701,7 @@ public:
     static constexpr int kHeaderH     = 44;   // header height (unified)
 private:
     static constexpr int kPageTabsH   = 28;  // top-level [SYNTH | GLOBAL] page-selector strip
-    static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip
+    static constexpr int kKeyboardH   = 76;   // bottom virtual-keyboard strip (flat, panel-integrated)
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
     static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
 
