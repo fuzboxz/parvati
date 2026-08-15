@@ -42,6 +42,16 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
     CHAIN mode and forward overflow on the same channel/key zone), and
     **As-Is** (legacy bitmasks, slots ignored). Pure solver in
     `Source/MulExport.*`; `.parvati` exports never degrade.
+  - **Byte-exact hardware files (found + fixed by the new byte-level
+    test):** the .PRO/.MUL name chunk now ends with the firmware's
+    NUL terminator at byte 15 (string + space pad + NUL, verified
+    against three reference hardware files). Re-written exports are
+    now byte-for-byte identical to real Ambika files. New
+    `export_bytes_test` memcmps full files against hardware
+    references, walks the raw RIFF chunk layout (tags/sizes/type
+    prefixes/interleaving), and verifies the export strategies at the
+    raw-byte level (only MultiData[i*4+3] + folded PartData[15]
+    change; patches/routing stay untouched).
 
 ### Fixed
 - **iOS Info.plist plumbing (T1/T2/T5/T16 of the iPadOS audit — see

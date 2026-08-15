@@ -148,6 +148,13 @@ bool writeAmbikaProgramFile (const juce::File& file, const AmbikaProgram& prog)
         const size_t len = std::min<size_t> (16, prog.name.getNumBytesAsUTF8());
         if (len > 0)
             std::memcpy (name16, raw, len);
+        // Hardware-exact terminator: the firmware writes its 16-byte name
+        // buffer verbatim, and every reference file shows string + space pad +
+        // NUL at the LAST byte (name[15]) — verified across 000.PRO "Junon",
+        // 001.PRO "Moof?" and 000.MUL "TekDrums". A 16-char name leaves no
+        // room for the NUL (matches C semantics on hardware).
+        if (len < 16)
+            name16[15] = '\0';
         b.insert (b.end(), name16, name16 + 16);
     }
 
@@ -288,6 +295,13 @@ bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi)
         const size_t len = std::min<size_t> (16, multi.name.getNumBytesAsUTF8());
         if (len > 0)
             std::memcpy (name16, raw, len);
+        // Hardware-exact terminator: the firmware writes its 16-byte name
+        // buffer verbatim, and every reference file shows string + space pad +
+        // NUL at the LAST byte (name[15]) — verified across 000.PRO "Junon",
+        // 001.PRO "Moof?" and 000.MUL "TekDrums". A 16-char name leaves no
+        // room for the NUL (matches C semantics on hardware).
+        if (len < 16)
+            name16[15] = '\0';
         b.insert (b.end(), name16, name16 + 16);
     }
 
