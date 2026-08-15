@@ -15,6 +15,7 @@
 #include "ui/CentralModBar.h"      // kBarHeight / kPillH / kPillGap
 #include "ui/ModMatrixView.h"      // kRowHeight
 #include "ui/FxMatrixView.h"       // kRowHeight
+#include "ui/FxSlotCard.h"         // kPowerHitSize (FX power-toggle hit area)
 
 namespace
 {
@@ -36,6 +37,7 @@ static_assert (CentralModBar::kPillH     == 72, "pill height must be 72 (~1.5x b
 static_assert (CentralModBar::kPillGap   == 8,  "pill gap must be 8 (HIG spacing)");
 static_assert (ModMatrixView::kRowHeight == 48, "mod-matrix row height must be 48");
 static_assert (FxMatrixView::kRowHeight  == 48, "FX-matrix row height must be 48");
+static_assert (FxSlotCard::kPowerHitSize == 44, "FX power-toggle hit area must be 44 (HIG)");
 
 int main()
 {
@@ -49,6 +51,7 @@ int main()
     check (CentralModBar::kPillGap    == 8,  "pill gap == 8");
     check (ModMatrixView::kRowHeight  == 48, "mod-matrix row == 48");
     check (FxMatrixView::kRowHeight   == 48, "FX-matrix row == 48");
+    check (FxSlotCard::kPowerHitSize  == 44, "FX power-toggle hit == 44");
 
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "HIG SIZING TEST: FAILURES" : "HIG SIZING TEST: ALL CHECKS PASSED",

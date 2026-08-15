@@ -7,7 +7,10 @@
 //
 //   HEADER  (~16px):  FX N (upper-left, bold uppercase 14px — synth GroupComponent
 //       header parity) + a compact power/bypass toggle in the TOP-RIGHT corner.
-//       The Enable/Bypass control is a POWER toggle button (the IEC glyph), NOT a
+//       The toggle's HIT area is the full 44x44 card corner (kPowerHitSize, the
+//       HIG touch minimum) while its glyph stays pinned to the small header spot,
+//       so the look is unchanged and only the tappable region grows. The
+//       Enable/Bypass control is a POWER toggle button (the IEC glyph), NOT a
 //       rotary knob: it reads accentSecondary (orange) when the slot is enabled
 //       and dimmed when bypassed.
 //   ROW 1  (~28px):  the fx{N}_type juce::ComboBox (the algorithm selector,
@@ -70,6 +73,13 @@ class FxSlotCard : public juce::Component,
                    private juce::AsyncUpdater
 {
 public:
+    // The power/bypass toggle's HIT area: a 44x44 card-corner band (the HIG
+    // touch minimum — the old 16px header strip left a ~10x12pt rect, reliably
+    // missed by a fingertip). The VISUAL glyph stays small + pinned to the
+    // header corner (PowerToggle::paintButton), so only the tappable region
+    // grows. Pinned by tests/ipad_hig_sizing_test.cpp.
+    static constexpr int kPowerHitSize = 44;
+
     /** Construct one FX-slot card.
         @param processor  the audio processor (APVTS access).
         @param themeManager  the editor theme manager.

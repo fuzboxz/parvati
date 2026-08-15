@@ -46,7 +46,20 @@ public:
 
         g.setColour (c);
 
-        const auto r = getLocalBounds().toFloat().reduced (3.0f);
+        // ---- Glyph pinning: the drawn power glyph is NOT scaled from the
+        // button bounds. The button's HIT area is a 44x44 card corner (HIG #1
+        // — see FxSlotCard::resized()), but the icon itself is pinned to a
+        // small fixed rect at the button's top-right corner — its original
+        // 10x12 header-band spot — so growing the tappable region leaves the
+        // desktop look byte-identical. (Clamped into bounds for degenerate
+        // button sizes, e.g. unplaced cards in tests.) ----
+        const auto b = getLocalBounds().toFloat();
+        const float bw = b.getWidth();
+        const float bh = b.getHeight();
+        const auto r = juce::Rectangle<float> (juce::jmax (0.0f, bw - 18.0f),
+                                              juce::jlimit (0.0f, juce::jmax (0.0f, bh - 12.0f), 8.0f),
+                                              juce::jmin (10.0f, bw),
+                                              juce::jmin (12.0f, bh));
         const auto c2 = r.getCentre();
         const float rad = juce::jmin (r.getWidth(), r.getHeight()) * 0.42f;
 
@@ -541,11 +554,22 @@ void FxSlotCard::resized()
     if (area.isEmpty())
         return;
 
-    // ---- Header row: title (upper-left, painted) + power toggle (top-right) ----
-    auto header = area.removeFromTop (kHeaderH);
+    // ---- Header row: title (upper-left, painted) + power toggle (top-right).
+    //      The toggle is the ONLY per-slot enable/bypass control, and the old
+    //      16px header strip left it a ~10x12pt hit rect — reliably missed by a
+    //      fingertip. Its HIT area is now the full 44x44 card corner (HIG #1);
+    //      paintButton pins the small glyph to its original header-corner spot
+    //      so the visual result is unchanged — only the tappable region grows.
+    //      The band laps over the top of the type row's right margin, so the
+    //      combo is re-fronted below: a wide, row-filling combo keeps its own
+    //      top-right corner taps, and the toggle keeps everything else. ----
+    // (The remaining header band is the title, painted in paint() — no child.)
+    area.removeFromTop (kHeaderH);
     if (powerToggle_ != nullptr)
-        powerToggle_->setBounds (header.removeFromRight (kHeaderH - 2).reduced (2));
-    // The remaining header band is the title (drawn in paint(), no child).
+    {
+        const int hit = juce::jmin (kPowerHitSize, getWidth(), getHeight());
+        powerToggle_->setBounds (getLocalBounds().removeFromTop (hit).removeFromRight (hit));
+    }
 
     if (area.isEmpty())
         return;
@@ -567,6 +591,10 @@ void FxSlotCard::resized()
         // the 44pt row. (The prev/next chevrons are not placed.)
         const int comboX = typeRow.getX() + (typeRow.getWidth() - comboW) / 2;
         typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
+        // Keep the combo ABOVE the power toggle's 44x44 corner hit band (see
+        // the header comment above): hit-testing walks siblings front-first,
+        // so the combo wins wherever the two overlap.
+        typeCombo_->toFront (false);
         area.removeFromTop (kHalfGap);
     }
 

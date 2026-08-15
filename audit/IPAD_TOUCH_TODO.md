@@ -30,7 +30,7 @@ Check items off (`[x]`) as they are implemented and verified.
   PRE_BUILD …)` patching `CMakeFiles/Parvati_Standalone.dir/Info.plist` (the actual
   INFOPLIST_FILE); same mechanism patches the AUv3 plist (T1).
 
-- [ ] **T3. FX-slot power/bypass toggle hit area ~10×12pt.**
+- [x] **T3. FX-slot power/bypass toggle hit area ~10×12pt.**
   `FxSlotCard.cpp:547`: `powerToggle_->setBounds (header.removeFromRight (kHeaderH - 2).reduced (2))`
   with `kHeaderH = 16`. Only enable/bypass control per FX slot; reliably untappable.
   → Grow the hit area to 44×44 (invisible transparent button shell painting the small
