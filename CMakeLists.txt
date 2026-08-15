@@ -28,6 +28,47 @@ else()
     set(PARVATI_PLUGIN_FORMATS Standalone VST3 AU)
 endif()
 
+# iOS-only Info.plist keys passed NATIVELY through juce_add_plugin (see the
+# call below). juceaide generates the plist with these keys at CONFIGURE time
+# inside juce_add_plugin itself, so they flow into every downstream copy
+# (the CMake generate-time CMakeFiles/<target>.dir/Info.plist, the built app,
+# and xcodebuild archives) with no custom patch step and no configure/build
+# ordering hazard. Desktop configure gets an EMPTY list so the desktop
+# plists/builds stay byte-identical. Keys with no juce_add_plugin seam
+# (LSSupportsOpeningDocumentsInPlace, the AUv3 CFBundleIdentifier) are still
+# patched below — see the PlistBuddy block in the PARVATI_IOS section.
+#   TARGETED_DEVICE_FAMILY 2        -> iPad-only: the UI's 1024pt width floor
+#                                      cannot fit iPhone AUv3 panes (~330-560pt);
+#                                      revisit when a compact layout exists.
+#   IPHONE/IPAD_SCREEN_ORIENTATIONS -> landscape-only on BOTH device families:
+#                                      the UI has no portrait layout, and the
+#                                      plist arrays must match the runtime
+#                                      Desktop::setOrientationsEnabled lock.
+#   REQUIRES_FULL_SCREEN TRUE       -> ITMS-90474: an iPad app that opts into
+#                                      Slide Over/Split View (the plist default
+#                                      UIRequiresFullScreen=false) MUST support
+#                                      all four orientations. Landscape-only
+#                                      therefore REQUIRES full screen — which
+#                                      also disables Split View, as intended
+#                                      for a performance instrument.
+#   BACKGROUND_AUDIO_ENABLED TRUE   -> UIBackgroundModes:audio, keep playing
+#                                      when backgrounded.
+#   FILE_SHARING_ENABLED TRUE       -> UIFileSharingEnabled, the app's Documents
+#                                      folder is browsable in the Files app.
+if(PARVATI_IOS)
+    set(PARVATI_IOS_PLIST_ARGS
+        TARGETED_DEVICE_FAMILY 2
+        IPHONE_SCREEN_ORIENTATIONS
+            UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        IPAD_SCREEN_ORIENTATIONS
+            UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        REQUIRES_FULL_SCREEN TRUE
+        BACKGROUND_AUDIO_ENABLED TRUE
+        FILE_SHARING_ENABLED TRUE)
+else()
+    set(PARVATI_IOS_PLIST_ARGS "")
+endif()
+
 # Use ccache when available so reconfigures / rebuilds reuse compiled objects
 # instead of recompiling the ~1161 memory-heavy JUCE + DSP translation units
 # every time. (A clean build fan-out is what thrashes a 16 GB machine; ccache
@@ -148,6 +189,9 @@ juce_add_plugin(Parvati
     IS_MIDI_EFFECT          FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
+    # Native iOS plist keys (empty on desktop) — see the PARVATI_IOS_PLIST_ARGS
+    # block above for the rationale of each key.
+    ${PARVATI_IOS_PLIST_ARGS}
 )
 
 # NOTE: Source/ is globbed (CONFIGURE_DEPENDS) so new DSP files added by
@@ -185,7 +229,10 @@ endif()
 # iOS toolchain + signing (M1). Sets the iOS deployment target, distinct bundle
 # identifiers for the Standalone app and the AUv3 app-extension, App-Group
 # entitlements (so both share one presets/state container — see
-# Source/ui/SharedContainer.cpp), device family, and an Automatic signing style.
+# Source/ui/SharedContainer.cpp), and an Automatic signing style. (The device
+# family and app-level plist keys are set natively via PARVATI_IOS_PLIST_ARGS in
+# the juce_add_plugin call; this block only patches the two keys with no native
+# seam.)
 #
 # The iOS Simulator SDK (iphonesimulator) does NOT require a signing identity or
 # a provisioning profile, so it builds with PARVATI_IOS_DEVELOPMENT_TEAM empty.
@@ -205,26 +252,13 @@ if(PARVATI_IOS)
     # Standalone app bundle: com.805labs.parvati
     set_target_properties(Parvati_Standalone PROPERTIES
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
         XCODE_ATTRIBUTE_ENABLE_BITCODE NO
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati.entitlements")
-    # Standalone-app Info.plist keys (app-level; the AUv3 extension needs none):
-    #   UIBackgroundModes:audio                          -> keep rendering/playing
-    #                                                     when backgrounded (P2-2).
-    #   UIFileSharingEnabled + LSSupportsOpening-         -> the app's Documents
-    #     DocumentsInPlace                                 folder is browsable in the
-    #                                                     Files app, so saved .PRO /
-    #                                                     .parvati patches are
-    #                                                     reachable by the user
-    #                                                     (P1-6 visibility half).
-    set_target_properties(Parvati_Standalone PROPERTIES
-        JUCE_XCODE_EXTRA_PLIST_ENTRIES "")
     # AUv3 app-extension bundle: com.805labs.parvati.AUv3 (child of the app id,
     # as iOS App-Store validation requires).
     set_target_properties(Parvati_AUv3 PROPERTIES
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati.AUv3"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
         XCODE_ATTRIBUTE_ENABLE_BITCODE NO
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati-auv3.entitlements")
@@ -234,48 +268,82 @@ if(PARVATI_IOS)
             XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${PARVATI_IOS_DEVELOPMENT_TEAM}")
     endif()
 
-    # App-level Info.plist keys juce_add_plugin doesn't expose cleanly (the
-    # JUCE_XCODE_EXTRA_PLIST_ENTRIES merger drops array values + later keys), so
-    # patch the juceaide-generated Standalone plist at configure time with
-    # PlistBuddy. Idempotent: juceaide regenerates the plist each configure, so
-    # Add finds it key-less; ERROR_QUIET guards a stale re-run. App-level only.
-    #   UIBackgroundModes:audio                       -> keep playing when
-    #                                                   backgrounded (P2-2).
-    #   UIFileSharingEnabled + LSSupportsOpening-      -> the app's Documents
-    #     DocumentsInPlace                               folder browsable in the
-    #                                                   Files app (P1-6).
-    set(_parvati_ios_plist "${CMAKE_BINARY_DIR}/Parvati_artefacts/JuceLibraryCode/Parvati_Standalone/Info.plist")
-    if(EXISTS "${_parvati_ios_plist}")
-        execute_process(
-            COMMAND /usr/libexec/PlistBuddy
-                -c "Add :UIBackgroundModes array"
-                -c "Add :UIBackgroundModes:0 string audio"
-                -c "Add :UIFileSharingEnabled bool true"
-                -c "Add :LSSupportsOpeningDocumentsInPlace bool true"
-                "${_parvati_ios_plist}"
-            RESULT_VARIABLE _parvati_ios_plist_rc ERROR_QUIET OUTPUT_QUIET)
+    # ----------------------------------------------------------------------------
+    # Info.plist patching — ONLY the keys with no juce_add_plugin seam.
+    # Everything else (device family, orientations, UIRequiresFullScreen,
+    # background audio, file sharing) is generated NATIVELY by juceaide from the
+    # PARVATI_IOS_PLIST_ARGS keyword arguments (see the top of this file), so it
+    # cannot be dropped by a configure/build ordering mishap. Two keys remain:
+    #
+    #   1. LSSupportsOpeningDocumentsInPlace (Standalone) — pairs with
+    #      UIFileSharingEnabled: lets the Files app open saved patches in place
+    #      rather than copying them out. No juce_add_plugin argument exists.
+    #
+    #   2. AUv3 CFBundleIdentifier — juceaide hard-codes the extension id as
+    #      "<app-id>.<last-component>AUv3" (com.805labs.parvati.parvatiAUv3),
+    #      which DISAGREES with this project's PRODUCT_BUNDLE_IDENTIFIER and
+    #      entitlements application-identifier (both …parvati.AUv3). The plist
+    #      literal wins in the built .appex, so automatic signing / App-Store
+    #      validation would fail on a device/.ipa build with an
+    #      application-identifier mismatch. Rewrite it to the intended id.
+    #
+    # Both plists are patched at their SOURCE — the juceaide-generated
+    # Parvati_artefacts/JuceLibraryCode/<target>/Info.plist — which juce_add_plugin
+    # has already produced during THIS configure (it runs juceaide via
+    # execute_process while evaluating the call), so the file provably exists
+    # here. CMake then copies it to CMakeFiles/<target>.dir/Info.plist (the real
+    # INFOPLIST_FILE) at generate time, AFTER all configure code has run, so the
+    # patched content reaches the built bundle. juceaide regenerates the plist
+    # fresh on every configure, so Delete/Add is idempotent across re-runs; a
+    # final Print + hard FATAL_ERROR replaces the old silent ERROR_QUIET skip —
+    # a missing key must FAIL the configure, not silently ship without it.
+    set(_parvati_standalone_plist
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/JuceLibraryCode/Parvati_Standalone/Info.plist")
+    set(_parvati_auv3_plist
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/JuceLibraryCode/Parvati_AUv3/Info.plist")
+    foreach(_plist IN LISTS _parvati_standalone_plist _parvati_auv3_plist)
+        if(NOT EXISTS "${_plist}")
+            message(FATAL_ERROR
+                "juceaide did not generate '${_plist}' during this configure — "
+                "the Parvati plist patch step must move after juce_add_plugin.")
+        endif()
+    endforeach()
+
+    # Standalone: LSSupportsOpeningDocumentsInPlace (see rationale above).
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy
+            -c "Delete :LSSupportsOpeningDocumentsInPlace"
+            -c "Add :LSSupportsOpeningDocumentsInPlace bool true"
+            "${_parvati_standalone_plist}"
+        RESULT_VARIABLE _parvati_lssupports_rc ERROR_QUIET OUTPUT_QUIET)
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy -c "Print :LSSupportsOpeningDocumentsInPlace" "${_parvati_standalone_plist}"
+        OUTPUT_VARIABLE _parvati_lssupports_val OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(NOT _parvati_lssupports_val STREQUAL "true")
+        message(FATAL_ERROR
+            "Failed to patch LSSupportsOpeningDocumentsInPlace into "
+            "'${_parvati_standalone_plist}' (PlistBuddy rc=${_parvati_lssupports_rc}, "
+            "value='${_parvati_lssupports_val}').")
     endif()
 
-    # Lock orientation to landscape-only (the UI has no portrait layout). JUCE's
-    # default plist lists Portrait+Landscape; replace BOTH the iPhone and iPad
-    # orientation arrays with the two landscape values so the launch orientation
-    # and App Store metadata match the runtime Desktop::setOrientationsEnabled
-    # lock. Idempotent: juceaide regenerates the plist each configure, so Delete
-    # finds the JUCE-default array present and re-Adds landscape-only; ERROR_QUIET
-    # guards the ~ipad Delete on a plist that lacks that key.
-    if(EXISTS "${_parvati_ios_plist}")
-        execute_process(
-            COMMAND /usr/libexec/PlistBuddy
-                -c "Delete :UISupportedInterfaceOrientations"
-                -c "Add :UISupportedInterfaceOrientations array"
-                -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationLandscapeLeft"
-                -c "Add :UISupportedInterfaceOrientations:1 string UIInterfaceOrientationLandscapeRight"
-                -c "Delete :UISupportedInterfaceOrientations~ipad"
-                -c "Add :UISupportedInterfaceOrientations~ipad array"
-                -c "Add :UISupportedInterfaceOrientations~ipad:0 string UIInterfaceOrientationLandscapeLeft"
-                -c "Add :UISupportedInterfaceOrientations~ipad:1 string UIInterfaceOrientationLandscapeRight"
-                "${_parvati_ios_plist}"
-            RESULT_VARIABLE _parvati_ios_orient_rc ERROR_QUIET OUTPUT_QUIET)
+    # AUv3: rewrite the juceaide-hard-coded CFBundleIdentifier to the intended
+    # com.805labs.parvati.AUv3 so it matches PRODUCT_BUNDLE_IDENTIFIER and the
+    # entitlements application-identifier (see rationale above). Set (not Add)
+    # overwrites the always-present juceaide value.
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy
+            -c "Set :CFBundleIdentifier com.805labs.parvati.AUv3"
+            "${_parvati_auv3_plist}"
+        RESULT_VARIABLE _parvati_auv3_id_rc ERROR_QUIET OUTPUT_QUIET)
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${_parvati_auv3_plist}"
+        OUTPUT_VARIABLE _parvati_auv3_id_val OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(NOT _parvati_auv3_id_val STREQUAL "com.805labs.parvati.AUv3")
+        message(FATAL_ERROR
+            "Failed to set the AUv3 CFBundleIdentifier to com.805labs.parvati.AUv3 "
+            "(PlistBuddy rc=${_parvati_auv3_id_rc}, value='${_parvati_auv3_id_val}').")
     endif()
 
     # SharedContainer.mm is the Obj-C++ resolver for the App-Group container

@@ -5,6 +5,29 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **iOS Info.plist plumbing (T1/T2/T5/T16 of the iPadOS audit — see
+  audit/IPAD_TOUCH_TODO.md).**
+  - The AUv3 app-extension shipped with a `CFBundleIdentifier` of
+    `com.805labs.parvati.parvatiAUv3` (juceaide hard-codes
+    `<app-id>.<last-component>AUv3`) while `PRODUCT_BUNDLE_IDENTIFIER` and
+    the entitlements `application-identifier` both said `com.805labs.parvati.AUv3`
+    — a code-sign/App-Store validation failure waiting for the first
+    real-device/.ipa build. The plist literal now agrees with both
+    (PlistBuddy `Set` on the juceaide-generated source plist).
+  - The Standalone plist was patched at configure time behind a silent
+    `if(EXISTS …)` + `ERROR_QUIET` guard that could no-op and drop keys.
+    Nearly all app-level keys (device family, orientation arrays,
+    `UIRequiresFullScreen`, background audio, file sharing) are now passed
+    NATIVELY via `juce_add_plugin` keyword arguments, so juceaide generates
+    them into the plist at configure time with no custom patch step at all;
+    the one remaining patched key (`LSSupportsOpeningDocumentsInPlace`)
+    fails the configure loudly instead of silently skipping.
+  - Added `UIRequiresFullScreen true` — fixes the ITMS-90474 App-Store
+    rejection (landscape-only orientations + Slide Over opt-in are
+    incompatible) and disables Split View, as intended for the layout.
+  - `TARGETED_DEVICE_FAMILY` is now iPad-only (`2`): the 1024pt editor width
+    floor cannot fit iPhone AUv3 panes; revisit when a compact layout exists.
+  - Deleted the dead `JUCE_XCODE_EXTRA_PLIST_ENTRIES ""` no-op.
 - **FV-1 FX family: denormal (subnormal) flush in the RateBridge BW-limit
   biquads.** The 4th-order Butterworth input/output filters shared by all
   five FV-1 effects (Clocked Delay / Ensemble / Plate Reverb / Vinyl
