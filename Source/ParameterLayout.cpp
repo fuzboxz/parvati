@@ -97,9 +97,12 @@ juce::StringArray makeModifierOps()
 }
 
 // FxType choice list (FxType::None..RingModulator). Matches the enum order.
+// Display-only: the stored value is the choice INDEX (APVTS flushToTree
+// serializes the denormalized float, never the text), so renaming a label —
+// e.g. "Reverb" -> "CVerb" — never breaks saved sessions/presets.
 juce::StringArray makeFxTypes()
 {
-    return { "None", "Diffuser", "Pitch Shifter", "Reverb",
+    return { "None", "Diffuser", "Pitch Shifter", "CVerb",
              "Looping Delay", "WSOLA Stretch", "Spectral",
              "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator",
              "Clocked Delay", "Ensemble", "Plate Reverb",

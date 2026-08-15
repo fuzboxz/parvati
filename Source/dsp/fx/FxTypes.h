@@ -34,7 +34,7 @@ enum class FxType : uint8_t {
     VinylCompressor = 14, Phaser = 15,
     Count
 };
-// choice list string: { "None", "Diffuser", "Pitch Shifter", "Reverb",
+// choice list string: { "None", "Diffuser", "Pitch Shifter", "CVerb",
 //                       "Looping Delay", "WSOLA Stretch", "Spectral",
 //                       "Wavefolder", "Frequency Shifter", "Ring Modulator",
 //                       "Resonator",
