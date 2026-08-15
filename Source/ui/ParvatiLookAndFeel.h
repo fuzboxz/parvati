@@ -22,7 +22,7 @@
 // Custom colour ID set per-tab-button on the nested card tabs (ENV/LFO/ARP/SEQ,
 // MOD MATRIX/MODIFIERS) and the GroupPager sub-tabs (ENV1/2/3, LFO1/2/3…).
 // drawTabButton reads it to colour each tab by its FUNCTION CATEGORY
-// (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD*=amber) instead of one
+// (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD=purple family) instead of one
 // shared accent — a single TabbedButtonBar holds several categories, so the
 // colour must travel with the individual TabBarButton. A JUCE colour ID in the
 // user range (well above the stock IDs).

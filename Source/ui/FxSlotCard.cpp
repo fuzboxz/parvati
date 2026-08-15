@@ -34,7 +34,7 @@ public:
         if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
             t = lnf->getTheme();
 
-        const juce::Colour accent = t ? t->accentSecondary : juce::Colour (0xffe8b84b);
+        const juce::Colour accent = t ? t->accentSecondary : parvati::parvatiFallbackAccent;
         const juce::Colour text   = t ? t->textPrimary     : juce::Colour (0xffe8e8ee);
         const juce::Colour dim    = t ? t->textDisabled    : text.withAlpha (0.35f);
 
@@ -104,7 +104,7 @@ public:
             t = lnf->getTheme();
         const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
         const juce::Colour dim    = t ? t->textDisabled   : text.withAlpha (0.45f);
-        const juce::Colour accent = t ? t->accentPrimary : juce::Colour (0xffe8b84b);
+        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
 
         juce::Colour c = dim;
         if (isButtonDown)           c = accent;
@@ -650,7 +650,7 @@ void FxSlotCard::paint (juce::Graphics& g)
 
     const juce::Colour panel   = t ? t->containerFill   : juce::Colour (0xff202028);
     const juce::Colour title   = t ? t->textSecondary   : juce::Colour (0xffb0b0bc);
-    const juce::Colour accent  = t ? t->accentSecondary : juce::Colour (0xffe8b84b);
+    const juce::Colour accent  = t ? t->accentSecondary : parvati::parvatiFallbackAccent;
 
     const auto r = getLocalBounds ().toFloat ();
 

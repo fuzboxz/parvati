@@ -23,7 +23,7 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
     setColour (juce::Slider::textBoxHighlightColourId,         t.accentSecondary);
 
-    // ---- ComboBox (dark container, 1px outline, amber chevron) ----
+    // ---- ComboBox (dark container, 1px outline, accent chevron) ----
     setColour (juce::ComboBox::backgroundColourId,             t.backgroundInput);
     setColour (juce::ComboBox::outlineColourId,                juce::Colour (0x00000000));   // borderless (drawComboBox draws no outline)
     // ComboBox text is always LIGHT: drawComboBox fills every dropdown with a
@@ -308,7 +308,7 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     // edge is outlined — NOT a per-tab vertical outline — so adjacent tabs read
     // as one contiguous segmented control instead of discrete buttons:
     //   - active (front): SOLID highlight background (tabSelectedBg tinted toward
-    //     accent for a clear on-brand gold segment) + bright text + the prominent
+    //     accent for a clear on-brand accent segment) + bright text + the prominent
     //     full-width tabUnderline.
     //   - unselected: subtle panelBackground fill + dim text (textDim); lifted on
     //     hover for affordance.
@@ -333,7 +333,7 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     // ID, and no category token is opaque-black, so the comparison is a safe
     // unset-detect. The category hue drives the active highlight + underline and
     // a dimmed underline on inactive tabs so every tab reads as its function
-    // (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD*=amber).
+    // (ENV=cyan, LFO=magenta, ARP=purple, SEQ=green, MOD=purple family).
     //
     // Robustness: juce::TabbedButtonBar can (re)create tab buttons (on resize /
     // add / setCurrentTabIndex), and the headless screen tool switches tabs
@@ -510,7 +510,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     // dial into the concentric modulation arcs or clip outside the slider. The
     // value is therefore kept centred but refined (smaller, cleaner). Disabled
     // knobs (sequencer steps past the active length) draw only the track arc.
-    const auto fill    = slider.findColour (juce::Slider::rotarySliderFillColourId);      // accent arc (amber / category)
+    const auto fill    = slider.findColour (juce::Slider::rotarySliderFillColourId);      // accent arc (brand / category)
     const auto valueCol = slider.findColour (juce::Slider::textBoxTextColourId);
     const auto trackCol = slider.findColour (juce::Slider::rotarySliderOutlineColourId);  // solid dark-gray track (knobTrack)
 
@@ -890,7 +890,7 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
 
 void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
-    // Inline text: left-padded, stopping before the right-aligned amber chevron
+    // Inline text: left-padded, stopping before the right-aligned accent chevron
     // (6px left pad + ~18px right reserve for the chevron = 24px chrome). Kept
     // tight so a fit-to-text dropdown reads as wide as its content, not padded.
     // When the combo carries the "parvatiComboVisualH" property (44pt tap band

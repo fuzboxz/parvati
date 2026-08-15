@@ -91,7 +91,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
 
     const auto panelBg = t ? t->backgroundPanel : juce::Colour (0xff24242e);
     const auto outline = t ? t->outline         : juce::Colour (0xff3c3c4a);
-    const auto accent  = t ? t->accentPrimary          : juce::Colour (0xffe8b84b);
+    const auto accent  = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
     const auto textDim = t ? t->textSecondary         : juce::Colour (0xff9a9aa8);
     // The waveform trace + its gradient fill adopt a category hue (cyan ENV /
     // magenta LFO) when set; otherwise the live theme accent. The neutral clean

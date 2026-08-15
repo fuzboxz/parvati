@@ -89,7 +89,7 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
         const juce::Colour fill = (t != nullptr) ? t->containerFill : juce::Colour (0xff202028);
         const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : juce::Colour (0xffe0e0e0);
-        const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : juce::Colour (0xffc8a44a);
+        const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : parvati::parvatiFallbackAccent;
         const juce::Font f = (lnf != nullptr) ? lnf->appFont (13.0f, juce::Font::plain)
                                               : juce::Font (juce::FontOptions (13.0f));
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, label_);
@@ -150,7 +150,7 @@ void WheelsComponent::paint (juce::Graphics& g)
 
     const juce::Colour bg    = (t != nullptr) ? t->backgroundBase : juce::Colour (0xff141419);
     const juce::Colour track = (t != nullptr) ? t->outline          : juce::Colour (0xff3a3a44);
-    const juce::Colour thumb = (t != nullptr) ? t->accentPrimary           : juce::Colour (0xffc8a44a);
+    const juce::Colour thumb = (t != nullptr) ? t->accentPrimary           : parvati::parvatiFallbackAccent;
 
     g.fillAll (bg);
 

@@ -3020,7 +3020,7 @@ void ParvatiEditor::timerCallback()
             auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
             const ParvatiTheme* th = lnf ? lnf->getTheme() : nullptr;
             const juce::Colour ok     = th ? th->textSecondary : juce::Colour (0xff9a9aa8);
-            const juce::Colour warn   = th ? th->accentPrimary  : juce::Colour (0xffe0b341);
+            const juce::Colour warn   = th ? th->accentPrimary  : parvati::parvatiFallbackAccent;
             const juce::Colour danger = juce::Colour (0xffe0584a);
             const juce::Colour c = (over > 0 || peak >= 0.90) ? danger
                                   : peak >= 0.70                ? warn

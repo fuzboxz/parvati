@@ -296,7 +296,7 @@ void OscPreviewDisplay::paint (juce::Graphics& g)
 
     const auto panelBg = t ? t->backgroundPanel : juce::Colour (0xff24242e);
     const auto outline = t ? t->outline         : juce::Colour (0xff3c3c4a);
-    const auto accent  = t ? t->accentPrimary          : juce::Colour (0xffe8b84b);
+    const auto accent  = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
     const auto trace   = hasCategoryColour_ ? categoryColour_ : accent;
     const auto gridCol = t ? t->divider.withAlpha (0.10f) : accent.withAlpha (0.06f);
 

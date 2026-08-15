@@ -30,7 +30,7 @@ public:
         if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
             t = lnf->getTheme();
         const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
-        const juce::Colour accent = t ? t->accentPrimary : juce::Colour (0xffe8b84b);
+        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
 
         juce::Colour c = text;
         if (! isEnabled())            c = text.withAlpha (0.30f);

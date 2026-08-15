@@ -75,6 +75,17 @@ struct ParvatiTheme
 };
 
 //==============================================================================
+namespace parvati
+{
+// NEUTRAL fallback accent for display components that paint before a theme is
+// reachable (nullptr theme): a cool steel blue matching Carbon's
+// accentSecondary. Deliberately NOT a warm hue — the old pre-theme gold
+// (0xffe8b84b-class literals) is gone so no indicator can render amber by
+// DEFAULT; amber now appears only where a THEME deliberately defines it.
+inline const juce::Colour parvatiFallbackAccent { 0xff5b8db8 };
+}   // namespace parvati
+
+//==============================================================================
 // Stable builtin list order: Carbon(0), Midnight(1), Obsidian(2), Paper(3),
 // Crimson(4), Legacy(5). Each factory returns a reference to a function-local static, so
 // the theme objects live for the whole program and are safe to hold pointers to.

@@ -132,7 +132,7 @@ void VoiceMeter::paint (juce::Graphics& g)
     const ParvatiTheme* t = currentTheme();
     const juce::Colour panel     = t ? t->backgroundPanel : juce::Colour (0xff24242e);
     const juce::Colour outlineC  = t ? t->outline         : juce::Colour (0xff3c3c4a);
-    const juce::Colour accent    = t ? t->accentPrimary          : juce::Colour (0xffe8b84b);
+    const juce::Colour accent    = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
     const juce::Colour textValue = t ? t->textPrimary       : juce::Colour (0xffe8e8ee);
 
     g.setColour (panel);

@@ -48,9 +48,9 @@ namespace
                      t->backgroundBase, t->keyWhite };
 
         // Carbon-derived fallback (only before the editor's L&F is inherited).
-        // keyWhite reuses Carbon's factory value so no new colour literal lives
-        // outside the theme factories.
-        return { juce::Colour (0xff3c3c4a), juce::Colour (0xffe8b84b), juce::Colour (0xff5b8db8),
+        // keyWhite and the accent reuse Carbon's factory values so no new colour
+        // literal lives outside the theme factories.
+        return { juce::Colour (0xff3c3c4a), carbonTheme().accentPrimary, juce::Colour (0xff5b8db8),
                  juce::Colour (0xff141419), carbonTheme().keyWhite };
     }
 
