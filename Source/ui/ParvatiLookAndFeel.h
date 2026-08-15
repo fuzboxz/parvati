@@ -32,6 +32,12 @@ constexpr int parvatiTabCategoryColourId = 0x2F000001;
 class ParvatiLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    // Popup-menu ROW height for every default-sized menu in the app (HIG
+    // minimum touch target). Pinned by tests/ipad_hig_sizing_test.cpp; the two
+    // menus that opt in explicitly (FxTypeCombo, the zoom overflow popup)
+    // reference the same constant via withStandardItemHeight.
+    static constexpr int kPopupRowHeight = 44;
+
     /** Defaults to the Carbon theme so theme_ is never null before setTheme(). */
     ParvatiLookAndFeel();
 
@@ -51,6 +57,20 @@ public:
     juce::Font getComboBoxFont   (juce::ComboBox&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getPopupMenuFont  () override;
+
+    // Popup-menu ROW height: every default-sized popup in the app gets 44pt
+    // rows (HIG minimum touch target) instead of JUCE's ~font*1.3 (~22pt at the
+    // 15pt popup font). Consulted ONLY when a menu's Options carry no explicit
+    // standardItemHeight — the two popups that already opt into
+    // withStandardItemHeight(44) (the FX type picker + the zoom overflow
+    // popup) stay byte-identical, and this override brings every other menu
+    // (PresetBrowser's nested Factory>Bank menus, Settings, ParamControl
+    // combos, PatchPage combos, right-click context menus) up to the same 44.
+    // The width keeps the V4 base's text-measured value, so menus stay exactly
+    // as wide as their content.
+    void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
+                                    int standardMenuItemHeight,
+                                    int& idealWidth, int& idealHeight) override;
     juce::Font getLabelFont      (juce::Label&) override;
     juce::Font getTabButtonFont  (juce::TabBarButton&, float height) override;
 

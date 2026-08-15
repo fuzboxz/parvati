@@ -58,7 +58,7 @@ Check items off (`[x]`) as they are implemented and verified.
   → Write user patch saves (Save .PRO / Save Parvati default dirs, `PluginEditor.cpp:3525,
   3555`) to `<app-sandbox>/Documents` (desktop behaviour unchanged; iOS only).
 
-- [ ] **T7. Sub-44pt combos and popup menu rows (systemic).**
+- [x] **T7. Sub-44pt combos and popup menu rows (systemic).**
   ParamControl combos 28pt (`PluginEditor.cpp:949`), PatchPage combos 24pt, SettingsPanel
   28pt; every `PopupMenu` except the FX type picker uses ~22pt default rows — including
   PresetBrowser's nested Factory▸Bank menu (core workflow).

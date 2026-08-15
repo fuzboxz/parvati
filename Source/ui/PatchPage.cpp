@@ -62,6 +62,14 @@ public:
         setupCaption (zoneHiCaption_);
         setupCaption (polyCaption_);
 
+        // HIG touch target: the DRAWN dropdown stays a compact 24pt strip
+        // while each combo's BOUNDS — its tap band — fill the column height
+        // (44pt after the 12pt caption band; see resized). The L&F reads this
+        // "parvatiComboVisualH" property (drawComboBox /
+        // positionComboBoxText), so the rows keep their exact look.
+        for (auto* c : { &cardsCombo_, &channelCombo_, &polyCombo_ })
+            c->getProperties().set ("parvatiComboVisualH", 24);
+
         // ---- Cards: count 0..6 (id = count + 1). Sum across rows capped at 6
         // (enforced by PatchPage::recomputeCardAllocation). ----
         for (int n = 0; n <= kMaxCards; ++n)
@@ -120,15 +128,17 @@ public:
 
         // Cards
         {
+            // 12pt caption band + the remaining 44pt of the 56pt row = a
+            // full-height HIG tap band around the compact 24pt visual box.
             auto col = b.removeFromLeft (92);
-            cardsCaption_.setBounds (col.removeFromTop (14));
-            cardsCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (24, col.getHeight())));
+            cardsCaption_.setBounds (col.removeFromTop (12));
+            cardsCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         // Ch
         {
             auto col = b.removeFromLeft (92);
-            chCaption_.setBounds (col.removeFromTop (14));
-            channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (24, col.getHeight())));
+            chCaption_.setBounds (col.removeFromTop (12));
+            channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         b.removeFromLeft (4);
         // Zone Low knob
@@ -147,8 +157,8 @@ public:
         // Poly (remaining width)
         {
             auto col = b;
-            polyCaption_.setBounds (col.removeFromTop (14));
-            polyCombo_.setBounds (col.withSizeKeepingCentre (juce::jmin (140, col.getWidth()), juce::jmin (24, col.getHeight())));
+            polyCaption_.setBounds (col.removeFromTop (12));
+            polyCombo_.setBounds (col.withSizeKeepingCentre (juce::jmin (140, col.getWidth()), juce::jmin (44, col.getHeight())));
         }
     }
 
@@ -339,6 +349,8 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
 
     buildArrangementCombo();
     arrangementCombo_.onChange = [this] { onArrangementChanged(); };
+    // HIG touch target: 26pt visual box inside a 44pt tap band (see resized).
+    arrangementCombo_.getProperties().set ("parvatiComboVisualH", 26);
     addAndMakeVisible (arrangementCombo_);
 
     cardsTotalLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
@@ -558,8 +570,13 @@ void PatchPage::resized()
     heading_.setBounds (area.removeFromTop (30));
     area.removeFromTop (6);
     {
+        // The top row is a 26pt band; the arrangement combo's TAP band is
+        // grown to 44pt centred on it (transparent padding into the gaps
+        // above/below — the 26pt visual box via "parvatiComboVisualH" — so no
+        // sibling moves and the page height is unchanged).
         auto topRow = area.removeFromTop (26);
-        arrangementCombo_.setBounds (topRow.removeFromLeft (220));
+        arrangementCombo_.setBounds (topRow.removeFromLeft (220)
+                                         .withSizeKeepingCentre (220, 44));
         topRow.removeFromLeft (12);
         cardsTotalLabel_.setBounds (topRow.removeFromLeft (170));
     }

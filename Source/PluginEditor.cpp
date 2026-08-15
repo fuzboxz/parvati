@@ -301,6 +301,12 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     {
         comboBox_ = std::make_unique<juce::ComboBox> (d.paramID);
         comboBox_->addItemList (*d.choices, 1);
+        // HIG touch target: the combo's BOUNDS are laid out 44pt tall (see
+        // resized) but the DRAWN dropdown stays a compact 28pt strip centred
+        // inside them — the L&F reads this "parvatiComboVisualH" property
+        // (drawComboBox / positionComboBoxText), so the tap band is full-size
+        // while the desktop look is pixel-identical.
+        comboBox_->getProperties().set ("parvatiComboVisualH", 28);
         addAndMakeVisible (*comboBox_);
         comboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             processor.getApvts(), d.paramID, *comboBox_);
@@ -941,12 +947,17 @@ void ParamControl::resized()
     }
     else if (comboBox_)
     {
-        // Dropdown: 28px tall, width fit-to-text (longest choice + 26px chrome:
-        // 6px left pad + amber chevron + slack). There is NO fixed width cap —
-        // each dropdown is exactly as wide as its longest option (narrow lists
-        // get narrow dropdowns) — but it never exceeds the cell width so dense
-        // rows (Mod / Modifier) stay compact. Centred in the cell.
-        const int comboH = juce::jmin (28, b.getHeight());
+        // Dropdown: the TAP band is 44pt tall (HIG touch minimum, clamped to
+        // the cell), while the DRAWN dropdown stays a compact 28pt strip
+        // centred inside it via the "parvatiComboVisualH" property set in the
+        // constructor — so dense rows keep their exact look yet a finger gets
+        // a full-size target. Width stays fit-to-text (longest choice + 26px
+        // chrome: 6px left pad + amber chevron + slack). There is NO fixed
+        // width cap — each dropdown is exactly as wide as its longest option
+        // (narrow lists get narrow dropdowns) — but it never exceeds the cell
+        // width so dense rows (Mod / Modifier) stay compact. Centred in the
+        // cell.
+        const int comboH = juce::jmin (44, b.getHeight());
         const int textW = maxChoiceTextWidth() + 26;
         const int comboW = juce::jlimit (28, juce::jmax (28, b.getWidth()), textW);
         comboBox_->setBounds (b.withSizeKeepingCentre (comboW, comboH));
@@ -2233,7 +2244,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         m.addItem (juce::PopupMenu::Item (TRANS ("Reset Zoom")).setAction ([this] { applyZoom (1.0); }));
         m.showMenuAsync (juce::PopupMenu::Options()
                              .withTargetComponent (&zoomOverflowButton_)
-                             .withStandardItemHeight (44),
+                             .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
                          nullptr);
     };
     addAndMakeVisible (zoomOverflowButton_);

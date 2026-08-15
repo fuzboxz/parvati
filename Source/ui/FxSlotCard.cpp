@@ -158,7 +158,7 @@ public:
         }
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (this)
-                                .withStandardItemHeight (44),
+                                .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
                             nullptr);
     }
 };

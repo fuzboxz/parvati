@@ -134,6 +134,13 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
             onLanguageChanged_ (code);
     };
     addAndMakeVisible (langCombo_);
+
+    // HIG touch target: the three combos keep their compact 28pt DRAWN box but
+    // get a 44pt tap band centred on their row (see resized — the extra band is
+    // transparent padding into the row gaps, no sibling moves). The L&F reads
+    // the "parvatiComboVisualH" property (drawComboBox / positionComboBoxText).
+    for (auto* c : { &themeCombo_, &osCombo_, &langCombo_ })
+        c->getProperties().set ("parvatiComboVisualH", 28);
 }
 
 void SettingsPanel::setZoomValue (double zoom)
@@ -207,10 +214,20 @@ void SettingsPanel::resized()
     const int rowH = 28;
     const int gap  = 8;
 
+    // HIG touch band: each combo's row (rowH tall) is grown to 44pt centred on
+    // itself for the setBounds call — the extra padding is transparent (the
+    // 28pt visual box comes from the "parvatiComboVisualH" property) and spills
+    // into the surrounding label/gap bands without moving anything. A row
+    // already 44pt or taller passes through unchanged.
+    const auto comboBand = [] (juce::Rectangle<int> row)
+    {
+        return row.withSizeKeepingCentre (row.getWidth(), juce::jmax (44, row.getHeight()));
+    };
+
     // Theme row.
     themeLabel_.setBounds (area.removeFromTop (18));
     area.removeFromTop (2);
-    themeCombo_.setBounds (area.removeFromTop (rowH));
+    themeCombo_.setBounds (comboBand (area.removeFromTop (rowH)));
     area.removeFromTop (gap + 8);
 
     // Zoom row.
@@ -230,11 +247,11 @@ void SettingsPanel::resized()
     // Filter Quality (oversampling) row.
     osLabel_.setBounds (area.removeFromTop (18));
     area.removeFromTop (2);
-    osCombo_.setBounds (area.removeFromTop (rowH));
+    osCombo_.setBounds (comboBand (area.removeFromTop (rowH)));
     area.removeFromTop (gap + 8);
 
     // Language row.
     langLabel_.setBounds (area.removeFromTop (18));
     area.removeFromTop (2);
-    langCombo_.setBounds (area.removeFromTop (rowH));
+    langCombo_.setBounds (comboBand (area.removeFromTop (rowH)));
 }

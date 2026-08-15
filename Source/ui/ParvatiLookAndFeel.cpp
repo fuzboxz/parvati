@@ -244,6 +244,24 @@ juce::Font ParvatiLookAndFeel::getPopupMenuFont()
     return appFont (15.0f, juce::Font::plain);
 }
 
+void ParvatiLookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
+                                                    int standardMenuItemHeight,
+                                                    int& idealWidth, int& idealHeight)
+{
+    // UNIFIED (iOS style is the single default on every platform): default-
+    // sized popup rows are raised to the 44pt HIG touch minimum. The V4 base
+    // measures the width (text + padding, never clipped), which we keep as-is;
+    // only the row HEIGHT is lifted. This method is consulted only for menus
+    // whose Options carry NO explicit standardItemHeight, so the FX type picker
+    // and the zoom overflow popup (both withStandardItemHeight(44)) are
+    // unaffected — and every other menu now matches their 44pt rows exactly.
+    // Separators keep the base sizing (half a row).
+    juce::LookAndFeel_V4::getIdealPopupMenuItemSize (text, isSeparator, standardMenuItemHeight,
+                                                     idealWidth, idealHeight);
+    if (! isSeparator && standardMenuItemHeight <= 0)
+        idealHeight = kPopupRowHeight;
+}
+
 juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
 {
     // Preserve each label's own height/style and only swap the family to the
@@ -801,7 +819,22 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                                                  : juce::Colour (0xff2A2E35);
     const auto fill = hover ? baseFill.brighter (0.06f) : baseFill;
     constexpr float corner = 5.0f;
-    const auto r = juce::Rectangle<int> (0, 0, width, height).toFloat().reduced (0.5f);
+
+    // VERTICAL VISUAL INSET ("parvatiComboVisualH" property, an int): dense
+    // rows keep a compact DRAWN dropdown (24-28pt) while the combo's BOUNDS —
+    // its tap / hover area — span the 44pt HIG touch minimum. Everything drawn
+    // below (fill, tag, chevron, padlock) is confined to the centred visual
+    // strip, so the extra hit padding is fully transparent and the desktop
+    // look is pixel-identical. positionComboBoxText() insets the inline text to
+    // the same strip. Combos WITHOUT the property draw exactly as before (the
+    // visual box fills the whole bounds).
+    const auto* vhVar = box.getProperties().getVarPointer ("parvatiComboVisualH");
+    const int visualH = (vhVar != nullptr && vhVar->isInt())
+                            ? juce::jlimit (1, height, (int) *vhVar)
+                            : height;
+    const auto r = juce::Rectangle<int> (0, (height - visualH) / 2, width, visualH)
+                       .toFloat()
+                       .reduced (0.5f);
 
     g.setColour (fill);
     g.fillRoundedRectangle (r, corner);
@@ -831,7 +864,7 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     const auto chevronCol = theme_->isDark ? theme_->textPrimary : juce::Colour (0xfff6f6fa);
     constexpr float chevronSize = 5.0f;
     const float cx = (float) width  - 12.0f;
-    const float cy = (float) height * 0.5f;
+    const float cy = r.getCentreY();
     juce::Path chevron;
     chevron.startNewSubPath (cx - chevronSize, cy - chevronSize * 0.5f);
     chevron.lineTo (cx + chevronSize, cy - chevronSize * 0.5f);
@@ -845,8 +878,8 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     {
         const auto* lv = box.getProperties().getVarPointer ("parvatiModLocked");
         if (lv != nullptr && lv->isBool() && (bool) *lv)
-            drawPadlock (g, juce::Point<float> ((float) width * 0.5f, (float) height * 0.5f),
-                         (float) height * 0.7f,
+            drawPadlock (g, r.getCentre(),
+                         r.getHeight() * 0.7f,
                          box.findColour (juce::ComboBox::textColourId).withAlpha (0.9f));
     }
 }
@@ -856,7 +889,16 @@ void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label&
     // Inline text: left-padded, stopping before the right-aligned amber chevron
     // (6px left pad + ~18px right reserve for the chevron = 24px chrome). Kept
     // tight so a fit-to-text dropdown reads as wide as its content, not padded.
-    label.setBounds (6, 1, box.getWidth() - 24, box.getHeight() - 2);
+    // When the combo carries the "parvatiComboVisualH" property (44pt tap band
+    // with a compact visual box — see drawComboBox), the text is inset to the
+    // SAME centred visual strip so it stays vertically centred in the drawn
+    // dropdown, not in the taller tap band.
+    const auto* vhVar = box.getProperties().getVarPointer ("parvatiComboVisualH");
+    const int visualH = (vhVar != nullptr && vhVar->isInt())
+                            ? juce::jlimit (1, box.getHeight(), (int) *vhVar)
+                            : box.getHeight();
+    const int y = (box.getHeight() - visualH) / 2;
+    label.setBounds (6, y + 1, box.getWidth() - 24, visualH - 2);
     label.setFont (appFont (14.0f, juce::Font::plain));
 }
 
