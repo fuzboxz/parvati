@@ -45,6 +45,7 @@ ambika_reference/
 
 # --- Pi subagent scratch / artefacts ---
 .pi-subagents/
+.pi/
 
 # --- Coverage / profiling / sanitizer output ---
 *.gcda
