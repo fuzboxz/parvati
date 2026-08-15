@@ -25,6 +25,67 @@ constexpr float kMainMixHeadroomGain = 0.5f;   // -6 dB
 }  // namespace
 
 //==============================================================================
+void ParvatiAudioProcessor::DeferredParamRing::push (int index, float value) noexcept
+{
+    // Spin until the drain (message thread) releases the lock. The critical
+    // section is a bounded scan + store (no allocation, no system call), so the
+    // spin is bounded in practice even under contention.
+    while (lock.test_and_set (std::memory_order_acquire)) {}
+    // Latest-wins coalescing: an entry for the same parameter index is
+    // OVERWRITTEN in place (order among DIFFERENT parameters is preserved),
+    // which is exactly knob-burst semantics.
+    for (uint32_t i = 0; i < count.load (std::memory_order_relaxed); ++i)
+        if (slots[i].index == index)
+        {
+            slots[i].value = value;
+            lock.clear (std::memory_order_release);
+            return;
+        }
+    if (count.load (std::memory_order_relaxed) < slots.size())
+    {
+        slots[count.load (std::memory_order_relaxed)] = { index, value };
+        count.store (count.load (std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
+    else
+        dropped.fetch_add (1, std::memory_order_relaxed);   // overflow: drop (bounded memory)
+    lock.clear (std::memory_order_release);
+}
+
+juce::Array<ParvatiAudioProcessor::DeferredParamRing::Entry> ParvatiAudioProcessor::DeferredParamRing::drain() noexcept
+{
+    juce::Array<Entry> out;
+    while (lock.test_and_set (std::memory_order_acquire)) {}
+    for (uint32_t i = 0; i < count.load (std::memory_order_relaxed); ++i)
+        out.add (slots[i]);
+    count.store (0, std::memory_order_relaxed);
+    lock.clear (std::memory_order_release);
+    return out;
+}
+
+void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
+{
+    // Message thread. Drain the deferred ring and dispatch each entry through
+    // the exact GUI-path apply function for its class. These are idempotent
+    // staging writes (engine setters -> atomics + dirty flags; onPartSelect ->
+    // loadPartIntoApvts + syncAllParamsToEngine), the same work a GUI edit
+    // performs -- safe and correct here, and NOT safe on the audio thread
+    // (which is why parameterChanged defers them).
+    const auto entries = owner.deferredParams_.drain();
+    for (const auto& e : entries)
+    {
+        const auto& descs = getPatchParamDescriptors();
+        if (e.index < 0 || static_cast<size_t> (e.index) >= descs.size())
+            continue;
+        const auto& d = descs[static_cast<size_t> (e.index)];
+        if (d.isArp)
+            owner.applyArpParameter (d, e.value);
+        else if (d.isSequencer)
+            owner.applySequencerParameter (d, e.value);
+        else if (d.paramID == "part_select")
+            owner.onPartSelect (static_cast<int> (e.value));
+    }
+}
+
 ParvatiAudioProcessor::ParvatiAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
         .withOutput ("Main", juce::AudioChannelSet::stereo(), true)
@@ -63,6 +124,24 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // box. Also ensures the USER save area exists. Non-fatal: a failure just
     // leaves the combo empty.
     parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getTemplatesDir(), getUserPatchDir());
+
+    // Start the deferred-parameter drain (60 Hz, message thread). Processor
+    // construction happens on the message thread in every host (and in the
+    // tests, where ScopedJuceInitialiser_GUI makes the main thread the message
+    // thread), satisfying juce::Timer's threading requirement.
+    deferredTimer_ = std::make_unique<DeferredParamTimer> (*this);
+    deferredTimer_->startTimerHz (60);
+}
+
+ParvatiAudioProcessor::~ParvatiAudioProcessor()
+{
+    // Stop the deferred drain FIRST: the timer holds a back-reference to this
+    // processor, and a callback firing mid-destruction would apply parameters
+    // to a partially destroyed engine. stopTimer is synchronous (waits for any
+    // in-flight callback on this -- the message -- thread).
+    if (deferredTimer_ != nullptr)
+        deferredTimer_->stopTimer();
+    deferredTimer_.reset();
 }
 
 //==============================================================================
@@ -320,8 +399,10 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
 {
     // Suppress the engine re-apply while loadPartIntoApvts pushes engine->APVTS
     // (the feedback is redundant for byte/arp/seq params and corrupts the FX mod
-    // matrix via applyFxParameter's stale sibling read -- see loadingPartIntoApvts_).
-    if (loadingPartIntoApvts_)
+    // matrix via applyFxParameter's stale sibling read -- see loadingPartIntoApvts_)
+    // and while setStateInformation's replaceState rewrites the APVTS (see
+    // restoringState_).
+    if (loadingPartIntoApvts_ || restoringState_)
         return;
 
     const auto it = paramIndex_.find (parameterID.toStdString());
@@ -329,6 +410,20 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
         return;
 
     const auto& d = getPatchParamDescriptors()[static_cast<size_t> (it->second)];
+
+    // Off-message-thread dispatch (host automation on the render thread, or the
+    // CC/NRPN map inside processBlock): the arp/seq classes write the engine's
+    // pendingConfig_ seqlock (single-writer invariant; a second writer tears
+    // it), and part_select runs loadPartIntoApvts' ~250 ValueTree+UndoManager
+    // writes -- neither is audio-thread work. Defer to the 60 Hz message-thread
+    // drain (DeferredParamTimer) instead. On the message thread (GUI edits,
+    // syncAllParamsToEngine) everything stays synchronous: zero added latency.
+    if (! juce::MessageManager::existsAndIsCurrentThread()
+        && (d.isArp || d.isSequencer || d.paramID == "part_select"))
+    {
+        deferredParams_.push (it->second, newValue);
+        return;
+    }
 
     // Arpeggiator params route to the controller-side arpeggiator, not the
     // patch-byte bridge.
@@ -407,6 +502,10 @@ void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& 
 
 void ParvatiAudioProcessor::applyArpParameter (const PatchParamDescriptor& d, float rawValue)
 {
+    // Message-thread only: this writes the engine's pendingConfig_ seqlock
+    // (single-writer). Audio-thread-origin arp edits arrive via the deferred
+    // ring instead (see parameterChanged / DeferredParamTimer).
+    jassert (juce::MessageManager::existsAndIsCurrentThread());
     const int v = static_cast<int> (rawValue);
     if (d.paramID == "arp_mode")
         engine_.setArpMode (static_cast<uint8_t> (v));
@@ -505,6 +604,10 @@ void ParvatiAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, flo
 
 void ParvatiAudioProcessor::applySequencerParameter (const PatchParamDescriptor& d, float rawValue)
 {
+    // Message-thread only: this writes the engine's pendingConfig_ seqlock
+    // (single-writer). Audio-thread-origin sequencer edits arrive via the
+    // deferred ring instead (see parameterChanged / DeferredParamTimer).
+    jassert (juce::MessageManager::existsAndIsCurrentThread());
     const int v = static_cast<int> (rawValue);
     if (d.paramID == "seq_length_1")
         engine_.setSequenceLength (0, static_cast<uint8_t> (v));
@@ -531,6 +634,10 @@ void ParvatiAudioProcessor::syncAllParamsToEngine()
 // values back into the APVTS (so the editor reflects it).
 void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
 {
+    // Message-thread only: this runs loadPartIntoApvts (~250 ValueTree+
+    // UndoManager writes). Audio-thread-origin part_select edits arrive via the
+    // deferred ring (see parameterChanged / DeferredParamTimer).
+    jassert (juce::MessageManager::existsAndIsCurrentThread());
     const int newPart = juce::jlimit (0, SynthEngine::getNumParts() - 1, newPart1Based - 1);
     if (newPart == currentPart_)
         return;
@@ -792,6 +899,14 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     // Show Part 0 in the editor and re-apply its parameters.
     currentPart_ = 0;
     engine_.setCurrentPart (0);
+    // Sync the part_select parameter to the engine's part-0 state (mirrors the
+    // .parvati multi path, ParvatiPreset.cpp:794-795). Without this the
+    // editor's part combo kept showing the PREVIOUSLY selected part while the
+    // engine/edits had already moved to Part 0 -- the combo desynced from
+    // engine state until the user re-picked a part. onPartSelect early-returns
+    // (currentPart_ is already 0), so this is a parameter/combo update only.
+    if (auto* ps = apvts.getParameter ("part_select"))
+        ps->setValueNotifyingHost (ps->convertTo0to1 (1.0f));
     loadPartIntoApvts (0);   // engine→APVTS one-way display refresh (Part 0 authoritative)
     // NOTE: NO syncAllParamsToEngine() — engine storage is authoritative after
     // a multi-load; pushing the (Part-0-only) APVTS back would clobber the
@@ -1087,6 +1202,17 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 1));
             uiFontMode_ = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
             uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
+
+            // JUCE 9 dispatch reality (verified against the vendored checkout):
+            // replaceState fires valueTreeRedirected -> setDenormalisedValue ->
+            // setValueNotifyingHost per CHANGED parameter, so parameterChanged
+            // runs DURING replaceState on this thread. Guard with restoringState_
+            // so those mid-restore callbacks are swallowed (they would otherwise
+            // re-apply stale/partial values to the engine, racing the
+            // authoritative engine-blob restore below; a part_select callback
+            // would even drive the full part-load machinery re-entrantly).
+            restoringState_ = true;
+            struct RestoreGuard { bool& flag; ~RestoreGuard() { flag = false; } } restoreGuard { restoringState_ };
             apvts.replaceState (tree);
 
             // Restore the full 6-Part engine state if the blob is present; else
@@ -1102,14 +1228,30 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 if (! engine_.restoreState (blob.getData(), blob.getSize()))
                     return false;
                 // Engine is authoritative for all 6 parts; refresh the APVTS
-                // display for the restored current part (replaceState restored
-                // host automation values but fires no parameterChanged, so the
-                // part-switch handler is not re-driven).
+                // display for the restored current part. currentPart_ is synced
+                // explicitly (it previously tracked the restore only via the
+                // accidental re-entrant part_select callback, which
+                // restoringState_ now suppresses).
+                currentPart_ = engine_.getCurrentPart();
                 loadPartIntoApvts (engine_.getCurrentPart());
                 return true;
             }();
             if (! restored)
+            {
+                // Legacy state: the APVTS is authoritative. Select the SAVED
+                // part BEFORE syncing (the original code got this ordering only
+                // via replaceState's accidental re-entrant part_select callback;
+                // the plan's literal sync-then-select order would write the
+                // saved part's bytes into the previously-current part's
+                // storage). syncAllParamsToEngine routes every byte edit through
+                // currentPart_, so the saved values must land on the saved part.
+                const int savedPart = juce::jlimit (0, SynthEngine::getNumParts() - 1,
+                    juce::roundToInt (apvts.getRawParameterValue ("part_select")->load()) - 1);
+                currentPart_ = savedPart;
+                engine_.setCurrentPart (savedPart);
                 syncAllParamsToEngine();
+                loadPartIntoApvts (savedPart);   // display refresh (no-op values)
+            }
         }
         engine_.setParameterSmoothing (uiSmoothing_);
         // Restore + propagate the filter-oversampling factor (rebuilds the

@@ -168,10 +168,12 @@ public:
 // drywet=0 = fully dry, enabled=0 = bypassed) — so picking a type otherwise
 // sounds like "nothing happened". These seed each effect with an audible,
 // characteristic starting point. Applied from parameterChanged() ONLY on a real
-// fx{N}_type change (never at construction). Because APVTS listener dispatch is
-// synchronous on the message thread AND the descriptor order is type, enabled,
-// drywet, param1..5, a preset/part load that sets type THEN params overrides
-// these — so saved patches keep their own values.
+// fx{N}_type change (never at construction). The dispatch semantics this relies
+// on: listener dispatch is synchronous ON THE CALLING THREAD, and the only
+// FX setters parameterChanged routes to here are the RT-safe fxState atomics
+// (audio-thread-safe from any thread). For the GUI/message-thread part load
+// the descriptor order is type, enabled, drywet, param1..5, so a load that sets
+// type THEN params overrides these — saved patches keep their own values.
 struct FxTypeDefaults { uint8_t enabled; uint8_t drywet; uint8_t p[5]; };
 FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 {

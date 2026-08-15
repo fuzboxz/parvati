@@ -11,8 +11,10 @@
 // An OPTIONAL third thread fires MIDI (note/CC/bend/pressure) through the
 // processor's thread-safe MidiMessageCollector (the UI click-play surface),
 // stressing that concurrent path too. The engine's internal state is still
-// mutated by a SINGLE message thread (its seqlocks assume a sole writer), so
-// this stays within the real plugin's threading contract.
+// mutated by a SINGLE message thread (its seqlocks assume a sole writer, an
+// invariant the processor enforces by deferring audio-thread-origin
+// arp/seq/part_select parameter writes back to the message thread), so this
+// stays within the real plugin's threading contract.
 //
 // Run under the sanitizers to surface bugs:
 //   ThreadSanitizer  -> message<->audio data races:

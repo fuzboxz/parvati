@@ -313,8 +313,8 @@ void SynthEngine::setFxOrder       (uint8_t v)
 }
 // Master-section setters (engine-state v3). Mirror the topology/order pattern:
 // relaxed store into the CURRENT Part's fxState + a release-store on fxDirty_ to
-// publish the frame to the audio thread. FxChain does not consume these yet (the
-// DSP is added by a follow-up) -- they only need to round-trip + not break the AT.
+// publish the frame to the audio thread. Consumed in renderPartFx's fxDirty_
+// service (chain.setMasterMix / setMasterEqLow / Mid / High).
 void SynthEngine::setFxMix       (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.mix.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 void SynthEngine::setFxEqLow     (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqLow.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 void SynthEngine::setFxEqMid     (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqMid.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
@@ -712,6 +712,13 @@ void SynthEngine::rebuildVoiceAllocation()
         initAllocator (parts_[(size_t) p]);
         parts_[(size_t) p].voiceCount_.store (static_cast<int> (parts_[(size_t) p].voiceIndices.size()), std::memory_order_relaxed);
     }
+
+    // Persist each Part's resolved card bitmask for renderPartFx's per-part FX
+    // input sum (see partCardMask_): summing the OWNED card buffers, not the
+    // buffers indexed by pool voice indices (which only coincide in the default
+    // single-part layout).
+    for (int p = 0; p < kNumParts; ++p)
+        partCardMask_[(size_t) p] = partCards[p];
 }
 
 void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
@@ -1252,7 +1259,13 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         auto& part = parts_[(size_t) p];
         // Snapshot the MT-authoritative arp/seq config under the seqlock (never a
         // torn read of pendingConfig_ while the message thread stages a new edit).
-        const auto cfg = part.readPendingConfig();
+        // On retry exhaustion the bounded reader hands back the AT's last-good
+        // snapshot; re-mark configDirty_ so the NEXT block retries the fresh
+        // config (the exchange above already cleared it).
+        bool exhausted = false;
+        const auto cfg = part.readPendingConfig (&exhausted);
+        if (exhausted)
+            part.configDirty_.store (true, std::memory_order_release);
         // arp/seq mode (same byte drives both): handle transition on the AT.
         {
             const bool wasActive = part.arp.isActive();
@@ -1273,6 +1286,11 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
             part.seq.setSequenceLength (i, cfg.seqLength[i]);
         for (int i = 0; i < 64; ++i)
             part.seq.setSequenceDataByte (i, cfg.seqData[i]);
+
+        // A consistent snapshot was fully applied: remember it as the AT's
+        // last-good config (the bounded seqlock reader's exhaustion fallback).
+        part.lastGoodConfig_ = cfg;
+        part.hasLastGoodConfig_ = true;
     }
 
     // Service deferred arp/seq note-kills ON THE AUDIO THREAD. setArpMode
@@ -1529,12 +1547,30 @@ void SynthEngine::renderPartFx (int numSamples)
 
         // ---- 2. Per-part mono sum of this Part's voicecard buffers ----
         // (voiceCardBuffers_ holds the full block after renderNextBlock.)
+        // Sum each OWNED card's buffer exactly once, per the bitmask resolved by
+        // rebuildVoiceAllocation (partCardMask_). Indexing voiceCardBuffers_ by
+        // the pool voice index instead (as this loop once did) is only correct
+        // in the default single-part layout where pool index == card index; with
+        // per-part voice slots or custom card bitmasks it cross-bleeds other
+        // Parts' cards into this Part's FX input and leaves later Parts' FX
+        // silent (pool slices >= kNumParts). Mask 0 => silence (a disabled Part),
+        // which is correct.
+#ifndef NDEBUG
+        {
+            // Debug consistency check: recomputing the owned-card mask from the
+            // voices themselves must equal the persisted rebuild result.
+            uint8_t recompute = 0;
+            for (int vi : part.voiceIndices)
+                if (auto* av = getAmbikaVoice (vi))
+                    recompute = static_cast<uint8_t> (recompute | (1u << juce::jlimit (0, kNumParts - 1, av->getVoiceCard())));
+            jassert (recompute == partCardMask_[(size_t) p]);
+        }
+#endif
         float* mono = fxMonoScratch_.getWritePointer (0);
         juce::FloatVectorOperations::clear (mono, numSamples);
-        for (int vi : part.voiceIndices)
-            if (vi >= 0 && vi < kNumParts)
-                juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vi].getReadPointer (0), numSamples);
-        // (voiceIndices empty => silence, which is correct.)
+        for (int vc = 0; vc < kNumParts; ++vc)
+            if (partCardMask_[(size_t) p] & (1u << vc))
+                juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vc].getReadPointer (0), numSamples);
 
         // ---- 3. Representative voice = the MOST-RECENTLY-TRIGGERED active voice ----
         // ---- + crossfade on any voice change.                                  ----

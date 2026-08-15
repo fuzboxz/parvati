@@ -1,10 +1,11 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // ParvatiAudioProcessor — the plugin's AudioProcessor. Owns the SynthEngine
-// (16 AmbikaVoice instances) and an AudioProcessorValueTreeState (APVTS) that
-// exposes every Ambika patch/part parameter. Parameter changes are bridged to
-// the integer engine by writing the corresponding Patch/Part struct byte into
-// every active voice (see ParameterLayout + SynthEngine::applyPatchByte).
+// (a kNumVoices = 96 AmbikaVoice pool — 6 parts x 16 max slots) and an
+// AudioProcessorValueTreeState (APVTS) that exposes every Ambika patch/part
+// parameter. Parameter changes are bridged to the integer engine by writing
+// the corresponding Patch/Part struct byte into every active voice (see
+// ParameterLayout + SynthEngine::applyPatchByte).
 
 #pragma once
 
@@ -12,6 +13,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>   // juce::dsp::Oversampling (filter-OS latency probe)
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -27,7 +29,7 @@ class ParvatiAudioProcessor : public juce::AudioProcessor,
 {
 public:
     ParvatiAudioProcessor();
-    ~ParvatiAudioProcessor() override = default;
+    ~ParvatiAudioProcessor() override;
 
     //==========================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -145,9 +147,27 @@ public:
     // Push the current value of every APVTS parameter into all voices.
     // Public so the GUI / preset loader can deterministically apply a freshly
     // loaded set of parameters. (Live host/GUI edits also apply automatically
-    // via the APVTS listener, but that is ValueTree/timer-routed, so an
-    // explicit sync is used after bulk loads and in tests.)
+    // via the APVTS listener, but that dispatch is synchronous on the CALLING
+    // thread -- the message thread for GUI edits, the AUDIO thread for host
+    // automation and the CC/NRPN map -- with audio-thread-origin arp/seq/
+    // part_select edits deferred to the 60 Hz message-thread drain; an
+    // explicit sync is still used after bulk loads and in tests.)
     void syncAllParamsToEngine();
+
+    // ---- Deferred-param diagnostics (tests / debug UI) ----
+    // Ring overflow since construction: non-zero means audio-thread-origin
+    // arp/seq/part_select events were DROPPED (64-slot latest-wins ring @60 Hz
+    // drain => sustained >3840 events/s required; real controllers stay far
+    // below). Pending count = entries not yet drained (convergence polling in
+    // the concurrency test).
+    uint64_t getDroppedDeferredCount() const noexcept
+    {
+        return deferredParams_.dropped.load (std::memory_order_relaxed);
+    }
+    uint32_t getPendingDeferredCount() const noexcept
+    {
+        return deferredParams_.count.load (std::memory_order_relaxed);
+    }
 
     // ---- Ambika .PRO patch support ----
     // Load a parsed Ambika program (raw Patch[112] + Part[84] bytes) into the
@@ -220,7 +240,58 @@ public:
 
 private:
     // ---- APVTS::Listener: a parameter changed (host / GUI / automation). ----
+    // DISPATCH REALITY (JUCE 9): listener dispatch is SYNCHRONOUS ON THE
+    // CALLING THREAD. Host automation arrives inside the render callback
+    // (AUv3 render events / VST3 process()), and MidiParameterMap's CC/NRPN
+    // setter (called from processBlock) routes through setValueNotifyingHost
+    // -- so this callback can run on the AUDIO thread. Most branches only stage
+    // atomics (RT-safe); the three unsafe classes (arp/seq -> the pendingConfig_
+    // seqlock writers; part_select -> loadPartIntoApvts' ValueTree+UndoManager
+    // writes) are DEFERRED to the message thread via deferredParams_ when the
+    // callback is off the message thread (see DeferredParamRing).
     void parameterChanged (const juce::String& parameterID, float newValue) override;
+
+    // ---- Deferred audio-thread-origin parameter writes (message-thread drain) ----
+    // A fixed-capacity (64) spinlock-protected latest-wins ring. The audio
+    // thread pushes (descriptor index, value) for the unsafe parameter classes;
+    // a 60 Hz juce::Timer on the message thread drains each entry through the
+    // normal apply path. Latest-wins coalescing (a second push of the same
+    // parameter overwrites the pending entry) matches how a knob turn sends a
+    // burst of values: only the last one matters. Overflow DROPS (bounded
+    // memory, RT-safe) and counts into `dropped` -- with 64 slots, one
+    // parameter per push and a 60 Hz drain, overflow needs a sustained
+    // >3840 param-events/s of arp/seq/part_select writes, which no real
+    // controller produces; the counter exists so tests can assert zero drops.
+    struct DeferredParamRing
+    {
+        struct Entry { int index = -1; float value = 0.0f; };
+        std::array<Entry, 64> slots;
+        std::atomic<uint32_t> count { 0 };            // used entries (diagnostic)
+        std::atomic<uint64_t> dropped { 0 };          // overflow counter (diagnostic)
+        std::atomic_flag lock = ATOMIC_FLAG_INIT;     // spinlock guarding slots/count
+
+        // RT-safe push (audio thread): acquires the spinlock (bounded hold: a
+        // short scan + store), coalesces same-index entries, drops on overflow.
+        void push (int index, float value) noexcept;
+        // Message-thread drain: swaps the ring into a local snapshot and clears
+        // it, so the apply path never runs under the spinlock.
+        juce::Array<Entry> drain() noexcept;
+    };
+
+    // The 60 Hz message-thread drain for deferredParams_. Plain juce::Timer
+    // (not HighResolutionTimer): the drain performs the exact GUI-path apply
+    // work (engine setters that stage atomics / loadPartIntoApvts' ValueTree
+    // writes), which is message-thread work; <=16.7 ms added latency for
+    // audio-thread-origin arp/seq/part_select edits only (GUI edits stay
+    // synchronous), the same order as the frameDirty_ one-block staging.
+    struct DeferredParamTimer : juce::Timer
+    {
+        explicit DeferredParamTimer (ParvatiAudioProcessor& o) : owner (o) {}
+        void timerCallback() override;
+        ParvatiAudioProcessor& owner;
+    };
+    DeferredParamRing deferredParams_;
+    std::unique_ptr<DeferredParamTimer> deferredTimer_;   // created in the ctor (message thread)
 
     // Apply one parameter's current APVTS value to the engine.
     void applyParameterToEngine (const PatchParamDescriptor& descriptor);
@@ -271,6 +342,15 @@ private:
     // amount) and would otherwise read them stale mid-load and clobber the
     // engine fxState it is sourcing from. Message-thread-only (load + listener).
     bool loadingPartIntoApvts_ = false;
+
+    // True while setStateInformation's replaceState rewrites the APVTS from a
+    // restored host state. Same feedback-suppression job as
+    // loadingPartIntoApvts_: in JUCE 9 replaceState DOES fire parameterChanged
+    // per changed parameter (valueTreeRedirected -> setDenormalisedValue ->
+    // setValueNotifyingHost), so without this guard each restored parameter is
+    // re-applied to the engine MID-RESTORE (stale/partial values racing the
+    // authoritative engine-blob restore that follows). Message-thread-only.
+    bool restoringState_ = false;
 
     // Hardware-parity MIDI CC/NRPN -> parameter mapping (spec F.4).
     MidiParameterMap midiParamMap_;

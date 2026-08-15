@@ -138,7 +138,19 @@ private:
     bool topologyChanged_  = true;
 
     // 4-pole LM13700 -> the JUCE ladder (LPF24, tanh saturation + Drive).
-    juce::dsp::LadderFilter<float> ladder_;
+    // LadderTap exposes LadderFilter's PROTECTED per-sample hooks so the
+    // per-sample path can call them directly. JUCE's public process() loops
+    // `updateSmoothers(); processSample (input, ch);` once per sample — the
+    // tap reproduces exactly that sequence for one mono channel, so the
+    // per-sample path is behavior-identical to the legacy 1-sample
+    // AudioBlock + process() routing WITHOUT constructing a block + context
+    // per sample (~3.8M wrapper calls/s at 96-voice polyphony).
+    struct LadderTap : juce::dsp::LadderFilter<float>
+    {
+        using juce::dsp::LadderFilter<float>::processSample;
+        using juce::dsp::LadderFilter<float>::updateSmoothers;
+    };
+    LadderTap ladder_;
 
     // 4-pole ("4P") -> TWO series StateVariableTPTFilter (both lowpass), cutoff+
     // resonance LINKED (per the modeling spec: a linear 24 dB/oct baseline). The

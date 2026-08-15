@@ -212,14 +212,14 @@ float AnalogFilter::processSample (float inputValue)
         }
     }
 
-    // 4-pole. juce::dsp::LadderFilter::processSample() is protected, so route a
-    // single sample through the public process(ProcessContext) in-place.
-    float v = inputValue;
-    float* data = &v;
-    juce::dsp::AudioBlock<float> block (&data, 1u, 1u);   // 1 channel, 1 sample
-    juce::dsp::ProcessContextReplacing<float> context (block);
-    ladder_.process (context);
-    return v;
+    // 4-pole. Direct per-sample call through the LadderTap: JUCE's public
+    // process() runs `updateSmoothers(); processSample (v, ch);` per sample,
+    // so this reproduces the exact per-sample sequence of the legacy 1-sample
+    // AudioBlock + ProcessContextReplacing routing (bit-identical output —
+    // pinned by parvati_analog_filter_batch_test) without the per-sample
+    // block/context construction.
+    ladder_.updateSmoothers();
+    return ladder_.processSample (inputValue, 0);
 }
 
 void AnalogFilter::processBlock (float* data, int numSamples)

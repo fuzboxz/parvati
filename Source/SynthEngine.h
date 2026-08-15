@@ -188,10 +188,12 @@ struct Part
     std::atomic<uint8_t> midiChannel  { 0 };   // 0 = Omni (all channels); else 1..16
     std::atomic<uint8_t> keyrangeLow  { 0 };
     std::atomic<uint8_t> keyrangeHigh { 127 };
-    // Flagged by setArpMode (message thread) when the arp/seq is turned OFF;
-    // serviced at the top of processTransport (audio thread) to kill this Part's
-    // arp/seq-generated voices. stopNote() mutates voice state the audio thread
-    // renders, so it must not run on the message thread.
+    // Flagged by the AUDIO-THREAD config service (servicePendingConfig, when
+    // an applied arp mode transition turns the arp/seq OFF) — NOT by the
+    // message-thread setter; serviced at the top of processTransport (audio
+    // thread) to kill this Part's arp/seq-generated voices. stopNote() mutates
+    // voice state the audio thread renders, so it must not run on the message
+    // thread.
     std::atomic<bool> killGeneratedNotes_ { false };
     // Message thread -> audio thread: a live APVTS edit (applyPatchByte/
     // applyPartByte) wrote this Part's patch/part storage; the audio thread pushes
@@ -220,7 +222,11 @@ struct Part
     std::atomic<uint32_t> pendingSeq_ { 0 };   // seqlock: even = stable, odd = writer mid-update
 
     // Message-thread writer: wrap a field mutation so the audio-thread reader
-    // never sees a torn pendingConfig_. (Single message thread => sole writer.)
+    // never sees a torn pendingConfig_. The message thread is the SOLE writer
+    // (audio-thread-origin arp/seq/part_select edits are funneled back to the
+    // message thread by ParvatiAudioProcessor's deferred-parameter drain before
+    // they can reach these setters — see PluginProcessor.h / DeferredParamRing;
+    // without that deferral this seqlock would have two writers and tear).
     template <typename Fn>
     void writePendingConfig (Fn&& fn)
     {
@@ -231,19 +237,44 @@ struct Part
         pendingSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes data)
     }
     // Audio-thread reader: copy out a consistent snapshot (retry on a concurrent
-    // write). Bounded retries: the writer is non-realtime and quick.
-    PendingConfig readPendingConfig() const
+    // write). Bounded retries (64): an unbounded spin on the audio thread could
+    // burn a whole real-time block under a pathological write storm, which is
+    // worse than applying a stale-but-consistent config for one block. On
+    // exhaustion the caller learns via @p exhausted (the audio-thread service
+    // re-marks configDirty_ so the next block retries) and the AT's
+    // lastGoodConfig_ snapshot (or a default-constructed one before the first
+    // successful apply) is returned. NOTE: only the AUDIO thread can exhaust:
+    // the message-thread callers (captureState / preset save / loadPartIntoApvts)
+    // run on the SAME thread as the sole seqlock writer, so they always see a
+    // stable even sequence — lastGoodConfig_ is therefore written and read
+    // single-threaded in the only exhaustion path that exists.
+    PendingConfig readPendingConfig (bool* exhausted = nullptr) const
     {
-        for (;;)
+        for (int attempt = 0; attempt < 64; ++attempt)
         {
             const uint32_t s1 = pendingSeq_.load (std::memory_order_acquire);
-            if (s1 & 1u) continue;                              // writer in progress
+            if (s1 & 1u)
+            {
+                if (exhausted != nullptr) *exhausted = (attempt == 63);
+                continue;                              // writer in progress
+            }
             PendingConfig copy = pendingConfig_;
             std::atomic_thread_fence (std::memory_order_acquire);
             if (pendingSeq_.load (std::memory_order_acquire) == s1)
+            {
+                if (exhausted != nullptr) *exhausted = false;
                 return copy;
+            }
+            if (exhausted != nullptr) *exhausted = (attempt == 63);
         }
+        return hasLastGoodConfig_ ? lastGoodConfig_ : PendingConfig{};
     }
+
+    // The audio thread's last SUCCESSFULLY-applied config snapshot (updated at
+    // the end of servicePendingConfig). AT-only: the fallback readPendingConfig
+    // returns on retry exhaustion. Defaults apply before the first service.
+    PendingConfig lastGoodConfig_;
+    bool hasLastGoodConfig_ = false;
 
     std::atomic<bool> configDirty_ { false };
 
@@ -530,9 +561,11 @@ public:
     // voicecard outputs no matter how many pool slots it owns. This function is
     // only the pre-rebuild default.
     static int voiceCardForIndex (int voiceIndex);
-    // Back-compat: the current Part's arp/seq.
-    parvati::Arpeggiator& getArp()       { return parts_[(size_t) currentPart_].arp; }
-    parvati::Sequencer&   getSequencer() { return parts_[(size_t) currentPart_].seq; }
+    // Back-compat: the current Part's arp/seq accessors were removed: they
+    // returned references to AUDIO-THREAD-owned objects with zero call sites
+    // (verified: Source/ tests/ tools/), so nothing may call them from the
+    // editor. The arp/seq state is MT-readable via pendingConfig_
+    // (readPendingConfig) instead.
 
     // ---- Per-part FX (Parvati-exclusive; post-render, host-rate stereo) ----
     // Render every Part's FX chain into its stereo FX-output buffer (called from
@@ -586,6 +619,16 @@ private:
     // One mono buffer per voicecard (6 total). Cleared + filled in renderVoices
     // for each sub-block range; the processor mixes them into the output buses.
     std::array<juce::AudioBuffer<float>, kNumParts> voiceCardBuffers_;
+    // The voicecard bitmask each Part actually OWNS after exclusive-claim
+    // resolution (rebuildVoiceAllocation's per-part `partCards` locals,
+    // persisted). renderPartFx sums exactly these card buffers into a Part's
+    // FX input — voiceIndices holds POOL indices (0..95, SynthEngine.h:271),
+    // which are NOT card indices once slots != card count, so indexing
+    // voiceCardBuffers_ by them cross-bleeds other Parts' cards into the FX
+    // input (or leaves it silent for pool slices >= 6). AT-only: written in
+    // rebuildVoiceAllocation (allocationDirty_ service / ctor) and read in
+    // renderPartFx — both on the audio thread, so no atomics are needed.
+    uint8_t partCardMask_[kNumParts] {};
     // One stereo (2-channel) FX-output buffer per Part, written by renderPartFx
     // and sourced by the processor for the main-bus sum. Sized in prepare().
     std::array<juce::AudioBuffer<float>, kNumParts> fxOutputBuffers_;

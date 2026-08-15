@@ -48,6 +48,33 @@ juce::File refMUL()
     return juce::File (PARVATI_SOURCE_DIR)
         .getChildFile ("ambika_reference/controller/data/goldencard/MULTI/BANK/A/000.MUL");
 }
+
+// Part-select consistency after any load: the part_select parameter, the
+// processor's currentPart_ (observable via which part a byte edit lands on)
+// and the engine's current part must all agree. The .MUL load path once
+// forgot to write part_select, leaving the combo showing the previous part
+// while the engine had already moved to Part 0.
+void assertPartSelectInSync (ParvatiAudioProcessor& proc, int expectedPart0Based)
+{
+    const int raw = juce::roundToInt (proc.getApvts().getRawParameterValue ("part_select")->load());
+    check (raw == expectedPart0Based + 1,
+           "part_select parameter matches the loaded state");
+    check (proc.getEngine().getCurrentPart() == expectedPart0Based,
+           "engine current part matches the loaded state");
+    // currentPart_ (0-based, 1 behind the parameter) is private; prove it via a
+    // byte edit routing to exactly the expected part's storage.
+    uint8_t before[6];
+    for (int p = 0; p < 6; ++p)
+        before[p] = proc.getEngine().getPart (p).partBytes[2];
+    setParam (proc, "part_tuning", 21.0f);
+    bool onlyExpected = proc.getEngine().getPart (expectedPart0Based).partBytes[2] == 21;
+    for (int p = 0; p < 6; ++p)
+        if (p != expectedPart0Based && proc.getEngine().getPart (p).partBytes[2] != before[p])
+            onlyExpected = false;
+    check (onlyExpected, "byte edits route to the selected part (currentPart_ in sync)");
+    for (int p = 0; p < 6; ++p)
+        proc.getEngine().getPart (p).partBytes[2] = before[p];   // restore
+}
 }  // namespace
 
 int main()
@@ -91,6 +118,7 @@ int main()
         ParvatiAudioProcessor procB;
         procB.prepareToPlay (48000.0, 512);
         check (procB.loadMultiFile (tmp), "proc B loads the saved .MUL");
+        assertPartSelectInSync (procB, 0);   // a .MUL load shows Part 0 everywhere
 
         // Part 0's arp/seq edits must have survived: they were made on Part 0
         // while it was current, then the .MUL was saved from Part 1. Before the
@@ -131,6 +159,24 @@ int main()
                 arpSeqInit = false;
         }
         check (arpSeqInit, "all 6 parts carry firmware arp/seq init (octave 1 / res 10 / len 16)");
+    }
+
+    // ---------------------------------------------------------------------
+    // (c) .MUL load syncs part_select: load a multi while part_select shows a
+    //     DIFFERENT part (4 => Part 3, 0-based); the load must move the
+    //     parameter AND the engine back to Part 0 together.
+    // ---------------------------------------------------------------------
+    std::printf ("\n[3] .MUL load resets part_select (combo no longer desynced)\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 512);
+        setParam (proc, "part_select", 4);   // Part 3 (0-based) before the load
+        check (proc.getEngine().getCurrentPart() == 3,
+               "pre-load: Part 3 selected (sanity)");
+        check (proc.loadMultiFile (refMUL()), "loads reference .MUL with Part 3 selected");
+        check (juce::roundToInt (proc.getApvts().getRawParameterValue ("part_select")->load()) == 1,
+               "part_select parameter is 1 after the .MUL load (was 4)");
+        assertPartSelectInSync (proc, 0);
     }
 
     std::printf ("\n%s (%d failure%s)\n",

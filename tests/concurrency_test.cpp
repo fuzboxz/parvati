@@ -43,6 +43,17 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
+// Pump the 60 Hz DeferredParamTimer from the message thread. (The plan's
+// runDispatchLoopUntil is unavailable here: JUCE 9 gates it behind
+// JUCE_MODAL_LOOPS_PERMITTED, which is off for these console targets.
+// callPendingTimersSynchronously delivers every timer whose deadline has
+// elapsed, which is the same convergence.)
+void pumpDeferredTimerMs (int ms)
+{
+    std::this_thread::sleep_for (std::chrono::milliseconds (ms));
+    juce::Timer::callPendingTimersSynchronously();
+}
+
 double peakAbs (const juce::AudioBuffer<float>& buf)
 {
     double p = 0.0;
@@ -436,6 +447,115 @@ int main (int argc, char** argv)
             p = std::max (p, peakAbs (rb));
         }
         check (p > 0.001, "engine responds to a note (peak > 0.001)");
+    }
+
+    // ---------------------------------------------------------------------
+    // [7] Deferred audio-thread-origin arp/seq/part_select writes (the
+    //     single-writer fix): a NON-message thread drives the REAL host-
+    //     automation surface (setValueNotifyingHost, plus the CC102-106
+    //     hardware-parity map inside processBlock) while the message thread
+    //     performs GUI-style arp edits and pumps the dispatch loop. All
+    //     audio-thread-origin writes must be funneled through the deferred
+    //     ring to the message thread (no drops), the LAST value must win, and
+    //     part_select must converge with currentPart_ tracking.
+    // ---------------------------------------------------------------------
+    std::printf ("\n[7] deferred arp/seq/part_select: audio-thread writes drain to the MT\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        proc.syncAllParamsToEngine();
+
+        std::atomic<bool> running { true };
+        std::atomic<int>  lastArpOctaveCC { -1 };   // raw CC104 value of the last block
+
+        // The "audio thread": renders blocks carrying the CC102-106 arp-map
+        // sequence (the real MidiParameterMap path inside processBlock fires
+        // parameterChanged ON THIS THREAD, which must defer, never apply) plus
+        // direct host-automation-style setValueNotifyingHost calls.
+        std::thread audio ([&]()
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            juce::Random rng { 0x5EED };
+            int toggle = 0;
+            while (running.load (std::memory_order_relaxed))
+            {
+                buf.clear();
+                juce::MidiBuffer midi;
+                midi.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 100), 0);
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 102, 1 + (toggle % 3)), 8);   // arp_mode
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 103, toggle % 6), 16);       // arp_direction
+                // CC104 = arp_octave: the CC path scales 7-bit into the 1..4 param
+                // range (firmware parameter.Scale: ((range*(v<<1))>>8)+min), so send
+                // the full-scale ticks 0/32/64/96 -> octaves 1/2/3/4 and compute
+                // the expected value with the same formula below.
+                const int octaveCC = 32 * (toggle % 4);
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 104, octaveCC), 24);        // arp_octave
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 105, toggle % 22), 32);     // arp_pattern
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 106, toggle % 15), 40);     // arp_resolution
+                proc.processBlock (buf, midi);
+                lastArpOctaveCC.store (octaveCC, std::memory_order_relaxed);
+
+                // Host-automation-style writes from this thread (no MIDI):
+                // a couple of seq + arp values, deferral branch as well.
+                if (auto* p = proc.getApvts().getParameter ("seq1_step0"))
+                    p->setValueNotifyingHost (p->convertTo0to1 ((float) (toggle % 128)));
+                if (auto* p = proc.getApvts().getParameter ("arp_pattern"))
+                    p->setValueNotifyingHost (p->convertTo0to1 ((float) (toggle % 22)));
+                ++toggle;
+            }
+        });
+
+        // The message thread: GUI-style synchronous arp edits + pump the
+        // dispatch loop so the 60 Hz DeferredParamTimer drains the ring.
+        for (int i = 0; i < 300; ++i)
+        {
+            parvati_test::setParamRaw (proc, "arp_resolution", (float) (i % 15));
+            pumpDeferredTimerMs (2);
+        }
+        running.store (false, std::memory_order_relaxed);
+        audio.join();
+        // Final drain: one timer tick past the last push.
+        pumpDeferredTimerMs (25);
+
+        check (proc.getDroppedDeferredCount() == 0, "no deferred arp/seq writes dropped (ring never overflowed)");
+        check (proc.getPendingDeferredCount() == 0, "deferred ring fully drained");
+        {
+            // Expected octave from the last CC104, via the firmware Scale the
+            // CC path applies (range 4, lo 1): ((4*(v<<1))>>8)+1, clamped.
+            const int cc = lastArpOctaveCC.load();
+            const int expected = std::max (1, std::min (4, ((4 * (cc << 1)) >> 8) + 1));
+            char m[128];
+            std::snprintf (m, sizeof (m),
+                "last CC104 arp_octave won (engine=%u, last CC=%d, expected=%d)",
+                (unsigned) proc.getEngine().getPart (0).pendingConfig_.arpOctave,
+                cc, expected);
+            check (proc.getEngine().getPart (0).pendingConfig_.arpOctave
+                       == (uint8_t) expected, m);
+        }
+
+        // part_select from a non-message thread: deferred, then converged. The
+        // engine's current part must track the selection AND subsequent byte
+        // edits must land on the SELECTED part's storage (currentPart_ tracking).
+        {
+            std::thread setter ([&]()
+            {
+                if (auto* p = proc.getApvts().getParameter ("part_select"))
+                    p->setValueNotifyingHost (p->convertTo0to1 (3.0f));   // Part 3 (0-based 2)
+            });
+            setter.join();
+            check (proc.getEngine().getCurrentPart() == 0,
+                "deferred part_select not applied before the timer fires");
+            pumpDeferredTimerMs (25);
+            check (proc.getEngine().getCurrentPart() == 2,
+                "deferred part_select applied: engine current part == 2");
+            check (juce::roundToInt (proc.getApvts().getRawParameterValue ("part_select")->load()) == 3,
+                "part_select parameter reflects the deferred selection");
+            // A byte edit after the deferred switch must land on Part 2 (the
+            // onPartSelect-driven currentPart_, not just the parameter value).
+            parvati_test::setParamRaw (proc, "part_octave", 2.0f);
+            check (proc.getEngine().getPart (2).partBytes[1] == 2,
+                "post-switch byte edit routes to the deferred-selected Part 2");
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n",

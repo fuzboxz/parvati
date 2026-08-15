@@ -917,6 +917,20 @@ target_link_libraries(parvati_filter_topology_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# AnalogFilter LadderTap equivalence: the per-sample direct-call path must be
+# BIT-IDENTICAL to the legacy 1-sample AudioBlock + process() routing across
+# cutoff/resonance/drive regimes and input classes. Built by default.
+# Run with: ./build/parvati_analog_filter_batch_test
+add_executable(parvati_analog_filter_batch_test
+    tests/analog_filter_batch_test.cpp
+)
+target_include_directories(parvati_analog_filter_batch_test PRIVATE Source)
+target_compile_features(parvati_analog_filter_batch_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_analog_filter_batch_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Multitimbral GUI smoke test (editor builds + Part selector + per-part MIDI
 # channel). Built by default. Run with: ./build/parvati_multigui_test
 add_executable(parvati_multigui_test
@@ -1061,6 +1075,21 @@ add_executable(parvati_multitimbral_test
 target_include_directories(parvati_multitimbral_test PRIVATE Source)
 target_compile_features(parvati_multitimbral_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_multitimbral_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Per-part FX input-routing regression: renderPartFx must sum the Part's OWNED
+# card buffers (the rebuild-resolved bitmask), not the buffers indexed by pool
+# voice indices -- which cross-bleeds parts and silences later parts' FX once
+# per-part voice slots / custom card bitmasks move pool indices past the 6 card
+# buffers. Built by default. Run with: ./build/parvati_part_fx_routing_test
+add_executable(parvati_part_fx_routing_test
+    tests/part_fx_routing_test.cpp
+)
+target_include_directories(parvati_part_fx_routing_test PRIVATE Source)
+target_compile_features(parvati_part_fx_routing_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_part_fx_routing_test PRIVATE
     Parvati
 )
 target_include_directories(parvati_patch_test PRIVATE Source)
