@@ -37,6 +37,14 @@ class FxRoutingBar : public juce::Component,
                      public juce::DragAndDropContainer
 {
 public:
+    // HIG touch-target constants (pinned by tests/ipad_hig_sizing_test.cpp):
+    // the ◀ ▶ topology steppers are full 44x44 targets inside the 50pt flow
+    // row (FlexBox centres them vertically, 3pt breathing room top/bottom),
+    // and the EQ rotary dials draw at the 44pt minimum.
+    static constexpr int kStepBtnW   = 44;   // ◀ ▶ topology stepper width
+    static constexpr int kStepBtnH   = 44;   // ◀ ▶ topology stepper height
+    static constexpr int kEqKnobSize = 44;   // EQ rotary dial (was 42; HIG minimum)
+
     FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
     ~FxRoutingBar() override;
 

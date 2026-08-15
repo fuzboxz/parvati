@@ -80,6 +80,17 @@ Check items off (`[x]`) as they are implemented and verified.
   Also bump EQ knobs 42→44 (`kEqKnobSize`), "+ Add Modulation" 30→44pt
   (`ModMatrixView.cpp:882`, `FxMatrixView.cpp:1004`), PatchPage zone knobs 40→44.
 
+  STATUS (partial — T9 batch): (b) steppers 44×44 DONE, (c) EQ knobs DONE — note
+  the dial actually drew at 36px (row-capped), now 44 via `kEqRowH` 52→60 —
+  (d) Add-Mod buttons 44pt DONE, (e) PatchPage zone knobs 44pt DONE. (a) STOPPED
+  pending a product decision: two 44×44 buttons cannot fit the 72×64 step-grid
+  cell, and even a modest cellH bump keeps stacked buttons at ~62×18. Options:
+  redesign the grid (e.g. 6 columns × 96×70 cells — fits the generator host at
+  ~640×285 — or popup-based length entry reusing the T7 44pt rows). ALSO
+  DISCOVERED (pre-existing, unchanged): at the default 1280×634 editor size the
+  FxRoutingBar column starves the Dry/Wet row to 0×0 (the mix knob is
+  INVISIBLE); needs its own layout-budget decision.
+
 ## Minor
 
 - [ ] **T10. Unify touch slop constants.** Long-press cancel is >8px

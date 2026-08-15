@@ -141,17 +141,19 @@ public:
             channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         b.removeFromLeft (4);
-        // Zone Low knob
+        // Zone Low knob. Caption band 14->12 (the same trick T7 applied to the
+        // combo captions) so the 56pt row yields a full 44pt band for the
+        // dial — the HIG touch minimum (was a 40px dial in a 42px band).
         {
             auto col = b.removeFromLeft (64);
-            zoneLoCaption_.setBounds (col.removeFromTop (14));
-            loSlider_.setBounds (col.withSizeKeepingCentre (40, juce::jmin (40, col.getHeight())));
+            zoneLoCaption_.setBounds (col.removeFromTop (12));
+            loSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
         }
-        // Zone High knob
+        // Zone High knob (same 44pt band as Zone Low).
         {
             auto col = b.removeFromLeft (64);
-            zoneHiCaption_.setBounds (col.removeFromTop (14));
-            hiSlider_.setBounds (col.withSizeKeepingCentre (40, juce::jmin (40, col.getHeight())));
+            zoneHiCaption_.setBounds (col.removeFromTop (12));
+            hiSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
         }
         b.removeFromLeft (8);
         // Poly (remaining width)

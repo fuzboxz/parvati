@@ -876,11 +876,13 @@ void ModMatrixView::rebuildLayout()
     }
 
     // "+ Add Modulation" row at the bottom of the active list (or "Matrix Full").
+    // Full row height (44pt HIG target): the rows above scroll inside the
+    // Viewport, so the taller button costs nothing but scroll length.
     const bool full = (activeCount >= 14);
     addButton_->setButtonText (full ? TRANS ("Matrix Full (14/14)") : TRANS ("+ Add Modulation"));
     addButton_->setEnabled (! full);
-    addButton_->setBounds (4, y + 4, juce::jmax (0, w - 8), 30);
-    y += 38;
+    addButton_->setBounds (4, y + 4, juce::jmax (0, w - 8), kAddButtonH);
+    y += kAddButtonH + 8;
 
     headerLabel_.setText (juce::String (activeCount) + " " + TRANS ("of 14 Used"),
                           juce::dontSendNotification);

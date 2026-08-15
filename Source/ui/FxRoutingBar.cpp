@@ -20,15 +20,18 @@ namespace
     constexpr int kGap        = 6;    // vertical gap between sections
     constexpr int kLabelH     = 14;   // "Dry/Wet" caption height
     constexpr int kKnobSize   = 52;   // Mix rotary dial (synth-parity)
-    constexpr int kStepBtnW   = 24;   // ◀ ▶ topology stepper width
-    constexpr int kStepBtnH   = 28;   // ◀ ▶ topology stepper height
-    constexpr int kFlowRowH   = 50;   // [◀][flow diagram][▶] row height (tightened)
+    constexpr int kFlowRowH   = 50;   // [◀][flow diagram][▶] row height (hosts the 44pt steppers)
     constexpr int kCtrlRowH   = 58;   // [Dry/Wet knob] row height (tightened)
-    constexpr int kEqRowH     = 52;   // [Low][Mid][High] EQ knob row height (tightened)
-    constexpr int kEqKnobSize = 42;   // EQ rotary dial (compact)
+    // [Low][Mid][High] EQ knob row. 14pt caption + 2pt gap + the 44pt dial
+    // (kEqKnobSize, declared in the header for the HIG test) = 60: the row is
+    // tall enough that the dial is no longer clamped by the cell (it was
+    // drawing at 36px when the row was 52). At the DEFAULT editor size the
+    // ctrl row below stays at its current (starved) allocation — see the
+    // resized() comment.
+    constexpr int kEqRowH     = 60;   // [Low][Mid][High] EQ knob row height
 
 // FX master-EQ / mix readout strings (compact, <=5 chars, no space -> fit the
-// 42px EQ dial above the painter's 9px floor). Self-contained here so the FX
+// 44px EQ dial above the painter's 9px floor). Self-contained here so the FX
 // routing bar stays independent of the synth formatter (ui/SynthParamLabels).
 //   fx_eq_low  0..127 (0=off, else HP 20..1500 Hz) — FxChain.cpp:308-312.
 //   fx_eq_mid/high 0..127 (64=unity, +-12 dB)      — FxChain.cpp:319/330.
@@ -379,6 +382,11 @@ void FxRoutingBar::resized()
     if (area.getHeight() > kGap) area.removeFromTop (kGap);
 
     // Reserve the three rows + their gaps, then centre the block vertically.
+    // NOTE (pre-existing, unchanged by the 44pt dial fix): at the DEFAULT
+    // editor size (1280x634) the bar's column is shorter than all three rows
+    // together, so the jlimits below starve the ctrl (Dry/Wet) row to ~0 —
+    // it only lays out at taller editor sizes. The flow + EQ rows keep
+    // priority; rebalancing the column budget would be a separate change.
     const int flowH = juce::jlimit (0, area.getHeight(), kFlowRowH);
     const int eqH   = juce::jlimit (0, juce::jmax (0, area.getHeight() - flowH - 2 * kGap), kEqRowH);
     const int ctrlH = juce::jlimit (0, juce::jmax (0, area.getHeight() - flowH - eqH - 3 * kGap), kCtrlRowH);

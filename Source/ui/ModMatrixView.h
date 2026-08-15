@@ -165,6 +165,11 @@ private:
     // test can static_assert it per platform.
 public:
     static constexpr int kRowHeight = 48;   // unified (was iOS 48 / desktop 34)
+
+    // "+ Add Modulation" / "Matrix Full" row: the 44pt HIG touch minimum.
+    // The rows above scroll inside the Viewport, so the extra height is free.
+    // Pinned by tests/ipad_hig_sizing_test.cpp.
+    static constexpr int kAddButtonH = 44;
 private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModMatrixView)

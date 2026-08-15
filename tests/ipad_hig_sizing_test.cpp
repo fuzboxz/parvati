@@ -13,9 +13,10 @@
 
 #include "PluginEditor.h"          // ParvatiEditor (kHeaderH/kBarHeight) + ParamPage (kMargin)
 #include "ui/CentralModBar.h"      // kBarHeight / kPillH / kPillGap
-#include "ui/ModMatrixView.h"      // kRowHeight
-#include "ui/FxMatrixView.h"       // kRowHeight
+#include "ui/ModMatrixView.h"      // kRowHeight / kAddButtonH
+#include "ui/FxMatrixView.h"       // kRowHeight / kAddButtonH
 #include "ui/FxSlotCard.h"         // kPowerHitSize (FX power-toggle hit area)
+#include "ui/FxRoutingBar.h"       // kStepBtnW/kStepBtnH/kEqKnobSize (routing-bar targets)
 #include "ui/ParvatiLookAndFeel.h" // kPopupRowHeight (default popup rows)
 
 namespace
@@ -39,6 +40,11 @@ static_assert (CentralModBar::kPillGap   == 8,  "pill gap must be 8 (HIG spacing
 static_assert (ModMatrixView::kRowHeight == 48, "mod-matrix row height must be 48");
 static_assert (FxMatrixView::kRowHeight  == 48, "FX-matrix row height must be 48");
 static_assert (FxSlotCard::kPowerHitSize == 44, "FX power-toggle hit area must be 44 (HIG)");
+static_assert (FxRoutingBar::kStepBtnW   == 44, "FX topology steppers must be 44 wide (HIG)");
+static_assert (FxRoutingBar::kStepBtnH   == 44, "FX topology steppers must be 44 tall (HIG)");
+static_assert (FxRoutingBar::kEqKnobSize == 44, "FX master-EQ dial must be 44 (HIG)");
+static_assert (ModMatrixView::kAddButtonH == 44, "mod-matrix Add button must be 44 tall (HIG)");
+static_assert (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button must be 44 tall (HIG)");
 static_assert (ParvatiLookAndFeel::kPopupRowHeight == 44, "default popup-menu rows must be 44 (HIG)");
 
 int main()
@@ -54,6 +60,11 @@ int main()
     check (ModMatrixView::kRowHeight  == 48, "mod-matrix row == 48");
     check (FxMatrixView::kRowHeight   == 48, "FX-matrix row == 48");
     check (FxSlotCard::kPowerHitSize  == 44, "FX power-toggle hit == 44");
+    check (FxRoutingBar::kStepBtnW    == 44, "FX topology stepper width == 44");
+    check (FxRoutingBar::kStepBtnH    == 44, "FX topology stepper height == 44");
+    check (FxRoutingBar::kEqKnobSize  == 44, "FX master-EQ dial == 44");
+    check (ModMatrixView::kAddButtonH == 44, "mod-matrix Add button == 44");
+    check (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button == 44");
     check (ParvatiLookAndFeel::kPopupRowHeight == 44, "default popup-menu row == 44");
 
     std::printf ("\n%s (%d failures)\n",
