@@ -10,7 +10,9 @@
 
 #include "PluginProcessor.h"   // ParvatiAudioProcessor::getEngine()
 #include "PluginEditor.h"      // ParamPage complete type (reflowToWidth/getContentHeight)
+#include "TuningTables.h"      // tuningPresetName (Tune combo items)
 #include "ui/NoteName.h"       // midiNoteName (key-zone knob readouts)
+#include "ui/TuningEditor.h"   // Custom… tuning popover (Tune column)
 
 #include <cstdint>
 
@@ -92,13 +94,14 @@ public:
         setupCaption (zoneLoCaption_);
         setupCaption (zoneHiCaption_);
         setupCaption (polyCaption_);
+        setupCaption (tuneCaption_);
 
         // HIG touch target: the DRAWN dropdown stays a compact 24pt strip
         // while each combo's BOUNDS — its tap band — fill the column height
         // (44pt after the 12pt caption band; see resized). The L&F reads this
         // "parvatiComboVisualH" property (drawComboBox /
         // positionComboBoxText), so the rows keep their exact look.
-        for (auto* c : { &cardsCombo_, &voicesCombo_, &channelCombo_, &polyCombo_ })
+        for (auto* c : { &cardsCombo_, &voicesCombo_, &channelCombo_, &polyCombo_, &tuneCombo_ })
             c->getProperties().set ("parvatiComboVisualH", 24);
 
         // ---- Cards: count 0..6 (id = count + 1). Sum across rows capped at 6
@@ -155,11 +158,26 @@ public:
         polyCombo_.onChange = [this] { onPolyChanged(); };
         addAndMakeVisible (polyCombo_);
 
+        // ---- Tune: per-part microtonal tuning (firmware raga presets +
+        // custom tables). "12-EDO" (id 1) + the 32 firmware presets
+        // (ids 2..33 = raga byte 1..32) + "Custom…" (id 34) opening the
+        // TuningEditor popover. Preset writes go through the SAME byte-4
+        // path as the part_raga APVTS param (so saves/exports carry them);
+        // the resolved-mode mapping mirrors SynthEngine::resolvedTuningMode
+        // (0 = 12-EDO, 1..32 = preset, 33 = custom). ----
+        buildTuneItems();
+        tuneCombo_.onChange = [this] { onTuningChanged(); };
+        addAndMakeVisible (tuneCombo_);
+
         refreshLanguage();
     }
 
     //----------------------------------------------------------------------
-    // Layout: a horizontal strip of labelled columns.
+    // Layout: a horizontal strip of labelled columns. The Tune column is
+    // budgeted for the longest preset name ("Parameshwari" ≈ 81px at the
+    // combo's 14pt text) + the 24px combo chrome — narrower columns measured
+    // against the actual caption/preset text widths (Patch-page working width
+    // floor 1024pt; captions 11pt, verified non-truncating).
     void resized() override
     {
         auto b = getLocalBounds().reduced (4);
@@ -171,19 +189,19 @@ public:
         {
             // 12pt caption band + the remaining 44pt of the 56pt row = a
             // full-height HIG tap band around the compact 24pt visual box.
-            auto col = b.removeFromLeft (78);
+            auto col = b.removeFromLeft (64);
             cardsCaption_.setBounds (col.removeFromTop (12));
             cardsCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         // Voices (Parvati extension: pool slots per part)
         {
-            auto col = b.removeFromLeft (78);
+            auto col = b.removeFromLeft (64);
             voicesCaption_.setBounds (col.removeFromTop (12));
             voicesCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         // Ch
         {
-            auto col = b.removeFromLeft (92);
+            auto col = b.removeFromLeft (56);
             chCaption_.setBounds (col.removeFromTop (12));
             channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
@@ -192,15 +210,22 @@ public:
         // combo captions) so the 56pt row yields a full 44pt band for the
         // dial — the HIG touch minimum (was a 40px dial in a 42px band).
         {
-            auto col = b.removeFromLeft (64);
+            auto col = b.removeFromLeft (48);
             zoneLoCaption_.setBounds (col.removeFromTop (12));
             loSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
         }
         // Zone High knob (same 44pt band as Zone Low).
         {
-            auto col = b.removeFromLeft (64);
+            auto col = b.removeFromLeft (48);
             zoneHiCaption_.setBounds (col.removeFromTop (12));
             hiSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (8);
+        // Tune (microtonal scale preset / Custom… popover)
+        {
+            auto col = b.removeFromLeft (110);
+            tuneCaption_.setBounds (col.removeFromTop (12));
+            tuneCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         b.removeFromLeft (8);
         // Poly (remaining width)
@@ -234,6 +259,8 @@ public:
         const uint8_t poly = engine_.getPart (partIndex_).partBytes[15];   // PartData byte 15 = polyphony
         polyCombo_.setSelectedId (static_cast<int> (poly) + 1, juce::dontSendNotification);
 
+        syncTuningDisplay();
+
         refreshing_ = false;
         updateDimState();
     }
@@ -249,6 +276,7 @@ public:
         zoneLoCaption_.setText (TRANS ("Zone Low"), juce::dontSendNotification);
         zoneHiCaption_.setText (TRANS ("Zone High"), juce::dontSendNotification);
         polyCaption_.setText (TRANS ("Polyphony"), juce::dontSendNotification);
+        tuneCaption_.setText (TRANS ("Tune"), juce::dontSendNotification);
 
         {
             const int prev = channelCombo_.getSelectedId();
@@ -275,6 +303,13 @@ public:
             for (int n = 1; n <= kMaxVoicesPerPart; ++n)
                 voicesCombo_.addItem (juce::String (n), n + 1);
             voicesCombo_.setSelectedId (prev, juce::dontSendNotification);
+        }
+        {
+            // Preset names are proper nouns (firmware scale names) — kept
+            // untranslated; only the fixed chrome items are.
+            const int prev = tuneCombo_.getSelectedId();
+            buildTuneItems();
+            tuneCombo_.setSelectedId (prev, juce::dontSendNotification);
         }
         refreshNameDisplay();
         repaint();
@@ -356,6 +391,37 @@ public:
         refreshing_ = false;
     }
 
+    // The Tune combo's currently-displayed mode (0..32 / 33 = Custom).
+    int displayedTuningMode() const
+    {
+        const int id = tuneCombo_.getSelectedId();
+        return id == 34 ? 33 : id - 1;
+    }
+
+    // Test/automation hook: set the Tune combo as if the user chose it, then
+    // run the normal byte-4 write / editor-open path (JUCE does not fire a
+    // combo's onChange for a programmatic setSelectedId). mode 33 opens the
+    // Custom… popover exactly like the UI — headless tests should drive
+    // TuningEditor directly instead.
+    void chooseTuningMode (int mode)
+    {
+        refreshing_ = true;
+        tuneCombo_.setSelectedId (tuningModeToComboId (mode), juce::dontSendNotification);
+        refreshing_ = false;
+        onTuningChanged();
+    }
+
+    // Re-select the Tune combo from the engine's resolved mode (called by
+    // PatchPage::openTuningEditor's change callback after live popover edits
+    // and by refresh()). No onChange fired.
+    void syncTuningDisplay()
+    {
+        refreshing_ = true;
+        tuneCombo_.setSelectedId (tuningModeToComboId (engine_.resolvedTuningMode (partIndex_)),
+                                  juce::dontSendNotification);
+        refreshing_ = false;
+    }
+
     // Dim the row when its Part has 0 cards (inactive). setAlpha keeps the row
     // visible AND interactive so the user can still raise its card count.
     void updateDimState()
@@ -370,9 +436,29 @@ private:
     SynthEngine& engine_;
     bool refreshing_ = false;
 
-    juce::Label partLabel_, cardsCaption_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_;
-    juce::ComboBox cardsCombo_, voicesCombo_, channelCombo_, polyCombo_;
+    juce::Label partLabel_, cardsCaption_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_, tuneCaption_;
+    juce::ComboBox cardsCombo_, voicesCombo_, channelCombo_, polyCombo_, tuneCombo_;
     juce::Slider loSlider_, hiSlider_;
+
+    // (Re)build the Tune combo items: "12-EDO" (id 1) + the 32 firmware
+    // presets (ids 2..33, untranslated proper nouns) + a separator +
+    // "Custom…" (id 34, opens the TuningEditor popover). Id mapping:
+    // combo id = resolved tuning mode + 1, except Custom (mode 33 -> id 34).
+    void buildTuneItems()
+    {
+        tuneCombo_.clear (juce::dontSendNotification);
+        tuneCombo_.addItem (TRANS ("12-EDO"), 1);
+        for (int id = 1; id <= parvati::kNumTuningPresets; ++id)
+            tuneCombo_.addItem (juce::String (parvati::tuningPresetName (id)), id + 1);
+        tuneCombo_.addSeparator();
+        tuneCombo_.addItem (TRANS ("Custom\xE2\x80\xA6"), 34);
+    }
+
+    static int tuningModeToComboId (int mode)
+    {
+        if (mode == 33) return 34;
+        return juce::jlimit (1, 33, mode + 1);   // mode 0..32 -> id 1..33
+    }
 
     void onCardsChanged()
     {
@@ -417,6 +503,40 @@ private:
         // value from the APVTS, which goes stale after this engine-direct write.
         // Re-sync the current part (engine->APVTS) so the knob + a save stay
         // correct (same staleness reason as the arrangement-combo path above).
+        owner_.proc_.loadPartIntoApvts (engine_.getCurrentPart());
+    }
+
+    void onTuningChanged()
+    {
+        if (refreshing_) return;
+        const int id = tuneCombo_.getSelectedId();
+        if (id == 34)
+        {
+            // Engine stays untouched until the popover's live edits land
+            // (TuningEditor::applyTable -> setPartTuningCustom); the combo
+            // re-syncs from the engine when the editor reports changes.
+            owner_.openTuningEditor (partIndex_);
+            return;
+        }
+        if (id < 1 || id > 33)
+            return;
+        const int mode = id - 1;   // 0 = 12-EDO, 1..32 = raga preset byte
+        // Byte-4 write through the poly idiom (setCurrentPart +
+        // applyPartByte(4, mode) + restore): the same PartData byte the
+        // part_raga APVTS param drives, so saves/exports carry the preset.
+        const int saved = engine_.getCurrentPart();
+        engine_.setCurrentPart (partIndex_);
+        engine_.applyPartByte (4, static_cast<uint8_t> (mode));
+        engine_.setCurrentPart (saved);
+        if (mode == 0)
+        {
+            // D4: "12-EDO" clears the custom flag EXPLICITLY (a preset
+            // selection only shadows it implicitly — byte 4 wins while set).
+            engine_.clearPartTuningCustom (partIndex_);
+        }
+        owner_.postPartEdit();
+        // Same APVTS staleness reason as onPolyChanged: the hosted param
+        // grid's part_raga combo reads the CURRENT part's value.
         owner_.proc_.loadPartIntoApvts (engine_.getCurrentPart());
     }
 
@@ -576,6 +696,32 @@ int PatchPage::getCardCountMax (int part) const
 {
     if (part < 0 || part >= kMaxCards) return -1;
     return rows_[(size_t) part]->cardCountMax();
+}
+
+int PatchPage::getDisplayedTuningMode (int part) const
+{
+    if (part < 0 || part >= kMaxCards) return -1;
+    return rows_[(size_t) part]->displayedTuningMode();
+}
+
+void PatchPage::chooseTuningMode (int part, int mode)
+{
+    if (part < 0 || part >= kMaxCards || mode < 0 || mode > 33) return;
+    rows_[(size_t) part]->chooseTuningMode (mode);
+}
+
+void PatchPage::openTuningEditor (int part)
+{
+    if (part < 0 || part >= kMaxCards) return;
+    // Live edits re-sync the row's combo + the page chrome (dim states,
+    // arrangement label) exactly like a combo-side preset pick.
+    auto onChanged = [this, part]
+    {
+        rows_[(size_t) part]->syncTuningDisplay();
+        postPartEdit();
+    };
+    TuningEditor::launch (rows_[(size_t) part].get(), proc_.getEngine(), part,
+                          std::move (onChanged));
 }
 
 void PatchPage::rebuildCardCombos()

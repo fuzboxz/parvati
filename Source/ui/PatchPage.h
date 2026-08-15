@@ -87,6 +87,15 @@ public:
     // Highest card count @p part's combo currently offers (0..6). With the
     // dynamic per-row cap this is 6 minus the cards used by the other rows.
     int getCardCountMax (int part) const;
+    // Currently-displayed tuning mode for @p part from its Tune combo
+    // (0 = 12-EDO, 1..32 = preset, 33 = Custom; -1 for an out-of-range part).
+    int getDisplayedTuningMode (int part) const;
+    // Set @p part's tuning as if the user chose it in the Tune combo: sets the
+    // selection then runs the normal byte-4 write / editor-open path
+    // (JUCE does not fire onChange for a programmatic setSelectedId).
+    // mode 33 opens the Custom… popover exactly like the UI — do not use in
+    // headless tests (instantiate TuningEditor directly instead).
+    void chooseTuningMode (int part, int mode);
 
 private:
     ParvatiAudioProcessor& proc_;
@@ -126,6 +135,10 @@ private:
     // After any per-part engine mutation: refresh dim states + the arrangement
     // label (the inferred arrangement may have become Custom).
     void postPartEdit();
+    // Open the per-part custom tuning popover (Tune column, "Custom…"). The
+    // editor's live edits re-sync this row's combo through the change
+    // callback (the engine's resolved mode becomes 33 after the first edit).
+    void openTuningEditor (int part);
     // Forward a part-name edit to onPartNamesChanged (editor Part-selector
     // relabel). Called by the nested PartRow after a rename commits.
     void partNamesChanged();

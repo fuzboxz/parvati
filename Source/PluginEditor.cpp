@@ -24,6 +24,7 @@
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
+#include <array>       // custom-tuning flags for the .MUL export dialog
 
 // Version string from CMake (Parvati target compile def). Fallback for any
 // translation unit that does not get the define.
@@ -3850,13 +3851,18 @@ void ParvatiEditor::openSaveMultiDialog()
         // Needs a strategy: show the fallback dialog (with the part names for
         // the preview), then save with the choice.
         std::vector<juce::String> names;
+        std::array<bool, parvati::mul_export::kParts> customTuning {};
         for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+        {
             names.push_back (processorRef_.getEngine().getPartName (i));
+            customTuning[(size_t) i] =
+                processorRef_.getEngine().resolvedTuningMode (i) == 33;
+        }
         MulExportDialog::launch (this, setup, names, [this, f] (int strategy)
         {
             if (strategy >= 0 && processorRef_.saveMultiFile (f, strategy))
                 afterMultiSaved (f);
-        });
+        }, customTuning);
         fileChooser_ = nullptr;
     });
 }

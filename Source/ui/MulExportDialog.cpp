@@ -53,8 +53,9 @@ juce::String toJuceString (const std::string& s) { return juce::String (s); }
 
 MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
                                   const std::vector<juce::String>& partNames,
-                                  DoneCallback onDone)
-    : setup_ (setup), onDone_ (std::move (onDone))
+                                  DoneCallback onDone,
+                                  const std::array<bool, parvati::mul_export::kParts>& customTuningParts)
+    : setup_ (setup), customTuningParts_ (customTuningParts), onDone_ (std::move (onDone))
 {
     // Preview context: part display names (or the empty fallback -> "Part N").
     for (int p = 0; p < parvati::mul_export::kParts; ++p)
@@ -202,6 +203,30 @@ void MulExportDialog::refreshPreview()
         for (const auto& line : previewLines (setup_, sol, 0, &ctx_))
             text << "  " << toJuceString (line) << "\n";
     }
+    // Custom-tuning lossy-export warning (D14): the .MUL carries only the
+    // raga PRESET byte, so parts tuned with a Parvati custom table fall back
+    // to their preset (or 12-EDO) on hardware — name the affected parts so
+    // the cost is visible before the save, not discovered on the unit.
+    for (int p = 0; p < parvati::mul_export::kParts; ++p)
+    {
+        if (! customTuningParts_[(size_t) p])
+            continue;
+        juce::String parts;
+        for (int q = 0; q < parvati::mul_export::kParts; ++q)
+        {
+            if (customTuningParts_[(size_t) q])
+            {
+                if (parts.isNotEmpty())
+                    parts << ", ";
+                parts << ((size_t) q < ctx_.names.size() && ! ctx_.names[(size_t) q].empty()
+                              ? toJuceString (ctx_.names[(size_t) q])
+                              : TRANS ("Part") + " " + juce::String (q + 1));
+            }
+        }
+        text << "\n" << TRANS ("Custom tunings cannot be represented in .MUL — exported parts "
+                                "fall back to their Scale preset byte (or 12-EDO): ") << parts;
+        break;   // one line for all affected parts
+    }
     previewLabel_.setText (text, juce::dontSendNotification);
     previewLineCount_ = text.length() - text.replace ("\n", "").length() + 1;
     resized();   // re-fit the scrolled label to the new content
@@ -210,9 +235,10 @@ void MulExportDialog::refreshPreview()
 void MulExportDialog::launch (juce::Component* parent,
                               const parvati::mul_export::Setup& setup,
                               const std::vector<juce::String>& partNames,
-                              DoneCallback onDone)
+                              DoneCallback onDone,
+                              const std::array<bool, parvati::mul_export::kParts>& customTuningParts)
 {
-    auto* content = new MulExportDialog (setup, partNames, std::move (onDone));
+    auto* content = new MulExportDialog (setup, partNames, std::move (onDone), customTuningParts);
 
     // Theme: inherit the launching editor's LookAndFeel so the dialog matches
     // the active Parvati theme (the DialogWindow is its own desktop window

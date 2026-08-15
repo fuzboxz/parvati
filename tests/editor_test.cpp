@@ -13,9 +13,11 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "TuningTables.h"              // tuningPresetTable (Tune combo assertions)
 #include "ui/ParvatiTheme.h"
 #include "ui/PatchPage.h"
 #include "ui/PatchArrangement.h"
+#include "ui/TuningEditor.h"           // custom-tuning popover (direct instantiation)
 
 namespace
 {
@@ -307,6 +309,75 @@ int main()
         for (int p = 0; p < 6; ++p)
             total6 += popcount (engine.getPartVoiceAllocation (p));
         check (total6 == 6, "Over-budget edits rejected: engine total stays exactly 6");
+
+        // ---- [9] Per-part tuning via the Patch page (Tune column) ----
+        // Drives the REAL combo path (byte-4 write + APVTS re-sync), the
+        // engine->GUI reflection, and the Custom… popover (instantiated
+        // directly — launch() needs a desktop window).
+        std::printf ("\n[9] Per-part tuning via PatchPage\n");
+        check (patchPage->getDisplayedTuningMode (0) == 0, "Tune: part 0 starts at 12-EDO");
+
+        // Preset pick via the UI path -> PartData byte 4 + resolved mode.
+        patchPage->chooseTuningMode (0, 5);
+        check (engine.getPart (0).partBytes[4] == 5, "Tune: preset 5 written to PartData byte 4");
+        check (engine.resolvedTuningMode (0) == 5, "Tune: resolved mode reports the preset");
+        check (patchPage->getDisplayedTuningMode (0) == 5, "Tune: combo reflects the preset");
+        // A preset pick on ANOTHER part must not touch part 0 (byte-4 write is
+        // part-addressed through the setCurrentPart idiom).
+        patchPage->chooseTuningMode (3, 12);
+        check (engine.getPart (0).partBytes[4] == 5 && engine.getPart (3).partBytes[4] == 12,
+               "Tune: per-part byte writes stay isolated");
+
+        // Engine -> GUI reflection (a .MUL load landing a preset byte).
+        patchPage->refresh();
+        check (patchPage->getDisplayedTuningMode (3) == 12, "Tune: refresh mirrors engine mode");
+
+        // Custom… popover (direct instantiation = the same rows/apply paths):
+        // prefill from the resolved preset, a row edit activates custom mode,
+        // [Clear] zeroes but stays custom, and an explicit 12-EDO pick clears
+        // the custom flag (D4).
+        {
+            int applyCount = 0;
+            TuningEditor ed (engine, 0, [&applyCount] { ++applyCount; });
+            const auto* just = parvati::tuningPresetTable (5);
+            check (ed.rowUnits (0) == just[0], "TuningEditor prefills from the resolved preset");
+            ed.setRowUnitsForTest (1, 17);
+            check (applyCount >= 1, "TuningEditor applies live (callback fired)");
+            check (engine.resolvedTuningMode (0) == 33, "row edit activates custom mode");
+            int16_t t[12] = {};
+            engine.resolveTuningOffsets (0, t);
+            check (t[1] == 17 && t[0] == just[0], "custom table = preset prefill + the edited row");
+            check (ed.rowReadout (1) == "+13.28ct", "readout shows quantized cents (17 units)");
+            ed.clearForTest();
+            engine.resolveTuningOffsets (0, t);
+            bool zeros = true;
+            for (int c = 0; c < 12; ++c) zeros = zeros && t[c] == 0;
+            check (zeros && engine.resolvedTuningMode (0) == 33, "[Clear] zeros the table, stays Custom");
+        }
+
+        // Scala import through the popover's conversion path (12tet + a kbm
+        // that mutes class 2): table untouched on error, sentinel on success.
+        {
+            TuningEditor ed (engine, 0, nullptr);
+            const auto scl = juce::String ("! 12tet\n12\n")
+                + "100.0\n200.0\n300.0\n400.0\n500.0\n600.0\n700.0\n800.0\n900.0\n1000.0\n1100.0\n1200.0\n";
+            const auto kbm = juce::String (
+                "! map\n12\n0\n11\n60\n60\n261.6255653\n12\n")
+                + "0\nx\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n";
+            check (ed.importScalaForTest (scl, kbm), "Scala import accepted (muted class)");
+            check (ed.rowUnits (1) == (int) parvati::kTuningSilence, "kbm 'x' class carries the mute sentinel");
+            check (ed.rowReadout (1).contains ("\xE2\x80\x94"), "muted row reads as an em dash");
+            const auto before = ed.rowUnits (0);
+            check (! ed.importScalaForTest (juce::String ("! bad\nnotanumber\n"), {}),
+                   "malformed .scl rejected");
+            check (ed.rowUnits (0) == before, "rejected import leaves the table untouched");
+        }
+
+        // Explicit 12-EDO clears the custom flag; byte 4 returns to 0.
+        patchPage->chooseTuningMode (0, 0);
+        check (engine.getPart (0).partBytes[4] == 0, "12-EDO writes raga byte 0");
+        check (engine.resolvedTuningMode (0) == 0, "12-EDO clears the custom flag (D4)");
+        check (patchPage->getDisplayedTuningMode (0) == 0, "Tune: combo back to 12-EDO");
     }
 
     // ---- teardown ----

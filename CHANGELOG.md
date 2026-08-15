@@ -4,7 +4,175 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **Engine correctness/threading fixes (audit 2026-08-15, section A).**
+  - **Critical — per-part FX input routing** (`SynthEngine::renderPartFx`):
+    the per-part FX-chain input summed `voiceCardBuffers_` indexed by POOL
+    voice indices (0..95), which only coincide with card indices (0..5) in
+    the default single-part layout. With per-part voice slots or custom
+    card bitmasks this cross-bled OTHER parts' cards into a part's FX
+    (audible on the main bus, which sums every part's FX output) and left
+    parts whose pool slice starts at ≥ 6 with a SILENT FX input — even the
+    firmware factory multi bitmasks (0x15/0x2a) were affected. The sum now
+    runs over each part's OWNED-card bitmask, persisted by
+    `rebuildVoiceAllocation` (`partCardMask_`). Regression test:
+    `parvati_part_fx_routing_test` (disjoint-card/slots≠cards layout,
+    factory bitmasks, default-path sample-exactness).
+  - **Critical — `part_select` automation ran ValueTree/UndoManager writes on
+    the render thread**: automating it executed `onPartSelect` →
+    `loadPartIntoApvts` (~250 `getParameterAsValue` writes bound to the
+    UndoManager, racing the APVTS 50 Hz flush timer — UB-class data race
+    plus a hard RT violation). `part_select` is now created
+    non-automatable (`AudioParameterIntAttributes().withAutomatable(false)`;
+    part switching is a UI action, not a sound parameter).
+  - **Critical — `parameterChanged` audio-thread dispatch broke the engine's
+    single-writer invariants**: JUCE 9 delivers host automation (AUv3 render
+    events / VST3 `process()`) and the CC/NRPN map (`midiParamMap_.handleBuffer`
+    inside `processBlock`) synchronously ON THE CALLING THREAD, so arp/seq
+    parameter edits reached the engine setters from the audio thread — a
+    SECOND writer for the `pendingConfig_` seqlock (torn configs: the
+    historical SIGBUS class). Audio-thread-origin arp/seq/part_select writes
+    are now funneled through a fixed-capacity (64) latest-wins
+    `DeferredParamRing` drained by a 60 Hz message-thread timer (≤ 16.7 ms
+    added latency for those edits only; GUI-path edits stay synchronous).
+    Debug jasserts on `applyArpParameter`/`applySequencerParameter`/
+    `onPartSelect` enforce the restored message-thread invariant. False
+    "timer-routed" dispatch comments corrected (PluginProcessor.h,
+    ui/FxSlotCard.cpp, SynthEngine.h, tests/mt_harness.h). Concurrency test
+    extended: CC102-106 + host-style writes from a non-message thread vs
+    GUI-style edits, drop/convergence/last-value-wins assertions.
+  - **`loadMultiFile` desynced `part_select`**: a `.MUL` load moved the
+    engine to Part 0 but left the part combo showing the previously selected
+    part (edits still routed correctly, but the UI lied). The load now writes
+    `part_select` (mirroring the `.parvati` path); `partstate_test` gains a
+    `assertPartSelectInSync` check.
+  - **`setStateInformation` rested on a false `replaceState` assumption**:
+    JUCE 9's `replaceState` DOES fire `parameterChanged` per changed
+    parameter (valueTreeRedirected → setDenormalisedValue →
+    setValueNotifyingHost). A `restoringState_` guard now suppresses those
+    mid-restore callbacks (they re-applied stale/partial values to the
+    engine and drove the part-load machinery re-entrantly);
+    `currentPart_` is tracked explicitly on both the engine-blob and legacy
+    restore paths. Host-state test hardened to a full ~259-parameter compare
+    (legacy state saved on Part 3 restores part_select==4, engine part 3,
+    and the saved bytes land on Part 3).
+  - **`readPendingConfig` spun unbounded on the audio thread**: the seqlock
+    reader now retries a bounded 64 times, falls back to the audio thread's
+    last-good config snapshot, and re-marks `configDirty_` so the next block
+    retries (documented: only the audio thread can exhaust — the message
+    thread IS the sole writer).
+  - **`AnalogFilter` per-sample overhead**: the 4-pole ladder path built a
+    1-sample `AudioBlock` + `ProcessContextReplacing` and called
+    `LadderFilter::process()` PER SAMPLE (~3.8M wrapper constructions/s at
+    96-voice polyphony). A `LadderTap` subclass now exposes the protected
+    `processSample`/`updateSmoothers` hooks and reproduces JUCE's exact
+    per-sample sequence — BIT-IDENTICAL output (pinned by
+    `parvati_analog_filter_batch_test` across cutoff/resonance/drive regimes
+    and input classes).
+  - Dead/stale surface removed: unused `getArp()`/`getSequencer()` (returned
+    audio-thread-owned objects; zero call sites), dead
+    `setNoteStealingEnabled(true)` (JUCE's steal path is unreachable —
+    noteOn/noteOff are overridden and stealing lives in the per-part
+    PolyAllocator), and four stale comments (`setFxMix` "not consumed yet",
+    "16 AmbikaVoice instances", `killGeneratedNotes_` flagged-by, seqlock
+    sole-writer note).
+- **Deferred (recorded, not implemented — separate lanes):** god-object
+  extraction (PolyAllocator/PartFxRack/EngineStateCodec), sample-accurate
+  arp/seq timing, PartData byte-map unification, clouds::Reverb `lp_decay`
+  init (vendored-verbatim policy), audio-thread allocation pre-construction
+  for OS/topology/FX-type changes, UndoManager transaction bracketing,
+  `.parvati` version check, part-combo repaint guard, SharedContainer
+  diagnostics, relaxed-snapshot acquire pairing.
+
 ### Added
+- **Per-part microtonal tuning (firmware raga restore + custom tables +
+  Scala import).**
+  - **Fidelity restore:** the Ambika controller firmware already had per-part
+    microtonal tuning — `PartData.raga` (byte 4) selecting one of 32 scale
+    tables applied by firmware `Part::TuneNote` — which the original Parvati
+    port had dropped (only octave + fine tuning were ported). The 30 scale
+    tables + the 32-entry dispatch (bageshree→kafi, rasia→yaman aliases) are
+    now vendored verbatim into `Source/TuningTables.cpp` (GPL-3.0 provenance,
+    NOTICES.md; do-not-edit policy like `dsp/resources`). Exposed as the
+    `part_raga` ("Scale") choice parameter — index == raga byte (0..32,
+    file-faithful superset of the hardware UI's 0..31). The firmware does NOT
+    map raga over CC/NRPN (UI-only there), so the parameter carries no MIDI
+    mapping. Restoring raga also restores the firmware AcceptNote behaviour:
+    note classes muted by the scale (32767 sentinel) are REFUSED, not voiced
+    as garbage pitch (a deliberate, documented deviation from the firmware's
+    clamped arithmetic).
+  - **Custom tables:** per-part 12-entry tables (±127 in 1/128-semitone
+    units) staged message-thread → audio-thread (`tuningDirty_`, the
+    frameDirty_/fxDirty_ pattern) and applied at the single note→pitch
+    choke point (`AmbikaVoice::startNote`, raw-note class indexing like the
+    firmware). Mode resolution: 0 = 12-EDO, 1..32 = raga preset (== byte 4,
+    which also round-trips .MUL/.PRO), 33 = custom (byte 4 kept 0 while
+    active — `setPartTuningCustom` enforces this, so a leftover preset can
+    never shadow the user's table and hardware export stays clean). Custom
+    tables may carry the mute sentinel themselves (Scala imports of keymaps
+    with unmapped classes): it survives storage verbatim and refuses those
+    note classes exactly like a raga preset. No `Source/dsp/` changes — the
+    bit-exactness policy is intact; resolution is capped at the hardware's
+    1/128-semitone (~0.78 ¢) oscillator quantum by construction.
+  - **Scala import:** `parvati::importScala` converts `.scl` (+ optional
+    `.kbm`) into the custom table, enforcing the hardware contract
+    ACCURATELY rather than approximating: 12-key mappings only (S≠12
+    rejected), octave-repeating periods only (the formal octave must be
+    1200 ¢ within the 1/128-st quantum — non-octave scales like
+    Bohlen-Pierce are rejected, not mangled), kbm degrees beyond the formal
+    octave rejected, short keymaps rejected (deterministic rule), offsets
+    clamped to ±127 with per-class warnings, unmapped classes become the
+    firmware mute sentinel, reference-frequency deviations (e.g. A = 432 Hz)
+    fold in exactly, single final rounding from full double precision, and a
+    C-locale parser (no locale-dependent numbers). Warning taxonomy: always
+    -on resolution-cap notice, clamped classes, muted classes, subset /
+    duplication notes.
+  - **State v7 + persistence:** the engine-state blob gains a per-part
+    length-prefixed tuning block (`{mode; offsets[12]}`); `restoreState`
+    accepts v1..v7 (a v6 blob restores presets from its raga byte, customs
+    cleared). Migration tradeoff (same accepted class as v5→v6): an OLDER
+    Parvati build strictly rejects a v7 blob and falls back to the legacy
+    single-part APVTS restore. `.parvati` multis carry `tuning_mode` +
+    `tuning_offsets` per part behind `hasProperty` guards (old files load
+    unchanged; new files load in old builds as no-ops). The raga byte rides
+    `.PRO`/`.MUL` unchanged (custom tables are Parvati-only: they do not
+    export to hardware formats).
+  - **Standing-bend pickup fix (pre-existing gap, fixed alongside):** voices
+    triggered while a pitch wheel is off-centre now inherit the standing
+    bend from a per-channel latch (`lastWheel_`, wheel-centre default);
+    previously a new note started un-bent until the next wheel event —
+    audible with MPE and latched wheels. Per-channel: other channels are
+    unaffected.
+  - Tests: `parvati_tuning_test` (vendored-table fidelity incl. the 7 muted
+    classes of kaushik todi, hook mapping/composition, sentinel gates, both
+    staging paths, v7 round-trip + hand-crafted v6 view, `.parvati` + `.MUL`
+    round-trips, standing bend) and `parvati_scala_import_test` (full
+    expected-table fixture corpus — 12tet / ji12 / penta+kbm / edo19+kbm /
+    bohlen / root62 / x432 — plus grammar edges and the malformed-input
+    taxonomy). Scala fixture expectations were hand-derived independently
+    from the documented math and cross-checked digit-by-digit.
+  - **UI surface (Patch page):** a per-part **Tune** column — "12-EDO" + the
+    32 firmware presets + "Custom…", which opens the per-part tuning popover
+    (`Source/ui/TuningEditor.{h,cpp}`): twelve note-class rows with a
+    1-unit drag/step control (±127), a quantized-cents readout (the honest
+    hardware resolution, never a finer promise), double-click-to-zero, an
+    inline warning/error band, [Import .scl/.kbm…] (the FileChooser path
+    over `parvati::importScala`, warnings surfaced inline — mobile-friendly,
+    no alert popups), [Clear] and [Done]. Applying is live (every edit lands
+    via `setPartTuningCustom`; closing without [Done] loses nothing), rows
+    prefill from the currently resolved table (tweak-a-preset-into-custom
+    flow), and the popover scrolls in short AUv3 panes (the MulExportDialog
+    pattern). The .MUL export-fallback dialog now also warns when any part
+    uses a custom tuning (naming the parts — .MUL cannot carry custom
+    tables). ParamHelp gains the `part_raga` entry (incl. the keytracking /
+    NOTE-mod-source side effect) and a `part_tuning` resolution note;
+    SynthParamLabels decodes the raga byte (pure regression entry). Row
+    columns re-budgeted (Cards/Voices/Ch/Zone/Tune) against measured caption
+    and preset-name text widths; HIG 44pt bands preserved. Test additions:
+    multigui [9] (Tune combo path, editor prefill/live-apply/Clear, Scala
+    import incl. sentinel + rejected-import-untouched), export-fallback [l]
+    (custom-tuning warning + part naming), synth-paramtext (part_raga
+    decode), tuning (custom sentinel round-trip).
 - **CLAP plugin format + Linux build support.**
   - CLAP via clap-juce-extensions (JUCE 9.0.0 has no native CLAP `FORMATS`
     value; native CLAP is on the JUCE roadmap). The extension is fetched at

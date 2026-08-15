@@ -116,6 +116,28 @@ Result: `tests/concurrency_test.cpp` (a background audio thread hammering
   patch/part/arp/seq/polyphony + a mid-run preset load) is now **TSAN-clean**
   (0 races over repeated runs); `polyphonyMode` stays plain (audio-thread-only).
 
+## Per-part tuning staging (microtonal)
+Per-part tuning follows the same MT-stage → AT-service shape as the byte frames:
+- **Preset mode** rides PartData byte 4 (the firmware "raga") — written via the
+  normal `applyPartByte`/`part_raga` param path, published by `frameDirty_`.
+- **Custom mode** (mode 33) is engine-side only: `Part::customTuning`
+  (`AtomicByteArray<24>`, 12 × int16 LE in 1/128-semitone units) + a
+  `customTuningActive` flag, published by a dedicated `tuningDirty_` release/
+  acquire serviced next to the `frameDirty_` loop (`pushPartBytesToVoices` also
+  ends with a tuning push, so preset picks and custom edits share one funnel).
+  `setPartTuningCustom` keeps byte 4 at 0 while custom is active (the resolution
+  rule `byte4 ? byte4 : customFlag ? 33 : 0` then never shadows user edits) and
+  passes the 32767 mute sentinel through verbatim.
+- **Consumption** happens once, at the single note→pitch choke point
+  (`AmbikaVoice::startNote`: `note14 = baseNote*128 + table[note & 11] + …`),
+  after the sentinel gates in `SynthEngine::noteOn`/`triggerNoteInPart` refuse
+  muted note classes (firmware `AcceptNote` semantics).
+- **Persistence**: the host-state blob carries a per-part length-prefixed
+  `{mode; offsets[12]}` block (state **v7**); `.parvati` multis carry
+  `tuning_mode`/`tuning_offsets` behind `hasProperty` guards; `.PRO`/`.MUL`
+  carry the preset byte unchanged (custom tables do not export — the dialog
+  warns). Guarded by `tests/tuning_test.cpp`.
+
 ## Host plugin state (full 6-Part persistence)
 `getStateInformation`/`setStateInformation` previously persisted only the APVTS
 (current Part) + UI prefs, so a DAW project reload lost Parts 1-5 (patch/part/

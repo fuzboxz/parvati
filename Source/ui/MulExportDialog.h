@@ -14,6 +14,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -28,9 +30,14 @@ public:
 
     // @p partNames: display names per part ("Kick", "Lead", ...) used in the
     // preview lines; entries may be empty ("Part N" fallback).
+    // @p customTuningParts: parts whose tuning is a Parvati CUSTOM table
+    // (engine resolvedTuningMode == 33). The .MUL format cannot carry custom
+    // tables (only the raga preset byte), so the preview shows a lossy-export
+    // warning naming those parts. All-false = no warning line.
     MulExportDialog (const parvati::mul_export::Setup& setup,
                      const std::vector<juce::String>& partNames,
-                     DoneCallback onDone);
+                     DoneCallback onDone,
+                     const std::array<bool, parvati::mul_export::kParts>& customTuningParts = {});
 
     void resized() override;
     void paint (juce::Graphics&) override;
@@ -41,7 +48,8 @@ public:
     static void launch (juce::Component* parent,
                         const parvati::mul_export::Setup& setup,
                         const std::vector<juce::String>& partNames,
-                        DoneCallback onDone);
+                        DoneCallback onDone,
+                        const std::array<bool, parvati::mul_export::kParts>& customTuningParts = {});
 
 private:
     void refreshPreview();
@@ -51,10 +59,14 @@ public:
     // smoke of the strategy->preview wiring without a peer).
     void refreshPreviewPublic() { refreshPreview(); }
 
+    // Test hook: the current preview text (warning-line assertions).
+    juce::String previewTextForTest() const { return previewLabel_.getText(); }
+
 private:
 
     parvati::mul_export::Setup setup_;
     parvati::mul_export::PreviewContext ctx_;
+    std::array<bool, parvati::mul_export::kParts> customTuningParts_ {};
     DoneCallback onDone_;
     bool fired_ = false;
 

@@ -130,6 +130,15 @@ arithmetic and structure — do not "modernize" it into floating point. Any chan
 there should be validated against the existing DSP tests
 (`parvati_lfo_*`, `parvati_filter_topology_test`, `parvati_tests`, …).
 
+`Source/TuningTables.cpp` follows the same policy for the CONTROLLER side: the
+32 scale ("raga") tables are vendored verbatim from the firmware's
+`controller/resources.cc` — do not edit them by hand; re-vendor from upstream
+if the firmware ever changes (see the file header and `NOTICES.md`). The Scala
+converter (`Source/ScalaImport.cpp`) is Parvati-authored and unit-tested against
+`parvati_scala_import_test`; per-part tuning behavior is covered by
+`parvati_tuning_test` (plus the `[9]` tuning section of `parvati_multigui_test`
+for the UI paths).
+
 ## Submitting changes
 
 1. Open an issue describing the change for non-trivial work.

@@ -23,6 +23,8 @@ microcontroller / voicecard hardware.
 - All 3 Ambika filter topologies (4-pole LM13700, 4-pole SSM2164, 2-pole SVF)
 - Loads/saves original Ambika `.PRO` (program) and `.MUL` (multi) patch files
 - 6-part multitimbral with per-part MIDI channel, key zone & voice allocation
+- **Per-part microtonal tuning** — the 32 firmware scale presets, custom
+  12-entry per-note-class tables, and Scala `.scl`/`.kbm` import
 - Host-tempo sync, MPE, multi-output buses (6 individual outs + main mix)
 - Factory preset banks bundled (GPL-3.0 "goldencard" banks)
 
@@ -86,6 +88,32 @@ cmake --build build --target Parvati_VST3 Parvati_CLAP Parvati_Standalone -j
 Linux builds VST3, CLAP, and Standalone (the classic AU is macOS-only).
 User-level install targets are `~/.vst3` and `~/.clap`; the standalone binary
 lands in `build/Parvati_artefacts/Release/Standalone/Parvati`.
+
+## Microtonal tuning
+
+Every part has its own tuning (the **Tune** column on the Patch page):
+
+- **12-EDO** (default) or one of the **32 firmware scale presets** — the
+  Ambika's own "raga" tables, restored verbatim (a dropped-by-the-port
+  firmware feature). Presets round-trip `.PRO`/`.MUL` files, so they also
+  play back on the hardware. Scale-muted note classes (some presets) are
+  refused exactly like the hardware.
+- **Custom…** opens a per-part editor: twelve note-class offsets in steps of
+  1 unit = 1/128 semitone (≈ 0.78 ¢ — the oscillator's actual resolution;
+  the readout never promises finer), double-click a row to reset it, and
+  **Import .scl/.kbm…** converts a Scala tuning file into the table.
+- Scala import stays honest to the hardware rather than approximating:
+  12-key octave-repeating mappings only (other sizes, non-octave periods
+  such as Bohlen-Pierce, and over-long keymaps are rejected with the
+  reason), offsets are clamped to ±127 with a per-class warning, unmapped
+  classes become the firmware's muted-note behaviour, and a 432 Hz-style
+  reference pitch folds in exactly.
+- Caveats: custom tables (unlike presets) do not export to `.MUL`/`.PRO`
+  (the formats have no field for them — the export falls back to the part's
+  Scale preset byte or 12-EDO, and the export dialog says so); arpeggiator
+  octave shifts transpose by one scale period; scale offsets also shift
+  filter key tracking and the NOTE modulation source (the offsets apply to
+  the triggered pitch, as on the hardware).
 
 ---
 

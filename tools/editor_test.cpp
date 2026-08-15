@@ -207,14 +207,15 @@ int main()
         const auto globalPage = std::find_if (pages.begin(), pages.end(), [] (ParamPage* p)
         {
             auto cs = pageControls (p);
-            if (cs.size() != 10) return false;
-            bool hasCard = false, hasCurve = false;
+            if (cs.size() != 11) return false;   // + part_raga (per-part scale)
+            bool hasCard = false, hasCurve = false, hasRaga = false;
             for (auto* c : cs)
             {
                 if (c->getParamID() == "filter_card") hasCard = true;
                 if (c->getParamID() == "vca_curve")   hasCurve = true;
+                if (c->getParamID() == "part_raga")   hasRaga = true;
             }
-            return hasCard && hasCurve;
+            return hasCard && hasCurve && hasRaga;
         });
 
         auto* topTabs = findTabs (ed);
@@ -380,10 +381,10 @@ int main()
         }
 
         std::printf ("\n[3b] Page grouping (Oscillators / Global)\n");
-        std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (10 controls)\n",
+        std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (11 controls)\n",
                      oscPage != pages.end(), globalPage != pages.end());
         check (oscPage != pages.end(), "Oscillators page has exactly 8 osc_* controls");
-        check (globalPage != pages.end(), "Global page has 10 controls incl. filter_card + vca_curve");
+        check (globalPage != pages.end(), "Global page has 11 controls incl. filter_card + vca_curve + part_raga");
 
         std::printf ("\n[4] Top-bar Part selector is wired to the engine\n");
         processor.getApvts().getParameterAsValue ("part_select") = 3.0f;   // 1-based part 3
