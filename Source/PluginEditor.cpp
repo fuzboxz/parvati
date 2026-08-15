@@ -2981,6 +2981,24 @@ void ParvatiEditor::timerCallback()
     if (popupOpen && tooltipWindow_ != nullptr)
         tooltipWindow_->hideTip();
 
+    // Mouse-activity tracking for the adaptive poll rate (see the END of this
+    // callback): getMouseXYRelative() is the peer-cached position (cheap), so a
+    // delta vs the last tick means the mouse moved. A mouse parked OUTSIDE the
+    // window also reports a constant position — no false activity.
+    if (const auto mousePos = getMouseXYRelative(); mousePos != lastMousePos_)
+    {
+        lastMousePos_ = mousePos;
+        lastMouseActivity_ = juce::Time::getCurrentTime();
+    }
+
+    // Single drain of the tap-to-assign transient status this tick (it has a
+    // frame budget — calling it twice would double-drain). The result feeds
+    // BOTH the tooltip priority below and the adaptive-rate activity signal.
+    const juce::String transientStatus = ParamControl::tickTransientStatus();
+
+    // Voice count for the status strip AND the adaptive-rate activity signal.
+    int activeVoices = 0;
+
     // Mirror the UndoManager's undo/redo availability onto the top-bar buttons
     // (~30 Hz, same cadence as the Patch-page refresh below). Cheap O(1)
     // canUndo/canRedo checks; setEnabled() is a no-op when unchanged.
@@ -2994,6 +3012,7 @@ void ParvatiEditor::timerCallback()
         for (int i = 0; i < engine.getNumVoices(); ++i)
             if (auto* av = engine.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
                 ++active;
+        activeVoices = active;
         const int denom = processorRef_.getEngine()
             .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load();
         const juce::String countText = juce::String (active) + "/" + juce::String (denom);
@@ -3012,10 +3031,29 @@ void ParvatiEditor::timerCallback()
             const uint64_t over = processorRef_.getAudioOverrunCount();
             const int curPct = juce::jlimit (0, 999, juce::roundToInt (cur * 100.0));
             const int peakPct = juce::jlimit (0, 999, juce::roundToInt (peak * 100.0));
-            juce::String loadText = "CPU " + juce::String (curPct) + "%";
-            if (over > 0) loadText += " !" + juce::String ((int) over);   // overrun count
-            if (statusLoadLabel_.getText() != loadText)
-                statusLoadLabel_.setText (loadText, juce::dontSendNotification);
+            // Anti-flicker hold gate: the per-block probe jitters 0<->1% from
+            // render-timing noise, which used to re-set this label ~20x/sec at
+            // idle (each text change repaints the whole status strip, and with
+            // it the editor). The readout now updates only when the value MOVES
+            // MEANINGFULLY (>=2 percentage points), a fresh overrun count
+            // appears (never held — overruns are the thing being diagnosed),
+            // or 500 ms elapsed since the last refresh (a genuinely drifting
+            // load still tracks). The existing text-comparison guard stays as
+            // the final gate below.
+            const bool overrunsChanged = static_cast<int> (over) != lastLoadOverruns_;
+            const bool movedEnough = std::abs (curPct - lastLoadPct_) >= 2;
+            const bool holdElapsed = juce::Time::getCurrentTime() - lastLoadTextUpdate_
+                                     > juce::RelativeTime::milliseconds (500);
+            if (overrunsChanged || movedEnough || holdElapsed)
+            {
+                juce::String loadText = "CPU " + juce::String (curPct) + "%";
+                if (over > 0) loadText += " !" + juce::String ((int) over);   // overrun count
+                if (statusLoadLabel_.getText() != loadText)
+                    statusLoadLabel_.setText (loadText, juce::dontSendNotification);
+                lastLoadPct_ = curPct;
+                lastLoadOverruns_ = static_cast<int> (over);
+                lastLoadTextUpdate_ = juce::Time::getCurrentTime();
+            }
             // Colour by headroom (peak drives the colour; overruns force red).
             auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
             const ParvatiTheme* th = lnf ? lnf->getTheme() : nullptr;
@@ -3025,12 +3063,25 @@ void ParvatiEditor::timerCallback()
             const juce::Colour c = (over > 0 || peak >= 0.90) ? danger
                                   : peak >= 0.70                ? warn
                                                                 : ok;
-            statusLoadLabel_.setColour (juce::Label::textColourId, c);
+            // setColour marks the label dirty even when the colour is unchanged
+            // — gate on an actual change so an idle tick never repaints.
+            if (c != lastLoadColour_)
+            {
+                statusLoadLabel_.setColour (juce::Label::textColourId, c);
+                lastLoadColour_ = c;
+            }
             // Keep the tooltip current with the peak (so the hovered help shows
-            // the worst-case seen, not just the live value).
-            statusLoadLabel_.setTooltip ("Audio-thread realtime load: now " + juce::String (curPct)
+            // the worst-case seen, not just the live value). The text is rebuilt
+            // every tick — only push it through setTooltip when it actually
+            // differs (setTooltip dirties the component regardless).
+            juce::String loadTip = "Audio-thread realtime load: now " + juce::String (curPct)
                 + "%, peak " + juce::String (peakPct) + "%" + (over > 0 ? (", " + juce::String ((int) over) + " overruns") : juce::String())
-                + ". Near/over 100% = xruns/crackle. Right-click to reset the peak.");
+                + ". Near/over 100% = xruns/crackle. Right-click to reset the peak.";
+            if (loadTip != lastLoadTip_)
+            {
+                statusLoadLabel_.setTooltip (loadTip);
+                lastLoadTip_ = loadTip;
+            }
         }
 
         // Tooltip bar: the help text of the control under the mouse (walks up
@@ -3054,8 +3105,9 @@ void ParvatiEditor::timerCallback()
         // Tap-to-assign transient status (e.g. "Mod Matrix full") takes priority
         // over the hover tooltip for a short time after requestAssign returns
         // false (full matrix). Drains back to the normal hover tip afterwards.
-        if (const auto ts = ParamControl::tickTransientStatus(); ts.isNotEmpty())
-            tip = ts;
+        // (Drained once at the top of this callback — transientStatus.)
+        if (transientStatus.isNotEmpty())
+            tip = transientStatus;
         if (statusTooltipLabel_.getText() != tip)
             statusTooltipLabel_.setText (tip, juce::dontSendNotification);
     }
@@ -3065,9 +3117,10 @@ void ParvatiEditor::timerCallback()
     // .MUL load) are covered by the forced refresh in applyPatchFile.
 
     // ---- Keyboard latching: mirror sounding notes across all voices ----
-    if (keyboardView_ == nullptr)
-        return;
-
+    // (No early returns below: the adaptive-rate decision at the END of this
+    // callback must run every tick.)
+    if (keyboardView_ != nullptr)
+    {
     const int curPart = processorRef_.getEngine().getCurrentPart();
     if (curPart != lastLatchPart_)
     {
@@ -3076,8 +3129,9 @@ void ParvatiEditor::timerCallback()
             keyboardView_->latchNoteOff (n);
         latchedNotes_.clear();
         lastLatchPart_ = curPart;
-        return;
     }
+    else
+    {
 
     // Collect the set of currently-active notes across ALL voices.
     juce::Array<int> activeNotes;
@@ -3112,6 +3166,39 @@ void ParvatiEditor::timerCallback()
         {
             keyboardView_->latchNoteOff (latchedNotes_[i]);
             latchedNotes_.remove (i);
+        }
+    }
+    }   // else: same-part latch mirror
+    }   // keyboardView_ != nullptr
+
+    // ---- Adaptive poll rate: 30 Hz while anything is happening, 4 Hz idle ----
+    // The timer drives the status strip, the tooltip hover walk, the undo/redo
+    // mirror and the keyboard latching. At true idle — no sounding voices, no
+    // transient status draining, no modal popup, no latched keyboard lamps and
+    // the mouse parked for >3 s — none of those displays can change, so the
+    // poll drops to 4 Hz and the idle repaint/CPU churn collapses. Any
+    // activity flips back to 30 Hz on the next tick (<=250 ms later at worst):
+    // tooltips only matter while the mouse moves (a moving mouse keeps the
+    // 30 Hz rate, well inside the hover delay), voice lamps update while voices
+    // sound, and a transient status drains at full rate while visible. The rate
+    // is recomputed at the END of the callback so this tick's own work (voice
+    // counts, latch state, drained status) already feeds the decision.
+    {
+        const bool mouseRecentlyMoved = juce::Time::getCurrentTime() - lastMouseActivity_
+                                        < juce::RelativeTime::seconds (3.0);
+        const bool keyboardBusy = keyboardView_ != nullptr
+                               && keyboardView_->isVisible()
+                               && ! latchedNotes_.isEmpty();
+        const bool busy = activeVoices > 0
+                       || transientStatus.isNotEmpty()
+                       || popupOpen
+                       || keyboardBusy
+                       || mouseRecentlyMoved;
+        const int desiredHz = busy ? 30 : 4;
+        if (desiredHz != timerHz_)
+        {
+            timerHz_ = desiredHz;
+            startTimerHz (desiredHz);
         }
     }
 }
@@ -3395,7 +3482,12 @@ void ParvatiEditor::paint (juce::Graphics& g)
                     juce::Justification::centredLeft, false);
         g.setFont (lnf_.appFont (10.0f, juce::Font::plain));
         g.setColour (theme.textSecondary);
-        g.drawText ("by 805Labs \xc2\xb7 v" PARVATI_VERSION, block,
+        // CharPointer_UTF8: the \xc2\xb7 middle dot makes this a UTF-8 literal;
+        // the implicit juce::String (const char*) conversion would assert
+        // (CharPointer_ASCII::isValidString) on EVERY editor paint — the paint
+        // is not clipped before the String is constructed — and in Release the
+        // ASCII path is ambiguous for bytes >127.
+        g.drawText (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION), block,
                     juce::Justification::centredLeft, false);
 
     }

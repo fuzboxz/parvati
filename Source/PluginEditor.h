@@ -786,5 +786,25 @@ private:
     juce::Array<int> latchedNotes_;
     int lastLatchPart_ { -1 };   // last part seen; clear latches when it changes
 
+    // ---- Status-strip audio-load readout anti-flicker + idle-poll state ----
+    // The per-block load probe jitters 0<->1% from render-timing noise; without
+    // the hold gate below the "CPU N%" text (and with it the whole editor
+    // repaint region) churned ~20x/sec at idle. lastLoadPct_/lastLoadOverruns_
+    // seed impossible values so the very first tick always publishes.
+    int lastLoadPct_ { -999 };          // last displayed current-load percentage
+    int lastLoadOverruns_ { -1 };       // last displayed overrun count
+    juce::Time lastLoadTextUpdate_;     // last time the load text was refreshed
+    juce::Colour lastLoadColour_ {};    // last applied load-label colour ({} => unset)
+    juce::String lastLoadTip_;          // last applied load-label tooltip text
+
+    // ---- Adaptive editor-timer rate (30 Hz active / 4 Hz idle) ----
+    // Idle = no sounding voices, no transient status draining, no modal popup,
+    // no latched keyboard lamps, and the mouse parked for >3 s: at that point
+    // nothing the timer refreshes can change, so the poll drops to 4 Hz. Any
+    // activity flips back to 30 Hz on the next tick.
+    int timerHz_ { 30 };               // current editor-timer rate
+    juce::Point<int> lastMousePos_ { -9999, -9999 };   // detects mouse-moved-since-last-tick
+    juce::Time lastMouseActivity_;      // last time the cached mouse position changed
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiEditor)
 };

@@ -216,7 +216,9 @@ void FxSlotVisualizer::drawNone (juce::Graphics& g, juce::Rectangle<float> plot,
     g.setColour (dimText.withAlpha (0.40f));
     g.setFont (lnf ? lnf->appFont (juce::jmin (16.0f, plot.getHeight() * 0.5f), juce::Font::plain)
                    : juce::Font (juce::FontOptions (juce::jmin (16.0f, plot.getHeight() * 0.5f))));
-    g.drawText ("\xe2\x80\x94", plot, juce::Justification::centred);   // em-dash
+    // CharPointer_UTF8: the em-dash (\xe2\x80\x94) makes this a UTF-8 literal; the
+    // implicit juce::String conversion asserts (ASCII validity) every paint.
+    g.drawText (juce::CharPointer_UTF8 ("\xe2\x80\x94"), plot, juce::Justification::centred);   // em-dash
 }
 
 //==============================================================================
