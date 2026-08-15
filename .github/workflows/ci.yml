@@ -1,0 +1,44 @@
+# Parvati CI — performance regression gate.
+#
+# Runs the headless perf smoke test (tests/perf_smoke_test.cpp) on macOS: it
+# constructs the full editor and pumps the JUCE message loop for 10 s
+# against CPU-time and message-thread-congestion budgets, catching the
+# timer/message-storm class of regression (e.g. an async-onChange rebuild
+# ping-pong) before it lands.
+#
+# NOT runnable unattended on CI (needs Accessibility permission to post
+# CGEvents, plus a real window for repaint cost): tools/profile_ui.sh —
+# the full idle/active/assert local gate documented in CONTRIBUTING.md
+# under "Performance regression testing". Run it by hand before merging
+# UI work that touches paint paths or timers.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  perf-smoke:
+    name: Perf smoke test (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout JUCE 9
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 9.0.0
+          path: JUCE
+
+      - name: Configure
+        run: cmake -S . -B build -DJUCE_GLOBAL_PATH="${{ github.workspace }}/JUCE"
+
+      - name: Build perf smoke test
+        run: cmake --build build --target parvati_perf_smoke_test -j3
+
+      - name: Run perf smoke test
+        run: ./build/parvati_perf_smoke_test

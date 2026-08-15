@@ -898,6 +898,21 @@ target_link_libraries(parvati_modbar_click_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# CI-portable headless perf regression gate (P3/PR3). Pumps the message loop
+# at the real timer cadence for ~10 s against CPU-time + tick-cost budgets —
+# catches the timer/message-storm class of regression (the PartRow combo
+# ping-pong would have blown this out instantly). Built by default.
+# Run: ./build/parvati_perf_smoke_test
+add_executable(parvati_perf_smoke_test
+    tests/perf_smoke_test.cpp
+)
+target_include_directories(parvati_perf_smoke_test PRIVATE Source)
+target_compile_features(parvati_perf_smoke_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_perf_smoke_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # iPad M5 HIG sizing-contract test. Asserts the iOS layout constants equal the
 # HIG touch minimums (44/48/8) under an iOS build and the desktop constants are
 # UNCHANGED (every HIG change is #if JUCE_IOS). Static + runtime asserts guard
