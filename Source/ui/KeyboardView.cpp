@@ -4,6 +4,7 @@
 
 #include "ParvatiTheme.h"
 
+#include <algorithm>
 #include <cmath>
 
 //==============================================================================
@@ -83,10 +84,13 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
 
         // Multitouch: each MouseInputSource (desktop mouse = 0, each finger =
         // 1+) tracks its OWN note, so several can sound at once (chords).
-        // Release this source's previously-held note (if any) before arming.
+        // Release this source's previously-held note (if any) before arming —
+        // but only when no OTHER source still holds it (a glissando can land
+        // two fingers on one key; each engine note must sound exactly once).
         const int src = e.source.getIndex();
         const auto it = owner.mouseDownNotesBySource_.find (src);
-        if (it != owner.mouseDownNotesBySource_.end() && it->second != midiNoteNumber)
+        if (it != owner.mouseDownNotesBySource_.end() && it->second != midiNoteNumber
+            && ! owner.noteHeldByOtherSource (it->second, src))
             owner.fireNoteCallback (it->second, false, 0.0f);
 
         owner.mouseDownNotesBySource_[src] = midiNoteNumber;
@@ -94,13 +98,31 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         return true;   // base lights the key via the shared state_
     }
 
-    bool mouseDraggedToKey (int midiNoteNumber, const juce::MouseEvent&) override
+    bool mouseDraggedToKey (int midiNoteNumber, const juce::MouseEvent& e) override
     {
-        // Glissando is visual-only (the base re-lights each swept key); the
-        // engine holds each source's originally-pressed note until THAT source
-        // releases. Keeps the engine free of stuck/duplicate notes per finger.
-        juce::ignoreUnused (midiNoteNumber);
-        return true;
+        // Real glissando: when a drag sweeps onto a DIFFERENT key, retarget this
+        // source's note — release the old, sound the new. The base class
+        // re-lights each swept key as it goes; keeping the engine on the FIRST
+        // note (the old visual-only behaviour) read as a stuck note during every
+        // slide. Velocity is recomputed from the drag position via the SAME
+        // top-of-key=louder rule as a press (a drag carries no fresh strike
+        // velocity, and JUCE's own drag handling derives velocity from position
+        // the same way). Cross-source dedup mirrors the base class's finger
+        // dedup in updateNoteUnderMouse: only release the old note when no OTHER
+        // source still holds it, and only sound the new note when no other
+        // source is already sounding it (two fingers on one key = one note).
+        const int src = e.source.getIndex();
+        const auto it = owner.mouseDownNotesBySource_.find (src);
+        if (it != owner.mouseDownNotesBySource_.end() && it->second != midiNoteNumber)
+        {
+            const int oldNote = it->second;
+            if (! owner.noteHeldByOtherSource (oldNote, src))
+                owner.fireNoteCallback (oldNote, false, 0.0f);
+            owner.mouseDownNotesBySource_[src] = midiNoteNumber;
+            if (! owner.noteHeldByOtherSource (midiNoteNumber, src))
+                owner.fireNoteCallback (midiNoteNumber, true, owner.velocityFromEvent (e));
+        }
+        return true;   // base lights the swept key via the shared state_
     }
 
     void mouseUpOnKey (int midiNoteNumber, const juce::MouseEvent& e) override
@@ -122,12 +144,16 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
     }
 
     // Release + erase one source's held note (no-op if that source holds none).
+    // Only fires the note-off when no OTHER source still holds the same note —
+    // a glissando retarget can leave two sources on one key, and the first
+    // release must not cut the sound out from under the finger still on it.
     void releaseSourceNote (int src)
     {
         const auto it = owner.mouseDownNotesBySource_.find (src);
         if (it != owner.mouseDownNotesBySource_.end())
         {
-            owner.fireNoteCallback (it->second, false, 0.0f);
+            if (! owner.noteHeldByOtherSource (it->second, src))
+                owner.fireNoteCallback (it->second, false, 0.0f);
             owner.mouseDownNotesBySource_.erase (it);
         }
     }
@@ -420,6 +446,13 @@ float KeyboardView::velocityFromEvent (const juce::MouseEvent& e) const
     // Click near the top of a key => louder (like striking the end of a key).
     const float norm = juce::jlimit (0.0f, 1.0f, e.position.y / static_cast<float> (h));
     return 0.3f + 0.7f * (1.0f - norm);
+}
+
+bool KeyboardView::noteHeldByOtherSource (int midiNote, int exceptSource) const
+{
+    return std::any_of (mouseDownNotesBySource_.begin(), mouseDownNotesBySource_.end(),
+                        [midiNote, exceptSource] (const auto& kv)
+                        { return kv.first != exceptSource && kv.second == midiNote; });
 }
 
 //==========================================================================

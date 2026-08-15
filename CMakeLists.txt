@@ -872,6 +872,19 @@ target_link_libraries(parvati_multigui_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Virtual-keyboard interaction test (glissando drag-retarget note ordering,
+# press/release routing, off-key release guard). Built by default.
+# Run with: ./build/parvati_keyboard_view_test
+add_executable(parvati_keyboard_view_test
+    tests/keyboard_view_test.cpp
+)
+target_include_directories(parvati_keyboard_view_test PRIVATE Source)
+target_compile_features(parvati_keyboard_view_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_keyboard_view_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # iPad M5 HIG sizing-contract test. Asserts the iOS layout constants equal the
 # HIG touch minimums (44/48/8) under an iOS build and the desktop constants are
 # UNCHANGED (every HIG change is #if JUCE_IOS). Static + runtime asserts guard

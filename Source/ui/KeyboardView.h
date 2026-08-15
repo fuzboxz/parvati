@@ -108,5 +108,11 @@ private:
     void fireNoteCallback (int midiNote, bool isOn, float velocity);
     float velocityFromEvent (const juce::MouseEvent& e) const;
 
+    // True when a MouseInputSource OTHER than exceptSource currently holds the
+    // given note. Multitouch overlap dedup for the KeyComp note routing: the
+    // engine must hear each note exactly once even when two sources (fingers /
+    // finger + mouse) land on the same key via press or glissando retarget.
+    bool noteHeldByOtherSource (int midiNote, int exceptSource) const;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KeyboardView)
 };

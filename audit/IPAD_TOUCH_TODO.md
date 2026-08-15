@@ -66,7 +66,7 @@ Check items off (`[x]`) as they are implemented and verified.
   (app-wide, inherits to every popup); raise combo *hit* heights to 44 on touch/iOS
   (transparent pad ok, visual height may stay smaller).
 
-- [ ] **T8. Keyboard glissando is visual-only (reads as stuck note).**
+- [x] **T8. Keyboard glissando is visual-only (reads as stuck note).**
   `KeyboardView.cpp:97-102`: `mouseDraggedToKey` ignores the swept key; base class
   re-lights it while the engine holds the originally-pressed note.
   → Use the existing per-source map: on key change, note-off old + note-on new
