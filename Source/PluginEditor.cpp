@@ -3537,8 +3537,43 @@ void ParvatiEditor::resized()
 }
 
 //==========================================================================
+#if JUCE_IOS
+// iOS: make a successful user-area save visible in the Files app. The
+// Standalone plist advertises UIFileSharingEnabled, which browses
+// <sandbox>/Documents — but the USER patch area lives in the shared App-Group
+// container (Source/ui/SharedContainer.h), which Files cannot browse at all.
+// COPY, not move: the group container stays the single source of truth for
+// the PresetBrowser and the AUv3 extension (Standalone + AUv3 keep one tree);
+// the Documents copy is a plain export. Only saves that land INSIDE the USER
+// area are mirrored — a picker navigated elsewhere is an explicit export
+// already — and the USER/ sub-path is preserved (Documents/Parvati/USER/...)
+// so bank folders survive. A failed copy is non-fatal (the save itself
+// already succeeded) and the next successful save re-mirrors; stale mirrors
+// are intentionally never deleted (silently removing user-visible files
+// would be surprising, and the group tree remains authoritative).
+// Note: when this editor runs inside the AUv3 extension in a host, Documents
+// is the EXTENSION's sandbox, which Files does not browse — the copy is
+// harmless there; the Standalone app's own saves are the visible ones.
+static void mirrorUserSaveToDocumentsIOS (const juce::File& saved)
+{
+    const auto userDir = ParvatiAudioProcessor::getUserPatchDir();
+    if (! saved.isAChildOf (userDir))
+        return;
+    const auto dest = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                          .getChildFile ("Parvati/USER")
+                          .getChildFile (saved.getRelativePathFrom (userDir));
+    dest.getParentDirectory().createDirectory();
+    saved.copyFileTo (dest);   // overwrite-in-place; a torn copy self-heals next save
+}
+#endif
+
 void ParvatiEditor::openLoadDialog()
 {
+    // The load picker starts nowhere in particular (empty start file): on iOS
+    // the document picker opens at its browse root, from which the mirrored
+    // Documents/Parvati/USER saves are reachable (On My iPad > Parvati); on
+    // desktop the browser starts at the OS default. The PresetBrowser keeps
+    // reading the SHARED tree either way (one tree for Standalone + AUv3).
     fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Load Patch / Multi (.PRO / .MUL / .parvati)"),
                                                        juce::File(), "*.PRO;*.MUL;*.parvati");
     const auto flags = juce::FileBrowserComponent::openMode
@@ -3572,6 +3607,9 @@ void ParvatiEditor::openSaveDialog()
             const auto f = fc.getResult().withFileExtension (".PRO");
             if (processorRef_.saveProgramFile (f))
             {
+#if JUCE_IOS
+                mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
+#endif
                 if (presetBrowser_ != nullptr)
                     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
             }
@@ -3602,6 +3640,9 @@ void ParvatiEditor::openSaveParvatiDialog()
             const auto f = fc.getResult().withFileExtension (".parvati");
             if (processorRef_.saveParvatiPatchFile (f))
             {
+#if JUCE_IOS
+                mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
+#endif
                 if (presetBrowser_ != nullptr)
                     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
             }

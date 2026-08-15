@@ -60,12 +60,22 @@ Check items off (`[x]`) as they are implemented and verified.
   → Set `TARGETED_DEVICE_FAMILY "2"` (iPad-only) on `Parvati_Standalone` + `Parvati_AUv3`
   until a compact layout exists.
 
-- [ ] **T6. Files-app visibility claim not realized.**
+- [x] **T6. Files-app visibility claim not realized.**
   `UIFileSharingEnabled` is set ("saved patches reachable in Files"), but user saves go
   to the App Group container (`PluginProcessor.cpp:823-825` → `Parvati/USER`), invisible
   to Files.
   → Write user patch saves (Save .PRO / Save Parvati default dirs, `PluginEditor.cpp:3525,
   3555`) to `<app-sandbox>/Documents` (desktop behaviour unchanged; iOS only).
+
+  DONE (T6 batch): chose the MIRROR design over redirecting saves — the App-Group tree
+  stays the single source of truth (PresetBrowser + AUv3 extension + Standalone keep one
+  tree; older saves remain loadable), and each successful save into the USER area is
+  copied to `<sandbox>/Documents/Parvati/USER/…` (`mirrorUserSaveToDocumentsIOS`,
+  `#if JUCE_IOS`, PluginEditor.cpp). Load picker + PresetBrowser unchanged (browser
+  reads the shared tree; the iOS document picker opens at its browse root where the
+  mirrored Documents are reachable). Failed copies are non-fatal; stale mirrors are
+  never deleted (group tree is authoritative). Desktop paths byte-identical
+  (helper + calls compiled out).
 
 - [x] **T7. Sub-44pt combos and popup menu rows (systemic).**
   ParamControl combos 28pt (`PluginEditor.cpp:949`), PatchPage combos 24pt, SettingsPanel
