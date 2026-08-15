@@ -2,21 +2,21 @@
 format: parvati-multi
 version: 1
 parvati_version: 0.1.0
-name: "Poly"
+name: "Drum Kit (GM)"
 author: ""
 parts:
-  - channel: 1
-    keyzone_low: 0
-    keyzone_high: 127
-    voice_allocation: 63
-    voice_slots: 0
-    name: ""
+  - channel: 0
+    keyzone_low: 36
+    keyzone_high: 36
+    voice_allocation: 1
+    voice_slots: 4
+    name: "Kick"
     params:
-      osc1_shape: 1            # Saw
+      osc1_shape: 4            # Sine
       osc1_param: 0
-      osc1_range: 0
+      osc1_range: -12
       osc1_detune: 0
-      osc2_shape: 2            # Square
+      osc2_shape: 0            # None
       osc2_param: 32
       osc2_range: -12
       osc2_detune: 12
@@ -28,37 +28,37 @@ parts:
       mix_noise: 0
       mix_fuzz: 0
       mix_crush: 0
-      filter1_cutoff: 96
-      filter1_reso: 0
+      filter1_cutoff: 40
+      filter1_reso: 24
       filter1_mode: 0            # LP
-      filter_env: 24
+      filter_env: 40
       filter_lfo: 0
       env1_attack: 0
-      env1_decay: 40
-      env1_sustain: 20
+      env1_decay: 20
+      env1_sustain: 0
       env1_release: 60
       env1_lfo_shape: 0            # Triangle
       env1_lfo_rate: 39
       env1_lfo_sync: 0            # Free
       env2_attack: 0
-      env2_decay: 40
+      env2_decay: 20
       env2_sustain: 0
       env2_release: 40
       env2_lfo_shape: 0            # Triangle
       env2_lfo_rate: 47
       env2_lfo_sync: 0            # Free
       env3_attack: 0
-      env3_decay: 40
-      env3_sustain: 100
-      env3_release: 40
+      env3_decay: 18
+      env3_sustain: 0
+      env3_release: 30
       env3_lfo_shape: 0            # Triangle
       env3_lfo_rate: 63
       env3_lfo_sync: 0            # Free
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Osc Param 1
-      mod1_amount: 0
+      mod1_dest: 4            # Osc 1+2 Coarse
+      mod1_amount: -63
       mod2_source: 0            # Env 1
       mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
@@ -116,7 +116,7 @@ parts:
       part_spread: 0
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 3            # Cyclic
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -267,18 +267,18 @@ parts:
       fxmod16_source: 0            # Env 1
       fxmod16_dest: 0            # FX1 Dry/Wet
       fxmod16_amount: 0
-  - channel: 2
-    keyzone_low: 0
-    keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
-    name: ""
+  - channel: 0
+    keyzone_low: 38
+    keyzone_high: 38
+    voice_allocation: 2
+    voice_slots: 4
+    name: "Snare"
     params:
-      osc1_shape: 1            # Saw
+      osc1_shape: 3            # Triangle
       osc1_param: 0
       osc1_range: 0
       osc1_detune: 0
-      osc2_shape: 2            # Square
+      osc2_shape: 0            # None
       osc2_param: 32
       osc2_range: -12
       osc2_detune: 12
@@ -287,40 +287,40 @@ parts:
       mix_param: 31
       mix_sub_shape: 0            # Sub Square 1
       mix_sub: 0
-      mix_noise: 0
+      mix_noise: 90
       mix_fuzz: 0
       mix_crush: 0
-      filter1_cutoff: 96
-      filter1_reso: 0
+      filter1_cutoff: 70
+      filter1_reso: 10
       filter1_mode: 0            # LP
-      filter_env: 24
+      filter_env: 50
       filter_lfo: 0
       env1_attack: 0
-      env1_decay: 40
-      env1_sustain: 20
+      env1_decay: 8
+      env1_sustain: 0
       env1_release: 60
       env1_lfo_shape: 0            # Triangle
       env1_lfo_rate: 39
       env1_lfo_sync: 0            # Free
       env2_attack: 0
-      env2_decay: 40
+      env2_decay: 8
       env2_sustain: 0
       env2_release: 40
       env2_lfo_shape: 0            # Triangle
       env2_lfo_rate: 47
       env2_lfo_sync: 0            # Free
       env3_attack: 0
-      env3_decay: 40
-      env3_sustain: 100
-      env3_release: 40
+      env3_decay: 11
+      env3_sustain: 0
+      env3_release: 20
       env3_lfo_shape: 0            # Triangle
       env3_lfo_rate: 63
       env3_lfo_sync: 0            # Free
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Osc Param 1
-      mod1_amount: 0
+      mod1_dest: 4            # Osc 1+2 Coarse
+      mod1_amount: -16
       mod2_source: 0            # Env 1
       mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
@@ -378,7 +378,7 @@ parts:
       part_spread: 0
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 3            # Cyclic
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -529,18 +529,18 @@ parts:
       fxmod16_source: 0            # Env 1
       fxmod16_dest: 0            # FX1 Dry/Wet
       fxmod16_amount: 0
-  - channel: 3
-    keyzone_low: 0
-    keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
-    name: ""
+  - channel: 0
+    keyzone_low: 39
+    keyzone_high: 39
+    voice_allocation: 4
+    voice_slots: 4
+    name: "Clap"
     params:
-      osc1_shape: 1            # Saw
+      osc1_shape: 4            # Sine
       osc1_param: 0
       osc1_range: 0
       osc1_detune: 0
-      osc2_shape: 2            # Square
+      osc2_shape: 0            # None
       osc2_param: 32
       osc2_range: -12
       osc2_detune: 12
@@ -549,39 +549,39 @@ parts:
       mix_param: 31
       mix_sub_shape: 0            # Sub Square 1
       mix_sub: 0
-      mix_noise: 0
+      mix_noise: 110
       mix_fuzz: 0
       mix_crush: 0
-      filter1_cutoff: 96
-      filter1_reso: 0
+      filter1_cutoff: 78
+      filter1_reso: 30
       filter1_mode: 0            # LP
-      filter_env: 24
+      filter_env: 10
       filter_lfo: 0
       env1_attack: 0
-      env1_decay: 40
-      env1_sustain: 20
+      env1_decay: 6
+      env1_sustain: 0
       env1_release: 60
       env1_lfo_shape: 0            # Triangle
       env1_lfo_rate: 39
       env1_lfo_sync: 0            # Free
       env2_attack: 0
-      env2_decay: 40
+      env2_decay: 6
       env2_sustain: 0
       env2_release: 40
       env2_lfo_shape: 0            # Triangle
       env2_lfo_rate: 47
       env2_lfo_sync: 0            # Free
       env3_attack: 0
-      env3_decay: 40
-      env3_sustain: 100
-      env3_release: 40
+      env3_decay: 16
+      env3_sustain: 0
+      env3_release: 20
       env3_lfo_shape: 0            # Triangle
       env3_lfo_rate: 63
       env3_lfo_sync: 0            # Free
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Osc Param 1
+      mod1_dest: 4            # Osc 1+2 Coarse
       mod1_amount: 0
       mod2_source: 0            # Env 1
       mod2_dest: 1            # Osc Param 2
@@ -640,7 +640,7 @@ parts:
       part_spread: 0
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 3            # Cyclic
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -791,18 +791,18 @@ parts:
       fxmod16_source: 0            # Env 1
       fxmod16_dest: 0            # FX1 Dry/Wet
       fxmod16_amount: 0
-  - channel: 4
-    keyzone_low: 0
-    keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
-    name: ""
+  - channel: 0
+    keyzone_low: 42
+    keyzone_high: 42
+    voice_allocation: 8
+    voice_slots: 4
+    name: "Closed Hat"
     params:
-      osc1_shape: 1            # Saw
+      osc1_shape: 4            # Sine
       osc1_param: 0
       osc1_range: 0
       osc1_detune: 0
-      osc2_shape: 2            # Square
+      osc2_shape: 0            # None
       osc2_param: 32
       osc2_range: -12
       osc2_detune: 12
@@ -811,39 +811,39 @@ parts:
       mix_param: 31
       mix_sub_shape: 0            # Sub Square 1
       mix_sub: 0
-      mix_noise: 0
+      mix_noise: 127
       mix_fuzz: 0
       mix_crush: 0
-      filter1_cutoff: 96
-      filter1_reso: 0
+      filter1_cutoff: 105
+      filter1_reso: 20
       filter1_mode: 0            # LP
-      filter_env: 24
+      filter_env: 30
       filter_lfo: 0
       env1_attack: 0
-      env1_decay: 40
-      env1_sustain: 20
+      env1_decay: 3
+      env1_sustain: 0
       env1_release: 60
       env1_lfo_shape: 0            # Triangle
       env1_lfo_rate: 39
       env1_lfo_sync: 0            # Free
       env2_attack: 0
-      env2_decay: 40
+      env2_decay: 3
       env2_sustain: 0
       env2_release: 40
       env2_lfo_shape: 0            # Triangle
       env2_lfo_rate: 47
       env2_lfo_sync: 0            # Free
       env3_attack: 0
-      env3_decay: 40
-      env3_sustain: 100
-      env3_release: 40
+      env3_decay: 5
+      env3_sustain: 0
+      env3_release: 6
       env3_lfo_shape: 0            # Triangle
       env3_lfo_rate: 63
       env3_lfo_sync: 0            # Free
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Osc Param 1
+      mod1_dest: 4            # Osc 1+2 Coarse
       mod1_amount: 0
       mod2_source: 0            # Env 1
       mod2_dest: 1            # Osc Param 2
@@ -902,7 +902,7 @@ parts:
       part_spread: 0
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 3            # Cyclic
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -1053,18 +1053,18 @@ parts:
       fxmod16_source: 0            # Env 1
       fxmod16_dest: 0            # FX1 Dry/Wet
       fxmod16_amount: 0
-  - channel: 5
-    keyzone_low: 0
-    keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
-    name: ""
+  - channel: 0
+    keyzone_low: 46
+    keyzone_high: 46
+    voice_allocation: 16
+    voice_slots: 4
+    name: "Open Hat"
     params:
-      osc1_shape: 1            # Saw
+      osc1_shape: 4            # Sine
       osc1_param: 0
       osc1_range: 0
       osc1_detune: 0
-      osc2_shape: 2            # Square
+      osc2_shape: 0            # None
       osc2_param: 32
       osc2_range: -12
       osc2_detune: 12
@@ -1073,39 +1073,39 @@ parts:
       mix_param: 31
       mix_sub_shape: 0            # Sub Square 1
       mix_sub: 0
-      mix_noise: 0
+      mix_noise: 127
       mix_fuzz: 0
       mix_crush: 0
-      filter1_cutoff: 96
-      filter1_reso: 0
+      filter1_cutoff: 100
+      filter1_reso: 20
       filter1_mode: 0            # LP
-      filter_env: 24
+      filter_env: 25
       filter_lfo: 0
       env1_attack: 0
-      env1_decay: 40
-      env1_sustain: 20
+      env1_decay: 20
+      env1_sustain: 0
       env1_release: 60
       env1_lfo_shape: 0            # Triangle
       env1_lfo_rate: 39
       env1_lfo_sync: 0            # Free
       env2_attack: 0
-      env2_decay: 40
+      env2_decay: 20
       env2_sustain: 0
       env2_release: 40
       env2_lfo_shape: 0            # Triangle
       env2_lfo_rate: 47
       env2_lfo_sync: 0            # Free
       env3_attack: 0
-      env3_decay: 40
-      env3_sustain: 100
-      env3_release: 40
+      env3_decay: 25
+      env3_sustain: 0
+      env3_release: 15
       env3_lfo_shape: 0            # Triangle
       env3_lfo_rate: 63
       env3_lfo_sync: 0            # Free
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Osc Param 1
+      mod1_dest: 4            # Osc 1+2 Coarse
       mod1_amount: 0
       mod2_source: 0            # Env 1
       mod2_dest: 1            # Osc Param 2
@@ -1164,7 +1164,7 @@ parts:
       part_spread: 0
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 3            # Cyclic
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -1315,18 +1315,18 @@ parts:
       fxmod16_source: 0            # Env 1
       fxmod16_dest: 0            # FX1 Dry/Wet
       fxmod16_amount: 0
-  - channel: 6
-    keyzone_low: 0
-    keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
-    name: ""
+  - channel: 0
+    keyzone_low: 45
+    keyzone_high: 45
+    voice_allocation: 32
+    voice_slots: 4
+    name: "Tom"
     params:
-      osc1_shape: 1            # Saw
+      osc1_shape: 4            # Sine
       osc1_param: 0
-      osc1_range: 0
+      osc1_range: -12
       osc1_detune: 0
-      osc2_shape: 2            # Square
+      osc2_shape: 0            # None
       osc2_param: 32
       osc2_range: -12
       osc2_detune: 12
@@ -1338,37 +1338,37 @@ parts:
       mix_noise: 0
       mix_fuzz: 0
       mix_crush: 0
-      filter1_cutoff: 96
-      filter1_reso: 0
+      filter1_cutoff: 55
+      filter1_reso: 15
       filter1_mode: 0            # LP
-      filter_env: 24
+      filter_env: 30
       filter_lfo: 0
       env1_attack: 0
-      env1_decay: 40
-      env1_sustain: 20
+      env1_decay: 15
+      env1_sustain: 0
       env1_release: 60
       env1_lfo_shape: 0            # Triangle
       env1_lfo_rate: 39
       env1_lfo_sync: 0            # Free
       env2_attack: 0
-      env2_decay: 40
+      env2_decay: 15
       env2_sustain: 0
       env2_release: 40
       env2_lfo_shape: 0            # Triangle
       env2_lfo_rate: 47
       env2_lfo_sync: 0            # Free
       env3_attack: 0
-      env3_decay: 40
-      env3_sustain: 100
-      env3_release: 40
+      env3_decay: 20
+      env3_sustain: 0
+      env3_release: 25
       env3_lfo_shape: 0            # Triangle
       env3_lfo_rate: 63
       env3_lfo_sync: 0            # Free
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Osc Param 1
-      mod1_amount: 0
+      mod1_dest: 4            # Osc 1+2 Coarse
+      mod1_amount: -48
       mod2_source: 0            # Env 1
       mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
@@ -1426,7 +1426,7 @@ parts:
       part_spread: 0
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 3            # Cyclic
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16

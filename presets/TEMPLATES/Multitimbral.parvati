@@ -9,6 +9,8 @@ parts:
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 21
+    voice_slots: 0
+    name: ""
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -55,10 +57,10 @@ parts:
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Parameter 1
+      mod1_dest: 0            # Osc Param 1
       mod1_amount: 0
       mod2_source: 0            # Env 1
-      mod2_dest: 1            # Parameter 2
+      mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
       mod3_source: 3            # LFO 1
       mod3_dest: 2            # Osc 1
@@ -67,15 +69,15 @@ parts:
       mod4_dest: 3            # Osc 2
       mod4_amount: 0
       mod5_source: 4            # LFO 2
-      mod5_dest: 0            # Parameter 1
+      mod5_dest: 0            # Osc Param 1
       mod5_amount: 0
       mod6_source: 4            # LFO 2
-      mod6_dest: 1            # Parameter 2
+      mod6_dest: 1            # Osc Param 2
       mod6_amount: 0
       mod7_source: 5            # LFO 3
       mod7_dest: 6            # Mix Balance
       mod7_amount: 0
-      mod8_source: 6            # LFO 4
+      mod8_source: 6            # Voice LFO
       mod8_dest: 12            # Filter Cutoff
       mod8_amount: 0
       mod9_source: 11            # Seq 1
@@ -93,7 +95,7 @@ parts:
       mod13_source: 16            # Pitch Bend
       mod13_dest: 4            # Osc 1+2 Coarse
       mod13_amount: 32
-      mod14_source: 6            # LFO 4
+      mod14_source: 6            # Voice LFO
       mod14_dest: 4            # Osc 1+2 Coarse
       mod14_amount: 16
       modif1_in1: 3            # LFO 1
@@ -187,10 +189,90 @@ parts:
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
       arp_resolution: 10            # 1/16T
+      fx1_type: 0            # None
+      fx1_enabled: 0
+      fx1_drywet: 0
+      fx1_param1: 0
+      fx1_param2: 0
+      fx1_param3: 0
+      fx1_param4: 0
+      fx1_param5: 0
+      fx2_type: 0            # None
+      fx2_enabled: 0
+      fx2_drywet: 0
+      fx2_param1: 0
+      fx2_param2: 0
+      fx2_param3: 0
+      fx2_param4: 0
+      fx2_param5: 0
+      fx3_type: 0            # None
+      fx3_enabled: 0
+      fx3_drywet: 0
+      fx3_param1: 0
+      fx3_param2: 0
+      fx3_param3: 0
+      fx3_param4: 0
+      fx3_param5: 0
+      fx_topo: 0            # FX1 -> FX2 -> FX3
+      fx_order: 0
+      fx_mix: 127
+      fx_eq_low: 0
+      fx_eq_mid: 64
+      fx_eq_high: 64
+      fxmod1_source: 0            # Env 1
+      fxmod1_dest: 0            # FX1 Dry/Wet
+      fxmod1_amount: 0
+      fxmod2_source: 0            # Env 1
+      fxmod2_dest: 0            # FX1 Dry/Wet
+      fxmod2_amount: 0
+      fxmod3_source: 0            # Env 1
+      fxmod3_dest: 0            # FX1 Dry/Wet
+      fxmod3_amount: 0
+      fxmod4_source: 0            # Env 1
+      fxmod4_dest: 0            # FX1 Dry/Wet
+      fxmod4_amount: 0
+      fxmod5_source: 0            # Env 1
+      fxmod5_dest: 0            # FX1 Dry/Wet
+      fxmod5_amount: 0
+      fxmod6_source: 0            # Env 1
+      fxmod6_dest: 0            # FX1 Dry/Wet
+      fxmod6_amount: 0
+      fxmod7_source: 0            # Env 1
+      fxmod7_dest: 0            # FX1 Dry/Wet
+      fxmod7_amount: 0
+      fxmod8_source: 0            # Env 1
+      fxmod8_dest: 0            # FX1 Dry/Wet
+      fxmod8_amount: 0
+      fxmod9_source: 0            # Env 1
+      fxmod9_dest: 0            # FX1 Dry/Wet
+      fxmod9_amount: 0
+      fxmod10_source: 0            # Env 1
+      fxmod10_dest: 0            # FX1 Dry/Wet
+      fxmod10_amount: 0
+      fxmod11_source: 0            # Env 1
+      fxmod11_dest: 0            # FX1 Dry/Wet
+      fxmod11_amount: 0
+      fxmod12_source: 0            # Env 1
+      fxmod12_dest: 0            # FX1 Dry/Wet
+      fxmod12_amount: 0
+      fxmod13_source: 0            # Env 1
+      fxmod13_dest: 0            # FX1 Dry/Wet
+      fxmod13_amount: 0
+      fxmod14_source: 0            # Env 1
+      fxmod14_dest: 0            # FX1 Dry/Wet
+      fxmod14_amount: 0
+      fxmod15_source: 0            # Env 1
+      fxmod15_dest: 0            # FX1 Dry/Wet
+      fxmod15_amount: 0
+      fxmod16_source: 0            # Env 1
+      fxmod16_dest: 0            # FX1 Dry/Wet
+      fxmod16_amount: 0
   - channel: 2
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 42
+    voice_slots: 0
+    name: ""
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -237,10 +319,10 @@ parts:
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Parameter 1
+      mod1_dest: 0            # Osc Param 1
       mod1_amount: 0
       mod2_source: 0            # Env 1
-      mod2_dest: 1            # Parameter 2
+      mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
       mod3_source: 3            # LFO 1
       mod3_dest: 2            # Osc 1
@@ -249,15 +331,15 @@ parts:
       mod4_dest: 3            # Osc 2
       mod4_amount: 0
       mod5_source: 4            # LFO 2
-      mod5_dest: 0            # Parameter 1
+      mod5_dest: 0            # Osc Param 1
       mod5_amount: 0
       mod6_source: 4            # LFO 2
-      mod6_dest: 1            # Parameter 2
+      mod6_dest: 1            # Osc Param 2
       mod6_amount: 0
       mod7_source: 5            # LFO 3
       mod7_dest: 6            # Mix Balance
       mod7_amount: 0
-      mod8_source: 6            # LFO 4
+      mod8_source: 6            # Voice LFO
       mod8_dest: 12            # Filter Cutoff
       mod8_amount: 0
       mod9_source: 11            # Seq 1
@@ -275,7 +357,7 @@ parts:
       mod13_source: 16            # Pitch Bend
       mod13_dest: 4            # Osc 1+2 Coarse
       mod13_amount: 32
-      mod14_source: 6            # LFO 4
+      mod14_source: 6            # Voice LFO
       mod14_dest: 4            # Osc 1+2 Coarse
       mod14_amount: 16
       modif1_in1: 3            # LFO 1
@@ -369,10 +451,90 @@ parts:
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
       arp_resolution: 10            # 1/16T
+      fx1_type: 0            # None
+      fx1_enabled: 0
+      fx1_drywet: 0
+      fx1_param1: 0
+      fx1_param2: 0
+      fx1_param3: 0
+      fx1_param4: 0
+      fx1_param5: 0
+      fx2_type: 0            # None
+      fx2_enabled: 0
+      fx2_drywet: 0
+      fx2_param1: 0
+      fx2_param2: 0
+      fx2_param3: 0
+      fx2_param4: 0
+      fx2_param5: 0
+      fx3_type: 0            # None
+      fx3_enabled: 0
+      fx3_drywet: 0
+      fx3_param1: 0
+      fx3_param2: 0
+      fx3_param3: 0
+      fx3_param4: 0
+      fx3_param5: 0
+      fx_topo: 0            # FX1 -> FX2 -> FX3
+      fx_order: 0
+      fx_mix: 127
+      fx_eq_low: 0
+      fx_eq_mid: 64
+      fx_eq_high: 64
+      fxmod1_source: 0            # Env 1
+      fxmod1_dest: 0            # FX1 Dry/Wet
+      fxmod1_amount: 0
+      fxmod2_source: 0            # Env 1
+      fxmod2_dest: 0            # FX1 Dry/Wet
+      fxmod2_amount: 0
+      fxmod3_source: 0            # Env 1
+      fxmod3_dest: 0            # FX1 Dry/Wet
+      fxmod3_amount: 0
+      fxmod4_source: 0            # Env 1
+      fxmod4_dest: 0            # FX1 Dry/Wet
+      fxmod4_amount: 0
+      fxmod5_source: 0            # Env 1
+      fxmod5_dest: 0            # FX1 Dry/Wet
+      fxmod5_amount: 0
+      fxmod6_source: 0            # Env 1
+      fxmod6_dest: 0            # FX1 Dry/Wet
+      fxmod6_amount: 0
+      fxmod7_source: 0            # Env 1
+      fxmod7_dest: 0            # FX1 Dry/Wet
+      fxmod7_amount: 0
+      fxmod8_source: 0            # Env 1
+      fxmod8_dest: 0            # FX1 Dry/Wet
+      fxmod8_amount: 0
+      fxmod9_source: 0            # Env 1
+      fxmod9_dest: 0            # FX1 Dry/Wet
+      fxmod9_amount: 0
+      fxmod10_source: 0            # Env 1
+      fxmod10_dest: 0            # FX1 Dry/Wet
+      fxmod10_amount: 0
+      fxmod11_source: 0            # Env 1
+      fxmod11_dest: 0            # FX1 Dry/Wet
+      fxmod11_amount: 0
+      fxmod12_source: 0            # Env 1
+      fxmod12_dest: 0            # FX1 Dry/Wet
+      fxmod12_amount: 0
+      fxmod13_source: 0            # Env 1
+      fxmod13_dest: 0            # FX1 Dry/Wet
+      fxmod13_amount: 0
+      fxmod14_source: 0            # Env 1
+      fxmod14_dest: 0            # FX1 Dry/Wet
+      fxmod14_amount: 0
+      fxmod15_source: 0            # Env 1
+      fxmod15_dest: 0            # FX1 Dry/Wet
+      fxmod15_amount: 0
+      fxmod16_source: 0            # Env 1
+      fxmod16_dest: 0            # FX1 Dry/Wet
+      fxmod16_amount: 0
   - channel: 3
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 0
+    voice_slots: 0
+    name: ""
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -419,10 +581,10 @@ parts:
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Parameter 1
+      mod1_dest: 0            # Osc Param 1
       mod1_amount: 0
       mod2_source: 0            # Env 1
-      mod2_dest: 1            # Parameter 2
+      mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
       mod3_source: 3            # LFO 1
       mod3_dest: 2            # Osc 1
@@ -431,15 +593,15 @@ parts:
       mod4_dest: 3            # Osc 2
       mod4_amount: 0
       mod5_source: 4            # LFO 2
-      mod5_dest: 0            # Parameter 1
+      mod5_dest: 0            # Osc Param 1
       mod5_amount: 0
       mod6_source: 4            # LFO 2
-      mod6_dest: 1            # Parameter 2
+      mod6_dest: 1            # Osc Param 2
       mod6_amount: 0
       mod7_source: 5            # LFO 3
       mod7_dest: 6            # Mix Balance
       mod7_amount: 0
-      mod8_source: 6            # LFO 4
+      mod8_source: 6            # Voice LFO
       mod8_dest: 12            # Filter Cutoff
       mod8_amount: 0
       mod9_source: 11            # Seq 1
@@ -457,7 +619,7 @@ parts:
       mod13_source: 16            # Pitch Bend
       mod13_dest: 4            # Osc 1+2 Coarse
       mod13_amount: 32
-      mod14_source: 6            # LFO 4
+      mod14_source: 6            # Voice LFO
       mod14_dest: 4            # Osc 1+2 Coarse
       mod14_amount: 16
       modif1_in1: 3            # LFO 1
@@ -551,10 +713,90 @@ parts:
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
       arp_resolution: 10            # 1/16T
+      fx1_type: 0            # None
+      fx1_enabled: 0
+      fx1_drywet: 0
+      fx1_param1: 0
+      fx1_param2: 0
+      fx1_param3: 0
+      fx1_param4: 0
+      fx1_param5: 0
+      fx2_type: 0            # None
+      fx2_enabled: 0
+      fx2_drywet: 0
+      fx2_param1: 0
+      fx2_param2: 0
+      fx2_param3: 0
+      fx2_param4: 0
+      fx2_param5: 0
+      fx3_type: 0            # None
+      fx3_enabled: 0
+      fx3_drywet: 0
+      fx3_param1: 0
+      fx3_param2: 0
+      fx3_param3: 0
+      fx3_param4: 0
+      fx3_param5: 0
+      fx_topo: 0            # FX1 -> FX2 -> FX3
+      fx_order: 0
+      fx_mix: 127
+      fx_eq_low: 0
+      fx_eq_mid: 64
+      fx_eq_high: 64
+      fxmod1_source: 0            # Env 1
+      fxmod1_dest: 0            # FX1 Dry/Wet
+      fxmod1_amount: 0
+      fxmod2_source: 0            # Env 1
+      fxmod2_dest: 0            # FX1 Dry/Wet
+      fxmod2_amount: 0
+      fxmod3_source: 0            # Env 1
+      fxmod3_dest: 0            # FX1 Dry/Wet
+      fxmod3_amount: 0
+      fxmod4_source: 0            # Env 1
+      fxmod4_dest: 0            # FX1 Dry/Wet
+      fxmod4_amount: 0
+      fxmod5_source: 0            # Env 1
+      fxmod5_dest: 0            # FX1 Dry/Wet
+      fxmod5_amount: 0
+      fxmod6_source: 0            # Env 1
+      fxmod6_dest: 0            # FX1 Dry/Wet
+      fxmod6_amount: 0
+      fxmod7_source: 0            # Env 1
+      fxmod7_dest: 0            # FX1 Dry/Wet
+      fxmod7_amount: 0
+      fxmod8_source: 0            # Env 1
+      fxmod8_dest: 0            # FX1 Dry/Wet
+      fxmod8_amount: 0
+      fxmod9_source: 0            # Env 1
+      fxmod9_dest: 0            # FX1 Dry/Wet
+      fxmod9_amount: 0
+      fxmod10_source: 0            # Env 1
+      fxmod10_dest: 0            # FX1 Dry/Wet
+      fxmod10_amount: 0
+      fxmod11_source: 0            # Env 1
+      fxmod11_dest: 0            # FX1 Dry/Wet
+      fxmod11_amount: 0
+      fxmod12_source: 0            # Env 1
+      fxmod12_dest: 0            # FX1 Dry/Wet
+      fxmod12_amount: 0
+      fxmod13_source: 0            # Env 1
+      fxmod13_dest: 0            # FX1 Dry/Wet
+      fxmod13_amount: 0
+      fxmod14_source: 0            # Env 1
+      fxmod14_dest: 0            # FX1 Dry/Wet
+      fxmod14_amount: 0
+      fxmod15_source: 0            # Env 1
+      fxmod15_dest: 0            # FX1 Dry/Wet
+      fxmod15_amount: 0
+      fxmod16_source: 0            # Env 1
+      fxmod16_dest: 0            # FX1 Dry/Wet
+      fxmod16_amount: 0
   - channel: 4
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 0
+    voice_slots: 0
+    name: ""
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -601,10 +843,10 @@ parts:
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Parameter 1
+      mod1_dest: 0            # Osc Param 1
       mod1_amount: 0
       mod2_source: 0            # Env 1
-      mod2_dest: 1            # Parameter 2
+      mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
       mod3_source: 3            # LFO 1
       mod3_dest: 2            # Osc 1
@@ -613,15 +855,15 @@ parts:
       mod4_dest: 3            # Osc 2
       mod4_amount: 0
       mod5_source: 4            # LFO 2
-      mod5_dest: 0            # Parameter 1
+      mod5_dest: 0            # Osc Param 1
       mod5_amount: 0
       mod6_source: 4            # LFO 2
-      mod6_dest: 1            # Parameter 2
+      mod6_dest: 1            # Osc Param 2
       mod6_amount: 0
       mod7_source: 5            # LFO 3
       mod7_dest: 6            # Mix Balance
       mod7_amount: 0
-      mod8_source: 6            # LFO 4
+      mod8_source: 6            # Voice LFO
       mod8_dest: 12            # Filter Cutoff
       mod8_amount: 0
       mod9_source: 11            # Seq 1
@@ -639,7 +881,7 @@ parts:
       mod13_source: 16            # Pitch Bend
       mod13_dest: 4            # Osc 1+2 Coarse
       mod13_amount: 32
-      mod14_source: 6            # LFO 4
+      mod14_source: 6            # Voice LFO
       mod14_dest: 4            # Osc 1+2 Coarse
       mod14_amount: 16
       modif1_in1: 3            # LFO 1
@@ -733,10 +975,90 @@ parts:
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
       arp_resolution: 10            # 1/16T
+      fx1_type: 0            # None
+      fx1_enabled: 0
+      fx1_drywet: 0
+      fx1_param1: 0
+      fx1_param2: 0
+      fx1_param3: 0
+      fx1_param4: 0
+      fx1_param5: 0
+      fx2_type: 0            # None
+      fx2_enabled: 0
+      fx2_drywet: 0
+      fx2_param1: 0
+      fx2_param2: 0
+      fx2_param3: 0
+      fx2_param4: 0
+      fx2_param5: 0
+      fx3_type: 0            # None
+      fx3_enabled: 0
+      fx3_drywet: 0
+      fx3_param1: 0
+      fx3_param2: 0
+      fx3_param3: 0
+      fx3_param4: 0
+      fx3_param5: 0
+      fx_topo: 0            # FX1 -> FX2 -> FX3
+      fx_order: 0
+      fx_mix: 127
+      fx_eq_low: 0
+      fx_eq_mid: 64
+      fx_eq_high: 64
+      fxmod1_source: 0            # Env 1
+      fxmod1_dest: 0            # FX1 Dry/Wet
+      fxmod1_amount: 0
+      fxmod2_source: 0            # Env 1
+      fxmod2_dest: 0            # FX1 Dry/Wet
+      fxmod2_amount: 0
+      fxmod3_source: 0            # Env 1
+      fxmod3_dest: 0            # FX1 Dry/Wet
+      fxmod3_amount: 0
+      fxmod4_source: 0            # Env 1
+      fxmod4_dest: 0            # FX1 Dry/Wet
+      fxmod4_amount: 0
+      fxmod5_source: 0            # Env 1
+      fxmod5_dest: 0            # FX1 Dry/Wet
+      fxmod5_amount: 0
+      fxmod6_source: 0            # Env 1
+      fxmod6_dest: 0            # FX1 Dry/Wet
+      fxmod6_amount: 0
+      fxmod7_source: 0            # Env 1
+      fxmod7_dest: 0            # FX1 Dry/Wet
+      fxmod7_amount: 0
+      fxmod8_source: 0            # Env 1
+      fxmod8_dest: 0            # FX1 Dry/Wet
+      fxmod8_amount: 0
+      fxmod9_source: 0            # Env 1
+      fxmod9_dest: 0            # FX1 Dry/Wet
+      fxmod9_amount: 0
+      fxmod10_source: 0            # Env 1
+      fxmod10_dest: 0            # FX1 Dry/Wet
+      fxmod10_amount: 0
+      fxmod11_source: 0            # Env 1
+      fxmod11_dest: 0            # FX1 Dry/Wet
+      fxmod11_amount: 0
+      fxmod12_source: 0            # Env 1
+      fxmod12_dest: 0            # FX1 Dry/Wet
+      fxmod12_amount: 0
+      fxmod13_source: 0            # Env 1
+      fxmod13_dest: 0            # FX1 Dry/Wet
+      fxmod13_amount: 0
+      fxmod14_source: 0            # Env 1
+      fxmod14_dest: 0            # FX1 Dry/Wet
+      fxmod14_amount: 0
+      fxmod15_source: 0            # Env 1
+      fxmod15_dest: 0            # FX1 Dry/Wet
+      fxmod15_amount: 0
+      fxmod16_source: 0            # Env 1
+      fxmod16_dest: 0            # FX1 Dry/Wet
+      fxmod16_amount: 0
   - channel: 5
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 0
+    voice_slots: 0
+    name: ""
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -783,10 +1105,10 @@ parts:
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Parameter 1
+      mod1_dest: 0            # Osc Param 1
       mod1_amount: 0
       mod2_source: 0            # Env 1
-      mod2_dest: 1            # Parameter 2
+      mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
       mod3_source: 3            # LFO 1
       mod3_dest: 2            # Osc 1
@@ -795,15 +1117,15 @@ parts:
       mod4_dest: 3            # Osc 2
       mod4_amount: 0
       mod5_source: 4            # LFO 2
-      mod5_dest: 0            # Parameter 1
+      mod5_dest: 0            # Osc Param 1
       mod5_amount: 0
       mod6_source: 4            # LFO 2
-      mod6_dest: 1            # Parameter 2
+      mod6_dest: 1            # Osc Param 2
       mod6_amount: 0
       mod7_source: 5            # LFO 3
       mod7_dest: 6            # Mix Balance
       mod7_amount: 0
-      mod8_source: 6            # LFO 4
+      mod8_source: 6            # Voice LFO
       mod8_dest: 12            # Filter Cutoff
       mod8_amount: 0
       mod9_source: 11            # Seq 1
@@ -821,7 +1143,7 @@ parts:
       mod13_source: 16            # Pitch Bend
       mod13_dest: 4            # Osc 1+2 Coarse
       mod13_amount: 32
-      mod14_source: 6            # LFO 4
+      mod14_source: 6            # Voice LFO
       mod14_dest: 4            # Osc 1+2 Coarse
       mod14_amount: 16
       modif1_in1: 3            # LFO 1
@@ -915,10 +1237,90 @@ parts:
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
       arp_resolution: 10            # 1/16T
+      fx1_type: 0            # None
+      fx1_enabled: 0
+      fx1_drywet: 0
+      fx1_param1: 0
+      fx1_param2: 0
+      fx1_param3: 0
+      fx1_param4: 0
+      fx1_param5: 0
+      fx2_type: 0            # None
+      fx2_enabled: 0
+      fx2_drywet: 0
+      fx2_param1: 0
+      fx2_param2: 0
+      fx2_param3: 0
+      fx2_param4: 0
+      fx2_param5: 0
+      fx3_type: 0            # None
+      fx3_enabled: 0
+      fx3_drywet: 0
+      fx3_param1: 0
+      fx3_param2: 0
+      fx3_param3: 0
+      fx3_param4: 0
+      fx3_param5: 0
+      fx_topo: 0            # FX1 -> FX2 -> FX3
+      fx_order: 0
+      fx_mix: 127
+      fx_eq_low: 0
+      fx_eq_mid: 64
+      fx_eq_high: 64
+      fxmod1_source: 0            # Env 1
+      fxmod1_dest: 0            # FX1 Dry/Wet
+      fxmod1_amount: 0
+      fxmod2_source: 0            # Env 1
+      fxmod2_dest: 0            # FX1 Dry/Wet
+      fxmod2_amount: 0
+      fxmod3_source: 0            # Env 1
+      fxmod3_dest: 0            # FX1 Dry/Wet
+      fxmod3_amount: 0
+      fxmod4_source: 0            # Env 1
+      fxmod4_dest: 0            # FX1 Dry/Wet
+      fxmod4_amount: 0
+      fxmod5_source: 0            # Env 1
+      fxmod5_dest: 0            # FX1 Dry/Wet
+      fxmod5_amount: 0
+      fxmod6_source: 0            # Env 1
+      fxmod6_dest: 0            # FX1 Dry/Wet
+      fxmod6_amount: 0
+      fxmod7_source: 0            # Env 1
+      fxmod7_dest: 0            # FX1 Dry/Wet
+      fxmod7_amount: 0
+      fxmod8_source: 0            # Env 1
+      fxmod8_dest: 0            # FX1 Dry/Wet
+      fxmod8_amount: 0
+      fxmod9_source: 0            # Env 1
+      fxmod9_dest: 0            # FX1 Dry/Wet
+      fxmod9_amount: 0
+      fxmod10_source: 0            # Env 1
+      fxmod10_dest: 0            # FX1 Dry/Wet
+      fxmod10_amount: 0
+      fxmod11_source: 0            # Env 1
+      fxmod11_dest: 0            # FX1 Dry/Wet
+      fxmod11_amount: 0
+      fxmod12_source: 0            # Env 1
+      fxmod12_dest: 0            # FX1 Dry/Wet
+      fxmod12_amount: 0
+      fxmod13_source: 0            # Env 1
+      fxmod13_dest: 0            # FX1 Dry/Wet
+      fxmod13_amount: 0
+      fxmod14_source: 0            # Env 1
+      fxmod14_dest: 0            # FX1 Dry/Wet
+      fxmod14_amount: 0
+      fxmod15_source: 0            # Env 1
+      fxmod15_dest: 0            # FX1 Dry/Wet
+      fxmod15_amount: 0
+      fxmod16_source: 0            # Env 1
+      fxmod16_dest: 0            # FX1 Dry/Wet
+      fxmod16_amount: 0
   - channel: 6
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 0
+    voice_slots: 0
+    name: ""
     params:
       osc1_shape: 1            # Saw
       osc1_param: 0
@@ -965,10 +1367,10 @@ parts:
       voice_lfo_shape: 0            # Triangle
       voice_lfo_rate: 72
       mod1_source: 0            # Env 1
-      mod1_dest: 0            # Parameter 1
+      mod1_dest: 0            # Osc Param 1
       mod1_amount: 0
       mod2_source: 0            # Env 1
-      mod2_dest: 1            # Parameter 2
+      mod2_dest: 1            # Osc Param 2
       mod2_amount: 0
       mod3_source: 3            # LFO 1
       mod3_dest: 2            # Osc 1
@@ -977,15 +1379,15 @@ parts:
       mod4_dest: 3            # Osc 2
       mod4_amount: 0
       mod5_source: 4            # LFO 2
-      mod5_dest: 0            # Parameter 1
+      mod5_dest: 0            # Osc Param 1
       mod5_amount: 0
       mod6_source: 4            # LFO 2
-      mod6_dest: 1            # Parameter 2
+      mod6_dest: 1            # Osc Param 2
       mod6_amount: 0
       mod7_source: 5            # LFO 3
       mod7_dest: 6            # Mix Balance
       mod7_amount: 0
-      mod8_source: 6            # LFO 4
+      mod8_source: 6            # Voice LFO
       mod8_dest: 12            # Filter Cutoff
       mod8_amount: 0
       mod9_source: 11            # Seq 1
@@ -1003,7 +1405,7 @@ parts:
       mod13_source: 16            # Pitch Bend
       mod13_dest: 4            # Osc 1+2 Coarse
       mod13_amount: 32
-      mod14_source: 6            # LFO 4
+      mod14_source: 6            # Voice LFO
       mod14_dest: 4            # Osc 1+2 Coarse
       mod14_amount: 16
       modif1_in1: 3            # LFO 1
@@ -1097,6 +1499,84 @@ parts:
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
       arp_resolution: 10            # 1/16T
+      fx1_type: 0            # None
+      fx1_enabled: 0
+      fx1_drywet: 0
+      fx1_param1: 0
+      fx1_param2: 0
+      fx1_param3: 0
+      fx1_param4: 0
+      fx1_param5: 0
+      fx2_type: 0            # None
+      fx2_enabled: 0
+      fx2_drywet: 0
+      fx2_param1: 0
+      fx2_param2: 0
+      fx2_param3: 0
+      fx2_param4: 0
+      fx2_param5: 0
+      fx3_type: 0            # None
+      fx3_enabled: 0
+      fx3_drywet: 0
+      fx3_param1: 0
+      fx3_param2: 0
+      fx3_param3: 0
+      fx3_param4: 0
+      fx3_param5: 0
+      fx_topo: 0            # FX1 -> FX2 -> FX3
+      fx_order: 0
+      fx_mix: 127
+      fx_eq_low: 0
+      fx_eq_mid: 64
+      fx_eq_high: 64
+      fxmod1_source: 0            # Env 1
+      fxmod1_dest: 0            # FX1 Dry/Wet
+      fxmod1_amount: 0
+      fxmod2_source: 0            # Env 1
+      fxmod2_dest: 0            # FX1 Dry/Wet
+      fxmod2_amount: 0
+      fxmod3_source: 0            # Env 1
+      fxmod3_dest: 0            # FX1 Dry/Wet
+      fxmod3_amount: 0
+      fxmod4_source: 0            # Env 1
+      fxmod4_dest: 0            # FX1 Dry/Wet
+      fxmod4_amount: 0
+      fxmod5_source: 0            # Env 1
+      fxmod5_dest: 0            # FX1 Dry/Wet
+      fxmod5_amount: 0
+      fxmod6_source: 0            # Env 1
+      fxmod6_dest: 0            # FX1 Dry/Wet
+      fxmod6_amount: 0
+      fxmod7_source: 0            # Env 1
+      fxmod7_dest: 0            # FX1 Dry/Wet
+      fxmod7_amount: 0
+      fxmod8_source: 0            # Env 1
+      fxmod8_dest: 0            # FX1 Dry/Wet
+      fxmod8_amount: 0
+      fxmod9_source: 0            # Env 1
+      fxmod9_dest: 0            # FX1 Dry/Wet
+      fxmod9_amount: 0
+      fxmod10_source: 0            # Env 1
+      fxmod10_dest: 0            # FX1 Dry/Wet
+      fxmod10_amount: 0
+      fxmod11_source: 0            # Env 1
+      fxmod11_dest: 0            # FX1 Dry/Wet
+      fxmod11_amount: 0
+      fxmod12_source: 0            # Env 1
+      fxmod12_dest: 0            # FX1 Dry/Wet
+      fxmod12_amount: 0
+      fxmod13_source: 0            # Env 1
+      fxmod13_dest: 0            # FX1 Dry/Wet
+      fxmod13_amount: 0
+      fxmod14_source: 0            # Env 1
+      fxmod14_dest: 0            # FX1 Dry/Wet
+      fxmod14_amount: 0
+      fxmod15_source: 0            # Env 1
+      fxmod15_dest: 0            # FX1 Dry/Wet
+      fxmod15_amount: 0
+      fxmod16_source: 0            # Env 1
+      fxmod16_dest: 0            # FX1 Dry/Wet
+      fxmod16_amount: 0
 options:
   vca_curve: 0            # Linearized
   filter_card: 0            # 4-pole LM13700 (Ladder)
