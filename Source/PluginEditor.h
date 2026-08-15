@@ -580,6 +580,12 @@ private:
     void openLoadDialog();
     void openSaveDialog();
     void openSaveParvatiDialog();
+    // Save the whole multitimbral setup as an Ambika .MUL. When the setup uses
+    // voice slots beyond the hardware (mul_export::needsFallback), the export
+    // fallback dialog (MulExportDialog) picks a voice->card mapping strategy.
+    void openSaveMultiDialog();
+    // Post-save chrome refresh + iOS Documents mirroring for a saved .MUL.
+    void afterMultiSaved (const juce::File& f);
     void applyPatchFile (const juce::File&);
 
     // Re-apply every editor-chrome string through TRANS() (buttons, captions,

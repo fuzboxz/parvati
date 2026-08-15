@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "MulExport.h"
 #include "ParameterLayout.h"
 #include "SynthEngine.h"
 #include "MidiParameterMap.h"
@@ -183,7 +184,25 @@ public:
     // the APVTS (live edits); the other 5 parts are read from engine storage.
     // MultiData.part_mapping_ is rebuilt from the engine's per-part channel /
     // keyrange / voice-allocation. A saved file re-loads to the same state.
-    bool saveMultiFile (const juce::File& file);
+    // Save the whole 6-Part state as an Ambika .MUL — the exact inverse of
+    // loadMultiFile. The CURRENT part's Patch/PartData bytes are gathered from
+    // the APVTS (live edits); the other 5 parts are read from engine storage.
+    // MultiData.part_mapping_ is rebuilt from the engine's per-part channel /
+    // keyrange / voice-allocation. A saved file re-loads to the same state.
+    //
+    // Export fallback (voice-slot extension): when a Part requests more voices
+    // than its voicecards (see mul_export::needsFallback), the chosen strategy
+    // maps the requested voices onto the 6 hardware cards (bitmask rewrite +
+    // optional polyphony-mode rewrite). ChainSplit writes additional sibling
+    // "-2.MUL"/"-3.MUL" unit files for physically chained Ambikas. The default
+    // (0 = AsIs) is the legacy behaviour: bitmasks unchanged, slots ignored.
+    // @p strategyInt is a parvati::mul_export::Strategy value passed as int to
+    // keep this header light for the headless tests.
+    bool saveMultiFile (const juce::File& file, int strategyInt = 0);
+
+    // The current export Setup (requested voices / cards / poly modes), for
+    // the editor's fallback dialog preview. Pure read of engine state.
+    parvati::mul_export::Setup getMulExportSetup() const;
     static juce::File getFactoryMultiDir();
     // Stock init templates (Mono / Poly / Unison / Multitimbral) — full-fidelity
     // .parvati multis. <appdata>/Parvati/TEMPLATES/.

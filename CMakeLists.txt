@@ -1180,6 +1180,15 @@ add_executable(parvati_voice_slots_test
 add_executable(parvati_drum_kit_test
     tests/drum_kit_test.cpp
 )
+add_executable(parvati_export_fallback_test
+    tests/export_fallback_test.cpp
+)
+target_include_directories(parvati_export_fallback_test PRIVATE Source)
+target_compile_features(parvati_export_fallback_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_export_fallback_test PRIVATE
+    Parvati
+)
+
 target_include_directories(parvati_drum_kit_test PRIVATE Source)
 target_compile_features(parvati_drum_kit_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_drum_kit_test PRIVATE

@@ -32,6 +32,16 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
     sine kick/tom).
   - Tests: `voice_slots_test`, `drum_kit_test`; multitimbral/multi_load/
     host_state updated to the pool-model behavioural contract.
+  - **`.MUL` export fallback dialog** (Save > Ambika Multi (.MUL) — the
+    entry itself is new). When the setup requests more voices than the
+    6 hardware voicecards can express, a strategy dialog previews and picks
+    the voice-to-card mapping: **Proportional** (largest-remainder split by
+    request, default), **Priority** (first-wins), **Even Split**, **Mono
+    Fold** (constrained parts fold to MONO unison), **Chain Split** (writes
+    extra "-2.MUL" unit files for physically chained Ambikas; heads get
+    CHAIN mode and forward overflow on the same channel/key zone), and
+    **As-Is** (legacy bitmasks, slots ignored). Pure solver in
+    `Source/MulExport.*`; `.parvati` exports never degrade.
 
 ### Fixed
 - **iOS Info.plist plumbing (T1/T2/T5/T16 of the iPadOS audit — see

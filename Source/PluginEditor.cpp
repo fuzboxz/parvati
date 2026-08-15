@@ -7,6 +7,7 @@
 #include "ui/ModDestMap.h"
 #include "ui/ModMatrixHighlight.h"
 #include "ui/OscPreviewDisplay.h"
+#include "ui/MulExportDialog.h"
 #include "ui/PatchPage.h"
 #include "ui/ParamHelp.h"
 #include "ui/SynthParamLabels.h"
@@ -2248,9 +2249,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         juce::PopupMenu m;
         m.addItem (1, TRANS ("Ambika Patch (.PRO)"));
         m.addItem (2, TRANS ("Parvati Patch (.parvati)"));
+        m.addItem (3, TRANS ("Ambika Multi (.MUL)"));
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this] (int result) {
             if (result == 1)      openSaveDialog();
             else if (result == 2) openSaveParvatiDialog();
+            else if (result == 3) openSaveMultiDialog();
         });
     };
     addAndMakeVisible (saveButton_);
@@ -3811,6 +3814,57 @@ void ParvatiEditor::openSaveParvatiDialog()
     });
 }
 
+void ParvatiEditor::openSaveMultiDialog()
+{
+    // Save the whole 6-Part multitimbral setup as an Ambika .MUL (byte-faithful;
+    // shareable with Ambika hardware). When a Part requests more voices than
+    // its voicecards (the voice-slot extension), the .MUL cannot express the
+    // setup faithfully -> the export-fallback dialog picks a strategy for
+    // mapping the voices onto the 6 hardware cards (MulExport solver).
+    auto defaultName = processorRef_.getLoadedProgramName();
+    if (defaultName.isEmpty())
+        defaultName = "Parvati";
+    const juce::File defaultDir = processorRef_.getUserPatchDir();
+    defaultDir.createDirectory();
+    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".MUL"));
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Ambika Multi (.MUL)"),
+                                                       defaultFile, "*.MUL");
+    const auto flags = juce::FileBrowserComponent::saveMode
+                     | juce::FileBrowserComponent::canSelectFiles
+                     | juce::FileBrowserComponent::warnAboutOverwriting;
+    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
+        if (fc.getResults().size() == 0)
+        {
+            fileChooser_ = nullptr;
+            return;
+        }
+        const auto f = fc.getResult().withFileExtension (".MUL");
+        const auto setup = processorRef_.getMulExportSetup();
+        if (! parvati::mul_export::needsFallback (setup))
+        {
+            if (processorRef_.saveMultiFile (f))
+                afterMultiSaved (f);
+            fileChooser_ = nullptr;
+            return;
+        }
+        // Needs a strategy: show the fallback dialog, then save with the choice.
+        MulExportDialog::launch (this, setup, [this, f] (int strategy)
+        {
+            if (strategy >= 0 && processorRef_.saveMultiFile (f, strategy))
+                afterMultiSaved (f);
+        });
+        fileChooser_ = nullptr;
+    });
+}
+
+void ParvatiEditor::afterMultiSaved (const juce::File& f)
+{
+#if JUCE_IOS
+    mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
+#endif
+    if (presetBrowser_ != nullptr)
+        presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+}
 void ParvatiEditor::applyPatchFile (const juce::File& f)
 {
     // .MUL -> multitimbral multi (all 6 Parts); .PRO -> single program;

@@ -5,6 +5,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "MulExport.h"
 #include "ParvatiPreset.h"
 #include "PatchFile.h"
 #include "ui/FactoryPresetInstaller.h"
@@ -824,7 +825,7 @@ juce::File ParvatiAudioProcessor::getUserPatchDir()
         .getChildFile ("Parvati/USER");
 }
 
-bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
+bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyInt)
 {
     // The byte-exact inverse of loadMultiFile. Builds an AmbikaMulti from the
     // live engine + APVTS state: the CURRENT part's Patch/PartData bytes come
@@ -906,10 +907,71 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file)
         multi.multiData[(size_t) off + 2] = engine_.getPartKeyrangeHigh (i);
         multi.multiData[(size_t) off + 3] = engine_.getPartVoiceAllocation (i);
     }
+
+    // Export fallback: when a Part requests more voices than its voicecards
+    // (the voice-slot extension), the chosen strategy rewrites the bitmasks
+    // (and optionally the polyphony modes) to map the requested voices onto
+    // the 6 hardware cards. ChainSplit additionally writes sibling "-2.MUL"
+    // unit files for physically chained Ambikas.
+    {
+        using namespace parvati::mul_export;
+        const Setup setup = getMulExportSetup();
+        const auto strat = static_cast<Strategy> (juce::jlimit (0, 5, strategyInt));
+
+        // One full multi per unit (same patches/routing; only masks + modes
+        // differ). Unit 0 is `multi`; ChainSplit clones it per extra unit.
+        const auto applySolution = [] (AmbikaMulti& m, const Solution& sol)
+        {
+            for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+            {
+                m.multiData[(size_t) (i * 4 + 3)] = sol.masks[(size_t) i];
+                if (sol.polyOverridden[(size_t) i])
+                    m.parts[(size_t) i].part[15] = sol.polyMode[(size_t) i];
+            }
+        };
+
+        if (strat == Strategy::ChainSplit)
+        {
+            const auto units = solveChain (setup);
+            applySolution (multi, units.front());
+            for (size_t u = 1; u < units.size(); ++u)
+            {
+                AmbikaMulti unitMulti = multi;   // same patches + routing
+                applySolution (unitMulti, units[u]);
+                const juce::File unitFile = file.getParentDirectory().getChildFile (
+                    file.getFileNameWithoutExtension() + "-" + juce::String (u + 1) + ".MUL");
+                if (! writeAmbikaMultiFile (unitFile, unitMulti))
+                    return false;
+            }
+        }
+        else if (strat != Strategy::AsIs)
+        {
+            applySolution (multi, solve (setup, strat));
+        }
+    }
     multi.hasMultiData = true;
     multi.ok = true;
 
     return writeAmbikaMultiFile (file, multi);
+}
+
+parvati::mul_export::Setup ParvatiAudioProcessor::getMulExportSetup() const
+{
+    parvati::mul_export::Setup setup;
+    for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+    {
+        const uint8_t mask = engine_.getPartVoiceAllocation (i);
+        int cards = 0;
+        for (int vc = 0; vc < 6; ++vc)
+            if (mask & (1u << vc)) ++cards;
+        const int slots = engine_.getPartVoiceSlots (i);
+        setup.cards[(size_t) i] = cards;
+        setup.active[(size_t) i] = cards > 0;
+        // Effective requested voices: fixed slots, else the card count (AUTO).
+        setup.requested[(size_t) i] = (slots > 0) ? slots : cards;
+        setup.polyMode[(size_t) i] = engine_.getPartPolyphony (i);
+    }
+    return setup;
 }
 
 //==========================================================================
