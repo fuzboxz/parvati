@@ -99,8 +99,12 @@ public:
         const float rowOff = kBlockH * 0.85f;              // parallel-branch vertical offset
 
         const int topo = currentTopoIndex();               // 0=Series 1=Par 1+2->3 2=Par 1->2+3
-        const juce::Font blockFont (juce::FontOptions (10.0f, juce::Font::bold));
-        const juce::Font endFont   (juce::FontOptions (8.0f,  juce::Font::bold));   // IN/OUT (smaller utility label)
+        // T15 (iPadOS audit): 12/10pt (was 10/8) — the diagram labels were
+        // below touch readability. The FX-slot labels already degrade to a
+        // bare digit when the block is too narrow, and IN/OUT are sized to
+        // their glyphs at these sizes, so nothing overflows its block.
+        const juce::Font blockFont (juce::FontOptions (12.0f, juce::Font::bold));
+        const juce::Font endFont   (juce::FontOptions (10.0f, juce::Font::bold));   // IN/OUT (smaller utility label)
 
         auto nodeRect = [&] (float cx, float bcY, float w) -> juce::Rectangle<float>
         {

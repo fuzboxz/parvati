@@ -2879,6 +2879,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         setZoom (processorRef_.getUiZoom());
 #endif
 
+#if JUCE_IOS
+    // T14 (iPadOS audit): keep the display awake while an editor exists — a
+    // patch tweak mid-performance must not lock the screen (audio keeps going
+    // via UIBackgroundModes, but the UI would vanish mid-drag). Restored in the
+    // destructor next to the zoom reset, mirroring that pattern. iOS-only seam
+    // (same gate as the zoom default above): desktop screensaver policy is not
+    // ours to change.
+    juce::Desktop::getInstance().setScreenSaverEnabled (false);
+#endif
+
     // Guarantee the full theme-derived colour re-apply runs on first build in
     // EVERY context (standalone, headless screen tool, editor tests).
     // changeListenerCallback is only the theme-CHANGE path: it is NOT invoked at
@@ -2916,6 +2926,12 @@ ParvatiEditor::~ParvatiEditor()
     // zoom is a documented future enhancement — see the setZoom() comment.)
     if (zoom_ != 1.0)
         juce::Desktop::getInstance().setGlobalScaleFactor (1.0f);
+
+#if JUCE_IOS
+    // T14: re-allow screen sleep (pairs with the constructor's disable — see
+    // the matching seam there).
+    juce::Desktop::getInstance().setScreenSaverEnabled (true);
+#endif
 }
 
 void ParvatiEditor::dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details)

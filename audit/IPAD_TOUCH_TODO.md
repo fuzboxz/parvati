@@ -129,13 +129,22 @@ Check items off (`[x]`) as they are implemented and verified.
   inert with no hint. Only `return` when `src >= 0`; else fall through to
   `TabBarButton::clicked`.
 
-- [ ] **T14. No screen-wake.** `Desktop::setScreenSaverEnabled(false)` while an editor
+- [x] **T14. No screen-wake.** `Desktop::setScreenSaverEnabled(false)` while an editor
   exists; restore in `~ParvatiEditor` (mirror the zoom-reset pattern at
   `PluginEditor.cpp:2877-2881`). iOS only.
 
-- [ ] **T15. Knob readout shrink floor 9pt** (`ParvatiLookAndFeel.cpp`
+  DONE (T14/T15 batch): constructor disables the screensaver next to the
+  iOS zoom default (`#if JUCE_IOS`, same gate); destructor re-enables it next
+  to the zoom reset. Desktop compiled out.
+
+- [x] **T15. Knob readout shrink floor 9pt** (`ParvatiLookAndFeel.cpp`
   `drawRotarySlider` `juce::jmax (9.0f, …)`) — raise floor to 11pt; flow-diagram
   8-10pt fonts → 10/12pt.
+
+  DONE (T14/T15 batch): shrink floor 9 → 11pt (over-long values now draw past
+  the dial edge rather than shrink below touch readability); FxFlowDiagram
+  blockFont 10 → 12, endFont 8 → 10 (FX labels still degrade to a bare digit
+  in narrow blocks; IN/OUT sized to glyphs).
 
 - [x] **T16. Remove dead no-op** `JUCE_XCODE_EXTRA_PLIST_ENTRIES ""`
   (`CMakeLists.txt:219-222`, comment itself declares it broken).

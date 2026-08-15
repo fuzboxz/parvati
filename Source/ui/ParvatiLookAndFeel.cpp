@@ -568,7 +568,11 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
         juce::Font vf = appFont (juce::jmax (11.0f, radius * 0.52f), juce::Font::plain);
         const int textW = juce::GlyphArrangement::getStringWidthInt (vf, valueText);
         if ((float) textW > maxTextW && textW > 0)
-            vf = appFont (juce::jmax (9.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
+            // Auto-shrink for long values, floored at 11pt (T15, iPadOS audit:
+            // was 9pt — below arm's-length touch readability). An over-long
+            // value that can't fit at 11pt simply draws past the dial edge
+            // rather than becoming unreadably small.
+            vf = appFont (juce::jmax (11.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
 
         const auto textRect = bounds.toNearestInt().withSizeKeepingCentre (
             juce::roundToInt (maxTextW), juce::roundToInt (vf.getHeight() * 1.7f));
