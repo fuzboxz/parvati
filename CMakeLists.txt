@@ -898,6 +898,21 @@ target_link_libraries(parvati_modbar_click_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Layout overlap regression gate (R3). Sweeps compact editor sizes across all
+# three top-level pages and asserts no interactive siblings overlap and nothing
+# escapes its parent outside scrollable viewports — the systematic gate for
+# the "compacted layout overlaps" bug class. Built by default.
+# Run: ./build/parvati_layout_overlap_test
+add_executable(parvati_layout_overlap_test
+    tests/layout_overlap_test.cpp
+)
+target_include_directories(parvati_layout_overlap_test PRIVATE Source)
+target_compile_features(parvati_layout_overlap_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_layout_overlap_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # CI-portable headless perf regression gate (P3/PR3). Pumps the message loop
 # at the real timer cadence for ~10 s against CPU-time + tick-cost budgets —
 # catches the timer/message-storm class of regression (the PartRow combo

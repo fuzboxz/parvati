@@ -127,8 +127,13 @@ private:
     // where the page previously clipped unrecoverably. The reparented page
     // stays editor-owned (generatedPages_); the host owns only its layout
     // slot, so reparenting never duplicates a control/attachment.
-    std::unique_ptr<juce::Viewport> activeEditorHost_;
-    ParamPage* activePage_ = nullptr;   // page currently reparented into the host
+    // TOP-row scroll host (R3): holds the three main-row pages; viewed by
+    // topRowViewport_ so a short frame scrolls instead of overlapping the
+    // bar/bottom rows. No scrollbar when the pages fit (design size).
+    std::unique_ptr<juce::Component> topRowHost_;
+    std::unique_ptr<juce::Viewport> topRowViewport_;
+
+    std::unique_ptr<juce::Viewport> activeEditorHost_;    ParamPage* activePage_ = nullptr;   // page currently reparented into the host
 
     // Generator -> { page, groups-to-show } registration (built by the editor from
     // the page-generation loop; one entry per generator pill).

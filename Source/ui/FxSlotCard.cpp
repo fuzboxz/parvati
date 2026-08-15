@@ -584,12 +584,21 @@ void FxSlotCard::resized()
     if (typeCombo_ != nullptr && area.getHeight() > kTypeRowH)
     {
         auto typeRow = area.removeFromTop (kTypeRowH);
+        // R3: the power toggle's 44x44 corner hit band laps the type row's
+        // right edge — RESERVE that span instead of letting the centred combo
+        // overlap it (the combo shrinks/left-centres in the remaining width;
+        // wide cards are unaffected). The toFront below stays as a belt-and-
+        // braces guard only.
+        auto avail = typeRow;
+        if (powerToggle_ != nullptr)
+            avail.removeFromRight (juce::jmin (kPowerHitSize, avail.getWidth() / 2));
         const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
-        const int comboW = juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth()), textW);
+        const int comboW = juce::jmin (avail.getWidth(),
+                                       juce::jlimit (kComboMinW, juce::jmax (kComboMinW, avail.getWidth()), textW));
         // The whole algorithm selector is ONE 44pt-tall tap target that opens
         // the effect picker. Centred, fit-to-text width; the 44pt combo fills
         // the 44pt row. (The prev/next chevrons are not placed.)
-        const int comboX = typeRow.getX() + (typeRow.getWidth() - comboW) / 2;
+        const int comboX = avail.getX() + (avail.getWidth() - comboW) / 2;
         typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
         // Keep the combo ABOVE the power toggle's 44x44 corner hit band (see
         // the header comment above): hit-testing walks siblings front-first,

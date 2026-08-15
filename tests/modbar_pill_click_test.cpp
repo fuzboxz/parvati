@@ -100,9 +100,14 @@ juce::Component* findPillByTooltip (CentralModBar* bar, const juce::String& full
 // bar's scrolling viewport lives deeper, inside the CentralModBar).
 juce::Viewport* findHostViewport (juce::Component* workspace)
 {
+    // R3 note: each workspace now has TWO direct-child viewports (the top-row
+    // scroll host whose viewed component is a plain host Component, and the
+    // bottom-left ACTIVE GENERATOR host whose viewed component is a ParamPage).
+    // The generator host is identified by its content, not child order.
     for (auto* child : workspace->getChildren())
         if (auto* v = dynamic_cast<juce::Viewport*> (child))
-            return v;
+            if (dynamic_cast<ParamPage*> (v->getViewedComponent()) != nullptr)
+                return v;
     return nullptr;
 }
 

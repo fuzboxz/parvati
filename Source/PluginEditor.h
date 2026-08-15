@@ -538,6 +538,12 @@ public:
     // tests) can drive the mode toggle without simulating header-button clicks.
     void setFxMode (bool fx);
 
+    // Select which of the three peer top-level pages is shown (0=Synth, 1=FX,
+    // 2=Patch) — exactly what the header page buttons do. Public for test/tool
+    // access only (same rationale as setFxMode: headless layout + screenshot
+    // tools must drive the page switch without simulating clicks).
+    void setCurrentTopPage (int pageIndex);
+
 private:
     // Unified 3-way top-level page selector (Synth/FX/Patch). Each header
     // page button calls showTopPage(idx): exclusive page visibility + button

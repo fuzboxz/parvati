@@ -129,6 +129,12 @@ private:
     // frames, where the page previously clipped unrecoverably. The reparented
     // page stays editor-owned (generatedPages_); the host owns only its layout
     // slot, so reparenting never duplicates a control/attachment.
+    // TOP-row scroll host (R3): holds the routing bar + slot cards; viewed by
+    // topRowViewport_ so a compacted frame scrolls the row at its natural
+    // minimum height instead of overlapping the rows below.
+    std::unique_ptr<juce::Component> topRowHost_;
+    std::unique_ptr<juce::Viewport> topRowViewport_;
+
     std::unique_ptr<juce::Viewport> activeEditorHost_;
     ParamPage* activePage_ = nullptr;   // page currently reparented into the host
 

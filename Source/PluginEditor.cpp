@@ -957,8 +957,11 @@ void ParamControl::resized()
         // this constant alone is a no-op. To grow the dials, raise the group /
         // page cellH (configureGroupLayouts / PageInfo), NOT this cap.
         constexpr int kKnobDiameterCap = 52;
-        slider_->setBounds (b.withSizeKeepingCentre (kKnobDiameterCap,
-                                                     juce::jmin (kKnobDiameterCap, b.getHeight())));
+        // Diameter respects BOTH cell axes: a compacted column can make cells
+        // narrower than the cap, and a fixed 52px dial in a narrower cell would
+        // paint over the neighbouring control (the R3 overlap class).
+        const int dial = juce::jmin (kKnobDiameterCap, b.getWidth(), b.getHeight());
+        slider_->setBounds (b.withSizeKeepingCentre (dial, dial));
     }
     else if (comboBox_)
     {
@@ -1667,7 +1670,14 @@ void ParamPage::layoutGroups (int targetWidth)
             rowH = 0;
         }
         rowOf[(size_t) gi] = currentRow;
-        g.rect.setBounds (x, y, g.naturalWidth, g.naturalHeight);
+        // R3 width clamp: a panel whose natural width exceeds the available
+        // row width SHRINKS to it instead of overflowing (its cells compress
+        // down to the 44pt touch floor in applyLayout) — compact columns/
+        // AUv3 panes degrade to smaller controls, never to controls painted
+        // over the neighbouring column.
+        g.rect.setBounds (x, y,
+                          juce::jmin (g.naturalWidth, juce::jmax (kMargin, maxRight - x)),
+                          g.naturalHeight);
         x += g.naturalWidth + kGroupGap;
         rowH = juce::jmax (rowH, g.naturalHeight);
     }
@@ -1781,12 +1791,16 @@ void ParamPage::applyLayout()
         const int cols = juce::jmax (1, g.internalCols);
         // Flexible-width cells: a NON-dense panel distributes its cells evenly
         // across the actual (possibly row-filled) inner width; a DENSE panel
-        // (sequencer step grid / mod-modifier strip) keeps its fixed cell size
-        // and is left-aligned. Column width never shrinks below the natural
-        // cellW, only grows to fill. Row height is always g.cellH.
-        const bool dense = g.stepGrid || g.singleRow;
-        const int colStep = dense ? g.cellW
-                                  : juce::jmax (g.cellW, inner.getWidth() / cols);
+        // (sequencer step grid / mod-modifier strip) uses its fixed cell size.
+        // R3: the shared 44pt touch floor lets BOTH compress when the group was
+        // width-clamped in layoutGroups (a compacted column degrades to smaller
+        // controls, not to controls overlapping the next column).
+        constexpr int kCellStepFloor = 44;
+        // Both branches compress down to the 44pt floor when the group was
+        // width-clamped (a compacted column degrades to smaller controls, not
+        // to controls overlapping the next column); at natural/grown widths
+        // inner/cols equals the design cellW so the layout is unchanged.
+        const int step = juce::jmax (kCellStepFloor, inner.getWidth() / cols);
 
         if (g.sectioned)
         {
@@ -1817,9 +1831,9 @@ void ParamPage::applyLayout()
                         col = 0;
                         ++row;
                     }
-                    const juce::Rectangle<int> cell (inner.getX() + col * colStep,
+                    const juce::Rectangle<int> cell (inner.getX() + col * step,
                                                      y + row * g.cellH,
-                                                     span * colStep, g.cellH);
+                                                     span * step, g.cellH);
                     auto* ctrl = controls_[(size_t) ci].get();
                     ctrl->setVisible (true);
                     ctrl->setBounds (cell.reduced (3));
@@ -1841,9 +1855,9 @@ void ParamPage::applyLayout()
             if (ci < 0 || ci >= (int) controls_.size()) continue;
             const int col = hasInlinePreview ? (idx == 0 ? 0 : idx + 1) : (idx % cols);
             const int row = hasInlinePreview ? 0 : (idx / cols);
-            const juce::Rectangle<int> cell (inner.getX() + col * colStep,
+            const juce::Rectangle<int> cell (inner.getX() + col * step,
                                              inner.getY() + row * g.cellH,
-                                             colStep, g.cellH);
+                                             step, g.cellH);
             auto* ctrl = controls_[(size_t) ci].get();
             ctrl->setVisible (true);
             ctrl->setBounds (cell.reduced (3));
@@ -1853,9 +1867,9 @@ void ParamPage::applyLayout()
         if (hasInlinePreview)
         {
             g.inlinePreview->setVisible (true);
-            const juce::Rectangle<int> pc (inner.getX() + 1 * colStep,
+            const juce::Rectangle<int> pc (inner.getX() + 1 * step,
                                            inner.getY(),
-                                           colStep, g.cellH);
+                                           step, g.cellH);
             g.inlinePreview->setBounds (pc.reduced (3));
         }
 
@@ -3229,6 +3243,13 @@ void ParvatiEditor::setFxMode (bool fx)
     // Public entry for the screen-shot tool / tests: select SYNTH (false) or FX
     // (true) via the unified page selector.
     showTopPage (fx ? 1 : 0);
+}
+
+void ParvatiEditor::setCurrentTopPage (int pageIndex)
+{
+    // Public 3-way entry for the layout / screenshot tools: 0=Synth, 1=FX,
+    // 2=Patch — the same path the header page buttons take.
+    showTopPage (juce::jlimit (0, 2, pageIndex));
 }
 
 void ParvatiEditor::showTopPage (int idx)

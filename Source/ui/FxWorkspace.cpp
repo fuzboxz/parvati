@@ -20,6 +20,19 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
 
+    // TOP row: the routing bar + three FX-slot cards live in a vertical-scroll
+    // Viewport host (R3). The host keeps a fixed NATURAL minimum height
+    // (kTopRowNaturalH) so the bar/cards always lay out at their designed row
+    // heights; at the tuned design size the row already meets that minimum so
+    // no scrollbar ever appears (layout byte-identical). A compacted frame
+    // SCROLLS the row instead of the cards/bar painting over the mod bar and
+    // the bottom rows (the reported overlap).
+    topRowHost_ = std::make_unique<juce::Component>();
+    topRowViewport_ = std::make_unique<juce::Viewport>();
+    topRowViewport_->setScrollBarsShown (true, false, false, false);   // vertical-only, shown only on overflow
+    topRowViewport_->setViewedComponent (topRowHost_.get(), false);
+    addAndMakeVisible (*topRowViewport_);
+
     // BOTTOM-LEFT: a vertical-scroll host (T4 safety net) that reparents one
     // generator page at a time. Mirrors SynthWorkspace's host exactly: no
     // scrollbar when the page fits its cell (reflowToWidth grows the page to
@@ -68,7 +81,7 @@ void FxWorkspace::setFxSlotCard (int slot, FxSlotCard* card)
     // Direct child (editor-owned card, reparented not regenerated).
     fxSlotCards_[slot] = card;
     if (card != nullptr)
-        addAndMakeVisible (*card);
+        topRowHost_->addAndMakeVisible (*card);
 }
 
 void FxWorkspace::setFxRoutingBar (FxRoutingBar* bar)
@@ -80,7 +93,7 @@ void FxWorkspace::setFxRoutingBar (FxRoutingBar* bar)
     // fxRoutingBar_) stays safe.
     fxRoutingBar_ = bar;
     if (bar != nullptr)
-        addAndMakeVisible (*bar);
+        topRowHost_->addAndMakeVisible (*bar);
 }
 
 void FxWorkspace::registerGeneratorPage (int modSrcEnum, ParamPage* page,
@@ -227,23 +240,33 @@ void FxWorkspace::resized()
     // GroupComponent cards. Each card gets the remaining height and sizes its
     // knobs/visualizer internally.
     constexpr int kGap = 8;
-    auto inner = mainRow.reduced (kGap);
-    if (! inner.isEmpty())
+    // R3: the top row's NATURAL height — the routing bar's stacked rows (flow
+    // diagram 50 + EQ 60 + Dry/Wet band) and the slot cards' 44pt rows need
+    // ~190px to lay out as designed. The viewport host is never laid shorter
+    // than this; a shorter FRAME scrolls instead of starving the rows (which
+    // previously made the EQ labels / Dry/Wet caption / stepper buttons paint
+    // outside the bar and over the rows below).
+    constexpr int kTopRowNaturalH = 190;
+    topRowViewport_->setBounds (mainRow);
+    // mainRow (NOT Viewport::getViewWidth()) is the width source: the viewport
+    // caches its visible area and can be stale mid-cascade (SynthWorkspace hit
+    // this and collapsed its first layout to the 150pt floor).
+    const int viewW = juce::jmax (0, mainRow.getWidth());
+    const int viewH = juce::jmax (kTopRowNaturalH, mainRow.getHeight());
+    auto layoutTopRow = [&] (int w)
     {
-        const int innerW = inner.getWidth();
-        const int routeW = juce::jlimit (176, 248, (innerW - 3 * kGap) * 16 / 100);
-        const int cardsRegionW = juce::jmax (0, innerW - routeW - 3 * kGap);
+        const int routeW = juce::jlimit (176, 248, (w - 3 * kGap) * 16 / 100);
+        const int cardsRegionW = juce::jmax (0, w - routeW - 3 * kGap);
         const int cardW = cardsRegionW / 3;
 
-        const int x0 = inner.getX();
-        const int y0 = inner.getY();
-        const int h0 = inner.getHeight();
+        const int x0 = kGap, y0 = kGap;
+        const int h0 = viewH - 2 * kGap;
 
         const juce::Rectangle<int> routeCol (x0, y0, routeW, h0);
         const juce::Rectangle<int> fx1Col   (x0 + routeW + kGap,                    y0, cardW, h0);
         const juce::Rectangle<int> fx2Col   (x0 + routeW + kGap + cardW + kGap,     y0, cardW, h0);
         const int fx3x = x0 + routeW + 3 * kGap + 2 * cardW;   // 3 gaps between 4 columns (ROUTE/FX1/FX2/FX3)
-        const juce::Rectangle<int> fx3Col   (fx3x, y0, juce::jmax (0, x0 + innerW - fx3x), h0);
+        const juce::Rectangle<int> fx3Col   (fx3x, y0, juce::jmax (0, x0 + w - kGap - fx3x), h0);
 
         if (fxRoutingBar_ != nullptr)
             fxRoutingBar_->setBounds (routeCol);
@@ -256,7 +279,9 @@ void FxWorkspace::resized()
         sizeCard (fxSlotCards_[0], fx1Col);
         sizeCard (fxSlotCards_[1], fx2Col);
         sizeCard (fxSlotCards_[2], fx3Col);
-    }
+    };
+    layoutTopRow (viewW);
+    topRowHost_->setSize (viewW, viewH);
 
     // ---- Middle seam: full-width bar ----
     modBar_->setBounds (barRow);

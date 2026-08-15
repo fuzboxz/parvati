@@ -15,6 +15,21 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
 
+    // TOP row: the three main-row columns (OSC | MIX | FILTER) live in a
+    // vertical-scroll Viewport host (R3). At the tuned design size each page
+    // fits its cell — reflowToWidth grows a fitting page to at least the view
+    // height — so no scrollbar ever appears and the layout is byte-identical
+    // to the old direct hosting. In a SHORT frame (compacted window, small
+    // AUv3 pane) the pages keep their natural, taller height and the row
+    // SCROLLS instead of the pages painting over the bar / bottom rows (the
+    // reported "compacting overlaps" bug). Same scroll-gesture properties as
+    // the bottom-left host below.
+    topRowHost_ = std::make_unique<juce::Component>();
+    topRowViewport_ = std::make_unique<juce::Viewport>();
+    topRowViewport_->setScrollBarsShown (true, false, false, false);   // vertical-only, shown only on overflow
+    topRowViewport_->setViewedComponent (topRowHost_.get(), false);
+    addAndMakeVisible (*topRowViewport_);
+
     // BOTTOM-LEFT: a vertical-scroll host (T4 safety net) that reparents one
     // generator page at a time. At the tuned design size every generator page
     // fits its cell — reflowToWidth grows the page to at least the view height
@@ -64,10 +79,11 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
 //==============================================================================
 void SynthWorkspace::setMainLeft (ParamPage* page)
 {
-    // Mixer — direct child (editor-owned page, reparented not regenerated).
+    // Mixer — direct child of the top-row host (editor-owned page, reparented
+    // not regenerated).
     mainLeftPage_ = page;
     if (page != nullptr)
-        addAndMakeVisible (*page);
+        topRowHost_->addAndMakeVisible (*page);
 }
 
 void SynthWorkspace::setOscillators (ParamPage* page)
@@ -77,15 +93,16 @@ void SynthWorkspace::setOscillators (ParamPage* page)
     // (reparented, never regenerated).
     mainOscPage_ = page;
     if (page != nullptr)
-        addAndMakeVisible (*page);
+        topRowHost_->addAndMakeVisible (*page);
 }
 
 void SynthWorkspace::setMainRight (ParamPage* page)
 {
-    // Filter — direct child (editor-owned page, reparented not regenerated).
+    // Filter — direct child of the top-row host (editor-owned page, reparented
+    // not regenerated).
     mainRightPage_ = page;
     if (page != nullptr)
-        addAndMakeVisible (*page);
+        topRowHost_->addAndMakeVisible (*page);
 }
 
 void SynthWorkspace::registerGeneratorPage (int modSrcEnum, ParamPage* page,
@@ -222,21 +239,42 @@ void SynthWorkspace::resized()
     auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
     // ---- Main row columns: OSCILLATORS 40% | MIXER 20% | FILTER 40% ----
-    const int fullW = mainRow.getWidth();
-    auto oscCol = mainRow.removeFromLeft (fullW * 40 / 100);
-    auto mixCol = mainRow.removeFromLeft (fullW * 20 / 100);
-    auto filCol = mainRow;                       // remaining 40%
-
-    auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b)
+    // The columns live inside topRowHost_ (viewed by topRowViewport_): each
+    // page is laid at its column rect and reflowed to the column width with
+    // the viewport height as the minimum, so a fitting page fills the view
+    // exactly (byte-identical to the old direct layout) and an over-tall page
+    // makes the host scroll. When the host does scroll it is re-laid one
+    // scrollbar-thickness narrower so the scrollbar never covers the FILTER
+    // column's right edge.
+#include <cstdio>
+    topRowViewport_->setBounds (mainRow);
+    // NOTE: mainRow (NOT Viewport::getViewWidth()) is the width source — the
+    // viewport caches its visible area and can be stale mid-cascade, which
+    // collapsed the first layout to the 150pt floor.
+    const int rowW = juce::jmax (150, mainRow.getWidth());
+    const int rowH = juce::jmax (0, mainRow.getHeight());
+    auto layoutTopRow = [&] (int w)
     {
-        if (page == nullptr)
-            return;
-        page->setBounds (b);
-        page->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
+        auto hostRow = juce::Rectangle<int> (0, 0, w, rowH);
+        auto oc = hostRow.removeFromLeft (w * 40 / 100);
+        auto mc = hostRow.removeFromLeft (w * 20 / 100);
+        auto fc = hostRow;
+        auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b)
+        {
+            if (page == nullptr)
+                return 0;
+            page->setBounds (b);
+            page->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
+            return page->getHeight();
+        };
+        return juce::jmax (juce::jmax (sizeDirect (mainOscPage_,   oc),
+                                       sizeDirect (mainLeftPage_,  mc)),
+                            juce::jmax (sizeDirect (mainRightPage_, fc), rowH));
     };
-    sizeDirect (mainOscPage_,   oscCol);
-    sizeDirect (mainLeftPage_,  mixCol);
-    sizeDirect (mainRightPage_, filCol);
+    int hostH = layoutTopRow (rowW);
+    if (hostH > rowH)
+        hostH = layoutTopRow (juce::jmax (150, rowW - topRowViewport_->getScrollBarThickness()));
+    topRowHost_->setSize (rowW, hostH);
 
     // ---- Middle seam: full-width bar ----
     modBar_->setBounds (barRow);

@@ -211,47 +211,60 @@ void SettingsPanel::resized()
 {
     auto area = getLocalBounds().reduced (16, 16);
 
-    const int rowH = 28;
-    const int gap  = 8;
-
-    // HIG touch band: each combo's row (rowH tall) is grown to 44pt centred on
-    // itself for the setBounds call — the extra padding is transparent (the
-    // 28pt visual box comes from the "parvatiComboVisualH" property) and spills
-    // into the surrounding label/gap bands without moving anything. A row
-    // already 44pt or taller passes through unchanged.
-    const auto comboBand = [] (juce::Rectangle<int> row)
+    // Rows that no longer fit (a compacted drawer) are HIDDEN rather than
+    // laid out beyond the panel bottom — the drawer degrades to showing what
+    // fits instead of controls spilling over its edge (R3).
+    auto takeRow = [&area] (int h)
     {
-        return row.withSizeKeepingCentre (row.getWidth(), juce::jmax (44, row.getHeight()));
+        if (area.getHeight() < h)
+            return juce::Rectangle<int>();
+        return area.removeFromTop (h);
+    };
+    const auto rowOrHide = [] (juce::Component* c, const juce::Rectangle<int>& r)
+    {
+        if (r.isEmpty()) { c->setVisible (false); return; }
+        c->setVisible (true);
+        c->setBounds (r);
     };
 
+    const int rowH = 28;
+    // R3: combo/toggle rows are 44pt tall outright (the HIG tap minimum) —
+    // NOT a 28pt row grown by a centred transparent band. The band trick
+    // spilled 8pt into the caption/gap bands above and below, overlapping the
+    // caption Labels (and off the panel bottom on the last row) when the panel
+    // was compacted. The visual box stays 28pt via the "parvatiComboVisualH"
+    // property; only the hit area is 44pt, and it now owns its own row.
+    const int comboRowH = 44;
+    const int gap  = 8;
+
     // Theme row.
-    themeLabel_.setBounds (area.removeFromTop (18));
-    area.removeFromTop (2);
-    themeCombo_.setBounds (comboBand (area.removeFromTop (rowH)));
-    area.removeFromTop (gap + 8);
+    rowOrHide (&themeLabel_, takeRow (18));
+    takeRow (2);
+    rowOrHide (&themeCombo_, takeRow (comboRowH));
+    takeRow (gap + 8);
 
     // Zoom row.
-    zoomLabel_.setBounds (area.removeFromTop (18));
-    area.removeFromTop (2);
-    zoomSlider_.setBounds (area.removeFromTop (rowH));
-    area.removeFromTop (gap + 8);
+    rowOrHide (&zoomLabel_, takeRow (18));
+    takeRow (2);
+    rowOrHide (&zoomSlider_, takeRow (rowH));
+    takeRow (gap + 8);
 
     // Tooltips row.
-    tooltipsToggle_.setBounds (area.removeFromTop (rowH));
-    area.removeFromTop (gap);
+    rowOrHide (&tooltipsToggle_, takeRow (comboRowH));
+    takeRow (gap);
 
     // Parameter Smoothing row.
-    smoothingToggle_.setBounds (area.removeFromTop (rowH));
-    area.removeFromTop (gap + 8);
+    rowOrHide (&smoothingToggle_, takeRow (comboRowH));
+    takeRow (gap + 8);
 
     // Filter Quality (oversampling) row.
-    osLabel_.setBounds (area.removeFromTop (18));
-    area.removeFromTop (2);
-    osCombo_.setBounds (comboBand (area.removeFromTop (rowH)));
-    area.removeFromTop (gap + 8);
+    rowOrHide (&osLabel_, takeRow (18));
+    takeRow (2);
+    rowOrHide (&osCombo_, takeRow (comboRowH));
+    takeRow (gap + 8);
 
     // Language row.
-    langLabel_.setBounds (area.removeFromTop (18));
-    area.removeFromTop (2);
-    langCombo_.setBounds (comboBand (area.removeFromTop (rowH)));
+    rowOrHide (&langLabel_, takeRow (18));
+    takeRow (2);
+    rowOrHide (&langCombo_, takeRow (comboRowH));
 }

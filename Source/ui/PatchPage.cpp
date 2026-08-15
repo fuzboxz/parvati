@@ -619,7 +619,10 @@ void PatchPage::resized()
     auto area = getLocalBounds().reduced (16);
 
     heading_.setBounds (area.removeFromTop (30));
-    area.removeFromTop (6);
+    // 10pt (not 6): the arrangement combo's 44pt tap band is centred on the
+    // 26pt top row and reaches 9pt above it — a 6pt gap made it clip 3pt into
+    // the heading (R3 sibling-overlap).
+    area.removeFromTop (10);
     {
         // The top row is a 26pt band; the arrangement combo's TAP band is
         // grown to 44pt centred on it (transparent padding into the gaps
