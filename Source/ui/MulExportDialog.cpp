@@ -8,8 +8,18 @@
 // the solver. Each label states WHAT happens; the description under the combo
 // (always visible — tooltips are invisible on touch) states HOW; the preview
 // + summary state the COST.
+//
+// Touch note (iPadOS): every interactive target is a 44pt band (HIG minimum,
+// same floor as the rest of the editor): the strategy combo's BOUNDS fill a
+// 44pt row while the L&F's "parvatiComboVisualH" property draws the compact
+// 24pt box inside it (the Patch-page pattern), the popup rows use the shared
+// kPopupRowHeight (44), and Save/Cancel are 44pt tall. The preview text lives
+// in a Viewport so long chain summaries SCROLL (touch-drag) instead of
+// clipping. Esc-less touch dismissal = the Cancel button.
 
 #include "MulExportDialog.h"
+
+#include "ParvatiLookAndFeel.h"
 
 namespace
 {
@@ -64,9 +74,14 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     strategyCaption_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (strategyCaption_);
 
+    // HIG touch: the combo's BOUNDS are the 44pt tap band; the L&F draws the
+    // compact 24pt visual box inside it (see resized + "parvatiComboVisualH").
     for (size_t i = 0; i < sizeof (kItems) / sizeof (kItems[0]); ++i)
         strategyCombo_.addItem (TRANS (kItems[i].label), static_cast<int> (i) + 1);
     strategyCombo_.setSelectedId (1, juce::dontSendNotification);   // recommended default
+    // Popup rows: 44pt via the inherited ParvatiLookAndFeel's
+    // getIdealPopupMenuItemSize override (menus without an explicit
+    // standardItemHeight are raised to the HIG floor) — see launch().
     strategyCombo_.onChange = [this] { refreshPreview(); };
     strategyCombo_.getProperties().set ("parvatiComboVisualH", 24);
     addAndMakeVisible (strategyCombo_);
@@ -89,9 +104,15 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     previewLabel_.setFont (juce::FontOptions (12.0f));
     previewLabel_.setJustificationType (juce::Justification::topLeft);
     previewLabel_.setMinimumHorizontalScale (1.0f);
-    addAndMakeVisible (previewLabel_);
+    // The preview scrolls inside a Viewport (a 4-unit chain summary far
+    // exceeds the fixed area): touch-drag to scroll, desktop wheel too.
+    previewViewport_.setViewedComponent (&previewLabel_, false);
+    previewViewport_.setScrollBarsShown (true, false);
+    addAndMakeVisible (previewViewport_);
     refreshPreview();
 
+    // HIG touch: 44pt buttons.
+    saveButton_.setButtonText (TRANS ("Save"));
     saveButton_.onClick = [this]
     {
         if (fired_ || onDone_ == nullptr) return;
@@ -99,6 +120,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
         onDone_ (static_cast<int> (kItems[(size_t) (strategyCombo_.getSelectedId() - 1)].s));
     };
     addAndMakeVisible (saveButton_);
+    cancelButton_.setButtonText (TRANS ("Cancel"));
     cancelButton_.onClick = [this]
     {
         if (fired_ || onDone_ == nullptr) return;
@@ -106,6 +128,11 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
         onDone_ (-1);
     };
     addAndMakeVisible (cancelButton_);
+}
+
+MulExportDialog::~MulExportDialog()
+{
+    previewViewport_.setViewedComponent (nullptr, false);
 }
 
 void MulExportDialog::paint (juce::Graphics&) {}
@@ -116,21 +143,27 @@ void MulExportDialog::resized()
     heading_.setBounds (b.removeFromTop (52));
     b.removeFromTop (10);
     {
+        // 44pt tap band; the combo fills it (the L&F draws the 24pt visual).
         auto row = b.removeFromTop (44);
         strategyCaption_.setBounds (row.removeFromLeft (70).removeFromTop (14));
-        strategyCombo_.setBounds (row.withSizeKeepingCentre (row.getWidth(), 24));
+        strategyCombo_.setBounds (row);
     }
     descriptionLabel_.setBounds (b.removeFromTop (58));
     b.removeFromTop (8);
     summaryLabel_.setBounds (b.removeFromTop (40));
     b.removeFromTop (6);
-    previewLabel_.setBounds (b.removeFromTop (std::max (110, b.getHeight() - 40)));
+    previewViewport_.setBounds (b.removeFromTop (b.getHeight() - 52));
+    // The label is sized to its content so the viewport can scroll it.
+    previewLabel_.setSize (previewViewport_.getWidth() - 8,
+                           juce::jmax (previewViewport_.getHeight() - 8,
+                                       (int) (previewLabel_.getFont().getHeight() * 1.4f)
+                                           * previewLineCount_));
     b.removeFromTop (8);
     {
-        auto row = b.removeFromTop (30);
-        cancelButton_.setBounds (row.removeFromRight (110));
+        auto row = b.removeFromTop (44);
+        cancelButton_.setBounds (row.removeFromRight (130));
         row.removeFromRight (10);
-        saveButton_.setBounds (row.removeFromRight (110));
+        saveButton_.setBounds (row.removeFromRight (130));
     }
 }
 
@@ -170,6 +203,8 @@ void MulExportDialog::refreshPreview()
             text << "  " << toJuceString (line) << "\n";
     }
     previewLabel_.setText (text, juce::dontSendNotification);
+    previewLineCount_ = text.length() - text.replace ("\n", "").length() + 1;
+    resized();   // re-fit the scrolled label to the new content
 }
 
 void MulExportDialog::launch (juce::Component* parent,
@@ -177,14 +212,26 @@ void MulExportDialog::launch (juce::Component* parent,
                               const std::vector<juce::String>& partNames,
                               DoneCallback onDone)
 {
-    juce::ignoreUnused (parent);   // centring needs a live peer; launchAsync is fine headless+GUI
     auto* content = new MulExportDialog (setup, partNames, std::move (onDone));
-    content->setSize (520, 480);
+
+    // Theme: inherit the launching editor's LookAndFeel so the dialog matches
+    // the active Parvati theme (the DialogWindow is its own desktop window
+    // and would otherwise fall back to the default JUCE look). The parent
+    // outlives the modal dialog; null parent (tests) keeps the default look.
+    if (parent != nullptr)
+        content->setLookAndFeel (&parent->getLookAndFeel());
+
+    // Height caps to the usable screen area (an AUv3 pane can be shorter than
+    // the natural dialog height; the preview viewport absorbs the shortfall).
+    const int maxH = juce::jlimit (360, 600,
+        static_cast<int> (juce::Desktop::getInstance().getDisplays()
+                              .getPrimaryDisplay()->userArea.getHeight() * 0.85));
+    content->setSize (540, juce::jmin (500, maxH));
 
     juce::DialogWindow::LaunchOptions o;
     o.content.set (content, true);
     o.dialogTitle = TRANS ("Export to Ambika");
-    o.dialogBackgroundColour = juce::Colour (0xff191919);
+    o.dialogBackgroundColour = content->findColour (juce::DocumentWindow::backgroundColourId);
     o.escapeKeyTriggersCloseButton = true;
     o.useNativeTitleBar = false;
     o.resizable = false;

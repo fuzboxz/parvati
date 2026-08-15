@@ -34,6 +34,7 @@ public:
 
     void resized() override;
     void paint (juce::Graphics&) override;
+    ~MulExportDialog() override;
 
     // Show modally (desktop: a DialogWindow; headless tests instantiate the
     // component directly). Callback fires exactly once.
@@ -62,9 +63,10 @@ private:
     juce::ComboBox strategyCombo_;
     juce::Label descriptionLabel_;   // plain-language "how it works" of the selection
     juce::Label summaryLabel_;       // one-line honest outcome ("6 of 24 voices kept")
+    juce::Viewport previewViewport_;   // scrolls long chain summaries (touch-drag)
     juce::Label previewLabel_;
-    juce::TextButton saveButton_ { "Save" },
-                     cancelButton_ { "Cancel" };
+    int previewLineCount_ = 1;
+    juce::TextButton saveButton_, cancelButton_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MulExportDialog)
 };
