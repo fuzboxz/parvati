@@ -246,11 +246,13 @@ int main()
         proc.getEngine().captureState (blob);
 
         // Build a legacy v5 blob: strip each part's 2-byte v6 tail (slots byte
-        // + empty-name length byte, so exactly 12 interleaved bytes) and patch
-        // the version byte back to 5.
+        // + empty-name length byte) AND the 29-byte v7 tuning block (4-byte
+        // length prefix + {mode; offsets[12]}), then patch the version byte
+        // back to 5.
         const size_t full = blob.getSize();
         constexpr size_t kPartV6 = 112 + 84 + 4 + 4 + 78 + 2;   // patch+part+routing+fxprefix+fx+v6 tail
-        juce::MemoryBlock v5 (full - (size_t) (kNumParts * 2), true);
+        constexpr size_t kPartV7Extra = 4 + 25;                 // tuning block length prefix + payload
+        juce::MemoryBlock v5 (full - (size_t) (kNumParts * (2 + kPartV7Extra)), true);
         const uint8_t* src = (const uint8_t*) blob.getData();
         uint8_t* dst = (uint8_t*) v5.getData();
         size_t r = 6, w = 6;   // read/write cursors (past the 6-byte header)
@@ -258,7 +260,7 @@ int main()
         for (int p = 0; p < kNumParts; ++p)
         {
             std::memcpy (dst + w, src + r, kPartV6 - 2);
-            r += kPartV6;
+            r += kPartV6 + kPartV7Extra;   // skip the v6 tail AND the v7 tuning block
             w += kPartV6 - 2;
         }
         dst[4] = 5;

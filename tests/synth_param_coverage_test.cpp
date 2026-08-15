@@ -1,13 +1,13 @@
 // Comprehensive SYNTH parameter coverage — every descriptor parameter swept,
 // INTENDED vs REAL outcome verified per tests/COVERAGE_SPEC.md.
 //
-// This is the consolidated regression net for the SYNTH side (105 patch/part +
+// This is the consolidated regression net for the SYNTH side (106 patch/part +
 // 67 sequencer + 5 arp + 4 options = 181 params). It would otherwise be ~20
 // separate ~6.5 MB binaries; instead it is one binary that links Parvati once.
 //
 // Strategy:
 //   * PRIMARY net: a generic byte-routing sweep — every byte-routed descriptor
-//     (osc/mix/filter/env/lfo/mod/modifier/part = 105 params) is set to several
+//     (osc/mix/filter/env/lfo/mod/modifier/part = 106 params) is set to several
 //     distinct values and the routed Patch/Part byte is asserted to equal
 //     parvatiValueToPatchByte(). This catches ANY broken byte routing.
 //   * SECONDARY net: targeted AUDIO checks for the key audio-meaningful params
@@ -258,8 +258,8 @@ static void testParamTable (ParvatiAudioProcessor& proc)
     }
     std::printf ("     synth (non-fx) descriptors: %d\n", synthCount);
     std::printf ("     byte-routed descriptors:    %d\n", byteRouted);
-    check (synthCount == 181, "181 synth params (259 total - 78 fx)");
-    check (byteRouted == 105, "105 byte-routed patch/part params");
+    check (synthCount == 182, "182 synth params (260 total - 78 fx)");
+    check (byteRouted == 106, "106 byte-routed patch/part params");
 
     int missing = 0;
     for (const auto& d : descs)
@@ -269,7 +269,7 @@ static void testParamTable (ParvatiAudioProcessor& proc)
 }
 
 // =============================================================================
-// 2. Generic byte-routing sweep — the PRIMARY regression net (105 params)
+// 2. Generic byte-routing sweep — the PRIMARY regression net (106 params)
 // =============================================================================
 static void testByteRoutingAll (ParvatiAudioProcessor& proc)
 {

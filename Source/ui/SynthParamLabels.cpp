@@ -11,6 +11,7 @@
 
 #include <cmath>
 
+#include "TuningTables.h"              // tuningPresetName (part_raga readout)
 #include "ui/NoteName.h"
 
 #include "dsp/analog_filter.h"            // AnalogFilter::cutoffByteToHz
@@ -230,6 +231,17 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
         if (id == "part_spread")   return pct (value, 40.0);
         if (id == "part_portamento") return pct (value, 63.0);   // display fallback; verify (rate, not time)
         if (id == "part_volume")   return pct (value, 127.0);    // display fallback; verify (dB)
+        if (id == "part_raga")
+        {
+            // PURE-FORMATTER regression entry: part_raga is a CHOICE param, so
+            // ParamPage gates it out of the runtime display (the combo shows
+            // its choice text directly — the same name). Kept for the same
+            // reason as the seqnote branches below: a unit-checkable decode of
+            // the raga byte (index 0 -> 12-EDO, 1..32 -> preset name).
+            return iv == 0 ? juce::String ("12-EDO")
+                           : juce::String (parvati::tuningPresetName (
+                                 juce::jlimit (1, parvati::kNumTuningPresets, iv)));
+        }
         return juce::String (iv);
     }
 

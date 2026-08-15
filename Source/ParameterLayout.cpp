@@ -2,6 +2,8 @@
 
 #include "ParameterLayout.h"
 
+#include "TuningTables.h"   // part_raga choice names (firmware raga presets)
+
 #include "dsp/fx/FxTypes.h"   // FxType / FxModDestination + counts (FX descriptors)
 #include "dsp/patch.h"  // enum value counts + the init patch field semantics
 
@@ -63,6 +65,19 @@ juce::StringArray makeVoiceLfoShapes()
 juce::StringArray makeLfoSyncModes()
 {
     return { "Free", "Slave", "Master" };
+}
+
+// part_raga (PartData byte 4): "Off" + the 32 firmware scale presets. The
+// choice INDEX is the raga byte (0 = 12-EDO, 1..32 = presets; files can carry
+// 32 = rasia, a superset of the hardware UI's 0..31 — see TuningTables.h).
+juce::StringArray makeTuningPresetNames()
+{
+    juce::StringArray a;
+    a.add ("Off");
+    for (int id = 1; id <= parvati::kNumTuningPresets; ++id)
+        a.add (juce::String (parvati::tuningPresetName (id)));
+    jassert (a.size() == parvati::kNumTuningPresets + 1);
+    return a;
 }
 
 // ModulationSource: MOD_SRC_LAST == 31.
@@ -238,6 +253,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
     static const auto kModSources    = makeModSources();
     static const auto kModDests      = makeModDests();
     static const auto kModifierOps   = makeModifierOps();
+    static const auto kTuningPresets = makeTuningPresetNames();
 
     static const std::vector<PatchParamDescriptor> table = [&]()
     {
@@ -338,6 +354,13 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         add ("part_octave",     "Octave",     1, true, true,  nullptr, -2, 2);   // PartData.octave (int8)
         add ("part_tuning",     "Tuning",     2, true, true,  nullptr, -127, 127); // PartData.tuning (int8)
         add ("part_spread",     "Spread",     3, true, false, nullptr,    0, 40);   // PartData.spread (uint8): per-voice detune
+        // PartData.raga (uint8): per-part scale preset, applied at trigger like
+        // firmware Part::TuneNote. Choice index == raga byte (0..32); the 33rd
+        // mode "custom table" is engine-side only (SynthEngine TuningState) and
+        // never appears here. The firmware exposes raga UI-only (NRPN 0xff,
+        // MidiParameterMap firmware_parameters row 46), so this param carries NO
+        // CC/NRPN mapping — values travel via the editor, presets and files.
+        add ("part_raga",       "Scale",      4, true, false, &kTuningPresets, 0, 32);
         add ("part_legato",     "Legato",     5,  true, false, &kOnOff,    0, 0);
         add ("part_portamento", "Portamento", 6,  true, false, nullptr,    0, 63);
         add ("part_polyphony",  "Polyphony",  15, true, false, &kPolyModes, 0, 0);
@@ -425,6 +448,13 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             ps.minValue = 1;
             ps.maxValue = 6;   // kNumParts (hardware: 6 voicecards)
             ps.defaultValue = 1;   // Part 1 (channel 1) by default
+            ps.nonAutomatable = true;   // part switching is a UI action, not a
+                                        // sound parameter: automation would
+                                        // drive the part-load machinery
+                                        // (loadPartIntoApvts + full re-sync)
+                                        // per automation tick -- now also
+                                        // deferred off-thread when it does
+                                        // arrive off the message thread.
             d.push_back (std::move (ps));
         }
 
@@ -542,6 +572,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout
         {
             layout.add (std::make_unique<juce::AudioParameterChoice> (
                 juce::ParameterID { d.paramID, 1 }, d.label, *d.choices, d.defaultValue));
+        }
+        else if (d.nonAutomatable)
+        {
+            // UI-action parameters (part_select): excluded from host
+            // automation. Everything else about the parameter is unchanged.
+            layout.add (std::make_unique<juce::AudioParameterInt> (
+                juce::ParameterID { d.paramID, 1 }, d.label, d.minValue, d.maxValue, d.defaultValue,
+                juce::AudioParameterIntAttributes().withAutomatable (false)));
         }
         else
         {

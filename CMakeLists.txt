@@ -1114,6 +1114,35 @@ target_link_libraries(parvati_partstate_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Per-part microtonal tuning verification (firmware raga presets + custom
+# tables): table contents, the AmbikaVoice::startNote hook mapping, sentinel
+# (AcceptNote) gates, MT->AT staging, engine-state v7 round-trip, .parvati +
+# .MUL persistence, standing-bend pickup. Built by default.
+# Run with: ./build/parvati_tuning_test
+add_executable(parvati_tuning_test
+    tests/tuning_test.cpp
+)
+target_include_directories(parvati_tuning_test PRIVATE Source)
+target_compile_features(parvati_tuning_test PRIVATE cxx_std_17)
+target_compile_definitions(parvati_tuning_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(parvati_tuning_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Scala (.scl + .kbm) import verification: grammar edges + the full expected-
+# table fixture corpus (byte-exact, hand-derived — see the test header).
+# Built by default. Run with: ./build/parvati_scala_import_test
+add_executable(parvati_scala_import_test
+    tests/scala_import_test.cpp
+)
+target_include_directories(parvati_scala_import_test PRIVATE Source)
+target_compile_features(parvati_scala_import_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_scala_import_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Step-sequencer verification. Built by default.
 # Run with: ./build/parvati_sequencer_test
 add_executable(parvati_sequencer_test

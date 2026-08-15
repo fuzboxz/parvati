@@ -103,6 +103,12 @@ static void testModSeqArpPart()
     checkEqual (T ("part_tuning", 64.0), "+50ct", "part_tuning 64 (1/128-st units -> 50 ct)");
     checkEqual (T ("part_tuning", 127.0), "+99ct", "part_tuning 127 (max -> 99 ct)");
     checkEqual (T ("part_tuning", -127.0), "-99ct", "part_tuning -127 (min -> -99 ct)");
+    // part_raga is a choice param (gated out of the runtime display — the
+    // combo shows its choice text); the formatter entry is the unit-checkable
+    // decode of the raga byte (index 0 = 12-EDO, 1..32 = firmware preset).
+    checkEqual (T ("part_raga", 0.0),  "12-EDO",      "part_raga 0 (off)");
+    checkEqual (T ("part_raga", 1.0),  "Just",        "part_raga 1 (just)");
+    checkEqual (T ("part_raga", 2.0),  "Pythagorean", "part_raga 2 (pythagorean)");
     checkEqual (T ("seq_length_1", 16.0),"16", "seq_length_1 16");
 }
 

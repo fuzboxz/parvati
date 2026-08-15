@@ -30,6 +30,12 @@ relicensed). GPL-3.0 is compatible with this project's AGPL-3.0. The
 `ambika_reference/` tree (kept locally, not part of the tracked source) is the
 original GPL-3.0 firmware used as the porting reference.
 
+The controller-side scale ("raga") tuning tables in `Source/TuningTables.cpp`
+are likewise vendored verbatim from the Ambika controller firmware
+(`controller/resources.cc`, GPL-3.0, upstream-derived) — a mechanical
+transcription of the 30 scale tables + the 32-entry dispatch used by Parvati's
+per-part microtonal tuning.
+
 ## Ambika factory presets ("goldencard")
 
 The bundled factory patches under `presets/Factory/*.PRO` and

@@ -164,11 +164,18 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     // which pushes part volume in Part::Touch, never per note-on).
 
     // Pitch is 14-bit (7 bits note : 7 bits fine, units of 1/128 semitone).
-    // Apply the controller-side part octave/tuning (firmware Part::TuneNote,
-    // part.cc:634): n = clamp(midi + octave*12, 0, 127); note14 = n*128 + tuning.
+    // Apply the controller-side part octave/tuning + the per-class tuning
+    // table (firmware Part::TuneNote, part.cc:634): n = clamp(midi + octave*12,
+    // 0, 127); note14 = n*128 + tuneOffsets_[note&11] + tuning. The table is
+    // indexed by the RAW incoming note (firmware TuneNote indexes the raga by
+    // note % 12; identical result after the octave shift — %12 is
+    // shift-invariant). Muted classes never reach here (AcceptNote gate in
+    // SynthEngine::noteOn / triggerNoteInPart refuses them upstream).
     const int baseNote = juce::jlimit (0, 127, midiNoteNumber + partOctave_ * 12);
     const int note14  = juce::jlimit (0, static_cast<int> (ambika::dsp::kHighestNote),
-                                     baseNote * 128 + partTuning_ + spreadDrift14_);
+                                     baseNote * 128 + tuneOffsets_[midiNoteNumber % 12]
+                                                   + partTuning_ + spreadDrift14_);
+    lastNote14_.store (note14, std::memory_order_relaxed);   // test-only readout
     const int velInt = juce::jlimit (0, 255, static_cast<int> (velocity * 255.0f));
     voice_.Trigger (static_cast<uint16_t> (note14), static_cast<uint8_t> (velInt & 0xFF), legato ? 1 : 0);
     legatoNext_ = false;   // one-shot hint, consumed

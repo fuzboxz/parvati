@@ -94,6 +94,18 @@ public:
         else if (offset == 2) partTuning_ = static_cast<int8_t> (value);
     }
 
+    // Per-part tuning table (firmware raga preset or Parvati custom table):
+    // 12 offsets in 1/128-semitone units, indexed by the RAW incoming note's
+    // class at trigger (startNote). Staged by the engine's audio-thread tuning
+    // service (pushTuningToVoices) — never written from the message thread
+    // while the voice renders. Default zeros = 12-EDO (bit-identical to the
+    // pre-tuning path: the hook adds tuneOffsets_[note % 12] == 0).
+    void setTuningOffsets (const int16_t* offsets)
+    {
+        if (offsets != nullptr)
+            std::memcpy (tuneOffsets_, offsets, sizeof (tuneOffsets_));
+    }
+
     // Push host transport tempo to the inner engine (tempo-synced LFOs).
     void setTempo (double bpm) { voice_.setTempo (bpm); }
 
@@ -203,6 +215,15 @@ public:
     void setMpePressure           (float p01)   { mpePressure_ = p01;            applyMpeToVoice(); }
     void setMpeSlide              (float s01)   { mpeSlide_ = s01;               applyMpeToVoice(); }
 
+    // Test-only readouts (tuning_test): the 14-bit pitch the last startNote
+    // computed (baseNote*128 + tuneOffsets_[note % 12] + partTuning_ + drift,
+    // before jlimit — clamped exactly like the live path) and the net bend
+    // semitones currently applied to the oscillator (standing-bend pickup).
+    // Atomic staged in startNote / the MPE setters; relaxed reads are fine for
+    // tests (the same SF-1 displayedNote_ pattern).
+    int   getLastNote14() const noexcept { return lastNote14_.load (std::memory_order_relaxed); }
+    float getMpePitchBendSemitones() const noexcept { return mpePitchBendSemitones_; }
+
     // ---- multitimbral: each voice is owned by one Part ----
     int  getPartIndex() const { return partIndex_; }
     void setPartIndex (int p) { partIndex_ = p; }
@@ -261,6 +282,7 @@ private:
     int                        partOctave_ { 0 };   // PartData.octave (applied at trigger, firmware TuneNote)
     int                        partTuning_ { 0 };   // PartData.tuning (1/128-semitone units)
     int                        spreadDrift14_ { 0 }; // PartData.spread per-voice drift (1/128-semitone units)
+    int16_t                    tuneOffsets_[12] {}; // per-class tuning table (engine staging; see setTuningOffsets)
 
     // ---- MPE / per-voice expression state (audio-thread) ----
     float                      mpeBendRangeSemitones_ { 2.f };  // per-voice bend range (MPE standard default)
@@ -303,6 +325,10 @@ private:
     // suffices (a single stale frame is cosmetically harmless).
     std::atomic<int>  displayedNote_   { -1 };
     std::atomic<bool> displayedActive_ { false };
+
+    // Test-only staged readout of the last computed 14-bit pitch (see
+    // getLastNote14). -1 before the first note.
+    std::atomic<int>  lastNote14_      { -1 };
 
     // Monotonic trigger sequence (stamped by SynthEngine at every note-on via
     // setTriggerSeq). Read by renderPartFx's FX mod-source representative-voice

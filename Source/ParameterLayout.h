@@ -34,6 +34,9 @@ struct PatchParamDescriptor
     int minValue = 0;             // APVTS Int range (ignored for Choice)
     int maxValue = 0;
     int defaultValue = 0;         // APVTS default (Int value or Choice index)
+    bool nonAutomatable = false;  // true => created with .withAutomatable(false):
+                                  // a UI action, not a sound parameter (hosts
+                                  // hide it from automation lanes)
 };
 
 // The complete, ordered table of all patch/part parameters.

@@ -177,6 +177,23 @@ struct Part
 {
     AtomicByteArray<112> patchBytes {};   // sizeof(Patch) — MT writes, AT reads
     AtomicByteArray<84>  partBytes  {};   // sizeof(PartData) — MT writes, AT reads
+    // Per-part microtonal tuning (firmware PartData.raga restored + Parvati
+    // custom tables). Resolved mode (SynthEngine::resolvedTuningMode):
+    //   0 = 12-EDO; 1..32 = firmware raga preset == partBytes[4];
+    //   33 = custom table (customTuning). While custom is ACTIVE partBytes[4]
+    //   is kept 0, so .MUL/.PRO export and the raga byte stay hardware-clean
+    //   (a preset selection implicitly wins over custom in the resolution
+    //   rule, exactly like firmware files carrying a non-zero raga byte).
+    // Storage: 12 x int16 LE in 1/128-semitone units. Per-byte atomics + the
+    // tuningDirty_ release/acquire publish whole frames (the frameDirty_ /
+    // patchBytes pattern), so no per-int16 atomicity is needed beyond that.
+    AtomicByteArray<24> customTuning {};
+    std::atomic<uint8_t> customTuningActive { 0 };   // 1 = custom table selected
+    // MT writers (setPartTuningCustom / clearPartTuningCustom / preset byte
+    // edits via applyPartByte -> frameDirty_) publish here; the AT services it
+    // in processTransport and pushes the resolved table to the Part's voices
+    // (pushTuningToVoices). Mirrors frameDirty_ / fxDirty_ / optionsDirty_.
+    std::atomic<bool> tuningDirty_ { false };
     parvati::Arpeggiator arp;
     parvati::Sequencer   seq;
     // These three are written on the message thread (Multi page / .MUL load) and
@@ -459,6 +476,31 @@ public:
     void setPartVoiceSlots (int part, int slots);
     int  getPartVoiceSlots (int part) const { return ok (part) ? static_cast<int> (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed)) : 0; }
 
+    // ---- Per-part microtonal tuning (firmware raga + custom tables) ----
+    // Preset selection is NOT a setter here: it is PartData byte 4, edited via
+    // applyPartByte / the part_raga APVTS param (rides frameDirty_). These are
+    // the custom-table and read paths. Mode encoding (see Part::customTuning):
+    //   0 = 12-EDO, 1..32 = raga preset (== byte 4), 33 = custom table.
+    // setPartTuningCustom selects the custom table (offsets clamped to the
+    // ±127 storage range, 1/128-semitone units — except the 32767 mute
+    // sentinel, which passes through verbatim so a custom table CAN mute
+    // classes exactly like a raga preset; Scala import uses this for
+    // kbm-unmapped classes).
+    // clearPartTuningCustom returns the Part to 12-EDO (or its byte-4 preset
+    // if one is selected). Both publish via tuningDirty_ (MT -> AT push).
+    void setPartTuningCustom (int part, const int16_t offsets[12]);
+    void clearPartTuningCustom (int part);
+    // The D4 resolution rule: (byte4 != 0) ? byte4 : (customFlag ? 33 : 0).
+    int  resolvedTuningMode (int part) const;
+    // Resolve the ACTIVE table (12 offsets, 1/128-semitone units; 32767 =
+    // muted class in raga presets) into @p out. Mode 0 -> zeros (12-EDO).
+    // Reads atomics only; callable from either thread without a dirty flag.
+    void resolveTuningOffsets (int part, int16_t out[12]) const;
+    // Firmware AcceptNote (part.cc:649-660): false when the resolved table
+    // mutes the note's class (sentinel). Used to refuse such notes in noteOn /
+    // triggerNoteInPart instead of voicing them as garbage pitch.
+    bool isNoteAcceptedByPartTuning (int part, int rawNote) const;
+
     // ---- Part names / aliases (Parvati extension; message-thread only) ----
     // 16-char limit keeps the Multi page rows + .parvati lines tidy. Control
     // characters (newlines) are stripped: the .parvati multi format is
@@ -728,6 +770,14 @@ private:
 
     float bendRangeSemitones_ = 2.f;   // per-voice pitch-bend range (MPE default)
 
+    // Standing-bend latch (per MIDI channel; index 0 unused — JUCE channels are
+    // 1-based). Written in handlePitchWheel, read by applyStandingBend so a
+    // voice triggered while a wheel is off-centre INHERITS the bend (pre-fix a
+    // new note started at 0 offset until the next wheel move — audible with
+    // MPE / latched wheels). Atomic: wheel events arrive on the audio thread,
+    // triggerVoice runs on both.
+    std::array<std::atomic<int16_t>, 17> lastWheel_ {{}};
+
     static bool ok (int part) { return part >= 0 && part < kNumParts; }
 
     // First Part whose channel+keyzone accepts (channel,note); -1 if none.
@@ -736,6 +786,12 @@ private:
     // Recompute every Part's voiceIndices from its voiceAllocation bitmask
     // (first-wins across Parts) and re-tag each voice's partIndex.
     void rebuildVoiceAllocation();
+
+    // Push the resolved tuning table of @p part into every voice it owns
+    // (audio-thread service of tuningDirty_ and of frameDirty_ — byte-4 preset
+    // edits ride the frame push, custom-offset edits ride tuningDirty_; both
+    // are idempotent so double application is harmless).
+    void pushTuningToVoices (int part);
 
     // (Re)initialise a Part's voice allocator for its current polyphony mode
     // and voice set (firmware Part::InitializeAllocators, part.cc:240).
@@ -777,7 +833,7 @@ private:
     void triggerVoice   (AmbikaVoice* av, juce::SynthesiserSound* sound,
                          int channel, int note, float velocity);
     void retriggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
-                         int note, float velocity);
+                         int channel, int note, float velocity);
     uint64_t nextTriggerSeq() noexcept { return triggerSeqCounter_.fetch_add (1, std::memory_order_relaxed) + 1; }
 
     // GLOBAL continuous-controller (mod wheel CC1 / breath CC2 / foot CC4)
@@ -785,6 +841,12 @@ private:
     // firmware Part::WriteToAllVoices over all allocated voicecards). See the
     // .cpp for why this also gives new notes current-wheel pickup for free.
     void applyGlobalModSource (int modSrcEnum, uint8_t value0to254);
+
+    // Apply the latched standing bend of @p channel to a just-triggered voice
+    // (see lastWheel_): same fixed ±2-semitone conversion as handlePitchWheel,
+    // routed through the voice's normal setMpePitchBendSemitones path so the
+    // oscillator offset AND the mod-matrix source both pick it up.
+    void applyStandingBend (AmbikaVoice* av, int channel);
 
     // Monotonic trigger counter backing nextTriggerSeq() / the per-voice
     // triggerSeq_ stamps (see the FX representative-voice tracker above).

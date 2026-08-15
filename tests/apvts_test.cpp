@@ -184,7 +184,7 @@ int main()
     for (const auto& [k, v] : groups)
         std::printf (" %s=%d", k.c_str(), v);
     std::printf ("\n");
-    check (descs.size() == 259, "exposes exactly 259 parameters (105 patch/part + 5 arp + 4 options + 67 sequencer + 78 fx)");
+    check (descs.size() == 260, "exposes exactly 260 parameters (106 patch/part + 5 arp + 4 options + 67 sequencer + 78 fx)");
     check (groups["osc"] == 8, "8 oscillator params");
     check (groups["mix"] == 8, "8 mixer params");
     check (groups["filter"] == 7, "7 filter params (filter1 cutoff/reso/mode + env + lfo + filter_card + filter_drive)");
@@ -192,7 +192,7 @@ int main()
     check (groups["voice"] == 2, "2 voice-LFO params");
     check (groups["mod"] == 42, "42 modulation-matrix params (14 x src/dest/amount)");
     check (groups["modif"] == 12, "12 modifier params (4 x in1/in2/op)");
-    check (groups["part"] == 7, "7 part params (volume/octave/tuning/spread/legato/portamento/polyphony)");
+    check (groups["part"] == 8, "8 part params (volume/octave/tuning/spread/raga/legato/portamento/polyphony)");
 
     // (2) Processor constructs; APVTS holds every descriptor paramID.
     ParvatiAudioProcessor proc;
@@ -288,6 +288,13 @@ int main()
     proc.syncAllParamsToEngine();
     check ((int) (int8_t) proc.getEngine().getPart (0).partBytes[2] == 40,
            "part_tuning=40 routes (signed) to PartData byte 2");
+
+    // (6) part_select is NON-automatable by design: part switching is a UI
+    //     action that drives the part-load machinery (loadPartIntoApvts + full
+    //     re-sync), not a sound parameter a host should automate per tick.
+    std::printf ("\n[6] part_select is non-automatable\n");
+    check (! proc.getApvts().getParameter ("part_select")->isAutomatable(),
+           "part_select excluded from host automation (isAutomatable == false)");
 
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",

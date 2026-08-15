@@ -8,14 +8,17 @@
 //
 // Built by default. Run with: ./build/parvati_host_state_test
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
+#include "ParameterLayout.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 #include "dsp/patch.h"
@@ -37,6 +40,11 @@ void renderOnce (ParvatiAudioProcessor& p)
     juce::MidiBuffer midi;
     p.processBlock (buf, midi);
 }
+
+// Per-part byte stride of a v7 engine-state blob with EMPTY part names:
+// core (patch112 + part84 + routing4) + FX block (4 + 78) + slots/name tail
+// (2) + tuning block (4 + 25). Shared by the hand-crafted v1/v2 derivations.
+constexpr size_t kV7PartStride = 112 + 84 + 4 + 4 + 78 + 2 + 29;   // 313
 
 // Set an APVTS param by raw value via the host notification path.
 void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
@@ -167,17 +175,32 @@ int main()
     // [2] Backward compat: a legacy state with no engine_state falls back
     //     gracefully (no crash; Parts seed init; current Part from APVTS).
     // ---------------------------------------------------------------------
-    std::printf ("\n[2] Legacy state (no engine_state) falls back gracefully\n");
+    std::printf ("\n[2] Legacy state (no engine_state) restores the saved part + all params\n");
     {
-        // Capture a real state, then strip the engine_state attribute to mimic
-        // a pre-persistence saved project.
+        // Save a real state from Part 3 with painted params, then strip the
+        // engine_state attribute to mimic a pre-persistence saved project.
         ParvatiAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
+        selectPart (a, 3);
+        // Paint a spread of parameter classes on the (current) Part 3: part
+        // bytes, a patch byte, an arp param, a sequencer byte, FX params.
+        setParam (a, "part_tuning",    -33);
+        setParam (a, "osc1_shape",      3);
+        setParam (a, "arp_octave",      4);
+        setParam (a, "seq1_step0",      99);
+        setParam (a, "fx1_type",        3);
+        setParam (a, "fx1_enabled",     1);
+        renderOnce (a);
+
         juce::MemoryBlock full;
         a.getStateInformation (full);
 
         auto xml = juce::AudioProcessor::getXmlFromBinary (full.getData(), (int) full.getSize());
         check (xml != nullptr && xml->hasAttribute ("engine_state"), "fresh state carries engine_state");
+        // Snapshot the APVTS-side values BEFORE stripping (the restored set).
+        std::map<std::string, float> savedValues;
+        for (const auto& d : getPatchParamDescriptors())
+            savedValues[d.paramID] = a.getApvts().getRawParameterValue (d.paramID)->load();
         xml->removeAttribute ("engine_state");
 
         juce::MemoryBlock legacy;
@@ -190,9 +213,46 @@ int main()
         catch (...) { threw = true; }
         renderOnce (b);
         check (! threw, "legacy state restores without throwing");
-        // Fallback path: Part 0 keeps the seeded audible init patch (no blob apply).
+
+        // FULL parameter compare: every descriptor's restored raw value equals
+        // the saved one (the APVTS survived the replaceState round-trip).
+        int mismatches = 0;
+        for (const auto& d : getPatchParamDescriptors())
+            if (std::fabs (b.getApvts().getRawParameterValue (d.paramID)->load()
+                           - savedValues[d.paramID]) > 0.001f)
+                ++mismatches;
+        char m[96];
+        std::snprintf (m, sizeof (m), "all %zu APVTS params restored (mismatches=%d)",
+                       savedValues.size(), mismatches);
+        check (mismatches == 0, m);
+
+        // The saved part is tracked: parameter + engine + edits all on Part 3.
+        check (juce::roundToInt (b.getApvts().getRawParameterValue ("part_select")->load()) == 4,
+               "legacy restore: part_select == 4 (Part 3)");
+        check (b.getEngine().getCurrentPart() == 3,
+               "legacy restore: engine current part == 3");
+        // The painted values must have LANDED on Part 3's storage (synced
+        // through the restored currentPart_, not a stale pre-restore part):
+        // tuning is a signed byte; arp/seq live in pendingConfig_.
+        check ((int) (int8_t) b.getEngine().getPart (3).partBytes[2] == -33,
+               "legacy restore: part_tuning landed on Part 3");
+        check (b.getEngine().getPart (3).patchBytes[0] == 3,
+               "legacy restore: osc1_shape landed on Part 3");
+        check (b.getEngine().getPart (3).pendingConfig_.arpOctave == 4,
+               "legacy restore: arp_octave landed on Part 3");
+        check (b.getEngine().getPart (3).pendingConfig_.seqData[0] == 99,
+               "legacy restore: seq1_step0 landed on Part 3");
+        check (b.getEngine().getPart (3).fxState.slotType[0].load() == 3
+                   && b.getEngine().getPart (3).fxState.slotEnabled[0].load() == 1,
+               "legacy restore: FX type/enabled landed on Part 3");
+        // Other parts keep the seeded init (legacy states carry one part only).
         check (b.getEngine().getPart (0).patchBytes[0] == ambika::dsp::WAVEFORM_SAW,
-               "Part 0 seeds init patch after legacy restore");
+               "legacy restore: Part 0 seeds init patch");
+        // A post-restore byte edit routes to Part 3 (currentPart_ tracking).
+        setParam (b, "part_octave", 1);
+        check (b.getEngine().getPart (3).partBytes[1] == 1
+                   && b.getEngine().getPart (0).partBytes[1] != 1,
+               "legacy restore: post-restore edits route to Part 3");
     }
 
     // ---------------------------------------------------------------------
@@ -263,14 +323,14 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX (sanity)");
 
-        // Capture the v6 host state and derive a v1 engine blob from its
-        // engine_state. A v6 blob interleaves an 82-byte FX block per Part
-        // (plus a 2-byte slots/name tail)
-        // (4-byte length prefix + 78 FX bytes) AFTER the routing bytes, so a
-        // naive truncation is NOT a valid v1 blob -- we must extract each Part's
-        // core (patch112 + part84 + routing4 = 200 bytes) and skip the FX block.
+        // Capture the v7 host state and derive a v1 engine blob from its
+        // engine_state. A v7 blob interleaves an 82-byte FX block per Part
+        // (4-byte length prefix + 78 FX bytes) after the routing bytes, plus a
+        // 2-byte slots/name tail and a 29-byte tuning block (4-byte length
+        // prefix + {mode; offsets[12]}), so a naive truncation is NOT a valid
+        // v1 blob -- we must extract each Part's core (patch112 + part84 +
+        // routing4 = 200 bytes) and skip everything after it.
         constexpr size_t kV1Core = 6 + 6 * (112 + 84 + 4);          // 1206
-        constexpr size_t kV6PartStride = 112 + 84 + 4 + 4 + 78 + 2;   // 284 (core + fxlen + fx + v6 slots/name tail)
         juce::MemoryBlock v1Engine;
         {
             juce::MemoryBlock v5Host;
@@ -278,8 +338,8 @@ int main()
             auto xml = juce::AudioProcessor::getXmlFromBinary (v5Host.getData(), (int) v5Host.getSize());
             juce::MemoryBlock v5Engine;
             v5Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v5Engine.getSize() >= 6 + 6 * kV6PartStride && ((const uint8_t*) v5Engine.getData())[4] == 6,
-                   "captured engine_state is a v6 blob large enough to derive v1");
+            check (v5Engine.getSize() >= 6 + 6 * kV7PartStride && ((const uint8_t*) v5Engine.getData())[4] == 7,
+                   "captured engine_state is a v7 blob large enough to derive v1");
             v1Engine.ensureSize (kV1Core);
             const auto* v5 = (const uint8_t*) v5Engine.getData();
             auto* v1 = (uint8_t*) v1Engine.getData();
@@ -287,7 +347,7 @@ int main()
             v1[4] = 1;                               // rewrite version 5 -> 1
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v5off = 6 + (size_t) p * kV6PartStride;   // Part's core in v6
+                const size_t v5off = 6 + (size_t) p * kV7PartStride;   // Part's core in v7
                 const size_t v1off = 6 + (size_t) p * 200;             // Part's core in v1
                 std::memcpy (v1 + v1off, v5 + v5off, 200);             // patch + part + routing (no FX)
             }
@@ -338,8 +398,8 @@ int main()
         // NO master section, so a naive memcpy of the first 71 FX bytes would
         // mis-map fields. Reassemble field-by-field instead: core + fxlen prefix
         // (rewritten 78 -> 71), then each FX field at its v2 offset. Version 5 -> 2.
-        constexpr size_t kV6PartStride = 112 + 84 + 4 + 4 + 78 + 2;   // 284
         constexpr size_t kV2PartStride = 112 + 84 + 4 + 4 + 71;   // 275
+        // (the SOURCE stride is the v7 layout, kV7PartStride above)
         // FX-field offsets WITHIN the per-Part FX block (after the 4-byte fxlen).
         // v5: type0 enabled3 drywet6 param9(15) topo24 order25 modSrc26 modDst42 modAmt58 master74.
         // v2: type0 enabled3 drywet6 param9(12) topo21 order22 modSrc23 modDst39 modAmt55.
@@ -350,8 +410,8 @@ int main()
             auto xml = juce::AudioProcessor::getXmlFromBinary (v5Host.getData(), (int) v5Host.getSize());
             juce::MemoryBlock v5Engine;
             v5Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v5Engine.getSize() >= 6 + 6 * kV6PartStride && ((const uint8_t*) v5Engine.getData())[4] == 6,
-                   "captured engine_state is a v6 blob large enough to derive v2");
+            check (v5Engine.getSize() >= 6 + 6 * kV7PartStride && ((const uint8_t*) v5Engine.getData())[4] == 7,
+                   "captured engine_state is a v7 blob large enough to derive v2");
             v2Engine.ensureSize (6 + 6 * kV2PartStride);
             const auto* v5 = (const uint8_t*) v5Engine.getData();
             auto* v2 = (uint8_t*) v2Engine.getData();
@@ -359,7 +419,7 @@ int main()
             v2[4] = 2;                                     // rewrite version 5 -> 2
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v5off = 6 + (size_t) p * kV6PartStride;
+                const size_t v5off = 6 + (size_t) p * kV7PartStride;
                 const size_t v2off = 6 + (size_t) p * kV2PartStride;
                 std::memcpy (v2 + v2off, v5 + v5off, 200 + 4);   // core + 4-byte fxlen prefix
                 v2[v2off + 200] = 71;                            // rewrite fxlen 78 -> 71 (LE)

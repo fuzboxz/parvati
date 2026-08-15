@@ -3,6 +3,7 @@
 #include "SynthEngine.h"
 
 #include "ParameterLayout.h"   // getControllerInitPatchBytes (audible init patch)
+#include "TuningTables.h"     // raga preset tables (resolvedTuningOffsets)
 
 SynthEngine::SynthEngine()
 {
@@ -18,8 +19,17 @@ SynthEngine::SynthEngine()
         if (auto* av = getAmbikaVoice (i))
             av->setVoiceCard (voiceCardForIndex (i));
 
+    // Standing-bend latch defaults to the wheel CENTRE (8192 = no bend). A
+    // zero value would mean "full negative deflection" and bend every
+    // first-note-until-a-wheel-event by -2 semitones (see applyStandingBend).
+    for (auto& w : lastWheel_)
+        w.store (8192, std::memory_order_relaxed);
+
     addSound (new AmbikaSound());
-    setNoteStealingEnabled (true);  // we steal within a Part anyway
+    // NOTE: juce::Synthesiser's note-stealing path is NOT used — noteOn/noteOff
+    // are overridden below and stealing is handled per-part inside the
+    // PolyAllocator (SynthEngine.h), so setNoteStealingEnabled would be dead
+    // (and its JUCE steal path unreachable).
 
     // Default voice allocation: SINGLE-PART — all 6 voicecards on Part 0, so a
     // player on MIDI channel 1 gets the full hardware polyphony (6 voices) out
@@ -372,11 +382,16 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     // Byte-oriented payload (endian-independent): magic + version + current
     // part, then per Part: patch[112], part[84] (with the arp/seq region overlaid
     // from the authoritative pendingConfig_), midi channel / keyzone / voice
-    // allocation, then a length-prefixed FX block (Parvati-exclusive; version 2).
-    // polyphony rides in partBytes[15]; arp/seq lives in pendingConfig_ (overlaid
-    // here) and is re-staged on restore. The FX block is absent in version 1,
-    // so legacy v1 hosts reject the v2 blob and fall back to legacy APVTS restore
-    // (acceptable; documented in CHANGELOG).
+    // allocation, then a length-prefixed FX block (Parvati-exclusive; version 2),
+    // voice slots + name (version 6) and a length-prefixed tuning block
+    // (version 7: {u8 resolvedMode; i16 LE offsets[12]}, 25 bytes — offsets
+    // written always, zeros unless the mode is custom 33). polyphony rides in
+    // partBytes[15]; arp/seq lives in pendingConfig_ (overlaid here) and is
+    // re-staged on restore. The length prefixes are for forward-safety (a
+    // future version may grow the blocks without re-versioning). The tuning
+    // block is absent in versions 1..6, so legacy hosts reject the v7 blob and
+    // fall back to legacy APVTS restore — the same accepted tradeoff as v5->v6
+    // (documented in CHANGELOG).
     //
     // FX block layout (fixed, 78 bytes): slotType[3], slotEnabled[3],
     // slotDryWet[3], slotParam[3][5], topology, orderIdx, modSource[16],
@@ -390,7 +405,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
                                               + 4);                            // master section (v3): mix + eqLow/mid/high
     juce::MemoryOutputStream out (dest, false);
     out.write (kEngineStateMagic, 4);
-    out.writeByte (6);                                                       // version (6 = per-part voiceSlots + name; v5 = per-slot 5th param; v4 = per-part FX + master section)
+    out.writeByte (7);                                                       // version (7 = per-part tuning block; v6 = voiceSlots + name; v5 = per-slot 5th param; v4 = per-part FX + master section)
     out.writeByte ((char) currentPart_);
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -441,6 +456,27 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         out.writeByte ((char) pnLen);
         if (pnLen > 0)
             out.write (pn.toRawUTF8(), (int) pnLen);
+
+        // Per-part tuning block (version 7, Parvati + firmware raga restore):
+        // length-prefixed {u8 resolvedMode; i16 LE offsets[12]}. The resolved
+        // mode (0/1..32/33) is authoritative — the raga byte also rides
+        // partBytes[4] above, but the CUSTOM mode (33) and its table live only
+        // here. Offsets always written (zeros unless custom) so the restore
+        // side can size-check uniformly.
+        constexpr uint32_t kTuningBlobLen = 25;
+        int16_t tune[12] = {};
+        resolveTuningOffsets (p, tune);
+        out.writeByte ((char) (kTuningBlobLen        & 0xFF));
+        out.writeByte ((char) ((kTuningBlobLen >> 8)  & 0xFF));
+        out.writeByte ((char) ((kTuningBlobLen >> 16) & 0xFF));
+        out.writeByte ((char) ((kTuningBlobLen >> 24) & 0xFF));
+        out.writeByte ((char) juce::jlimit (0, 33, resolvedTuningMode (p)));
+        for (int c = 0; c < 12; ++c)
+        {
+            const uint16_t u = static_cast<uint16_t> (tune[c]);
+            out.writeByte ((char) (u & 0xFF));
+            out.writeByte ((char) ((u >> 8) & 0xFF));
+        }
     }
     out.flush ();
 }
@@ -454,7 +490,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     if (in.read (magic, 4) != 4 || std::memcmp (magic, kEngineStateMagic, 4) != 0)
         return false;
     const int version = in.readByte();
-    if (version < 1 || version > 6)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
+    if (version < 1 || version > 7)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
         return false;
     const int savedCurrent = in.readByte();
     for (int p = 0; p < kNumParts; ++p)
@@ -565,6 +601,47 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         {
             part.voiceSlots.store (0, std::memory_order_relaxed);
             part.name = juce::String();
+        }
+
+        // Per-part tuning block (version 7). Length-prefixed (4 bytes LE) +
+        // {u8 resolvedMode; i16 LE offsets[12]} = 25 bytes; longer lengths are
+        // forward-compat (trailing bytes skipped), a short/truncated read is
+        // rejected like the core payload. Absent in v1..v6 -> the tuning falls
+        // back to the restored partBytes[4] raga byte (D12) with the custom
+        // table explicitly cleared (parts_ of a reused engine may carry one).
+        if (version >= 7)
+        {
+            uint8_t tuneLenBytes[4];
+            if (in.read (tuneLenBytes, 4) != 4) return false;
+            const uint32_t tuneLen = (uint32_t) tuneLenBytes[0]
+                                   | ((uint32_t) tuneLenBytes[1] << 8)
+                                   | ((uint32_t) tuneLenBytes[2] << 16)
+                                   | ((uint32_t) tuneLenBytes[3] << 24);
+            if (tuneLen < 25 || in.getNumBytesRemaining() < (juce::int64) tuneLen)
+                return false;   // truncated / foreign layout
+            juce::HeapBlock<uint8_t> tuneBlob (tuneLen, true);
+            if (in.read (tuneBlob, (int) tuneLen) != (int) tuneLen) return false;
+            const uint8_t mode = tuneBlob[0];
+            int16_t offsets[12] = {};
+            for (int c = 0; c < 12; ++c)
+                offsets[c] = (int16_t) ((uint16_t) tuneBlob[1 + 2 * c]
+                            | ((uint16_t) tuneBlob[2 + 2 * c] << 8));
+            if (mode == 33)
+            {
+                setPartTuningCustom (p, offsets);   // clamps + flags tuningDirty_
+            }
+            else
+            {
+                clearPartTuningCustom (p);
+                if (mode >= 1 && mode <= parvati::kNumTuningPresets)
+                    part.partBytes[4] = static_cast<uint8_t> (mode);   // redundant with the overlay above, applied for robustness
+            }
+        }
+        else
+        {
+            // v6 and older: no tuning block — 12-EDO/customs cleared, the raga
+            // preset comes from the restored partBytes[4].
+            clearPartTuningCustom (p);
         }
     }
     setCurrentPart (juce::jlimit (0, kNumParts - 1, savedCurrent));
@@ -764,6 +841,123 @@ void SynthEngine::setPartVoiceSlots (int part, int slots)
     }
 }
 
+//==========================================================================
+// Per-part microtonal tuning (PartData.raga presets + custom tables).
+int SynthEngine::resolvedTuningMode (int part) const
+{
+    if (! ok (part))
+        return 0;
+    const auto& p = parts_[(size_t) part];
+    const uint8_t raga = p.partBytes[4];
+    if (raga != 0)
+        return static_cast<int> (raga);   // preset selection wins (file-faithful)
+    return p.customTuningActive.load (std::memory_order_relaxed) != 0 ? 33 : 0;
+}
+
+void SynthEngine::setPartTuningCustom (int part, const int16_t offsets[12])
+{
+    if (! ok (part) || offsets == nullptr)
+        return;
+    auto& p = parts_[(size_t) part];
+    // D4: while the custom table is active, PartData byte 4 (the raga preset)
+    // is kept 0 so a leftover preset selection never shadows the custom
+    // table (the resolution rule lets byte 4 win). Zeroing it here also keeps
+    // .MUL/.PRO export hardware-clean: a custom-tuned part exports raga 0
+    // (12-EDO fallback), never a stale preset id.
+    p.partBytes[4] = 0;
+    // Clamp to the ±127 storage range (D6: matches partTuning_'s byte range,
+    // keeps the hook's jlimit from clamping extreme offsets into silence) —
+    // EXCEPT the firmware mute sentinel, which is not an offset but a "refuse
+    // this note class" marker and must survive verbatim: Scala imports use it
+    // for kbm-unmapped classes and the sentinel gate reads it back from the
+    // custom table (isNoteAcceptedByPartTuning), so clamping it to +127 would
+    // turn a muted class into a detuned one.
+    for (int c = 0; c < 12; ++c)
+    {
+        const int src = (int) offsets[c];
+        const int16_t v = (src == (int) parvati::kTuningSilence)
+                              ? parvati::kTuningSilence
+                              : static_cast<int16_t> (juce::jlimit (-127, 127, src));
+        const uint16_t u = static_cast<uint16_t> (v);
+        p.customTuning[(size_t) (2 * c)]     = static_cast<uint8_t> (u & 0xFF);        // LE
+        p.customTuning[(size_t) (2 * c + 1)] = static_cast<uint8_t> ((u >> 8) & 0xFF);
+    }
+    p.customTuningActive.store (1, std::memory_order_relaxed);
+    // Publishes the customTuning frame to the audio-thread acquire-read below
+    // (frameDirty_ pattern: the release orders the whole byte frame).
+    p.tuningDirty_.store (true, std::memory_order_release);
+}
+
+void SynthEngine::clearPartTuningCustom (int part)
+{
+    if (! ok (part))
+        return;
+    parts_[(size_t) part].customTuningActive.store (0, std::memory_order_relaxed);
+    parts_[(size_t) part].tuningDirty_.store (true, std::memory_order_release);
+}
+
+void SynthEngine::resolveTuningOffsets (int part, int16_t out[12]) const
+{
+    if (out == nullptr)
+        return;
+    if (! ok (part))
+    {
+        for (int c = 0; c < 12; ++c) out[c] = 0;
+        return;
+    }
+    const auto& p = parts_[(size_t) part];
+    const int mode = resolvedTuningMode (part);
+    if (mode >= 1 && mode <= parvati::kNumTuningPresets)
+    {
+        const int16_t* t = parvati::tuningPresetTable (mode);
+        for (int c = 0; c < 12; ++c)
+            out[c] = t != nullptr ? t[c] : 0;
+        return;
+    }
+    if (mode == 33)   // custom table (12 x int16 LE)
+    {
+        for (int c = 0; c < 12; ++c)
+        {
+            const uint16_t u = (uint16_t) ((uint16_t) p.customTuning[(size_t) (2 * c)]
+                                 | ((uint16_t) p.customTuning[(size_t) (2 * c + 1)] << 8));
+            out[c] = static_cast<int16_t> (u);
+        }
+        return;
+    }
+    for (int c = 0; c < 12; ++c) out[c] = 0;   // 12-EDO (mode 0 / unknown)
+}
+
+bool SynthEngine::isNoteAcceptedByPartTuning (int part, int rawNote) const
+{
+    if (! ok (part))
+        return true;
+    int16_t t[12];
+    resolveTuningOffsets (part, t);
+    // Firmware Part::AcceptNote (part.cc:649-660): a muted note CLASS is
+    // refused outright. Voiced as a refusal (not as firmware TuneNote's
+    // 32767-clamped garbage pitch) — deliberate, documented deviation.
+    return t[rawNote % 12] != parvati::kTuningSilence;
+}
+
+void SynthEngine::pushTuningToVoices (int part)
+{
+    if (! ok (part))
+        return;
+    // Audio-thread path: resolve the table once (atomics only) and hand every
+    // voice owned by this Part its own copy (AmbikaVoice::tuneOffsets_ is read
+    // at the next startNote — sounding voices keep their triggered pitch, the
+    // same change-on-new-notes semantics as partOctave_/partTuning_).
+    int16_t t[12];
+    resolveTuningOffsets (part, t);
+    for (auto* v : voices)
+    {
+        auto* av = dynamic_cast<AmbikaVoice*> (v);
+        if (av == nullptr || av->getPartIndex() != part)
+            continue;
+        av->setTuningOffsets (t);
+    }
+}
+
 void SynthEngine::pushPartBytesToVoices (int part)
 {
     if (! ok (part))
@@ -795,6 +989,11 @@ void SynthEngine::pushPartBytesToVoices (int part)
         // (the standalone "dead after a voice-mode / template switch" glitch).
         av->reprimeEnvelopes();
     }
+    // A frame push may carry a PartData byte-4 (raga preset) change: resolve
+    // and hand the Part's voices the new tuning table in the same pass (the
+    // tuningDirty_ service in processTransport covers custom-table edits that
+    // change no patch/part byte). Idempotent with that path.
+    pushTuningToVoices (part);
 }
 
 void SynthEngine::resetAllVoices()
@@ -859,14 +1058,19 @@ void SynthEngine::triggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
 {
     if (av == nullptr) return;
     startVoice (av, sound, channel, note, velocity);
+    // Pick up the standing bend of the note's channel (a voice triggered while
+    // a wheel is off-centre previously started un-bent until the next wheel
+    // event; under MPE / latched wheels that was audible).
+    applyStandingBend (av, channel);
     av->setTriggerSeq (nextTriggerSeq());
 }
 
 void SynthEngine::retriggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
-                                  int note, float velocity)
+                                  int channel, int note, float velocity)
 {
     if (av == nullptr) return;
     av->retriggerNote (sound, note, velocity);
+    applyStandingBend (av, channel);   // same pickup as triggerVoice (legato path)
     av->setTriggerSeq (nextTriggerSeq());
 }
 
@@ -874,6 +1078,13 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
 {
     if (! ok (part)) return;
     auto& p = parts_[(size_t) part];
+    // Firmware Part::AcceptNote (part.cc:649-660): a tuning table that mutes
+    // the note's class (32767 sentinel) refuses the note outright. This head
+    // gate covers EVERY trigger source — direct MIDI (via noteOn), arp and
+    // sequencer generated notes (their callbacks land here), MONO/POLY paths
+    // — and octave-shifted arp notes stay in-class (note % 12 is octave-
+    // invariant), so one check suffices.
+    if (! isNoteAcceptedByPartTuning (part, note)) return;
     // Tag the voice with its REAL incoming MIDI channel (clamped 1..16) so the
     // per-channel expression routing isolates per-note under MPE. For a non-Omni
     // Part this equals the Part's own channel (findPartForNote matched); for an
@@ -914,7 +1125,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
                 // would then render silence). The first note (voice idle) still
                 // uses startVoice for a fresh attack.
                 if (legato && av->isVoiceActive())
-                    retriggerVoice (av, sound, note, velocity);
+                    retriggerVoice (av, sound, channel, note, velocity);
                 else
                     triggerVoice (av, sound, channel, note, velocity);
                 drift += spread;
@@ -1004,7 +1215,7 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
                     // Legato slide-back to the prior held note on release: same
                     // no-kill retrigger (a kill would silence the legato Trigger).
                     if (av->isVoiceActive())
-                        retriggerVoice (av, sound, newNote, newVel);
+                        retriggerVoice (av, sound, channel, newNote, newVel);
                     else
                         triggerVoice (av, sound, channel, newNote, newVel);
                     drift += spread;
@@ -1055,6 +1266,10 @@ void SynthEngine::noteOn (int midiChannel, int midiNoteNumber, float velocity)
     // into their held-key stacks; only "play directly" notes reach here.
     const int part = findPartForNote (midiChannel, midiNoteNumber);
     if (part < 0) return;
+    // Firmware AcceptNote gate BEFORE the arp-hold stack: a muted note class
+    // must not be held for arpeggiation either (firmware refuses it at
+    // dispatch, part.cc:649-660, before any arp bookkeeping).
+    if (! isNoteAcceptedByPartTuning (part, midiNoteNumber)) return;
     if (parts_[(size_t) part].arp.isActive())
         parts_[(size_t) part].arp.noteOn (midiNoteNumber, static_cast<uint8_t> (juce::jlimit (0, 127, (int) (velocity * 127))));
     else
@@ -1081,6 +1296,11 @@ void SynthEngine::noteOff (int midiChannel, int midiNoteNumber, float /*velocity
 // AmbikaVoice, so these overrides are the real implementation.
 void SynthEngine::handlePitchWheel (int midiChannel, int wheelValue)
 {
+    // Latch the standing bend per channel so voices triggered LATER (while the
+    // wheel stays off-centre) inherit it — see applyStandingBend / lastWheel_.
+    if (midiChannel >= 0 && midiChannel < (int) lastWheel_.size())
+        lastWheel_[(size_t) midiChannel].store (static_cast<int16_t> (wheelValue),
+                                                std::memory_order_relaxed);
     // Host wheel 0..16383 (centre 8192) -> semitones via the per-voice bend range.
     const float semis = (static_cast<float> (wheelValue) - 8192.0f) / 8192.0f * bendRangeSemitones_;
     for (auto* v : voices)
@@ -1121,6 +1341,17 @@ void SynthEngine::applyGlobalModSource (int modSrcEnum, uint8_t value0to254)
     for (auto* v : voices)
         if (auto* av = dynamic_cast<AmbikaVoice*> (v))
             av->setModulationSource (idx, value0to254);
+}
+
+void SynthEngine::applyStandingBend (AmbikaVoice* av, int channel)
+{
+    if (av == nullptr || channel <= 0 || channel >= (int) lastWheel_.size())
+        return;
+    // Same fixed ±2-semitone conversion as handlePitchWheel, from the latched
+    // wheel of the note's channel — so the new voice starts where the sounding
+    // ones already are (no re-centering glitch until the next wheel event).
+    const int wheel = lastWheel_[(size_t) channel].load (std::memory_order_relaxed);
+    av->setMpePitchBendSemitones ((static_cast<float> (wheel) - 8192.0f) / 8192.0f * bendRangeSemitones_);
 }
 
 void SynthEngine::handleController (int midiChannel, int controllerNumber, int controllerValue)
@@ -1197,6 +1428,16 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     for (int p = 0; p < kNumParts; ++p)
         if (parts_[(size_t) p].frameDirty_.exchange (false, std::memory_order_acq_rel))
             pushPartBytesToVoices (p);
+
+    // Service deferred per-part tuning tables ON THE AUDIO THREAD: a custom-
+    // table edit (setPartTuningCustom / clearPartTuningCustom) staged the table
+    // + tuningDirty_; push the resolved offsets to that Part's voices now.
+    // (Byte-4 raga-preset edits ride frameDirty_ above — pushPartBytesToVoices
+    // ends with pushTuningToVoices — so a preset change never needs this loop;
+    // both paths are idempotent.)
+    for (int p = 0; p < kNumParts; ++p)
+        if (parts_[(size_t) p].tuningDirty_.exchange (false, std::memory_order_acq_rel))
+            pushTuningToVoices (p);
 
     // Service deferred global-option writes ON THE AUDIO THREAD: VCA curve /
     // smoothing / filter drive were staged by the message-thread setters

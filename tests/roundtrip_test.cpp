@@ -106,9 +106,9 @@ int main()
         {
             char m[96];
             std::snprintf (m, sizeof (m), ".MUL part %d patch[112] byte-equal", i);
-            check (m1.parts[i].hasPatch == m2.parts[i].hasPatch && m1.parts[i].patch == m2.parts[i].patch, m);
+            check (m1.parts[(size_t) i].hasPatch == m2.parts[(size_t) i].hasPatch && m1.parts[(size_t) i].patch == m2.parts[(size_t) i].patch, m);
             std::snprintf (m, sizeof (m), ".MUL part %d part[84] byte-equal", i);
-            check (m1.parts[i].hasPart == m2.parts[i].hasPart && m1.parts[i].part == m2.parts[i].part, m);
+            check (m1.parts[(size_t) i].hasPart == m2.parts[(size_t) i].hasPart && m1.parts[(size_t) i].part == m2.parts[(size_t) i].part, m);
         }
         t.deleteFile();
     }

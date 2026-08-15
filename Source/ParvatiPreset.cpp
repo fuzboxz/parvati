@@ -7,6 +7,7 @@
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
+#include "TuningTables.h"     // kTuningSilence (sentinel-preserving clamp below)
 
 namespace parvati::preset
 {
@@ -589,6 +590,31 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
         const juce::String pn = engine.getPartName (i).replace ("\\", "\\\\").replace ("\"", "\\\"");
         out << "    name: \"" << pn << "\"\n";
 
+        // Parvati extension: per-part microtonal tuning. tuning_mode is the
+        // RESOLVED mode (0 = 12-EDO [omitted], 1..32 = raga preset [also rides
+        // params: part_raga], 33 = custom table). Only mode 33 needs the table
+        // itself (12 comma-separated ints, 1/128-semitone units) — the presets
+        // resolve from TuningTables. Written only when the mode is non-zero so
+        // old files stay byte-identical; loaded behind hasProperty guards.
+        const int tuningMode = engine.resolvedTuningMode (i);
+        if (tuningMode != 0)
+        {
+            out << "    tuning_mode: " << tuningMode;
+            if (tuningMode == 33)
+            {
+                int16_t t[12] = {};
+                engine.resolveTuningOffsets (i, t);
+                out << "   # custom table";
+                out << "\n    tuning_offsets: ";
+                for (int c = 0; c < 12; ++c)
+                {
+                    if (c > 0) out << ", ";
+                    out << (int) t[c];
+                }
+            }
+            out << "\n";
+        }
+
         auto params = partParamsMap (engine, i);
         out << "    params:\n";
         for (const auto& p : params->getProperties())
@@ -762,6 +788,47 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
             part.configDirty_.store (true, std::memory_order_release);
         if (stagedFx)
             part.fxState.fxDirty_.store (true, std::memory_order_release);
+
+        // Parvati extension: per-part tuning fields, applied AFTER params: so
+        // the resolved mode stays authoritative over any part_raga value the
+        // params map carried (a writer never emits both non-neutral; the
+        // custom mode clears byte 4 to keep the D4 invariant — custom active
+        // implies raga byte 0). Absent in older files -> tuning untouched.
+        if (partObj->hasProperty ("tuning_mode"))
+        {
+            const int mode = juce::jlimit (0, 33, (int) partNode["tuning_mode"]);
+            if (mode == 33 && partObj->hasProperty ("tuning_offsets"))
+            {
+                int16_t t[12] = {};   // missing/short entries stay 0 (12-EDO class)
+                const juce::StringArray toks = juce::StringArray::fromTokens (
+                    partNode["tuning_offsets"].toString(), ",", "");
+                for (int c = 0; c < 12; ++c)
+                {
+                    // Clamp exactly like SynthEngine::setPartTuningCustom —
+                    // including its one exception: 32767 is the firmware mute
+                    // marker, not an offset. Pre-clamping it to +127 would turn
+                    // a muted class (e.g. a kbm-unmapped class written by a
+                    // Scala import) into a ~+99-cent detune on reload, while
+                    // engine-state v7 and the TuningEditor both keep it verbatim.
+                    const int v = toks[c].getIntValue();
+                    t[c] = (v == (int) parvati::kTuningSilence)
+                               ? parvati::kTuningSilence
+                               : static_cast<int16_t> (juce::jlimit (-127, 127, v));
+                }
+                part.partBytes[4] = 0;   // D4: custom active implies raga byte 0
+                engine.setPartTuningCustom (i, t);   // clamps again + flags tuningDirty_
+            }
+            else if (mode >= 1 && mode <= 32)
+            {
+                part.partBytes[4] = static_cast<uint8_t> (mode);   // rides the markAllocationDirty push below
+                engine.clearPartTuningCustom (i);
+            }
+            else   // explicit 12-EDO: clear both selection paths
+            {
+                part.partBytes[4] = 0;
+                engine.clearPartTuningCustom (i);
+            }
+        }
 
     }
 
