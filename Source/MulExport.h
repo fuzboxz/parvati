@@ -75,11 +75,24 @@ Solution solve (const Setup& s, Strategy strategy);
 // is the file the user chose; the rest are written as sibling files.
 std::vector<Solution> solveChain (const Setup& s);
 
-// Human-readable preview of one solution against the setup (e.g.
-// "1  Kick  6 -> 2 voices  (Mono)"). One line per active Part, plus a note for
-// overridden modes. Dependency-free C++ (std::string) so tests stay light;
+// Optional human context for the preview helpers (empty = "Part N" fallback).
+struct PreviewContext
+{
+    std::vector<std::string> names;   // per-Part display names ("Kick", ...)
+};
+
+// Human-readable preview of one solution against the setup. One line per
+// active Part, e.g. "Lead: 10 -> 3 voices (Poly)" / "Pad: 8 -> 2 voices
+// (Mono, switched)". Dependency-free C++ (std::string) so tests stay light;
 // the editor wraps it in juce::String.
-std::vector<std::string> previewLines (const Setup& s, const Solution& sol, int unitIndex = 0);
+std::vector<std::string> previewLines (const Setup& s, const Solution& sol,
+                                       int unitIndex = 0,
+                                       const PreviewContext* ctx = nullptr);
+
+// One-line outcome summary for the whole strategy choice, e.g.
+// "Fits on one Ambika. 6 of 24 voices kept." or
+// "Needs 3 chained Ambikas. All 24 voices kept."
+std::string summarize (const Setup& s, Strategy strategy);
 
 }  // namespace parvati::mul_export
 

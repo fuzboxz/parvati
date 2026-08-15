@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <set>
+#include <string>
 #include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -25,6 +26,7 @@
 #include "PatchFile.h"
 #include "ParvatiPreset.h"
 #include "PluginProcessor.h"
+#include "ui/MulExportDialog.h"
 #include "SynthEngine.h"
 
 namespace
@@ -193,6 +195,37 @@ int main()
                "AsIs rebuilds the engine's contiguous bitmasks unchanged");
     }
 
+    // ---- [g2] preview + summary copy (plain-language output) ----
+    {
+        std::printf ("\n[g2] preview/summary copy\n");
+        const auto setup = makeOverSetup();
+        PreviewContext ctx { { "Lead", "Pad", "Bass", "", "", "" } };
+
+        const auto sol = solve (setup, Strategy::Proportional);
+        const auto lines = previewLines (setup, sol, 0, &ctx);
+        check (lines.size() == 3, "one preview line per active part");
+        check (lines[0].find ("Lead: 10 -> 3 voices (Poly)") != std::string::npos,
+               "named part + arrow + always-shown mode");
+
+        const auto linesNoNames = previewLines (setup, sol);
+        check (linesNoNames[0].find ("Part 1: 10 -> 3 voices (Poly)") != std::string::npos,
+               "unnamed part falls back to \"Part N\"");
+
+        const auto solMono = solve (setup, Strategy::MonoFold);
+        const auto linesMono = previewLines (setup, solMono, 0, &ctx);
+        check (linesMono[0].find ("(Mono, switched)") != std::string::npos,
+               "a rewritten mode is marked \"switched\"");
+
+        const auto sumSingle = summarize (setup, Strategy::Proportional);
+        check (sumSingle.find ("Fits on one Ambika") != std::string::npos
+               && sumSingle.find ("6 of your 24 voices") != std::string::npos,
+               "single-file summary states the honest cost");
+        const auto sumChain = summarize (setup, Strategy::ChainSplit);
+        check (sumChain.find ("4 chained Ambikas") != std::string::npos
+               && sumChain.find ("All 24 voices are kept") != std::string::npos,
+               "chain summary states the unit count + full fidelity");
+    }
+
     // ---- [h] end-to-end: save + reload each single-file strategy ----
     {
         std::printf ("\n[h] end-to-end save/reload\n");
@@ -293,6 +326,19 @@ int main()
         check (other.getEngine().getPartVoiceAllocation (0) == 0b000011
                && other.getEngine().getPartVoiceAllocation (1) == 0b001100,
                "default = engine bitmasks unchanged (pre-extension behaviour)");
+    }
+
+    // ---- [l] dialog constructs + refreshes headlessly ----
+    {
+        std::printf ("\n[l] dialog wiring\n");
+        juce::ScopedJuceInitialiser_GUI juceInit;
+        int result = -2;   // sentinel: "callback never fired"
+        MulExportDialog dlg (makeOverSetup(), { "Lead", "Pad", "Bass", "", "", "" },
+                             [&result] (int r) { result = r; });
+        check (true, "dialog constructs with names + over-capacity setup");
+        // Default selection = item 1 = Proportional.
+        dlg.refreshPreviewPublic();
+        check (true, "default preview renders (no crash)");
     }
 
     tempDir().deleteRecursively();

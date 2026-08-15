@@ -3847,8 +3847,12 @@ void ParvatiEditor::openSaveMultiDialog()
             fileChooser_ = nullptr;
             return;
         }
-        // Needs a strategy: show the fallback dialog, then save with the choice.
-        MulExportDialog::launch (this, setup, [this, f] (int strategy)
+        // Needs a strategy: show the fallback dialog (with the part names for
+        // the preview), then save with the choice.
+        std::vector<juce::String> names;
+        for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+            names.push_back (processorRef_.getEngine().getPartName (i));
+        MulExportDialog::launch (this, setup, names, [this, f] (int strategy)
         {
             if (strategy >= 0 && processorRef_.saveMultiFile (f, strategy))
                 afterMultiSaved (f);

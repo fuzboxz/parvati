@@ -113,7 +113,7 @@ std::array<int, kParts> proportionalCounts (const Setup& s)
 bool needsFallback (const Setup& s)
 {
     for (int p = 0; p < kParts; ++p)
-        if (s.active[p] && s.requested[p] > s.cards[p])
+        if (s.active[(size_t) p] && s.requested[(size_t) p] > s.cards[(size_t) p])
             return true;
     return false;
 }
@@ -204,7 +204,7 @@ std::vector<Solution> solveChain (const Setup& s)
 
     for (int p = 0; p < kParts; ++p)
     {
-        if (! s.active[p]) continue;
+        if (! s.active[(size_t) p]) continue;
         int r = s.requested[(size_t) p];
         while (r > 0)
         {
@@ -246,7 +246,8 @@ std::vector<Solution> solveChain (const Setup& s)
     return out;
 }
 
-std::vector<std::string> previewLines (const Setup& s, const Solution& sol, int unitIndex)
+std::vector<std::string> previewLines (const Setup& s, const Solution& sol,
+                                       int unitIndex, const PreviewContext* ctx)
 {
     static const char* kModeNames[] = { "Mono", "Poly", "Unison 2x", "Cyclic", "Chain" };
     std::vector<std::string> lines;
@@ -254,15 +255,50 @@ std::vector<std::string> previewLines (const Setup& s, const Solution& sol, int 
     {
         if (! s.active[(size_t) p]) continue;
         const int got = popcount8 (sol.masks[(size_t) p]);
-        std::string line = std::to_string (p + 1) + ": " + std::to_string (s.requested[(size_t) p])
-                           + " -> " + std::to_string (got) + " voices";
-        if (sol.polyOverridden[(size_t) p])
-            line += std::string (" (") + kModeNames[sol.polyMode[(size_t) p] % 5] + ")";
         if (unitIndex > 0 && got == 0)
             continue;   // this Part has no segment on this unit
+
+        std::string name = (ctx != nullptr && (size_t) p < ctx->names.size()
+                                && ! ctx->names[(size_t) p].empty())
+                               ? ctx->names[(size_t) p]
+                               : "Part " + std::to_string (p + 1);
+        std::string line = name + ": " + std::to_string (s.requested[(size_t) p])
+                           + " -> " + std::to_string (got)
+                           + (got == 1 ? " voice" : " voices");
+        line += " (";
+        line += kModeNames[sol.polyMode[(size_t) p] % 5];
+        if (sol.polyOverridden[(size_t) p])
+            line += ", switched";
+        line += ")";
         lines.push_back (std::move (line));
     }
     return lines;
+}
+
+std::string summarize (const Setup& s, Strategy strategy)
+{
+    int requested = 0;
+    for (int p = 0; p < kParts; ++p)
+        if (s.active[(size_t) p]) requested += s.requested[(size_t) p];
+
+    if (strategy == Strategy::ChainSplit)
+    {
+        const auto units = solveChain (s);
+        if (units.size() <= 1)
+            return "Fits on one Ambika. All " + std::to_string (requested)
+                   + " voices are kept.";
+        return "Needs " + std::to_string (units.size())
+               + " chained Ambikas (connect them by MIDI, load one file into "
+                 "each). All " + std::to_string (requested) + " voices are kept.";
+    }
+
+    std::string out = "Fits on one Ambika. ";
+    if (requested > kParts)
+        out += "Only 6 of your " + std::to_string (requested)
+               + " voices will play at once on the hardware.";
+    else
+        out += "All " + std::to_string (requested) + " voices are kept.";
+    return out;
 }
 
 }  // namespace parvati::mul_export
