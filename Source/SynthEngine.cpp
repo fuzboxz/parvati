@@ -9,10 +9,11 @@ SynthEngine::SynthEngine()
     for (int i = 0; i < kNumVoices; ++i)
         addVoice (new AmbikaVoice());
 
-    // Tag each voice with its FIXED voicecard (Ambika hardware: 6 voicecards,
-    // each with individual outputs). Unlike the Part assignment (which can
-    // change via the Multi editor), the voicecard never changes — it is set
-    // once here from the voice index via the fixed block mapping.
+    // Pre-tag each pool voice round-robin over the 6 firmware voicecards
+    // (Ambika hardware: 6 voicecards, each with individual outputs).
+    // rebuildVoiceAllocation() (called at the end of the ctor) re-tags every
+    // ALLOCATED voice onto its own Part's cards, so this is only the default
+    // for unallocated pool voices.
     for (int i = 0; i < kNumVoices; ++i)
         if (auto* av = getAmbikaVoice (i))
             av->setVoiceCard (voiceCardForIndex (i));
@@ -25,9 +26,9 @@ SynthEngine::SynthEngine()
     // of the box. This differs from the firmware factory multi
     // (controller/multi.cc: Part0=0x15, Part1=0x2a, a 3+3 multitimbral split),
     // which remains available by loading a factory .MUL or assigning voicecards
-    // per Part via the Multi page. rebuildVoiceAllocation() maps each voicecard
-    // to its single Parvati voice (voice i == voicecard i) with first-wins
-    // across Parts.
+    // per Part via the Multi page. All Parts start in AUTO slots mode (one
+    // voice per allocated card), so the default = faithful 6-voice Ambika;
+    // rebuildVoiceAllocation() partitions the voice pool accordingly.
     constexpr uint8_t kInitVoiceAllocation[kNumParts] = { 0x3f, 0, 0, 0, 0, 0 };
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -389,7 +390,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
                                               + 4);                            // master section (v3): mix + eqLow/mid/high
     juce::MemoryOutputStream out (dest, false);
     out.write (kEngineStateMagic, 4);
-    out.writeByte (5);                                                       // version (5 = per-slot 5th param; v4 = per-part FX + master section; keepTails removed, always-on)
+    out.writeByte (6);                                                       // version (6 = per-part voiceSlots + name; v5 = per-slot 5th param; v4 = per-part FX + master section)
     out.writeByte ((char) currentPart_);
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -430,6 +431,16 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         out.writeByte ((char) fx.eqLow.load (std::memory_order_relaxed));
         out.writeByte ((char) fx.eqMid.load (std::memory_order_relaxed));
         out.writeByte ((char) fx.eqHigh.load (std::memory_order_relaxed));
+
+        // Per-part voice slots + name (version 6, Parvati extension).
+        // slots: 0 = AUTO (card count), 1..kMaxVoicesPerPart = fixed count.
+        // name: length-prefixed UTF-8 bytes (max 16 chars).
+        out.writeByte ((char) part.voiceSlots.load (std::memory_order_relaxed));
+        const juce::String pn = part.name;
+        const size_t pnLen = pn.getNumBytesAsUTF8();
+        out.writeByte ((char) pnLen);
+        if (pnLen > 0)
+            out.write (pn.toRawUTF8(), (int) pnLen);
     }
     out.flush ();
 }
@@ -443,7 +454,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     if (in.read (magic, 4) != 4 || std::memcmp (magic, kEngineStateMagic, 4) != 0)
         return false;
     const int version = in.readByte();
-    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
+    if (version < 1 || version > 6)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
         return false;
     const int savedCurrent = in.readByte();
     for (int p = 0; p < kNumParts; ++p)
@@ -526,6 +537,27 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             }
             fx.fxDirty_.store (true, std::memory_order_release);
         }
+
+        // Per-part voice slots + name (version 6). Absent in v1..v5 -> AUTO
+        // slots (faithful card-count behaviour) + empty name ("Part N").
+        if (version >= 6)
+        {
+            part.voiceSlots.store ((uint8_t) in.readByte(), std::memory_order_relaxed);
+            const int nameLen = (uint8_t) in.readByte();
+            if (nameLen > 0)
+            {
+                juce::HeapBlock<char> nb (nameLen + 1, true);
+                if (in.read (nb, nameLen) != nameLen) return false;
+                part.name = juce::String::fromUTF8 (nb, nameLen).substring (0, 16);
+            }
+            else
+                part.name = juce::String();
+        }
+        else
+        {
+            part.voiceSlots.store (0, std::memory_order_relaxed);
+            part.name = juce::String();
+        }
     }
     setCurrentPart (juce::jlimit (0, kNumParts - 1, savedCurrent));
     resetAllVoices();        // clean slate for the restored config (deferred to AT)
@@ -540,16 +572,67 @@ void SynthEngine::setCurrentPart (int part)
 }
 
 //==========================================================================
-// Voice allocation from the firmware 6-voicecard bitmask.
+//==========================================================================
+// Voice allocation: the firmware 6-voicecard bitmask + the Parvati voice-slot
+// extension.
+namespace
+{
+    int popcount8 (uint8_t x)
+    {
+        int n = 0;
+        for (; x; x >>= 1) n += x & 1;
+        return n;
+    }
+    // Index of the n-th set bit of @p mask (n 0-based). Mask must be non-zero.
+    int nthSetBit (uint8_t mask, int n)
+    {
+        for (int vc = 0, seen = 0; vc < 8; ++vc)
+            if (mask & (1u << vc))
+            {
+                if (seen == n) return vc;
+                ++seen;
+            }
+        return 0;   // defensive (n >= popcount never occurs at the call sites)
+    }
+}
+
 void SynthEngine::rebuildVoiceAllocation()
 {
-    // 1 voice per voicecard (voice i == voicecard i); faithful Ambika 6-note
-    // max polyphony total across Parts.
+    // The engine owns a fixed pool of kNumVoices (96) voices, partitioned in
+    // Part order from each Part's effective slot count:
+    //   effectiveSlots(p) = (voiceSlots == 0 /*AUTO*/) ? cardCount(p) : voiceSlots(p)
+    // Because the pool = kNumParts * kMaxVoicesPerPart, every Part can sit at
+    // its maximum simultaneously — the partition never runs short (the jmin
+    // clamp below is pure defense).
+    //
+    // The firmware 6-voicecard bitmask keeps three jobs: Part ownership
+    // (first-wins claimed[] stays as a safety net, like firmware
+    // Multi::AssignVoices), aux-out routing (a Part's pool voices are tagged
+    // ROUND-ROBIN across its cards, so its audio still appears on the
+    // individual voicecard outputs), and hardware (.MUL) export. It no longer
+    // caps polyphony — but a Part with NO cards is disabled (0 voices),
+    // preserving the multitimbral ownership model.
     bool claimed[kNumParts] = {};   // voicecard already taken by an earlier Part
+    uint8_t partCards[kNumParts] = {};   // the cards each Part ended up owning
+    int nextVoice = 0;                    // next free pool index
+
+    // Voices owned by ANY Part before this rebuild. A voice that DROPS OUT of
+    // its Part's set (fewer slots / lost cards) will never receive a noteOff
+    // from that Part again — release it with a graceful tail-off below so it
+    // rings out and frees itself instead of sustaining forever. (A hard kill
+    // is wrong here: Kill + idle would leave the voice silent on its next
+    // trigger — the standalone dead-voice glitch.)
+    bool wasOwned[kNumVoices] = {};
+    for (int p = 0; p < kNumParts; ++p)
+        for (int vi : parts_[(size_t) p].voiceIndices)
+            if (vi >= 0 && vi < kNumVoices)
+                wasOwned[vi] = true;
+
     for (int p = 0; p < kNumParts; ++p)
     {
         auto& part = parts_[(size_t) p];
         part.voiceIndices.clear();
+
         const uint8_t voiceAllocation = part.voiceAllocation.load (std::memory_order_relaxed);
         for (int vc = 0; vc < kNumParts; ++vc)
         {
@@ -558,29 +641,57 @@ void SynthEngine::rebuildVoiceAllocation()
             if (claimed[vc])          // first-wins (firmware AssignVoices)
                 continue;
             claimed[vc] = true;
-            part.voiceIndices.push_back (vc);   // voice i == voicecard i
+            partCards[p] = static_cast<uint8_t> (partCards[p] | (1u << vc));
+        }
+        if (partCards[p] == 0)
+            continue;   // disabled Part (no voicecards): no voices, slots or not
+
+        const int cards = popcount8 (partCards[p]);
+        const uint8_t slotsSetting = part.voiceSlots.load (std::memory_order_relaxed);
+        const int want = (slotsSetting == 0) ? cards : static_cast<int> (slotsSetting);
+        const int n = juce::jmin (want, kNumVoices - nextVoice);
+        for (int k = 0; k < n; ++k)
+        {
+            const int vi = nextVoice++;
+            part.voiceIndices.push_back (vi);
+            if (auto* av = getAmbikaVoice (vi))
+                av->setVoiceCard (nthSetBit (partCards[p], k % cards));
         }
     }
-    // CHAIN (Option A): each CHAIN Part doubles its voice set by claiming FREE
-    // voicecards as an internal "chain partner" — the plugin equivalent of the
-    // firmware's 2-unit chain (2N voices via midi_dispatcher.ForwardNote,
-    // midi_dispatcher.h:228) but fully internal (no MIDI output). Base claims
-    // (above) are honoured first, so a CHAIN Part only takes voicecards no other
-    // Part uses; if free cards run out it gets a partial chain (graceful).
+    // CHAIN (Option A): a CHAIN Part doubles its voice set by drawing partner
+    // slots from the REMAINING pool (the plugin equivalent of the firmware's
+    // 2-unit chain, 2N voices via midi_dispatcher.ForwardNote,
+    // midi_dispatcher.h:228, but fully internal — no MIDI output). Base claims
+    // (above) are honoured first; if the pool runs low it gets a partial chain
+    // (graceful). Partner voices are tagged onto the Part's own cards.
     for (int p = 0; p < kNumParts; ++p)
     {
         if (parts_[(size_t) p].polyphonyMode != 4 /*CHAIN*/) continue;
-        const size_t baseN = parts_[(size_t) p].voiceIndices.size();
-        if (baseN == 0) continue;
-        size_t partnerVoices = 0;
-        for (int vc = 0; vc < kNumParts && partnerVoices < baseN; ++vc)
+        const int baseN = static_cast<int> (parts_[(size_t) p].voiceIndices.size());
+        if (baseN == 0 || partCards[p] == 0) continue;
+        const int cards = popcount8 (partCards[p]);
+        const int n = juce::jmin (baseN, kNumVoices - nextVoice);
+        for (int k = 0; k < n; ++k)
         {
-            if (claimed[vc]) continue;          // only truly free cards
-            claimed[vc] = true;
-            parts_[(size_t) p].voiceIndices.push_back (vc);
-            ++partnerVoices;
+            const int vi = nextVoice++;
+            parts_[(size_t) p].voiceIndices.push_back (vi);
+            if (auto* av = getAmbikaVoice (vi))
+                av->setVoiceCard (nthSetBit (partCards[p], k % cards));
         }
     }
+    // Release voices that lost their slot in this rebuild (see wasOwned above).
+    {
+        bool isOwned[kNumVoices] = {};
+        for (int p = 0; p < kNumParts; ++p)
+            for (int vi : parts_[(size_t) p].voiceIndices)
+                if (vi >= 0 && vi < kNumVoices)
+                    isOwned[vi] = true;
+        for (int vi = 0; vi < kNumVoices; ++vi)
+            if (wasOwned[vi] && ! isOwned[vi])
+                if (auto* av = getAmbikaVoice (vi))
+                    stopVoice (av, 1.0f, true);   // tail-off (never Kill)
+    }
+
     // Re-tag each voice with its (possibly changed) Part.
     for (int p = 0; p < kNumParts; ++p)
         for (int vi : parts_[(size_t) p].voiceIndices)
@@ -624,6 +735,18 @@ void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
             }
 
     markAllocationDirty();   // defer the rebuild to the audio thread (next block)
+}
+
+void SynthEngine::setPartVoiceSlots (int part, int slots)
+{
+    if (! ok (part))
+        return;
+    const uint8_t v = static_cast<uint8_t> (juce::jlimit (0, kMaxVoicesPerPart, slots));
+    if (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed) != v)   // only defer on a real change
+    {
+        parts_[(size_t) part].voiceSlots.store (v, std::memory_order_relaxed);
+        markAllocationDirty();   // re-partition the pool on the audio thread
+    }
 }
 
 void SynthEngine::pushPartBytesToVoices (int part)
@@ -754,10 +877,20 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         const uint8_t spread = p.partBytes[3];
         p.monoStack.noteOn (n8, static_cast<uint8_t> (juce::jlimit (0, 127, static_cast<int> (velocity * 127.0f))));
         const bool legato = p.monoStack.size() > 1;
+        // Per-CARD mono (Parvati extension semantics): the firmware triggers
+        // every allocated VOICECARD; with more pool slots than cards, exactly
+        // one voice per card fires — so a mono patch's unison size = its card
+        // count, invariant under the voice-slot setting, and MONO + 1 card is
+        // true single-voice mono.
         uint8_t drift = 0;   // 14-bit units (1/128 semitone); uint8 wrap is faithful
+        uint8_t seenCards = 0;
         for (int vi : p.voiceIndices)
             if (auto* av = getAmbikaVoice (vi))
             {
+                const int vc = av->getVoiceCard();
+                if (seenCards & (1u << vc))
+                    continue;   // this card already fired
+                seenCards |= static_cast<uint8_t> (1u << vc);
                 av->setLegatoNext (legato);
                 av->setSpreadDrift (drift);
                 // Overlap on a sounding voice: re-trigger WITHOUT the kill that
@@ -826,8 +959,15 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
         p.monoStack.noteOff (n8);
         if (p.monoStack.size() == 0)
         {
+            uint8_t seenCards = 0;   // per-card mono: release one voice per card
             for (int vi : p.voiceIndices)
-                if (auto* av = getAmbikaVoice (vi)) stopVoice (av, 1.0f, true);
+                if (auto* av = getAmbikaVoice (vi))
+                {
+                    const int vc = av->getVoiceCard();
+                    if (seenCards & (1u << vc)) continue;
+                    seenCards |= static_cast<uint8_t> (1u << vc);
+                    stopVoice (av, 1.0f, true);
+                }
         }
         else if (topNote == n8)
         {
@@ -837,9 +977,13 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
             auto* sound = getNumSounds() > 0 ? getSound (0).get() : nullptr;
             const uint8_t spread = p.partBytes[3];   // firmware part.cc:760: retrigger drift
             uint8_t drift = 0;
+            uint8_t seenCards = 0;   // per-card mono: retrigger one voice per card
             for (int vi : p.voiceIndices)
                 if (auto* av = getAmbikaVoice (vi))
                 {
+                    const int vc = av->getVoiceCard();
+                    if (seenCards & (1u << vc)) continue;
+                    seenCards |= static_cast<uint8_t> (1u << vc);
                     av->setLegatoNext (true);
                     av->setSpreadDrift (drift);
                     // Legato slide-back to the prior held note on release: same
@@ -1263,9 +1407,10 @@ void SynthEngine::injectSequencerModulation()
 // Multi-output routing.
 int SynthEngine::voiceCardForIndex (int voiceIndex)
 {
-    // Voice i == voicecard i (one voice per voicecard), so the voicecard IS the
-    // (clamped) voice index.
-    return juce::jlimit (0, kNumParts - 1, voiceIndex);
+    // Pre-rebuild default: pool voices spread round-robin over the 6 cards.
+    // rebuildVoiceAllocation re-tags every allocated voice onto its own Part's
+    // cards, so in practice this only covers unallocated pool voices.
+    return juce::jlimit (0, kNumVoices - 1, voiceIndex) % kNumParts;
 }
 
 void SynthEngine::renderVoices (juce::AudioBuffer<float>& outputAudio,

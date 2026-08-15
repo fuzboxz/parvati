@@ -557,6 +557,11 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
         out << "    keyzone_low: " << (int) engine.getPartKeyrangeLow (i) << "\n";
         out << "    keyzone_high: " << (int) engine.getPartKeyrangeHigh (i) << "\n";
         out << "    voice_allocation: " << (int) engine.getPartVoiceAllocation (i) << "\n";
+        // Parvati extension: per-part voice slots (0 = AUTO: one voice per
+        // allocated card, faithful hardware) + the user-facing part name.
+        out << "    voice_slots: " << engine.getPartVoiceSlots (i) << "\n";
+        const juce::String pn = engine.getPartName (i).replace ("\\", "\\\\").replace ("\"", "\\\"");
+        out << "    name: \"" << pn << "\"\n";
 
         auto params = partParamsMap (engine, i);
         out << "    params:\n";
@@ -621,6 +626,12 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                                         (uint8_t) (int) partNode["keyzone_high"]);
         if (partObj->hasProperty ("voice_allocation"))
             engine.setPartVoiceAllocation (i, (uint8_t) (int) partNode["voice_allocation"]);
+        // Parvati extension: per-part voice slots + name (absent in older files
+        // -> AUTO slots + empty name, i.e. faithful hardware behaviour).
+        if (partObj->hasProperty ("voice_slots"))
+            engine.setPartVoiceSlots (i, (int) partNode["voice_slots"]);
+        if (partObj->hasProperty ("name"))
+            engine.setPartName (i, partNode["name"].toString());
 
         // Per-part params. Patch/Part byte params are written into the Part's
         // patch/part storage; arp/seq params are staged into pendingConfig_ +

@@ -29,9 +29,17 @@
 
 // Authentic hardware = 6 voicecards => 6 Parts.
 static constexpr int kNumParts  = 6;
-// Authentic hardware = 6 voicecards => 6 voices (one voice per voicecard) =>
-// 6-note max polyphony total across Parts.
-static constexpr int kNumVoices = 6;
+// Per-part voice-slot ceiling (Parvati extension). The engine owns a fixed
+// pool of kNumParts * kMaxVoicesPerPart voices so EVERY Part can be maxed out
+// SIMULTANEOUSLY: the pool always satisfies the sum of all Parts' slot
+// settings, so allocation never steals between Parts. A Part's live voice
+// count is its per-part `voiceSlots` setting (0 = AUTO: one voice per
+// allocated voicecard, faithful 6-voice hardware behaviour; 1..16 = a fixed
+// slot count drawn from the pool). Idle pool voices are gated silent and
+// skipped by the renderer, so the large pool costs nothing until played;
+// worst-case CPU scales with PLAYED voices only.
+static constexpr int kMaxVoicesPerPart = 16;
+static constexpr int kNumVoices = kNumParts * kMaxVoicesPerPart;   // 96
 
 // ===== Parvati-exclusive per-part FX (Ambika knows nothing about these) =====
 // FxType / FxTopology / FxModDestination / kNumFxSlots / kNumFxMatrixSlots /
@@ -244,6 +252,19 @@ struct Part
     std::atomic<int> voiceCount_ { 0 };
 
     std::atomic<uint8_t> voiceAllocation { 0 };   // 6-bitmask over firmware voicecards (vc0..5)
+    // Parvati extension: per-part voice-slot count drawn from the engine pool.
+    // 0 = AUTO (one voice per allocated voicecard — faithful hardware);
+    // 1..kMaxVoicesPerPart = fixed count. Written on the message thread
+    // (setPartVoiceSlots), read on the audio thread in
+    // rebuildVoiceAllocation — atomic like voiceAllocation, published through
+    // the allocationDirty_ release/acquire.
+    std::atomic<uint8_t> voiceSlots { 0 };
+    // Parvati extension: user-facing part name/alias ("Kick", "Snare", "Lead").
+    // Message-thread-only (MIDI routing and the audio thread never read it),
+    // so a plain String is safe. Carried by the .parvati multi format and the
+    // host engine-state blob (v2); the Ambika .MUL/.PRO formats have no name
+    // bytes, so hardware export falls back to "Part N".
+    juce::String name;
     uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
     parvati::NoteStack<12> monoStack;   // MONO note-priority stack
@@ -394,6 +415,31 @@ public:
     void setPartVoiceAllocation (int part, uint8_t bitmask);
     uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[(size_t) part].voiceAllocation.load (std::memory_order_relaxed) : 0; }
 
+    // ---- Per-part voice slots (Parvati extension) ----
+    // slots: 0 = AUTO (follow the voicecard bitmask: one voice per allocated
+    // card, faithful hardware), 1..kMaxVoicesPerPart = fixed count drawn from
+    // the engine pool. The pool (kNumVoices = kNumParts * kMaxVoicesPerPart)
+    // always satisfies every Part simultaneously. Changing slots re-partitions
+    // the pool on the audio thread (deferred via markAllocationDirty, the same
+    // path as bitmask/polyphony edits). NOTE: a Part with NO allocated cards is
+    // disabled regardless of its slot count (the bitmask keeps its ownership /
+    // aux-out / hardware-export jobs); slots only add polyphony beyond the
+    // card count.
+    void setPartVoiceSlots (int part, int slots);
+    int  getPartVoiceSlots (int part) const { return ok (part) ? static_cast<int> (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed)) : 0; }
+
+    // ---- Part names / aliases (Parvati extension; message-thread only) ----
+    // 16-char limit keeps the Multi page rows + .parvati lines tidy.
+    void setPartName (int part, const juce::String& n) { if (ok (part)) parts_[(size_t) part].name = n.substring (0, 16); }
+    juce::String getPartName (int part) const { return ok (part) ? parts_[(size_t) part].name : juce::String(); }
+    // Display helper: the user name if set, else "Part N".
+    juce::String getPartDisplayName (int part) const
+    {
+        if (! ok (part)) return {};
+        const auto& n = parts_[(size_t) part].name;
+        return n.isNotEmpty() ? n : "Part " + juce::String (part + 1);
+    }
+
     // Advance the transport + per-part arp/sequencer for one audio block.
     void processTransport (juce::MidiBuffer& midi, int numSamples, double bpm, bool isPlaying);
 
@@ -463,8 +509,12 @@ public:
     {
         return voiceCardBuffers_;
     }
-    // Voicecard (0..5) for a given voice index. Voice i == voicecard i (one
-    // voice per voicecard), so this is the identity clamped to the 6 cards.
+    // Voicecard (0..5) for a given voice index. Pool voices are pre-tagged
+    // round-robin (i % 6) at construction; rebuildVoiceAllocation re-tags every
+    // ALLOCATED voice onto its OWN Part's cards (round-robin across the cards
+    // the Part's bitmask claims), so a Part's audio reaches its individual
+    // voicecard outputs no matter how many pool slots it owns. This function is
+    // only the pre-rebuild default.
     static int voiceCardForIndex (int voiceIndex);
     // Back-compat: the current Part's arp/seq.
     parvati::Arpeggiator& getArp()       { return parts_[(size_t) currentPart_].arp; }

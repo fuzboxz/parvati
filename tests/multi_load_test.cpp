@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <set>
 #include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -157,7 +158,15 @@ int main()
                 std::sort (got.begin(), got.end());
                 totalExpected += (int) expected[i].size();
                 totalActual   += (int) got.size();
-                if (got != expected[i]) allocOk = false;
+                // Pool model: match the BEHAVIOURAL contract (one voice per
+                // card, tagged onto that Part's own cards), not raw pool indices.
+                std::set<int> cards;
+                for (int vi : got)
+                    if (auto* av = engine.getAmbikaVoice (vi))
+                        cards.insert (av->getVoiceCard());
+                if ((int) got.size() != (int) expected[i].size()
+                    || ! std::equal (cards.begin(), cards.end(), expected[i].begin(), expected[i].end()))
+                    allocOk = false;
                 if ((int) got.size() >= 2) sawMultiCard = true;
             }
             char msg[160];
@@ -196,20 +205,28 @@ int main()
             return v;
         };
 
-        // part0 -> vc0,1 (bits 0,1) => voices {0,1}
+        // part0 -> vc0,1; part1 -> vc2; part2 -> vc4,5. Under the pool model a
+        // Part's voice COUNT equals its card count and its voices are tagged
+        // onto its OWN cards (pool indices are engine-internal).
+        auto cardsAsSet = [&engine] (int part)
+        {
+            std::set<int> cards;
+            for (int vi : engine.getPart (part).voiceIndices)
+                if (auto* av = engine.getAmbikaVoice (vi))
+                    cards.insert (av->getVoiceCard());
+            return cards;
+        };
         engine.setPartVoiceAllocation (0, 0b000011);
-        // part1 -> vc2 (bit 2) => {2}
         engine.setPartVoiceAllocation (1, 0b000100);
-        // part2 -> vc4,5 (bits 4,5) => {4,5}
         engine.setPartVoiceAllocation (2, 0b110000);
         engine.setPartVoiceAllocation (3, 0);
         engine.setPartVoiceAllocation (4, 0);
         engine.setPartVoiceAllocation (5, 0);
         renderOnce (proc);   // service the deferred rebuild before inspecting voiceIndices
 
-        check (voicesAsSet (0) == std::vector<int> ({ 0,1 }), "part0(vc0,1) owns {0,1}");
-        check (voicesAsSet (1) == std::vector<int> ({ 2 }),    "part1(vc2) owns {2}");
-        check (voicesAsSet (2) == std::vector<int> ({ 4,5 }),  "part2(vc4,5) owns {4,5}");
+        check (voicesAsSet (0).size() == 2 && cardsAsSet (0) == std::set<int> ({ 0, 1 }), "part0(vc0,1) owns 2 voices on vc0,1");
+        check (voicesAsSet (1).size() == 1 && cardsAsSet (1) == std::set<int> ({ 2 }),    "part1(vc2) owns 1 voice on vc2");
+        check (voicesAsSet (2).size() == 2 && cardsAsSet (2) == std::set<int> ({ 4, 5 }), "part2(vc4,5) owns 2 voices on vc4,5");
         check (voicesAsSet (3).empty() && voicesAsSet (4).empty() && voicesAsSet (5).empty(),
                "parts 3-5 (no bits) own no voices");
 
@@ -218,8 +235,8 @@ int main()
         // first-wins behaviour where part1 could not steal a claimed card.
         engine.setPartVoiceAllocation (1, 0b000001);  // vc0, previously part0's
         renderOnce (proc);   // service the deferred rebuild
-        check (voicesAsSet (1) == std::vector<int> ({ 0 }), "exclusive: part1 takes vc0");
-        check (voicesAsSet (0) == std::vector<int> ({ 1 }), "exclusive: part0 keeps only vc1");
+        check (voicesAsSet (1).size() == 1 && cardsAsSet (1) == std::set<int> ({ 0 }), "exclusive: part1 takes vc0");
+        check (voicesAsSet (0).size() == 1 && cardsAsSet (0) == std::set<int> ({ 1 }), "exclusive: part0 keeps only vc1");
     }
 
     std::printf ("\n%s (%d failures)\n",

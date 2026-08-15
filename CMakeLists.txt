@@ -1174,6 +1174,15 @@ target_link_libraries(parvati_polyphony_test PRIVATE
     Parvati
 )
 
+add_executable(parvati_voice_slots_test
+    tests/voice_slots_test.cpp
+)
+target_include_directories(parvati_voice_slots_test PRIVATE Source)
+target_compile_features(parvati_voice_slots_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_voice_slots_test PRIVATE
+    Parvati
+)
+
 add_executable(parvati_patch_load_test
     tests/patch_load_test.cpp
 )

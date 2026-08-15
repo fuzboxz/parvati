@@ -188,12 +188,21 @@ int main()
         check ((p1 & 0x01) == 0x01, "exclusive: Part 1 owns vc0");
         check (p0 == 0x0e,          "exclusive: Part 0 keeps vc1,2,3");
 
-        // rebuild reflects the exclusive bitmasks (voice i == voicecard i):
-        // Part 0 owns voices {1,2,3}, Part 1 owns voice {0}.
-        std::vector<int> v0 = e.getPart (0).voiceIndices; std::sort (v0.begin(), v0.end());
-        std::vector<int> v1 = e.getPart (1).voiceIndices; std::sort (v1.begin(), v1.end());
-        check (v0 == (std::vector<int> { 1, 2, 3 }), "rebuild: Part 0 voices {1,2,3}");
-        check (v1 == (std::vector<int> { 0 }),        "rebuild: Part 1 voices {0}");
+        // rebuild reflects the exclusive bitmasks under the pool model: a Part's
+        // voice COUNT equals its card count and its voices are tagged onto its
+        // OWN cards (the raw pool indices are an engine-internal detail).
+        auto cardsOf = [&e] (int part)
+        {
+            std::set<int> cards;
+            for (int vi : e.getPart (part).voiceIndices)
+                if (auto* av = e.getAmbikaVoice (vi))
+                    cards.insert (av->getVoiceCard());
+            return cards;
+        };
+        check (e.getPart (0).voiceIndices.size() == 3 && cardsOf (0) == std::set<int> ({ 1, 2, 3 }),
+               "rebuild: Part 0 owns 3 voices on vc1,2,3");
+        check (e.getPart (1).voiceIndices.size() == 1 && cardsOf (1) == std::set<int> ({ 0 }),
+               "rebuild: Part 1 owns 1 voice on vc0");
     }
 
     std::printf ("\n%s (%d failures)\n",
