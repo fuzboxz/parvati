@@ -3406,17 +3406,18 @@ void ParvatiEditor::resized()
     auto area = getLocalBounds();
 
     // Keep the UI out of the OS safe area (iOS: status bar / home indicator /
-    // landscape camera stub; macOS: the MacBook notch if reported). Without the
-    // TOP inset the header is laid out at y=0 directly under the iOS status bar,
-    // where iOS swallows/defers the first touch — the reported double-tap /
-    // non-recognized-tap issue on the top row. This is platform-COMMON: on
-    // platforms with no reserved area (windowed macOS/Win/Linux) safeAreaInsets
-    // is a 0-border, so this is a harmless no-op there.
+    // landscape camera stub). Without the TOP inset the header is laid out at
+    // y=0 directly under the iOS status bar, where iOS swallows/defers the
+    // first touch — the reported double-tap / non-recognized-tap issue on the
+    // top row. iOS ONLY: desktop displays can report non-zero insets too (e.g.
+    // a MacBook notch), which would pad the WINDOWED desktop UI — desktop
+    // builds apply no safe-area padding (the window chrome already insets it).
     // safeAreaInsets are in DISPLAY (physical) points, but `area` is in the
     // editor's LOCAL logical coords. The global scale factor maps local->physical,
     // so divide each inset by it: at any zoom the rendered inset then lands on the
     // real safe-area edge (without this, zooming out shrank the inset and the UI
     // slid back under the status bar).
+#if JUCE_IOS
     if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
     {
         const double z = juce::jmax (0.1, (double) juce::Desktop::getInstance().getGlobalScaleFactor());
@@ -3426,6 +3427,7 @@ void ParvatiEditor::resized()
                    .withTrimmedLeft   (juce::roundToInt (s.getLeft()   / z))
                    .withTrimmedRight  (juce::roundToInt (s.getRight()  / z));
     }
+#endif
 
     // ---- Bottom status strip = LOWEST band: [n/denom] + tooltip bar ----
     {

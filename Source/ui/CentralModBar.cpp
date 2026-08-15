@@ -56,6 +56,23 @@ namespace
         }
         return {};
     }
+
+    // Minimal per-button font override for the `<` / `>` nav pills: they are
+    // pill-height (72px) buttons showing ONE character, so the repo-wide 14px
+    // TextButton font would render a tiny glyph floating in a tall button.
+    // Deriving from ParvatiLookAndFeel keeps EVERY other behaviour (flat tonal
+    // drawButtonBackground, colour IDs, disabled alpha) identical to the app's
+    // buttons; only the glyph size/weight changes. The bar re-points it at the
+    // active theme in applyThemeColors() so its fills track theme switches
+    // (a default-constructed ParvatiLookAndFeel defaults to Carbon).
+    class NavButtonLnf : public ParvatiLookAndFeel
+    {
+    public:
+        juce::Font getTextButtonFont (juce::TextButton&, int) override
+        {
+            return appFont (20.0f, juce::Font::bold);
+        }
+    };
 }  // namespace
 
 //==============================================================================
@@ -316,34 +333,25 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     for (auto& p : pills_)
         pillContent_->addAndMakeVisible (*p);
 
-    // ---- `<` / `>` nav pills: prominent chevrons that page-scroll the
+    // ---- `<` / `>` nav pills: real text-glyph buttons that page-scroll the
     // viewport left/right (replacing the thin scrollbar). Children of the BAR
     // (not pillContent_) so they flank the viewport and stay put while it
-    // scrolls. Colours are resolved from the theme in applyThemeColors(). ----
-    auto makeChevron = [] (bool left)
-    {
-        const float cx = 24.0f;
-        const auto mx = [cx] (float v) { return 2.0f * cx - v; };
-        const float x0 = left ? 38.0f : mx (38.0f);
-        const float x1 = left ? 10.0f : mx (10.0f);
-        const float xi = left ? 18.0f : mx (18.0f);
-        juce::Path p;
-        p.startNewSubPath (x0, 10.0f);
-        p.lineTo (x1, 24.0f);
-        p.lineTo (x0, 38.0f);
-        p.lineTo (x0, 30.0f);
-        p.lineTo (xi, 24.0f);
-        p.lineTo (x0, 18.0f);
-        p.closeSubPath();
-        return p;
-    };
-    navPrev_ = std::make_unique<juce::ShapeButton> ("navPrev", juce::Colours::white, juce::Colours::white, juce::Colours::white);
-    navPrev_->setShape (makeChevron (true), true, true, false);
+    // scrolls. Plain ASCII "<" / ">" characters in the app font (a Unicode
+    // chevron glyph would be a font-stack gamble; ASCII is present everywhere),
+    // vertically centred by the TextButton itself. The fill/hover/press states
+    // come from the repo L&F's flat tonal drawButtonBackground - exactly like
+    // every other button in the app - so applyThemeColors() only feeds it the
+    // backgroundInput fill + textPrimary glyph colours. ----
+    navLnf_ = std::make_unique<NavButtonLnf>();
+    navPrev_ = std::make_unique<juce::TextButton> ("navPrev");
+    navPrev_->setButtonText ("<");
+    navPrev_->setLookAndFeel (navLnf_.get());
     addAndMakeVisible (*navPrev_);
     navPrev_->onClick = [this] { if (viewport_) scrollPills (-juce::jmax (1, viewport_->getViewWidth())); };
 
-    navNext_ = std::make_unique<juce::ShapeButton> ("navNext", juce::Colours::white, juce::Colours::white, juce::Colours::white);
-    navNext_->setShape (makeChevron (false), true, true, false);
+    navNext_ = std::make_unique<juce::TextButton> ("navNext");
+    navNext_->setButtonText (">");
+    navNext_->setLookAndFeel (navLnf_.get());
     addAndMakeVisible (*navNext_);
     navNext_->onClick = [this] { if (viewport_) scrollPills (juce::jmax (1, viewport_->getViewWidth())); };
     // Per-scrollbar override (NOT the global L&F): the mod-bar horizontal
@@ -390,9 +398,26 @@ void CentralModBar::applyThemeColors()
     // (The iOS Viewport has no background-colour API; the scrolled content fills
     // its own background in paintSegments, so the bar reads as one colour.)
     // Theme the `<` / `>` nav pills from the active theme (the scrollbar is
-    // hidden; these scroll the bar). backgroundInput fill, accentPrimary on hover/press.
-    if (navPrev_) { navPrev_->setColours (t.backgroundInput, t.accentPrimary, t.accentPrimary); navPrev_->repaint(); }
-    if (navNext_) { navNext_->setColours (t.backgroundInput, t.accentPrimary, t.accentPrimary); navNext_->repaint(); }
+    // hidden; these scroll the bar). backgroundInput fill with a textPrimary
+    // glyph; hover/press states are the shared flat tonal behaviour (fill
+    // LIGHTER on hover, DARKER on press) from drawButtonBackground, matching
+    // every other button in the app. The per-button Lnf is re-pointed at the
+    // theme so its fills track switches instead of staying on Carbon.
+    if (navLnf_ != nullptr)
+        if (auto* nl = dynamic_cast<NavButtonLnf*> (navLnf_.get()))
+            nl->setTheme (t);
+    if (navPrev_ != nullptr)
+    {
+        navPrev_->setColour (juce::TextButton::buttonColourId,  t.backgroundInput);
+        navPrev_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+        navPrev_->repaint();
+    }
+    if (navNext_ != nullptr)
+    {
+        navNext_->setColour (juce::TextButton::buttonColourId,  t.backgroundInput);
+        navNext_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+        navNext_->repaint();
+    }
     repaint();
 }
 

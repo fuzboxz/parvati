@@ -105,8 +105,10 @@ private:
     std::unique_ptr<PillContent>    pillContent_;
 
     // `<` / `>` nav pills that page-scroll the viewport (replacing the scrollbar).
-    std::unique_ptr<juce::ShapeButton> navPrev_;
-    std::unique_ptr<juce::ShapeButton> navNext_;
+    std::unique_ptr<juce::TextButton> navPrev_;
+    std::unique_ptr<juce::TextButton> navNext_;
+    // Per-button font override for the two tall nav pills (see NavButtonLnf).
+    std::unique_ptr<juce::LookAndFeel> navLnf_;
     void scrollPills (int deltaPx);   // page-scroll the viewport by deltaPx (clamped)
     void updateNavEnabled();          // enable/disable nav buttons at the scroll ends
 
