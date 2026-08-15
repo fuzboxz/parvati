@@ -15,8 +15,25 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
 
-    // BOTTOM-LEFT: a plain host that reparents one generator page at a time.
-    activeEditorHost_ = std::make_unique<juce::Component>();
+    // BOTTOM-LEFT: a vertical-scroll host (T4 safety net) that reparents one
+    // generator page at a time. At the tuned design size every generator page
+    // fits its cell — reflowToWidth grows the page to at least the view height
+    // — so NO scrollbar ever appears and the layout is byte-identical to the
+    // old plain host. Only in a SHORT host frame (small AUv3 pane, dense page
+    // subset) does the page keep its natural, taller height and a vertical
+    // scrollbar appear, turning previously unreachable clipped content into
+    // reachable scrolled content.
+    //   * Desktop mouse drags never scroll-on-drag: the Viewport's default
+    //     ScrollOnDragMode::nonHover is touch-only.
+    //   * The mouse WHEEL scrolls: knobs have their wheel disabled
+    //     (setScrollWheelEnabled(false)) and juce bubbles an unhandled wheel up
+    //     the ancestors to the Viewport, so wheel-over-knob scrolls instead of
+    //     editing (the knob-wheel policy is unchanged).
+    //   * A TOUCH drag starting on a control does not scroll (ParamControl sets
+    //     the viewport ignore-drag flag on its cells), so knob edits and page
+    //     scrolling never fight; a touch drag on the page background scrolls.
+    activeEditorHost_ = std::make_unique<juce::Viewport>();
+    activeEditorHost_->setScrollBarsShown (true, false, false, false);   // vertical-only, shown only when the page overflows
     addAndMakeVisible (*activeEditorHost_);
 
     // Wire the bar's pill clicks. A GENERATOR pill (catalogue isGenerator) swaps
@@ -110,12 +127,13 @@ void SynthWorkspace::showGenerator (int modSrcEnum)
 
     // Reparent the page into the active-editor host (the page is NEVER
     // regenerated — only its parent + visible-group subset change). The prior
-    // page is detached (non-owned: removeChildComponent, never deleted).
+    // page is detached (non-owned: the Viewport drops it without deleting, as
+    // it was attached with delete-on-remove = false). setViewedComponent also
+    // resets the scroll to the top, so every generator swap starts at the page
+    // head instead of inheriting the previous page's scroll offset.
     if (activePage_ != page)
     {
-        if (activePage_ != nullptr)
-            activeEditorHost_->removeChildComponent (activePage_);
-        activeEditorHost_->addAndMakeVisible (*page);
+        activeEditorHost_->setViewedComponent (page, false);
         activePage_ = page;
     }
 
@@ -140,7 +158,10 @@ void SynthWorkspace::releaseActiveEditor()
 {
     if (activePage_ != nullptr)
     {
-        activeEditorHost_->removeChildComponent (activePage_);
+        // Detach via the Viewport API (non-owned: nullptr with the same
+        // delete-on-remove = false used at attach, so the page is only
+        // reparented away, never deleted).
+        activeEditorHost_->setViewedComponent (nullptr, false);
         activePage_ = nullptr;
     }
 }
@@ -152,8 +173,22 @@ void SynthWorkspace::reflowActiveEditor()
     const auto b = activeEditorHost_->getLocalBounds();
     if (b.isEmpty())
         return;
-    activePage_->setBounds (b);
+    // Anchor at the Viewport origin (setViewedComponent resets the scroll, and
+    // setSize below preserves the top-left, so this is only load-bearing on the
+    // first layout after a swap).
+    activePage_->setTopLeftPosition (0, 0);
+    // Lay the page out at the FULL view width first. reflowToWidth grows the
+    // page to at least the view height, so a page that FITS produces exactly
+    // the old plain-host layout: no scrollbar, no width change. Only when the
+    // page's natural height overflows the view is it re-laid one
+    // scrollbar-thickness narrower so the vertical scrollbar never covers the
+    // right edge (the FxMatrixView precedent subtracts the thickness
+    // unconditionally; here it is subtracted only when it actually scrolls).
     activePage_->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
+    if (activePage_->getHeight() > b.getHeight())
+        activePage_->reflowToWidth (juce::jmax (150, b.getWidth()
+                                                      - activeEditorHost_->getScrollBarThickness()),
+                                    juce::jmax (0, b.getHeight()));
 }
 
 //==============================================================================

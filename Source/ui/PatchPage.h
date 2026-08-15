@@ -91,6 +91,18 @@ private:
     juce::ComboBox arrangementCombo_;   // 5 selectable items (ids 1..5); Custom = no selection
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 
+    // T4 scroll safety net: the 6 part rows + the hosted patch-wide ParamPage
+    // live inside this vertical Viewport, so a short host frame (small AUv3
+    // pane) SCROLLS instead of clipping the lower rows / page unrecoverably.
+    // At the tuned design size the body fits and reflowToWidth-style sizing
+    // grows it to the view height, so no scrollbar ever appears. ScrollBody
+    // (declared BEFORE the viewport so the viewport — which views it — is
+    // destroyed first) is the scrolled content component, defined in the .cpp
+    // like PartRow.
+    class ScrollBody;
+    std::unique_ptr<ScrollBody> scrollBody_;
+    juce::Viewport viewport_;
+
     // One row per Part (0..5). Defined in the .cpp.
     class PartRow;
     std::array<std::unique_ptr<PartRow>, 6> rows_;
@@ -115,6 +127,9 @@ private:
     void rebuildCardCombos();
     // Refresh the "Cards X/6" budget readout from the engine (source of truth).
     void updateCardsTotal();
+    // (Re)lay out scrollBody_ inside viewport_ (the rows + hosted page),
+    // sizing it to its natural height — or the view height when it fits.
+    void layoutScrollBody();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PatchPage)
 };

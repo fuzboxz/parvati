@@ -285,6 +285,14 @@ private:
 ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& d)
     : desc_ (d), processor_ (processor), paramIDStr_ (d.paramID)
 {
+    // Viewport safety net (T4): a TOUCH drag that starts on a control cell must
+    // not ALSO scroll an enclosing juce::Viewport (the viewport's
+    // drag-to-scroll listener sees child events and the default nonHover mode
+    // is touch-only). setViewportIgnoreDragFlag is juce's documented opt-out;
+    // it is only consulted by a Viewport's drag listener, so cells in non-
+    // viewport hosts (the main-row pages) are completely unaffected.
+    setViewportIgnoreDragFlag (true);
+
     // Visible label uses the short (prefix-stripped) display form so the section
     // name (shown in the panel border) isn't redundantly repeated in every knob
     // caption. The FULL label is preserved for tooltips / accessibility (see

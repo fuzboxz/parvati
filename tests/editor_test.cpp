@@ -205,6 +205,42 @@ int main()
 
     if (patchPage != nullptr)
     {
+        // ---- [6b] T4 scroll safety net: the 6 part rows + the hosted Global
+        // page live in a vertical juce::Viewport (previously they clipped
+        // unrecoverably in short frames). The body never under-fills the view,
+        // and in the minimum 1024x500 frame it OVERFLOWS (natural height >
+        // view height) — exactly the content that used to clip is scrollable.
+        juce::Viewport* patchViewport = nullptr;
+        {
+            juce::Array<juce::Component*> nodes;
+            nodes.add (patchPage);
+            for (int i = 0; i < nodes.size() && patchViewport == nullptr; ++i)
+            {
+                auto* c = nodes.getUnchecked (i);
+                if (auto* v = dynamic_cast<juce::Viewport*> (c)) patchViewport = v;
+                for (auto* child : c->getChildren())
+                    nodes.add (child);
+            }
+        }
+        char t4msg[160];
+        check (patchViewport != nullptr, "PatchPage body scrolls in a juce::Viewport (T4)");
+        if (patchViewport != nullptr && patchViewport->getViewedComponent() != nullptr)
+        {
+            auto* body = patchViewport->getViewedComponent();
+            check (body->getHeight() >= patchViewport->getViewHeight(),
+                   "PatchPage body never under-fills the view");
+            editor->setSize (1024, 500);   // the short-host scenario (minimum frame)
+            const bool overflowed = body->getHeight() > patchViewport->getViewHeight();
+            editor->setSize (1280, 634);   // restore the default size for later checks
+            std::snprintf (t4msg, sizeof (t4msg),
+                           "PatchPage body overflows (scrolls) in a 1024x500 frame [body=%d view=%d]",
+                           body->getHeight(), patchViewport->getViewHeight());
+            check (overflowed, t4msg);
+        }
+    }
+
+    if (patchPage != nullptr)
+    {
         // ---- [7] Voice-card allocation manipulation via the Patch page ----
         // Drives the REAL UI code path (combo onChange -> cap-check ->
         // contiguous-bitmask write) and the engine->GUI reflection path, then

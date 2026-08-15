@@ -51,6 +51,13 @@ public:
         partLabel_.setJustificationType (juce::Justification::centredLeft);
         addAndMakeVisible (partLabel_);
 
+        // Viewport safety net (T4): a TOUCH drag that starts anywhere on this
+        // row must not ALSO scroll the enclosing Viewport — the ignore-drag
+        // flag covers the row's combos/knobs/labels too, exactly like the
+        // ParamControl cells. Mouse drags never scroll-on-drag anyway (the
+        // viewport's default nonHover mode is touch-only).
+        setViewportIgnoreDragFlag (true);
+
         auto setupCaption = [this] (juce::Label& l) {
             l.setJustificationType (juce::Justification::centredLeft);
             l.setFont (juce::FontOptions (11.0f));
@@ -341,8 +348,31 @@ private:
 };
 
 //==============================================================================
+// The vertically-scrolled body of the Patch page: the 6 Part rows + the hosted
+// patch-wide ParamPage. A plain Component that paints the page background — a
+// juce::Viewport has no background of its own, and the body is grown to at
+// least the view height in layoutScrollBody() so a fitting body leaves no
+// unpainted tail below the rows.
+class PatchPage::ScrollBody : public juce::Component
+{
+public:
+    explicit ScrollBody (PatchPage& owner) : owner_ (owner) {}
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (owner_.themeManager_.getCurrentTheme().backgroundBase);
+    }
+
+private:
+    PatchPage& owner_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScrollBody)
+};
+
+//==============================================================================
 PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
-    : proc_ (processor), themeManager_ (themeManager)
+    : proc_ (processor), themeManager_ (themeManager),
+      scrollBody_ (std::make_unique<ScrollBody> (*this))
 {
     heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
     heading_.setJustificationType (juce::Justification::centredLeft);
@@ -363,8 +393,20 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     for (int i = 0; i < kMaxCards; ++i)
     {
         rows_[ (size_t) i] = std::make_unique<PartRow> (*this, i);
-        addAndMakeVisible (*rows_[ (size_t) i]);
+        scrollBody_->addAndMakeVisible (*rows_[ (size_t) i]);
     }
+
+    // T4 scroll safety net: the rows + the hosted global page scroll vertically
+    // inside a Viewport. At the tuned design size the body fits (it is grown to
+    // the view height — no scrollbar, no layout change vs the old direct
+    // layout); only in a short host frame does the vertical scrollbar appear,
+    // turning previously unreachable clipped rows/page into reachable scrolled
+    // content. Mouse drags never scroll-on-drag (default nonHover mode is
+    // touch-only); the mouse WHEEL scrolls (knob wheels are disabled and juce
+    // bubbles an unhandled wheel up to the Viewport).
+    viewport_.setScrollBarsShown (true, false, false, false);   // vertical-only, shown only when the body overflows
+    viewport_.setViewedComponent (scrollBody_.get(), false);    // body is member-owned, not view-owned
+    addAndMakeVisible (viewport_);
 
     setSize (640, 540);
     refresh();
@@ -584,31 +626,67 @@ void PatchPage::resized()
     }
     area.removeFromTop (10);
 
-    // 6 part rows (horizontal strips).
-    constexpr int rowH = 56;
-    constexpr int rowGap = 4;
-    for (int i = 0; i < kMaxCards; ++i)
+    // Everything below the fixed header chrome (rows + hosted page) scrolls
+    // vertically inside the Viewport when it overflows (T4 safety net).
+    viewport_.setBounds (area);
+    layoutScrollBody();
+}
+
+void PatchPage::layoutScrollBody()
+{
+    const int vw = viewport_.getWidth();
+    const int vh = viewport_.getHeight();
+    if (vw <= 0 || vh <= 0)
+        return;
+
+    // Lay the body out at the given width; returns the natural height used
+    // (rows first, then the hosted page reflowed to the same width — exactly
+    // the old direct layout, just expressed in the body's local coordinates).
+    auto layoutAtWidth = [this] (int cw)
     {
-        rows_[ (size_t) i]->setBounds (area.removeFromTop (rowH));
-        area.removeFromTop (rowGap);
+        constexpr int rowH = 56;
+        constexpr int rowGap = 4;
+        int y = 0;
+        for (int i = 0; i < kMaxCards; ++i)
+        {
+            rows_[ (size_t) i]->setBounds (0, y, cw, rowH);
+            y += rowH + rowGap;
+        }
+        if (hostedParamPage_ != nullptr)
+        {
+            y += 8;   // breathing room below the last row
+            hostedParamPage_->reflowToWidth (juce::jmax (200, cw), 0);
+            hostedParamPage_->setBounds (0, y, cw,
+                                         juce::jmax (200, hostedParamPage_->getContentHeight()));
+            y += hostedParamPage_->getHeight();
+        }
+        return y;
+    };
+
+    // Full view width first: a body that FITS keeps the old direct layout (no
+    // scrollbar, no width change). Only an overflowing body is re-laid one
+    // scrollbar-thickness narrower so the vertical scrollbar never covers the
+    // right edge (the same pattern as the workspace active-editor hosts /
+    // FxMatrixView).
+    int cw = vw;
+    int totalH = layoutAtWidth (cw);
+    if (totalH > vh)
+    {
+        cw = juce::jmax (150, vw - viewport_.getScrollBarThickness());
+        totalH = layoutAtWidth (cw);
     }
 
-    // Hosted patch-wide ParamPage below the rows: reflow to the row width, then
-    // position at the remaining area's top-left. The voice-activity meter stays
-    // attached to it as a decoration (it is not moved here).
-    if (hostedParamPage_ != nullptr)
-    {
-        const int w = juce::jmax (200, area.getWidth());
-        hostedParamPage_->reflowToWidth (w, 0);
-        const int h = hostedParamPage_->getContentHeight();
-        hostedParamPage_->setBounds (area.getX(), area.getY(), w, h);
-    }
+    // Grow to at least the view height so a fitting body still paints the page
+    // background over the whole viewport area (no foreign colour below).
+    scrollBody_->setSize (cw, juce::jmax (totalH, vh));
 }
 
 void PatchPage::hostParamPage (juce::Component* paramPage)
 {
     hostedParamPage_ = dynamic_cast<ParamPage*> (paramPage);
+    // The hosted page lives INSIDE the scrolled body so it scrolls together
+    // with the rows (T4). Editor retains ownership; reparent only.
     if (hostedParamPage_ != nullptr)
-        addAndMakeVisible (paramPage);   // editor retains ownership; reparent only
+        scrollBody_->addAndMakeVisible (hostedParamPage_);
     resized();
 }

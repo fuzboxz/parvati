@@ -122,10 +122,14 @@ private:
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
 
-    // BOTTOM-LEFT: a plain host that reparents ONE generator page at a time. The
-    // reparented page stays editor-owned (generatedPages_); the host owns only
-    // its layout slot, so reparenting never duplicates a control/attachment.
-    std::unique_ptr<juce::Component> activeEditorHost_;
+    // BOTTOM-LEFT: the vertical-scroll host that reparents ONE generator page
+    // at a time. A Viewport SAFETY NET mirroring SynthWorkspace (T4): no
+    // scrollbar when the page fits its cell — reflowToWidth grows the page to
+    // at least the view height — and a vertical scrollbar only in short host
+    // frames, where the page previously clipped unrecoverably. The reparented
+    // page stays editor-owned (generatedPages_); the host owns only its layout
+    // slot, so reparenting never duplicates a control/attachment.
+    std::unique_ptr<juce::Viewport> activeEditorHost_;
     ParamPage* activePage_ = nullptr;   // page currently reparented into the host
 
     // Generator -> { page, groups-to-show } registration (built by the editor from

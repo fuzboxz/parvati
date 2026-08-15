@@ -36,13 +36,22 @@ Check items off (`[x]`) as they are implemented and verified.
   → Grow the hit area to 44×44 (invisible transparent button shell painting the small
   glyph, or reserved 44pt band). Visual glyph may stay small.
 
-- [ ] **T4. Landscape-only layout has no scroll safety net.**
+- [x] **T4. Landscape-only layout has no scroll safety net.**
   Generator hosts `SynthWorkspace.cpp:132-141` / `FxWorkspace.cpp:117-126` are plain
   `juce::Component`s with no Viewport; any host frame shorter than the tuned content
   height clips unrecoverably. Same for `PatchPage.cpp:559-590` (6×56pt rows + hosted
   Global page, no scroll).
   → Wrap the active-editor host content in a vertical `juce::Viewport` (both workspaces)
   and wrap PatchPage's hosted page (mirroring `FxMatrixView`'s viewport pattern).
+
+  DONE (T4 batch): both workspace active-editor hosts + PatchPage body now scroll
+  vertically (as-needed scrollbar; no layout change when content fits — reflowToWidth
+  grows a fitting page to the view height). Wheel-over-knob scrolls (verified at JUCE
+  source level: Slider calls the base class when its wheel is disabled, which bubbles
+  to the Viewport); touch drags on control cells don't scroll (ParamControl + PartRow
+  set the viewport ignore-drag flag), background drags do; desktop mouse drag behaviour
+  unchanged (default ScrollOnDragMode::nonHover is touch-only). Regression checks added
+  in tools/editor_test.cpp ([3d]) and tests/editor_test.cpp ([6b]).
 
 ## Major
 

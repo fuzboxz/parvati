@@ -287,9 +287,11 @@ int main()
         // [3d] Click-wiring: a CentralModBar generator pill surfaces the right
         // page (reparents it into SynthWorkspace's active-editor host). This
         // drives the same setActiveGenerator path the bar's pill-click handler
-        // invokes — the new click-wiring's first automated coverage. The page's
-        // parent becomes the host, and the host is a direct child of
-        // SynthWorkspace, so the page's grand-parent is the workspace.
+        // invokes — the new click-wiring's first automated coverage. The host
+        // is a vertical-scroll juce::Viewport (T4 safety net), so the page's
+        // DIRECT parent is the viewport's internal content holder; the check
+        // walks the ancestor chain and asserts the page is inside a Viewport
+        // that is a direct child of SynthWorkspace.
         // ------------------------------------------------------------------
         std::printf ("\n[3d] CentralModBar generator pill surfaces the right page\n");
         {
@@ -315,18 +317,26 @@ int main()
             check (workspace != nullptr, "SynthWorkspace present (CentralModBar host)");
             if (workspace != nullptr)
             {
+                // True when @p page is inside a juce::Viewport that is a direct
+                // child of the workspace (the T4 active-editor host).
+                auto surfacedInHost = [&] (juce::Component* page)
+                {
+                    for (auto* c = page->getParentComponent(); c != nullptr; c = c->getParentComponent())
+                        if (auto* vp = dynamic_cast<juce::Viewport*> (c))
+                            return vp->getParentComponent() == workspace;
+                    return false;
+                };
+
                 // LFO 1 pill -> the LFO page.
                 ParamPage* lfoPage = findLfoPage();
                 check (lfoPage != nullptr, "LFO generator page found");
                 if (lfoPage != nullptr)
                 {
                     workspace->setActiveGenerator (ambika::dsp::MOD_SRC_LFO_1);
-                    juce::Component* host = lfoPage->getParentComponent();
-                    const bool surfaced = host != nullptr && host->getParentComponent() == workspace;
                     std::snprintf (msg, sizeof (msg),
                                    "LFO_1 pill reparents the LFO page into the active-editor host [parent=%s]",
-                                   host != nullptr ? "set" : "null");
-                    check (surfaced, msg);
+                                   lfoPage->getParentComponent() != nullptr ? "set" : "null");
+                    check (surfacedInHost (lfoPage), msg);
                 }
 
                 // NOTE pill (bar-only sentinel) -> the Sequencer page (Option A:
@@ -337,12 +347,34 @@ int main()
                 if (seqNotePage != nullptr)
                 {
                     workspace->setActiveGenerator (parvati::kNoteSeqSentinel);
-                    juce::Component* host = seqNotePage->getParentComponent();
-                    const bool surfaced = host != nullptr && host->getParentComponent() == workspace;
                     std::snprintf (msg, sizeof (msg),
                                    "NOTE pill reparents the Sequencer page into the active-editor host [parent=%s]",
-                                   host != nullptr ? "set" : "null");
-                    check (surfaced, msg);
+                                   seqNotePage->getParentComponent() != nullptr ? "set" : "null");
+                    check (surfacedInHost (seqNotePage), msg);
+                }
+
+                // T4 scroll safety net: the active-editor host is a
+                // vertical-scroll juce::Viewport (the audit's "no safety net"
+                // fix — short host frames scroll instead of clipping
+                // unrecoverably). The active page is the viewport's viewed
+                // component, and it never UNDER-fills the view (reflowToWidth
+                // grows a fitting page to the full view height, so no scrollbar
+                // appears at the tuned design size).
+                juce::Viewport* genHost = nullptr;
+                for (auto* child : workspace->getChildren())
+                    if (auto* v = dynamic_cast<juce::Viewport*> (child))
+                    {
+                        genHost = v;
+                        break;
+                    }
+                check (genHost != nullptr,
+                       "active-editor host is a juce::Viewport (T4 scroll safety net)");
+                if (genHost != nullptr && seqNotePage != nullptr)
+                {
+                    check (genHost->getViewedComponent() == seqNotePage,
+                           "the active generator page is the host viewport's viewed component");
+                    check (seqNotePage->getHeight() >= genHost->getViewHeight(),
+                           "generator page never under-fills the host view (no gap below a fitting page)");
                 }
             }
         }

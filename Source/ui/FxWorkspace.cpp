@@ -20,8 +20,19 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
 
-    // BOTTOM-LEFT: a plain host that reparents one generator page at a time.
-    activeEditorHost_ = std::make_unique<juce::Component>();
+    // BOTTOM-LEFT: a vertical-scroll host (T4 safety net) that reparents one
+    // generator page at a time. Mirrors SynthWorkspace's host exactly: no
+    // scrollbar when the page fits its cell (reflowToWidth grows the page to
+    // at least the view height, so the layout is byte-identical to the old
+    // plain host at the tuned design size), a vertical scrollbar only in short
+    // host frames (previously unrecoverable clipping). Desktop mouse drags
+    // never scroll-on-drag (default ScrollOnDragMode::nonHover is touch-only);
+    // the mouse WHEEL scrolls (knob wheels are disabled and juce bubbles the
+    // unhandled wheel up to the Viewport); a TOUCH drag on a control does not
+    // scroll (ParamControl sets the viewport ignore-drag flag), on the page
+    // background it does.
+    activeEditorHost_ = std::make_unique<juce::Viewport>();
+    activeEditorHost_->setScrollBarsShown (true, false, false, false);   // vertical-only, shown only when the page overflows
     addAndMakeVisible (*activeEditorHost_);
 
     // Wire the bar's pill clicks. A GENERATOR pill (catalogue isGenerator) swaps
@@ -110,16 +121,15 @@ void FxWorkspace::showGenerator (int modSrcEnum)
     auto* page = it->second.page;
 
     // Reparent the page into the active-editor host (the page is NEVER
-    // regenerated — only its parent + visible-group subset change). The prior
-    // page is detached (non-owned: removeChildComponent, never deleted). Because
+    // regenerated — only its parent + visible-group subset change). Because
     // the SAME page is shared with SynthWorkspace, reparenting it here detaches
     // it from the other workspace's host on a Synth<->FX toggle (single active
     // selection — no double-parent: a JUCE Component can only have one parent).
+    // The Viewport API (delete-on-remove = false) only reparents, never
+    // deletes, and resets the scroll to the top on every swap.
     if (activePage_ != page)
     {
-        if (activePage_ != nullptr)
-            activeEditorHost_->removeChildComponent (activePage_);
-        activeEditorHost_->addAndMakeVisible (*page);
+        activeEditorHost_->setViewedComponent (page, false);
         activePage_ = page;
     }
 
@@ -142,7 +152,10 @@ void FxWorkspace::releaseActiveEditor()
 {
     if (activePage_ != nullptr)
     {
-        activeEditorHost_->removeChildComponent (activePage_);
+        // Detach via the Viewport API (non-owned: nullptr with the same
+        // delete-on-remove = false used at attach, so the page is only
+        // reparented away, never deleted).
+        activeEditorHost_->setViewedComponent (nullptr, false);
         activePage_ = nullptr;
     }
 }
@@ -154,8 +167,20 @@ void FxWorkspace::reflowActiveEditor()
     const auto b = activeEditorHost_->getLocalBounds();
     if (b.isEmpty())
         return;
-    activePage_->setBounds (b);
+    // Anchor at the Viewport origin (setViewedComponent resets the scroll, and
+    // setSize below preserves the top-left, so this is only load-bearing on the
+    // first layout after a swap).
+    activePage_->setTopLeftPosition (0, 0);
+    // Full view width first: a page that FITS keeps the old plain-host layout
+    // (reflowToWidth grows it to at least the view height — no scrollbar, no
+    // width change). Only an overflowing page is re-laid one
+    // scrollbar-thickness narrower so the scrollbar never covers the right
+    // edge (mirrors SynthWorkspace / the FxMatrixView precedent).
     activePage_->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
+    if (activePage_->getHeight() > b.getHeight())
+        activePage_->reflowToWidth (juce::jmax (150, b.getWidth()
+                                                      - activeEditorHost_->getScrollBarThickness()),
+                                    juce::jmax (0, b.getHeight()));
 }
 
 //==============================================================================

@@ -13,14 +13,21 @@
 //       M1-4) to swap the bottom-left active generator editor; drag ANY pill
 //       onto a destination knob to assign it (drag carries the same
 //       "parvatiModSrc:<enum>" payload the rest of the editor emits).
-//   BOTTOM row: LEFT 50% = the ACTIVE GENERATOR EDITOR (one generator page at a
-//       time, chosen by the bar — reparented, never regenerated), RIGHT 50% =
+//   BOTTOM row: LEFT 50% = the ACTIVE GENERATOR EDITOR (one generator page at
+//       a time, chosen by the bar — reparented, never regenerated), RIGHT 50% =
 //       the editor-owned ModMatrixView (direct-hosted, no tab bar).
 //
-// NO per-page juce::Viewport wrappers: every page fits its cell, so there are
-// ZERO param-panel scrollbars. The pages stay owned by ParvatiEditor
-// (generatedPages_); the workspace owns only the bar + the plain active-editor
-// host, so reparenting never duplicates a ParamControl / APVTS attachment.
+// NO per-page juce::Viewport wrappers on the MAIN-ROW pages: each fits its
+// cell, so there are ZERO param-panel scrollbars there. The BOTTOM-LEFT
+// active-editor host IS a vertical-scroll Viewport, but only as a T4 safety
+// net: reflowToWidth grows a fitting page to the full view height, so no
+// scrollbar (and no layout change) ever appears at the tuned design size —
+// the scrollbar exists solely for short host frames (small AUv3 panes), where
+// content previously clipped unrecoverably.
+//
+// The pages stay owned by ParvatiEditor
+// (generatedPages_); the workspace owns only the bar + the active-editor host,
+// so reparenting never duplicates a ParamControl / APVTS attachment.
 
 #pragma once
 
@@ -113,10 +120,14 @@ private:
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
 
-    // BOTTOM-LEFT: a plain host that reparents ONE generator page at a time. The
-    // reparented page stays editor-owned (generatedPages_); the host owns only
-    // its layout slot, so reparenting never duplicates a control/attachment.
-    std::unique_ptr<juce::Component> activeEditorHost_;
+    // BOTTOM-LEFT: the vertical-scroll host that reparents ONE generator page
+    // at a time. A Viewport SAFETY NET (see the class comment): no scrollbar
+    // when the page fits its cell — reflowToWidth grows the page to at least
+    // the view height — and a vertical scrollbar only in short host frames,
+    // where the page previously clipped unrecoverably. The reparented page
+    // stays editor-owned (generatedPages_); the host owns only its layout
+    // slot, so reparenting never duplicates a control/attachment.
+    std::unique_ptr<juce::Viewport> activeEditorHost_;
     ParamPage* activePage_ = nullptr;   // page currently reparented into the host
 
     // Generator -> { page, groups-to-show } registration (built by the editor from
