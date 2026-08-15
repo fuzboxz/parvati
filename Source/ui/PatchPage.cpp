@@ -257,7 +257,14 @@ public:
     {
         maxCount = juce::jlimit (0, 6, maxCount);
         refreshing_ = true;
-        cardsCombo_.clear();
+        // dontSendNotification: clear()'s default is sendNotificationAsync,
+        // which (with a non-zero selection) arms a DEFERRED onChange that fires
+        // after refreshing_ has already been reset to false — re-entering
+        // onCardsChanged -> recompute -> rebuild -> clear() ... an infinite
+        // async ping-pong that permanently saturated one core at idle. The
+        // synchronous refresh below sets the selection itself, so no change
+        // signal is needed here.
+        cardsCombo_.clear (juce::dontSendNotification);
         for (int n = 0; n <= maxCount; ++n)
             cardsCombo_.addItem (juce::String (n), n + 1);
         cardsCombo_.setSelectedId (juce::jlimit (0, maxCount, displayCount) + 1,
