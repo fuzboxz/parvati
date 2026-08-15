@@ -2670,6 +2670,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     patchPage_ = std::make_unique<PatchPage> (processorRef_, themeManager_);
     addChildComponent (patchPage_.get());   // owned here; invisible until toggled
     patchPage_->setVisible (false);
+    // Relabel the top-bar Part selector when a part name/alias is edited.
+    patchPage_->onPartNamesChanged = [this] { refreshPartComboNames(); };
     if (globalPage_ != nullptr)
         patchPage_->hostParamPage (globalPage_);   // reparents the Section::Global ParamPage into the Patch page
 
@@ -2973,6 +2975,22 @@ void ParvatiEditor::dragOperationEnded (const juce::DragAndDropTarget::SourceDet
     ParamControl::setModDragActive (false);
 }
 
+// Relabel the top-bar Part selector with the current part names/aliases
+// (Parvati extension): "3 · Snare" when named, "Part 3" otherwise. Cheap
+// (6 string compares); called on name edits + from the poll timer so loads
+// (multi/template/DAW state) also refresh the labels.
+void ParvatiEditor::refreshPartComboNames()
+{
+    for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
+    {
+        const auto n = processorRef_.getEngine().getPartName (i - 1);
+        partCombo_.changeItemText (i, n.isNotEmpty()
+            ? juce::String (i) + " \u00b7 " + n     // e.g. "3 - Snare"
+            : TRANS ("Part") + " " + juce::String (i));
+    }
+    partCombo_.repaint();
+}
+
 void ParvatiEditor::timerCallback()
 {
     // ---- Tooltip bleed-through fix (~30 Hz) ----
@@ -2994,6 +3012,10 @@ void ParvatiEditor::timerCallback()
     const bool popupOpen = juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
     if (popupOpen && tooltipWindow_ != nullptr)
         tooltipWindow_->hideTip();
+
+    // Part-name labels follow engine state (edits made on the Patch page fire
+    // onPartNamesChanged directly; this also catches file loads + DAW restores).
+    refreshPartComboNames();
 
     // Mouse-activity tracking for the adaptive poll rate (see the END of this
     // callback): getMouseXYRelative() is the peer-cached position (cheap), so a

@@ -4,6 +4,35 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **Per-part voice slots + part names + Drum Kit template (voice-card
+  polyphony extension).**
+  - Engine: each Part has a `voiceSlots` setting (0 = **Auto**: one voice
+    per allocated voicecard — the faithful 6-voice hardware behaviour;
+    1..16 = a fixed count) drawn from a fixed 96-voice pool, so every Part
+    can be maxed out simultaneously with no cross-Part stealing. The
+    voicecard bitmask keeps ownership / aux-out routing / `.MUL` export: a
+    Part's voices are tagged round-robin onto its own cards, and a
+    card-less Part stays disabled. Idle pool voices are self-gated (no DSP
+    cost until played). Voices that drop out of a Part's set on a rebuild
+    now get a graceful tail-off release (previously they could sustain
+    forever when a card/slot was removed mid-note — latent bug).
+  - Mono is **per-card**: MONO fires exactly one voice per allocated card,
+    so the unison size and CPU are invariant under the slot setting, and
+    MONO + 1 card is true single-voice mono.
+  - Part names/aliases ("Kick", "Lead"): editable on the Patch page rows,
+    shown in the top-bar Part selector, carried by the `.parvati` multi
+    format and the host engine state (v6; v1..v5 blobs restore as unnamed).
+    The Ambika `.MUL`/`.PRO` formats carry no name/slot bytes — hardware
+    export keeps the faithful bitmask representation.
+  - New **Drum Kit (GM)** template: a 6-part drum multi with one GM note
+    per part (Kick 36 / Snare 38 / Clap 39 / Closed Hat 42 / Open Hat 46 /
+    Tom 45), Omni channel, 4 slots + CYCLIC round-robin per drum, named
+    parts, and short percussive patches (noise hats, pitch-dropped
+    sine kick/tom).
+  - Tests: `voice_slots_test`, `drum_kit_test`; multitimbral/multi_load/
+    host_state updated to the pool-model behavioural contract.
+
 ### Fixed
 - **iOS Info.plist plumbing (T1/T2/T5/T16 of the iPadOS audit — see
   audit/IPAD_TOUCH_TODO.md).**

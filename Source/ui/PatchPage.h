@@ -22,6 +22,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <functional>
 #include <memory>
 
 #include "PatchArrangement.h"   // Arrangement (getDisplayedArrangement return type)
@@ -41,6 +42,11 @@ public:
     // Destructor defined out-of-line: rows_ holds unique_ptr to the incomplete
     // nested PartRow, so the type must be complete where the dtor runs.
     ~PatchPage() override;
+
+    // Fired when a part name/alias is edited (Parvati extension) so the host
+    // editor can relabel its Part selector. Optional (a null callback is a
+    // no-op — used by headless tests).
+    std::function<void()> onPartNamesChanged;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -120,6 +126,9 @@ private:
     // After any per-part engine mutation: refresh dim states + the arrangement
     // label (the inferred arrangement may have become Custom).
     void postPartEdit();
+    // Forward a part-name edit to onPartNamesChanged (editor Part-selector
+    // relabel). Called by the nested PartRow after a rename commits.
+    void partNamesChanged();
     // Set arrangementCombo_ from inferArrangement(engine) (no onChange fired).
     void setArrangementFromEngine();
     // Rebuild every row's card combo to offer only 0..(6 - cards used by the

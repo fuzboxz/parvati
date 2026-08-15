@@ -49,6 +49,29 @@ public:
         // ---- chrome ----
         partLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         partLabel_.setJustificationType (juce::Justification::centredLeft);
+        // Editable part name/alias (Parvati extension): click (desktop) or tap
+        // (touch) to rename -- "Kick", "Lead", ... Empty reverts to "Part N".
+        partLabel_.setEditable (true, true, false);
+        partLabel_.setColour (juce::Label::outlineWhenEditingColourId,
+                              juce::Colours::transparentBlack);
+        partLabel_.onEditorShow = [this]
+        {
+            // Edit the RAW name (clear the "Part N" placeholder first).
+            if (auto* ed = partLabel_.getCurrentTextEditor())
+            {
+                const auto raw = engine_.getPartName (partIndex_);
+                ed->setText (raw, juce::dontSendNotification);
+                ed->setInputRestrictions (16);
+            }
+        };
+        partLabel_.onEditorHide = [this]
+        {
+            if (refreshing_) return;
+            auto text = partLabel_.getText (true).trim();
+            engine_.setPartName (partIndex_, text);   // empty -> placeholder on refresh
+            refreshNameDisplay();
+            owner_.partNamesChanged();
+        };
         addAndMakeVisible (partLabel_);
 
         // Viewport safety net (T4): a TOUCH drag that starts anywhere on this
@@ -64,6 +87,7 @@ public:
             addAndMakeVisible (l);
         };
         setupCaption (cardsCaption_);
+        setupCaption (voicesCaption_);
         setupCaption (chCaption_);
         setupCaption (zoneLoCaption_);
         setupCaption (zoneHiCaption_);
@@ -74,7 +98,7 @@ public:
         // (44pt after the 12pt caption band; see resized). The L&F reads this
         // "parvatiComboVisualH" property (drawComboBox /
         // positionComboBoxText), so the rows keep their exact look.
-        for (auto* c : { &cardsCombo_, &channelCombo_, &polyCombo_ })
+        for (auto* c : { &cardsCombo_, &voicesCombo_, &channelCombo_, &polyCombo_ })
             c->getProperties().set ("parvatiComboVisualH", 24);
 
         // ---- Cards: count 0..6 (id = count + 1). Sum across rows capped at 6
@@ -83,6 +107,16 @@ public:
             cardsCombo_.addItem (juce::String (n), n + 1);
         cardsCombo_.onChange = [this] { onCardsChanged(); };
         addAndMakeVisible (cardsCombo_);
+
+        // ---- Voices: slot count drawn from the engine pool (Parvati
+        // extension). "Auto" (0) = one voice per allocated card (faithful
+        // hardware); 1..16 = a fixed count. Pool = 6x16, so every part can be
+        // maxed simultaneously. ----
+        voicesCombo_.addItem (TRANS ("Auto"), 1);
+        for (int n = 1; n <= kMaxVoicesPerPart; ++n)
+            voicesCombo_.addItem (juce::String (n), n + 1);
+        voicesCombo_.onChange = [this] { onVoicesChanged(); };
+        addAndMakeVisible (voicesCombo_);
 
         // ---- Ch: Omni (0) + 1..16 (id = channel + 1). ----
         channelCombo_.addItem (TRANS ("Omni"), 1);
@@ -130,16 +164,22 @@ public:
     {
         auto b = getLocalBounds().reduced (4);
 
-        partLabel_.setBounds (b.removeFromLeft (62));
+        partLabel_.setBounds (b.removeFromLeft (128));
         b.removeFromLeft (6);
 
         // Cards
         {
             // 12pt caption band + the remaining 44pt of the 56pt row = a
             // full-height HIG tap band around the compact 24pt visual box.
-            auto col = b.removeFromLeft (92);
+            auto col = b.removeFromLeft (78);
             cardsCaption_.setBounds (col.removeFromTop (12));
             cardsCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
+        }
+        // Voices (Parvati extension: pool slots per part)
+        {
+            auto col = b.removeFromLeft (78);
+            voicesCaption_.setBounds (col.removeFromTop (12));
+            voicesCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         // Ch
         {
@@ -179,6 +219,10 @@ public:
         const int cardN = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
         cardsCombo_.setSelectedId (cardN + 1, juce::dontSendNotification);
 
+        const int slots = engine_.getPartVoiceSlots (partIndex_);
+        voicesCombo_.setSelectedId (slots + 1, juce::dontSendNotification);   // 1 = Auto
+        refreshNameDisplay();
+
         channelCombo_.setSelectedId (static_cast<int> (engine_.getPartChannel (partIndex_)) + 1,
                                      juce::dontSendNotification);
 
@@ -199,8 +243,8 @@ public:
     // + mode names are translated), preserving each selection.
     void refreshLanguage()
     {
-        partLabel_.setText (TRANS ("Part") + " " + juce::String (partIndex_ + 1), juce::dontSendNotification);
         cardsCaption_.setText (TRANS ("Cards"), juce::dontSendNotification);
+        voicesCaption_.setText (TRANS ("Voices"), juce::dontSendNotification);
         chCaption_.setText (TRANS ("Ch"), juce::dontSendNotification);
         zoneLoCaption_.setText (TRANS ("Zone Low"), juce::dontSendNotification);
         zoneHiCaption_.setText (TRANS ("Zone High"), juce::dontSendNotification);
@@ -224,11 +268,29 @@ public:
             polyCombo_.addItem (TRANS ("Chain"), 5);
             polyCombo_.setSelectedId (prev, juce::dontSendNotification);
         }
+        {
+            const int prev = voicesCombo_.getSelectedId();
+            voicesCombo_.clear();
+            voicesCombo_.addItem (TRANS ("Auto"), 1);
+            for (int n = 1; n <= kMaxVoicesPerPart; ++n)
+                voicesCombo_.addItem (juce::String (n), n + 1);
+            voicesCombo_.setSelectedId (prev, juce::dontSendNotification);
+        }
+        refreshNameDisplay();
         repaint();
     }
 
     // Colours come from the inherited L&F (read at paint time) — just repaint.
     void applyThemeColors() { repaint(); }
+
+    // Show the user name if set, else the "Part N" placeholder (translated).
+    void refreshNameDisplay()
+    {
+        const auto n = engine_.getPartName (partIndex_);
+        partLabel_.setText (n.isNotEmpty() ? n
+                                           : TRANS ("Part") + " " + juce::String (partIndex_ + 1),
+                            juce::dontSendNotification);
+    }
 
     // The currently-displayed card count (0..6) from the combo.
     int cardCount() const
@@ -308,14 +370,21 @@ private:
     SynthEngine& engine_;
     bool refreshing_ = false;
 
-    juce::Label partLabel_, cardsCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_;
-    juce::ComboBox cardsCombo_, channelCombo_, polyCombo_;
+    juce::Label partLabel_, cardsCaption_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_;
+    juce::ComboBox cardsCombo_, voicesCombo_, channelCombo_, polyCombo_;
     juce::Slider loSlider_, hiSlider_;
 
     void onCardsChanged()
     {
         if (refreshing_) return;
         owner_.recomputeCardAllocation (partIndex_);
+    }
+
+    void onVoicesChanged()
+    {
+        if (refreshing_) return;
+        engine_.setPartVoiceSlots (partIndex_, voicesCombo_.getSelectedId() - 1);
+        owner_.postPartEdit();
     }
 
     void onChannelChanged()
@@ -563,6 +632,14 @@ void PatchPage::postPartEdit()
     rebuildCardCombos();
     updateCardsTotal();
     setArrangementFromEngine();
+}
+
+// A part name was edited: forward to the editor (Part-selector relabel) if a
+// callback is installed.
+void PatchPage::partNamesChanged()
+{
+    if (onPartNamesChanged)
+        onPartNamesChanged();
 }
 
 void PatchPage::recomputeCardAllocation (int changedPart)
