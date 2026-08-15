@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See CentralModBar.h.
 //
 // Layout geometry (px):
-//   kBarHeight = 38 (52 on iOS), pill height 28 (44 on iOS) -> top/bottom inset.
+//   kBarHeight = 82, pill height 72 -> top/bottom inset (single UI, all platforms).
 //   Pills are left-aligned within each cluster; clusters are separated ONLY by
 //   the inter-cluster gap (no caption — the family colour identifies the
 //   cluster instead, via each pill's persistent family-coloured underline).
-//   On iOS each cluster is wrapped in a labelled segment background and the
-//   pill row scrolls horizontally inside a juce::Viewport so 25+ 44pt pills
-//   never widen the editor.
+//   Each cluster is wrapped in a labelled segment background and the pill row
+//   scrolls horizontally inside a juce::Viewport so 25+ pills never widen the
+//   editor.
 //   preferredWidth() returns the exact width needed so every pill fits with no
 //   clipping.
 
@@ -19,51 +19,43 @@
 
 namespace
 {
-#if JUCE_IOS
     // kPillH / kPillGap live as PUBLIC members (CentralModBar::kPillH /
-    // kPillGap) so the iOS HIG sizing-contract test can assert them; they are
+    // kPillGap = 72/8) so the sizing-contract test can assert them; they are
     // referenced unqualified below and resolve to the static members from
-    // within CentralModBar's members. Desktop keeps the file-local constants.
-#else
-    constexpr int kPillH           = 28;   // pill height (spec)
-    constexpr int kPillGap         = 4;    // gap between pills within a cluster
-#endif
+    // within CentralModBar's members.
     constexpr int kPillHPad        = 8;    // horizontal padding inside a pill
-#if JUCE_IOS
-    constexpr int kPillMinW        = 36;   // minimum pill width (iOS HIG: wider floor for the bigger pills)
-#else
-    constexpr int kPillMinW        = 30;   // minimum pill width
-#endif
+    constexpr int kPillMinW        = 36;   // minimum pill width (wider floor for the bigger pills)
     constexpr int kClusterGap      = 20;   // gap between clusters
     constexpr int kSideGap         = 40;   // larger gap splitting generators (L) from drag-only (R)
     constexpr int kEdgePad         = 6;    // left/right outer padding
 
-#if JUCE_IOS
-    // iOS category-segment geometry: each cluster is wrapped in a labelled
-    // rounded segment background (HIG #1 grouping), and the pill row scrolls
-    // horizontally so 25+ 44pt pills never widen the editor.
-    constexpr int kSegPad      = 3;    // segment background padding around label+pills
-    constexpr int kSegVPad     = 4;    // vertical inset of the segment background
-    constexpr int kSegLabelW   = 30;   // reserved width for the cluster short label
-    constexpr int kSegLabelGap = 6;    // gap between the label and the first pill
+    // Category-segment geometry: each cluster is wrapped in a labelled rounded
+    // segment background, and the pill row scrolls horizontally so 25+ pills
+    // never widen the editor.
+    constexpr int kSegPad      = 3;    // coloured tab horizontal padding
+    constexpr int kSegVPad     = 4;    // top inset of the coloured tab
+    constexpr int kLabelTabH   = 14;   // coloured label-tab header height (above the pills)
+    constexpr int kLabelTabGap = 4;    // gap between the label tab and the pills
 
-    // Short cluster label drawn at the left of each iOS segment (matches the
-    // HIG mockup: ENV / LFO / SEQ / MOD / PERF / UTIL / CON).
+    // `<` / `>` nav pills that flank the viewport (replacing the scrollbar).
+    constexpr int kNavW   = 48;   // < > nav pill width
+    constexpr int kNavGap = 6;    // gap between a nav pill and the viewport
+
+    // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
     {
         switch (c)
         {
-            case parvati::Cluster::Env:    return "ENV";
+            case parvati::Cluster::Env:    return "ENVELOPE";
             case parvati::Cluster::Lfo:    return "LFO";
-            case parvati::Cluster::SeqArp: return "SEQ";
+            case parvati::Cluster::SeqArp: return "SEQUENCER";
             case parvati::Cluster::Mod:    return "MOD";
             case parvati::Cluster::Perf:   return "PERF";
             case parvati::Cluster::Util:   return "UTIL";
-            case parvati::Cluster::Const:  return "CON";
+            case parvati::Cluster::Const:  return "CONST";
         }
         return {};
     }
-#endif
 }  // namespace
 
 //==============================================================================
@@ -159,17 +151,14 @@ struct CentralModBar::ModPill : public juce::Component,
                                                 : t.tabUnselectedBg);
             g.setColour (fill);
             g.fillRoundedRectangle (r, 5.0f);
-#if JUCE_IOS
             // Strong family-colour cue: a full-width accent band across the TOP
             // of the pill (the inverse of the underline), clipped to the rounded
-            // pill so its corners follow the radius. Restores the per-cluster
-            // colour prominence that the iOS segment background otherwise drowns.
+            // pill so its corners follow the radius.
             g.saveState();
             g.reduceClipRegion (r.toNearestInt());
             g.setColour (active_ ? accent_ : accent_.withAlpha (0.85f));
             g.fillRect (r.withHeight (3.5f));
             g.restoreState();
-#endif
             drawFamilyUnderline (g, r);
 
             g.setColour (active_ ? t.textPrimary
@@ -188,14 +177,12 @@ struct CentralModBar::ModPill : public juce::Component,
             const juce::Colour fill = hovered_ ? inactiveFill.brighter (0.20f) : inactiveFill;
             g.setColour (fill);
             g.fillRoundedRectangle (r, 5.0f);
-#if JUCE_IOS
             // Drag-only pills get the same family-colour top band for parity.
             g.saveState();
             g.reduceClipRegion (r.toNearestInt());
             g.setColour (accent_.withAlpha (0.85f));
             g.fillRect (r.withHeight (3.5f));
             g.restoreState();
-#endif
 
             const float hx  = r.getX() + 2.0f;
             const float hy0 = r.getY() + 7.0f;
@@ -296,19 +283,17 @@ private:
 };
 
 //==============================================================================
-#if JUCE_IOS
 // PillContent — the horizontally-scrolled content of the CentralModBar's
-// Viewport on iOS. It owns no state: it paints the per-cluster segment
-// backgrounds + short labels (delegated to CentralModBar::paintSegments, whose
-// coordinates match the pill positions computeLayout set), then the pills
-// (children of this content) paint themselves on top.
+// Viewport. It owns no state: it paints the per-cluster segment backgrounds +
+// short labels (delegated to CentralModBar::paintSegments, whose coordinates
+// match the pill positions computeLayout set), then the pills (children of this
+// content) paint themselves on top.
 struct CentralModBar::PillContent : public juce::Component
 {
     CentralModBar& owner;
     explicit PillContent (CentralModBar& o) : owner (o) {}
     void paint (juce::Graphics& g) override { owner.paintSegments (g); }
 };
-#endif
 
 //==============================================================================
 CentralModBar::CentralModBar (ThemeManager& themeManager)
@@ -317,37 +302,61 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     // One pill per catalogue entry, in cluster display order.
     for (const auto& e : parvati::kAllSources)
         pills_.push_back (std::make_unique<ModPill> (*this, e));
-#if JUCE_IOS
-    // iOS: wrap the pill row in a horizontal-scroll Viewport (pills become
-    // children of the scrolled content) so 25+ 44pt pills never widen the
-    // editor. Desktop keeps the flat dense bar (pills are direct children).
+    // Wrap the pill row in a horizontal-scroll Viewport (pills become children
+    // of the scrolled content) so 25+ pills never widen the editor.
     viewport_   = std::make_unique<juce::Viewport>();
     pillContent_ = std::make_unique<PillContent> (*this);
-    viewport_->setScrollBarsShown (false, true, false, false);   // horizontal scroll only
+    viewport_->setScrollBarsShown (false, false, false, false);   // hidden: < > nav pills scroll instead
     viewport_->setViewedComponent (pillContent_.get(), false);   // viewport does NOT delete content
     // 'never': touch drags must start a pill drag-to-assign, NOT scroll the bar,
-    // so we disable scroll-on-drag entirely (the user scrolls via the shown
-    // horizontal scrollbar). Avoids a drag/scroll gesture conflict on touch.
+    // so we disable scroll-on-drag entirely. Scrolling happens via the `<` / `>`
+    // nav pills (created below), avoiding any drag/scroll gesture conflict.
     viewport_->setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::never);
     addAndMakeVisible (*viewport_);
     for (auto& p : pills_)
         pillContent_->addAndMakeVisible (*p);
-#if JUCE_IOS
+
+    // ---- `<` / `>` nav pills: prominent chevrons that page-scroll the
+    // viewport left/right (replacing the thin scrollbar). Children of the BAR
+    // (not pillContent_) so they flank the viewport and stay put while it
+    // scrolls. Colours are resolved from the theme in applyThemeColors(). ----
+    auto makeChevron = [] (bool left)
+    {
+        const float cx = 24.0f;
+        const auto mx = [cx] (float v) { return 2.0f * cx - v; };
+        const float x0 = left ? 38.0f : mx (38.0f);
+        const float x1 = left ? 10.0f : mx (10.0f);
+        const float xi = left ? 18.0f : mx (18.0f);
+        juce::Path p;
+        p.startNewSubPath (x0, 10.0f);
+        p.lineTo (x1, 24.0f);
+        p.lineTo (x0, 38.0f);
+        p.lineTo (x0, 30.0f);
+        p.lineTo (xi, 24.0f);
+        p.lineTo (x0, 18.0f);
+        p.closeSubPath();
+        return p;
+    };
+    navPrev_ = std::make_unique<juce::ShapeButton> ("navPrev", juce::Colours::white, juce::Colours::white, juce::Colours::white);
+    navPrev_->setShape (makeChevron (true), true, true, false);
+    addAndMakeVisible (*navPrev_);
+    navPrev_->onClick = [this] { if (viewport_) scrollPills (-juce::jmax (1, viewport_->getViewWidth())); };
+
+    navNext_ = std::make_unique<juce::ShapeButton> ("navNext", juce::Colours::white, juce::Colours::white, juce::Colours::white);
+    navNext_->setShape (makeChevron (false), true, true, false);
+    addAndMakeVisible (*navNext_);
+    navNext_->onClick = [this] { if (viewport_) scrollPills (juce::jmax (1, viewport_->getViewWidth())); };
     // Per-scrollbar override (NOT the global L&F): the mod-bar horizontal
-    // scrollbar uses a dark-grey thumb (backgroundInput) on a chassis-coloured
-    // track (backgroundBase) so it recedes instead of flashing the accent.
-    // Re-applied in applyThemeColors() after a theme switch.
+    // scrollbar is hidden (the `<` / `>` nav pills scroll instead), but its
+    // colours are themed for completeness — a dark-grey thumb (backgroundInput)
+    // on a chassis-coloured track (backgroundBase) so it would recede instead of
+    // flashing the accent. Re-applied in applyThemeColors() after a theme switch.
     {
         const auto& tt = theme();
         auto& hbar = viewport_->getHorizontalScrollBar();
         hbar.setColour (juce::ScrollBar::thumbColourId, tt.backgroundInput);
         hbar.setColour (juce::ScrollBar::trackColourId, tt.backgroundBase);
     }
-#endif
-#else
-    for (auto& p : pills_)
-        addAndMakeVisible (*p);
-#endif
 
     applyThemeColors();
 }
@@ -380,17 +389,10 @@ void CentralModBar::applyThemeColors()
         p->accent_ = parvati::clusterAccent (p->cluster_, t);
     // (The iOS Viewport has no background-colour API; the scrolled content fills
     // its own background in paintSegments, so the bar reads as one colour.)
-#if JUCE_IOS
-    // Re-apply the per-scrollbar dark-grey override after a theme switch (the
-    // Viewport's horizontal scrollbar is otherwise left at the previous theme's
-    // thumb/track colours). Global L&F ScrollBar colours are untouched.
-    if (viewport_ != nullptr)
-    {
-        auto& hbar = viewport_->getHorizontalScrollBar();
-        hbar.setColour (juce::ScrollBar::thumbColourId, t.backgroundInput);
-        hbar.setColour (juce::ScrollBar::trackColourId, t.backgroundBase);
-    }
-#endif
+    // Theme the `<` / `>` nav pills from the active theme (the scrollbar is
+    // hidden; these scroll the bar). backgroundInput fill, accentPrimary on hover/press.
+    if (navPrev_) { navPrev_->setColours (t.backgroundInput, t.accentPrimary, t.accentPrimary); navPrev_->repaint(); }
+    if (navNext_) { navNext_->setColours (t.backgroundInput, t.accentPrimary, t.accentPrimary); navNext_->repaint(); }
     repaint();
 }
 
@@ -407,28 +409,33 @@ const ParvatiTheme& CentralModBar::theme() const
 
 juce::Font CentralModBar::pillFont() const
 {
+    const float size = 14.0f;   // proportional with the ~1.5x bigger pills
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        return lnf->appFont (12.0f, juce::Font::plain);
-    return juce::Font (juce::FontOptions (12.0f));
+        return lnf->appFont (size, juce::Font::plain);
+    return juce::Font (juce::FontOptions (size));
 }
 
 void CentralModBar::resized()
 {
-#if JUCE_IOS
-    // iOS: the pill row scrolls horizontally inside the Viewport. Size the
-    // scrolled content to its full no-clip preferred width, then position the
-    // pills + segment backgrounds within it (the Viewport clips/scrolls).
+    // The pill row scrolls horizontally inside the Viewport, flanked by the
+    // `<` / `>` nav pills. Size the scrolled content to its full no-clip
+    // preferred width, then position the pills + segment backgrounds within it
+    // (the Viewport clips/scrolls). The nav pills sit at the bar's two ends and
+    // stay fixed while the viewport scrolls between them.
     if (viewport_ != nullptr && pillContent_ != nullptr)
     {
-        viewport_->setBounds (getLocalBounds());
+        const auto b = getLocalBounds();
+        const int navH = juce::jmin (kPillH, b.getHeight());
+        const int navY = b.getY() + (b.getHeight() - navH) / 2;
+        if (navPrev_ != nullptr) navPrev_->setBounds (b.getX(), navY, kNavW, navH);
+        if (navNext_ != nullptr) navNext_->setBounds (b.getRight() - kNavW, navY, kNavW, navH);
+        viewport_->setBounds (b.withTrimmedLeft (kNavW + kNavGap).withTrimmedRight (kNavW + kNavGap));
         const int contentW = computeLayout (false);   // full no-clip width
         pillContent_->setSize (contentW, kBarHeight);
         computeLayout (true);                         // position pills + segment rects
         pillContent_->repaint();
+        updateNavEnabled();
     }
-#else
-    computeLayout (true);
-#endif
 }
 
 int CentralModBar::preferredWidth() const
@@ -439,19 +446,19 @@ int CentralModBar::preferredWidth() const
 int CentralModBar::computeLayout (bool positionChildren) const
 {
     const juce::Font f = pillFont();
-    const int        yOff = (kBarHeight - kPillH) / 2;   // vertical centre of the pills
+    const int        pillY = kSegVPad + kLabelTabH + kLabelTabGap;   // pills sit BELOW the coloured tab
 
     const auto& clusters = parvati::clustersInOrder();
 
     int x = kEdgePad;
     size_t idx = 0;   // walks kAllSources, which is already in cluster order
 
-#if JUCE_IOS
-    // ---- iOS: group each cluster into a LABELLED segment background ----
+    // ---- group each cluster into a LABELLED segment background ----
     if (positionChildren)
     {
         segmentRects_.clearQuick();
         segmentLabels_.clearQuick();
+        segmentClusters_.clearQuick();
     }
 
     for (size_t ci = 0; ci < clusters.size(); ++ci)
@@ -468,8 +475,7 @@ int CentralModBar::computeLayout (bool positionChildren) const
             x += (prevGen && ! thisGen) ? kSideGap : kClusterGap;
         }
 
-        const int segStart = x;
-        x += kSegLabelW + kSegLabelGap;   // reserve the cluster label area
+        const int segStart = x;   // pills now start at segStart (no horizontal label reservation)
 
         // Pills belonging to this cluster (kAllSources is ordered to match).
         bool first = true;
@@ -480,79 +486,65 @@ int CentralModBar::computeLayout (bool positionChildren) const
 
             const int w = pills_[idx]->widthForFont (f);
             if (positionChildren)
-                pills_[idx]->setBounds (x, yOff, w, kPillH);
+                pills_[idx]->setBounds (x, pillY, w, kPillH);
             x += w;
         }
 
         if (positionChildren)
         {
+            // The coloured label TAB header sits at the top of the cluster column
+            // (full cluster width, tab height); the pills are positioned below it.
             segmentRects_.add (juce::Rectangle<int> (segStart - kSegPad, kSegVPad,
                                                      x - segStart + 2 * kSegPad,
-                                                     kBarHeight - 2 * kSegVPad));
+                                                     kLabelTabH));
             segmentLabels_.add (clusterShortLabel (c));
+            segmentClusters_.add (c);
         }
     }
 
     return x + kEdgePad;   // right edge padding
-#else
-    for (size_t ci = 0; ci < clusters.size(); ++ci)
-    {
-        const parvati::Cluster c = clusters[ci];
-
-        // Separator BEFORE this cluster (skipped before the very first): the
-        // normal inter-cluster gap, EXCEPT at the generators->drag-only split,
-        // where a larger kSideGap clearly separates the two halves of the bar.
-        if (ci > 0)
-        {
-            const bool prevGen = parvati::isGeneratorCluster (clusters[ci - 1]);
-            const bool thisGen = parvati::isGeneratorCluster (c);
-            x += (prevGen && ! thisGen) ? kSideGap : kClusterGap;
-        }
-
-        // Pills belonging to this cluster (kAllSources is ordered to match).
-        // No caption — clusters are identified by their family-coloured
-        // underline (see ModPill::paint).
-        bool first = true;
-        for (; idx < parvati::kAllSources.size() && parvati::kAllSources[idx].cluster == c; ++idx)
-        {
-            if (! first) x += kPillGap;
-            first = false;
-
-            const int w = pills_[idx]->widthForFont (f);
-            if (positionChildren)
-                pills_[idx]->setBounds (x, yOff, w, kPillH);
-            x += w;
-        }
-    }
-
-    return x + kEdgePad;   // right edge padding
-#endif
 }
 
-#if JUCE_IOS
+void CentralModBar::scrollPills (int deltaPx)
+{
+    if (viewport_ == nullptr || pillContent_ == nullptr)
+        return;
+    const int cur = viewport_->getViewPositionX();
+    const int max = juce::jmax (0, pillContent_->getWidth() - viewport_->getViewWidth());
+    viewport_->setViewPosition (juce::jlimit (0, max, cur + deltaPx), 0);
+    updateNavEnabled();
+}
+
+void CentralModBar::updateNavEnabled()
+{
+    if (viewport_ == nullptr || pillContent_ == nullptr)
+        return;
+    const int cur = viewport_->getViewPositionX();
+    const int max = juce::jmax (0, pillContent_->getWidth() - viewport_->getViewWidth());
+    if (navPrev_) navPrev_->setEnabled (cur > 0);
+    if (navNext_) navNext_->setEnabled (cur < max - 1);
+}
+
 void CentralModBar::paintSegments (juce::Graphics& g) const
 {
-    const auto&      t = theme();
-    const juce::Font lf = pillFont();
+    const auto& t = theme();
 
     // Fill the scrolled content with the bar background so the gaps between /
-    // around the segment backgrounds read as one continuous bar.
+    // around the cluster tabs read as one continuous bar.
     g.fillAll (t.backgroundBase);
 
-    // One rounded segment background per cluster, with its short label drawn in
-    // the reserved left area (HIG #1 category grouping).
+    // One small COLOURED LABEL TAB header per cluster (its family colour + short
+    // label), sitting above the pills — replaces the former full-height 'cube'.
+    const juce::Font tabFont = juce::Font (juce::FontOptions (9.0f)).boldened();
     for (int i = 0; i < segmentRects_.size(); ++i)
     {
-        const auto& seg = segmentRects_.getReference (i);
-        g.setColour (t.tabUnselectedBg.brighter (0.06f));
-        g.fillRoundedRectangle (seg.toFloat().reduced (0.5f), 6.0f);
+        const auto& seg = segmentRects_.getReference (i);   // the tab rect (top of the cluster column)
+        g.setColour (parvati::clusterAccent (segmentClusters_.getReference (i), t));
+        g.fillRoundedRectangle (seg.toFloat().reduced (0.5f), 4.0f);
 
-        const juce::Rectangle<int> labelArea (seg.getX() + kSegPad, seg.getY(),
-                                               kSegLabelW, seg.getHeight());
-        g.setColour (t.textSecondary);
-        g.setFont (lf);
-        g.drawText (segmentLabels_.getReference (i), labelArea,
+        g.setColour (t.backgroundBase);   // dark text reads on every saturated family colour
+        g.setFont (tabFont);
+        g.drawText (segmentLabels_.getReference (i), seg,
                     juce::Justification::centred, true);
     }
 }
-#endif

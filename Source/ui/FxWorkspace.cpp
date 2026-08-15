@@ -32,7 +32,6 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
     // needs no wiring here — it carries the "parvatiModSrc:<enum>" payload.
     modBar_->setOnPillClicked ([this] (int src)
     {
-#if JUCE_IOS
         // Tap-to-assign mode: a pill tap selects this mod source for the next
         // dest tap and SUPPRESSES the generator-page flip (assign mode is
         // focused). Bar-only sentinels (src < 0, e.g. the Note Sequencer) are
@@ -43,7 +42,6 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
                 ParamControl::setTapSelectedSource (src);
             return;
         }
-#endif
         if (parvati::entryFor (src).isGenerator)
             setActiveGenerator (src);
         else if (onDragOnlyPillClicked_)
@@ -183,15 +181,10 @@ void FxWorkspace::resized()
     // ---- 3 rows: TOP (slots) | MIDDLE (bar) | BOTTOM (generators | matrix) ----
     // Mirrors SynthWorkspace: the bar is a fixed-height full-width seam; the
     // remaining height splits between the top main row and the bottom row.
-#if JUCE_IOS
-    // iOS: the FX slot cards get slightly less of the remaining height
-    // (~0.42 vs the symmetric 0.5) so each card is literally shorter and the
-    // freed height goes to the bottom (matrix + generator editor). Desktop keeps
-    // the symmetric split.
-    constexpr float kTopRatio = 0.42f;
-#else
-    constexpr float kTopRatio = 0.5f;
-#endif
+    // The FX slot cards get slightly less of the remaining height (0.40 vs a
+    // symmetric 0.5) so each card is shorter and the freed height goes to the
+    // bottom (matrix + generator editor).
+    constexpr float kTopRatio = 0.40f;
     const int remaining = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
     const int mainH = juce::roundToInt (static_cast<float> (remaining) * kTopRatio);
 
@@ -208,12 +201,12 @@ void FxWorkspace::resized()
     // workspace edges — mirroring how the synth page's kMargin insets its
     // GroupComponent cards. Each card gets the remaining height and sizes its
     // knobs/visualizer internally.
-    constexpr int kGap = 10;
+    constexpr int kGap = 8;
     auto inner = mainRow.reduced (kGap);
     if (! inner.isEmpty())
     {
         const int innerW = inner.getWidth();
-        const int routeW = juce::jlimit (210, 320, (innerW - 3 * kGap) * 20 / 100);
+        const int routeW = juce::jlimit (176, 248, (innerW - 3 * kGap) * 16 / 100);
         const int cardsRegionW = juce::jmax (0, innerW - routeW - 3 * kGap);
         const int cardW = cardsRegionW / 3;
 
@@ -224,7 +217,7 @@ void FxWorkspace::resized()
         const juce::Rectangle<int> routeCol (x0, y0, routeW, h0);
         const juce::Rectangle<int> fx1Col   (x0 + routeW + kGap,                    y0, cardW, h0);
         const juce::Rectangle<int> fx2Col   (x0 + routeW + kGap + cardW + kGap,     y0, cardW, h0);
-        const int fx3x = x0 + routeW + 2 * kGap + 2 * cardW;
+        const int fx3x = x0 + routeW + 3 * kGap + 2 * cardW;   // 3 gaps between 4 columns (ROUTE/FX1/FX2/FX3)
         const juce::Rectangle<int> fx3Col   (fx3x, y0, juce::jmax (0, x0 + innerW - fx3x), h0);
 
         if (fxRoutingBar_ != nullptr)

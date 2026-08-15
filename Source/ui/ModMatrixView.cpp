@@ -9,9 +9,7 @@
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // appFont() via the inherited editor L&F
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_*, MOD_DST_*, kNumModulations
-#if JUCE_IOS
 #include "PluginEditor.h"   // ParamControl (tap-to-assign state)
-#endif
 
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachments + AudioParameterChoice
 
@@ -204,11 +202,10 @@ struct ModSourceDragGrip : public juce::Component,
         ddc->startDragging ("parvatiModSrc:" + juce::String (src), this, buildDragImage(), true);
     }
 
-#if JUCE_IOS
     // Tap-to-assign: a clean tap (no drag) selects this row's mod source for
     // the next dest tap. Mirrors the CentralModBar pill's clean-tap detection
-    // (! dragStarted_ + small movement). The whole method is iOS-only so the
-    // desktop grip gains no new virtual override.
+    // (! dragStarted_ + small movement). Available on all platforms; inert
+    // unless [MOD] tap-to-assign is toggled on (tapAssignActive()).
     void mouseUp (const juce::MouseEvent& e) override
     {
         if (ParamControl::tapAssignActive() && ! dragStarted_ && e.getDistanceFromDragStart() <= 5)
@@ -218,7 +215,6 @@ struct ModSourceDragGrip : public juce::Component,
                 ParamControl::setTapSelectedSource (src);
         }
     }
-#endif
 
 private:
     // A small themed drag image composited under the cursor: the source's
@@ -492,13 +488,8 @@ struct ModMatrixRow : public juce::Component,
 
         indexLabel_.setBounds (b.removeFromLeft (18));
         b.removeFromLeft (4);
-#if JUCE_IOS
-        dragGrip_->setBounds (b.removeFromLeft (44));   // HIG drag-grip touch target
+        dragGrip_->setBounds (b.removeFromLeft (44));   // drag-grip touch target (unified)
         b.removeFromLeft (8);
-#else
-        dragGrip_->setBounds (b.removeFromLeft (14));
-        b.removeFromLeft (4);
-#endif
 
         // Source + dest combos: proportional, floored so the choice text stays legible.
         const int comboW = juce::jmax (70, b.getWidth() / 5);
@@ -508,13 +499,8 @@ struct ModMatrixRow : public juce::Component,
         b.removeFromLeft (8);
 
         // Right-aligned controls: Mute, Clear, value, then slider fills the rest.
-#if JUCE_IOS
-        muteButton_.setBounds (b.removeFromRight (44));   // HIG mute touch target
+        muteButton_.setBounds (b.removeFromRight (44));   // mute touch target (unified)
         b.removeFromRight (8);
-#else
-        muteButton_.setBounds (b.removeFromRight (30));
-        b.removeFromRight (6);
-#endif
         clearButton_.setBounds (b.removeFromRight (juce::jmax (44, b.getWidth() / 8)));
         b.removeFromRight (8);
         valueLabel_.setBounds (b.removeFromRight (46));

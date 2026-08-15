@@ -118,18 +118,18 @@ inline constexpr std::array<SourceEntry, 32> kAllSources =
     { ambika::dsp::MOD_SRC_NOTE,       "KEY", "Note",       Cluster::Perf, false },
     // --- Util (drag-only) ---
     { ambika::dsp::MOD_SRC_GATE,   "GATE", "Gate",   Cluster::Util, false },
-    { ambika::dsp::MOD_SRC_NOISE,  "NOIS", "Noise",  Cluster::Util, false },
+    { ambika::dsp::MOD_SRC_NOISE,  "NOIZ", "Noise",  Cluster::Util, false },
     { ambika::dsp::MOD_SRC_RANDOM, "RND",  "Random", Cluster::Util, false },
     // --- Const (drag-only). Labels show the ACTUAL value each constant writes
     // (CONSTANT_256 writes 255, etc. — see dsp/voice.cpp) so a pill reads as a
     // modulation amount, not an arbitrary index. Ascending by value. ---
-    { ambika::dsp::MOD_SRC_CONSTANT_4,   "C4",   "Constant 4",   Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_8,   "C8",   "Constant 8",   Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_16,  "C16",  "Constant 16",  Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_32,  "C32",  "Constant 32",  Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_64,  "C64",  "Constant 64",  Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_128, "C128", "Constant 128", Cluster::Const, false },
-    { ambika::dsp::MOD_SRC_CONSTANT_256, "C255", "Constant 255", Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_4,   "4",   "Constant 4",   Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_8,   "8",   "Constant 8",   Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_16,  "16",  "Constant 16",  Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_32,  "32",  "Constant 32",  Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_64,  "64",  "Constant 64",  Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_128, "128", "Constant 128", Cluster::Const, false },
+    { ambika::dsp::MOD_SRC_CONSTANT_256, "255", "Constant 255", Cluster::Const, false },
 }};
 
 // Look up the catalogue entry for a MOD_SRC_* enum value (0..MOD_SRC_LAST-1)

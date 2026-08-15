@@ -17,14 +17,14 @@ namespace
     constexpr int kPad        = 6;    // card edge inset (matches the FX-slot cards)
     constexpr float kCorner   = 7.0f; // card panel corner radius (synth GroupComponent parity)
     constexpr int kHeaderH    = 16;   // header band (painted "FX ROUTING" title)
-    constexpr int kGap        = 8;    // vertical gap between sections
+    constexpr int kGap        = 6;    // vertical gap between sections
     constexpr int kLabelH     = 14;   // "Dry/Wet" caption height
     constexpr int kKnobSize   = 52;   // Mix rotary dial (synth-parity)
     constexpr int kStepBtnW   = 24;   // ◀ ▶ topology stepper width
     constexpr int kStepBtnH   = 28;   // ◀ ▶ topology stepper height
-    constexpr int kFlowRowH   = 56;   // [◀][flow diagram][▶] row height
-    constexpr int kCtrlRowH   = 70;   // [Dry/Wet knob] row height
-    constexpr int kEqRowH     = 58;   // [Low][Mid][High] EQ knob row height
+    constexpr int kFlowRowH   = 50;   // [◀][flow diagram][▶] row height (tightened)
+    constexpr int kCtrlRowH   = 58;   // [Dry/Wet knob] row height (tightened)
+    constexpr int kEqRowH     = 52;   // [Low][Mid][High] EQ knob row height (tightened)
     constexpr int kEqKnobSize = 42;   // EQ rotary dial (compact)
 
 // FX master-EQ / mix readout strings (compact, <=5 chars, no space -> fit the
@@ -386,7 +386,7 @@ void FxRoutingBar::resized()
                      + (eqH   > 0 ? kGap + eqH   : 0)
                      + (ctrlH > 0 ? kGap + ctrlH : 0);
     if (area.getHeight() > blockH)
-        area.removeFromTop ((area.getHeight() - blockH) / 2);
+        area.removeFromTop (juce::jmin ((area.getHeight() - blockH) / 2, 10));   // cap dead space (tighter)
 
     // ---- Flow row: [◀][flow diagram][▶] horizontally centred (FlexBox) ----
     if (flowH > 0 && flowDiagram_ != nullptr)

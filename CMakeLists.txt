@@ -256,6 +256,28 @@ if(PARVATI_IOS)
             RESULT_VARIABLE _parvati_ios_plist_rc ERROR_QUIET OUTPUT_QUIET)
     endif()
 
+    # Lock orientation to landscape-only (the UI has no portrait layout). JUCE's
+    # default plist lists Portrait+Landscape; replace BOTH the iPhone and iPad
+    # orientation arrays with the two landscape values so the launch orientation
+    # and App Store metadata match the runtime Desktop::setOrientationsEnabled
+    # lock. Idempotent: juceaide regenerates the plist each configure, so Delete
+    # finds the JUCE-default array present and re-Adds landscape-only; ERROR_QUIET
+    # guards the ~ipad Delete on a plist that lacks that key.
+    if(EXISTS "${_parvati_ios_plist}")
+        execute_process(
+            COMMAND /usr/libexec/PlistBuddy
+                -c "Delete :UISupportedInterfaceOrientations"
+                -c "Add :UISupportedInterfaceOrientations array"
+                -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationLandscapeLeft"
+                -c "Add :UISupportedInterfaceOrientations:1 string UIInterfaceOrientationLandscapeRight"
+                -c "Delete :UISupportedInterfaceOrientations~ipad"
+                -c "Add :UISupportedInterfaceOrientations~ipad array"
+                -c "Add :UISupportedInterfaceOrientations~ipad:0 string UIInterfaceOrientationLandscapeLeft"
+                -c "Add :UISupportedInterfaceOrientations~ipad:1 string UIInterfaceOrientationLandscapeRight"
+                "${_parvati_ios_plist}"
+            RESULT_VARIABLE _parvati_ios_orient_rc ERROR_QUIET OUTPUT_QUIET)
+    endif()
+
     # SharedContainer.mm is the Obj-C++ resolver for the App-Group container
     # (NSFileManager containerURLForSecurityApplicationGroupIdentifier). It is
     # iOS-only; the desktop path lives in the globbed SharedContainer.cpp and is

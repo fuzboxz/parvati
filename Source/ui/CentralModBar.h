@@ -15,6 +15,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "ModSourceCatalog.h"   // parvati::Cluster (per-segment family colour in paintSegments)
 
 #include <functional>
 #include <memory>
@@ -28,17 +29,15 @@ class CentralModBar : public juce::Component
 {
 public:
     /** Fixed total bar height (host sets the component height to this). */
-#if JUCE_IOS
-    // iOS HIG: a taller bar (58pt) hosts 50pt pills grouped into labelled
+    // A taller bar (82pt) hosts ~1.5x bigger (72pt) pills grouped into labelled
     // category segments, and the pill row scrolls horizontally inside a
-    // juce::Viewport so 25+ 50pt pills never widen the editor. kPillH / kPillGap
-    // are exposed here so the HIG sizing-contract test can assert them.
-    static constexpr int kBarHeight = 58;
-    static constexpr int kPillH     = 50;   // iOS HIG touch-target height
-    static constexpr int kPillGap   = 8;    // iOS HIG minimum spacing
-#else
-    static constexpr int kBarHeight = 38;
-#endif
+    // juce::Viewport so 25+ 72pt pills never widen the editor. Scrolling is driven
+    // by prominent `<` / `>` nav pills (not a scrollbar). kPillH / kPillGap are
+    // exposed here so the sizing-contract test can assert them. Single UI on all
+    // platforms (the former compact desktop bar is gone).
+    static constexpr int kBarHeight = 92;   // taller bar: ~1.5x pills + a coloured label tab above them + nav arrows
+    static constexpr int kPillH     = 72;   // ~1.5x bigger blips (was 50)
+    static constexpr int kPillGap   = 8;    // minimum pill spacing
 
     explicit CentralModBar (ThemeManager& themeManager);
     ~CentralModBar() override;
@@ -75,15 +74,13 @@ private:
     /** Forwards a pill click to the registered callback. */
     void invokeClicked (int modSrcEnum);
 
-#if JUCE_IOS
     /** The scrolled content of the horizontal Viewport (painted: segment
         backgrounds + cluster labels), defined in the .cpp. */
     struct PillContent;
 
-    /** Draws the per-cluster segment backgrounds + short labels on the iOS
-        scrolled content (coordinates match computeLayout's pill positions). */
+    /** Draws the per-cluster segment backgrounds + short labels on the scrolled
+        content (coordinates match computeLayout's pill positions). */
     void paintSegments (juce::Graphics&) const;
-#endif
 
     /**
         Lays the 7 clusters out left -> right. When @p positionChildren is true
@@ -101,19 +98,24 @@ private:
     std::vector<std::unique_ptr<ModPill>> pills_;
     int activeEnum_ = -1;
 
-#if JUCE_IOS
-    // iOS horizontal-scroll wrapper + its viewed content (pills are children of
-    // the content, not of this bar, so the bar clips/scrolls them). PillContent
-    // is defined in the .cpp; forward-declared above.
+    // Horizontal-scroll wrapper + its viewed content (pills are children of the
+    // content, not of this bar, so the bar clips/scrolls them). PillContent is
+    // defined in the .cpp; forward-declared above.
     std::unique_ptr<juce::Viewport> viewport_;
     std::unique_ptr<PillContent>    pillContent_;
 
+    // `<` / `>` nav pills that page-scroll the viewport (replacing the scrollbar).
+    std::unique_ptr<juce::ShapeButton> navPrev_;
+    std::unique_ptr<juce::ShapeButton> navNext_;
+    void scrollPills (int deltaPx);   // page-scroll the viewport by deltaPx (clamped)
+    void updateNavEnabled();          // enable/disable nav buttons at the scroll ends
+
     // Per-cluster segment background rects + short labels (populated by
-    // computeLayout on iOS, read by paintSegments). Mutable because
+    // computeLayout, read by paintSegments). Mutable because
     // computeLayout/preferredWidth are const.
     mutable juce::Array<juce::Rectangle<int>> segmentRects_;
     mutable juce::Array<juce::String>         segmentLabels_;
-#endif
+    mutable juce::Array<parvati::Cluster>     segmentClusters_;   // per-segment cluster (the tab's family colour)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CentralModBar)
 };

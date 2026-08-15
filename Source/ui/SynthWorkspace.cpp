@@ -27,18 +27,16 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     // needs no wiring here — it carries the "parvatiModSrc:<enum>" payload.
     modBar_->setOnPillClicked ([this] (int src)
     {
-#if JUCE_IOS
         // Tap-to-assign mode: a pill tap selects this mod source for the next
         // dest tap and SUPPRESSES the generator-page flip (assign mode is
         // focused). Bar-only sentinels (src < 0, e.g. the Note Sequencer) are
-        // never a valid mod source and are skipped.
+        // never a valid mod source and are skipped. Inert unless [MOD] is on.
         if (ParamControl::tapAssignActive())
         {
             if (src >= 0)
                 ParamControl::setTapSelectedSource (src);
             return;
         }
-#endif
         if (parvati::entryFor (src).isGenerator)
             setActiveGenerator (src);
         else if (onDragOnlyPillClicked_)
@@ -182,7 +180,7 @@ void SynthWorkspace::resized()
     // The bar is a fixed-height full-width seam; the remaining height splits
     // evenly between the top main row and the bottom row (as the prior 50/50).
     const int remaining = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
-    const int mainH = remaining / 2;
+    const int mainH = juce::roundToInt (static_cast<float> (remaining) * 0.40f);   // match FxWorkspace so SYNTH<->FX doesn't reflow
 
     auto mainRow  = area.removeFromTop (mainH);
     auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);

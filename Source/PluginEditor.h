@@ -57,9 +57,7 @@ class ParamControl : public juce::Component,
                      public juce::TooltipClient,
                      public juce::AudioProcessorValueTreeState::Listener,
                      public juce::DragAndDropTarget
-#if JUCE_IOS
-                   , private juce::Timer   // iOS long-press -> context menu
-#endif
+                   , private juce::Timer   // long-press -> context menu (armed on touch only)
 {
 public:
     ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
@@ -107,8 +105,7 @@ public:
     // (mirrors setTooltipsEnabled / reapplyCategoryColours). Restored (full
     // alpha, ring cleared) the instant the drag ends.
     static void   setModDragActive (bool active);
-#if JUCE_IOS
-    // ---- Tap-to-assign modulation (iPad) ----
+    // ---- Tap-to-assign modulation ----
     // iPad has no drag-and-drop, so modulation routing is reached by toggling
     // [MOD] ON, tapping a mod source, then tapping a destination knob. The dest
     // tap calls the SAME assign seam itemDropped uses
@@ -126,21 +123,18 @@ public:
     // timer) returns the text while the budget lasts, or empty once expired.
     static void        postTransientStatus (const juce::String& text, int frames);
     static juce::String tickTransientStatus();
-#endif
 
     // Right-click (popup) on this cell — or on its child Slider/ComboBox, which
     // registers `this` as a MouseListener (Component is already a MouseListener,
     // so no extra base is needed) — shows a context menu (Reset to default /
     // Randomize). Non-popup clicks fall through to normal interaction.
     void mouseDown (const juce::MouseEvent& e) override;
-#if JUCE_IOS
     // Touch long-press -> context menu. iPad has no right-click, so Reset /
     // Randomize (the desktop right-click menu) is reached by holding a knob for
     // ~450ms. Dragging past a small threshold or releasing cancels the pending
     // menu; the timer is a ParamControl member (private juce::Timer base).
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp   (const juce::MouseEvent& e) override;
-#endif
 
     // Hover highlight: mousing over a mod-destination knob publishes its dest on
     // the editor-scoped ModMatrixHighlight bus so every matching matrix row
@@ -203,12 +197,10 @@ public:
 
 private:
     void showContextMenu();
-#if JUCE_IOS
     // juce::Timer: fires ~450ms into an unmoving touch to ARM the long-press
     // menu. The menu itself opens on finger release (mouseUp) so a modal popup
     // never strands a mid-drag Slider. Desktop never starts the timer.
     void timerCallback() override;
-#endif
     void resetToDefault();
     void randomize();
 
@@ -299,18 +291,14 @@ private:
     juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
     static bool tooltipsEnabled_;   // toggled from the Settings panel
     static bool modDragActive_;     // true while a parvatiModSrc drag is in flight
-#if JUCE_IOS
     static bool tapAssignActive_;       // [MOD] toggle ON -> reuse the drop-zone affordance
     static int  tapSelectedSource_;     // MOD_SRC_* tapped on a source; -1 = none yet
     static juce::String transientStatusText_;   // transient status-strip text (e.g. "Mod Matrix full")
     static int  transientStatusFrames_;         // frame budget for the transient status
-#endif
 
     juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
-#if JUCE_IOS
     juce::Point<int> longPressStart_;     // screen pos where the touch began (matches MouseEvent::getScreenPosition)
     bool longPressArmed_ = false;         // set in timerCallback; menu opens on mouseUp (see .cpp)
-#endif
     juce::String displayLabelOverride_;   // empty => use displayLabelFor (desc_.paramID, desc_.label)
     juce::String lengthParamID_;     // sibling length param; empty for non-steps
 
@@ -456,14 +444,9 @@ private:
     // Layout constants (pixels). Tight margins / gaps / insets keep every page
     // dense (high component density, minimal whitespace), matching the compact
     // SEQ page rather than the sparse look the wider values produced. kMargin is
-    // public + iOS-gated (8pt on iOS to tighten page padding for the taller
-    // header/bar; 10pt desktop) so the HIG sizing-contract test can assert it.
+    // public so the sizing-contract test can assert it.
 public:
-#if JUCE_IOS
-    static constexpr int kMargin      = 8;
-#else
-    static constexpr int kMargin      = 10;  // page edge padding
-#endif
+    static constexpr int kMargin      = 8;   // page edge padding (unified)
 private:
     static constexpr int kGroupGap    = 8;   // gap between group panels (h + v)
     static constexpr int kGroupPad    = 8;   // inset inside a group border
@@ -677,13 +660,11 @@ private:
     juce::TextButton zoomInButton_    { "+" };
     juce::TextButton zoomOutButton_   { "-" };
     juce::TextButton zoomResetButton_ { "0" };
-#if JUCE_IOS
-    // iOS: the three zoom buttons (+/-/0) are folded into one "..." overflow
+    // The three zoom buttons (+/-/0) are folded into one "..." overflow
     // that opens a 44pt-row popup, so the grown (44pt) icon cluster still fits
     // the 1280pt editor width. The three zoom buttons stay constructed (their
     // logic is reused) but are not placed on iOS.
     juce::TextButton zoomOverflowButton_ { "..." };
-#endif
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Top bar: Part selector (bound to the `part_select` APVTS param).
@@ -698,9 +679,7 @@ private:
     int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Patch
     juce::TextButton globalButton_ { "Patch" }; // header button -> Patch page overlay (hosts the Section::Global ParamPage; not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
-#if JUCE_IOS
-    juce::TextButton modAssignButton_ { "MOD" };  // header toggle: tap-to-assign modulation mode (iPad)
-#endif
+    juce::TextButton modAssignButton_ { "MOD" };  // header toggle: tap-to-assign modulation mode
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
     // Top header: brand icon + white "Parvati" wordmark (painted, left) + version label (inline right).
@@ -718,13 +697,8 @@ private:
     // Exposed public (access-only; no symbol/codegen change) so the HIG sizing-
     // contract test can static_assert these values per platform.
 public:
-#if JUCE_IOS
     static constexpr int kBarHeight   = 44;   // full-height icon strip (44pt targets)
-    static constexpr int kHeaderH     = 44;   // HIG header height
-#else
-    static constexpr int kBarHeight   = 34;
-    static constexpr int kHeaderH     = 40;   // compact header: icon + "Parvati" + version (left) | Patch/Part (centre) | icons (right)
-#endif
+    static constexpr int kHeaderH     = 44;   // header height (unified)
 private:
     static constexpr int kPageTabsH   = 28;  // top-level [SYNTH | GLOBAL] page-selector strip
     static constexpr int kKeyboardH   = 104;  // bottom virtual-keyboard strip

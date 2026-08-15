@@ -52,10 +52,7 @@ namespace ParvatiLogo {
 // resized() with the SAME font paint() uses so the logo/version/centre/right
 // header cluster stays byte-stable.
 constexpr const char* kLogoText       = "Parvati";
-constexpr float       kLogoTextHeight = 22.0f;   // bold sans-serif cap height in the 34px header bar
-constexpr int         kLogoIconSize   = 28;      // square brand icon (~header bar height, aspect preserved)
-constexpr int         kLogoIconGap      = 2;       // gap between the icon and the version label
-constexpr int         kLogoTextIconGap  = 8;       // gap between "Parvati" text and the icon (a touch more room)
+constexpr float       kLogoTextHeight = 22.0f;   // bold sans-serif cap height in the header bar
 
 // Re-apply each Label's font in the component tree (same height/style, default
 // family) so each re-resolves its typeface through the active L&F after a
@@ -139,12 +136,10 @@ juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
 //==============================================================================
 bool ParamControl::tooltipsEnabled_ = true;
 bool ParamControl::modDragActive_    = false;
-#if JUCE_IOS
 bool        ParamControl::tapAssignActive_      = false;
 int         ParamControl::tapSelectedSource_    = -1;
 juce::String ParamControl::transientStatusText_;
 int         ParamControl::transientStatusFrames_ = 0;
-#endif
 
 namespace
 {
@@ -614,7 +609,6 @@ void ParamControl::setModDragActive (bool active)
         c->applyModDragAffordance();
 }
 
-#if JUCE_IOS
 void ParamControl::setTapAssignActive (bool active)
 {
     // [MOD] toggle entry. Reuses the existing drop-zone affordance (ring on
@@ -656,7 +650,6 @@ juce::String ParamControl::tickTransientStatus()
     }
     return {};
 }
-#endif
 
 void ParamControl::applyCategoryArcColour()
 {
@@ -1080,28 +1073,34 @@ void ParamControl::mouseDown (const juce::MouseEvent& e)
         showContextMenu();
         return;
     }
-#if JUCE_IOS
-    // Touch: there is no right-click, so Reset/Randomize is reached via a
-    // long-press. Start a ~450ms timer on press; if the finger stays put, the
-    // timer ARMS the menu (longPressArmed_) but does NOT open it mid-drag — a
-    // modal popup opened while the Slider is mid-drag would strand it (its
-    // mouseUp would land on the popup). The menu opens on finger release
-    // (mouseUp), after the Slider has cleanly ended its drag. A drag past a
-    // small threshold cancels a pending/armed long-press.
-    longPressStart_ = e.getScreenPosition();
-    longPressArmed_ = false;
-    startTimer (450);
+    if (e.source.isTouch())
+    {
+        // Touch: there is no right-click, so Reset/Randomize is reached via a
+        // long-press. Start a ~450ms timer on press; if the finger stays put, the
+        // timer ARMS the menu (longPressArmed_) but does NOT open it mid-drag — a
+        // modal popup opened while the Slider is mid-drag would strand it (its
+        // mouseUp would land on the popup). The menu opens on finger release
+        // (mouseUp), after the Slider has cleanly ended its drag. A drag past a
+        // small threshold cancels a pending/armed long-press.
+        // Long-press Reset/Randomize is a KNOB feature. A ComboBox opens its
+        // own popup on tap, so never arm the long-press there — it would fire
+        // under/over the combo popup and make dropdown taps feel flaky.
+        if (slider_ != nullptr)
+        {
+            longPressStart_ = e.getScreenPosition();
+            longPressArmed_ = false;
+            startTimer (450);
+        }
 
-    // Touch has no hover, so surface this parameter's help text inline in the
-    // status strip on every touch (~3s). A value change needs a DRAG (not a
-    // tap), so a user can tap-to-learn what a control does without altering it.
-    // Respects the global tooltipsEnabled_ toggle; skips empty help.
-    if (tooltipsEnabled_ && helpText_.isNotEmpty())
-        postTransientStatus (helpText_, 90);
-#endif
+        // Touch has no hover, so surface this parameter's help text inline in the
+        // status strip on every touch (~3s). A value change needs a DRAG (not a
+        // tap), so a user can tap-to-learn what a control does without altering it.
+        // Respects the global tooltipsEnabled_ toggle; skips empty help.
+        if (tooltipsEnabled_ && helpText_.isNotEmpty())
+            postTransientStatus (helpText_, 90);
+    }
 }
 
-#if JUCE_IOS
 void ParamControl::mouseDrag (const juce::MouseEvent& e)
 {
     // An intentional knob drag (finger moved past a small threshold) cancels a
@@ -1132,7 +1131,7 @@ void ParamControl::mouseUp (const juce::MouseEvent& e)
     // dest via the SAME seam itemDropped uses (no drag on touch). A value-drag
     // of the knob (>5 px) is NOT an assign — the slider just changes its value.
     // Stays in mode for more routings; clears the selected source each time.
-    // (This whole mouseUp is iOS-only — see the surrounding #if JUCE_IOS.)
+    // (Long-press fires only on touch; tap-assign runs when [MOD] is on.)
     if (tapAssignActive_ && isModDestKnob_ && e.getDistanceFromDragStart() <= 5)
     {
         if (tapSelectedSource_ < 0)
@@ -1146,9 +1145,7 @@ void ParamControl::mouseUp (const juce::MouseEvent& e)
         tapSelectedSource_ = -1;   // consumed; stay in mode for another routing
     }
 }
-#endif
 
-#if JUCE_IOS
 void ParamControl::timerCallback()
 {
     // The finger held still long enough for a long-press. ARM the menu but do
@@ -1158,7 +1155,6 @@ void ParamControl::timerCallback()
     stopTimer();
     longPressArmed_ = true;
 }
-#endif
 
 void ParamControl::showContextMenu()
 {
@@ -2105,6 +2101,13 @@ void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
 ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     : juce::AudioProcessorEditor (&p), processorRef_ (p), loadMouseListener_ (p)
 {
+    // The UI is landscape-only (no portrait layout exists). Lock the device to
+    // the two landscape orientations. The iOS/Android peer consults this live in
+    // its supportedInterfaceOrientations (see juce_UIViewComponentPeer_ios.mm);
+    // on desktop it is a harmless no-op (no device rotation).
+    juce::Desktop::getInstance().setOrientationsEnabled (
+        juce::Desktop::rotatedClockwise | juce::Desktop::rotatedAntiClockwise);
+
     // Install the persisted chrome language BEFORE building the UI, so every
     // TRANS() below resolves to the right language at construction. English (and
     // "auto" on an English locale) clears the mappings => TRANS() is the
@@ -2216,8 +2219,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
     zoomResetButton_.onClick = [this] { applyZoom (1.0); };
     addAndMakeVisible (zoomResetButton_);
-#if JUCE_IOS
-    // iOS overflow: one "..." button opens a 44pt-row popup holding the three
+    // Zoom overflow: one "..." button opens a 44pt-row popup holding the three
     // zoom actions, so the grown (44pt) icon cluster still fits the 1280pt
     // editor width. The three zoom buttons above stay constructed (their logic
     // is reused here) but are not placed on iOS (see resized()).
@@ -2235,7 +2237,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                          nullptr);
     };
     addAndMakeVisible (zoomOverflowButton_);
-#endif
 
     // ---- Top bar: Part selector (bound to the `part_select` APVTS param) ----
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
@@ -2651,14 +2652,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (kbdToggleButton_);
 
-#if JUCE_IOS
-    // ---- [MOD] header toggle: tap-to-assign modulation (iPad) ----
-    // iPad has no drag-and-drop, so modulation routing is reached by toggling
-    // [MOD] ON, tapping a mod source, then tapping a destination knob — which
-    // calls the same requestAssign seam itemDropped uses. ON reuses the
-    // drop-zone affordance (ring on dest knobs, dim non-targets) so the touch
-    // mode mirrors the desktop drag visually. The toggled button is the "still
-    // in assign mode" indicator.
+    // ---- [MOD] header toggle: tap-to-assign modulation ----
+    // Where there is no drag-and-drop (touch), modulation routing is reached by
+    // toggling [MOD] ON, tapping a mod source, then tapping a destination knob —
+    // which calls the same requestAssign seam itemDropped uses. ON reuses the
+    // drop-zone affordance (ring on dest knobs, dim non-targets) so the tap
+    // mode mirrors a drag visually. The toggled button is the "still in assign
+    // mode" indicator.
     modAssignButton_.setTooltip (TRANS ("Tap-to-assign modulation"));
     modAssignButton_.setClickingTogglesState (true);
     modAssignButton_.setToggleState (false, juce::dontSendNotification);
@@ -2666,7 +2666,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         ParamControl::setTapAssignActive (modAssignButton_.getToggleState());
     };
     addAndMakeVisible (modAssignButton_);
-#endif
 
     // ---- Header: brand icon + white "Parvati" wordmark (painted, left) + version (inline, right of logo) ----
     versionLabel_.setText ("by 805Labs - v" PARVATI_VERSION, juce::dontSendNotification);
@@ -2823,26 +2822,25 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // raised to at least that minimum so the bar is uncompressed at startup too.
     // Min height 600 keeps the 3 rows (top | bar | bottom) usable. (Headless tests
     // call setSize() below the min, which bypasses setResizeLimits.)
-#if JUCE_IOS
-    // iOS: the CentralModBar scrolls internally (Viewport), so it never widens
-    // the editor — keep the 1280pt floor. Default height grows to 634pt to absorb
-    // the taller HIG header (44) + segmented mod bar (52) with the tighter (8pt)
-    // page margins; the taller mod bar eats no editor height (the matrix scrolls).
+    // The CentralModBar scrolls internally (Viewport), so it never widens the
+    // editor — the width floor can sit BELOW the old 1280pt so the editor FILLS
+    // the screen at 100% zoom on tablets narrower than 1280pt (iPad Pro 11"
+    // landscape is 1194pt): no manual zoom-out is needed. 1024 covers every
+    // current iPad; min height 500 keeps the 3 rows usable. (Headless tests call
+    // setSize() below the min, which bypasses setResizeLimits.)
     setSize (1280, 634);
     setResizable (true, true);
-    setResizeLimits (1280, 600, 1800, 1100);
-#else
-    const int minBarW = (synthWorkspace_ != nullptr) ? synthWorkspace_->barPreferredWidth() : 0;
-    const int minWidth = minBarW + 8;
-    setSize (juce::jmax (1280, minWidth), 620);
-    setResizable (true, true);
-    setResizeLimits (minWidth, 600, 1800, 1100);
-#endif
+    setResizeLimits (1024, 500, 1800, 1100);
 
     // Apply persisted zoom (global scale; only if non-default to avoid an
-    // unnecessary rescale at startup).
+    // unnecessary rescale at startup). iOS fullscreen always starts at 100%,
+    // ignoring any persisted value.
+#if JUCE_IOS
+    setZoom (1.0);
+#else
     if (processorRef_.getUiZoom() != 1.0)
         setZoom (processorRef_.getUiZoom());
+#endif
 
     // Guarantee the full theme-derived colour re-apply runs on first build in
     // EVERY context (standalone, headless screen tool, editor tests).
@@ -2993,13 +2991,11 @@ void ParvatiEditor::timerCallback()
                     if (t.isNotEmpty()) { tip = t; break; }
                 }
         }
-#if JUCE_IOS
         // Tap-to-assign transient status (e.g. "Mod Matrix full") takes priority
         // over the hover tooltip for a short time after requestAssign returns
         // false (full matrix). Drains back to the normal hover tip afterwards.
         if (const auto ts = ParamControl::tickTransientStatus(); ts.isNotEmpty())
             tip = ts;
-#endif
         if (statusTooltipLabel_.getText() != tip)
             statusTooltipLabel_.setText (tip, juce::dontSendNotification);
     }
@@ -3330,8 +3326,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // "Parvati" text uses the theme `text` token so it re-colours each paint().
     if (! logoArea_.isEmpty())
     {
-#if JUCE_IOS
-        // iOS restack: drop the logo graphic + icon border; render a two-line
+        // Two-line brand: "Parvati" (bold) over the subtitle (10px, dim).
         // brand — "Parvati" (bold) over "by 805Labs \xc2\xb7 v<ver>" (10px, dim).
         auto block = logoArea_;
         g.setFont (lnf_.appFont (kLogoTextHeight, juce::Font::bold));
@@ -3342,31 +3337,35 @@ void ParvatiEditor::paint (juce::Graphics& g)
         g.setColour (theme.textSecondary);
         g.drawText ("by 805Labs \xc2\xb7 v" PARVATI_VERSION, block,
                     juce::Justification::centredLeft, false);
-#else
-        loadLogoIcon();   // idempotent: parses the SVG once, then a cheap null check
 
-        auto block = logoArea_;
-        // Icon sits to the RIGHT of the "Parvati" text; text fills the left.
-        const auto iconArea = block.removeFromRight (kLogoIconSize)
-                                     .withSizeKeepingCentre (kLogoIconSize, kLogoIconSize);
-        block.removeFromRight (kLogoTextIconGap);   // gap between the text and the icon (8px)
-        g.setFont (lnf_.appFont (kLogoTextHeight, juce::Font::bold));
-        g.setColour (theme.textPrimary);
-        g.drawText (kLogoText, block, juce::Justification::centredLeft, false);
-        if (logoDrawable_ != nullptr)
-            logoDrawable_->drawWithin (g, iconArea.toFloat().reduced (1.0f),
-                juce::RectanglePlacement (juce::RectanglePlacement::centred
-                    | juce::RectanglePlacement::onlyReduceInSize), 1.0f);
-        // Thin square white border framing the brand icon (1px stroke, 1px padding inside).
-        g.setColour (theme.textPrimary);
-        g.drawRect (iconArea.toFloat(), 1.0f);
-#endif
     }
 }
 
 void ParvatiEditor::resized()
 {
     auto area = getLocalBounds();
+
+    // Keep the UI out of the OS safe area (iOS: status bar / home indicator /
+    // landscape camera stub; macOS: the MacBook notch if reported). Without the
+    // TOP inset the header is laid out at y=0 directly under the iOS status bar,
+    // where iOS swallows/defers the first touch — the reported double-tap /
+    // non-recognized-tap issue on the top row. This is platform-COMMON: on
+    // platforms with no reserved area (windowed macOS/Win/Linux) safeAreaInsets
+    // is a 0-border, so this is a harmless no-op there.
+    // safeAreaInsets are in DISPLAY (physical) points, but `area` is in the
+    // editor's LOCAL logical coords. The global scale factor maps local->physical,
+    // so divide each inset by it: at any zoom the rendered inset then lands on the
+    // real safe-area edge (without this, zooming out shrank the inset and the UI
+    // slid back under the status bar).
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+    {
+        const double z = juce::jmax (0.1, (double) juce::Desktop::getInstance().getGlobalScaleFactor());
+        const auto& s = d->safeAreaInsets;
+        area = area.withTrimmedTop    (juce::roundToInt (s.getTop()    / z))
+                   .withTrimmedBottom (juce::roundToInt (s.getBottom() / z))
+                   .withTrimmedLeft   (juce::roundToInt (s.getLeft()   / z))
+                   .withTrimmedRight  (juce::roundToInt (s.getRight()  / z));
+    }
 
     // ---- Bottom status strip = LOWEST band: [n/denom] + tooltip bar ----
     {
@@ -3396,8 +3395,7 @@ void ParvatiEditor::resized()
     // gap; an 8px gap separates the history/zoom/view icons from the file group.
     // Save/Load are trimmed (100/80 -> 84/70) so the cluster stays compact and
     // never collides with the centred Patch/Part cluster at the default width.
-#if JUCE_IOS
-    // iOS HIG: every icon is a 44x44 touch target with >=8pt gaps, and the three
+    // Every icon is a 44x44 touch target with >=8pt gaps, and the three
     // zoom buttons (+/-/0) are folded into one "..." overflow popup so the grown
     // cluster still fits the 1280pt editor width. [KBD] is already 44pt wide.
     kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] (already 44pt wide)
@@ -3411,29 +3409,11 @@ void ParvatiEditor::resized()
     redoButton_.setBounds (bar.removeFromRight (44));          // redo
     bar.removeFromRight (8);
     undoButton_.setBounds (bar.removeFromRight (44));          // undo
-    bar.removeFromRight (8);   // separates the history/view icons from the file group
-    saveButton_.setBounds (bar.removeFromRight (84));          // Save (carries the format popup menu)
-    bar.removeFromRight (8);
-    loadButton_.setBounds (bar.removeFromRight (70));          // Load
-#else
-    kbdToggleButton_.setBounds (bar.removeFromRight (44));   // [KBD] toggle (far right)
-    bar.removeFromRight (4);
-    settingsButton_.setBounds (bar.removeFromRight (30));    // gear
-    bar.removeFromRight (4);
-    zoomResetButton_.setBounds (bar.removeFromRight (28));   // zoom reset (0)
-    bar.removeFromRight (3);
-    zoomOutButton_.setBounds (bar.removeFromRight (28));     // zoom out (-)
-    bar.removeFromRight (3);
-    zoomInButton_.setBounds (bar.removeFromRight (28));      // zoom in (+)
-    bar.removeFromRight (4);
-    redoButton_.setBounds (bar.removeFromRight (30));        // redo
-    bar.removeFromRight (4);
-    undoButton_.setBounds (bar.removeFromRight (30));        // undo
-    bar.removeFromRight (8);   // separates the history/zoom/view icons from the file group
-    saveButton_.setBounds (bar.removeFromRight (84));        // Save (carries the format popup menu)
-    bar.removeFromRight (4);
-    loadButton_.setBounds (bar.removeFromRight (70));        // Load
-#endif
+    bar.removeFromRight (6);   // separates the history/view icons from the file group
+    saveButton_.setBounds (bar.removeFromRight (64));          // Save (carries the format popup menu)
+    bar.removeFromRight (6);
+    loadButton_.setBounds (bar.removeFromRight (54));          // Load
+
 
     // Left: brand icon + white "Parvati" wordmark (painted) + version label
     // inline to its right. Layout: [~14px edge] "Parvati" [6px] [icon] [6px] [version]
@@ -3444,45 +3424,36 @@ void ParvatiEditor::resized()
         juce::GlyphArrangement ga;
         ga.addLineOfText (textFont, kLogoText, 0.0f, 0.0f);
         const int textW = juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
-#if JUCE_IOS
-        // iOS restack: logoArea_ shrinks to the wordmark width (the subtitle
+        // logoArea_ shrinks to the wordmark width (the subtitle
         // "by 805Labs \xc2\xb7 v<ver>" rides beneath it in paint()). The inline
         // version label is replaced by the painted subtitle, so it is hidden
         // here (it stays wired on desktop).
-        logoArea_ = bar.removeFromLeft (textW);
+        // +16px slack so the wordmark breathes and the (now left-aligned)
+        // preset dropdown can sit close to it without jamming against the text.
+        logoArea_ = bar.removeFromLeft (textW + 16);
         versionLabel_.setVisible (false);
-#else
-        const int logoW = textW + kLogoTextIconGap + kLogoIconSize;   // "Parvati" + 8px gap + icon
-        logoArea_ = bar.removeFromLeft (logoW);   // paint() draws the icon + "Parvati" text here
-        bar.removeFromLeft (kLogoIconGap);        // 6px gap between the icon and the version label
-        const juce::Font versionFont (juce::FontOptions (10.0f));
-        juce::GlyphArrangement vga;
-        vga.addLineOfText (versionFont, versionLabel_.getText(), 0.0f, 0.0f);
-        const int versionW = juce::roundToInt (vga.getBoundingBox (0, vga.getNumGlyphs(), true).getWidth()) + 8;
-        versionLabel_.setBounds (bar.removeFromLeft (versionW));   // "by 805Labs - v…" inline right of the logo
-#endif
+
     }
 
-    // Centre the Global/Patch/Part menu cluster in the remaining middle space.
+    // Patch/Part menu cluster. The "Patch:" caption is removed and the preset
+    // dropdown is LEFT-aligned right after the logo block (logoArea_ carries
+    // breathing-room slack) so it sits close to the wordmark; the preset browser
+    // is narrowed. The toolbar hugs the right edge, so the menus pack from the
+    // left of the remaining bar. Layout: [preset][gap][Patch][Part n][Synth][FX]
     {
-        const int patchCapW = 48;
-        const int presetW   = (presetBrowser_ != nullptr) ? 220 : 0;
-        const int partCapW  = 40;
+        patchCaption_.setVisible (false);   // "Patch:" label removed
+        partCaption_.setVisible (false);    // "Part:" label removed (dropdown only)
+        const int presetW   = (presetBrowser_ != nullptr) ? 168 : 0;   // narrower patch dropdown
         const int partComboW = 88;
         const int gapW = 6;
         const int globalW = 64;
         const int modeW = 50;   // [Synth]/[FX] toggle buttons (radio group)
-        // Centre cluster: [Patch:][preset][gap][Patch][Part:][Part n][Synth][FX]
-        const int clusterW = patchCapW + presetW + gapW + globalW + partCapW + partComboW
-                             + modeW + modeW;
 
-        auto cluster = bar.withSizeKeepingCentre (juce::jmin (clusterW, bar.getWidth()), bar.getHeight());
-        patchCaption_.setBounds (cluster.removeFromLeft (patchCapW));
+        auto cluster = bar;   // left-aligned: follows the logo block directly
         if (presetBrowser_ != nullptr)
             presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
         cluster.removeFromLeft (gapW);   // small gap between the Patch dropdown and the Patch button
         globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Patch page overlay toggle (between Patch dropdown and Part)
-        partCaption_.setBounds (cluster.removeFromLeft (partCapW));
         partCombo_.setBounds (cluster.removeFromLeft (partComboW));
         // Synth/FX mode toggle (radio group) after Part.
         synthModeButton_.setBounds (cluster.removeFromLeft (modeW));

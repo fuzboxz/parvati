@@ -184,11 +184,7 @@ private:
     // public (access-only; no symbol/codegen change) so the HIG sizing-contract
     // test can static_assert it per platform.
 public:
-#if JUCE_IOS
-    static constexpr int kRowHeight = 48;
-#else
-    static constexpr int kRowHeight = 34;
-#endif
+    static constexpr int kRowHeight = 48;   // unified (was iOS 48 / desktop 34)
 private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxMatrixView)

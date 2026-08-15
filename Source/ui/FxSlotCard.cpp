@@ -117,14 +117,13 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TypeStepButton)
 };
 
-#if JUCE_IOS
-// FxTypeCombo — the iOS effect picker. The whole "< None >" selector is one
-// 44pt-tall tap target (HIG #4); the prev/next chevron step buttons are removed
-// on iOS. JUCE's default ComboBox popup item rows (~24pt) are below the HIG
+// FxTypeCombo — the effect picker. The whole "< None >" selector is one
+// 44pt-tall tap target (HIG #4); the prev/next chevron step buttons are not
+// placed. JUCE's default ComboBox popup item rows (~24pt) are below the HIG
 // touch minimum, so showPopup() rebuilds the popup from the combo's OWN items
 // at a 44pt standard item height. Selecting an item writes through
 // setSelectedItemIndex, which the ComboBoxAttachment syncs to the APVTS — so the
-// byte-bridge + per-type knob refresh are unchanged from the desktop combo.
+// byte-bridge + per-type knob refresh are unchanged.
 class FxTypeCombo : public juce::ComboBox
 {
 public:
@@ -150,7 +149,6 @@ public:
                             nullptr);
     }
 };
-#endif
 
 // Per-type ENGAGEMENT defaults applied the moment a user selects an effect
 // type. The generic slot params all default to 0 — silent (Delay time=0,
@@ -201,25 +199,14 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 constexpr int kPad         = 6;      // card edge inset
 constexpr int kHeaderH     = 16;     // header row (title + power toggle; synth kGroupTitleH parity)
 constexpr int kHalfGap     = 2;      // gap below the header + between bands
-#if JUCE_IOS
-constexpr int kTypeRowH    = 44;     // HIG: the whole algorithm selector is one 44pt tap target
-constexpr int kComboH      = 44;     // HIG: 44pt-tall combo (picker tap target)
-#else
-constexpr int kTypeRowH    = 28;     // algorithm dropdown row (styled combo height, Shape/Mode parity)
-constexpr int kComboH      = 28;     // dropdown height (ParamControl combo parity)
-#endif
+constexpr int kTypeRowH    = 44;     // the whole algorithm selector is one 44pt tap target
+constexpr int kComboH      = 44;     // 44pt-tall combo (picker tap target)
 constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron + slack
 constexpr int kComboMinW   = 80;     // dropdown floor width
 constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
-#if JUCE_IOS
-constexpr int kCellH       = 58;     // knob cell height (denser on iOS: label band + dial)
-constexpr int kVisMin      = 32;     // visualizer band floor (smaller FX illustrations on iOS)
-constexpr int kVisMax      = 56;     // visualizer band cap (smaller FX illustrations on iOS)
-#else
-constexpr int kCellH       = 64;     // knob cell height (synth cellH parity: label band + 52px dial)
-constexpr int kVisMin      = 40;     // visualizer band floor (legible at the min size)
-constexpr int kVisMax      = 80;     // visualizer band cap (synth kDecorationH parity)
-#endif
+constexpr int kCellH       = 70;     // knob cell height (bigger, more visible dials + tighter spacing)
+constexpr int kVisMin      = 20;     // visualizer band floor (compact FX illustrations)
+constexpr int kVisMax      = 30;     // visualizer band cap (compact — shorter modules, knobs prioritised)
 // Bypass affordance: a bypassed slot's live controls (knobs + visualizer + type
 // combo) are recessed to this alpha so the slot reads as inactive at a glance
 // (0.5 matches the synth GroupComponent / knob disabled alpha).
@@ -285,14 +272,10 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
         drywet_->setDisplayValuePercent (true);
 
     // ---- Type combo (ComboBoxAttachment auto-uses the param's choices) ----
-#if JUCE_IOS
-    // iOS: FxTypeCombo rebuilds the popup at a 44pt item height (HIG picker).
-    // It IS-A juce::ComboBox, so the ComboBoxAttachment + addItemList below are
-    // unchanged. The prev/next chevrons are not placed on iOS (see resized()).
+    // FxTypeCombo rebuilds the popup at a 44pt item height (HIG picker). It IS-A
+    // juce::ComboBox, so the ComboBoxAttachment + addItemList below are unchanged.
+    // The prev/next chevrons are not placed (see resized()).
     typeCombo_ = std::make_unique<FxTypeCombo> ();
-#else
-    typeCombo_ = std::make_unique<juce::ComboBox> ();
-#endif
     typeCombo_->setTooltip ("FX " + juce::String (slot_ + 1) + " algorithm");
     // Populate from the param's OWN choice list BEFORE the attachment:
     // AudioProcessorValueTreeState::ComboBoxAttachment does NOT add items itself,
@@ -579,28 +562,11 @@ void FxSlotCard::resized()
         auto typeRow = area.removeFromTop (kTypeRowH);
         const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
         const int comboW = juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth()), textW);
-#if JUCE_IOS
-        // iOS HIG: the whole algorithm selector is ONE 44pt-tall tap target that
-        // opens the effect picker (the prev/next chevrons are removed on iOS).
-        // Centred, fit-to-text width; the 44pt combo fills the 44pt row.
+        // The whole algorithm selector is ONE 44pt-tall tap target that opens
+        // the effect picker. Centred, fit-to-text width; the 44pt combo fills
+        // the 44pt row. (The prev/next chevrons are not placed.)
         const int comboX = typeRow.getX() + (typeRow.getWidth() - comboW) / 2;
         typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
-#else
-        // The prev/next ("<" ">") step buttons flank the combo as a centred
-        // cluster: [ < ][ combo ][ > ]. Small square chevrons, combo height.
-        constexpr int kStepW   = 16;                 // chevron button width
-        constexpr int kStepGap = 3;                  // gap between a chevron and the combo
-        const int clusterW = comboW + 2 * (kStepW + kStepGap);
-        const int clusterX = typeRow.getX() + (typeRow.getWidth() - clusterW) / 2;
-        const int comboX   = clusterX + kStepW + kStepGap;
-        typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
-        const int stepY = typeRow.getY() + (kTypeRowH - kComboH) / 2;
-        const int stepH = kComboH;
-        if (typePrev_ != nullptr)
-            typePrev_->setBounds (clusterX, stepY, kStepW, stepH);
-        if (typeNext_ != nullptr)
-            typeNext_->setBounds (comboX + comboW + kStepGap, stepY, kStepW, stepH);
-#endif
         area.removeFromTop (kHalfGap);
     }
 
@@ -636,7 +602,11 @@ void FxSlotCard::resized()
 
     if (visualizer_ != nullptr && visH > 0)
     {
-        visualizer_->setBounds (area.removeFromTop (visH));
+        if (area.getHeight() > visH + 4)
+            area.removeFromTop (4);   // nudge the FX graphics down a touch off the type row
+        auto visRow = area.removeFromTop (visH);
+        const int inset = visRow.getWidth() * 15 / 100;   // ~70% width, centred (less-wide graphics)
+        visualizer_->setBounds (visRow.reduced (inset, 0));
         if (! area.isEmpty())
             area.removeFromTop (kHalfGap);
     }
