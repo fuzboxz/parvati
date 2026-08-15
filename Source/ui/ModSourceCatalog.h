@@ -87,9 +87,13 @@ inline constexpr std::array<SourceEntry, 32> kAllSources =
 {{
     // ===== Generators (LEFT half of the bar — click opens the editor) =====
     // --- Env (generators) ---
-    { ambika::dsp::MOD_SRC_ENV_1, "E1",  "Env 1",   Cluster::Env,    true },
-    { ambika::dsp::MOD_SRC_ENV_2, "E2",  "Env 2",   Cluster::Env,    true },
-    { ambika::dsp::MOD_SRC_ENV_3, "E3",  "Env 3",   Cluster::Env,    true },
+    // Short labels name the envelope's DESTINATION (Mod / Filter / Amp — the
+    // semantic mapping verified against the generator-page registration and
+    // the Env group headers); the fullName tooltips keep the "Env n" identity
+    // for the status strip / hover / tests.
+    { ambika::dsp::MOD_SRC_ENV_1, "MOD",  "Env 1",   Cluster::Env,    true },
+    { ambika::dsp::MOD_SRC_ENV_2, "FLTR", "Env 2",   Cluster::Env,    true },
+    { ambika::dsp::MOD_SRC_ENV_3, "AMP",  "Env 3",   Cluster::Env,    true },
     // --- Lfo (generators) ---
     { ambika::dsp::MOD_SRC_LFO_1, "L1",  "LFO 1",   Cluster::Lfo,    true },
     { ambika::dsp::MOD_SRC_LFO_2, "L2",  "LFO 2",   Cluster::Lfo,    true },

@@ -57,20 +57,57 @@ namespace
         return {};
     }
 
-    // Minimal per-button font override for the `<` / `>` nav pills: they are
-    // pill-height (72px) buttons showing ONE character, so the repo-wide 14px
-    // TextButton font would render a tiny glyph floating in a tall button.
-    // Deriving from ParvatiLookAndFeel keeps EVERY other behaviour (flat tonal
-    // drawButtonBackground, colour IDs, disabled alpha) identical to the app's
-    // buttons; only the glyph size/weight changes. The bar re-points it at the
-    // active theme in applyThemeColors() so its fills track theme switches
-    // (a default-constructed ParvatiLookAndFeel defaults to Carbon).
+    // Pill-styled nav scrollers: the `<` / `>` buttons are drawn EXACTLY like
+    // the mod pills (same rounded tile, corner radius, fill tokens, hover lift
+    // and clipped band geometry — see ModPill::paint) so they read as part of
+    // the pill row they flank, not as generic app buttons. They are bar chrome
+    // rather than a mod family, so the accent bands use accentPrimary (resolved
+    // from the active theme; the L&F is re-pointed in applyThemeColors())
+    // instead of a cluster colour. A press darkens the tile slightly (the pills
+    // have no press state — this keeps click feedback) and a disabled button
+    // dims to half alpha, matching the shared flat-button behaviour.
     class NavButtonLnf : public ParvatiLookAndFeel
     {
     public:
         juce::Font getTextButtonFont (juce::TextButton&, int) override
         {
             return appFont (20.0f, juce::Font::bold);
+        }
+
+        void drawButtonBackground (juce::Graphics& g, juce::Button& b,
+                                   const juce::Colour& /*backgroundColour*/,
+                                   bool isMouseOverButton, bool isButtonDown) override
+        {
+            const ParvatiTheme* t = getTheme();
+            if (t == nullptr)
+                return;
+
+            const float alpha = b.isEnabled() ? 1.0f : 0.5f;
+            const juce::Rectangle<float> r = b.getLocalBounds().toFloat().reduced (0.5f);
+
+            juce::Colour fill = t->tabUnselectedBg;
+            if (isButtonDown)
+                fill = fill.darker (0.15f);
+            else if (isMouseOverButton)
+                fill = fill.brighter (0.20f);
+            g.setColour (fill.withMultipliedAlpha (alpha));
+            g.fillRoundedRectangle (r, 5.0f);
+
+            // accentPrimary band across the TOP, clipped to the rounded tile —
+            // the same geometry the pills use for their family band.
+            g.saveState();
+            g.reduceClipRegion (r.toNearestInt());
+            g.setColour (t->accentPrimary.withMultipliedAlpha (0.85f * alpha));
+            g.fillRect (r.withHeight (3.5f));
+            g.restoreState();
+
+            // Subtle accentPrimary underline at the BOTTOM (the pill's family
+            // cue, in the chrome accent instead of a cluster colour).
+            const float ux = r.getX() + 3.0f;
+            const float uw = r.getWidth() - 6.0f;
+            const float uy = r.getBottom() - 1.5f;
+            g.setColour (t->accentPrimary.withMultipliedAlpha (0.45f * alpha));
+            g.fillRect (juce::Rectangle<float> (ux, uy, uw, 1.0f));
         }
     };
 }  // namespace
@@ -338,10 +375,10 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     // (not pillContent_) so they flank the viewport and stay put while it
     // scrolls. Plain ASCII "<" / ">" characters in the app font (a Unicode
     // chevron glyph would be a font-stack gamble; ASCII is present everywhere),
-    // vertically centred by the TextButton itself. The fill/hover/press states
-    // come from the repo L&F's flat tonal drawButtonBackground - exactly like
-    // every other button in the app - so applyThemeColors() only feeds it the
-    // backgroundInput fill + textPrimary glyph colours. ----
+    // vertically centred by the TextButton itself. The per-button NavButtonLnf
+    // draws the tile with the SAME pill geometry/fill tokens (rounded tile,
+    // top band + underline in accentPrimary, hover lift, press darken), so the
+    // scrollers read as siblings of the mod pills. ----
     navLnf_ = std::make_unique<NavButtonLnf>();
     navPrev_ = std::make_unique<juce::TextButton> ("navPrev");
     navPrev_->setButtonText ("<");
@@ -398,23 +435,22 @@ void CentralModBar::applyThemeColors()
     // (The iOS Viewport has no background-colour API; the scrolled content fills
     // its own background in paintSegments, so the bar reads as one colour.)
     // Theme the `<` / `>` nav pills from the active theme (the scrollbar is
-    // hidden; these scroll the bar). backgroundInput fill with a textPrimary
-    // glyph; hover/press states are the shared flat tonal behaviour (fill
-    // LIGHTER on hover, DARKER on press) from drawButtonBackground, matching
-    // every other button in the app. The per-button Lnf is re-pointed at the
-    // theme so its fills track switches instead of staying on Carbon.
+    // hidden; these scroll the bar). The per-button Lnf is re-pointed at the
+    // theme so its pill-tile fills/bands track switches instead of staying on
+    // Carbon; the glyph keeps the textPrimary colour id for the TextButton text
+    // path (the tile itself ignores the colour ids and reads theme tokens).
     if (navLnf_ != nullptr)
         if (auto* nl = dynamic_cast<NavButtonLnf*> (navLnf_.get()))
             nl->setTheme (t);
     if (navPrev_ != nullptr)
     {
-        navPrev_->setColour (juce::TextButton::buttonColourId,  t.backgroundInput);
+        navPrev_->setColour (juce::TextButton::buttonColourId,  t.tabUnselectedBg);
         navPrev_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
         navPrev_->repaint();
     }
     if (navNext_ != nullptr)
     {
-        navNext_->setColour (juce::TextButton::buttonColourId,  t.backgroundInput);
+        navNext_->setColour (juce::TextButton::buttonColourId,  t.tabUnselectedBg);
         navNext_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
         navNext_->repaint();
     }
