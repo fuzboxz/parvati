@@ -88,12 +88,38 @@ bool looksFloat (const juce::String& t)
     return true;
 }
 
+// Unescape the emitter's quoted-string escapes (\\" -> ", \\\\ -> \\). The
+// emitter (emitScalar + the part-name writer) escapes both characters; the
+// parser must mirror it or a name like `He said "hi"` round-trips with the
+// literal backslashes left in.
+juce::String unescapeQuoted (const juce::String& t)
+{
+    juce::String out;
+    out.preallocateBytes ((size_t) t.getNumBytesAsUTF8());
+    for (int i = 0; i < t.length(); ++i)
+    {
+        const juce::juce_wchar c = t[i];
+        if (c == '\\' && i + 1 < t.length())
+        {
+            const juce::juce_wchar n = t[i + 1];
+            if (n == '"' || n == '\\')
+            {
+                out += n;
+                ++i;
+                continue;
+            }
+        }
+        out += c;
+    }
+    return out;
+}
+
 // Parse a scalar token to a juce::var (int / double / quoted-or-bare string).
 var parseScalar (const juce::String& v)
 {
     const juce::String t = v.trim();
     if (t.length() >= 2 && t.startsWith ("\"") && t.endsWith ("\""))
-        return t.substring (1, t.length() - 1);
+        return unescapeQuoted (t.substring (1, t.length() - 1));
 
     if (isIntLiteral (t))
         return t.getIntValue();

@@ -549,6 +549,14 @@ bool SynthEngine::restoreState (const void* data, size_t size)
                 juce::HeapBlock<char> nb (nameLen + 1, true);
                 if (in.read (nb, nameLen) != nameLen) return false;
                 part.name = juce::String::fromUTF8 (nb, nameLen).substring (0, 16);
+                // Same sanitize as setPartName (control-char strip): a corrupt
+                // or hand-edited state blob could otherwise carry a newline
+                // into a name that a later .parvati save would corrupt.
+                juce::String clean;
+                for (int i = 0; i < part.name.length(); ++i)
+                    if (part.name[i] >= 0x20)
+                        clean += part.name[i];
+                part.name = clean;
             }
             else
                 part.name = juce::String();

@@ -1186,6 +1186,16 @@ add_executable(parvati_export_fallback_test
 add_executable(parvati_export_bytes_test
     tests/export_bytes_test.cpp
 )
+add_executable(parvati_mul_strategies_test
+    tests/mul_strategies_test.cpp
+)
+target_include_directories(parvati_mul_strategies_test PRIVATE Source)
+target_compile_features(parvati_mul_strategies_test PRIVATE cxx_std_17)
+target_compile_definitions(parvati_mul_strategies_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(parvati_mul_strategies_test PRIVATE
+    Parvati
+)
+
 target_include_directories(parvati_export_bytes_test PRIVATE Source)
 target_compile_features(parvati_export_bytes_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_export_bytes_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

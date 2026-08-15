@@ -52,6 +52,23 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
     prefixes/interleaving), and verifies the export strategies at the
     raw-byte level (only MultiData[i*4+3] + folded PartData[15]
     change; patches/routing stay untouched).
+  - **Unicode-safe names.** The .PRO/.MUL 16-byte name chunk now
+    truncates at a UTF-8 code-point boundary (a raw 16-byte copy
+    could split a multi-byte character, writing invalid UTF-8 into
+    the hardware file) and drops control characters. The .parvati
+    parser now unescapes the serializer's `\"`/`\\` escapes (a
+    part name containing a quote round-tripped with literal
+    backslashes). `setPartName` strips control characters (a
+    newline in a name would corrupt the line-based .parvati
+    document on save); the host-state restore path sanitizes too.
+    New `mul_strategies_test`: a scenario-matrix x strategy
+    invariant suite (card conservation, mask contiguity/disjointness,
+    min-1-per-active-part, proportional monotonicity, chain segment
+    conservation + CHAIN heads), end-to-end playable-polyphony
+    checks per strategy, and the unicode/name battery (accented /
+    CJK / emoji / quote / newline names across .parvati, host state
+    and the hardware name chunk). ASCII hardware files remain
+    byte-identical.
 
 ### Fixed
 - **iOS Info.plist plumbing (T1/T2/T5/T16 of the iPadOS audit — see

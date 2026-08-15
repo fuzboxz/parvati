@@ -106,6 +106,56 @@ bool parseAmbikaProgramFile (const juce::File& file, AmbikaProgram& out)
 }
 
 //==============================================================================
+namespace
+{
+// Copy @p name into the 16-byte, space-padded, NUL@15 name chunk WITHOUT ever
+// splitting a UTF-8 code point: names longer than 16 bytes (e.g. "Ünïcödé...")
+// are truncated at a code-point boundary so the written file always contains
+// valid UTF-8 (a raw 16-byte memcpy can cut a multi-byte sequence in half).
+// Control characters (newlines etc.) are dropped — the hardware LCD shows
+// printable text and a stray newline byte buys nothing.
+void writeName16 (std::vector<uint8_t>& b, const juce::String& name)
+{
+    char name16[16];
+    std::memset (name16, ' ', 16);
+    const char* const raw = name.toRawUTF8();
+    const size_t bytes = name.getNumBytesAsUTF8();
+
+    // Length of the code point starting at raw[i] (1..4; an invalid lead byte
+    // counts as 1 so a malformed sequence never splits a real one after it).
+    const auto cpLen = [] (uint8_t c) -> size_t
+    {
+        if ((c & 0xE0) == 0xC0) return 2;
+        if ((c & 0xF0) == 0xE0) return 3;
+        if ((c & 0xF8) == 0xF0) return 4;
+        return 1;
+    };
+
+    size_t out = 0;
+    for (size_t i = 0; i < bytes; )
+    {
+        const size_t cp = cpLen (static_cast<uint8_t> (raw[i]));
+        const bool printable = static_cast<uint8_t> (raw[i]) >= 0x20;
+        if (printable)
+        {
+            if (out + cp > 16) break;   // would split the code point: stop before it
+            std::memcpy (name16 + out, raw + i, cp);
+            out += cp;
+        }
+        i += cp;   // control bytes are skipped, not copied
+    }
+
+    // Hardware-exact terminator: the firmware writes its 16-byte name buffer
+    // verbatim, and every reference file shows string + space pad + NUL at the
+    // LAST byte (name[15]) — verified across 000.PRO "Junon", 001.PRO "Moof?"
+    // and 000.MUL "TekDrums". A full 16-byte name leaves no room for the NUL
+    // (matches C semantics on hardware).
+    if (out < 16)
+        name16[15] = '\0';
+    b.insert (b.end(), name16, name16 + 16);
+}
+}  // namespace
+
 bool writeAmbikaProgramFile (const juce::File& file, const AmbikaProgram& prog)
 {
     // Layout — byte-for-byte verified against a real Ambika factory .PRO, and a
@@ -142,20 +192,7 @@ bool writeAmbikaProgramFile (const juce::File& file, const AmbikaProgram& prog)
     push4 ("name");
     le32 (16u);
     {
-        char name16[16];
-        std::memset (name16, ' ', 16);
-        const char* const raw = prog.name.toRawUTF8();
-        const size_t len = std::min<size_t> (16, prog.name.getNumBytesAsUTF8());
-        if (len > 0)
-            std::memcpy (name16, raw, len);
-        // Hardware-exact terminator: the firmware writes its 16-byte name
-        // buffer verbatim, and every reference file shows string + space pad +
-        // NUL at the LAST byte (name[15]) — verified across 000.PRO "Junon",
-        // 001.PRO "Moof?" and 000.MUL "TekDrums". A 16-char name leaves no
-        // room for the NUL (matches C semantics on hardware).
-        if (len < 16)
-            name16[15] = '\0';
-        b.insert (b.end(), name16, name16 + 16);
+        writeName16 (b, prog.name);
     }
 
     // Patch object (type prefix 0x00000001).
@@ -289,20 +326,7 @@ bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi)
     push4 ("name");
     le32 (16u);
     {
-        char name16[16];
-        std::memset (name16, ' ', 16);
-        const char* const raw = multi.name.toRawUTF8();
-        const size_t len = std::min<size_t> (16, multi.name.getNumBytesAsUTF8());
-        if (len > 0)
-            std::memcpy (name16, raw, len);
-        // Hardware-exact terminator: the firmware writes its 16-byte name
-        // buffer verbatim, and every reference file shows string + space pad +
-        // NUL at the LAST byte (name[15]) — verified across 000.PRO "Junon",
-        // 001.PRO "Moof?" and 000.MUL "TekDrums". A 16-char name leaves no
-        // room for the NUL (matches C semantics on hardware).
-        if (len < 16)
-            name16[15] = '\0';
-        b.insert (b.end(), name16, name16 + 16);
+        writeName16 (b, multi.name);
     }
 
     // MultiData object (type prefix 0x00000004, part 0). Always written: a

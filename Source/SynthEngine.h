@@ -429,8 +429,22 @@ public:
     int  getPartVoiceSlots (int part) const { return ok (part) ? static_cast<int> (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed)) : 0; }
 
     // ---- Part names / aliases (Parvati extension; message-thread only) ----
-    // 16-char limit keeps the Multi page rows + .parvati lines tidy.
-    void setPartName (int part, const juce::String& n) { if (ok (part)) parts_[(size_t) part].name = n.substring (0, 16); }
+    // 16-char limit keeps the Multi page rows + .parvati lines tidy. Control
+    // characters (newlines) are stripped: the .parvati multi format is
+    // LINE-based, so a newline inside a name would corrupt the document on
+    // save (and the hardware name chunk only wants printable text anyway).
+    static juce::String sanitizePartName (const juce::String& n)
+    {
+        juce::String out;
+        for (int i = 0; i < n.length() && out.length() < 16; ++i)
+        {
+            const auto c = n[i];
+            if (c >= 0x20)
+                out += c;
+        }
+        return out;
+    }
+    void setPartName (int part, const juce::String& n) { if (ok (part)) parts_[(size_t) part].name = sanitizePartName (n); }
     juce::String getPartName (int part) const { return ok (part) ? parts_[(size_t) part].name : juce::String(); }
     // Display helper: the user name if set, else "Part N".
     juce::String getPartDisplayName (int part) const
