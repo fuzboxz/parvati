@@ -75,12 +75,19 @@ public:
         // Tap-to-assign: surface this tab's generator as the selected mod
         // source and SUPPRESS the sub-tab flip (mirrors the drag guard above so
         // an assign tap does not also switch the sub-tab). Inert unless [MOD] on.
+        // Only a tab that actually mapped to a source consumes the tap — a
+        // NON-source sub-tab (a pager with no map_, or NOTES/VEL-style labels
+        // that resolve to -1) falls through to the normal flip so the pager
+        // stays navigable in [MOD] mode (returning unconditionally would
+        // dead-end it with no hint why).
         if (ParamControl::tapAssignActive())
         {
             const int src = map_ ? map_ (getButtonText()) : -1;
             if (src >= 0)
+            {
                 ParamControl::setTapSelectedSource (src);
-            return;
+                return;
+            }
         }
         juce::TabBarButton::clicked (mods);
     }

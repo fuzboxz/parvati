@@ -93,19 +93,19 @@ Check items off (`[x]`) as they are implemented and verified.
 
 ## Minor
 
-- [ ] **T10. Unify touch slop constants.** Long-press cancel is >8px
+- [x] **T10. Unify touch slop constants.** Long-press cancel is >8px
   (`PluginEditor.cpp:1108`) but clean-tap gate is <=5px (`:1135`) — 6-8px drift opens
   the context menu from what felt like a tweak. One shared constant (5px).
 
-- [ ] **T11. Two-finger long-press hazard.** Finger 1 long-press can open the modal
+- [x] **T11. Two-finger long-press hazard.** Finger 1 long-press can open the modal
   menu while finger 2 is mid-drag on another knob (`ParamControl::mouseUp` doesn't
   check for other active drags). Bail out of `showContextMenu()` if another
   `MouseInputSource` is dragging.
 
-- [ ] **T12. Audio-load probe reset is right-click-only** (`PluginEditor.h:767`) —
+- [x] **T12. Audio-load probe reset is right-click-only** (`PluginEditor.h:767`) —
   unreachable on iPad while its tooltip advertises it. Accept touch tap/long-press.
 
-- [ ] **T13. `[MOD]` mode dead-ends non-source sub-tabs.** `GroupPager.cpp:77-87`
+- [x] **T13. `[MOD]` mode dead-ends non-source sub-tabs.** `GroupPager.cpp:77-87`
   returns unconditionally even when the tab maps to no mod source → pager becomes
   inert with no hint. Only `return` when `src >= 0`; else fall through to
   `TabBarButton::clicked`.

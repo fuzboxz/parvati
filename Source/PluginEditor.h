@@ -296,6 +296,13 @@ private:
     static juce::String transientStatusText_;   // transient status-strip text (e.g. "Mod Matrix full")
     static int  transientStatusFrames_;         // frame budget for the transient status
 
+    // Touch slop: the px of finger drift a "clean tap" tolerates. SHARED by the
+    // tap-assign gate (mouseUp) and the long-press cancel (mouseDrag) so any
+    // movement that fails clean-tap also cancels a pending/armed long-press —
+    // a 6-8px drift must never BOTH arm the context menu AND fail the tap.
+    // Matches the 5px one-drag-per-press debounce in the DnD drag sources.
+    static constexpr int kTouchSlop = 5;
+
     juce::String paramIDStr_;        // cached juce::String (desc_.paramID)
     juce::Point<int> longPressStart_;     // screen pos where the touch began (matches MouseEvent::getScreenPosition)
     bool longPressArmed_ = false;         // set in timerCallback; menu opens on mouseUp (see .cpp)
@@ -760,11 +767,18 @@ private:
 
     // Right-click on statusLoadLabel_ resets the overrun probe's peak/count
     // (so you can reset -> reproduce -> read the peak for a specific episode).
+    // Touch too: the readout has no other touch function, and iPad has no
+    // right-click — without this the reset would be unreachable while its
+    // tooltip advertises it.
     struct LoadLabelMouseListener : juce::MouseListener
     {
         ParvatiAudioProcessor& proc;
         explicit LoadLabelMouseListener (ParvatiAudioProcessor& p) : proc (p) {}
-        void mouseDown (const juce::MouseEvent& e) override { if (e.mods.isRightButtonDown()) proc.resetAudioLoadProbe(); }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isRightButtonDown() || e.source.isTouch())
+                proc.resetAudioLoadProbe();
+        }
     } loadMouseListener_;
 
     // Keyboard latching state: notes currently lit on the virtual keyboard so

@@ -1114,9 +1114,12 @@ void ParamControl::mouseDown (const juce::MouseEvent& e)
 
 void ParamControl::mouseDrag (const juce::MouseEvent& e)
 {
-    // An intentional knob drag (finger moved past a small threshold) cancels a
-    // pending OR already-armed long-press: neither should survive a real drag.
-    if (e.getScreenPosition().getDistanceFrom (longPressStart_) > 8)
+    // An intentional knob drag (finger moved past kTouchSlop — the SAME slop
+    // the tap-assign gate uses) cancels a pending OR already-armed long-press:
+    // neither should survive a real drag, and movement that fails a clean tap
+    // must not leave the long-press armed (a 6-8px drift would otherwise open
+    // the context menu from what felt like a small knob tweak).
+    if (e.getScreenPosition().getDistanceFrom (longPressStart_) > kTouchSlop)
     {
         stopTimer();
         longPressArmed_ = false;
@@ -1134,15 +1137,30 @@ void ParamControl::mouseUp (const juce::MouseEvent& e)
     if (longPressArmed_)
     {
         longPressArmed_ = false;
+
+        // Two-finger guard: finger 1 can hold a knob still (arming the
+        // long-press) while finger 2 is mid-drag on ANOTHER control. Opening
+        // the modal menu then would strand finger 2's drag — exactly the
+        // scenario the arm-then-open-on-release design avoids for the
+        // single-finger case. If any OTHER pointer is still dragging, silently
+        // cancel the menu instead (the gesture simply does nothing).
+        const auto mySource = e.source.getIndex();
+        auto& desktop = juce::Desktop::getInstance();
+        for (int i = 0; i < desktop.getNumMouseSources(); ++i)
+            if (i != mySource && desktop.getMouseSource (i)->isDragging())
+                return;
+
         showContextMenu();
         return;
     }
-    // Tap-to-assign dest: in [MOD] mode, a CLEAN tap (<=5 px, mirroring the 5
-    // source sides) on a destination knob assigns the selected source to this
+    // Tap-to-assign dest: in [MOD] mode, a CLEAN tap (<= kTouchSlop, mirroring
+    // the 5px one-drag-per-press debounce in the source-side drag starts) on a
+    // destination knob assigns the selected source to this
     // dest via the SAME seam itemDropped uses (no drag on touch). A value-drag
-    // of the knob (>5 px) is NOT an assign — the slider just changes its value.
-    // Stays in mode for more routings; clears the selected source each time.
-    // (Long-press fires only on touch; tap-assign runs when [MOD] is on.)
+    // of the knob (> kTouchSlop) is NOT an assign — the slider just changes
+    // its value. Stays in mode for more routings; clears the selected source
+    // each time. (Long-press fires only on touch; tap-assign runs when [MOD]
+    // is on.)
     if (tapAssignActive_ && isModDestKnob_ && e.getDistanceFromDragStart() <= 5)
     {
         if (tapSelectedSource_ < 0)
@@ -2783,7 +2801,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     statusLoadLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
     statusLoadLabel_.setTooltip ("Audio-thread realtime load (peak since reset) + overrun count. "
-                                 "Approaching 100% means xruns/crackle. Right-click to reset the peak.");
+                                 "Approaching 100% means xruns/crackle. Right-click (or tap on touch) to reset the peak.");
     addAndMakeVisible (statusLoadLabel_);
     statusLoadLabel_.addMouseListener (&loadMouseListener_, false);   // right-click resets the probe
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
