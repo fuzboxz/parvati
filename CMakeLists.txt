@@ -884,6 +884,19 @@ target_link_libraries(parvati_keyboard_view_test PRIVATE
     Parvati
 )
 
+# CentralModBar pill click-selection regression test (P3). Injects real
+# peer-level mouse clicks on generator pills in the live editor and asserts
+# the active generator editor swaps. Built by default.
+# Run: ./build/parvati_modbar_click_test
+add_executable(parvati_modbar_click_test
+    tests/modbar_pill_click_test.cpp
+)
+target_include_directories(parvati_modbar_click_test PRIVATE Source)
+target_compile_features(parvati_modbar_click_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_modbar_click_test PRIVATE
+    Parvati
+)
+
 # ------------------------------------------------------------------------------
 # iPad M5 HIG sizing-contract test. Asserts the iOS layout constants equal the
 # HIG touch minimums (44/48/8) under an iOS build and the desktop constants are

@@ -642,8 +642,15 @@ void ParamControl::setTapSelectedSource (int sourceEnum) noexcept
     // Touch has no hover/cursor, so surface the armed source by name in the
     // status strip (reuses the transient-status mechanism). Skipped on a reset
     // (sourceEnum < 0) so a consumed/cleared selection stays silent.
+    // P3 lesson: while [MOD] is engaged a plain pill click arms the source
+    // instead of browsing the generator — without a loud, self-explanatory
+    // status this reads as "pill clicks no longer work". So the armed message
+    // spells out BOTH halves of the gesture and lasts ~5s (150 frames @30 Hz),
+    // long enough to be noticed mid-flow.
     if (sourceEnum >= 0)
-        postTransientStatus (TRANS ("Mod source: ") + parvati::entryFor (sourceEnum).fullName, 45);
+        postTransientStatus (TRANS ("MOD assign armed: ") + parvati::entryFor (sourceEnum).fullName
+                                 + TRANS (" — tap a destination knob ([MOD] to exit)"),
+                             150);
 }
 
 void ParamControl::postTransientStatus (const juce::String& text, int frames)
