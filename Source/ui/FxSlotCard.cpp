@@ -153,13 +153,27 @@ public:
             item.text     = getItemText (i);
             item.itemID   = getItemId (i);
             item.isTicked = (i == current);
-            item.action   = [this, i] { setSelectedItemIndex (i, juce::sendNotificationSync); };
+            // SafePointer: the popup is modal but ASYNC — the card (and this
+            // combo) can be torn down while it is open (page switch / teardown).
+            juce::Component::SafePointer<FxTypeCombo> safe { this };
+            item.action   = [safe, i] { if (safe != nullptr) safe->setSelectedItemIndex (i, juce::sendNotificationSync); };
             menu.addItem (std::move (item));
         }
+        // The completion callback is NOT optional: stock ComboBox::showPopup
+        // finishes with comboBoxPopupMenuFinishedCallback -> hidePopup(), which
+        // resets the private `menuActive` flag. Passing nullptr (the old code)
+        // left menuActive latched TRUE after dismissal, so every later click
+        // bailed inside showPopupIfNotActive() and the dropdown could never be
+        // reopened after the first selection.
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (this)
                                 .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
-                            nullptr);
+                            juce::ModalCallbackFunction::create (
+                                [safe = juce::Component::SafePointer<FxTypeCombo> { this }] (int)
+                                {
+                                    if (safe != nullptr)
+                                        safe->hidePopup();
+                                }));
     }
 };
 
@@ -220,8 +234,8 @@ constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron 
 constexpr int kComboMinW   = 80;     // dropdown floor width
 constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
 constexpr int kCellH       = 70;     // knob cell height (bigger, more visible dials + tighter spacing)
-constexpr int kVisMin      = 20;     // visualizer band floor (compact FX illustrations)
-constexpr int kVisMax      = 30;     // visualizer band cap (compact — shorter modules, knobs prioritised)
+constexpr int kVisMax      = 30;     // visualizer band cap (compact — shorter modules, knobs prioritised). No kVisMin floor
+                                       // any more: the band shrinks to 0 before the FIXED-height knob grid yields a pixel.
 // Bypass affordance: a bypassed slot's live controls (knobs + visualizer + type
 // combo) are recessed to this alpha so the slot reads as inactive at a glance
 // (0.5 matches the synth GroupComponent / knob disabled alpha).
@@ -525,7 +539,17 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
     constexpr int rows        = 2;
     constexpr int kDryWetCell = 5;           // bottom-right of the 3x2 grid
 
-    const int cellH  = juce::jmin (kCellH, gridArea.getHeight() / rows);
+    // FIXED cell geometry: the cell height is the CONSTANT kCellH — it is NOT
+    // derived from gridArea (the pre-2026-08 behaviour shrank the cells — and
+    // with them the dials — whenever the window was resized shorter). Knob
+    // size stability parity with the synth pages: ParamPage lays its groups out
+    // at FIXED cell sizes and lets the parent Viewport scroll; the FX top row
+    // does the same (FxWorkspace::kTopRowNaturalH floors the top-row host at
+    // the cards' full-grid natural height, so a shorter frame scrolls instead
+    // of starving the grid). If the region is somehow shorter than the block
+    // (host floor bypassed), the fixed block is still centred and clipped
+    // symmetrically — the dials never scale.
+    const int cellH  = kCellH;
     const int cellW  = gridArea.getWidth() / cols;
     const int blockH = rows * cellH;
     const int y0     = gridArea.getY() + (gridArea.getHeight() - blockH) / 2;
@@ -619,6 +643,11 @@ void FxSlotCard::resized()
     const auto t = static_cast<FxType> (currentTypeIndex());
     // The knob grid is a FIXED 3x2 layout (up to 5 params + Dry/Wet) whenever the
     // slot has an effect; for None the grid collapses entirely (Dry/Wet hidden).
+    // The grid height is FIXED at rows*kCellH (knob size stability — see
+    // layoutParamGrid); only the visualizer band is elastic (kVisMax down to
+    // 0). Below the band's floor the grid keeps its fixed height and the card
+    // relies on the workspace top-row scroll floor (kTopRowNaturalH) — the grid
+    // is never squeezed.
     const bool hasGrid = (t != FxType::None);
     const int gridIdealH = hasGrid ? (2 * kCellH) : 0;
 
@@ -627,16 +656,12 @@ void FxSlotCard::resized()
     int gridH = gridIdealH;
     if (visH + gridH + kHalfGap > bodyH)          // ideal grid + max band does not fit
     {
-        if (gridIdealH + kVisMin + kHalfGap <= bodyH)   // band can shrink to its floor
-        {
-            visH  = juce::jmax (0, bodyH - gridIdealH - kHalfGap);
-            gridH = gridIdealH;
-        }
-        else                                            // grid must shrink; band holds kVisMin
-        {
-            visH  = juce::jmin (kVisMin, juce::jmax (0, bodyH - kHalfGap));
-            gridH = juce::jmax (0, bodyH - visH - kHalfGap);
-        }
+        // Band shrinks toward 0 (kVisMax -> kVisMin -> 0) to keep the FIXED grid;
+        // below that the grid keeps its fixed height regardless (the workspace
+        // top-row scroll floor is the real relief valve — the grid is never
+        // squeezed).
+        visH  = juce::jmax (0, bodyH - gridIdealH - kHalfGap);
+        gridH = gridIdealH;
     }
 
     if (visualizer_ != nullptr && visH > 0)

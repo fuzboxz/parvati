@@ -34,8 +34,8 @@ void check (bool cond, const char* msg)
 static_assert (ParvatiEditor::kHeaderH   == 44, "header height must be 44 (HIG)");
 static_assert (ParvatiEditor::kBarHeight == 44, "header icon strip must be 44 (HIG targets)");
 static_assert (ParamPage::kMargin        == 8,  "page margin must be 8 (HIG spacing)");
-static_assert (CentralModBar::kBarHeight == 92, "mod-bar height must be 92 (hosts 72pt pills + a coloured label tab + nav arrows)");
-static_assert (CentralModBar::kPillH     == 72, "pill height must be 72 (~1.5x bigger blips)");
+static_assert (CentralModBar::kBarHeight == 78, "mod-bar height must be 78 (hosts 56pt pills + a coloured label tab + nav arrows)");
+static_assert (CentralModBar::kPillH     == 56, "pill height must be 56 (compact pills; still >= 44pt HIG touch target — the bar seam is collapsible via [MOD])");
 static_assert (CentralModBar::kPillGap   == 8,  "pill gap must be 8 (HIG spacing)");
 static_assert (ModMatrixView::kRowHeight == 48, "mod-matrix row height must be 48");
 static_assert (FxMatrixView::kRowHeight  == 48, "FX-matrix row height must be 48");
@@ -54,8 +54,8 @@ int main()
     check (ParvatiEditor::kHeaderH    == 44, "header height == 44");
     check (ParvatiEditor::kBarHeight  == 44, "header icon strip == 44");
     check (ParamPage::kMargin         == 8,  "page margin == 8");
-    check (CentralModBar::kBarHeight  == 92, "mod-bar height == 92");
-    check (CentralModBar::kPillH      == 72, "pill height == 72");
+    check (CentralModBar::kBarHeight  == 78, "mod-bar height == 78");
+    check (CentralModBar::kPillH      == 56, "pill height == 56");
     check (CentralModBar::kPillGap    == 8,  "pill gap == 8");
     check (ModMatrixView::kRowHeight  == 48, "mod-matrix row == 48");
     check (FxMatrixView::kRowHeight   == 48, "FX-matrix row == 48");

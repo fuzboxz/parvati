@@ -223,11 +223,14 @@ void FxWorkspace::resized()
     // symmetric 0.5) so each card is shorter and the freed height goes to the
     // bottom (matrix + generator editor).
     constexpr float kTopRatio = 0.40f;
-    const int remaining = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
+    // The bar seam COLLAPSES when hidden ([MOD] header toggle) — mirrored with
+    // SynthWorkspace so switching SYNTH<->FX never reflows on the difference.
+    const int barH = modBarVisible_ ? CentralModBar::kBarHeight : 0;
+    const int remaining = juce::jmax (0, area.getHeight() - barH);
     const int mainH = juce::roundToInt (static_cast<float> (remaining) * kTopRatio);
 
     auto mainRow  = area.removeFromTop (mainH);
-    auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);
+    auto barRow   = area.removeFromTop (barH);
     auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
     // ---- Upper region: 4 columns [ ROUTING | FX1 | FX2 | FX3 ] ----
@@ -241,12 +244,16 @@ void FxWorkspace::resized()
     // knobs/visualizer internally.
     constexpr int kGap = 8;
     // R3: the top row's NATURAL height — the routing bar's stacked rows (flow
-    // diagram 50 + EQ 60 + Dry/Wet band) and the slot cards' 44pt rows need
-    // ~190px to lay out as designed. The viewport host is never laid shorter
+    // diagram 50 + EQ 60 + Dry/Wet band) need ~190px, and the FX-slot cards'
+    // FIXED-height knob grid (2 x kCellH = 140px of grid + header/type/
+    // visualizer overhead ≈ 108px + card padding) needs ~248px + the host's
+    // kGap margins for FULL-SIZE knobs. The viewport host is never laid shorter
     // than this; a shorter FRAME scrolls instead of starving the rows (which
     // previously made the EQ labels / Dry/Wet caption / stepper buttons paint
-    // outside the bar and over the rows below).
-    constexpr int kTopRowNaturalH = 190;
+    // outside the bar and over the rows below — and, pre-2026-08, shrank the
+    // FX knob cells themselves). Knob-size stability parity with the synth
+    // pages (ParamPage::reflowToWidth scrolls the same way).
+    constexpr int kTopRowNaturalH = 264;
     topRowViewport_->setBounds (mainRow);
     // mainRow (NOT Viewport::getViewWidth()) is the width source: the viewport
     // caches its visible area and can be stale mid-cascade (SynthWorkspace hit
@@ -284,7 +291,9 @@ void FxWorkspace::resized()
     topRowHost_->setSize (viewW, viewH);
 
     // ---- Middle seam: full-width bar ----
-    modBar_->setBounds (barRow);
+    modBar_->setVisible (modBarVisible_);
+    if (modBarVisible_)
+        modBar_->setBounds (barRow);
 
     // ---- Bottom row: LEFT 50% = active editor, RIGHT 50% = FxMatrixView ----
     auto modLeft  = bottomRow.removeFromLeft (bottomRow.getWidth() / 2);
