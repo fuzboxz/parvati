@@ -3,6 +3,7 @@
 // resize / teardown; no real message loop).
 
 #include <cstdio>
+#include <cstring>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -13,6 +14,15 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "ui/CentralModBar.h"     // [MOD] toggle check (dynamic_cast target)
+
+// Headless run-loop pump for the asynchronous triggerClick (Apple-only; the
+// JUCE MessageQueue IS a CFRunLoopSource on the main loop — the
+// perf-smoke-test idiom). defined(__APPLE__), not JUCE_MAC: this precedes the
+// JUCE includes, which are what defines the JUCE_MAC macro.
+#if defined (__APPLE__)
+ #include <CoreFoundation/CoreFoundation.h>
+#endif
 #include "TuningTables.h"              // tuningPresetTable (Tune combo assertions)
 #include "ui/ParvatiTheme.h"
 #include "ui/PatchPage.h"
@@ -66,11 +76,16 @@ int main()
     // isDark is correct per theme, and the dark themes use the exact spec hues.
     std::printf ("\n[4] Theme category tokens (positional-init guard)\n");
     {
-        const juce::Colour specAudio (0xffFFB400), specEnv (0xff2DD4BF),
+        const juce::Colour specEnv (0xff2DD4BF),
             specLfo (0xffE879F9), specSeq (0xff34D399), specArp (0xff34D399);
-        // STRICT family palette: catAudio stays amber; Env=teal, Lfo=magenta,
-        // Seq/Arp=mint. catArp == catSeq (Seq + Arp intentionally share the
-        // mint sequencer-family hue), so that pair is exempt from the
+        // STRICT family palette everywhere: Env=teal, Lfo=magenta, Seq/Arp=mint
+        // (and Perf=amber / Util=orange / Mod=purple / Const=indigo in the
+        // factories). catAudio is NOT part of the family amber: every theme
+        // adopts its brand accent for the audio family (a8b3cb2 introduced
+        // this for Carbon; the amber-free-audio change extended it to all
+        // themes) so knob rings / previews never render amber.
+        // catArp == catSeq (Seq + Arp intentionally share the mint
+        // sequencer-family hue), so that pair is exempt from the
         // pairwise-distinct guard below (the exact spec-hue match still guards
         // its positional-init alignment).
 
@@ -81,9 +96,9 @@ int main()
             { "Carbon",   carbonTheme(),   true,  true  },
             { "Midnight", midnightTheme(), true,  true  },
             { "Obsidian", obsidianTheme(), true,  true  },
-            { "Paper",    paperTheme(),    false, false },
-            { "Crimson",  crimsonTheme(),  true,  false },
-            { "Legacy",   legacyTheme(),   false, false },
+            { "Paper",    paperTheme(),    false, true  },
+            { "Crimson",  crimsonTheme(),  true,  true  },
+            { "Legacy",   legacyTheme(),   false, true  },
         };
 
         char buf[160];
@@ -122,7 +137,38 @@ int main()
 
             if (tc.expectSpec)
             {
-                const juce::Colour spec[] = { specAudio, specEnv, specLfo, specSeq, specArp };
+                // catAudio is the theme's BRAND ACCENT, never the family
+                // amber (see the comment above the themes table) — encode the
+                // expected audio hue PER THEME so the exact-ARGB positional
+                // guard keeps full strength on all 5 tokens. Family hues
+                // (Env/Lfo/Seq/Arp) are shared across the dark themes; the
+                // light themes use their darker 600-tier variants.
+                const juce::Colour expAudio = (std::strcmp (tc.name, "Carbon") == 0)
+                                                ? juce::Colour (0xff38BDF8)
+                                                : (std::strcmp (tc.name, "Midnight") == 0)
+                                                    ? juce::Colour (0xff5b9bd5)
+                                                    : (std::strcmp (tc.name, "Obsidian") == 0)
+                                                        ? juce::Colour (0xff8b5cf6)
+                                                        : (std::strcmp (tc.name, "Paper") == 0)
+                                                            ? juce::Colour (0xff2563eb)
+                                                            : (std::strcmp (tc.name, "Crimson") == 0)
+                                                                ? juce::Colour (0xffe5484d)
+                                                                : juce::Colour (0xffC8216A);   // Legacy magenta
+                const bool paperTheme_  = (std::strcmp (tc.name, "Paper")  == 0);
+                const bool legacyTheme_ = (std::strcmp (tc.name, "Legacy") == 0);
+                // Paper uses darker 600-tier family hues for light-bg contrast;
+                // Legacy adopts the reference module's family hues wholesale.
+                const juce::Colour expEnv = paperTheme_  ? juce::Colour (0xff0D9488)
+                                            : legacyTheme_ ? juce::Colour (0xff009696)
+                                            : specEnv;
+                const juce::Colour expLfo = paperTheme_  ? juce::Colour (0xffC026D3)
+                                            : legacyTheme_ ? juce::Colour (0xffE5B55C)
+                                            : specLfo;
+                const juce::Colour expSeq = paperTheme_  ? juce::Colour (0xff059669)
+                                            : legacyTheme_ ? juce::Colour (0xffA8C69F)
+                                            : specSeq;
+                const juce::Colour expArp = expSeq;   // Seq family share
+                const juce::Colour spec[] = { expAudio, expEnv, expLfo, expSeq, expArp };
                 bool matchSpec = true;
                 for (size_t i = 0; i < 5; ++i)
                     if (cats[i].getARGB() != spec[i].getARGB()) matchSpec = false;
@@ -379,6 +425,69 @@ int main()
         check (engine.resolvedTuningMode (0) == 0, "12-EDO clears the custom flag (D4)");
         check (patchPage->getDisplayedTuningMode (0) == 0, "Tune: combo back to 12-EDO");
     }
+
+    // ---- [MOD] header toggle: mod-pill bar show/hide ----
+    // The toggle collapses the bar SEAM in both workspaces (its height rejoins
+    // the content rows). Drive the REAL button (triggerClick + a run-loop pump —
+    // a click is asynchronous) and verify the workspace's CentralModBar child
+    // hides, then re-shows. Apple-only: the headless pump runs the main
+    // CFRunLoop directly (the perf-smoke-test idiom).
+#if defined (__APPLE__)
+    std::printf ("\n[MOD] mod-pill bar toggle\n");
+    {
+        auto* ed = dynamic_cast<ParvatiEditor*> (editor);
+        std::function<juce::TextButton* (juce::Component*)> findBtn = [&] (juce::Component* c) -> juce::TextButton*
+        {
+            // Two header buttons are labelled "MOD" after the 2026-08 rename
+            // (bar toggle + tap-to-assign); the BAR toggle is identified by its
+            // tooltip.
+            if (auto* b = dynamic_cast<juce::TextButton*> (c))
+                if (b->getButtonText() == "MOD" && b->getTooltip().containsIgnoreCase ("pill bar"))
+                    return b;
+            for (auto* ch : c->getChildren())
+                if (auto* r = findBtn (ch)) return r;
+            return nullptr;
+        };
+        juce::TextButton* mbarBtn = ed != nullptr ? findBtn (ed) : nullptr;
+        check (mbarBtn != nullptr, "[MOD] bar-toggle button exists in the header (tooltip: pill bar)");
+        check (mbarBtn != nullptr && mbarBtn->getToggleState(),
+               "[MOD] bar toggle defaults to ON (bar shown)");
+        if (mbarBtn != nullptr)
+        {
+            std::function<CentralModBar* (juce::Component*)> findBar = [&] (juce::Component* c) -> CentralModBar*
+            {
+                if (auto* bar = dynamic_cast<CentralModBar*> (c)) return bar;
+                for (auto* ch : c->getChildren())
+                    if (auto* r = findBar (ch)) return r;
+                return nullptr;
+            };
+            CentralModBar* bar = ed != nullptr ? findBar (ed) : nullptr;
+            check (bar != nullptr, "CentralModBar found in the workspace");
+            if (bar != nullptr)
+            {
+                check (bar->isVisible(), "bar visible before the toggle");
+                mbarBtn->triggerClick();
+                bool hidden = false;
+                for (int i = 0; i < 50 && ! hidden; ++i)
+                {
+                    CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.020, false);
+                    hidden = ! bar->isVisible();
+                }
+                check (hidden, "[MOD] bar toggle OFF hides the bar (seam collapses)");
+                mbarBtn->triggerClick();
+                bool shown = false;
+                for (int i = 0; i < 50 && ! shown; ++i)
+                {
+                    CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.020, false);
+                    shown = bar->isVisible();
+                }
+                check (shown, "[MOD] bar toggle ON re-shows the bar");
+            }
+        }
+    }
+#else
+    std::printf ("\n[MOD] mod-pill bar toggle check skipped (non-Apple pump)\n");
+#endif
 
     // ---- teardown ----
     delete editor;

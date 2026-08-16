@@ -25,13 +25,15 @@
 //   - every patch/part descriptor EXCEPT `part_select` and the mod-matrix slot
 //     params gets exactly one ParamControl cell (counted across ALL generated
 //     pages, parented or not)
-//   - the Oscillators page has exactly 8 controls; the Global page has 10
+//   - the Oscillators page has exactly 8 controls; the Global page has 11
+//     (incl. part_raga since the per-part tuning feature)
 //   - clicking a CentralModBar generator pill reparents the right page into the
 //     active-editor host (the new click-wiring's first automated coverage)
 //   - a ModMatrixView is a DIRECT child of SynthWorkspace (no longer tab content)
 //   - the top-bar Part selector is wired: setting `part_select` switches the part
-//   - default editor size matches CentralModBar::preferredWidth()+8 x 620
-//     (~1443 x 620, not the old 1280 x 620)
+//   - default editor size is the fixed 1280 x 634 (R3: the mod bar scrolls
+//     horizontally inside its own Viewport, so the editor no longer tracks
+//     CentralModBar::preferredWidth())
 //   - every generated ParamPage reports a sane (overlap-free, width-filling) layout
 //   - the Sequencer page is present among the generated pages; it has exactly 3
 //     marked Length controls + correct step dimming
@@ -45,11 +47,23 @@
 #include <cstdio>
 #include <vector>
 
+// THE HEADLESS POPUP PUMP (Apple): driving the async ComboBox popup path needs
+// the main run loop serviced; JUCE 9's synchronous pumps are either
+// JUCE_MODAL_LOOPS_PERMITTED-gated or [NSApp run] (which a console binary's
+// timer queue does not service). Same idiom as tests/perf_smoke_test.cpp — the
+// JUCE MessageQueue IS a CFRunLoopSource on the main loop.
+// (defined(__APPLE__), not JUCE_MAC: this precedes the JUCE includes, which
+//  are what defines the JUCE_MAC macro.)
+#if defined (__APPLE__)
+ #include <CoreFoundation/CoreFoundation.h>
+#endif
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "dsp/fx/FxTypes.h"     // FxType::Count (FX type combo assertion)
 #include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel + ambika::dsp::MOD_SRC_*
 #include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
 #include "ui/FxWorkspace.h"        // complete type for findFirst<FxWorkspace>
@@ -361,13 +375,21 @@ int main()
                 // component, and it never UNDER-fills the view (reflowToWidth
                 // grows a fitting page to the full view height, so no scrollbar
                 // appears at the tuned design size).
+                // Resolve the T4 host from the ACTIVE PAGE's ancestor chain
+                // (the same rule as surfacedInHost above) instead of taking the
+                // first Viewport child: R3 (695fa27) added topRowViewport_ AHEAD
+                // of activeEditorHost_ in the workspace child list, so child
+                // order no longer identifies the generator host (it now grabs
+                // the top-row scroll host instead).
                 juce::Viewport* genHost = nullptr;
-                for (auto* child : workspace->getChildren())
-                    if (auto* v = dynamic_cast<juce::Viewport*> (child))
-                    {
-                        genHost = v;
-                        break;
-                    }
+                if (seqNotePage != nullptr)
+                    for (auto* c = seqNotePage->getParentComponent(); c != nullptr;
+                         c = c->getParentComponent())
+                        if (auto* v = dynamic_cast<juce::Viewport*> (c))
+                        {
+                            genHost = v;
+                            break;
+                        }
                 check (genHost != nullptr,
                        "active-editor host is a juce::Viewport (T4 scroll safety net)");
                 if (genHost != nullptr && seqNotePage != nullptr)
@@ -401,14 +423,19 @@ int main()
 
         std::printf ("\n[6] Default editor size\n");
         {
+            // R3 (695fa27): the CentralModBar scrolls horizontally inside its
+            // own Viewport, so the editor no longer tracks preferredWidth()
+            // (which grew to 1580 with the named Env pills). The default is a
+            // fixed 1280 x 634 with a 1024pt width floor so the editor fills
+            // tablets at 100% zoom (PluginEditor.cpp: setSize (1280, 634)).
+            // barPreferredWidth is printed as a diagnostic only.
             const int barPrefW = (workspace != nullptr) ? workspace->barPreferredWidth() : 0;
-            const int expectedW = juce::jmax (1280, barPrefW + 8);   // == CentralModBar::preferredWidth()+8 (~1443)
-            std::printf ("     %d x %d (bar preferred=%d, expected width=%d)\n",
-                         ed->getWidth(), ed->getHeight(), barPrefW, expectedW);
+            std::printf ("     %d x %d (bar preferred=%d, unused for sizing)\n",
+                         ed->getWidth(), ed->getHeight(), barPrefW);
             std::snprintf (msg, sizeof (msg),
-                           "default editor size is %d x 620 [was %d x %d]",
-                           expectedW, ed->getWidth(), ed->getHeight());
-            check (ed->getWidth() == expectedW && ed->getHeight() == 620, msg);
+                           "default editor size is 1280 x 634 [was %d x %d]",
+                           ed->getWidth(), ed->getHeight());
+            check (ed->getWidth() == 1280 && ed->getHeight() == 634, msg);
         }
 
         std::printf ("\n[7] Layout sanity (every surfaced page: no overlaps, fills width)\n");
@@ -823,9 +850,71 @@ int main()
                         if ((typeCombo = dynamic_cast<juce::ComboBox*> (c)))
                             break;
                     std::snprintf (msg, sizeof (msg),
-                                   "FX1 type combo has 11 items [got %d]",
+                                   "FX1 type combo has %d items [got %d]",
+                                   (int) FxType::Count,
                                    typeCombo ? typeCombo->getNumItems() : -1);
-                    check (typeCombo != nullptr && typeCombo->getNumItems() == 11, msg);
+                    // One item per FxType — the FV-1 family is APPEND-ONLY
+                    // (81679f5 + f80a6c9 grew Count 11 -> 16), so assert
+                    // against the enum, not a literal count.
+                    check (typeCombo != nullptr
+                               && typeCombo->getNumItems() == (int) FxType::Count,
+                           msg);
+
+                    // Dropdown-REOPEN regression: FxTypeCombo::showPopup once
+                    // finished with a nullptr completion callback, so the
+                    // private menuActive flag stayed latched TRUE after the
+                    // popup dismissed and every later click bailed inside
+                    // ComboBox::showPopupIfNotActive() — the effect could be
+                    // picked exactly once per card. Drive the REAL click path
+                    // (mouseDown -> showPopupIfNotActive -> async showPopup)
+                    // and prove the flag resets when the menu is dismissed.
+                    // (Apple-only: the headless pump runs the main CFRunLoop
+                    // directly — the perf-smoke-test idiom; other platforms
+                    // skip this check.)
+#if JUCE_MAC || JUCE_IOS
+                    if (typeCombo != nullptr)
+                    {
+                        check (! typeCombo->isPopupActive(),
+                               "FX1 type combo: menuActive false before first open");
+                        typeCombo->mouseDown (
+                            juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                               typeCombo->getLocalBounds().getCentre().toFloat(),
+                                               juce::ModifierKeys::leftButtonModifier,
+                                               juce::MouseInputSource::defaultPressure,
+                                               juce::MouseInputSource::defaultOrientation,
+                                               juce::MouseInputSource::defaultRotation,
+                                               juce::MouseInputSource::defaultTiltX,
+                                               juce::MouseInputSource::defaultTiltY,
+                                               typeCombo, typeCombo,
+                                               juce::Time::getCurrentTime(), {},
+                                               juce::Time::getCurrentTime(), 1, false));
+                        // showPopupIfNotActive defers the actual popup via
+                        // callAsync — pump the main run loop so it opens
+                        // (JUCE 9 has no unguarded synchronous pump; the JUCE
+                        // MessageQueue IS a CFRunLoopSource on the main loop).
+                        bool opened = false;
+                        for (int i = 0; i < 50 && ! opened; ++i)
+                        {
+                            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.020, false);
+                            opened = typeCombo->isPopupActive();
+                        }
+                        check (opened, "FX1 type combo: popup active after click");
+                        juce::PopupMenu::dismissAllActiveMenus();
+                        bool closed = false;
+                        for (int i = 0; i < 50 && ! closed; ++i)
+                        {
+                            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.020, false);
+                            closed = ! typeCombo->isPopupActive();
+                        }
+                        std::snprintf (msg, sizeof (msg),
+                                       "FX1 type combo: menuActive resets after dismissal "
+                                       "(dropdown reopenable) [got %d]",
+                                       typeCombo->isPopupActive() ? 1 : 0);
+                        check (closed && ! typeCombo->isPopupActive(), msg);
+                    }
+#else
+                    std::printf ("  (popup-reopen check skipped: non-Apple pump)\n");
+#endif
                     // (Selection -> APVTS propagation is async via the attachment and
                     // isn't pumpable in this headless test; the identical addItemList +
                     // ComboBoxAttachment pattern already powers the working osc-shape

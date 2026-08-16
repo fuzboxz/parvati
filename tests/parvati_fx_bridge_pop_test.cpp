@@ -9,8 +9,14 @@
 // seamless across sub-chunk AND block boundaries.
 //
 // This test renders every Clouds (bridge) FX via an FxChain slot, sub-chunked at
-// the engine's ~980 Hz cadence, and asserts the isolated-spike count is ~0 (was
-// 13+ for the Diffuser pre-fix). Native (non-bridge) FX are a control (always 0).
+// the engine's ~980 Hz cadence, and asserts the isolated-spike count sits at
+// the single-block (no-sub-chunking) floor + a small margin (was 13+ above it
+// for the Diffuser pre-fix). Native (non-bridge) FX are a control asserted at
+// the same single-block floor: their render is chunking-invariant (no per-call
+// state), so sub-chunking must add nothing — but their ABSOLUTE spike count
+// need not be 0 (the Resonator's Structure param legitimately shapes an
+// inharmonic modal waveform whose narrow crests trip the isolated-spike
+// heuristic at some sample rates).
 // It FAILS if the head-overlap fix is reverted (the per-sub-chunk clicks return).
 //
 // Build: linked as parvati_fx_bridge_pop_test (see CMakeLists).
@@ -116,8 +122,9 @@ int measureSpikes (const std::vector<float>& out)
 // A Clouds FX is "pop-clean" under sub-chunking if its sub-chunk spike count does
 // not exceed the single-block (no-sub-chunking) floor by more than a small margin.
 // Pre-fix the sub-chunk count was FAR above the single-block floor (Diffuser @48k:
-// 13 vs 3; @44k: 48 vs 1). The fix brings them together. Margin 5 is well below the
-// pre-fix gap (>=10) and above the fixed residual (<=3 at 96k's 3:1 downsample).
+// 13 vs 3; @44k: 48 vs 1). The fix brings them together. Margin 1 is well below the
+// pre-fix gap (>=10) — native and bridged FX alike are compared against their own
+// single-block floor, which is the actual contract (sub-chunking adds nothing).
 constexpr int kSubVsSingleMargin = 1;
 
 void testRate (double sr, int subChunk, int blocks, int singleChunk, int singleBlocks)
@@ -144,13 +151,20 @@ void testRate (double sr, int subChunk, int blocks, int singleChunk, int singleB
 
     for (FxType t : nativeFx)
     {
-        const int spikesSub = measureSpikes (renderSubChunked (t, sr, subChunk, blocks));
+        const int spikesSub    = measureSpikes (renderSubChunked (t, sr, subChunk, blocks));
+        const int spikesSingle = measureSpikes (renderSubChunked (t, sr, singleChunk, singleBlocks));
         char msg[160];
         std::snprintf (msg, sizeof (msg),
-            "%-14s @%.0fk (native, control): sub-chunk spikes=%d (expect 0)",
-            fxTypeName (t), sr / 1000.0, spikesSub);
+            "%-14s @%.0fk (native, control): sub-chunk spikes=%d (single=%d; must be <= single+%d)",
+            fxTypeName (t), sr / 1000.0, spikesSub, spikesSingle, kSubVsSingleMargin);
         std::printf ("  %s\n", msg);
-        check (spikesSub == 0, msg);   // native FX never had the bridge bug
+        // Native FX never had the bridge bug: their render is chunking-invariant
+        // (no per-call state to reset), so sub-chunk spikes must sit at the
+        // single-block floor. An ABSOLUTE 0 held only before Structure became
+        // param 5 (496ed01: 0.5 -> inharmonic modal layout -> legitimately narrow
+        // crest texture); a real native discontinuity would still blow the gap
+        // (sub >> single), exactly like the pre-fix bridge did.
+        check (spikesSub <= spikesSingle + kSubVsSingleMargin, msg);
     }
 }
 
