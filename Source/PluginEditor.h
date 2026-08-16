@@ -549,6 +549,13 @@ public:
     void setCurrentTopPage (int pageIndex);
 
 private:
+    // Active voices of the CURRENT part (pool voices filtered by their part
+    // tag + the SF-1 atomic activity snapshot) — the numerator of the bottom
+    // status-strip count. Part-relative since the 96-voice pool: the
+    // denominator is the current part's voiceCount_, so a global count
+    // produced mixed fractions like "23/16".
+    int currentPartActiveVoiceCount() const;
+
     // Unified 3-way top-level page selector (Synth/FX/Patch). Each header
     // page button calls showTopPage(idx): exclusive page visibility + button
     // states; reparents the shared generator only on a Synth<->FX change.

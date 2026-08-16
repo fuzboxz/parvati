@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// SynthEngine — a juce::Synthesiser owning 6 AmbikaVoice instances (one per
-// firmware voicecard), divided among up to kNumParts (6) Parts (multitimbral,
-// hardware-accurate). Each Part
+// SynthEngine — a juce::Synthesiser owning a fixed pool of AmbikaVoice
+// instances (kNumVoices = kNumParts * kMaxVoicesPerPart), divided among up to
+// kNumParts (6) Parts (multitimbral, hardware-accurate). Each Part
 // has its own Patch + PartData + Arpeggiator + Sequencer + MIDI channel + key
 // zone + a subset of the voices. Only the "current" Part is edited via APVTS
 // (matching the hardware: one editor, part-select). Direct MIDI is routed by
@@ -27,17 +27,22 @@
 #include "dsp/fx/FxChain.h"   // per-part FX chains (FxChain, FxType)
 #include "dsp/patch.h"
 
+#include "MulExport.h"        // mul_export::deriveMasks (derived voicecard masks)
+
 // Authentic hardware = 6 voicecards => 6 Parts.
 static constexpr int kNumParts  = 6;
 // Per-part voice-slot ceiling (Parvati extension). The engine owns a fixed
 // pool of kNumParts * kMaxVoicesPerPart voices so EVERY Part can be maxed out
 // SIMULTANEOUSLY: the pool always satisfies the sum of all Parts' slot
-// settings, so allocation never steals between Parts. A Part's live voice
-// count is its per-part `voiceSlots` setting (0 = AUTO: one voice per
-// allocated voicecard, faithful 6-voice hardware behaviour; 1..16 = a fixed
-// slot count drawn from the pool). Idle pool voices are gated silent and
-// skipped by the renderer, so the large pool costs nothing until played;
-// worst-case CPU scales with PLAYED voices only.
+// settings, so allocation never steals between Parts. voiceSlots is the
+// SINGLE SOURCE OF TRUTH for a Part's polyphony (1 voice = digital voice
+// section + voicecard): 1..16 voices drawn from the pool, 0 = disabled (only
+// the ctor default and legacy loaders ever store 0). The firmware
+// 6-voicecard bitmask is DERIVED from the slot counts (contiguous
+// proportional share, mul_export::deriveMasks) and keeps its aux-out routing
+// + .MUL export jobs. Idle pool voices are gated silent and skipped by the
+// renderer, so the large pool costs nothing until played; worst-case CPU
+// scales with PLAYED voices only.
 static constexpr int kMaxVoicesPerPart = 16;
 static constexpr int kNumVoices = kNumParts * kMaxVoicesPerPart;   // 96
 
@@ -299,11 +304,16 @@ struct Part
     // message thread (editor status strip) never reads voiceIndices directly.
     std::atomic<int> voiceCount_ { 0 };
 
-    std::atomic<uint8_t> voiceAllocation { 0 };   // 6-bitmask over firmware voicecards (vc0..5)
-    // Parvati extension: per-part voice-slot count drawn from the engine pool.
-    // 0 = AUTO (one voice per allocated voicecard — faithful hardware);
-    // 1..kMaxVoicesPerPart = fixed count. Written on the message thread
-    // (setPartVoiceSlots), read on the audio thread in
+    // DERIVED 6-bitmask over firmware voicecards (vc0..5): written by the
+    // audio thread in rebuildVoiceAllocation (mul_export::deriveMasks over
+    // the slot counts) and read on the message thread (.MUL export + UI).
+    // NOT user state — see voiceSlots.
+    std::atomic<uint8_t> voiceAllocation { 0 };
+    // Parvati extension: the Part's VOICE COUNT from the engine pool — the
+    // single source of truth for polyphony. 1..kMaxVoicesPerPart = voices;
+    // 0 = disabled (only the ctor default / legacy loaders store 0 —
+    // setPartVoiceSlots clamps 0 to 1). Written on the message thread
+    // (setPartVoiceSlots / legacy loads), read on the audio thread in
     // rebuildVoiceAllocation — atomic like voiceAllocation, published through
     // the allocationDirty_ release/acquire.
     std::atomic<uint8_t> voiceSlots { 0 };
@@ -453,26 +463,40 @@ public:
     // stay const-correct. Default POLY (1) for an out-of-range part.
     uint8_t getPartPolyphony (int part) const { return ok (part) ? parts_[(size_t) part].partBytes[15] : 1; }
 
-    // ---- Voice allocation (firmware 6-voicecard bitmask) ----
-    // Each firmware voicecard maps to exactly one Parvati voice (voice i ==
-    // voicecard i). A Part owns the voicecards whose bits it sets; a voicecard
-    // already claimed by an earlier Part is not reassigned (first-wins, like
-    // firmware Multi::AssignVoices), and setPartVoiceAllocation additionally
-    // enforces EXCLUSIVE ownership (a card newly claimed by a Part is removed
-    // from every other Part). Default bitmask = 1<<partIndex.
+    // ---- Voicecard masks (DERIVED from the voice slots) ----
+    // The firmware 6-voicecard bitmask is no longer user state: voiceSlots is
+    // the single source of truth and rebuildVoiceAllocation derives each
+    // Part's contiguous proportional card share via mul_export::deriveMasks
+    // (same shape as the .MUL Proportional strategy), publishing it into
+    // Part::voiceAllocation. setPartVoiceAllocation is kept as the LEGACY
+    // LOAD PATH: .MUL files, host-state v1..v5 and older .parvati files carry
+    // bitmasks, so it materializes the equivalent slot count (slots =
+    // popcount(mask), 0 -> disabled) and marks the allocation dirty.
     void setPartVoiceAllocation (int part, uint8_t bitmask);
-    uint8_t getPartVoiceAllocation (int part) const { return ok (part) ? parts_[(size_t) part].voiceAllocation.load (std::memory_order_relaxed) : 0; }
+    // The DERIVED mask for @p part, computed FRESH from the slot counts
+    // (same pure rule the audio-thread rebuild tags voices with) so readers
+    // (.MUL export, Patch page) never see a stale-by-one-block value after a
+    // slots edit. Part::voiceAllocation keeps the AT-published copy solely as
+    // the legacy seed written into host-state blobs.
+    uint8_t getPartVoiceAllocation (int part) const
+    {
+        if (! ok (part))
+            return 0;
+        std::array<int, kNumParts> want {};
+        for (int q = 0; q < kNumParts; ++q)
+            want[(size_t) q] = static_cast<int> (parts_[(size_t) q].voiceSlots.load (std::memory_order_relaxed));
+        return parvati::mul_export::deriveMasks (want)[(size_t) part];
+    }
 
     // ---- Per-part voice slots (Parvati extension) ----
-    // slots: 0 = AUTO (follow the voicecard bitmask: one voice per allocated
-    // card, faithful hardware), 1..kMaxVoicesPerPart = fixed count drawn from
-    // the engine pool. The pool (kNumVoices = kNumParts * kMaxVoicesPerPart)
-    // always satisfies every Part simultaneously. Changing slots re-partitions
-    // the pool on the audio thread (deferred via markAllocationDirty, the same
-    // path as bitmask/polyphony edits). NOTE: a Part with NO allocated cards is
-    // disabled regardless of its slot count (the bitmask keeps its ownership /
-    // aux-out / hardware-export jobs); slots only add polyphony beyond the
-    // card count.
+    // slots: 1..kMaxVoicesPerPart = the Part's voice count drawn from the
+    // engine pool (the single source of truth; the card mask is derived from
+    // it). The pool (kNumVoices = kNumParts * kMaxVoicesPerPart) always
+    // satisfies every Part simultaneously. Changing slots re-partitions the
+    // pool on the audio thread (deferred via markAllocationDirty, the same
+    // path as the legacy-bitmask/polyphony edits). A Part is enabled iff its
+    // slot count >= 1; the PUBLIC setter clamps 0 to 1 (disabling is the
+    // legacy loaders' job via setPartVoiceAllocation).
     void setPartVoiceSlots (int part, int slots);
     int  getPartVoiceSlots (int part) const { return ok (part) ? static_cast<int> (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed)) : 0; }
 

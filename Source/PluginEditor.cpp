@@ -2676,6 +2676,32 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     patchPage_->setVisible (false);
     // Relabel the top-bar Part selector when a part name/alias is edited.
     patchPage_->onPartNamesChanged = [this] { refreshPartComboNames(); };
+    // Global voice-pool view (Patch page only — the whole-patch picture).
+    // Per part: its label (name/alias or the translated "Part N" placeholder,
+    // exactly what the Patch rows show) + one entry per ALLOCATED voice.
+    // The pool voices are re-TAGGED with their owning part by
+    // rebuildVoiceAllocation, so the sort key is the part tag — the same
+    // source of truth as the part-relative meter provider. ONE pass over the
+    // 96-voice pool per poll (each voice lands in its tag's row); the view's
+    // timer only runs while the Patch page is on-screen.
+    patchPage_->setVoicePoolProvider ([this]() {
+        VoicePoolFrame frame;
+        auto& e = processorRef_.getEngine();
+        for (int part = 0; part < static_cast<int> (frame.parts.size()); ++part)
+        {
+            auto& pf = frame.parts[(size_t) part];
+            const auto name = e.getPartName (part);
+            pf.label = name.isNotEmpty() ? name
+                                         : TRANS ("Part") + " " + juce::String (part + 1);
+        }
+        for (int vi = 0; vi < e.getNumVoices(); ++vi)
+            if (auto* av = e.getAmbikaVoice (vi); av != nullptr)
+                if (const int p = av->getPartIndex();
+                    p >= 0 && p < static_cast<int> (frame.parts.size()))
+                    frame.parts[(size_t) p].voices.push_back (
+                        { av->isDisplayedActive(), av->getDisplayedNote() });
+        return frame;
+    });
     if (globalPage_ != nullptr)
         patchPage_->hostParamPage (globalPage_);   // reparents the Section::Global ParamPage into the Patch page
 
@@ -2812,16 +2838,26 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     {
         auto vm = std::make_unique<VoiceMeter>();
         vm->setStateProvider ([this]() {
+            // PART-RELATIVE frame: one entry per ALLOCATED voice of the
+            // current part, in pool order (0..16 entries; empty = a disabled
+            // part, a valid all-dim frame). The pool is partitioned in part
+            // order but voices are re-TAGGED with their owning part by
+            // rebuildVoiceAllocation, so the filter is the part tag — the old
+            // first-six-pool-indices view always showed Part 1 regardless of
+            // the selection.
             std::vector<VoiceActivity> v;
             auto& e = processorRef_.getEngine();
-            v.reserve (static_cast<size_t> (e.getNumVoices()));
+            const int curPart = e.getCurrentPart();
+            v.reserve (static_cast<size_t> (
+                e.getPart (curPart).voiceCount_.load()));
             for (int i = 0; i < e.getNumVoices(); ++i)
             {
+                auto* av = e.getAmbikaVoice (i);
+                if (av == nullptr || av->getPartIndex() != curPart)
+                    continue;
                 // SF-1: read the lock-free atomic snapshot instead of the
                 // non-atomic SynthesiserVoice::currentlyPlayingNote.
-                auto* av = e.getAmbikaVoice (i);
-                v.push_back ({ av != nullptr && av->isDisplayedActive(),
-                               av != nullptr ? av->getDisplayedNote() : -1 });
+                v.push_back ({ av->isDisplayedActive(), av->getDisplayedNote() });
             }
             return v;
         });
@@ -2839,9 +2875,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     statusCountLabel_.setJustificationType (juce::Justification::centred);
     statusCountLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     statusCountLabel_.setColour (juce::Label::textColourId, theme.accentPrimary);
-    statusCountLabel_.setText ("0/" + juce::String (
-        processorRef_.getEngine()
-            .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
+    statusCountLabel_.setText (
+        juce::String (currentPartActiveVoiceCount()) + "/" + juce::String (
+            processorRef_.getEngine()
+                .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
                                juce::dontSendNotification);
     addAndMakeVisible (statusCountLabel_);
     // Realtime audio-load / overrun probe readout (see ParvatiAudioProcessor::
@@ -2957,6 +2994,8 @@ ParvatiEditor::~ParvatiEditor()
         globalVoiceMeter_->setStateProvider (nullptr);
     if (keyboardView_ != nullptr)
         keyboardView_->setNoteCallback (nullptr);
+    if (patchPage_ != nullptr)
+        patchPage_->setVoicePoolProvider (nullptr);
     // Detach from the theme broadcaster and release the L&F BEFORE the member
     // objects (themeManager_, lnf_) and the base Component are destroyed, so the
     // ChangeBroadcaster never calls back into a half-dead editor and no child
@@ -3012,6 +3051,18 @@ void ParvatiEditor::refreshPartComboNames()
     partCombo_.repaint();
 }
 
+int ParvatiEditor::currentPartActiveVoiceCount() const
+{
+    auto& engine = processorRef_.getEngine();
+    const int curPart = engine.getCurrentPart();
+    int active = 0;
+    for (int i = 0; i < engine.getNumVoices(); ++i)
+        if (auto* av = engine.getAmbikaVoice (i);
+            av != nullptr && av->getPartIndex() == curPart && av->isDisplayedActive())
+            ++active;
+    return active;
+}
+
 void ParvatiEditor::timerCallback()
 {
     // ---- Tooltip bleed-through fix (~30 Hz) ----
@@ -3065,13 +3116,15 @@ void ParvatiEditor::timerCallback()
     // ---- Bottom status strip: active-voice count + hover tooltip (~30 Hz) ----
     {
         auto& engine = processorRef_.getEngine();
-        int active = 0;
-        for (int i = 0; i < engine.getNumVoices(); ++i)
-            if (auto* av = engine.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
-                ++active;
+        // PART-RELATIVE count: active voices of the CURRENT part only. The
+        // numerator used to sweep the whole 96-voice pool while the denominator
+        // was the current part's allocation — mixed fractions like "23/16".
+        // (The keyboard latching further below intentionally stays GLOBAL
+        // across all parts.)
+        const int active = currentPartActiveVoiceCount();
         activeVoices = active;
-        const int denom = processorRef_.getEngine()
-            .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load();
+        const int denom = engine
+            .getPart (engine.getCurrentPart()).voiceCount_.load();
         const juce::String countText = juce::String (active) + "/" + juce::String (denom);
         if (statusCountLabel_.getText() != countText)
             statusCountLabel_.setText (countText, juce::dontSendNotification);

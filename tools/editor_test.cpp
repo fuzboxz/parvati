@@ -71,6 +71,7 @@
 #include "ui/FxSlotCard.h"         // complete type for findFirst/collectAll<FxSlotCard>
 #include "ui/FxRoutingBar.h"       // complete type for findFirst<FxRoutingBar>
 #include "ui/FxSlotVisualizer.h"   // complete type for findFirst<FxSlotVisualizer>
+#include "ui/VoicePoolView.h"     // complete type for findFirst<VoicePoolView>
 
 namespace
 {
@@ -552,7 +553,40 @@ int main()
         check (meter != nullptr, "voice meter (cells) exists on the Global page");
         if (meter != nullptr)
             check (meter->getActiveVoiceCount() >= 0,
-                   "voice meter reports an active-voice count (6-cell view)");
+                   "voice meter reports an active-voice count (part-relative view)");
+
+        // The GLOBAL pool picture lives ONLY on the Patch page (the meter
+        // above is part-relative): the view is a permanent child of the
+        // Patch page's scrolled body, so it is in the tree regardless of the
+        // active page.
+        auto* pool = findFirst<VoicePoolView> (ed);
+        check (pool != nullptr, "voice pool view exists on the Patch page");
+        if (pool != nullptr)
+            check (pool->getAllocatedVoiceCount() >= 0,
+                   "voice pool view reports an allocated count (global view)");
+
+        // Headless provider test on a STANDALONE instance (the editor's own
+        // view keeps its real provider): a CHAIN part can own up to 2 x 16
+        // voices — the view DISPLAYS 16 squares but every count (per-row and
+        // the X/96 total) must reflect the FULL frame, so it never contradicts
+        // the status strip or the Patch page's "Voices Y/96" readout.
+        {
+            VoicePoolView standalone;
+            standalone.setBounds (0, 0, 1024, VoicePoolView::kHeight);
+            VoicePoolFrame f;
+            f.parts[0].label = "Chain";
+            f.parts[0].voices.assign (20, VoiceActivity { false, -1 });
+            f.parts[0].voices[2].active  = true;
+            f.parts[0].voices[17].active = true;   // active BEYOND the 16th square
+            f.parts[1].label = "P2";
+            f.parts[1].voices.assign (3, VoiceActivity { true, 60 });
+            standalone.setStateProvider ([f]() { return f; });
+            standalone.pollNow();
+            check (standalone.getAllocatedVoiceCount() == 23,
+                   "pool view counts the FULL frame (20 CHAIN + 3), not the 16-square cap");
+            check (standalone.getActiveVoiceCount() == 5,
+                   "pool view counts active voices beyond the 16th square (2 + 3)");
+        }
 
         // ------------------------------------------------------------------
         // [11] REMOVED: the nested ENV/LFO/ARP/SEQ card tab bar (and its

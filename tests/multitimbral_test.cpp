@@ -169,28 +169,31 @@ int main()
         check (peak1 > 0.01, "Part 1 (channel 2) renders audible audio");
     }
 
-    std::printf ("\n[5] Exclusive voicecard assignment (a card on <=1 Part)\n");
+    std::printf ("\n[5] Derived voicecard masks (contiguous share of the slots)\n");
     {
         ParvatiAudioProcessor p;
         p.prepareToPlay (48000.0, 256);
         SynthEngine& e = p.getEngine();
 
-        // Part 0 claims vc0..3 (0x0f).
+        // Legacy bitmask loads materialize slot counts (popcount), and the
+        // engine DERIVES contiguous proportional card shares from them:
+        // masks 0x0f (4 cards) + 0x01 (1 card) -> slots 4+1 -> cards 0..3 for
+        // Part 0 and card 4 for Part 1. Disjoint by construction (no
+        // exclusivity logic to test — the derivation cannot double-assign).
         e.setPartVoiceAllocation (0, 0x0f);
-        // Part 1 now claims vc0 too -> exclusivity removes vc0 from Part 0.
         e.setPartVoiceAllocation (1, 0x01);
         { juce::AudioBuffer<float> flushBuf (2, 256); flushBuf.clear(); juce::MidiBuffer emptyMidi; p.processBlock (flushBuf, emptyMidi); }
 
         const uint8_t p0 = e.getPartVoiceAllocation (0);
         const uint8_t p1 = e.getPartVoiceAllocation (1);
-        std::printf ("     Part0 alloc = 0x%02x (expect 0x0e), Part1 alloc = 0x%02x (expect 0x01)\n", p0, p1);
-        check ((p0 & 0x01) == 0,    "exclusive: Part 0 lost vc0 to Part 1");
-        check ((p1 & 0x01) == 0x01, "exclusive: Part 1 owns vc0");
-        check (p0 == 0x0e,          "exclusive: Part 0 keeps vc1,2,3");
+        std::printf ("     Part0 alloc = 0x%02x (expect 0x0f), Part1 alloc = 0x%02x (expect 0x10)\n", p0, p1);
+        check ((p0 & p1) == 0, "derived masks are disjoint (a card on <=1 Part)");
+        check (p0 == 0x0f,          "derived: Part 0 owns vc0..3 (its 4 slots share)");
+        check (p1 == 0x10,          "derived: Part 1 owns vc4 (its 1 slot share)");
 
-        // rebuild reflects the exclusive bitmasks under the pool model: a Part's
-        // voice COUNT equals its card count and its voices are tagged onto its
-        // OWN cards (the raw pool indices are an engine-internal detail).
+        // The rebuild partitions the pool from the slots and tags each Part's
+        // voices round-robin onto ITS derived cards (pool indices are an
+        // engine-internal detail).
         auto cardsOf = [&e] (int part)
         {
             std::set<int> cards;
@@ -199,10 +202,10 @@ int main()
                     cards.insert (av->getVoiceCard());
             return cards;
         };
-        check (e.getPart (0).voiceIndices.size() == 3 && cardsOf (0) == std::set<int> ({ 1, 2, 3 }),
-               "rebuild: Part 0 owns 3 voices on vc1,2,3");
-        check (e.getPart (1).voiceIndices.size() == 1 && cardsOf (1) == std::set<int> ({ 0 }),
-               "rebuild: Part 1 owns 1 voice on vc0");
+        check (e.getPart (0).voiceIndices.size() == 4 && cardsOf (0) == std::set<int> ({ 0, 1, 2, 3 }),
+               "rebuild: Part 0 owns 4 voices on vc0..3");
+        check (e.getPart (1).voiceIndices.size() == 1 && cardsOf (1) == std::set<int> ({ 4 }),
+               "rebuild: Part 1 owns 1 voice on vc4");
     }
 
     std::printf ("\n%s (%d failures)\n",

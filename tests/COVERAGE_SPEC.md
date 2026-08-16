@@ -121,6 +121,29 @@ NOTE: `filter_card` (option) + `filter_drive` (option) are in Options below.
 | `part_portamento` | 6 | glide time 0..63 | byte; audio: portamento on + 2 rapid notes => pitch glide |
 | `part_polyphony` | 15 | Mono/Poly/Unison2x/Cyclic/Chain (0..4) | byte; functional: voice allocation differs |
 
+## Voice counts & arrangement (engine-level, not patch bytes)
+
+Voice slots are ENGINE state (`SynthEngine::voiceSlots`, 1..16 per Part from
+the 96-voice pool), so they are covered functionally, not via the byte bridge:
+
+- **Counts are the user model.** `setPartVoiceSlots` clamps 1..16; a Part is
+  enabled iff its count >= 1 (disabled Parts are 0 — reachable only via an
+  arrangement preset or a loaded multi). No `Auto`, no card budget.
+- **Cards are derived.** The 6-voicecard bitmask comes from
+  `mul_export::deriveMasks` (contiguous proportional share, min 1 per active
+  Part) — one source of truth shared with `.MUL` export. Assert the derived
+  masks for representative count vectors (e.g. 10/8/6 -> 3/2/1 cards).
+- **Six arrangement presets** — Mono (1 voice + MONO poly = true mono),
+  Single (16), Dual Layer (8+8 Omni), Dual Split (8+8 @48), Quad Split
+  (4x8 @36/60/84), Multi 6 (6x16, channels 1..6). Coverage: apply each,
+  assert per-Part counts + zones + channels + polyphony, and that inference
+  round-trips the preset (non-matching edits read Custom).
+- **MONO/unison = the count** (MONO + N voices = N-voice unison);
+  CHAIN doubles a Part's voice set (up to 32).
+- **Round-trips:** `.parvati` carries `voice_slots` verbatim; `.MUL`/legacy
+  host-state blobs materialize counts from the stored mask's popcount
+  (0 -> disabled).
+
 ## Sequencer (67 params; controller PartData)
 
 `seq_length_{1,2,3}` (1..16), `seq1_step{0..15}`, `seq2_step{0..15}` (0..127),

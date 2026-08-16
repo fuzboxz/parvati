@@ -15,7 +15,7 @@ descriptor-driven view of the engine. We are not emulating the Ambika hardware U
 
 | Area | Status |
 |------|--------|
-| **Architecture** | `ParvatiAudioProcessor` owns `SynthEngine` (16 voices, 6 multitimbral Parts) + APVTS exposing ~104 params via a `PatchParamDescriptor` table. |
+| **Architecture** | `ParvatiAudioProcessor` owns `SynthEngine` (96-voice pool: 6 multitimbral Parts x 16 slots each) + APVTS exposing ~104 params via a `PatchParamDescriptor` table. |
 | **GUI generation** | `PluginEditor.cpp` auto-generates `ParamControl` cells (rotary `Slider`/`ComboBox`) into 9 `ParamPage`s + 1 custom `MultiPage`, wrapped in `Viewport`s in a `TabbedComponent`. Cannot drift from the engine (good — keep this). |
 | **Colour** | One hard-coded `col::` palette (dark bg + gold accent). Every control gets ~8 manual `setColour()` calls. No theme system, no `LookAndFeel`. |
 | **Layout** | Fixed-pixel grid (e.g. 214×106 cells). Resizable window but the grid does **not** reflow/scale — controls get clipped or padded. |
@@ -51,7 +51,7 @@ descriptor-driven view of the engine. We are not emulating the Ambika hardware U
 ### D. Visualization ("modern experience")
 12. **Envelope display** — ADSR shape reacting to A/D/S/R knobs.
 13. **Virtual keyboard** — `MidiKeyboardComponent` showing/triggering notes, per-part channel colour.
-14. **Voice activity meter** — 16-voice allocator state.
+14. **Voice activity meter** — per-part allocator state (one cell per allocated voice, up to 16; the global 96-voice pool view lives on the Patch page).
 15. **Step-sequencer grid editor** — replace 32 raw sliders with a 16-step grid.
 16. **Oscilloscope/spectrum** (lower priority).
 
@@ -170,7 +170,7 @@ All delivered and verified (debug + release build clean, 14/14 tests pass, stand
 | **1b** Tooltips | `ParamHelp` map — **183/183 params covered** (119 curated + 64 generated seq steps, runtime-verified) | `Source/ui/ParamHelp.{h,cpp}` |
 | **2a** LookAndFeel + wiring | `ParvatiLookAndFeel` (centralized, drives all stock widget colours from theme); removed legacy `col::`; `TooltipWindow`; `setZoom`; `ChangeListener` theme refresh | `Source/ui/ParvatiLookAndFeel.{h,cpp}`, `Source/PluginEditor.{h,cpp}` |
 | **2b** Responsive layout | Grouped panels (`groupForId` → bordered `GroupComponent`s); FlexBox-style reflow to window width; dense Mod-Matrix/Sequencer handling; viewport reflow contract | `Source/PluginEditor.{h,cpp}` |
-| **3** Visualization components | `EnvelopeDisplay` (ADSR preview), `KeyboardView` (engine-mirrored + click-play), `VoiceMeter` (16-voice activity) | `Source/ui/{EnvelopeDisplay,KeyboardView,VoiceMeter}.{h,cpp}` |
+| **3** Visualization components | `EnvelopeDisplay` (ADSR preview), `KeyboardView` (engine-mirrored + click-play), `VoiceMeter` (part-relative activity, up to 16 cells) | `Source/ui/{EnvelopeDisplay,KeyboardView,VoiceMeter}.{h,cpp}` |
 | **4a** Integration + settings + persistence | Keyboard + meter wired in; `SettingsPanel` (theme/zoom/tooltips) in a `SidePanel`; thread-safe `MidiMessageCollector` click-play; backward-compatible UI-pref persistence in processor state | `Source/PluginProcessor.{h,cpp}`, `Source/PluginEditor.{h,cpp}`, `Source/ui/SettingsPanel.{h,cpp}` |
 | **4b** Polish (reviewer fixes + UX) | Atomic voice-activity snapshot (removes data race); zoom leak fixed (reset on teardown) + documented; zoom keyboard shortcuts (Cmd/Ctrl +/−/0); right-click context menus (reset-to-default / randomize); dead-code NITs fixed | `Source/AmbikaVoice.{h,cpp}`, `Source/PluginEditor.{h,cpp}`, `Source/ui/KeyboardView.{h,cpp}`, `Source/ui/SettingsPanel.{h,cpp}` |
 | **4c** Env displays + QA | `setGroupDecoration` ParamPage hook; 3 ADSR previews on the Env/LFO page; theme-contrast QA (no changes needed) | `Source/PluginEditor.{h,cpp}` |
@@ -181,7 +181,7 @@ All delivered and verified (debug + release build clean, 14/14 tests pass, stand
 - **Tooltips:** hover any control for name+value+description (all 183 params). Toggle in Settings. Persisted.
 - **Right-click** any knob/combo → Reset to default / Randomize.
 - **Virtual keyboard** (bottom): click to play (routes to current part's MIDI channel); mirrors sounding notes from the engine.
-- **Voice meter** (status strip): shows the 16-voice allocator state + active count, grouped by voicecard.
+- **Voice meter** (status strip): part-relative — one cell per allocated voice of the current part (up to 16; the pool itself is 96 voices across 6 parts) + active count.
 
 ### Known limitations / future enhancements (documented, not blocking)
 - **Zoom is process-global** (JUCE `Desktop::setGlobalScaleFactor`): multiple Parvati instances in one host share one zoom; reset to 1.0 on editor teardown (no leak). Per-editor transform-based zoom is the documented future enhancement (would require restructuring the reflow layout that keys off `getWidth()`).
@@ -197,7 +197,7 @@ Driven by an audit of the JUCE professional-checklist, filtered for Parvati's fa
 ### Implemented
 - **Preset Save** — `.PRO` export (byte-exact inverse of parser, round-trip verified); "Save…" button.
 - **Undo/Redo** — `UndoManager` on the APVTS; knob drags, combos, context-menu reset/randomize, patch loads all undoable; Cmd/Ctrl+Z / Shift+Z + Undo/Redo buttons.
-- **Accessibility** — `AccessibilityHandler`s on the virtual keyboard, voice meter (live "N of 16"), envelope displays (the 182 generated controls already had JUCE defaults).
+- **Accessibility** — `AccessibilityHandler`s on the virtual keyboard, voice meter (live "N of M" where M is the current part's allocation), envelope displays (the 182 generated controls already had JUCE defaults).
 - **Computer-keyboard play** — standalone-ONLY (in a DAW the host owns musical-typing); modifier keys passthrough for zoom.
 - **🐛 Byte-bridge truncation fix** — `parvatiValueToPatchByte` now `juce::roundToInt` (was truncating 62.9999→62). Init-neutral; fixes load/live/save of float-roundtripped values.
 - **HW-accelerated rendering** — already ON by default in JUCE 9 (Direct2D on Windows unconditional; CoreGraphics on macOS). No flag needed.

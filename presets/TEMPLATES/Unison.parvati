@@ -9,7 +9,7 @@ parts:
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 63
-    voice_slots: 0
+    voice_slots: 6
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -114,6 +114,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 2            # Unison 2x
@@ -376,6 +377,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 1            # Poly
@@ -638,6 +640,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 1            # Poly
@@ -900,6 +903,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 1            # Poly
@@ -1162,6 +1166,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 1            # Poly
@@ -1424,6 +1429,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 1            # Poly

@@ -1072,18 +1072,22 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
 
 parvati::mul_export::Setup ParvatiAudioProcessor::getMulExportSetup() const
 {
+    // Voice-first model: the per-part slot count IS the requested voice count
+    // (0 = a disabled part), and the card counts come from the DERIVED
+    // voicecard masks (contiguous proportional share of the 6 cards — the
+    // same rule the engine's rebuild tags voices with, so needsFallback
+    // compares against what a .MUL can actually carry).
     parvati::mul_export::Setup setup;
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
-        const uint8_t mask = engine_.getPartVoiceAllocation (i);
+        const int slots = engine_.getPartVoiceSlots (i);
+        const uint8_t mask = engine_.getPartVoiceAllocation (i);   // derived
         int cards = 0;
         for (int vc = 0; vc < 6; ++vc)
             if (mask & (1u << vc)) ++cards;
-        const int slots = engine_.getPartVoiceSlots (i);
         setup.cards[(size_t) i] = cards;
-        setup.active[(size_t) i] = cards > 0;
-        // Effective requested voices: fixed slots, else the card count (AUTO).
-        setup.requested[(size_t) i] = (slots > 0) ? slots : cards;
+        setup.active[(size_t) i] = slots > 0;
+        setup.requested[(size_t) i] = slots;
         setup.polyMode[(size_t) i] = engine_.getPartPolyphony (i);
     }
     return setup;

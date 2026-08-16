@@ -324,9 +324,12 @@ int main()
         renderIdle (other, 2);
         other.loadMultiFile (f);
         renderIdle (other, 2);
-        check (other.getEngine().getPartVoiceAllocation (0) == 0b000011
-               && other.getEngine().getPartVoiceAllocation (1) == 0b001100,
-               "default = engine bitmasks unchanged (pre-extension behaviour)");
+        check (other.getEngine().getPartVoiceAllocation (0) == 0b000111
+               && other.getEngine().getPartVoiceAllocation (1) == 0b011000
+               && other.getEngine().getPartVoiceAllocation (2) == 0b100000,
+               "default = derived bitmasks (AsIs writes the engine's live,\n"
+               "                       slots-derived contiguous masks; contiguous\n"
+               "                       masks round-trip identically)");
     }
 
     // ---- [l] dialog constructs + refreshes headlessly ----

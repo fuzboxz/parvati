@@ -115,7 +115,10 @@ bool commonInvariants (const Setup& s, const Solution& sol, int maxCards)
     return used <= maxCards;
 }
 
-// Apply a scenario to a live processor (engines slots + contiguous card masks).
+// Apply a scenario to a live processor. Under the slots model the mask only
+// seeds slot counts (legacy load path); requested == 0 must NOT go through
+// setPartVoiceSlots — the public setter clamps 0 to 1 (cannot disable), so a
+// zero-request part keeps its zero-mask materialization (0 slots = disabled).
 void applyScenario (ParvatiAudioProcessor& proc, const Scenario& sc)
 {
     proc.prepareToPlay (48000.0, 256);
@@ -128,7 +131,8 @@ void applyScenario (ParvatiAudioProcessor& proc, const Scenario& sc)
         for (int c = 0; c < sc.cards[(size_t) p] && cursor < 6; ++c, ++cursor)
             mask = static_cast<uint8_t> (mask | (1u << cursor));
         e.setPartVoiceAllocation (p, mask);
-        e.setPartVoiceSlots (p, sc.requested[(size_t) p]);
+        if (sc.requested[(size_t) p] > 0)
+            e.setPartVoiceSlots (p, sc.requested[(size_t) p]);
     }
     renderIdle (proc, 2);
 }

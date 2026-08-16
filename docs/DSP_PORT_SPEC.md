@@ -13,7 +13,7 @@ All `file:line` citations are relative to `ambika_reference/`.
 1. **Faithful integer port of the digital voice DSP.** Preserve 8-bit audio (0–255, centered 128), all PROGMEM lookup/wavetables, the fixed-point math (`avrlib/op.h`), and the **40-sample block / once-per-block control-rate** structure. Convert to `float` **only** at the audio output boundary. **Do NOT** re-implement oscillators/LFOs/envelopes with `juce::dsp` generators — port them so they bit-match the firmware.
 2. **`juce::dsp` is used for:** (a) the **analog filter emulation** (no firmware exists — written fresh), and (b) the **framework**: `juce::Synthesiser`, `juce::AudioProcessorValueTreeState` (APVTS).
 3. **Scope** = patch/voice engine **+ arpeggiator**. DEFER multi-timbral parts + step sequencer + the LCD/encoder UI.
-4. **Polyphony** = **16** voices (authentic hardware default = **6**).
+4. **Polyphony** = **16** voices per Part (fixed 96-voice pool, 6 Parts x 16; the authentic hardware default is 6 — one per voicecard).
 
 ---
 

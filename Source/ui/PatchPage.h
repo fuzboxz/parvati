@@ -2,10 +2,12 @@
 //
 // A custom Component (no APVTS descriptor magic) that replaces the separate
 // Multi/Setup + Global pages. It lets the user pick a high-level arrangement
-// (Single/Stack/Split 2/Layer 2/Multi 6) which auto-configures all 6 Parts, then
-// fine-tunes each Part through simple controls (a card COUNT, not a bitmask).
-// It also HOSTS the editor's existing Section::Global ParamPage (patch-wide
-// knobs + the voice-activity meter decoration) below the 6 part rows.
+// (Mono/Single/Dual Layer/Dual Split/Quad Split/Multi 6 — voice-budget presets
+// over the 96-voice pool) which auto-configures all 6 Parts, then fine-tunes
+// each Part through simple controls (a VOICE COUNT 1..16, not a card bitmask:
+// the 6-voicecard masks are derived by the engine). It also HOSTS the editor's
+// existing Section::Global ParamPage (patch-wide knobs + the voice-activity
+// meter decoration) below the 6 part rows.
 //
 // Design: /tmp/parvati_patch_design.md ("Phase 2"). Phase 1 output
 // (Source/ui/PatchArrangement.h) supplies applyArrangement/inferArrangement.
@@ -26,6 +28,7 @@
 #include <memory>
 
 #include "PatchArrangement.h"   // Arrangement (getDisplayedArrangement return type)
+#include "VoicePoolView.h"    // VoicePoolFrame (setVoicePoolProvider type)
 
 class ParvatiAudioProcessor;
 class ThemeManager;
@@ -58,8 +61,15 @@ public:
     // page is reflowed to the row width in resized().
     void hostParamPage (juce::Component* paramPage);
 
-    // Re-read all 6 Parts' engine state into the rows (card count via popcount,
-    // channel, key zone, polyphony) WITHOUT firing onChange, then re-infer the
+    // Inject the state provider for the global voice-pool view (the pool
+    // picture lives ONLY here — the Global page's VoiceMeter is part-relative).
+    // Same decoupled pattern as the meter: the editor builds a VoicePoolFrame
+    // (per part: label + one entry per allocated voice) at ~30 Hz; the view
+    // owns nothing from the engine.
+    void setVoicePoolProvider (std::function<VoicePoolFrame()> provider);
+
+    // Re-read all 6 Parts' engine state into the rows (voice count, channel,
+    // key zone, polyphony) WITHOUT firing onChange, then re-infer the
     // arrangement from the engine. Idempotent (guarded by refreshing_).
     void refresh();
 
@@ -74,19 +84,8 @@ public:
     void applyThemeColors();
 
     // ---- test / automation hooks (observe + drive the exact UI code paths) ----
-    // Currently-displayed card count for @p part (0..6), read from its combo
-    // (returns -1 for an out-of-range part).
-    int getDisplayedCardCount (int part) const;
     // Currently-displayed arrangement (the combo selection; Custom if none).
     Arrangement getDisplayedArrangement() const;
-    // Set @p part's card count as if the user chose it: sets the combo then runs
-    // the normal cap-check + contiguous-bitmask write (recomputeCardAllocation).
-    // If the new total would exceed 6 the edit is rejected (engine untouched,
-    // the combo reverts) — exactly like a real edit.
-    void chooseCardCount (int part, int count);
-    // Highest card count @p part's combo currently offers (0..6). With the
-    // dynamic per-row cap this is 6 minus the cards used by the other rows.
-    int getCardCountMax (int part) const;
     // Currently-displayed tuning mode for @p part from its Tune combo
     // (0 = 12-EDO, 1..32 = preset, 33 = Custom; -1 for an out-of-range part).
     int getDisplayedTuningMode (int part) const;
@@ -96,14 +95,26 @@ public:
     // mode 33 opens the Custom… popover exactly like the UI — do not use in
     // headless tests (instantiate TuningEditor directly instead).
     void chooseTuningMode (int part, int mode);
+    // Currently-displayed voice count for @p part from its Voices combo
+    // (1..16; 0 = no selection = a DISABLED part — the combo offers no 0 item,
+    // disabling is the arrangements'/loaders' job; -1 for an out-of-range part).
+    int getDisplayedVoiceSlots (int part) const;
+    // Set @p part's voice count as if the user chose it in the Voices combo:
+    // sets the selection then runs the normal engine write path
+    // (onVoicesChanged -> setPartVoiceSlots). JUCE does not fire a combo's
+    // onChange for a programmatic setSelectedId, hence the explicit drive.
+    // @p slots is clamped into the combo's 1..16 range (0 clamps to 1 —
+    // enabling a disabled part; the public engine setter likewise never
+    // disables).
+    void chooseVoiceSlots (int part, int slots);
 
 private:
     ParvatiAudioProcessor& proc_;
     ThemeManager& themeManager_;
 
     juce::Label heading_;
-    juce::Label cardsTotalLabel_;        // "Cards X/6" budget readout (next to the arrangement combo)
-    juce::ComboBox arrangementCombo_;   // 5 selectable items (ids 1..5); Custom = no selection
+    juce::Label voicesTotalLabel_;       // "Voices Y/96" pool-budget readout (next to the arrangement combo)
+    juce::ComboBox arrangementCombo_;   // 6 selectable items (ids 1..6); Custom = no selection
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 
     // T4 scroll safety net: the 6 part rows + the hosted patch-wide ParamPage
@@ -118,6 +129,12 @@ private:
     std::unique_ptr<ScrollBody> scrollBody_;
     juce::Viewport viewport_;
 
+    // Global voice-pool view (owned) + its caption. Lives INSIDE the scrolled
+    // body below the 6 part rows and above the hosted Global ParamPage, so the
+    // whole-part picture is reachable exactly where parts are configured.
+    juce::Label voicePoolCaption_;
+    std::unique_ptr<VoicePoolView> voicePoolView_;
+
     // One row per Part (0..5). Defined in the .cpp.
     class PartRow;
     std::array<std::unique_ptr<PartRow>, 6> rows_;
@@ -129,9 +146,6 @@ private:
     void buildArrangementCombo();
     // Arrangement combo onChange: apply the template, then full refresh.
     void onArrangementChanged();
-    // Cards combo onChange for @p changedPart: enforce the sum<=6 cap, then
-    // recompute + write all 6 contiguous bitmasks in part order.
-    void recomputeCardAllocation (int changedPart);
     // After any per-part engine mutation: refresh dim states + the arrangement
     // label (the inferred arrangement may have become Custom).
     void postPartEdit();
@@ -144,11 +158,10 @@ private:
     void partNamesChanged();
     // Set arrangementCombo_ from inferArrangement(engine) (no onChange fired).
     void setArrangementFromEngine();
-    // Rebuild every row's card combo to offer only 0..(6 - cards used by the
-    // other rows), so the GUI never offers a count that would exceed the total.
-    void rebuildCardCombos();
-    // Refresh the "Cards X/6" budget readout from the engine (source of truth).
-    void updateCardsTotal();
+    // Refresh the "Voices Y/96" pool-budget readout from the engine (source of
+    // truth; the total sums the audio-thread-published per-part voiceCount_
+    // snapshots).
+    void updateVoicesTotal();
     // (Re)lay out scrollBody_ inside viewport_ (the rows + hosted page),
     // sizing it to its natural height — or the view height when it fits.
     void layoutScrollBody();

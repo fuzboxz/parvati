@@ -13,6 +13,18 @@ mirrors this: `SynthEngine` = controller, `AmbikaVoice` = voicecard. The
 controller ships a full patch frame to a voicecard; the voicecard loads it. We
 make that transfer clean and atomic.
 
+**Voice model (slots-truth):** the user-facing polyphony knob is each Part's
+`voiceSlots` (1..16, from a fixed 96-voice pool = 6 Parts x 16 — a Part is
+enabled iff its count is >= 1; a Part is disabled only by an arrangement
+preset or a loaded multi). On hardware a voice IS a voicecard, so the firmware
+6-voicecard bitmask is **derived, not user state**: `mul_export::deriveMasks`
+(the pure, tested solver in `Source/MulExport.h`) gives each active Part a
+contiguous proportional share of the 6 cards — the single source of truth
+shared by the engine and the `.MUL` export strategies, so they cannot drift.
+The derived masks keep only their legacy jobs: individual-output (aux) routing
+and `.MUL`/hardware export. Legacy loads (`.MUL`, old host-state blobs) seed
+slots from the stored mask's popcount (0 -> disabled).
+
 ## Current problems (from the two read-only audits)
 1. **Ad-hoc message↔audio handoffs** — three bespoke flags
    (`allocationDirty_`, `killGeneratedNotes_`, `resetAllVoicesPending_`) plus
@@ -143,8 +155,9 @@ Per-part tuning follows the same MT-stage → AT-service shape as the byte frame
 (current Part) + UI prefs, so a DAW project reload lost Parts 1-5 (patch/part/
 arp/seq/routing). They now also embed a versioned, base64 binary blob
 (`engine_state`) capturing every Part's patch bytes, PartData (arp/seq overlaid
-from the authoritative `pendingConfig_`), MIDI routing, voice allocation,
-polyphony, the voice-capacity mode and the current Part. `SynthEngine::
+from the authoritative `pendingConfig_`), MIDI routing, voice counts
+(`voiceSlots`; the voicecard bitmask is re-derived on load — see the voice
+model above), polyphony mode and the current Part. `SynthEngine::
 captureState`/`restoreState` own the format (magic `PVST`, byte-oriented →
 endian-independent). Backward compatible: a state without `engine_state` (or a
 short/foreign blob) falls back to the legacy current-Part APVTS restore.
@@ -154,6 +167,8 @@ short/foreign blob) falls back to the legacy current-Part APVTS restore.
 - Do not modify `Source/dsp/*` DSP behaviour or the Ambika render path.
 - Do not change the APVTS parameter IDs / byte offsets (`ParameterLayout.cpp`
   descriptors) — the verified byte-bridge.
-- Keep the Ambika-faithful structures: 6 voicecards / 6 parts, the Patch/PartData
-  byte layout, multitimbral routing, the controller/voicecard split.
+- Keep the Ambika-faithful structures: 6 parts, the Patch/PartData
+  byte layout, multitimbral routing, the controller/voicecard split. The
+  6-voicecard bitmask stays a DERIVED representation (see the voice model
+  above) — never independent user state.
 - Every phase keeps the full test suite green.

@@ -4,7 +4,15 @@
 // the engine purely through its EXISTING public setters (the engine internals,
 // voice allocators, file formats and audio-thread code are untouched).
 //
-// Design: /tmp/parvati_patch_design.md ("Phase 1").
+// VOICE-FIRST MODEL (Task 2, 2026-08): the six templates are VOICE-BUDGET
+// presets over the engine's 96-voice pool — each Part carries a voice count
+// (1..kMaxVoicesPerPart) and the 6-voicecard bitmask is DERIVED from those
+// counts (mul_export::deriveMasks; contiguous proportional share, min 1 per
+// active Part). The old card-count presets (Stack 2/Split 2/Layer 2 card
+// splits) are gone: with any combination of counts legal (pool = 6x16), a
+// preset is just a convenient starting point of counts + zones + channels +
+// polyphony. "Mono" is a TRUE mono preset: 1 voice + MONO polyphony = one
+// retriggering voice, no unison.
 //
 // ----------------------------------------------------------------------------
 // Engine-API note (behaviour is identical to what the spec names; the engine
@@ -18,9 +26,12 @@
 //     change — the established message-thread path (mirrors the .MUL loader).
 //     applyArrangement saves and restores the original currentPart.
 //
-// (Polyphony READ previously forced inferArrangement to be non-const, because
-//  SynthEngine had no const polyphony accessor. Resolved by adding the additive
-//  const SynthEngine::getPartPolyphony(int), so inference is now const-correct.)
+//  2. Disabling a Part (voice count 0) rides the LEGACY materialization path:
+//       engine.setPartVoiceAllocation (part, 0);
+//     The PUBLIC setPartVoiceSlots clamps 0 to 1 by design (it can never
+//     disable), while the legacy loader path materializes a zero mask as 0
+//     slots = disabled. That asymmetry is the engine's single disable entry
+//     point for preset/loader code.
 // ----------------------------------------------------------------------------
 #pragma once
 
@@ -30,31 +41,35 @@
 // no-op): it labels engine state that does not match any built-in template.
 enum class Arrangement
 {
+    Mono,
     Single,
-    Stack,
-    Split2,
-    Layer2,
+    DualLayer,
+    DualSplit,
+    QuadSplit,
     Multi6,
     Custom
 };
 
-// Human label: "Single" / "Stack" / "Split 2" / "Layer 2" / "Multi 6" / "Custom".
+// Human label: "Mono" / "Single" / "Dual Layer" / "Dual Split" / "Quad Split"
+// / "Multi 6" / "Custom".
 const char* arrangementLabel (Arrangement a);
 
-// Number of built-in (selectable, non-Custom) arrangement templates (= 5).
+// Number of built-in (selectable, non-Custom) arrangement templates (= 6).
 int arrangementCount();
 
 // Write the template's full 6-Part state into the engine via its EXISTING public
-// setters: voicecard bitmasks (setPartVoiceAllocation), MIDI channels
-// (setPartMidiChannel), key zones (setPartKeyZone) and polyphony (setPartByte
-// equivalent: setCurrentPart + applyPartByte(15,mode)). Card bitmasks are
-// assigned CONTIGUOUSLY in part order from the per-part counts (part 0 gets the
-// first N0 cards, part 1 the next N1, ...). Polyphony is written LAST. The
-// original currentPart is restored on return. applyArrangement(Custom) is a
+// setters: voice counts (setPartVoiceSlots 1..16; 0 = disable via the legacy
+// setPartVoiceAllocation(part,0) path), MIDI channels (setPartMidiChannel), key
+// zones (setPartKeyZone) and polyphony (setCurrentPart + applyPartByte(15)).
+// The voicecard bitmasks are NOT written — they are DERIVED from the voice
+// counts by the engine (rebuildVoiceAllocation). Polyphony is written LAST.
+// The original currentPart is restored on return. applyArrangement(Custom) is a
 // no-op (Custom is inferred, never applied).
 void applyArrangement (SynthEngine& engine, Arrangement a);
 
-// Best-effort template inference from engine state; Custom if nothing matches.
-// Reads per-part popcount(voiceAllocation), midiChannel, keyrange and polyphony
-// (PartData byte 15, via the const getPartPolyphony getter). Read-only.
+// Exact-preset inference from engine state; Custom if nothing matches. A state
+// matches iff EVERY part's voice count, MIDI channel, key zone and polyphony
+// (PartData byte 15) equal the template's table (the applyArrangement round-trip
+// is exact by construction). Reads getPartVoiceSlots / getPartChannel /
+// getPartKeyrangeLow/High / getPartPolyphony (all const). Read-only.
 Arrangement inferArrangement (const SynthEngine& engine);

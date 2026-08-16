@@ -5,6 +5,64 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
+- **Voice-first Patch page: voice counts are the user model, cards are
+  derived.** On real Ambika hardware a voice IS a voicecard (the digital
+  voice section lives on the card), so Parvati now exposes exactly that: a
+  **Voices 1..16** count per Part (drawn from the fixed 96-voice pool,
+  6x16 — any combination is legal, every Part can be maxed at once), and the
+  6-voicecard bitmask is DERIVED internally from those counts
+  (`mul_export::deriveMasks`: contiguous proportional share, exact counts
+  while they fit in 6, min 1 per active Part) purely for the individual
+  outputs, `.MUL`/hardware export and the legacy seeds. The Cards column,
+  the 6-card budget enforcement and the Voices combo's `Auto` item are
+  GONE (a Part is disabled by an arrangement preset or a loaded multi; a
+  disabled Part shows `0` with no selection); the header keeps a single
+  `Voices Y/96` pool readout. MONO/unison follows the count (MONO + N
+  voices = N-voice unison).
+- **Six new arrangement presets** replace the five card-budget ones
+  (Single/Stack 2/Split 2/Layer 2/Multi 6): **Mono** (TRUE mono: 1 voice +
+  MONO poly — one retriggering voice, no unison), **Single** (16 voices),
+  **Dual Layer** (8+8, both full-range Omni), **Dual Split** (8+8, split at
+  48), **Quad Split** (4x8, splits at 36/60/84) and **Multi 6** (6x16 —
+  the whole pool, Parts on channels 1..6). Inference is an exact-preset
+  match over voices + channels + zones + polyphony; anything else reads
+  Custom. FR/DE translations added (Mono, Dual Layer, Dual Split, Quad
+  Split; Cards/Auto/Stack/Split 2/Layer 2 entries removed).
+- **Templates updated to the slots model.** Mono loads part 0 with 1 voice
+  (+ MONO), Poly/Unison with 6, Multitimbral with 3+3 — the old files
+  carried `voice_slots: 0`, which the loader now (correctly) reads as a
+  disabled Part. All five templates regenerated via `parvati_gen_templates`
+  and byte-identical to a fresh run (this also picks up the `part_raga`
+  line the committed files had drifted on). The `.MUL` export strategies,
+  fallback dialog and `.PRO` export are untouched; a default (AsIs) save
+  now carries the DERIVED contiguous masks, which round-trip identically
+  for contiguous setups.
+- **Part-relative voice meter + the global voice-pool view on the Patch
+  page.** The voice-activity UI now reflects the per-part voice-slot
+  extension (96-voice pool). The Global-page meter and the bottom status
+  count show the CURRENT part only (its allocated voices / its active
+  count), and the global picture lives in a new "Voice pool" panel on the
+  Patch page: all 6 parts listed with a square per allocated voice (filled
+  = active), per-part `active/allocated` counts and the total allocation
+  `X/96`, below the part rows and above the Global section. A `Voices
+  Y/96` pool-budget readout sits in the header next to the arrangement
+  combo; the Voices combo carries a plain-language tooltip (voices =
+  this part's polyphony from the shared 96-voice pool; cards are derived
+  for the individual outputs + `.MUL` export). CHAIN parts can own up to
+  32 voices (their set is doubled): a pool row shows 16 squares plus a
+  `+N` marker, but every count (per-row and the `X/96` total) reflects
+  the FULL allocation. Both view timers pause while their page is
+  off-screen. New strings translated (FR/DE): Voices, Voice pool.
+- **Full test sweep + docs brought to the voice-first model.** All 64
+  `parvati_*` test targets pass (one stale `export_fallback` assertion
+  updated: the default/AsIs `.MUL` baseline is now the DERIVED masks);
+  the four preset templates are regenerated to match `parvati_gen_templates`
+  byte-for-byte. README features, `docs/ARCHITECTURE.md` (voice-model /
+  slots-truth section, `deriveMasks` as the single card-mask source of
+  truth), `docs/UI_MODERNIZATION_PLAN.md`, `docs/DSP_PORT_SPEC.md` and
+  `tests/COVERAGE_SPEC.md` (new voice-counts & arrangement coverage
+  section) now describe voices-1..16 + derived cards instead of the
+  6-card budget.
 - **Smaller mod pills + [MOD] header toggle.** The central mod-pill bar's
   pills are compacted (72pt → 56pt, bar 92pt → 78pt — still ≥ the 44pt HIG
   touch minimum), reclaiming a seam of vertical space for the content rows.
@@ -38,6 +96,14 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   guard now pins the exact category hues of ALL six themes.
 
 ### Fixed
+- **Voice-activity UI was stuck on the pre-pool 6-voice model.** The
+  Global-page meter kept 6 fixed cells fed by pool voices 0..5 — which are
+  always Part 1's first six voices (the pool is partitioned in part order),
+  so it showed Part 1 regardless of the selected part and could never show
+  more than 6 of a part's up-to-16 voices. The bottom status count mixed a
+  whole-pool active numerator with the current part's allocation denominator
+  (impossible fractions like `23/16`). Both are now part-relative; the
+  global picture lives in the new Patch-page voice-pool view.
 - **FX effect dropdowns can be reopened after a selection.** FxTypeCombo's
   custom showPopup finished with a nullptr completion callback, so JUCE's
   private ComboBox `menuActive` flag stayed latched TRUE after the popup

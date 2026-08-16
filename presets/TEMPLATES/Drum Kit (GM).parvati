@@ -114,6 +114,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 3            # Cyclic
@@ -376,6 +377,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 3            # Cyclic
@@ -638,6 +640,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 3            # Cyclic
@@ -900,6 +903,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 3            # Cyclic
@@ -1162,6 +1166,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 3            # Cyclic
@@ -1424,6 +1429,7 @@ parts:
       part_octave: 0
       part_tuning: 0
       part_spread: 0
+      part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 3            # Cyclic

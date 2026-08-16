@@ -18,11 +18,15 @@ microcontroller / voicecard hardware.
 
 ## Features
 
-- Faithful 6-voicecard multitimbral engine (oscillators, mixer, filters,
-  3× envelope/LFO, modulation matrix, step sequencer, arpeggiator)
+- Faithful Ambika multitimbral engine (oscillators, mixer, filters,
+  3× envelope/LFO, modulation matrix, step sequencer, arpeggiator) with
+  **per-part voices 1..16 from a 96-voice pool** — Mono / Single / Dual
+  Layer / Dual Split / Quad Split / Multi 6 arrangement presets (Mono is
+  true 1-voice mono). The hardware's 6 voicecards are a derived internal
+  detail (individual outputs + `.MUL` export), not a user-facing cap.
 - All 3 Ambika filter topologies (4-pole LM13700, 4-pole SSM2164, 2-pole SVF)
 - Loads/saves original Ambika `.PRO` (program) and `.MUL` (multi) patch files
-- 6-part multitimbral with per-part MIDI channel, key zone & voice allocation
+- 6-part multitimbral with per-part MIDI channel, key zone & voice count
 - **Per-part microtonal tuning** — the 32 firmware scale presets, custom
   12-entry per-note-class tables, and Scala `.scl`/`.kbm` import
 - Host-tempo sync, MPE, multi-output buses (6 individual outs + main mix)

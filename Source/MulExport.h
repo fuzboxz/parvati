@@ -51,6 +51,16 @@ struct Setup
 // .MUL cannot represent the setup faithfully and a strategy should be chosen.
 bool needsFallback (const Setup& s);
 
+// Derive the contiguous per-Part voicecard bitmasks from per-Part VOICE
+// COUNTS: largest-remainder proportional share of the 6 cards weighted by
+// each nonzero count, minimum one card per Part with a nonzero count, cards
+// packed contiguously in Part order (part 0 first). This is the allocation
+// rule the ENGINE uses to derive its card masks from voiceSlots (the slots
+// model: 1 voice = digital voice + card) and the same shape
+// Strategy::Proportional produces for export — one source of truth, kept
+// here (pure + dependency-free) so the engine cannot drift from the solver.
+std::array<uint8_t, kParts> deriveMasks (const std::array<int, kParts>& requested);
+
 // One unit's solved allocation (a single .MUL file).
 struct Solution
 {

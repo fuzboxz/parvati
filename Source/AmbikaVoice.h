@@ -225,15 +225,21 @@ public:
     float getMpePitchBendSemitones() const noexcept { return mpePitchBendSemitones_; }
 
     // ---- multitimbral: each voice is owned by one Part ----
-    int  getPartIndex() const { return partIndex_; }
-    void setPartIndex (int p) { partIndex_ = p; }
+    // Relaxed atomics: written on the audio thread (rebuildVoiceAllocation
+    // re-tags voices on every allocation rebuild) and read from the message
+    // thread by the editor's part-relative voice meter / status count — the
+    // same SF-1 discipline as displayedActive_/displayedNote_.
+    int  getPartIndex() const { return partIndex_.load (std::memory_order_relaxed); }
+    void setPartIndex (int p) { partIndex_.store (p, std::memory_order_relaxed); }
 
     // ---- multi-output: each voice belongs to a FIXED voicecard (0..5). The
     // Ambika hardware exposes 6 individual voicecard outputs; the engine routes
     // each voice's render to its voicecard buffer, which the processor copies to
     // the matching optional aux bus (and sums into the main stereo mix).
-    int  getVoiceCard() const noexcept { return voiceCard_; }
-    void setVoiceCard (int vc) noexcept { voiceCard_ = vc; }
+    // Atomic for the same cross-thread reason as partIndex_ (audio-thread
+    // re-tagging vs. message-thread export / meter reads).
+    int  getVoiceCard() const noexcept { return voiceCard_.load (std::memory_order_relaxed); }
+    void setVoiceCard (int vc) noexcept { voiceCard_.store (vc, std::memory_order_relaxed); }
 
 private:
     // One-time engine init (loads the faithful init patch). The audible
@@ -277,8 +283,10 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedResonance_;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedVcaGain_;
     bool                       legatoNext_ { false };
-    int                        partIndex_ { 0 };
-    int                        voiceCard_ { 0 };   // FIXED voicecard (0..5) — set once from the voice index
+    // std::atomic (non-copyable) is fine: juce::SynthesiserVoice is held by
+    // pointer in the engine's Synthesiser voice list and never copied.
+    std::atomic<int>          partIndex_ { 0 };
+    std::atomic<int>          voiceCard_ { 0 };   // FIXED voicecard (0..5) — re-tagged by rebuildVoiceAllocation
     int                        partOctave_ { 0 };   // PartData.octave (applied at trigger, firmware TuneNote)
     int                        partTuning_ { 0 };   // PartData.tuning (1/128-semitone units)
     int                        spreadDrift14_ { 0 }; // PartData.spread per-voice drift (1/128-semitone units)

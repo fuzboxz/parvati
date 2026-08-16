@@ -122,11 +122,11 @@ int main()
             auto popcount = [] (uint8_t v) { int c = 0; while (v) { c += v & 1; v >>= 1; } return c; };
             (void) popcount;
 
-            // The engine applies EXCLUSIVE voicecard ownership on load
-            // (setPartVoiceAllocation removes a card from every other Part), so
-            // the engine's STORED bitmask per Part is the source of truth. With 1
-            // voice per voicecard (voice i == card i), expected[i] = the cards in
-            // the stored bitmask.
+            // Under the slots model the .MUL bitmasks materialize slot counts
+            // (popcount) and the engine DERIVES contiguous card shares from
+            // them, so the engine's PUBLISHED bitmask per Part (which the
+            // rebuild writes) is the source of truth: expected[i] = the cards
+            // in the derived bitmask, matching the voices' card tags.
             std::vector<int> expected[6];
             int totalExpected = 0, totalActual = 0;
             uint8_t exclusiveUnion = 0;
@@ -144,12 +144,17 @@ int main()
             check (exclusiveOk, "exclusive: no voicecard owned by more than one Part");
 
             // No card is LOST vs the raw .MUL bitmasks (the load reached every
-            // Part; exclusivity only redistributes ownership, never drops a card).
+            // Part). Under the slots model the engine DERIVES contiguous card
+            // shares from the materialized slot counts, so the exact card
+            // POSITIONS may differ from the file's mask shape — the TOTAL
+            // card count is what must be preserved.
+            auto maskPopcount = [] (uint8_t v) { int c = 0; while (v) { c += v & 1; v >>= 1; } return c; };
             uint8_t mulUnion = 0;
             for (int i = 0; i < 6; ++i)
                 mulUnion |= m.hasMultiData ? m.multiData[(size_t) (i * 4 + 3)]
                                            : (uint8_t) (1 << i);
-            check (exclusiveUnion == mulUnion, "no voicecard lost between .MUL and the engine");
+            check (maskPopcount (exclusiveUnion) == maskPopcount (mulUnion),
+                   "no voicecard lost between .MUL and the engine (total count)");
 
             bool allocOk = true; bool sawMultiCard = false;
             for (int i = 0; i < 6; ++i)
@@ -224,19 +229,24 @@ int main()
         engine.setPartVoiceAllocation (5, 0);
         renderOnce (proc);   // service the deferred rebuild before inspecting voiceIndices
 
-        check (voicesAsSet (0).size() == 2 && cardsAsSet (0) == std::set<int> ({ 0, 1 }), "part0(vc0,1) owns 2 voices on vc0,1");
-        check (voicesAsSet (1).size() == 1 && cardsAsSet (1) == std::set<int> ({ 2 }),    "part1(vc2) owns 1 voice on vc2");
-        check (voicesAsSet (2).size() == 2 && cardsAsSet (2) == std::set<int> ({ 4, 5 }), "part2(vc4,5) owns 2 voices on vc4,5");
+        // The masks materialize slot counts 2/1/2 and the engine derives a
+        // CONTIGUOUS share in Part order: part0 -> vc0,1; part1 -> vc2;
+        // part2 -> vc3,4 (the file's card POSITIONS are not user state).
+        check (voicesAsSet (0).size() == 2 && cardsAsSet (0) == std::set<int> ({ 0, 1 }), "part0(2 slots) owns 2 voices on vc0,1");
+        check (voicesAsSet (1).size() == 1 && cardsAsSet (1) == std::set<int> ({ 2 }),    "part1(1 slot) owns 1 voice on vc2");
+        check (voicesAsSet (2).size() == 2 && cardsAsSet (2) == std::set<int> ({ 3, 4 }), "part2(2 slots) owns 2 voices on vc3,4");
         check (voicesAsSet (3).empty() && voicesAsSet (4).empty() && voicesAsSet (5).empty(),
-               "parts 3-5 (no bits) own no voices");
+               "parts 3-5 (zero mask -> 0 slots) own no voices");
 
-        // Exclusive: re-claim vc0 on part1 -> part1 TAKES vc0 (removed from
-        // part0 by setPartVoiceAllocation's exclusivity). This replaces the old
-        // first-wins behaviour where part1 could not steal a claimed card.
-        engine.setPartVoiceAllocation (1, 0b000001);  // vc0, previously part0's
+        // Same popcount, different card shape: under the slots model the two
+        // are EQUIVALENT (both mean "1 voice") — the derived layout is driven
+        // by the counts, not the mask's bit positions.
+        engine.setPartVoiceAllocation (1, 0b000001);  // vc0 position, still 1 slot
         renderOnce (proc);   // service the deferred rebuild
-        check (voicesAsSet (1).size() == 1 && cardsAsSet (1) == std::set<int> ({ 0 }), "exclusive: part1 takes vc0");
-        check (voicesAsSet (0).size() == 1 && cardsAsSet (0) == std::set<int> ({ 1 }), "exclusive: part0 keeps only vc1");
+        check (voicesAsSet (1).size() == 1 && cardsAsSet (1) == std::set<int> ({ 2 }),
+               "equivalent: a 1-bit mask anywhere still maps to the derived 1-card share");
+        check (voicesAsSet (0).size() == 2 && cardsAsSet (0) == std::set<int> ({ 0, 1 }),
+               "part0 keeps its derived share (no card stealing under slots)");
     }
 
     std::printf ("\n%s (%d failures)\n",

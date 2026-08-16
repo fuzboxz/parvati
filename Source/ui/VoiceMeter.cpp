@@ -28,6 +28,15 @@ VoiceMeter::~VoiceMeter()
     stopTimer();
 }
 
+void VoiceMeter::visibilityChanged()
+{
+    // Hidden (another top page active) -> stop polling; shown -> resume.
+    if (isVisible())
+        startTimerHz (30);
+    else
+        stopTimer();
+}
+
 void VoiceMeter::setStateProvider (std::function<std::vector<VoiceActivity>()> provider)
 {
     provider_ = std::move (provider);
@@ -36,15 +45,16 @@ void VoiceMeter::setStateProvider (std::function<std::vector<VoiceActivity>()> p
 int VoiceMeter::getActiveVoiceCount() const noexcept
 {
     int n = 0;
-    for (const auto& c : state_)
-        if (c.active)
+    for (int c = 0; c < cellCount_; ++c)
+        if (state_[(size_t) c].active)
             ++n;
     return n;
 }
 
 //==========================================================================
 // Accessibility: expose the live active-voice count as a read-only text value
-// ("N of 6") so screen readers announce the meter state.
+// ("N of M", M == the current part's allocated voice count) so screen readers
+// announce the meter state.
 struct VoiceMeter::VoiceCountInterface : public juce::AccessibilityTextValueInterface
 {
     explicit VoiceCountInterface (VoiceMeter& o) : owner (o) {}
@@ -53,7 +63,7 @@ struct VoiceMeter::VoiceCountInterface : public juce::AccessibilityTextValueInte
 
     juce::String getCurrentValueAsString() const override
     {
-        return juce::String (owner.getActiveVoiceCount()) + " of " + juce::String (kNumVoicecards);
+        return juce::String (owner.getActiveVoiceCount()) + " of " + juce::String (owner.cellCount_);
     }
 
     void setValueAsString (const juce::String&) override {}   // read-only
@@ -90,14 +100,27 @@ void VoiceMeter::timerCallback()
         return;
 
     const auto next = provider_();
-    if (next.size() < static_cast<size_t> (kNumVoicecards))
-        return;   // malformed frame; keep the last good state
 
+    // The frame SIZE is the current part's allocated voice count (see the
+    // part-relative contract in setStateProvider): 0..kMaxCells entries, an
+    // empty frame being a valid disabled part. Truncate anything larger
+    // (defensive — a CHAIN part tops out at 2 x 16 voices == kMaxCells).
+    const int n = juce::jmin (static_cast<int> (next.size()), kMaxCells);
+
+    // A size change is a REALLOCATION: relayout the strip and drop the state of
+    // cells that vanished, and repaint even if no individual cell flipped.
     bool changed = false;
-    for (int c = 0; c < kNumVoicecards; ++c)
+    if (n != cellCount_)
     {
-        // Voice i == voicecard i (one voice per card), so cell c is fed directly
-        // by provider slot c.
+        cellCount_ = n;
+        layoutCells();
+        for (int c = cellCount_; c < kMaxCells; ++c)
+            state_[(size_t) c] = CellState {};
+        changed = true;
+    }
+
+    for (int c = 0; c < cellCount_; ++c)
+    {
         const auto& slot = next[static_cast<size_t> (c)];
         if (state_[(size_t) c].active != slot.active || state_[(size_t) c].note != slot.note)
         {
@@ -111,7 +134,7 @@ void VoiceMeter::timerCallback()
         repaint();
 
         // Announce the active-voice count to accessibility clients when it
-        // changes (screen readers read the value interface, e.g. "5 of 6").
+        // changes (screen readers read the value interface, e.g. "5 of 8").
         const int count = getActiveVoiceCount();
         if (count != lastAnnouncedCount_)
         {
@@ -124,11 +147,14 @@ void VoiceMeter::timerCallback()
 
 void VoiceMeter::paint (juce::Graphics& g)
 {
-    // Compact single-row strip of 6 voice indicators (one per firmware
-    // voicecard): a small square (filled accent when the voice is active, an
-    // outline when free) followed by "V#:<note>" / "V#:--". The enclosing Global
-    // group panel already supplies the frame, so only a subtle strip fill is
-    // painted here. Text follows the active font mode (Console/Serif/Sans).
+    // Compact single-row strip of voice indicators for the CURRENT part (one
+    // per allocated voice): a small square (filled accent when the voice is
+    // active, an outline when free) followed by "V#:<note>" / "V#:--" while the
+    // strip is wide enough (a maxed-out 16-cell strip degrades to squares-only
+    // rather than truncating the labels into noise). The enclosing Global group
+    // panel already supplies the frame, so only a subtle strip fill is painted
+    // here. Text follows the active font mode (Console/Serif/Sans). An empty
+    // part (no cards / no slots) paints the background only.
     const ParvatiTheme* t = currentTheme();
     const juce::Colour panel     = t ? t->backgroundPanel : juce::Colour (0xff24242e);
     const juce::Colour outlineC  = t ? t->outline         : juce::Colour (0xff3c3c4a);
@@ -138,6 +164,9 @@ void VoiceMeter::paint (juce::Graphics& g)
     g.setColour (panel);
     g.fillRect (getLocalBounds());
 
+    if (cellCount_ == 0)
+        return;
+
     const juce::Font font = [this]() -> juce::Font
     {
         if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
@@ -146,7 +175,8 @@ void VoiceMeter::paint (juce::Graphics& g)
     }();
 
     constexpr float sq = 8.0f;   // square indicator edge
-    for (int c = 0; c < kNumVoicecards; ++c)
+    constexpr float kMinTextWidth = 44.0f;   // "V#:<note>" legibility floor
+    for (int c = 0; c < cellCount_; ++c)
     {
         const auto r = cellRects_[(size_t) c].toFloat();
         const bool active = state_[(size_t) c].active;
@@ -169,30 +199,47 @@ void VoiceMeter::paint (juce::Graphics& g)
             g.drawRect (sqRect, 1.0f);
         }
 
-        g.setColour (col);
-        g.setFont (font);
-        g.drawText (label,
-                    r.withTrimmedLeft (sq + 5.0f),
-                    juce::Justification::centredLeft, false);
+        if (r.getWidth() >= kMinTextWidth)
+        {
+            g.setColour (col);
+            g.setFont (font);
+            g.drawText (label,
+                        r.withTrimmedLeft (sq + 5.0f),
+                        juce::Justification::centredLeft, false);
+        }
+    }
+}
+
+void VoiceMeter::layoutCells()
+{
+    // Even single row across the strip; no separate label column (the active
+    // count is shown in the editor's bottom status strip; accessibility exposes
+    // it via getActiveVoiceCount()).
+    auto area = getLocalBounds().reduced (4);
+
+    const int gap = 6;
+    const int totalGap = (cellCount_ - 1) * gap;
+    const int cellW = cellCount_ > 0
+        ? juce::jmax (8, (area.getWidth() - totalGap) / cellCount_)
+        : 0;
+    const int cellH = area.getHeight();
+    int x = area.getX();
+    const int y = area.getY();
+    for (int c = 0; c < kMaxCells; ++c)
+    {
+        if (c < cellCount_)
+        {
+            cellRects_[(size_t) c] = juce::Rectangle<int> (x, y, cellW, cellH);
+            x += cellW + gap;
+        }
+        else
+        {
+            cellRects_[(size_t) c] = {};   // beyond the current frame: no cell
+        }
     }
 }
 
 void VoiceMeter::resized()
 {
-    // Compact single row: 6 even voice indicators across the strip. No separate
-    // label column (the active count is shown in the editor's bottom status
-    // strip; accessibility exposes it via getActiveVoiceCount()).
-    auto area = getLocalBounds().reduced (4);
-
-    const int gap = 6;
-    const int totalGap = (kNumVoicecards - 1) * gap;
-    const int cellW = juce::jmax (8, (area.getWidth() - totalGap) / kNumVoicecards);
-    const int cellH = area.getHeight();
-    int x = area.getX();
-    const int y = area.getY();
-    for (int c = 0; c < kNumVoicecards; ++c)
-    {
-        cellRects_[(size_t) c] = juce::Rectangle<int> (x, y, cellW, cellH);
-        x += cellW + gap;
-    }
+    layoutCells();
 }

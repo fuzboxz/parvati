@@ -159,14 +159,16 @@ int main()
         check (b.getEngine().getPartChannel (1) == 5, "Part 1 midi channel preserved");
         check (b.getEngine().getPartKeyrangeLow (1) == 36 && b.getEngine().getPartKeyrangeHigh (1) == 72,
                "Part 1 keyzone preserved");
-        check (b.getEngine().getPartVoiceAllocation (1) == 0x06, "Part 1 voice allocation preserved");
+        check (b.getEngine().getPartVoiceSlots (1) == 2, "Part 1 voice slots preserved");
+        check (b.getEngine().getPartVoiceAllocation (1) == 0x10, "Part 1 derived mask = contiguous 1-card share (vc4)");
         check (b.getEngine().getPart (1).pendingConfig_.arpOctave == 4, "Part 1 arp octave preserved");
         check (b.getEngine().getPart (1).pendingConfig_.seqData[0] == 77, "Part 1 seq step preserved");
 
         // Part 2 survived + is the restored current part.
         check (b.getEngine().getPart (2).patchBytes[0] == 11, "Part 2 osc1_shape preserved");
         check (b.getEngine().getPartChannel (2) == 9, "Part 2 midi channel preserved");
-        check (b.getEngine().getPartVoiceAllocation (2) == 0x18, "Part 2 voice allocation preserved");
+        check (b.getEngine().getPartVoiceSlots (2) == 2, "Part 2 voice slots preserved");
+        check (b.getEngine().getPartVoiceAllocation (2) == 0x20, "Part 2 derived mask = contiguous 1-card share (vc5)");
         check (b.getEngine().getPart (2).pendingConfig_.arpResolution == 3, "Part 2 arp resolution preserved");
         check (b.getEngine().getCurrentPart() == 2, "current part preserved");
     }

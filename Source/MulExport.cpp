@@ -118,6 +118,18 @@ bool needsFallback (const Setup& s)
     return false;
 }
 
+std::array<uint8_t, kParts> deriveMasks (const std::array<int, kParts>& requested)
+{
+    // Reuse the solver's own proportional path: a Setup whose `active` flags
+    // come from the requested counts themselves (count > 0 => active) drives
+    // proportionalCounts, and masksFromCounts packs the cards contiguously.
+    Setup s;
+    s.requested = requested;
+    for (int p = 0; p < kParts; ++p)
+        s.active[(size_t) p] = requested[(size_t) p] > 0;
+    return masksFromCounts (proportionalCounts (s));
+}
+
 Solution solve (const Setup& s, Strategy strategy)
 {
     switch (strategy)

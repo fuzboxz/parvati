@@ -584,8 +584,10 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
         out << "    keyzone_low: " << (int) engine.getPartKeyrangeLow (i) << "\n";
         out << "    keyzone_high: " << (int) engine.getPartKeyrangeHigh (i) << "\n";
         out << "    voice_allocation: " << (int) engine.getPartVoiceAllocation (i) << "\n";
-        // Parvati extension: per-part voice slots (0 = AUTO: one voice per
-        // allocated card, faithful hardware) + the user-facing part name.
+        // Parvati extension: the per-part voice count (1..16; 0 = disabled
+        // Part, restored via the legacy zero-mask path) + the user-facing
+        // part name. voice_allocation above stays the DERIVED mask snapshot
+        // (aux-out + .MUL export context).
         out << "    voice_slots: " << engine.getPartVoiceSlots (i) << "\n";
         const juce::String pn = engine.getPartName (i).replace ("\\", "\\\\").replace ("\"", "\\\"");
         out << "    name: \"" << pn << "\"\n";
@@ -678,10 +680,20 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                                         (uint8_t) (int) partNode["keyzone_high"]);
         if (partObj->hasProperty ("voice_allocation"))
             engine.setPartVoiceAllocation (i, (uint8_t) (int) partNode["voice_allocation"]);
-        // Parvati extension: per-part voice slots + name (absent in older files
-        // -> AUTO slots + empty name, i.e. faithful hardware behaviour).
+        // Parvati extension: per-part voice slots + name. The slots are the
+        // single source of truth (the allocation above is only a legacy seed:
+        // an old file without slots materializes its card count from the
+        // bitmask). A saved 0 (disabled Part) must stay 0 — the PUBLIC
+        // setPartVoiceSlots clamps 0 to 1, so it rides the legacy disable
+        // path instead (a zero mask materializes 0 slots).
         if (partObj->hasProperty ("voice_slots"))
-            engine.setPartVoiceSlots (i, (int) partNode["voice_slots"]);
+        {
+            const int slots = (int) partNode["voice_slots"];
+            if (slots > 0)
+                engine.setPartVoiceSlots (i, slots);
+            else
+                engine.setPartVoiceAllocation (i, 0);
+        }
         if (partObj->hasProperty ("name"))
             engine.setPartName (i, partNode["name"].toString());
 

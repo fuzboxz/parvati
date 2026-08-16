@@ -1,19 +1,23 @@
-// Voice-slots (Parvati extension) test — verifies the per-part voice-slot
-// pool model on top of the faithful 6-voicecard engine:
+// Voice-slots (Parvati extension) test — verifies the SLOTS MODEL on top of
+// the faithful 6-voicecard engine:
 //
-//   * Default (AUTO slots): one voice per allocated card — the pre-extension
-//     6-voice hardware behaviour, bit-for-bit.
-//   * Fixed slots: a Part draws its slot count from the 96-voice pool; every
-//     Part can be maxed simultaneously (pool = kNumParts * kMaxVoicesPerPart).
-//   * Card bitmask keeps ownership / aux-out routing: a Part's voices are
-//     tagged round-robin across ITS cards; a Part with no cards is disabled
-//     regardless of slots.
-//   * Per-CARD mono: MONO fires exactly one voice per allocated card, so the
-//     unison size (and CPU) is invariant under the slots setting, and
-//     MONO + 1 card is true single-voice mono.
-//   * Host engine-state round-trip (v6): voiceSlots + part names survive
-//     capture/restore; a legacy v5-sized blob (no v6 tail) still restores
-//     with AUTO slots + empty names.
+//   * voiceSlots is the SINGLE SOURCE OF TRUTH: each Part has 1..16 voices
+//     from the 96-voice pool (1 voice = digital voice + voicecard); the
+//     6-card bitmask is DERIVED (contiguous proportional share, minimum one
+//     card per active Part) and keeps only its aux-out routing + .MUL export
+//     jobs.
+//   * Default: Part 0 materializes 6 voices (the faithful 6-voice Ambika);
+//     the other Parts are disabled (0 slots).
+//   * Fixed slots: a Part draws its slot count from the pool; every Part can
+//     be maxed simultaneously (pool = kNumParts * kMaxVoicesPerPart).
+//   * Slots alone enable a Part — the old "no cards = disabled" gate is gone;
+//     0 slots (set only by the ctor default / legacy loaders) disables.
+//   * MONO fires every allocated VOICE: unison size = the Part's voice count
+//     (MONO + 1 voice is true single-voice mono, MONO + 16 is 16-voice
+//     unison).
+//   * Host engine-state round-trip: voiceSlots + part names survive
+//     capture/restore; a legacy v5-sized blob (no v6 tail) materializes its
+//     slot counts from the blob bitmasks (popcount).
 //
 // Harness mirrors polyphony_test: a ParvatiAudioProcessor, edits via the
 // engine API, notes on MIDI channel 1, active-voice inspection on the engine.
@@ -75,17 +79,18 @@ int main()
 {
     std::printf ("VOICE SLOTS TEST\n");
 
-    // ---- [a] Default = AUTO slots = faithful 6-voice hardware ----
+    // ---- [a] Default = Part 0 with 6 materialized voices ----
     {
-        std::printf ("\n[a] default AUTO: part 0 (all 6 cards) owns 6 voices\n");
+        std::printf ("\n[a] default: part 0 owns 6 voices (faithful hardware)\n");
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
-        check (engine.getPartVoiceSlots (0) == 0, "default voice_slots = 0 (AUTO)");
-        check ((int) engine.getPart (0).voiceIndices.size() == 6, "AUTO gives part 0 six voices (card count)");
+        check (engine.getPartVoiceSlots (0) == 6, "default voice_slots = 6 (materialized from the init bitmask)");
+        check ((int) engine.getPart (0).voiceIndices.size() == 6, "part 0 owns six voices (faithful 6-voice Ambika)");
+        check (engine.getPartVoiceAllocation (0) == 0x3f, "derived mask: the single active part owns all 6 cards");
         for (int i = 1; i < kNumParts; ++i)
-            check (engine.getPart (i).voiceIndices.empty(), "AUTO: card-less part disabled (0 voices)");
+            check (engine.getPart (i).voiceIndices.empty(), "parts 1..5 disabled (0 slots -> 0 voices)");
 
         // 6 distinct notes sustain on part 0 (hardware parity).
         for (int n = 60; n < 66; ++n)
@@ -143,71 +148,90 @@ int main()
         check (activeVoices (engine, 1) == 8, "part 1 sustains 8 notes concurrently");
     }
 
-    // ---- [d] Slots never override ownership: no cards -> disabled ----
+    // ---- [d] Slots alone enable a Part (the card gate is gone) ----
     {
-        std::printf ("\n[d] slots do not bypass the card bitmask\n");
+        std::printf ("\n[d] slots activate a part with no legacy card assignment\n");
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
-        engine.setPartVoiceAllocation (0, 0x3f);
-        engine.setPartVoiceSlots (1, 8);      // part 1 has NO cards...
+        engine.setPartVoiceSlots (1, 8);      // part 1 was disabled (0 slots)...
+        engine.setPartMidiChannel (1, 2);
         renderIdle (proc, 2);
-        check ((int) engine.getPart (1).voiceIndices.empty(), "card-less part stays disabled despite slots=8");
-        check ((int) engine.getPart (0).voiceIndices.size() == 6, "part 0 unaffected (AUTO, 6 cards)");
+        check ((int) engine.getPart (1).voiceIndices.size() == 8, "slots=8 alone -> 8 pool voices for part 1");
+        check (engine.getPartVoiceAllocation (1) != 0, "derived mask: part 1 holds >= 1 card (min-one rule)");
+        check ((int) engine.getPart (0).voiceIndices.size() == 6, "part 0 unaffected (its own 6 slots)");
+        // 0 slots via the legacy path disables; the PUBLIC setter clamps 0 -> 1.
+        engine.setPartVoiceAllocation (1, 0);
+        renderIdle (proc, 2);
+        check (engine.getPart (1).voiceIndices.empty(), "legacy zero mask -> 0 slots -> disabled");
+        engine.setPartVoiceSlots (1, 0);
+        renderIdle (proc, 2);
+        check (engine.getPartVoiceSlots (1) == 1, "public setter clamps 0 -> 1 (cannot disable)");
     }
 
-    // ---- [e] Aux routing: a Part's voices spread round-robin over ITS cards ----
+    // ---- [e] Aux routing: a Part's voices spread round-robin over ITS DERIVED cards ----
     {
-        std::printf ("\n[e] per-part card tagging (round-robin over owned cards)\n");
+        std::printf ("\n[e] derived card tagging (round-robin over the derived share)\n");
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
-        engine.setPartVoiceAllocation (0, 0b000011);   // cards 0+1
-        engine.setPartVoiceSlots (0, 5);
+        // Two parts, 8 slots each: the derived share is a contiguous 3+3
+        // split (largest-remainder of 6 cards by 8/8).
+        engine.setPartVoiceSlots (0, 8);
+        engine.setPartVoiceSlots (1, 8);
         renderIdle (proc, 2);
-        const auto& vi = engine.getPart (0).voiceIndices;
-        check (vi.size() == 5, "5 pool voices for the 2-card part");
-        std::set<int> cards;
-        for (int v : vi)
-            if (auto* av = engine.getAmbikaVoice (v))
-                cards.insert (av->getVoiceCard());
-        check (cards.count (0) == 1 && cards.count (1) == 1, "voices render onto the part's own cards (0 and 1)");
-        check (cards.size() == 2, "no voice tagged to a foreign card");
+        check (engine.getPartVoiceAllocation (0) == 0b000111 && engine.getPartVoiceAllocation (1) == 0b111000,
+               "derived masks: contiguous 3+3 proportional split of the 6 cards");
+        for (int p = 0; p < 2; ++p)
+        {
+            const auto& vi = engine.getPart (p).voiceIndices;
+            check (vi.size() == 8, "part owns 8 pool voices");
+            std::set<int> cards;
+            for (int v : vi)
+                if (auto* av = engine.getAmbikaVoice (v))
+                    cards.insert (av->getVoiceCard());
+            const int firstCard = p == 0 ? 0 : 3;
+            bool ownOnly = ! cards.empty();
+            for (int c : cards)
+                if (c < firstCard || c >= firstCard + 3) ownOnly = false;
+            check (ownOnly && cards.size() == 3, "voices tagged round-robin onto the part's own derived cards");
+        }
     }
 
-    // ---- [f] Per-CARD mono: unison size = card count, slots-invariant ----
+    // ---- [f] MONO unison size = the Part's voice count ----
     {
-        std::printf ("\n[f] MONO fires one voice per card regardless of slots\n");
+        std::printf ("\n[f] MONO fires every allocated voice\n");
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
 
         proc.getApvts().getParameterAsValue ("part_polyphony") = 0.0f;   // MONO
-        engine.setPartVoiceSlots (0, 16);   // 6 cards, 16 slots
+        engine.setPartVoiceSlots (0, 16);
         renderIdle (proc, 4);               // polyphony byte -> allocation service
         noteEvent (proc, juce::MidiMessage::noteOn (1, 60, 0.8f));
         renderIdle (proc, 2);
-        check (activeVoices (engine, 0) == 6, "MONO + 6 cards + slots=16 -> exactly 6 sounding voices (one per card)");
+        check (activeVoices (engine, 0) == 16, "MONO + 16 voices -> 16-voice unison (every allocated voice)");
 
-        engine.setPartVoiceSlots (0, 0);    // back to AUTO
+        engine.setPartVoiceSlots (0, 6);    // the faithful 6-voice unison
         renderIdle (proc, 4);
         noteEvent (proc, juce::MidiMessage::noteOff (1, 60, 0.8f));
         renderIdle (proc, 200);
         noteEvent (proc, juce::MidiMessage::noteOn (1, 62, 0.8f));
         renderIdle (proc, 2);
-        check (activeVoices (engine, 0) == 6, "MONO + 6 cards + AUTO -> same 6-voice unison (capacity-invariant)");
+        check (activeVoices (engine, 0) == 6, "MONO + 6 voices -> 6-voice unison (hardware parity)");
 
-        // MONO + a single card = true single-voice mono.
+        // MONO + a single voice = true single-voice mono (legacy 1-card mask
+        // materializes 1 slot).
         engine.setPartVoiceAllocation (0, 0x01);
         renderIdle (proc, 4);
         noteEvent (proc, juce::MidiMessage::noteOff (1, 62, 0.8f));
         renderIdle (proc, 200);
         noteEvent (proc, juce::MidiMessage::noteOn (1, 64, 0.8f));
         renderIdle (proc, 2);
-        check (activeVoices (engine, 0) == 1, "MONO + 1 card -> exactly 1 sounding voice (true mono)");
+        check (activeVoices (engine, 0) == 1, "MONO + 1 voice -> exactly 1 sounding voice (true mono)");
     }
 
     // ---- [g] Host engine-state v6 round-trip: slots + names ----
@@ -268,7 +292,7 @@ int main()
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
         check (other.getEngine().restoreState (v5.getData(), v5.getSize()), "legacy v5 blob restores");
-        check (other.getEngine().getPartVoiceSlots (0) == 0, "legacy blob -> AUTO slots (faithful hardware)");
+        check (other.getEngine().getPartVoiceSlots (0) == 6, "legacy blob materializes slots from its bitmask (6)");
         check (other.getEngine().getPartName (0).isEmpty(), "legacy blob -> empty name");
     }
 

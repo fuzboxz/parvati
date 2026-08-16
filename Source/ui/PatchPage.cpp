@@ -19,28 +19,16 @@
 //==============================================================================
 namespace
 {
-// popcount over the 6-bit voicecard bitmask (a Part's voiceAllocation).
-int cardPopcount (uint8_t mask)
-{
-    int n = 0;
-    for (; mask; mask >>= 1)
-        n += mask & 1;
-    return n;
-}
-
-// Alpha applied to an inactive Part row (0 cards) so the split is legible while
-// the row stays visible AND interactive (the user can still raise its card count
-// to activate it).
+// Alpha applied to an inactive Part row (0 voices) so the split is legible while
+// the row stays visible AND interactive (the user can still raise its voice
+// count to activate it).
 constexpr float kInactiveRowAlpha = 0.4f;
-
-// Number of selectable cards per Part / total cards (authentic hardware = 6).
-constexpr int kMaxCards = 6;
 }  // namespace
 
 //==============================================================================
-// One Part row: "Part N" + card-count combo + MIDI-channel combo + key-zone
+// One Part row: "Part N" + voice-count combo + MIDI-channel combo + key-zone
 // knobs (Lo/Hi) + polyphony combo. Every control binds DIRECTLY to the engine's
-// existing per-part setters (no APVTS). Inactive parts (0 cards) are dimmed but
+// existing per-part setters (no APVTS). Inactive parts (0 voices) are dimmed but
 // remain visible + interactive.
 class PatchPage::PartRow : public juce::Component
 {
@@ -88,7 +76,6 @@ public:
             l.setFont (juce::FontOptions (11.0f));
             addAndMakeVisible (l);
         };
-        setupCaption (cardsCaption_);
         setupCaption (voicesCaption_);
         setupCaption (chCaption_);
         setupCaption (zoneLoCaption_);
@@ -101,24 +88,25 @@ public:
         // (44pt after the 12pt caption band; see resized). The L&F reads this
         // "parvatiComboVisualH" property (drawComboBox /
         // positionComboBoxText), so the rows keep their exact look.
-        for (auto* c : { &cardsCombo_, &voicesCombo_, &channelCombo_, &polyCombo_, &tuneCombo_ })
+        for (auto* c : { &voicesCombo_, &channelCombo_, &polyCombo_, &tuneCombo_ })
             c->getProperties().set ("parvatiComboVisualH", 24);
 
-        // ---- Cards: count 0..6 (id = count + 1). Sum across rows capped at 6
-        // (enforced by PatchPage::recomputeCardAllocation). ----
-        for (int n = 0; n <= kMaxCards; ++n)
-            cardsCombo_.addItem (juce::String (n), n + 1);
-        cardsCombo_.onChange = [this] { onCardsChanged(); };
-        addAndMakeVisible (cardsCombo_);
-
-        // ---- Voices: slot count drawn from the engine pool (Parvati
-        // extension). "Auto" (0) = one voice per allocated card (faithful
-        // hardware); 1..16 = a fixed count. Pool = 6x16, so every part can be
-        // maxed simultaneously. ----
-        voicesCombo_.addItem (TRANS ("Auto"), 1);
+        // ---- Voices: this Part's voice count drawn from the shared 96-voice
+        // pool (1..16). Any combination of counts is legal (pool = 6x16, so
+        // every Part can be maxed simultaneously); the 6 hardware voicecards
+        // are DERIVED from these counts for the individual outputs + the .MUL
+        // export. No "0" item: a Part is disabled by an arrangement preset
+        // or a loaded multi (a disabled Part shows "0" with no selection). ----
         for (int n = 1; n <= kMaxVoicesPerPart; ++n)
-            voicesCombo_.addItem (juce::String (n), n + 1);
+            voicesCombo_.addItem (juce::String (n), n);
+        voicesCombo_.setTextWhenNothingSelected ("0");
         voicesCombo_.onChange = [this] { onVoicesChanged(); };
+        voicesCombo_.setTooltip (
+            "How many voices this part plays at once, drawn from the shared "
+            "96-voice pool (1-16). Every part can be maxed out at the same "
+            "time — the pool holds 6 x 16. The hardware voicecards are shared "
+            "out automatically for the individual outputs and the .MUL "
+            "hardware export.");
         addAndMakeVisible (voicesCombo_);
 
         // ---- Ch: Omni (0) + 1..16 (id = channel + 1). ----
@@ -173,7 +161,9 @@ public:
     }
 
     //----------------------------------------------------------------------
-    // Layout: a horizontal strip of labelled columns. The Tune column is
+    // Layout: a horizontal strip of labelled columns. The name column absorbed
+    // the removed Cards column's width (128 -> 156; the voice-first model has
+    // one Voices column instead of Cards + Voices). The Tune column is
     // budgeted for the longest preset name ("Parameshwari" ≈ 81px at the
     // combo's 14pt text) + the 24px combo chrome — narrower columns measured
     // against the actual caption/preset text widths (Patch-page working width
@@ -182,20 +172,12 @@ public:
     {
         auto b = getLocalBounds().reduced (4);
 
-        partLabel_.setBounds (b.removeFromLeft (128));
+        partLabel_.setBounds (b.removeFromLeft (156));
         b.removeFromLeft (6);
 
-        // Cards
+        // Voices (the part's pool voice count; 44pt HIG tap band)
         {
-            // 12pt caption band + the remaining 44pt of the 56pt row = a
-            // full-height HIG tap band around the compact 24pt visual box.
-            auto col = b.removeFromLeft (64);
-            cardsCaption_.setBounds (col.removeFromTop (12));
-            cardsCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        // Voices (Parvati extension: pool slots per part)
-        {
-            auto col = b.removeFromLeft (64);
+            auto col = b.removeFromLeft (76);
             voicesCaption_.setBounds (col.removeFromTop (12));
             voicesCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
@@ -241,11 +223,11 @@ public:
     void refresh()
     {
         refreshing_ = true;
-        const int cardN = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
-        cardsCombo_.setSelectedId (cardN + 1, juce::dontSendNotification);
-
+        // Voice count: 1..16 selects the matching item; 0 (a DISABLED part)
+        // clears the selection so the combo shows its "0" placeholder.
         const int slots = engine_.getPartVoiceSlots (partIndex_);
-        voicesCombo_.setSelectedId (slots + 1, juce::dontSendNotification);   // 1 = Auto
+        voicesCombo_.setSelectedId (juce::jlimit (0, kMaxVoicesPerPart, slots),
+                                    juce::dontSendNotification);
         refreshNameDisplay();
 
         channelCombo_.setSelectedId (static_cast<int> (engine_.getPartChannel (partIndex_)) + 1,
@@ -270,7 +252,6 @@ public:
     // + mode names are translated), preserving each selection.
     void refreshLanguage()
     {
-        cardsCaption_.setText (TRANS ("Cards"), juce::dontSendNotification);
         voicesCaption_.setText (TRANS ("Voices"), juce::dontSendNotification);
         chCaption_.setText (TRANS ("Ch"), juce::dontSendNotification);
         zoneLoCaption_.setText (TRANS ("Zone Low"), juce::dontSendNotification);
@@ -296,13 +277,15 @@ public:
             polyCombo_.addItem (TRANS ("Chain"), 5);
             polyCombo_.setSelectedId (prev, juce::dontSendNotification);
         }
+        // The Voices items are bare numbers (language-independent); only the
+        // selection needs re-applying after the clear.
         {
-            const int prev = voicesCombo_.getSelectedId();
-            voicesCombo_.clear();
-            voicesCombo_.addItem (TRANS ("Auto"), 1);
+            voicesCombo_.clear (juce::dontSendNotification);
             for (int n = 1; n <= kMaxVoicesPerPart; ++n)
-                voicesCombo_.addItem (juce::String (n), n + 1);
-            voicesCombo_.setSelectedId (prev, juce::dontSendNotification);
+                voicesCombo_.addItem (juce::String (n), n);
+            voicesCombo_.setSelectedId (
+                juce::jlimit (0, kMaxVoicesPerPart, engine_.getPartVoiceSlots (partIndex_)),
+                juce::dontSendNotification);
         }
         {
             // Preset names are proper nouns (firmware scale names) — kept
@@ -327,68 +310,25 @@ public:
                             juce::dontSendNotification);
     }
 
-    // The currently-displayed card count (0..6) from the combo.
-    int cardCount() const
+    // The Voices combo's currently-displayed voice count (1..16; 0 = no
+    // selection = a disabled part).
+    int displayedVoiceSlots() const
     {
-        const int id = cardsCombo_.getSelectedId();
-        return id > 0 ? id - 1 : 0;
+        const int id = voicesCombo_.getSelectedId();
+        return juce::jlimit (0, kMaxVoicesPerPart, id);
     }
 
-    // Highest card count this row's combo currently offers (0..6). With the
-    // dynamic per-row cap this is 6 minus the cards used by the OTHER rows, so
-    // the GUI never offers a count that would exceed the 6-card total.
-    int cardCountMax() const
+    // Test/automation hook: set the Voices combo as if the user chose it, then
+    // run the normal engine write path (onVoicesChanged -> setPartVoiceSlots).
+    // JUCE does not fire a combo's onChange for a programmatic setSelectedId.
+    // 0 clamps to 1 (the combo offers no "0"; a real user pick always enables).
+    void chooseVoiceSlots (int slots)
     {
-        const int n = cardsCombo_.getNumItems();
-        return n > 0 ? cardsCombo_.getItemId (n - 1) - 1 : 0;
-    }
-
-    // Rebuild the card-count combo to offer 0..@p maxCount, then select the
-    // engine's actual count for this Part (@p displayCount, clamped into range).
-    // Sourcing the selection from the engine (not the combo's stale cardCount())
-    // is what keeps the displayed count correct after an arrangement change
-    // widens this Part's allocation beyond what its (previously-narrowed) combo
-    // still offered. Called by PatchPage::rebuildCardCombos so each row only
-    // offers budget-legal counts AND mirrors the engine.
-    void rebuildCardItems (int maxCount, int displayCount)
-    {
-        maxCount = juce::jlimit (0, 6, maxCount);
         refreshing_ = true;
-        // dontSendNotification: clear()'s default is sendNotificationAsync,
-        // which (with a non-zero selection) arms a DEFERRED onChange that fires
-        // after refreshing_ has already been reset to false — re-entering
-        // onCardsChanged -> recompute -> rebuild -> clear() ... an infinite
-        // async ping-pong that permanently saturated one core at idle. The
-        // synchronous refresh below sets the selection itself, so no change
-        // signal is needed here.
-        cardsCombo_.clear (juce::dontSendNotification);
-        for (int n = 0; n <= maxCount; ++n)
-            cardsCombo_.addItem (juce::String (n), n + 1);
-        cardsCombo_.setSelectedId (juce::jlimit (0, maxCount, displayCount) + 1,
-                                   juce::dontSendNotification);
+        voicesCombo_.setSelectedId (juce::jlimit (1, kMaxVoicesPerPart, slots),
+                                    juce::dontSendNotification);
         refreshing_ = false;
-    }
-
-    // Test/automation hook: set the card-count combo to @p n WITHOUT firing
-    // onChange, clamped to what the combo currently offers (a row whose budget
-    // is spent offers only 0, so asking for more yields 0 — exactly as a user
-    // who can only pick from the offered items). PatchPage::chooseCardCount
-    // then drives the cap-check + write path explicitly (JUCE does not fire a
-    // combo's onChange for a programmatic setSelectedId in a headless test).
-    void setCardCountDisplay (int n)
-    {
-        n = juce::jlimit (0, cardCountMax(), n);
-        cardsCombo_.setSelectedId (n + 1, juce::dontSendNotification);
-    }
-
-    // Revert the card combo to the engine's actual count (used when an edit
-    // would push the total over 6). No onChange fired.
-    void revertCardDisplay()
-    {
-        const int n = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
-        refreshing_ = true;
-        cardsCombo_.setSelectedId (n + 1, juce::dontSendNotification);
-        refreshing_ = false;
+        onVoicesChanged();
     }
 
     // The Tune combo's currently-displayed mode (0..32 / 33 = Custom).
@@ -422,12 +362,11 @@ public:
         refreshing_ = false;
     }
 
-    // Dim the row when its Part has 0 cards (inactive). setAlpha keeps the row
-    // visible AND interactive so the user can still raise its card count.
+    // Dim the row when its Part has 0 voices (inactive). setAlpha keeps the row
+    // visible AND interactive so the user can still raise its voice count.
     void updateDimState()
     {
-        const int n = cardPopcount (engine_.getPartVoiceAllocation (partIndex_));
-        setAlpha (n == 0 ? kInactiveRowAlpha : 1.0f);
+        setAlpha (engine_.getPartVoiceSlots (partIndex_) == 0 ? kInactiveRowAlpha : 1.0f);
     }
 
 private:
@@ -436,8 +375,8 @@ private:
     SynthEngine& engine_;
     bool refreshing_ = false;
 
-    juce::Label partLabel_, cardsCaption_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_, tuneCaption_;
-    juce::ComboBox cardsCombo_, voicesCombo_, channelCombo_, polyCombo_, tuneCombo_;
+    juce::Label partLabel_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_, tuneCaption_;
+    juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_;
     juce::Slider loSlider_, hiSlider_;
 
     // (Re)build the Tune combo items: "12-EDO" (id 1) + the 32 firmware
@@ -460,16 +399,12 @@ private:
         return juce::jlimit (1, 33, mode + 1);   // mode 0..32 -> id 1..33
     }
 
-    void onCardsChanged()
-    {
-        if (refreshing_) return;
-        owner_.recomputeCardAllocation (partIndex_);
-    }
-
     void onVoicesChanged()
     {
         if (refreshing_) return;
-        engine_.setPartVoiceSlots (partIndex_, voicesCombo_.getSelectedId() - 1);
+        // The combo's id IS the voice count (1..16); no selection (0) never
+        // reaches here (an onChange only fires on a real pick).
+        engine_.setPartVoiceSlots (partIndex_, voicesCombo_.getSelectedId());
         owner_.postPartEdit();
     }
 
@@ -581,16 +516,43 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     arrangementCombo_.getProperties().set ("parvatiComboVisualH", 26);
     addAndMakeVisible (arrangementCombo_);
 
-    cardsTotalLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
-    cardsTotalLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
-    cardsTotalLabel_.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (cardsTotalLabel_);
+    // Pool-budget readout: how many of the 96 pool voices are allocated
+    // across all parts (sum of the per-part voiceCount_ snapshots) — the only
+    // budget label in the voice-first model (any combination of per-part
+    // counts is legal, so there is nothing to cap).
+    voicesTotalLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    voicesTotalLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
+    voicesTotalLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (voicesTotalLabel_);
 
-    for (int i = 0; i < kMaxCards; ++i)
+    for (int i = 0; i < kNumParts; ++i)
     {
         rows_[ (size_t) i] = std::make_unique<PartRow> (*this, i);
         scrollBody_->addAndMakeVisible (*rows_[ (size_t) i]);
     }
+
+    // ---- Global voice-pool view: the whole-patch picture lives ONLY here
+    // (the Global page's VoiceMeter is part-relative). Below the 6 part rows,
+    // above the hosted Global ParamPage — right where parts are configured.
+    // The provider is injected by the editor (setVoicePoolProvider), so the
+    // view stays engine-decoupled exactly like the meter.
+    voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
+    voicePoolCaption_.setFont (juce::FontOptions (11.0f));
+    voicePoolCaption_.setJustificationType (juce::Justification::centredLeft);
+    voicePoolCaption_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
+    voicePoolCaption_.setTooltip (
+        "Every part draws its voices from one shared 96-voice pool. Each part "
+        "can use up to 16 voices at once; the squares light up while its "
+        "voices sound. The hardware voicecards are shared out automatically "
+        "for the individual outputs and the .MUL hardware export.");
+    scrollBody_->addAndMakeVisible (voicePoolCaption_);
+    voicePoolView_ = std::make_unique<VoicePoolView>();
+    voicePoolView_->setTooltip (
+        "Every part draws its voices from one shared 96-voice pool. Each part "
+        "can use up to 16 voices at once; the squares light up while its "
+        "voices sound. The hardware voicecards are shared out automatically "
+        "for the individual outputs and the .MUL hardware export.");
+    scrollBody_->addAndMakeVisible (*voicePoolView_);
 
     // T4 scroll safety net: the rows + the hosted global page scroll vertically
     // inside a Viewport. At the tuned design size the body fits (it is grown to
@@ -617,18 +579,24 @@ void PatchPage::paint (juce::Graphics& g)
 
 void PatchPage::applyThemeColors()
 {
-    const auto accent = themeManager_.getCurrentTheme().accentPrimary;
+    const auto theme = themeManager_.getCurrentTheme();
+    const auto accent = theme.accentPrimary;
     heading_.setColour (juce::Label::textColourId, accent);
-    cardsTotalLabel_.setColour (juce::Label::textColourId, accent);
+    voicesTotalLabel_.setColour (juce::Label::textColourId, accent);
+    voicePoolCaption_.setColour (juce::Label::textColourId, theme.textSecondary);
+    if (voicePoolView_ != nullptr)
+        voicePoolView_->refresh();   // colours are read at paint time
     repaint();
 }
 
 void PatchPage::refreshLanguage()
 {
     heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
+    voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
     buildArrangementCombo();
     for (auto& r : rows_)
         r->refreshLanguage();
+    updateVoicesTotal();   // "Voices Y/96" is TRANS-built chrome
     repaint();
 }
 
@@ -637,11 +605,12 @@ void PatchPage::buildArrangementCombo()
     const int prev = arrangementCombo_.getSelectedId();
     arrangementCombo_.clear();
     arrangementCombo_.setTextWhenNothingSelected (TRANS ("Custom"));
-    arrangementCombo_.addItem (TRANS ("Single"), 1);
-    arrangementCombo_.addItem (TRANS ("Stack"), 2);
-    arrangementCombo_.addItem (TRANS ("Split 2"), 3);
-    arrangementCombo_.addItem (TRANS ("Layer 2"), 4);
-    arrangementCombo_.addItem (TRANS ("Multi 6"), 5);
+    arrangementCombo_.addItem (TRANS ("Mono"), 1);
+    arrangementCombo_.addItem (TRANS ("Single"), 2);
+    arrangementCombo_.addItem (TRANS ("Dual Layer"), 3);
+    arrangementCombo_.addItem (TRANS ("Dual Split"), 4);
+    arrangementCombo_.addItem (TRANS ("Quad Split"), 5);
+    arrangementCombo_.addItem (TRANS ("Multi 6"), 6);
     arrangementCombo_.setSelectedId (prev, juce::dontSendNotification);
 }
 
@@ -660,7 +629,7 @@ void PatchPage::onArrangementChanged()
 {
     if (refreshing_) return;
     const int id = arrangementCombo_.getSelectedId();
-    if (id < 1 || id > 5) return;
+    if (id < 1 || id > arrangementCount()) return;
     applyArrangement (proc_.getEngine(), static_cast<Arrangement> (id - 1));
     refresh();
     // applyArrangement writes each part's polyphony ENGINE-DIRECT (setCurrentPart
@@ -671,48 +640,40 @@ void PatchPage::onArrangementChanged()
     proc_.loadPartIntoApvts (proc_.getEngine().getCurrentPart());
 }
 
-int PatchPage::getDisplayedCardCount (int part) const
-{
-    if (part < 0 || part >= kMaxCards) return -1;
-    return rows_[(size_t) part]->cardCount();
-}
-
 Arrangement PatchPage::getDisplayedArrangement() const
 {
     const int id = arrangementCombo_.getSelectedId();
-    return (id >= 1 && id <= 5) ? static_cast<Arrangement> (id - 1) : Arrangement::Custom;
-}
-
-void PatchPage::chooseCardCount (int part, int count)
-{
-    if (part < 0 || part >= kMaxCards || count < 0 || count > kMaxCards) return;
-    // Mirror a user edit: set the combo to the requested count, then run the
-    // exact cap-check + contiguous-bitmask write path (recomputeCardAllocation).
-    rows_[(size_t) part]->setCardCountDisplay (count);
-    recomputeCardAllocation (part);
-}
-
-int PatchPage::getCardCountMax (int part) const
-{
-    if (part < 0 || part >= kMaxCards) return -1;
-    return rows_[(size_t) part]->cardCountMax();
+    return (id >= 1 && id <= arrangementCount())
+        ? static_cast<Arrangement> (id - 1) : Arrangement::Custom;
 }
 
 int PatchPage::getDisplayedTuningMode (int part) const
 {
-    if (part < 0 || part >= kMaxCards) return -1;
+    if (part < 0 || part >= kNumParts) return -1;
     return rows_[(size_t) part]->displayedTuningMode();
 }
 
 void PatchPage::chooseTuningMode (int part, int mode)
 {
-    if (part < 0 || part >= kMaxCards || mode < 0 || mode > 33) return;
+    if (part < 0 || part >= kNumParts || mode < 0 || mode > 33) return;
     rows_[(size_t) part]->chooseTuningMode (mode);
+}
+
+int PatchPage::getDisplayedVoiceSlots (int part) const
+{
+    if (part < 0 || part >= kNumParts) return -1;
+    return rows_[(size_t) part]->displayedVoiceSlots();
+}
+
+void PatchPage::chooseVoiceSlots (int part, int slots)
+{
+    if (part < 0 || part >= kNumParts) return;   // slots clamped inside the row (0 -> 1)
+    rows_[(size_t) part]->chooseVoiceSlots (slots);
 }
 
 void PatchPage::openTuningEditor (int part)
 {
-    if (part < 0 || part >= kMaxCards) return;
+    if (part < 0 || part >= kNumParts) return;
     // Live edits re-sync the row's combo + the page chrome (dim states,
     // arrangement label) exactly like a combo-side preset pick.
     auto onChanged = [this, part]
@@ -724,40 +685,20 @@ void PatchPage::openTuningEditor (int part)
                           std::move (onChanged));
 }
 
-void PatchPage::rebuildCardCombos()
+void PatchPage::updateVoicesTotal()
 {
-    // Source of truth = the ENGINE, not the combos: a row's combo may still hold
-    // a stale/narrowed selection from a previous arrangement (e.g. only "0"), so
-    // reading cardCount() here would compute the per-row caps against the wrong
-    // total and leave the displayed count stuck. Reading the engine popcounts
-    // makes both the caps and the displayed counts always track the engine.
-    int counts[kMaxCards] {};
-    int total = 0;
-    for (int p = 0; p < kMaxCards; ++p)
-    {
-        counts[p] = cardPopcount (proc_.getEngine().getPartVoiceAllocation (p));
-        total += counts[p];
-    }
-
-    // Each row may offer 0..(6 - cards used by the OTHER rows), so the GUI never
-    // offers a count that would exceed the 6-card total, and each row's selection
-    // mirrors its engine allocation.
-    for (int p = 0; p < kMaxCards; ++p)
-    {
-        const int usedByOthers = total - counts[p];
-        const int maxForThis = juce::jlimit (0, kMaxCards, kMaxCards - usedByOthers);
-        rows_[(size_t) p]->rebuildCardItems (maxForThis, counts[p]);
-    }
-}
-
-void PatchPage::updateCardsTotal()
-{
-    int used = 0;
-    for (int p = 0; p < kMaxCards; ++p)
-        used += cardPopcount (proc_.getEngine().getPartVoiceAllocation (p));
-    cardsTotalLabel_.setText (TRANS ("Cards") + " " + juce::String (used) + "/"
-                                  + juce::String (kMaxCards),
-                              juce::dontSendNotification);
+    // Pool budget: the sum of the per-part ALLOCATED counts. voiceCount_ is
+    // the audio-thread-published snapshot (rebuildVoiceAllocation), so after a
+    // voice-count edit the label settles on the next process block — the same
+    // freshness as the status-strip denominator, and never a lie about the
+    // ACTUAL allocation (a message-thread re-derivation would miss CHAIN's
+    // doubled voice sets).
+    int voices = 0;
+    for (int p = 0; p < kNumParts; ++p)
+        voices += proc_.getEngine().getPart (p).voiceCount_.load();
+    voicesTotalLabel_.setText (TRANS ("Voices") + " " + juce::String (voices) + "/"
+                                   + juce::String (kNumVoices),
+                               juce::dontSendNotification);
 }
 
 void PatchPage::refresh()
@@ -766,8 +707,7 @@ void PatchPage::refresh()
     for (auto& r : rows_)
         r->refresh();
     refreshing_ = false;
-    rebuildCardCombos();
-    updateCardsTotal();
+    updateVoicesTotal();
     setArrangementFromEngine();
 }
 
@@ -775,8 +715,7 @@ void PatchPage::postPartEdit()
 {
     for (auto& r : rows_)
         r->updateDimState();
-    rebuildCardCombos();
-    updateCardsTotal();
+    updateVoicesTotal();
     setArrangementFromEngine();
 }
 
@@ -786,55 +725,6 @@ void PatchPage::partNamesChanged()
 {
     if (onPartNamesChanged)
         onPartNamesChanged();
-}
-
-void PatchPage::recomputeCardAllocation (int changedPart)
-{
-    if (refreshing_) return;
-
-    // Read all 6 counts from the combos (the just-edited one already holds its
-    // new value).
-    int counts[kMaxCards] {};
-    int sum = 0;
-    for (int p = 0; p < kMaxCards; ++p)
-    {
-        counts[p] = rows_[ (size_t) p]->cardCount();
-        sum += counts[p];
-    }
-
-    if (sum > kMaxCards)
-    {
-        // Reject: the edit would exceed the 6-card total. Revert the changed
-        // row's display to the engine's actual (pre-edit) count; the engine is
-        // untouched. The displayed counts therefore always satisfy sum <= 6.
-        rows_[ (size_t) changedPart]->revertCardDisplay();
-        return;
-    }
-
-    // Recompute the 6 contiguous bitmasks in part order (part 0 takes the first
-    // count0 cards, part 1 the next count1, ...) and write ALL of them.
-    //
-    // Deviation from the spec's "for each changed part" hint: contiguous
-    // reassignment shifts the card cursor for EVERY part from the first changed
-    // one onward, so a part whose own count is unchanged can still need a
-    // different bitmask position. Comparing new vs old masks is therefore unsafe
-    // under the engine's exclusive-ownership steal. Writing all 6 disjoint
-    // contiguous masks in order is the simplest correct contract (each write is
-    // idempotent for a disjoint mask), and is exactly what applyArrangement does.
-    auto& engine = proc_.getEngine();
-    const int saved = engine.getCurrentPart();
-    int cursor = 0;
-    for (int p = 0; p < kMaxCards; ++p)
-    {
-        uint8_t mask = 0;
-        for (int c = 0; c < counts[p]; ++c)
-            mask |= static_cast<uint8_t> (1u << (cursor + c));
-        cursor += counts[p];
-        engine.setPartVoiceAllocation (p, mask);
-    }
-    engine.setCurrentPart (saved);
-
-    postPartEdit();
 }
 
 void PatchPage::resized()
@@ -855,7 +745,7 @@ void PatchPage::resized()
         arrangementCombo_.setBounds (topRow.removeFromLeft (220)
                                          .withSizeKeepingCentre (220, 44));
         topRow.removeFromLeft (12);
-        cardsTotalLabel_.setBounds (topRow.removeFromLeft (170));
+        voicesTotalLabel_.setBounds (topRow.removeFromLeft (170));
     }
     area.removeFromTop (10);
 
@@ -880,11 +770,19 @@ void PatchPage::layoutScrollBody()
         constexpr int rowH = 56;
         constexpr int rowGap = 4;
         int y = 0;
-        for (int i = 0; i < kMaxCards; ++i)
+        for (int i = 0; i < kNumParts; ++i)
         {
             rows_[ (size_t) i]->setBounds (0, y, cw, rowH);
             y += rowH + rowGap;
         }
+        // Global voice-pool view: caption + the compact 6-part grid. The view
+        // sizes itself to its FIXED height (its rows/geometry are fixed; only
+        // the width is elastic), so it never destabilises the body height.
+        y += 10;   // gap below the part rows
+        voicePoolCaption_.setBounds (0, y, cw, 16);
+        y += 18;
+        voicePoolView_->setBounds (0, y, cw, VoicePoolView::kHeight);
+        y += VoicePoolView::kHeight;
         if (hostedParamPage_ != nullptr)
         {
             y += 8;   // breathing room below the last row
@@ -922,4 +820,10 @@ void PatchPage::hostParamPage (juce::Component* paramPage)
     if (hostedParamPage_ != nullptr)
         scrollBody_->addAndMakeVisible (hostedParamPage_);
     resized();
+}
+
+void PatchPage::setVoicePoolProvider (std::function<VoicePoolFrame()> provider)
+{
+    if (voicePoolView_ != nullptr)
+        voicePoolView_->setStateProvider (std::move (provider));
 }

@@ -289,72 +289,98 @@ int main()
 
     if (patchPage != nullptr)
     {
-        // ---- [7] Voice-card allocation manipulation via the Patch page ----
-        // Drives the REAL UI code path (combo onChange -> cap-check ->
-        // contiguous-bitmask write) and the engine->GUI reflection path, then
-        // asserts against the engine (the source of truth).
-        std::printf ("\n[7] Voice-card allocation via PatchPage\n");
+        // ---- [7] Arrangements + voice counts via the Patch page ----
+        // Drives the REAL UI path (combo onChange -> applyArrangement /
+        // setPartVoiceSlots) and the engine->GUI reflection path, then asserts
+        // against the engine (the source of truth). The voice-first model: a
+        // Part's voice count is 1..16 from the 96-voice pool and the 6 hardware
+        // voicecards are DERIVED (contiguous proportional share) — any
+        // combination of counts is legal, so there is no per-row cap.
+        std::printf ("\n[7] Arrangements + voice counts via PatchPage\n");
         auto& engine = proc.getEngine();
         auto popcount = [] (uint8_t m) { int n = 0; for (int b = 0; b < 6; ++b) if (m & (1u << b)) ++n; return n; };
 
-        // Start from a known arrangement: Single = all 6 cards on part 0.
+        // Single: part 0 maxed (16 voices), everything else disabled.
         applyArrangement (engine, Arrangement::Single);
         patchPage->refresh();
-        check (patchPage->getDisplayedCardCount (0) == 6, "Single: part 0 shows 6 cards");
-        check (patchPage->getDisplayedCardCount (1) == 0, "Single: part 1 shows 0 cards");
+        check (patchPage->getDisplayedVoiceSlots (0) == 16, "Single: part 0 shows 16 voices");
+        check (patchPage->getDisplayedVoiceSlots (1) == 0, "Single: part 1 shows 0 (disabled)");
         check (patchPage->getDisplayedArrangement() == Arrangement::Single,
                "Single: arrangement inferred as Single");
+        // The derived cards follow the counts: one active part owns all 6.
+        check (popcount (engine.getPartVoiceAllocation (0)) == 6,
+               "Single: derived mask gives part 0 all 6 cards");
 
-        // Manipulate via the UI path: redistribute to 3 + 3.
-        patchPage->chooseCardCount (0, 3);
-        patchPage->chooseCardCount (1, 3);
-        check (popcount (engine.getPartVoiceAllocation (0)) == 3, "UI 3+3: part 0 owns 3 cards (engine)");
-        check (popcount (engine.getPartVoiceAllocation (1)) == 3, "UI 3+3: part 1 owns 3 cards (engine)");
-        check (patchPage->getDisplayedCardCount (0) == 3 && patchPage->getDisplayedCardCount (1) == 3,
-               "UI 3+3: displayed counts reflect 3/3");
-        int totalCards = 0;
-        for (int p = 0; p < 6; ++p) totalCards += popcount (engine.getPartVoiceAllocation (p));
-        check (totalCards == 6, "UI 3+3: total cards across parts == 6 (no leak)");
+        // TRUE Mono preset: part 0 = 1 voice + MONO polyphony, others disabled.
+        applyArrangement (engine, Arrangement::Mono);
+        patchPage->refresh();
+        check (patchPage->getDisplayedVoiceSlots (0) == 1, "Mono: part 0 shows 1 voice");
+        check (engine.getPartPolyphony (0) == 0, "Mono: part 0 poly is MONO (true mono)");
+        check (patchPage->getDisplayedArrangement() == Arrangement::Mono,
+               "Mono: arrangement inferred as Mono");
 
-        // Cap enforcement: 6 cards already spent, so raising any other part
-        // must be REJECTED (total cannot exceed 6; engine + combo untouched).
-        const uint8_t p2Before = engine.getPartVoiceAllocation (2);
-        patchPage->chooseCardCount (2, 2);   // would make 3 + 3 + 2 = 8 > 6
-        check (popcount (engine.getPartVoiceAllocation (2)) == 0, "Cap: part 2 rejected (stays 0 cards)");
-        check (engine.getPartVoiceAllocation (2) == p2Before, "Cap: part 2 engine bitmask unchanged");
-        check (patchPage->getDisplayedCardCount (2) == 0, "Cap: part 2 combo reverted to 0");
-
-        // Engine -> GUI reflection: load Multi6 directly, refresh, confirm the
-        // page mirrors it (1 card each) and re-infers Multi6.
+        // Engine -> GUI reflection: load Multi6 (16 each, ch 1..6), refresh,
+        // confirm the page mirrors it and re-infers Multi6.
         applyArrangement (engine, Arrangement::Multi6);
         patchPage->refresh();
-        bool oneEach = true;
+        bool allSixteen = true;
         for (int p = 0; p < 6; ++p)
-            if (patchPage->getDisplayedCardCount (p) != 1) oneEach = false;
-        check (oneEach, "Multi6: every part shows 1 card (engine->GUI reflection)");
+            if (patchPage->getDisplayedVoiceSlots (p) != 16) allSixteen = false;
+        check (allSixteen, "Multi6: every part shows 16 voices (engine->GUI reflection)");
         check (patchPage->getDisplayedArrangement() == Arrangement::Multi6,
                "Multi6: arrangement inferred as Multi6");
 
-        // ---- [8] 6-card budget is self-enforcing (no 6x6) ----
-        std::printf ("\n[8] 6-card budget self-enforces\n");
-        applyArrangement (engine, Arrangement::Single);   // part 0 = all 6
+        // ---- [7b] Voice counts (per-part pool allocation) via the Patch page
+        // ----
+        // Drives the REAL Voices-combo path (onVoicesChanged ->
+        // setPartVoiceSlots) and the engine->GUI reflection (refresh re-reads
+        // the counts into the combo). The combo offers 1..16 (no "0":
+        // disabling is the arrangements'/loaders' job — a real pick always
+        // enables).
+        std::printf ("\n[7b] Voice counts via PatchPage\n");
+        check (patchPage->getDisplayedVoiceSlots (0) == 16,
+               "default: part 0 Voices combo shows 16 (Multi6 preset)");
+        patchPage->chooseVoiceSlots (0, 10);
+        check (engine.getPartVoiceSlots (0) == 10,
+               "UI voices: part 0 engine slots == 10");
+        check (patchPage->getDisplayedVoiceSlots (0) == 10,
+               "UI voices: part 0 combo shows 10");
         patchPage->refresh();
-        check (patchPage->getCardCountMax (0) == 6, "Single: part 0 combo offers up to 6");
-        check (patchPage->getCardCountMax (1) == 0, "Single: part 1 combo offers only 0 (budget spent)");
-        // Freeing cards widens another row's budget: part 0 -> 3 lets part 1 reach 3.
-        patchPage->chooseCardCount (0, 3);
-        check (patchPage->getCardCountMax (1) == 3, "After part0=3: part 1 combo offers up to 3");
-        // Spend the rest: part 1 -> 3 (total 6) collapses part 2's budget to 0.
-        patchPage->chooseCardCount (1, 3);
-        check (patchPage->getCardCountMax (2) == 0, "After 3+3: part 2 combo offers only 0");
-        // No sequence of UI edits can push the engine past 6 total cards: the
-        // dynamic per-row cap stops over-budget values even being offered.
-        patchPage->chooseCardCount (0, 6);
-        patchPage->chooseCardCount (2, 6);
-        int total6 = 0;
+        check (patchPage->getDisplayedVoiceSlots (0) == 10,
+               "UI voices: refresh keeps part 0 at 10 (engine->GUI reflection)");
+        // 0 is clamped to 1 (the combo offers no "0" — a pick always enables).
+        patchPage->chooseVoiceSlots (0, 0);
+        check (engine.getPartVoiceSlots (0) == 1,
+               "UI voices: chooseVoiceSlots(0) clamps to 1 (enables, never disables)");
+
+        // ---- [8] The pool has NO per-row cap: every part can be maxed ----
+        std::printf ("\n[8] every part can be maxed simultaneously\n");
+        applyArrangement (engine, Arrangement::Multi6);   // 6 x 16 = the whole pool
+        patchPage->refresh();
+        patchPage->chooseVoiceSlots (0, 16);
+        patchPage->chooseVoiceSlots (1, 16);
+        patchPage->chooseVoiceSlots (2, 16);
+        patchPage->chooseVoiceSlots (3, 16);
+        patchPage->chooseVoiceSlots (4, 16);
+        patchPage->chooseVoiceSlots (5, 16);
+        int totalVoices = 0;
         for (int p = 0; p < 6; ++p)
-            total6 += popcount (engine.getPartVoiceAllocation (p));
-        check (total6 == 6, "Over-budget edits rejected: engine total stays exactly 6");
+            totalVoices += engine.getPartVoiceSlots (p);
+        check (totalVoices == 96, "All six parts maxed: engine total == 96 (whole pool, no cap)");
+        // The DERIVED 6-card budget still holds: 6 active parts -> 1 card each,
+        // disjoint.
+        int totalCards = 0;
+        bool disjoint = true;
+        uint8_t used = 0;
+        for (int p = 0; p < 6; ++p)
+        {
+            const uint8_t m = engine.getPartVoiceAllocation (p);
+            totalCards += popcount (m);
+            if (used & m) disjoint = false;
+            used = static_cast<uint8_t> (used | m);
+        }
+        check (totalCards == 6 && disjoint,
+               "Derived cards: exactly 6, disjoint, shared across the 6 parts");
 
         // ---- [9] Per-part tuning via the Patch page (Tune column) ----
         // Drives the REAL combo path (byte-4 write + APVTS re-sync), the
