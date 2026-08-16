@@ -1380,9 +1380,12 @@ target_link_libraries(parvati_host_state_test PRIVATE
 
 # ------------------------------------------------------------------------------
 # Phase-4 verification (not shipped): headless editor instantiation + coverage.
-# Confirms createEditor() is non-null, every one of the 104 descriptors has a
-# control + attachment, there are exactly 6 tab pages, the default size is
-# 980x660, and the editor deletes cleanly (leak-detector validated).
+# Confirms createEditor() is non-null, one ParamControl per descriptor (the
+# mod-matrix slot params, the fx{1,2,3}_* slot params, the FX master/topology
+# params and part_select are hosted by dedicated views instead of ParamPage
+# cells), exactly 2 top-level page tabs ([SYNTH][FX]; Global is a header-button
+# overlay), the default size is 1280x634, and the editor deletes cleanly
+# (leak-detector validated).
 #   cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
 add_executable(parvati_editor_test EXCLUDE_FROM_ALL
     tools/editor_test.cpp

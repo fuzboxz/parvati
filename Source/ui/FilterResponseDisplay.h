@@ -8,7 +8,7 @@
 // resonance, and the mode choice index (0..3 = LP/BP/HP/Notch). Self-contained:
 // owns a 30 Hz refresh timer with an eps-diff gate. Read-only on the APVTS.
 // Colours are read from the active ParvatiTheme via the component's LookAndFeel
-// every repaint; the trace adopts a category hue (catAudio amber) via
+// every repaint; the trace adopts a category hue (catAudio) via
 // setCategoryColour().
 //
 // Magnitude model (local math — the runtime filter in dsp/analog_filter.cpp is

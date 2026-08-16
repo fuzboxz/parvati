@@ -60,7 +60,7 @@ struct ParvatiTheme
     // The STRICT family palette: teal=Envelope, magenta=LFO, amber=keyboard/perf,
     // mint=sequencer (Seq+Arp), orange=utility, purple=modifier, indigo=constant.
     // Control arcs/graphs + mod-bar pills + matrix rows tinted by function group:
-    juce::Colour catAudio;            // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (amber — NOT a mod-source family; section headers)
+    juce::Colour catAudio;            // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (NOT a mod-source family; section headers). Adopts the theme's BRAND ACCENT in every theme — never the family amber, so knob rings/previews follow the accent (Carbon/Legacy: primary; Midnight/Paper: secondary — their primaries collide with the Env teal / amber families; Obsidian/Crimson: primary). The mod-source family hues below are unaffected and stay uniform across themes.
     juce::Colour catEnv;              // Envelopes (TEAL)
     juce::Colour catLfo;              // LFOs (MAGENTA)
     juce::Colour catSeq;              // Sequencer (MINT GREEN)

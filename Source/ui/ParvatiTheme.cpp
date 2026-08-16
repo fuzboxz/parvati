@@ -37,8 +37,8 @@ const ParvatiTheme& carbonTheme()
         // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg, keyWhite
         juce::Colour (0xff2C3138), juce::Colour (0xff2A2E35), juce::Colour (0xff1E2228),
         juce::Colour (0xff1A1E24), juce::Colour (0xff252A31), juce::Colour (0xffeeeae0),
-        // modulation routing palette — Carbon overrides catAudio to the cyan brand
-        // hue (was the shared family amber) so osc/filter previews match the accent.
+        // modulation routing palette — catAudio adopts the CYAN brand accent
+        // (was the shared family amber) so osc/filter previews match the accent.
         // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT (sequencer family).
         juce::Colour (0xff38BDF8), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
         juce::Colour (0xff34D399), juce::Colour (0xff34D399),
@@ -68,9 +68,11 @@ const ParvatiTheme& midnightTheme()
         // auxiliary
         juce::Colour (0xff2E3950), juce::Colour (0xff26303F), juce::Colour (0xff1C2433),
         juce::Colour (0xff182030), juce::Colour (0xff242E40), juce::Colour (0xffeceef1),
-        // modulation routing palette — STRICT family hues (same family hues as Carbon):
-        // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
-        juce::Colour (0xffFFB400), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
+        // modulation routing palette — catAudio adopts the BLUE complementary
+        // accent (the primary teal would collide with the Env family teal on
+        // knob rings/previews). Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER,
+        // Util=ORANGE, Mod=PURPLE, Const=INDIGO (family palette unchanged)
+        juce::Colour (0xff5b9bd5), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
         juce::Colour (0xff34D399), juce::Colour (0xff34D399),
         juce::Colour (0xffFBBF24), juce::Colour (0xffFB923C), juce::Colour (0xffA78BFA),
         juce::Colour (0xff818CF8),
@@ -96,9 +98,11 @@ const ParvatiTheme& obsidianTheme()
         // auxiliary
         juce::Colour (0xff2C2C3C), juce::Colour (0xff262634), juce::Colour (0xff1C1C26),
         juce::Colour (0xff181820), juce::Colour (0xff252532), juce::Colour (0xffefeaf2),
-        // modulation routing palette — STRICT family hues (same family hues as Carbon):
-        // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
-        juce::Colour (0xffFFB400), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
+        // modulation routing palette — catAudio adopts the VIOLET brand accent
+        // (was the shared family amber) so osc/filter previews match the accent.
+        // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE,
+        // Const=INDIGO (family palette unchanged; the Mod pills keep PURPLE).
+        juce::Colour (0xff8b5cf6), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
         juce::Colour (0xff34D399), juce::Colour (0xff34D399),
         juce::Colour (0xffFBBF24), juce::Colour (0xffFB923C), juce::Colour (0xffA78BFA),
         juce::Colour (0xff818CF8),
@@ -127,10 +131,11 @@ const ParvatiTheme& paperTheme()
         // auxiliary
         juce::Colour (0xffc2beb3), juce::Colour (0xffdedbd1), juce::Colour (0xffeceae4),
         juce::Colour (0xffe0ddd3), juce::Colour (0xffece9e0), juce::Colour (0xfffbf9f4),
-        // modulation routing palette — STRICT family hues, darker (600-tier) for clear
-        // contrast on the light bg: Env=teal, LFO=magenta, Seq/Arp=mint, Perf=amber,
-        // Util=orange, Mod=purple, Const=indigo
-        juce::Colour (0xffB45309), juce::Colour (0xff0D9488), juce::Colour (0xffC026D3),
+        // modulation routing palette — catAudio adopts the BLUE accent (600-tier
+        // for light-bg contrast; the primary is itself amber). Env=TEAL, LFO=MAGENTA,
+        // Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
+        // (family palette unchanged, darker 600-tier hues retained)
+        juce::Colour (0xff2563eb), juce::Colour (0xff0D9488), juce::Colour (0xffC026D3),
         juce::Colour (0xff059669), juce::Colour (0xff059669),
         juce::Colour (0xffD97706), juce::Colour (0xffEA580C), juce::Colour (0xff7C3AED),
         juce::Colour (0xff4F46E5),
@@ -156,10 +161,11 @@ const ParvatiTheme& crimsonTheme()
         // auxiliary
         juce::Colour (0xff3E2424), juce::Colour (0xff2E1818), juce::Colour (0xff2A1818),
         juce::Colour (0xff201212), juce::Colour (0xff341E1E), juce::Colour (0xfff1ebe7),
-        // modulation routing palette — STRICT family hues (same vivid family hues as
-        // the other dark themes; catAudio left harmonized): Env=TEAL, LFO=MAGENTA,
+        // modulation routing palette — catAudio adopts the CRIMSON brand accent
+        // (was a harmonized amber-orange). Env=TEAL, LFO=MAGENTA,
         // Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
-        juce::Colour (0xffE8923C), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
+        // (same vivid family hues as the other dark themes; palette unchanged)
+        juce::Colour (0xffe5484d), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
         juce::Colour (0xff34D399), juce::Colour (0xff34D399),
         juce::Colour (0xffFBBF24), juce::Colour (0xffFB923C), juce::Colour (0xffA78BFA),
         juce::Colour (0xff818CF8),

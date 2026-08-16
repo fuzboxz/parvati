@@ -111,10 +111,10 @@ juce::StringArray makeModifierOps()
     return { "None", "Sum", "Product", "Attenuate", "Max", "Min", "XOR", "GE", "LE", "Quantize", "Lag" };
 }
 
-// FxType choice list (FxType::None..RingModulator). Matches the enum order.
-// Display-only: the stored value is the choice INDEX (APVTS flushToTree
-// serializes the denormalized float, never the text), so renaming a label —
-// e.g. "Reverb" -> "CVerb" — never breaks saved sessions/presets.
+// FxType choice list (FxType::None..Phaser — the FV-1 family is APPEND-ONLY).
+// Matches the enum order. Display-only: the stored value is the choice INDEX
+// (APVTS flushToTree serializes the denormalized float, never the text), so
+// renaming a label — e.g. "Reverb" -> "CVerb" — never breaks saved sessions/presets.
 juce::StringArray makeFxTypes()
 {
     return { "None", "Diffuser", "Pitch Shifter", "CVerb",

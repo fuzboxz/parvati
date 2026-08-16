@@ -11,7 +11,7 @@
 // when the shape or (quantized) parameter actually changes. Read-only on the
 // APVTS. Colours are read from the active ParvatiTheme via the component's
 // LookAndFeel every repaint, so theme switches are picked up automatically; the
-// trace adopts a category hue (catAudio amber) via setCategoryColour().
+// trace adopts a category hue (catAudio) via setCategoryColour().
 //
 // Rendering strategy (hybrid):
 //   * The 5 basic shapes (None/Saw/Square/Triangle/Sine) are drawn ANALYTICALLY
@@ -67,7 +67,7 @@ public:
 
     ~OscPreviewDisplay() override;
 
-    /** Adopt a category hue for the waveform TRACE (catAudio amber). When never
+    /** Adopt a category hue for the waveform TRACE (catAudio). When never
         called, the trace reads the live theme accent. */
     void setCategoryColour (const juce::Colour& c) { categoryColour_ = c; hasCategoryColour_ = true; repaint(); }
     bool hasCategoryColour() const noexcept { return hasCategoryColour_; }

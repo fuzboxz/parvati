@@ -117,13 +117,13 @@ Section sectionForId (const juce::String& id)
 
 // Map a functional Section to its theme category-token colour. Oscillators /
 // Mixer / Filter / ModMatrix / Modifiers / Global / Multi share the neutral
-// "audio" amber; Envelopes/LFOs/Sequencer/Arp get their own hue. This is the
+// "audio" brand accent; Envelopes/LFOs/Sequencer/Arp get their own hue. This is the
 // ONLY place a Section resolves to a category token, so every arc / graph / tint
 // shares one consistent mapping and a theme switch re-resolves automatically.
 juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
 {
     // Only Envelopes/LFOs/Sequencer/Arp carry a distinct hue; every other
-    // section shares the neutral "audio" amber. (if-chain, not switch, so the
+    // section shares the theme's "audio" brand accent (catAudio). (if-chain, not switch, so the
     // remaining categories fall through to the neutral default without a
     // -Wswitch-enum warning.)
     if (s == Section::Envelopes) return theme.catEnv;
@@ -374,7 +374,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
             processor.getApvts(), d.paramID, *slider_);
         // Catch right-clicks on the knob (so the cell's popup menu shows).
         slider_->addMouseListener (this, false);
-        // Colour the knob's fill ARC by functional category (amber Osc/Filter/Mix,
+        // Colour the knob's fill ARC by functional category (theme-accent Osc/Filter/Mix,
         // cyan Env, magenta LFO, green Seq, purple Arp). Only the arc adopts the
         // category hue; the numeric value readout stays neutral. The LookAndFeel
         // drawRotarySlider reads this colour ID per-component, so this overrides
@@ -2716,6 +2716,23 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (kbdToggleButton_);
 
+    // ---- [MOD] header toggle: show/hide the central mod-pill bar ----
+    // The bar is a fixed-height SEAM in both workspaces (Synth + FX). Hiding
+    // collapses the seam — its height rejoins the content rows (a relayout,
+    // not an overlay like [KBD], because the bar occupies layout space). Both
+    // workspaces are toggled together so switching SYNTH<->FX never reflows on
+    // the difference. The bar is NOT torn down: re-showing is a cheap relayout
+    // and the pill state (active generator, scroll) survives.
+    modBarToggleButton_.setTooltip (TRANS ("Toggle the modulation pill bar"));
+    modBarToggleButton_.setClickingTogglesState (true);
+    modBarToggleButton_.setToggleState (true, juce::dontSendNotification);   // shown by default (the historical look)
+    modBarToggleButton_.onClick = [this] {
+        const bool on = modBarToggleButton_.getToggleState();
+        if (synthWorkspace_ != nullptr) synthWorkspace_->setModBarVisible (on);
+        if (fxWorkspace_    != nullptr) fxWorkspace_->setModBarVisible (on);
+    };
+    addAndMakeVisible (modBarToggleButton_);
+
     // ---- [MOD] header toggle: tap-to-assign modulation ----
     // Where there is no drag-and-drop (touch), modulation routing is reached by
     // toggling [MOD] ON, tapping a mod source, then tapping a destination knob —
@@ -3600,6 +3617,8 @@ void ParvatiEditor::resized()
     // zoom buttons (+/-/0) are folded into one "..." overflow popup so the grown
     // cluster still fits the 1280pt editor width. [KBD] is already 44pt wide.
     kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] (already 44pt wide)
+    bar.removeFromRight (8);
+    modBarToggleButton_.setBounds (bar.removeFromRight (44)); // [MOD] mod-pill bar seam toggle (left of [KBD])
     bar.removeFromRight (8);
     modAssignButton_.setBounds (bar.removeFromRight (44));     // [MOD] tap-to-assign toggle
     bar.removeFromRight (8);
