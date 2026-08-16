@@ -29,14 +29,17 @@ class CentralModBar : public juce::Component
 {
 public:
     /** Fixed total bar height (host sets the component height to this). */
-    // A taller bar (82pt) hosts ~1.5x bigger (72pt) pills grouped into labelled
-    // category segments, and the pill row scrolls horizontally inside a
-    // juce::Viewport so 25+ 72pt pills never widen the editor. Scrolling is driven
-    // by prominent `<` / `>` nav pills (not a scrollbar). kPillH / kPillGap are
-    // exposed here so the sizing-contract test can assert them. Single UI on all
-    // platforms (the former compact desktop bar is gone).
-    static constexpr int kBarHeight = 92;   // taller bar: ~1.5x pills + a coloured label tab above them + nav arrows
-    static constexpr int kPillH     = 72;   // ~1.5x bigger blips (was 50)
+    // A 78pt bar hosts compact (56pt) pills grouped into labelled category
+    // segments, and the pill row scrolls horizontally inside a juce::Viewport
+    // so 25+ pills never widen the editor. Scrolling is driven by prominent
+    // `<` / `>` nav pills (not a scrollbar). kPillH / kPillGap are exposed here
+    // so the sizing-contract test can assert them. Single UI on all platforms
+    // (the former compact desktop bar is gone). 56pt keeps the pill a full
+    // HIG 44pt+ touch target while reclaiming vertical space for the content
+    // rows (the bar is a fixed seam in both workspaces; see also the [MOD]
+    // header toggle, which collapses the seam entirely).
+    static constexpr int kBarHeight = 78;   // label tab (14) + gap (4) + 56pt pills + insets
+    static constexpr int kPillH     = 56;   // compact pills (was 72 — still >= 44pt HIG touch target)
     static constexpr int kPillGap   = 8;    // minimum pill spacing
 
     explicit CentralModBar (ThemeManager& themeManager);

@@ -4,7 +4,48 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Changed
+- **Smaller mod pills + [MOD] header toggle.** The central mod-pill bar's
+  pills are compacted (72pt → 56pt, bar 92pt → 78pt — still ≥ the 44pt HIG
+  touch minimum), reclaiming a seam of vertical space for the content rows.
+  The flanking `<` / `>` scroll buttons are quiet CHROME now: 30x30 glyphs
+  centred on the pill band (was 56pt-tall pill-styled tiles with accent
+  bands) — borderless at rest, dim glyph that lights on hover/press only. A
+  [MOD] toggle (the bar seam; the tap-to-assign toggle is [MAP] now) sits in
+  the header between [MAP] and [KBD] and
+  collapses/expands the bar seam in BOTH workspaces (hiding hands the bar's
+  height back to the content rows; the bar is hidden, not torn down, so
+  scroll position and the active-generator highlight survive). Default ON
+  (the historical look).
+- **FX knobs no longer shrink when the window is resized.** The FX-slot
+  cards' 3x2 param grid now has a FIXED cell height (kCellH, full-size 48px
+  dials — synth-page parity) instead of deriving the cell height from the
+  card body; only the compact visualizer band is elastic (down to 0). The
+  FX top row's natural-height scroll floor (kTopRowNaturalH, was 190 for
+  the routing bar alone) is raised to 264 so a shorter frame SCROLLS the
+  slot row instead of starving the cards — the same pattern the synth
+  pages already use. Verified: dial bounds are 48x48 at every window size
+  from the 1024x500 minimum to 1800x1100.
+- **Theme: the audio-family colour is the theme's brand accent in EVERY
+  theme — no amber knob rings/previews anywhere.** The STRICT mod-source
+  family palette is unchanged in every theme (Env=teal, LFO=magenta,
+  Seq/Arp=mint, Perf=amber, Util=orange, Mod=purple, Const=indigo), but
+  `catAudio` (Osc/Sub-Osc/Noise/Filter/Mixer knob rings, osc/filter
+  previews, audio section headers) no longer carries the family amber:
+  Carbon keeps its cyan brand (a8b3cb2), Midnight adopts steel blue (its
+  primary teal would collide with the Env teal rings), Obsidian violet,
+  Paper blue (its primary is amber), Crimson crimson. The multigui theme
+  guard now pins the exact category hues of ALL six themes.
+
 ### Fixed
+- **FX effect dropdowns can be reopened after a selection.** FxTypeCombo's
+  custom showPopup finished with a nullptr completion callback, so JUCE's
+  private ComboBox `menuActive` flag stayed latched TRUE after the popup
+  dismissed — every later click bailed inside showPopupIfNotActive() and the
+  effect could be picked exactly once per card. The popup now finishes with
+  a hidePopup() callback (destruction-safe via SafePointer; the per-item
+  action is SafePointer-guarded too). Regression-tested by driving the real
+  mouseDown → popup → dismiss path headlessly (parvati_editor_test).
 - **Engine correctness/threading fixes (audit 2026-08-15, section A).**
   - **Critical — per-part FX input routing** (`SynthEngine::renderPartFx`):
     the per-part FX-chain input summed `voiceCardBuffers_` indexed by POOL

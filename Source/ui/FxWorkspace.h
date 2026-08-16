@@ -55,6 +55,14 @@ public:
     // reparented directly (never regenerated). setFxSlotCard(slot, card).
     void setFxSlotCard (int slot, FxSlotCard* card);
 
+    /** Show/hide the central mod-pill bar seam (mirrors SynthWorkspace so
+        SYNTH<->FX never reflows on the difference). */
+    void setModBarVisible (bool visible)
+    {
+        modBarVisible_ = visible;
+        resized();
+    }
+
     // TOP-row slim ROUTING column (FLOW topology dropdown + global MIX +
     // master EQ), now the leftmost of the 4-column top row. Editor-owned,
     // hosted NON-owned.
@@ -121,6 +129,7 @@ private:
 
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
+    bool modBarVisible_ = true;   // [MOD] header toggle state (bar shown by default)
 
     // BOTTOM-LEFT: the vertical-scroll host that reparents ONE generator page
     // at a time. A Viewport SAFETY NET mirroring SynthWorkspace (T4): no

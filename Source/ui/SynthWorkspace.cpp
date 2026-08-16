@@ -231,11 +231,17 @@ void SynthWorkspace::resized()
     // ---- 3 rows: TOP (main) | MIDDLE (bar) | BOTTOM (generators | matrix) ----
     // The bar is a fixed-height full-width seam; the remaining height splits
     // evenly between the top main row and the bottom row (as the prior 50/50).
-    const int remaining = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
+    // The seam COLLAPSES when the bar is hidden ([MOD] header toggle): its
+    // height joins `remaining`, so hiding the pill bar hands the full strip
+    // back to the content rows (the pill bar is a power-user surface, not a
+    // requirement — modulation is also reachable via the Mod Matrix rows and
+    // tap-to-assign).
+    const int barH = modBarVisible_ ? CentralModBar::kBarHeight : 0;
+    const int remaining = juce::jmax (0, area.getHeight() - barH);
     const int mainH = juce::roundToInt (static_cast<float> (remaining) * 0.40f);   // match FxWorkspace so SYNTH<->FX doesn't reflow
 
     auto mainRow  = area.removeFromTop (mainH);
-    auto barRow   = area.removeFromTop (CentralModBar::kBarHeight);
+    auto barRow   = area.removeFromTop (barH);
     auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
 
     // ---- Main row columns: OSCILLATORS 40% | MIXER 20% | FILTER 40% ----
@@ -277,7 +283,12 @@ void SynthWorkspace::resized()
     topRowHost_->setSize (rowW, hostH);
 
     // ---- Middle seam: full-width bar ----
-    modBar_->setBounds (barRow);
+    if (modBar_ != nullptr)
+    {
+        modBar_->setVisible (modBarVisible_);
+        if (modBarVisible_)
+            modBar_->setBounds (barRow);
+    }
 
     // ---- Bottom row: LEFT 50% = active editor, RIGHT 50% = ModMatrixView ----
     auto modLeft  = bottomRow.removeFromLeft (bottomRow.getWidth() / 2);

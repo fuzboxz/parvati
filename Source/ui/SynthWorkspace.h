@@ -104,10 +104,22 @@ public:
     // page + the ModMatrixView. Called by the editor on a theme switch.
     void applyThemeColors();
 
-    // The bar's no-clipping minimum width (CentralModBar::preferredWidth).
-    // The editor uses this as the floor of setResizeLimits so the bar never
-    // compresses a pill.
+    // The bar's no-clipping ideal width (CentralModBar::preferredWidth).
+    // Diagnostic only since R3: the bar scrolls horizontally inside its own
+    // Viewport, so the editor's width floor is a fixed 1024pt (tablets) and
+    // the default size no longer tracks this value — it reports the
+    // uncompressed ideal width (e.g. for tests).
     int barPreferredWidth() const;
+
+    /** Show/hide the central mod-pill bar seam. Hiding COLLAPSES the bar row
+        (its height rejoins the content rows — see resized()); it does NOT
+        tear the bar down, so re-showing is a cheap relayout. Mirrored by
+        FxWorkspace so SYNTH<->FX never reflows on the difference. */
+    void setModBarVisible (bool visible)
+    {
+        modBarVisible_ = visible;
+        resized();
+    }
 
 private:
     ThemeManager& themeManager_;
@@ -119,6 +131,7 @@ private:
 
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
+    bool modBarVisible_ = true;   // [MOD] header toggle state (bar shown by default)
 
     // BOTTOM-LEFT: the vertical-scroll host that reparents ONE generator page
     // at a time. A Viewport SAFETY NET (see the class comment): no scrollbar

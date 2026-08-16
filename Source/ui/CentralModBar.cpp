@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See CentralModBar.h.
 //
 // Layout geometry (px):
-//   kBarHeight = 82, pill height 72 -> top/bottom inset (single UI, all platforms).
+//   kBarHeight = 78, pill height 56 -> top/bottom inset (single UI, all platforms).
 //   Pills are left-aligned within each cluster; clusters are separated ONLY by
 //   the inter-cluster gap (no caption — the family colour identifies the
 //   cluster instead, via each pill's persistent family-coloured underline).
@@ -37,9 +37,14 @@ namespace
     constexpr int kLabelTabH   = 14;   // coloured label-tab header height (above the pills)
     constexpr int kLabelTabGap = 4;    // gap between the label tab and the pills
 
-    // `<` / `>` nav pills that flank the viewport (replacing the scrollbar).
-    constexpr int kNavW   = 48;   // < > nav pill width
-    constexpr int kNavGap = 6;    // gap between a nav pill and the viewport
+    // `<` / `>` nav scrollers that flank the viewport (replacing the scrollbar).
+    // COMPACT, QUIET chrome (2026-08): 30x30, vertically centred on the PILL
+    // BAND (not the full bar height), borderless at rest — a bare dim chevron
+    // that only lights on hover/press. They previously matched the pill tiles
+    // (56pt tall, filled tile + accent bands) and visually competed with the
+    // mod pills they flank.
+    constexpr int kNavW   = 30;   // < > nav glyph width
+    constexpr int kNavGap = 4;    // gap between a nav glyph and the viewport
 
     // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
@@ -57,21 +62,19 @@ namespace
         return {};
     }
 
-    // Pill-styled nav scrollers: the `<` / `>` buttons are drawn EXACTLY like
-    // the mod pills (same rounded tile, corner radius, fill tokens, hover lift
-    // and clipped band geometry — see ModPill::paint) so they read as part of
-    // the pill row they flank, not as generic app buttons. They are bar chrome
-    // rather than a mod family, so the accent bands use accentPrimary (resolved
-    // from the active theme; the L&F is re-pointed in applyThemeColors())
-    // instead of a cluster colour. A press darkens the tile slightly (the pills
-    // have no press state — this keeps click feedback) and a disabled button
-    // dims to half alpha, matching the shared flat-button behaviour.
+    // Quiet nav scrollers: the `<` / `>` buttons are CHROME, not pills — no
+    // tile, no accent bands. A bare chevron in dim text (textSecondary) at
+    // rest, lifting to textPrimary on hover and the theme accent on press;
+    // a hover/press shows only a faint rounded fill so the hit area is
+    // discoverable without visual weight. Disabled dims to 40%. (Was drawn
+    // exactly like a mod pill — filled tile + top accent band + underline —
+    // which competed with the pills it flanks.)
     class NavButtonLnf : public ParvatiLookAndFeel
     {
     public:
         juce::Font getTextButtonFont (juce::TextButton&, int) override
         {
-            return appFont (20.0f, juce::Font::bold);
+            return appFont (16.0f, juce::Font::bold);
         }
 
         void drawButtonBackground (juce::Graphics& g, juce::Button& b,
@@ -79,35 +82,32 @@ namespace
                                    bool isMouseOverButton, bool isButtonDown) override
         {
             const ParvatiTheme* t = getTheme();
-            if (t == nullptr)
-                return;
+            if (t == nullptr || (! isMouseOverButton && ! isButtonDown))
+                return;   // borderless at rest — the glyph alone
 
-            const float alpha = b.isEnabled() ? 1.0f : 0.5f;
+            const float alpha = b.isEnabled() ? 1.0f : 0.4f;
             const juce::Rectangle<float> r = b.getLocalBounds().toFloat().reduced (0.5f);
 
             juce::Colour fill = t->tabUnselectedBg;
-            if (isButtonDown)
-                fill = fill.darker (0.15f);
-            else if (isMouseOverButton)
-                fill = fill.brighter (0.20f);
+            if (isButtonDown)  fill = fill.brighter (0.25f);
+            else               fill = fill.brighter (0.10f);
             g.setColour (fill.withMultipliedAlpha (alpha));
-            g.fillRoundedRectangle (r, 5.0f);
+            g.fillRoundedRectangle (r, 4.0f);
+        }
 
-            // accentPrimary band across the TOP, clipped to the rounded tile —
-            // the same geometry the pills use for their family band.
-            g.saveState();
-            g.reduceClipRegion (r.toNearestInt());
-            g.setColour (t->accentPrimary.withMultipliedAlpha (0.85f * alpha));
-            g.fillRect (r.withHeight (3.5f));
-            g.restoreState();
-
-            // Subtle accentPrimary underline at the BOTTOM (the pill's family
-            // cue, in the chrome accent instead of a cluster colour).
-            const float ux = r.getX() + 3.0f;
-            const float uw = r.getWidth() - 6.0f;
-            const float uy = r.getBottom() - 1.5f;
-            g.setColour (t->accentPrimary.withMultipliedAlpha (0.45f * alpha));
-            g.fillRect (juce::Rectangle<float> (ux, uy, uw, 1.0f));
+        void drawButtonText (juce::Graphics& g, juce::TextButton& b,
+                             bool isMouseOverButton, bool isButtonDown) override
+        {
+            const ParvatiTheme* t = getTheme();
+            if (t == nullptr)
+                return;
+            const float alpha = b.isEnabled() ? 1.0f : 0.4f;
+            const juce::Colour c = isButtonDown ? t->accentPrimary
+                                 : isMouseOverButton ? t->textPrimary
+                                                     : t->textSecondary;
+            g.setColour (c.withMultipliedAlpha (alpha));
+            g.setFont (getTextButtonFont (b, b.getHeight()));
+            g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred, true);
         }
     };
 }  // namespace
@@ -434,24 +434,25 @@ void CentralModBar::applyThemeColors()
         p->accent_ = parvati::clusterAccent (p->cluster_, t);
     // (The iOS Viewport has no background-colour API; the scrolled content fills
     // its own background in paintSegments, so the bar reads as one colour.)
-    // Theme the `<` / `>` nav pills from the active theme (the scrollbar is
+    // Theme the `<` / `>` nav glyphs from the active theme (the scrollbar is
     // hidden; these scroll the bar). The per-button Lnf is re-pointed at the
-    // theme so its pill-tile fills/bands track switches instead of staying on
-    // Carbon; the glyph keeps the textPrimary colour id for the TextButton text
-    // path (the tile itself ignores the colour ids and reads theme tokens).
+    // theme so its quiet-chrome colours (dim glyph at rest, hover lift,
+    // accent press — see NavButtonLnf) track theme switches; the TextButton
+    // colour ids below are inert (both background and text are fully
+    // overridden by the Lnf) and kept only as sensible fallbacks.
     if (navLnf_ != nullptr)
         if (auto* nl = dynamic_cast<NavButtonLnf*> (navLnf_.get()))
             nl->setTheme (t);
     if (navPrev_ != nullptr)
     {
         navPrev_->setColour (juce::TextButton::buttonColourId,  t.tabUnselectedBg);
-        navPrev_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+        navPrev_->setColour (juce::TextButton::textColourOffId, t.textSecondary);
         navPrev_->repaint();
     }
     if (navNext_ != nullptr)
     {
         navNext_->setColour (juce::TextButton::buttonColourId,  t.tabUnselectedBg);
-        navNext_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+        navNext_->setColour (juce::TextButton::textColourOffId, t.textSecondary);
         navNext_->repaint();
     }
     repaint();
@@ -486,8 +487,12 @@ void CentralModBar::resized()
     if (viewport_ != nullptr && pillContent_ != nullptr)
     {
         const auto b = getLocalBounds();
-        const int navH = juce::jmin (kPillH, b.getHeight());
-        const int navY = b.getY() + (b.getHeight() - navH) / 2;
+        // Compact nav glyphs, vertically CENTRED ON THE PILL BAND (the pill
+        // strip: kSegVPad + kLabelTabH + kLabelTabGap .. + kPillH), not the
+        // full bar height — 30x30 quiet chrome beside 56pt pills.
+        const int pillBandY = kSegVPad + kLabelTabH + kLabelTabGap;
+        const int navH = juce::jmin (kNavW, kPillH);
+        const int navY = pillBandY + (kPillH - navH) / 2;
         if (navPrev_ != nullptr) navPrev_->setBounds (b.getX(), navY, kNavW, navH);
         if (navNext_ != nullptr) navNext_->setBounds (b.getRight() - kNavW, navY, kNavW, navH);
         viewport_->setBounds (b.withTrimmedLeft (kNavW + kNavGap).withTrimmedRight (kNavW + kNavGap));

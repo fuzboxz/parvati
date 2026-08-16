@@ -702,7 +702,8 @@ private:
     int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Patch
     juce::TextButton globalButton_ { "Patch" }; // header button -> Patch page overlay (hosts the Section::Global ParamPage; not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
-    juce::TextButton modAssignButton_ { "MOD" };  // header toggle: tap-to-assign modulation mode
+    juce::TextButton modBarToggleButton_ { "MOD" };  // header toggle: show/hide the central mod-pill bar seam
+    juce::TextButton modAssignButton_ { "MAP" };  // header toggle: tap-to-assign modulation mode
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
     // Top header: brand icon + white "Parvati" wordmark (painted, left) + version label (inline right).
