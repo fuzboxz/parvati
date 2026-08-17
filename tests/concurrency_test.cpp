@@ -243,7 +243,7 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
             case 5: { juce::MemoryBlock b; proc.getStateInformation (b); } break;                    // host autosave
             case 6: if (savedState != nullptr) proc.setStateInformation (savedState->getData(), (int) savedState->getSize()); break;  // host restore
             case 7: switch (rng.nextInt (2)) {                                                        // engine modes
-                        case 0: proc.setOversamplingFactor (rng.nextInt (2) ? 2 : 4); break;         // OS 2/4 (1 left for default)
+                        case 0: proc.setOversamplingFactor (rng.nextInt (2) ? 4 : 8); break;         // OS 4/8 (2 is the fresh default, 1 the bit-identical path)
                         case 1: proc.setParameterSmoothing (rng.nextBool()); break;
                     } break;
             case 8: { const int p = rng.nextInt (SynthEngine::getNumParts());                        // multitimbral routing

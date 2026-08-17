@@ -362,9 +362,11 @@ public:
     // exposed as a parameter; handlePitchWheel uses it to convert the host wheel
     // to semitones before routing per-voice.
 
-    // Global (all voices): optional FILTER oversampling (1/2/4). Default 1 keeps
-    // the audio path bit-identical. Each voice defers the rebuild to its audio
-    // thread (see AmbikaVoice::setOversamplingFactor).
+    // Global (all voices): optional FILTER oversampling (1/2/4/8). Factor 1
+    // keeps the audio path bit-identical. Each voice PRE-BUILDS the
+    // replacement Oversampling on this (message) thread and stages it; the
+    // audio thread installs it with pointer moves only (audit F3 — see
+    // AmbikaVoice::setOversamplingFactor / consumeStagedOversampling).
     void setOversamplingFactor (int factor)
     {
         for (auto* v : voices)
@@ -678,6 +680,13 @@ public:
     // that carries no FX information, so the FX section is a clean slate instead
     // of retaining the previously-loaded patch's FX. Publishes via fxDirty_.
     void resetPartFx (int part);
+
+    // Message-thread reaper for the staged audio-object swaps: frees the FX
+    // processors displaced by a type change (FxChain retirement parking) and
+    // the per-voice Oversampling objects displaced by a filter-oversampling
+    // change. Called at ~60 Hz from the processor's DeferredParamTimer so the
+    // audio thread's type/OS swaps are pointer moves only (audits F1/F3).
+    void reapRetiredAudioObjects();
 
 private:
     std::array<Part, kNumParts> parts_;

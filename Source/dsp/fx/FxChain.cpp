@@ -13,14 +13,39 @@ FxChain::FxChain()
     dryWet_.fill (0.0f);
     for (auto& p : params_)
         p.fill (0.0f);
+    // Staged-swap + retirement parking (audit F1): mirror the slot-type
+    // defaults (None) so the MT no-op check starts coherent.
+    mtLastType_.fill (static_cast<uint8_t> (FxType::None));
+    pendingType_.fill (static_cast<uint8_t> (FxType::None));
+    for (auto& st : stageState_)
+        st.store (kStageEmpty, std::memory_order_relaxed);
+    for (auto& r : retired_)
+        r.store (nullptr, std::memory_order_relaxed);
+    retiredDirty_.store (false, std::memory_order_relaxed);
 }
 
-FxChain::~FxChain() = default;
+FxChain::~FxChain()
+{
+    // The engine (and thus every chain) is destroyed with the audio callback
+    // stopped, so claiming any parked processors with a plain exchange is
+    // race-free here. pending_ releases via its own destructor on this thread.
+    for (auto& r : retired_)
+        delete r.exchange (nullptr, std::memory_order_acq_rel);
+}
 
 void FxChain::prepare (double rate, int maxBlock)
 {
     rate_     = rate;
     maxBlock_ = juce::jmax (1, maxBlock);
+
+    // Apply any staged-but-unconsumed type swaps FIRST (prepare runs with the
+    // audio callback stopped, so the shared install routine is safe here).
+    // This both honours a swap staged before prepareToPlay and re-sizes a
+    // processor staged against a stale maxBlock_ (the loop below re-prepares
+    // every slot at the new rate/block, so a swapped-in processor can never
+    // keep undersized scratch).
+    servicePendingTypeSwaps();
+    reapRetired();   // retire what that apply parked (same thread discipline)
 
     for (auto& s : slots_)
         if (s)
@@ -85,32 +110,143 @@ void FxChain::prepare (double rate, int maxBlock)
     updateEqCoeffs();
 }
 
+//==========================================================================
+// Staged type swap (audit F1: build on the message thread, install on the AT
+// with pointer moves only).
+bool FxChain::acquireStagingSlot (int slot) noexcept
+{
+    // Spin over the 3-way stage state until this thread owns Filling. The only
+    // contending transition is an in-flight AT install (Staged->Empty, a few
+    // pointer moves inside one audio block), so the loop is bounded by
+    // microseconds, not by audio blocks -- an audio-stopped engine never spins
+    // here because the take-back CAS below succeeds immediately.
+    for (;;)
+    {
+        int cur = kStageEmpty;
+        if (stageState_[(size_t) slot].compare_exchange_strong (
+                cur, kStageFilling, std::memory_order_acquire, std::memory_order_acquire))
+            return true;   // Empty -> Filling
+        if (cur == kStageStaged
+            && stageState_[(size_t) slot].compare_exchange_strong (
+                   cur, kStageFilling, std::memory_order_acquire, std::memory_order_acquire))
+            return true;   // take back an unconsumed swap (coalesce: newest wins)
+        // cur == kStageFilling is impossible from this thread (single staging
+        // thread); the state changed under us -- retry.
+        juce::Thread::yield();
+    }
+}
+
 void FxChain::setSlotType (int slot, FxType t)
 {
     if (slot < 0 || slot >= kNumFxSlots)
         return;
     const auto tv = static_cast<uint8_t> (t);
-    if (slotType_[(size_t) slot] == tv && slots_[(size_t) slot] != nullptr)
-        return;   // unchanged
 
-    slotType_[(size_t) slot] = tv;
-    slots_[(size_t) slot].reset();
+    // No-op check against the MT-side mirror (slotType_ itself is AT-owned):
+    // the slot already shows this type AND nothing NEWER is queued -> skip
+    // the factory + prepare entirely (every fxDirty_ service re-pushes all
+    // three types, so this early-out is what keeps a plain knob turn from
+    // rebuilding processors). A queued swap for the SAME type (state==Staged,
+    // pendingType_==tv) also short-circuits: re-staging would rebuild +
+    // take back an identical object to no effect. pendingType_ is safe to
+    // read here: only this thread writes it, and only while it holds Filling.
+    if (mtLastType_[(size_t) slot] == tv)
+    {
+        const int st = stageState_[(size_t) slot].load (std::memory_order_acquire);
+        if (st == kStageEmpty
+            || (st == kStageStaged && pendingType_[(size_t) slot] == tv))
+            return;
+    }
+
+    acquireStagingSlot (slot);
+    // We own pending_[slot]: build + prepare the replacement HERE (message
+    // thread -- the allocation site the audit flagged). A None type stages an
+    // empty slot (the install clears the processor). Assigning pending_ also
+    // frees an un-consumed older staging on this thread (the coalescing
+    // choice: a queued-but-never-installed swap was never audible).
     if (t != FxType::None && t < FxType::Count)
     {
-        slots_[(size_t) slot] = createFxProcessor (t);
-        if (slots_[(size_t) slot])
+        auto next = createFxProcessor (t);
+        if (next)
         {
-            slots_[(size_t) slot]->prepare (rate_, maxBlock_);
-            slots_[(size_t) slot]->reset();
+            next->prepare (rate_, juce::jmax (1, maxBlock_));
+            next->reset();
         }
+        pending_[(size_t) slot] = std::move (next);
     }
+    else
+    {
+        pending_[(size_t) slot].reset();
+    }
+    pendingType_[(size_t) slot] = tv;
+    mtLastType_[(size_t) slot]  = tv;
+    stageState_[(size_t) slot].store (kStageStaged, std::memory_order_release);
+}
+
+void FxChain::servicePendingTypeSwaps() noexcept
+{
+    for (int s = 0; s < kNumFxSlots; ++s)
+        consumePendingSwap (s);
+}
+
+void FxChain::consumePendingSwap (int slot) noexcept
+{
+    // AT (or the MT inside prepare, with the callback stopped): claim the
+    // published swap, then own pending_ exclusively. Pointer moves only -- no
+    // construction, no destruction except the documented parking-full case.
+    int expected = kStageStaged;
+    if (! stageState_[(size_t) slot].compare_exchange_strong (
+            expected, kStageEmpty, std::memory_order_acq_rel, std::memory_order_relaxed))
+        return;
+
+    // Park the displaced processor (ownership passes to the MT reaper).
+    parkRetiredProcessor (slots_[(size_t) slot].release());
+    slots_[(size_t) slot] = std::move (pending_[(size_t) slot]);   // may be null (None)
+
+    auto tv = pendingType_[(size_t) slot];
+    if (slots_[(size_t) slot] == nullptr && tv != static_cast<uint8_t> (FxType::None))
+        tv = static_cast<uint8_t> (FxType::None);   // factory refused (no case hits this today)
+    slotType_[(size_t) slot] = tv;
+
     // The freshly-created effect starts from zero state; force its wet fade to
     // 0 so it FADES IN (B4) instead of slamming in at full wet. (The old
-    // processor's tail is unavoidably lost on a module change — the user-
+    // processor's tail is unavoidably lost on a module change -- the user-
     // accepted "module turned off" exception; only the new module's engage
     // must be click-free.)
     wetFade_[(size_t) slot] = 0.0f;
-    clearDelayRings();   // N3: latency may have changed — flush stale ring history
+    clearDelayRings();   // N3: latency may have changed -- flush stale ring history
+}
+
+void FxChain::parkRetiredProcessor (FxProcessor* old) noexcept
+{
+    if (old == nullptr)
+        return;
+    for (auto& r : retired_)
+    {
+        FxProcessor* expected = nullptr;
+        if (r.compare_exchange_strong (expected, old, std::memory_order_release,
+                                       std::memory_order_relaxed))
+        {
+            retiredDirty_.store (true, std::memory_order_release);
+            return;
+        }
+    }
+    // Parking full (4 swaps inside one 60 Hz reaper interval -- practically
+    // unreachable; even the concurrency chaos test changes at most ~3 slot
+    // types per tick). Free here as the documented fallback.
+    delete old;
+}
+
+void FxChain::reapRetired() noexcept
+{
+    // MT: free everything the AT parked. The exchange claims each pointer
+    // atomically, so a concurrent park on the same slot resolves ownership to
+    // exactly one side (we either get the pointer and delete it here, or the
+    // AT parks it again for the next pass).
+    if (! retiredDirty_.exchange (false, std::memory_order_acq_rel))
+        return;
+    for (auto& r : retired_)
+        delete r.exchange (nullptr, std::memory_order_acq_rel);
 }
 
 void FxChain::setSlotEnabled (int slot, bool e) noexcept
@@ -378,9 +514,19 @@ int FxChain::latency() const noexcept
     // enabled_). This is INVARIANT across enable/bypass (only changes on type
     // change), so the masterMix dry-delay never snaps.
     auto slotL = [this] (int s) -> int {
-        return (slots_[(size_t) s]
-                    && slotType_[(size_t) s] != static_cast<uint8_t> (FxType::None))
-                   ? slots_[(size_t) s]->latency() : 0;
+        const auto idx = static_cast<size_t> (s);
+        // A staged (pending) swap wins: latency() is a PLANNING query (the
+        // dry-delay rings + PDC), and the staged type is what the next block
+        // will run — reporting the old slot's latency after a setSlotType
+        // would leave the alignment one install behind (the param-coverage
+        // test reads it pre-render).
+        if (pending_[idx] != nullptr
+            && pendingType_[idx] != static_cast<uint8_t> (FxType::None))
+            return pending_[idx]->latency();
+        if (slots_[idx] != nullptr
+            && slotType_[idx] != static_cast<uint8_t> (FxType::None))
+            return slots_[idx]->latency();
+        return 0;
     };
     const int A = order_[0], B = order_[1], C = order_[2];
     if (topology_ == static_cast<uint8_t> (FxTopology::Series))
@@ -394,6 +540,37 @@ void FxChain::process (const float* inL, const float* inR,
                        float* outL, float* outR, int numSamples)
 {
     ++processCallCountForTest_;
+
+    // Install any staged type swaps BEFORE the first slot read (latency(),
+    // anyEnabled(), the renders). This is the AT's install point in the
+    // engine path (renderPartFx also services explicitly before its fxDirty_
+    // block; the second consume is an idempotent no-op) and it is what makes
+    // DIRECT single-threaded use (tests: setSlotType -> process) observe the
+    // staged type on the very next process, exactly like the old inline
+    // build. Pointer moves only.
+    servicePendingTypeSwaps();
+
+    // ---- Block-size overflow guard (FX audit F3/F6) ----
+    // Every scratch this chain touches is sized from prepare()'s maxBlock_:
+    // dryL_/dryR_/wetL_/wetR_ hold exactly maxBlock_ samples, and every slot
+    // processor's internal scratch follows the same budget (worst case
+    // FxWavefolder's 6x-oversampled osL_/osR_, sized maxBlock_*6+8, into which
+    // its SRC writes numSamples*6 floats). A host that renders a block LARGER
+    // than the one it prepared (buffer-size transitions, offline/freeze
+    // renders, some AU/AUv3 hosts -- JUCE does not universally guarantee
+    // numSamples <= samplesPerBlock) would overrun all of them: a 6x-amplified
+    // heap OOB WRITE. Clamp here and degrade to rendering the first maxBlock_
+    // samples (a truncated block with an untouched tail) instead of smashing
+    // the heap. renderParallel/blendSlotWetFade/delayPassthrough all receive
+    // this already-clamped count from below, so they need no guard of their
+    // own; PluginProcessor::processBlock clamps first, making this the second
+    // (chain-local) layer.
+    if (numSamples > maxBlock_)
+    {
+        jassertfalse;   // host block > prepared maxBlock_ -- contract violation
+        numSamples = maxBlock_;
+    }
+
     // Effect params are passed RAW to each processor (no per-block smoothing) —
     // see FxChain.h: a block-rate one-pole would SLEW audio-rate FX-param
     // modulation, which the FX mod matrix now delivers at the ~980 Hz internal-

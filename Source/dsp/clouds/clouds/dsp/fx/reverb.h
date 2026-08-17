@@ -54,6 +54,13 @@ class Reverb {
     previous_diffusion_ = 0.625f;
     previous_lp_ = 0.7f;
     previous_reverb_time_ = 0.7f;
+    // The one-pole tank filters are read by Process() before their first
+    // write; the empty constructor leaves the floats indeterminate, so a
+    // processor recycled from freed heap (FX type changes heap-allocate the
+    // reverb) could seed the tank with NaN bit patterns and emit NaN
+    // forever. Initialize both to silence like every other member above.
+    lp_decay_1_ = 0.0f;
+    lp_decay_2_ = 0.0f;
   }
   
   void Process(FloatFrame* in_out, size_t size) {

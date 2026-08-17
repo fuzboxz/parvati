@@ -47,17 +47,35 @@ void AmbikaVoice::prepare (double hostSampleRate, int /*blockSize*/)
 
     // Pick up any pending oversampling factor change before arming the filter.
     // prepare() runs in host setup (non-concurrent with processBlock), so a
-    // direct assignment of osFactor_ here is race-free.
+    // direct assignment of osFactor_ here is race-free. If the message thread
+    // PRE-BUILT a staged object (audit F3), install it instead of rebuilding —
+    // same configuration (buildOversamplingFor builds both paths) — so a
+    // factor set before prepareToPlay is not built twice.
     osFactor_ = pendingOsFactor_.load (std::memory_order_relaxed);
     osFactorDirty_.store (false, std::memory_order_relaxed);
+    {
+        int expected = kOsStageStaged;
+        if (osStageState_.compare_exchange_strong (expected, kOsStageEmpty,
+                                                   std::memory_order_acq_rel,
+                                                   std::memory_order_relaxed))
+            filterOS_ = std::move (pendingOs_);   // install the pre-built object
+        else
+            filterOS_ = buildOversamplingFor (osFactor_);   // (null for factor 1)
+    }
+    // Retirement parking: claim + delete anything still parked (prepare runs
+    // with the callback stopped, so a plain exchange is race-free here; this
+    // mirrors reapRetired for the re-prepare path instead of overwriting the
+    // slots, which would leak a parked object).
+    for (auto& r : retiredOs_)
+        delete r.exchange (nullptr, std::memory_order_acq_rel);
+    retiredOsDirty_.store (false, std::memory_order_relaxed);
 
     // The analog filter operates on the internal-rate (or oversampled) signal
-    // (matches hardware: the filter is post-DSP, pre-DAW). recreateOversampling()
-    // prepares the filter at osFactor_*kInternalSampleRate when OS is on (else at
-    // the engine rate) and builds/destroys the per-voice Oversampling object.
+    // (matches hardware: the filter is post-DSP, pre-DAW). The filter runs at
+    // osFactor_*kInternalSampleRate when OS is on (else at the engine rate).
     filter_.setTopology (ambika::dsp::FilterTopology::FOUR_POLE_LADDER);
     filter_.setMode (0);   // LP
-    recreateOversampling();
+    prepareFilterAtOsRate();
     filter_.commit();
 
     interp_.reset();
@@ -84,17 +102,130 @@ void AmbikaVoice::prepare (double hostSampleRate, int /*blockSize*/)
 
 void AmbikaVoice::setOversamplingFactor (int factor)
 {
-    // Clamp to the supported factors (1 / 2 / 4).
-    if (factor != 1 && factor != 2 && factor != 4)
-        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : 4);
+    // Clamp to the supported factors (1 / 2 / 4 / 8).
+    if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
+        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
 
-    // Stage the change for the audio thread. Recreating the per-voice
-    // Oversampling object here (message thread) would race fillInternalBlock()
-    // (audio thread), so we defer: osFactorDirty_ is serviced at the top of the
-    // next fillInternalBlock(), which rebuilds the filter + Oversampling on the
-    // owning thread. A silent voice rebuilds on its next note (no stale audio).
+    // No-op: the last staged factor matches AND nothing is queued. (This
+    // implies the active osFactor_ already equals @p factor: state Empty with
+    // pendingOsFactor_ == factor means the last consume/prepare installed
+    // exactly that value — osFactor_ itself is AT-owned and must not be read
+    // from this thread.) Redundant calls (the processor seeds every voice
+    // with the same factor) must not allocate 96 objects.
+    if (pendingOsFactor_.load (std::memory_order_relaxed) == factor
+        && osStageState_.load (std::memory_order_acquire) != kOsStageStaged)
+        return;
+
+    // Audit F3: PRE-BUILD the replacement Oversampling HERE on the calling
+    // (message) thread and stage it. The audio thread installs it with
+    // pointer moves only (consumeStagedOversampling) instead of running
+    // make_unique + initProcessing for every voice inside one callback.
+    // The internal block is the constant kAudioBlockSize (40), so the
+    // pre-built object is valid at any host rate / block size.
+    acquireOsStaging();
     pendingOsFactor_.store (factor, std::memory_order_relaxed);
+    pendingOs_ = buildOversamplingFor (factor);   // null for factor 1
+    osStageState_.store (kOsStageStaged, std::memory_order_release);
+
+    // The dirty flag remains the trigger the audio thread polls (and the
+    // belt-and-braces fallback below); a silent voice installs on its next
+    // note, exactly like the old rebuild.
     osFactorDirty_.store (true, std::memory_order_release);
+}
+
+AmbikaVoice::~AmbikaVoice()
+{
+    // Callback stopped at engine teardown: claim + delete parked objects.
+    for (auto& r : retiredOs_)
+        delete r.exchange (nullptr, std::memory_order_acq_rel);
+}
+
+std::unique_ptr<juce::dsp::Oversampling<float>> AmbikaVoice::buildOversamplingFor (int factor)
+{
+    if (factor <= 1)
+        return nullptr;   // factor 1: no oversampling (bit-identical path)
+    // juce::dsp::Oversampling takes a power-of-2 EXPONENT: 2^factorExp.
+    // 2x -> 1, 4x -> 2, 8x -> 3. Min-phase IIR half-band = minimal latency;
+    // max quality steepens the transition band. Integer latency is enabled
+    // so getLatencyInSamples() is a whole number of INPUT samples (clean for
+    // host PDC reporting).
+    const size_t factorExp = (factor >= 8) ? 3 : (factor >= 4) ? 2 : 1;
+    auto os = std::make_unique<juce::dsp::Oversampling<float>> (
+        1u,
+        factorExp,
+        juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR,
+        true,   // isMaxQuality
+        true);  // useIntegerLatency
+    // The internal block rendered to the filter is always kAudioBlockSize
+    // (40) — processSamplesUp turns that into 40*factor.
+    os->initProcessing (static_cast<size_t> (ambika::dsp::kAudioBlockSize));
+    os->reset();
+    return os;
+}
+
+//==========================================================================
+// Staged OS swap internals (audit F3; mirrors FxChain's type staging).
+bool AmbikaVoice::acquireOsStaging() noexcept
+{
+    for (;;)
+    {
+        int cur = kOsStageEmpty;
+        if (osStageState_.compare_exchange_strong (
+                cur, kOsStageFilling, std::memory_order_acquire, std::memory_order_acquire))
+            return true;   // Empty -> Filling
+        if (cur == kOsStageStaged
+            && osStageState_.compare_exchange_strong (
+                   cur, kOsStageFilling, std::memory_order_acquire, std::memory_order_acquire))
+            return true;   // take back an unconsumed swap (coalesce: newest wins)
+        juce::Thread::yield();   // only against an in-flight AT install (microseconds)
+    }
+}
+
+bool AmbikaVoice::consumeStagedOversampling() noexcept
+{
+    int expected = kOsStageStaged;
+    if (! osStageState_.compare_exchange_strong (
+            expected, kOsStageEmpty, std::memory_order_acq_rel, std::memory_order_relaxed))
+        return false;
+
+    // Pointer moves only: park the displaced object, install the staged one,
+    // re-prepare the filter at the new rate. prepareFilterAtOsRate touches
+    // only float filter state on this (owning) thread — the same work the old
+    // AT rebuild did, minus the allocation.
+    parkRetiredOversampling (filterOS_.release());
+    filterOS_ = std::move (pendingOs_);
+    osFactor_ = pendingOsFactor_.load (std::memory_order_relaxed);
+    prepareFilterAtOsRate();
+    filter_.commit();
+    return true;
+}
+
+void AmbikaVoice::parkRetiredOversampling (juce::dsp::Oversampling<float>* old) noexcept
+{
+    if (old == nullptr)
+        return;
+    for (auto& r : retiredOs_)
+    {
+        juce::dsp::Oversampling<float>* expected = nullptr;
+        if (r.compare_exchange_strong (expected, old, std::memory_order_release,
+                                       std::memory_order_relaxed))
+        {
+            retiredOsDirty_.store (true, std::memory_order_release);
+            return;
+        }
+    }
+    // Parking full (2 OS changes inside one 60 Hz reaper interval — needs a
+    // double factor flip faster than the reaper). Free here as the documented
+    // fallback.
+    delete old;
+}
+
+void AmbikaVoice::reapRetired() noexcept
+{
+    if (! retiredOsDirty_.exchange (false, std::memory_order_acq_rel))
+        return;
+    for (auto& r : retiredOs_)
+        delete r.exchange (nullptr, std::memory_order_acq_rel);
 }
 
 void AmbikaVoice::prepareFilterAtOsRate()
@@ -112,30 +243,11 @@ void AmbikaVoice::prepareFilterAtOsRate()
 
 void AmbikaVoice::recreateOversampling()
 {
-    if (osFactor_ > 1)
-    {
-        // juce::dsp::Oversampling takes a power-of-2 EXPONENT: 2^factorExp.
-        // 2x -> 1, 4x -> 2. Min-phase IIR half-band = minimal latency; max
-        // quality steepens the transition band. Integer latency is enabled so
-        // getLatencyInSamples() is a whole number of INPUT samples (clean for
-        // host PDC reporting).
-        const size_t factorExp = (osFactor_ >= 4) ? 2 : 1;
-        filterOS_ = std::make_unique<juce::dsp::Oversampling<float>> (
-            1u,
-            factorExp,
-            juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR,
-            true,   // isMaxQuality
-            true);  // useIntegerLatency
-        // The internal block rendered to the filter is always kAudioBlockSize
-        // (40) — processSamplesUp turns that into 40*osFactor_.
-        filterOS_->initProcessing (static_cast<size_t> (ambika::dsp::kAudioBlockSize));
-        filterOS_->reset();
-    }
-    else
-    {
-        filterOS_.reset();
-    }
-
+    // Direct build on the calling thread: the AT belt-and-braces fallback and
+    // prepare()'s non-concurrent rebuild. The message-thread staging uses
+    // buildOversamplingFor() directly, so both paths are
+    // configuration-identical (same exponent / filter / latency / block size).
+    filterOS_ = buildOversamplingFor (osFactor_);
     prepareFilterAtOsRate();
 }
 
@@ -243,18 +355,26 @@ void AmbikaVoice::applyMpeToVoice()
 
 void AmbikaVoice::fillInternalBlock()
 {
-    // Service a pending oversampling-factor change ON THE AUDIO THREAD. The
-    // message-thread setter (setOversamplingFactor) only stages pending + flag;
-    // the actual rebuild (filter re-prepare + Oversampling recreate) happens
-    // here so the per-voice Oversampling object is never freed under a
-    // concurrent processSamplesUp/Down. AnalogFilter::prepare resets the filter
-    // state, so the switch is click-free (just a rare quality toggle).
+    // Service a staged oversampling-factor change ON THE AUDIO THREAD (audit
+    // F3). The message-thread setter PRE-BUILT the replacement Oversampling
+    // object, so the fast path is POINTER MOVES ONLY: install the staged object,
+    // park the displaced one for the reaper, re-prepare the filter at the new
+    // rate (float state only — the same work the old rebuild did minus the
+    // allocation). AnalogFilter::prepare resets the filter state, so the
+    // switch is click-free (just a rare quality toggle).
     // exchange (acq_rel) check-and-clear: a plain load()+store(false) would
     // drop a change staged by the message thread between the two ops (a lost
-    // update on a rapid double-toggle). exchange makes the clear atomic with the
-    // check, matching the frame/options/config dirty-flag pattern.
-    if (osFactorDirty_.exchange (false, std::memory_order_acq_rel))
+    // update on a rapid double-toggle). exchange makes the clear atomic with
+    // the check, matching the frame/options/config dirty-flag pattern.
+    if (! consumeStagedOversampling()
+        && osFactorDirty_.exchange (false, std::memory_order_acq_rel))
     {
+        // Belt-and-braces fallback (legacy staged-flag path, no pre-built
+        // object): no current caller reaches this (the message-thread setter
+        // always stages an object before publishing the flag), but a future
+        // caller that only sets the flag stays CORRECT — the old AT-side
+        // rebuild (allocation on the AT, identical configuration via
+        // buildOversamplingFor).
         if (osFactor_ != pendingOsFactor_.load (std::memory_order_relaxed))
         {
             osFactor_ = pendingOsFactor_.load (std::memory_order_relaxed);

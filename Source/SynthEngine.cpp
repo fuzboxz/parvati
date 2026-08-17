@@ -2,6 +2,7 @@
 
 #include "SynthEngine.h"
 
+#include "stmlib/dsp/dsp.h"    // stmlib::SoftLimit (FX chain-input safety knee)
 #include "MulExport.h"        // mul_export::deriveMasks (derived voicecard masks)
 #include "ParameterLayout.h"   // getControllerInitPatchBytes (audible init patch)
 #include "TuningTables.h"     // raga preset tables (resolvedTuningOffsets)
@@ -306,7 +307,16 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
 #define PARVATI_FX_CURRENT_PART() parts_[(size_t) currentPart_]
 void SynthEngine::setFxSlotType    (int slot, uint8_t v)
 {
-    if (slot >= 0 && slot < kNumFxSlots) { PARVATI_FX_CURRENT_PART().fxState.slotType[(size_t) slot].store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+    if (slot >= 0 && slot < kNumFxSlots)
+    {
+        PARVATI_FX_CURRENT_PART().fxState.slotType[(size_t) slot].store (v, std::memory_order_relaxed);
+        // Audit F1: pre-build + stage the replacement processor HERE (message
+        // thread) so the audio thread installs it with pointer moves only
+        // (FxChain::servicePendingTypeSwaps in renderPartFx). The factory /
+        // prepare allocations used to run inside processBlock.
+        fxChains_[(size_t) currentPart_].setSlotType (slot, static_cast<FxType> (v));
+        PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
+    }
 }
 void SynthEngine::setFxSlotEnabled (int slot, uint8_t v)
 {
@@ -380,7 +390,27 @@ void SynthEngine::resetPartFx (int part)
         fx.modDest  [(size_t) m].store (0, std::memory_order_relaxed);
         fx.modAmount[(size_t) m].store (0, std::memory_order_relaxed);
     }
+    // Audit F1: stage the slot-type resets on the message thread too (the AT
+    // installs them with pointer moves only) -- the chain, not just the atomic
+    // state, must return to all-None.
+    for (int s = 0; s < kNumFxSlots; ++s)
+        fxChains_[(size_t) part].setSlotType (s, FxType::None);
     fx.fxDirty_.store (true, std::memory_order_release);
+}
+
+void SynthEngine::reapRetiredAudioObjects()
+{
+    // Message thread (the processor's 60 Hz DeferredParamTimer): free every
+    // object the audio thread parked for retirement -- the FX processors
+    // displaced by a staged type swap (audit F1) and the per-voice Oversampling
+    // objects displaced by a staged filter-oversampling change (audit F3).
+    // Keeping operator delete here means the audio thread's steady state and
+    // change paths are pointer moves only.
+    for (int p = 0; p < kNumParts; ++p)
+        fxChains_[(size_t) p].reapRetired();
+    for (auto* v : voices)
+        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
+            av->reapRetired();
 }
 
 //==========================================================================
@@ -589,6 +619,14 @@ bool SynthEngine::restoreState (const void* data, size_t size)
                 fx.eqHigh.store (take(), std::memory_order_relaxed);
             }
             fx.fxDirty_.store (true, std::memory_order_release);
+            // Audit F1: stage the restored slot types on the message thread
+            // (pre-build + prepare here; the AT installs with pointer moves
+            // only). Staged BEFORE the next prepare/render, so a restore that
+            // lands before prepareToPlay is re-prepared at the real block size
+            // by FxChain::prepare.
+            for (int s = 0; s < kNumFxSlots; ++s)
+                fxChains_[(size_t) p].setSlotType (
+                    s, static_cast<FxType> (fx.slotType[(size_t) s].load (std::memory_order_relaxed)));
         }
 
         // Per-part voice slots + name (version 6). Slots are the single
@@ -1750,9 +1788,18 @@ void SynthEngine::renderPartFx (int numSamples)
         auto& chain = fxChains_[(size_t) p];
         auto& cache = fxCached_[(size_t) p];
 
-        // ---- 1. Service fxDirty_ (single-threaded on the AT) ----
-        // Read the MT-staged fxState frame (published by fxDirty_ release-store)
-        // into the AT cache + push topology/order/type/enabled to the chain.
+        // ---- 1. Service staged FX state (single-threaded on the AT) ----
+        // (a) Install any staged type swaps FIRST (a staged swap is its own
+        //     reason to service -- it must land before this block's process,
+        //     regardless of the dirty flag). Pointer moves only: the processor
+        //     was built + prepared on the message thread (audit F1; the old
+        //     in-service createFxProcessor + ~512 KB free ran inside
+        //     processBlock).
+        chain.servicePendingTypeSwaps();
+
+        // (b) Read the MT-staged fxState frame (published by fxDirty_ release-
+        //     store) into the AT cache + push topology/order/enabled to the
+        //     chain. Slot TYPES were consumed above.
         if (part.fxState.fxDirty_.exchange (false, std::memory_order_acq_rel))
         {
             chain.setTopology (static_cast<FxTopology> (part.fxState.topology.load (std::memory_order_relaxed)));
@@ -1761,7 +1808,6 @@ void SynthEngine::renderPartFx (int numSamples)
             for (int s = 0; s < kNumFxSlots; ++s)
             {
                 const uint8_t newType = part.fxState.slotType[(size_t) s].load (std::memory_order_relaxed);
-                chain.setSlotType    (s, static_cast<FxType> (newType));
                 chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
                 cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
                 for (int k = 0; k < kNumFxSlotParams; ++k)
@@ -1821,6 +1867,25 @@ void SynthEngine::renderPartFx (int numSamples)
         for (int vc = 0; vc < kNumParts; ++vc)
             if (partCardMask_[(size_t) p] & (1u << vc))
                 juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vc].getReadPointer (0), numSamples);
+
+        // ---- 2b. Chain-input safety ceiling ----
+        // The mono voicecard sum is UNCLAMPED polyphony: up to 16 voices per
+        // part, each with resonant filter peaks above unity, and the whole
+        // chain (Wavefolder 6x SRC, Diffuser, WSOLA...) is gain-staged for
+        // roughly unity-per-voice levels. A SoftLimit knee (unity-gain mapping
+        // 8 * SoftLimit(s/8)) keeps ordinary playing TRANSPARENT (measured:
+        // -0.04 dB at |s|=1, -0.35 dB at |s|=3 — a loud chord; -2.2 dB at |s|=8)
+        // while progressively taming runaway sums, and the hard jlimit (+/-16)
+        // is a last-resort ceiling for pathological input (|s| >= ~100). This
+        // guarantees downstream processors never see unbounded levels — the
+        // class of over-range input that fed the Wavefolder LUT overrun (fixed
+        // at the lookup itself too; this is defense in depth, finding 8).
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float s = mono[i];
+            mono[i] = juce::jlimit (-16.0f, 16.0f,
+                                    8.0f * stmlib::SoftLimit (s * 0.125f));
+        }
 
         // ---- 3. Representative voice = the MOST-RECENTLY-TRIGGERED active voice ----
         // ---- + crossfade on any voice change.                                  ----

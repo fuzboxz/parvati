@@ -78,6 +78,24 @@ class WSOLASamplePlayer {
     env_phase_ = 0.0f;
     env_phase_increment_ = 0.5f;
     elapsed_ = 0;
+    // PARVATI PATCH: the very first window must not be placed from the
+    // correlator. Before any search has run, Correlator::best_match() reports
+    // its Init() zero, so the first window was scheduled at buffer position
+    // -window_size_/2: its 0->1 gain ramp played over the NEVER-WRITTEN (zeroed)
+    // tail of the record buffer, and the window reached full gain exactly as it
+    // stepped onto the first recorded sample at the head - an instantaneous
+    // full-amplitude discontinuity (measured: ~0.14 output jump at 0.5 input
+    // amplitude, ~32 ms in = window_size_/2 internal samples) with NO fading
+    // partner window. Placing the first window AT the head instead (start = 0,
+    // i.e. best-match equivalent of window_size_/2) makes that same gain ramp
+    // apply to the real recorded audio: a clean fade-in of the signal itself.
+    // The driver writes each chunk before playing it, and a fresh player runs
+    // at next_pitch_ratio_ 1.0, so a window reading forward from position 0
+    // never reads ahead of the write head. Only the FIRST scheduling is
+    // affected; every later window comes from a real correlator search (the
+    // search completes in ~4 x 32-sample chunks, far before the first
+    // half-point regeneration at window_size_/2 samples).
+    first_window_ = true;
   }
   
   template<Resolution resolution>
@@ -218,6 +236,13 @@ class WSOLASamplePlayer {
       const AudioBuffer<resolution>* buffer,
       Window* window) {
     int32_t next_window_position = correlator_->best_match();
+    if (first_window_) {
+      // PARVATI PATCH (see Init): place the startup window at the head so its
+      // gain ramp fades IN the recorded audio instead of stepping onto it
+      // after ramping over silence. Start(0) == best-match window_size_/2.
+      next_window_position = window_size_ >> 1;
+      first_window_ = false;
+    }
     correlator_loaded_ = false;
     window->Start(
         buffer->size(),
@@ -281,6 +306,7 @@ class WSOLASamplePlayer {
   float env_phase_;
   float env_phase_increment_;
   int32_t elapsed_;
+  bool first_window_;   // PARVATI PATCH: startup window placement (see Init)
   
   DISALLOW_COPY_AND_ASSIGN(WSOLASamplePlayer);
 };

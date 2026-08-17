@@ -34,6 +34,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -65,13 +66,39 @@ public:
     float debugGetDryWet (int slot) const noexcept { return dryWet_[(size_t) slot]; }
 
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
-    // Safe to call on a sample-rate / block-size change.
+    // Safe to call on a sample-rate / block-size change. Any staged-but-
+    // unconsumed type swap is applied first (same thread discipline: the
+    // audio callback is not running), then every slot -- including a freshly
+    // applied one -- is re-prepared at the new rate/block, so a swap staged
+    // before prepareToPlay can never render with undersized scratch.
     void prepare (double rate, int maxBlock);
 
-    // Rebuild this slot's processor for a new effect type. Allocations (factory
-    // + processor prepare) happen here — call only when fxDirty_ is serviced
-    // (single-threaded on the AT), never inside process().
+    // Rebuild this slot's processor for a new effect type, MESSAGE-THREAD
+    // side. The factory call + processor prepare() (the ~512 KB allocations
+    // of the Clouds/Warps family) happen HERE on the calling thread; the
+    // finished object is parked in a staging slot and published with a
+    // release-store. The audio thread later installs it via
+    // servicePendingTypeSwaps() with pointer moves only (audit F1: the old
+    // AT-side build was a malloc/free burst inside processBlock).
+    //
+    // Thread contract: called from the message thread (engine setters /
+    // resetPartFx / restoreState; applyFxParameter is message-thread-only --
+    // audio-thread-origin FX edits ride the deferred ring). A no-op when the
+    // slot already shows @p t and nothing newer is staged.
     void setSlotType (int slot, FxType t);
+
+    // AUDIO-THREAD side of the type swap: install any staged processor for
+    // every slot (pointer moves only -- no construction, no destruction
+    // except the documented 4-parking-full fallback). Called from
+    // SynthEngine::renderPartFx BEFORE the fxDirty_ service so a staged swap
+    // lands before the next process() regardless of the dirty flag.
+    void servicePendingTypeSwaps() noexcept;
+
+    // MESSAGE-THREAD reaper: free the processors parked by the audio thread's
+    // swap (retirement parking). Called at ~60 Hz from the processor's
+    // DeferredParamTimer via SynthEngine::reapRetiredAudioObjects(). Deleting
+    // here keeps operator delete off the audio thread.
+    void reapRetired() noexcept;
     void setSlotEnabled (int slot, bool e) noexcept;
     void setSlotDryWet (int slot, float dw) noexcept;      // 0..1 (0 = fully dry)
     void setSlotParam  (int slot, int idx, float v) noexcept;   // 0..1
@@ -120,6 +147,36 @@ private:
 
     uint8_t topology_ = 0;   // FxTopology::Series
     std::array<int, 3> order_ { 0, 1, 2 };
+
+    // ---- Staged type swap (MT builds / AT installs; audit F1) ----
+    // pending_ is owned by whichever side holds the 3-way stage state:
+    //   kStageEmpty   -> nobody owns it
+    //   kStageFilling -> the message thread is filling it (the AT ignores it)
+    //   kStageStaged  -> published; the AT may install it at any moment
+    // The message thread enters Filling via compare_exchange (from Empty, or
+    // by taking an unconsumed Staged entry back -- the coalescing path: a
+    // queued-but-never-audible swap is replaced, its object freed on the MT).
+    // The AT installs via CAS Staged->Empty and then owns pending_ exclusively.
+    // A plain pendingReady_ bool is NOT sufficient: after its exchange the AT
+    // is still mid-move, so "flag == false" would not make an MT overwrite
+    // race-free; the 3-state machine closes that window.
+    static constexpr int kStageEmpty   = 0;
+    static constexpr int kStageFilling = 1;
+    static constexpr int kStageStaged  = 2;
+    std::array<std::unique_ptr<FxProcessor>, kNumFxSlots> pending_;
+    std::array<uint8_t, kNumFxSlots> pendingType_ {};   // type of pending_ (MT-written while Filling, AT-read after acquiring Staged)
+    std::array<uint8_t, kNumFxSlots> mtLastType_ {};    // MT-side mirror of the last staged type (setSlotType no-op check)
+    std::array<std::atomic<int>, kNumFxSlots> stageState_ {};   // kStageEmpty
+
+    // ---- Retirement parking (AT parks / MT deletes; audit F1) ----
+    // The old processor displaced by a swap is parked here as a RAW pointer in
+    // an atomic slot (the AT releases ownership with a compare_exchange, the
+    // reaper claims it with an exchange + delete). Atomic slots -- not the
+    // obvious unique_ptr array -- because a park and a reap can race: the
+    // atomic exchange resolves ownership of the pointer to exactly one side.
+    static constexpr int kRetiredCap = 4;
+    std::array<std::atomic<FxProcessor*>, (size_t) kRetiredCap> retired_ {};   // nullptr
+    std::atomic<bool> retiredDirty_ { false };
 
     // Per-block scratch buffers (sized once in prepare; never on the AT):
     //  - wetL_/wetR_: one per slot — each parallel contributor processes a copy
@@ -248,4 +305,15 @@ private:
     // N3: zero all delay-ring history + positions (call on topology/order/type
     // change so stale old-routing audio does not replay).
     void clearDelayRings() noexcept;
+
+    // ---- Staged-swap internals ----
+    // MT: acquire the staging slot for @p slot (spin over the 3-way state;
+    // bounded -- Filling is only ever held by the single message thread, so a
+    // failed CAS retries only against an in-flight AT install, microseconds).
+    bool acquireStagingSlot (int slot) noexcept;
+    // Shared install routine (AT service + prepare's MT consume): CAS
+    // Staged->Empty, then move pending_ into slots_ parking the old processor.
+    void consumePendingSwap (int slot) noexcept;
+    // Park a displaced processor for the MT reaper (first empty atomic slot).
+    void parkRetiredProcessor (FxProcessor* old) noexcept;
 };

@@ -457,10 +457,20 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     {
         const float dl = osL_[i] * drive;
         const float sl = (dl + x2 + dl * x2 * 0.25f) * gain;
-        osL_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048, sl, kScale);
+        // The fold LUT covers |sl| <= 2048/kScale ~= 2.295; the drive pre-gain
+        // (up to 4x) plus the unclamped polyphonic chain input can exceed that
+        // by far, and stmlib::Interpolate does NO bounds check - an over-range
+        // index reads past lut_bipolar_fold[4097] into other rodata (garbage
+        // output) or off the module (hard crash: the reported Wavefolder
+        // SIGSEGV). Clamp to the valid domain: the fold saturates there by
+        // construction (bipolar fold tables converge), so the clamp is
+        // inaudible at the extremes.
+        osL_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
+                                       juce::jlimit (-2.29f, 2.29f, sl), kScale);
         const float dr = osR_[i] * drive;
         const float sr = (dr + x2 + dr * x2 * 0.25f) * gain;
-        osR_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048, sr, kScale);
+        osR_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
+                                       juce::jlimit (-2.29f, 2.29f, sr), kScale);
     }
     srcDown_[0].Process (osL_.data(), L, static_cast<size_t> (os));   // n*6 % 6 == 0
     srcDown_[1].Process (osR_.data(), R, static_cast<size_t> (os));

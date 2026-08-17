@@ -223,54 +223,41 @@ class SampleRateConverter<SRC_DOWN, ratio, filter_size> {
     }
 
     SRC_FIR<SRC_DOWN, ratio, filter_size> ir;
-    if (input_size >= 8 * filter_size) {
-      std::copy(&in[0], &in[N], &x_[N - 1]);
-      
-      // Generate the samples which require access to the history buffer.
-      for (int32_t i = 0; i < N; i += ratio) {
-        Accumulator<N, -1, 1, filter_size> accumulator;
-        *out++ = accumulator(&x_[N - 1 + i], ir);
-        in += ratio;
-        input_size -= ratio;
-      }
-        
-      // From now on, all the samples we need to access are located inside
-      // the input buffer passed as an argument, and since the filter
-      // is small, we can unroll the summation loop.
-      if ((input_size / ratio) & 1) {
-        while (input_size) {
-          Accumulator<N, -1, 1, filter_size> accumulator;
-          *out++ = accumulator(in, ir);
-          input_size -= ratio;
-          in += ratio;
-        }
-      } else {
-        while (input_size) {
-          Accumulator<N, -1, 1, filter_size> accumulator;
-          *out++ = accumulator(in, ir);
-          *out++ = accumulator(in + ratio, ir);
-          input_size -= 2 * ratio;
-          in += 2 * ratio;
-        }
-      }
 
-      // Copy last input samples to history buffer.
-      std::copy(&in[-N + 1], &in[0], &x_[0]);
-    } else {
-      // Variant which uses a circular buffer to store history.
-      while (input_size) {
-        for (int32_t i = 0; i < ratio; ++i) {
-          x_ptr_[0] = x_ptr_[N] = *in++;
-          --x_ptr_;
-          if (x_ptr_ < x_) {
-            x_ptr_ += N;
-          }
+    // Upstream Warps keeps two Process paths: a linear-in-buffer "fast path"
+    // for input_size >= 8 * filter_size and this circular-buffer path for
+    // smaller sizes. The fast path never touches x_ptr_ (it is positioned only
+    // by Init() and by this circular path) and its trailing history copy fills
+    // just the LOWER half of x_, leaving the mirror half (x_[N..2N)) stale —
+    // so the first circular call after a fast call reads an FIR window that
+    // mixes fresh, stale-mirror and stale-history samples: a large-amplitude
+    // discontinuity. That is harmless upstream, where one caller feeds whole
+    // fixed-size buffers and never switches paths mid-stream, but Parvati
+    // drives this from the FX chain with VARIABLE sub-chunk sizes that cross
+    // the 8 * filter_size threshold inside a single host block (full sub-
+    // chunks take the fast path, the trailing remainder drops back to the
+    // circular path), producing a periodic discontinuity at (nearly) every
+    // block boundary in exactly the two SRC_DOWN users (Wavefolder,
+    // RingModulator). The circular path alone is correct for ANY size that is
+    // a multiple of ratio and is its own invariant: every push writes both a
+    // slot and its mirror and wraps x_ptr_ within [x_, x_ + N), so the window
+    // [x_ptr_ + 1, x_ptr_ + N] always holds the most recent N inputs in read
+    // order. Its cost is the same N-tap accumulation per output sample as the
+    // fast path (the extra two stores and wrap check per INPUT sample are
+    // noise next to the 48 MACs per OUTPUT sample at these block sizes), so
+    // the fast path is removed rather than made transition-safe.
+    while (input_size) {
+      for (int32_t i = 0; i < ratio; ++i) {
+        x_ptr_[0] = x_ptr_[N] = *in++;
+        --x_ptr_;
+        if (x_ptr_ < x_) {
+          x_ptr_ += N;
         }
-        input_size -= ratio;
-
-        Accumulator<N, 1, 1, filter_size> accumulator;
-        *out++ = accumulator(&x_ptr_[1], ir);
       }
+      input_size -= ratio;
+
+      Accumulator<N, 1, 1, filter_size> accumulator;
+      *out++ = accumulator(&x_ptr_[1], ir);
     }
   }
  

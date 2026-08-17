@@ -31,6 +31,33 @@ inline float clamp01 (float v) noexcept
     if (v > 1.0f) return 1.0f;
     return v;
 }
+
+// The tempo-synced base delay target, in whole internal samples, from the
+// cached Sync param + BPM (clamped to [1, kMaxDelaySamples]). Pure: no state.
+// Shared by recomputeDelayLen() (block-start snap) and processSampleFx()
+// (per-sample glide target), so both always agree on the same math.
+inline int tempoDelayTargetSamples (float pSync, double bpm) noexcept
+{
+    int i = static_cast<int> (std::lround (pSync * 7.0));
+    if (i < 0) i = 0;
+    if (i > 7) i = 7;
+
+    const double b = (bpm > 0.0) ? bpm : 120.0;
+    const double delaySeconds = (4.0 / kDivisors[static_cast<size_t> (i)])
+                              * (60.0 / b);
+    long len = std::lround (delaySeconds * kInternalRate);
+    if (len < 1)                len = 1;
+    if (len > kMaxDelaySamples) len = kMaxDelaySamples;
+    return static_cast<int> (len);
+}
+
+// delayLen_ repurposing (see processSampleFx): it stores the GLIDING base
+// delay as Q.16 fixed point (samples << 16). Whole-sample targets snap to
+// exact multiples of 65536, so the glide never loses its fractional residual
+// (an int-samples one-pole would stall when the remaining distance < 1).
+constexpr int32_t kDelayQOne = 65536;          // 1.0 sample in Q.16
+constexpr int32_t kDelayGlideCapQ = 16384;     // glide ≤ ~0.25 sample/sample (~a tape-speed pitch bend, click-free)
+constexpr int kDelayGlideShift = 8;            // one-pole k = 1/256 per internal sample (τ ≈ 8 ms)
 } // namespace
 
 void Fv1ClockedDelay::prepareInternal (double, int)
@@ -44,6 +71,11 @@ void Fv1ClockedDelay::resetInternal()
     delay_.clear();
     tapeLp_.clear();
     lfoPhase_ = 0.0f;
+    // Mark the Q.16 glide state "unset" (0 is never a legal glide value: it
+    // only ever lives between snap-settled targets, all ≥ kDelayQOne). The
+    // next block's recomputeDelayLen() then SNAPS to the target exactly, so a
+    // fresh/reset instance never starts a long startup glide from zero.
+    delayLen_ = 0;
 }
 
 void Fv1ClockedDelay::setParams (const float param[5])
@@ -80,22 +112,19 @@ void Fv1ClockedDelay::setTransport (double bpm, bool isPlaying)
 
 void Fv1ClockedDelay::recomputeDelayLen()
 {
-    int i = static_cast<int> (std::lround (pSync_ * 7.0));
-    if (i < 0) i = 0;
-    if (i > 7) i = 7;
-
-    const double bpm = (bpm_ > 0.0) ? bpm_ : 120.0;
-    const double delaySeconds = (4.0 / kDivisors[static_cast<size_t> (i)])
-                              * (60.0 / bpm);
-    long len = std::lround (delaySeconds * kInternalRate);
-    if (len < 1)                len = 1;
-    if (len > kMaxDelaySamples) len = kMaxDelaySamples;
-    delayLen_ = static_cast<int> (len);
+    // Block-start tempo-sync service. The TARGET is computed per internal
+    // sample by processSampleFx() via tempoDelayTargetSamples(); here the only
+    // remaining block-rate job is the first-set/exact snap (delayLen_ <= 1 is
+    // the "unset" sentinel: the constructor's default 1, or resetInternal()'s
+    // 0 — legal glide values are always ≥ kDelayQOne = 65536).
+    if (delayLen_ <= 1)
+        delayLen_ = tempoDelayTargetSamples (pSync_, bpm_) << 16;
 }
 
 void Fv1ClockedDelay::process (float* L, float* R, int numSamples)
 {
-    // Tempo-sync: recompute the delay length from the host BPM at block start.
+    // Tempo-sync: service the delay-length glide state at block start (exact
+    // snap on the first block after construction/reset).
     recomputeDelayLen();
     // Then run the BW-limited host<->internal fixed-point core.
     Fv1FxProcessor::process (L, R, numSamples);
@@ -108,6 +137,36 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
 
     const int32_t mono = lin;
 
+    // TEMPO-GLIDE: delayLen_ holds the base delay as Q.16 fixed point and
+    // slews toward the current tempo target ONE INTERNAL SAMPLE AT A TIME
+    // (the read is fractional — readFrac — so a moving base is a smooth
+    // pitch bend, never a read-pointer jump). Before this fix the length
+    // stepped by whole hundreds of samples at block boundaries on a
+    // tempo/param change: a hard read-pointer discontinuity = the click.
+    // Exponential one-pole (k = 1/256) capped at ~0.25 sample/sample, so the
+    // pitch deviation stays tape-like; the sub-1/16-sample tail snaps exact
+    // (inaudible) so the glide always settles instead of crawling. Reading
+    // the target per sample also picks up sub-chunk Sync/BPM edits
+    // immediately, matching the chain's ~980 Hz param cadence.
+    const int32_t targetQ = static_cast<int32_t> (
+        tempoDelayTargetSamples (pSync_, bpm_)) << 16;
+    const int32_t deltaQ = targetQ - delayLen_;
+    const int32_t distQ = (deltaQ < 0) ? -deltaQ : deltaQ;
+    if (distQ <= kDelayQOne / 16)
+    {
+        delayLen_ = targetQ;   // settle the inaudible tail instantly
+    }
+    else
+    {
+        int32_t stepQ = deltaQ >> kDelayGlideShift;
+        if (stepQ >  kDelayGlideCapQ) stepQ =  kDelayGlideCapQ;
+        if (stepQ < -kDelayGlideCapQ) stepQ = -kDelayGlideCapQ;
+        if (stepQ == 0) stepQ = (deltaQ > 0) ? 1 : -1;   // never stall below 1 Q16
+        delayLen_ += stepQ;
+    }
+    const float baseDelay = static_cast<float> (delayLen_)
+                          * (1.0f / static_cast<float> (kDelayQOne));
+
     // GRIT on the delay input (bit-truncation, pure mask).
     const int32_t q = f24_quantBits (mono, gritBits_);
 
@@ -115,8 +174,7 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     const int32_t lpOut = tapeLp_.process (q);
 
     // TAPE-AGE LFO on the read pointer (sine LUT, ~0.6 Hz; depth 0..~6 samples).
-    float modDelay = static_cast<float> (delayLen_)
-                   + lutSine32 (lfoPhase_) * ageLfoDepth_;
+    float modDelay = baseDelay + lutSine32 (lfoPhase_) * ageLfoDepth_;
     // Hard-clamp the read VALUE to the documented max (<= kMaxDelaySamples) so a
     // clamped delayLen_ (32767) plus LFO depth never wraps the power-of-two ring.
     if (modDelay < 1.0f)   modDelay = 1.0f;

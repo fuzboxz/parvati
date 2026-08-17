@@ -36,6 +36,9 @@ class AmbikaVoice : public juce::SynthesiserVoice
 {
 public:
     AmbikaVoice() = default;
+    // Deletes anything still parked for retirement (the engine destroys its
+    // voices with the audio callback stopped, so a plain exchange is safe).
+    ~AmbikaVoice() override;
 
     // ---- juce::SynthesiserVoice -------------------------------------------------
     bool canPlaySound (juce::SynthesiserSound* sound) override;
@@ -127,11 +130,18 @@ public:
     // analog card) aliases; running it at osFactor_*kInternalSampleRate and
     // up/downsampling its I/O reduces that aliasing for higher fidelity. The
     // oscillators stay FIXED-RATE at kInternalSampleRate (39216) for
-    // authenticity — only the filter is oversampled. Default osFactor_==1 keeps
-    // fillInternalBlock() bit-identical to the un-oversampled path. Changing the
-    // factor is deferred to the audio thread (see osFactorDirty_) so the
-    // per-voice Oversampling object is never recreated under a concurrent reader.
+    // authenticity — only the filter is oversampled. osFactor_==1 keeps
+    // fillInternalBlock() bit-identical to the un-oversampled path. The new
+    // Oversampling object is PRE-BUILT here on the calling (message) thread
+    // and staged; the audio thread installs it with pointer moves only
+    // (audit F3 — the old AT-side rebuild was up to 96 make_unique + frees
+    // inside one callback).
     void setOversamplingFactor (int factor);
+
+    // Message-thread reaper: delete the Oversampling objects the audio thread
+    // parked when installing a staged swap (audit F3). Called from
+    // SynthEngine::reapRetiredAudioObjects() at ~60 Hz.
+    void reapRetired() noexcept;
 
     // Write/read a modulation-source slot (SEQ_1/2 are injected by the engine-
     // side sequencer; LoadSources does not clobber them).
@@ -248,6 +258,27 @@ private:
     void ensureInitialized();
 
     // Renders one 40-sample engine block -> float -> filter -> VCA -> staging.
+    // Builds the per-voice Oversampling object for @p factor (exponent
+    // mapping, min-phase IIR half-band, integer latency, initProcessing at the
+    // constant internal block size). Returns null for factor 1 (the
+    // bit-identical no-OS path). Used by BOTH the MT staging (pre-build) and
+    // recreateOversampling (the AT fallback), so the two paths stay
+    // configuration-identical.
+    static std::unique_ptr<juce::dsp::Oversampling<float>> buildOversamplingFor (int factor);
+
+    // ---- Staged-OS-swap internals (audit F3; mirrors FxChain's staging) ----
+    // MT: acquire the staging slot (spin over the 3-way state; take back an
+    // unconsumed Staged entry to coalesce rapid changes). Bounded by an
+    // in-flight AT install only (microseconds) -- an audio-stopped engine
+    // returns immediately via the take-back.
+    bool acquireOsStaging() noexcept;
+    // AT (or prepare on the MT with the callback stopped): install a staged
+    // object if one is published (CAS Staged->Empty; pointer moves only).
+    // Returns true when an install happened.
+    bool consumeStagedOversampling() noexcept;
+    // Park a displaced Oversampling object for the MT reaper.
+    void parkRetiredOversampling (juce::dsp::Oversampling<float>* old) noexcept;
+
     void fillInternalBlock();
 
     // (Re)prepares the analog filter at the rate implied by osFactor_ (the
@@ -299,13 +330,33 @@ private:
     float                      mpeSlide_              { 0.f };  // CC74 (expression/slide), 0..1
     ambika::dsp::AnalogFilter  filter_;
 
-    // Filter-only oversampling state. osFactor_ is the ACTIVE factor (1/2/4);
+    // Filter-only oversampling state. osFactor_ is the ACTIVE factor (1/2/4/8);
     // pendingOsFactor_/osFactorDirty_ stage a message-thread change for the
     // audio thread (which owns the Oversampling object). filterOS_ is null when
     // osFactor_==1 (no oversampling -> bit-identical path).
     int osFactor_ { 1 };
     std::atomic<int> pendingOsFactor_ { 1 };
     std::atomic<bool> osFactorDirty_ { false };
+
+    // ---- Staged OS swap (MT builds / AT installs; audit F3) ----
+    // Same 3-way handoff as FxChain's type staging: pendingOs_ is owned by
+    // whoever holds the stage state (Empty / Filling=MT filling / Staged=
+    // published, the AT may install at any moment). The MT takes an unconsumed
+    // Staged entry back to coalesce rapid changes; the AT installs via
+    // CAS Staged->Empty and then owns pendingOs_ exclusively.
+    static constexpr int kOsStageEmpty   = 0;
+    static constexpr int kOsStageFilling = 1;
+    static constexpr int kOsStageStaged  = 2;
+    std::unique_ptr<juce::dsp::Oversampling<float>> pendingOs_;
+    std::atomic<int> osStageState_ { kOsStageEmpty };
+
+    // Retirement parking for displaced Oversampling objects: the AT releases
+    // with a compare_exchange, the MT reaper claims with an exchange + delete
+    // (atomic slots so a park and a reap racing on one entry resolve pointer
+    // ownership to exactly one side).
+    static constexpr int kRetiredOsCap = 2;
+    std::array<std::atomic<juce::dsp::Oversampling<float>*>, (size_t) kRetiredOsCap> retiredOs_ {};
+    std::atomic<bool> retiredOsDirty_ { false };
 
     // Filter-card topology staging (message-thread -> audio-thread). The active
     // topology is applied in fillInternalBlock() so the filter is never

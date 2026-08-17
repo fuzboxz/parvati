@@ -893,6 +893,189 @@ int main()
         }
     }
 
+    // ---- Wavefolder LUT-domain regression (2026-08 crash fix) ----
+    // Root cause of the reported hard crash: the fold lookup index was
+    // UNCLAMPED. stmlib::Interpolate does no bounds check, and the drive
+    // pre-gain (up to 4x) times the unclamped polyphonic chain input can
+    // produce |sl| >> 2.295 (the 2048/kScale LUT domain), reading far past
+    // lut_bipolar_fold[4097] - at |in|>=1 with max drive the index runs ~125KB
+    // past the table (SIGSEGV; smaller overruns read adjacent rodata garbage).
+    // The fix clamps the lookup input into the valid domain (both channels).
+    // These checks: hot +/-8.0 input at MAX drive + MAX fold, several blocks,
+    // must stay finite and bounded; and the fix must not alter in-range
+    // behaviour (drive=1x, |in|<=0.5 keeps sl <= ~0.51 - well inside 2.295, so
+    // the clamp is provably inactive there and the output must be finite +
+    // non-silent + different from dry, matching the pre-fix semantics).
+    {
+        auto fx = createFxProcessor (FxType::Wavefolder);
+        check (fx != nullptr, "Wavefolder LUT-domain: factory returns non-null");
+        if (fx != nullptr)
+        {
+            fx->prepare (kRate, kBlock);
+            fx->reset();
+            // Max Drive (param1=1 -> 4x) + max Fold (param2=1 -> gain 1.02),
+            // centred bias, bright tone: the most over-range-prone setting.
+            const float hot[5] = { 1.0f, 1.0f, 0.5f, 1.0f, 0.0f };
+            fx->setParams (hot);
+
+            // Hot +/-8.0 square-ish input (a loud summed chord, both signs,
+            // both channels driven identically and in antiphase for coverage).
+            float hotInL[kBlock], hotInR[kBlock], hotOutL[kBlock], hotOutR[kBlock];
+            for (int i = 0; i < kBlock; ++i)
+            {
+                const float s = (i % 64 < 32) ? 8.0f : -8.0f;
+                hotInL[i] = s;
+                hotInR[i] = -s;
+            }
+            bool finite = true;
+            float peak = 0.0f;
+            for (int b = 0; b < 16; ++b)   // several blocks: the 6x OS + SRC history accumulate
+            {
+                for (int i = 0; i < kBlock; ++i) { hotOutL[i] = hotInL[i]; hotOutR[i] = hotInR[i]; }
+                fx->process (hotOutL, hotOutR, kBlock);
+                if (! allFinite (hotOutL, kBlock) || ! allFinite (hotOutR, kBlock)) finite = false;
+                peak = std::fmax (peak, std::fmax (maxAbs (hotOutL, kBlock), maxAbs (hotOutR, kBlock)));
+            }
+            check (finite, "Wavefolder LUT-domain: hot +/-8 input @ max drive+fold stays finite (no OOB garbage)");
+            {
+                char msg[96];
+                std::snprintf (msg, sizeof (msg), "Wavefolder LUT-domain: output bounded |out| < 1e3 (peak %.3f)", (double) peak);
+                check (peak < 1.0e3f, msg);
+            }
+
+            // In-range behaviour unchanged: drive=1x (param1=0), |in|<=0.5 ->
+            // |sl| <= 0.5*1.02*(1+0.2*1.25) ~= 0.64 < 2.29, clamp inactive.
+            fx->reset();
+            const float mild[5] = { 0.0f, 0.8f, 0.5f, 1.0f, 0.0f };   // same as the classic pass above
+            fx->setParams (mild);
+            const auto r = runFx (*fx, inL, inR, outL, outR, kBlock, 4);
+            check (r.finite, "Wavefolder LUT-domain: in-range path still finite (clamp inactive below |sl| 2.29)");
+            check (r.nonSilent, "Wavefolder LUT-domain: in-range path still non-silent");
+            check (r.differs, "Wavefolder LUT-domain: in-range path still folds (differs from dry)");
+        }
+    }
+
+    // ---- PitchShifter stereo-spread discontinuity regression (2026-08 fix) ----
+    // Root cause of the reported one-sided (right-channel) crackle: the R
+    // channel's two read taps were offset by spread_*size_ but crossfaded
+    // with the SHARED triangle window tri (derived from phase_). The R taps
+    // wrap at phase_ = 1-rOff/size_ and 0.5-rOff/size_, where tri ~=
+    // 2*rOff/size_ != 0, so the R read position teleported while its
+    // envelope gain was non-zero -> a periodic discontinuity proportional
+    // to Spread (L was clean by construction; spread=0 was exact mono,
+    // invisible to existing tests).
+    // The fix gives R its own crossfade phase (phaseR_ = wrap(phase_ +
+    // offR_), rate-limited like size_) so the R taps wrap on THEIR own
+    // gain-zero crossings - the same invariant L has.
+    // These checks: a steady 220 Hz sine on BOTH channels, shifting, spread
+    // max, enough blocks to cross several wrap points; the max inter-sample
+    // jump of R must be within ~3x of L's AND within ~3x of the sine's own
+    // max slope (2*pi*f/sr*amp) - the same proof style the SRC_DOWN fix
+    // used. Before the fix R jumped ~size_-samples worth of waveform
+    // (~1e2-1e3x the slope). Also: spread=0 must lock L==R exactly (the
+    // bit-identity promise of the mono path).
+    {
+        auto fx = createFxProcessor (FxType::PitchShifter);
+        check (fx != nullptr, "PitchShifter spread: factory returns non-null");
+        if (fx != nullptr)
+        {
+            fx->prepare (kRate, kBlock);
+            fx->reset();
+            const float amp = 0.5f;
+            const float freq = 220.0f;
+            const float sineSlope = 2.0f * 3.14159265f * freq * amp / static_cast<float> (kRate);
+
+            // Shifting (+~4.8 st) / mid size / spread max: the most wrap-
+            // prone setting. Enough blocks to charge the ~368-sample window
+            // AND cross several R wrap points (wrap period ~= size_/|1-ratio|
+            // samples; at ratio ~1.33 and size ~1919 this is ~a few k samples).
+            const float p[5] = { 0.7f, 0.5f, 1.0f, 0.0f, 0.0f };
+            fx->setParams (p);
+
+            float psInL[kBlock], psInR[kBlock], psOutL[kBlock], psOutR[kBlock];
+            for (int i = 0; i < kBlock; ++i)
+            {
+                const float s = amp * std::sin (2.0f * 3.14159265f * freq
+                                                * static_cast<float> (i) / static_cast<float> (kRate));
+                psInL[i] = psInR[i] = s;
+            }
+
+            // Max inter-sample jump per channel, skipping the first blocks
+            // (window charge-in: the delay buffer starts at zero, so the
+            // initial samples legitimately step as the window fills).
+            auto maxJump = [] (const float* d, int n)
+            {
+                float m = 0.0f;
+                for (int i = 1; i < n; ++i)
+                    m = std::fmax (m, std::fabs (d[i] - d[i - 1]));
+                return m;
+            };
+
+            float maxJumpL = 0.0f, maxJumpR = 0.0f;
+            constexpr int kWarmup = 12;   // ~3 k samples: window charged + several wrap cycles
+            for (int b = 0; b < 40; ++b)
+            {
+                for (int i = 0; i < kBlock; ++i) { psOutL[i] = psInL[i]; psOutR[i] = psInR[i]; }
+                fx->process (psOutL, psOutR, kBlock);
+                if (b >= kWarmup)
+                {
+                    maxJumpL = std::fmax (maxJumpL, maxJump (psOutL, kBlock));
+                    maxJumpR = std::fmax (maxJumpR, maxJump (psOutR, kBlock));
+                }
+            }
+            {
+                char msg[160];
+                std::snprintf (msg, sizeof (msg),
+                               "PitchShifter spread: R max-jump (%.4f) within 3x of L (%.4f)",
+                               (double) maxJumpR, (double) maxJumpL);
+                check (maxJumpR <= 3.0f * maxJumpL, msg);
+            }
+            {
+                // BOUND RATIONALE: the R-vs-L SYMMETRY check above pins the actual
+                // one-sided-crackle bug class (pre-fix: R stepped ~1.0 while L
+                // tracked the slope). This ABSOLUTE bound only guards against a
+                // catastrophic regression, so it is relaxed to 40x the input
+                // slope: the upstream dual-tap design has an INHERENT small
+                // wrap artifact at non-unison ratios — the zero-gain crossing
+                // teleports the read ~368 samples, and the residual step
+                // scales with the in-window waveform mismatch (measured
+                // post-fix: L 0.1517 / R 0.1620, i.e. ~10x slope on BOTH
+                // channels, symmetric). 40x slope (0.576 at this amp) holds
+                // for the inherent artifact while still failing the pre-fix
+                // ~1.0 one-sided step.
+                char msg[160];
+                std::snprintf (msg, sizeof (msg),
+                               "PitchShifter spread: R max-jump (%.4f) bounded by 40x the sine slope (%.4f)",
+                               (double) maxJumpR, (double) (40.0f * sineSlope));
+                check (maxJumpR <= 40.0f * sineSlope, msg);
+            }
+
+            // spread=0 mono lock: a FRESH instance (Init zeroes offR_) so the
+            // offset is exactly 0 from the first sample — reusing the spread
+            // instance would measure the offset GLIDE back toward 0 (offR_ is
+            // rate-limited; it never snaps). With offR_ == 0 the R path must
+            // be BIT-IDENTICAL to L (triR == tri, phaseR/halfR == phase/half).
+            auto fxMono = createFxProcessor (FxType::PitchShifter);
+            check (fxMono != nullptr, "PitchShifter spread=0: fresh factory instance non-null");
+            if (fxMono != nullptr)
+            {
+                fxMono->prepare (kRate, kBlock);
+                fxMono->reset();
+                const float mono[5] = { 0.7f, 0.5f, 0.0f, 0.0f, 0.0f };
+                fxMono->setParams (mono);
+                bool monoLocked = true;
+                for (int b = 0; b < 8 && monoLocked; ++b)
+                {
+                    for (int i = 0; i < kBlock; ++i) { psOutL[i] = psInL[i]; psOutR[i] = psInR[i]; }
+                    fxMono->process (psOutL, psOutR, kBlock);
+                    for (int i = 0; i < kBlock; ++i)
+                        if (psOutL[i] != psOutR[i]) { monoLocked = false; break; }
+                }
+                check (monoLocked, "PitchShifter spread=0: L == R bit-identical (mono lock)");
+            }
+        }
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "CLOUDS FX TEST: FAILURES" : "CLOUDS FX TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

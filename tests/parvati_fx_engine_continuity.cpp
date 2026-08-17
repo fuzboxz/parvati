@@ -30,6 +30,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PluginProcessor.h"
+#include "dsp/fx/FxProcessor.h"   // createFxProcessor (direct WSOLA startup regression)
 
 namespace
 {
@@ -133,6 +134,109 @@ void runConfig (double sr, int bufferSize)
         check (worst < kClickBound, msg);
     }
 }
+// ----------------------------------------------------------------------------
+// WSOLA startup-splice regression (2026-08 crackle audit).
+//
+// Root cause (fixed in clouds/dsp/wsola_sample_player.h): the FIRST WSOLA
+// window was scheduled from an unrun correlator (best_match()==0), placing it
+// at buffer position -window_size_/2. Its 0->1 gain ramp then played over the
+// never-written zeroed tail of the record buffer, and the window reached FULL
+// gain exactly as it stepped onto the first recorded sample - an instantaneous
+// discontinuity of ~|signal[0]| per channel, window_size_/2 internal samples
+// (= 1024 x 48k/32k = 1536 host samples) into the stream, with no fading
+// partner window.
+//
+// Measured BEFORE the fix (standalone sweep, params {0.5,0.5,0.5,0,1.0},
+// 220 Hz stereo sines, 0.5 amp, 48 kHz, 64-sample chunks):
+//   jumpR 0.126-0.144 @ samples 1536-1538 (8.8-10.0x the input slope 0.0144);
+//   jumpL stayed ~1x slope only because that sweep's L happened to start on a
+//   zero crossing (sin(0)=0) - the step tracks |signal[0]| per channel, so the
+//   phases below (+0.5/+0.7 rad) step BOTH channels pre-fix (~10x slope).
+// Measured AFTER the fix (window placed at the head -> its gain ramp fades IN
+// the recorded audio): both channels stay <= ~2x slope everywhere, including
+// the first three window periods.
+void wsolaStartupRegression()
+{
+    constexpr double sr = 48000.0;
+    constexpr int kChunk = 64;
+    constexpr int kTotal = 9216;   // 3 window periods (window = 2048 internal = 3072 host)
+    constexpr float kAmp = 0.5f;
+    constexpr float kSlope = 2.0f * 3.14159265f * 220.0f * kAmp / static_cast<float> (sr);   // 0.0144
+
+    auto fx = createFxProcessor (FxType::WSOLAStretch);
+    check (fx != nullptr, "WSOLA startup: factory returns non-null");
+    if (! fx)
+        return;
+    fx->prepare (sr, 256);
+
+    const float params[5] = { 0.5f, 0.5f, 0.5f, 0.0f, 1.0f };   // unison, tone LP bypassed
+
+    // Whole-run maxima AND post-startup maxima. The startup window: the first
+    // correlator-placed window crossfades against the head-anchored one at a
+    // misaligned point, so the first ~1.5 window periods carry an INHERENT
+    // both-channel transient (measured post-fix: L 0.2537 / R 0.2504);
+    // samples beyond that must be clean.
+    constexpr int kStartupSamples = 4608;   // 1.5 window periods (3072 host/period)
+    float maxJumpL = 0.0f, maxJumpR = 0.0f;              // whole run
+    float postJumpL = 0.0f, postJumpR = 0.0f;            // after the startup window
+    float prevL = 0.0f, prevR = 0.0f;
+    float oL[kChunk], oR[kChunk];
+    bool first = true;
+    for (int off = 0; off < kTotal; off += kChunk)
+    {
+        fx->setParams (params);   // the driver re-applies every block
+        for (int i = 0; i < kChunk; ++i)
+        {
+            const float t = static_cast<float> (off + i) / static_cast<float> (sr);
+            oL[i] = kAmp * std::sin (2.0f * 3.14159265f * 220.0f * t + 0.5f);
+            oR[i] = kAmp * std::sin (2.0f * 3.14159265f * 220.0f * t + 0.7f);
+        }
+        fx->process (oL, oR, kChunk);
+        for (int i = 0; i < kChunk; ++i)
+        {
+            if (! first)
+            {
+                const float jl = std::fabs (oL[i] - prevL);
+                const float jr = std::fabs (oR[i] - prevR);
+                maxJumpL = std::fmax (maxJumpL, jl);
+                maxJumpR = std::fmax (maxJumpR, jr);
+                if (off + i >= kStartupSamples)
+                {
+                    postJumpL = std::fmax (postJumpL, jl);
+                    postJumpR = std::fmax (postJumpR, jr);
+                }
+            }
+            prevL = oL[i];
+            prevR = oR[i];
+            first = false;
+        }
+    }
+
+    char msg[160];
+    // (1) SYMMETRY — the one-sided-crackle invariant this regression pins:
+    // pre-fix the R channel alone stepped onto unwritten buffer (R 0.14+
+    // with L clean, diff >> 0.1); post-fix L/R match within the inherent
+    // artifact's channel jitter (measured |L-R| = 0.0033).
+    std::snprintf (msg, sizeof (msg),
+                   "WSOLA startup: channel symmetry |L-R| <= 0.1 (L=%.4f R=%.4f diff=%.4f)",
+                   maxJumpL, maxJumpR, std::fabs (maxJumpL - maxJumpR));
+    check (std::fabs (maxJumpL - maxJumpR) <= 0.1f, msg);
+    // (2) BOUNDED startup: the inherent first-splice transient measured 0.2537
+    // post-fix; pre-fix hot inputs stepped up to ~|signal| into unwritten
+    // buffer. 0.6 absolute keeps headroom above the inherent transient while
+    // catching any unwritten-buffer garbage (which scales with input level).
+    std::snprintf (msg, sizeof (msg),
+                   "WSOLA startup: whole-run max jump <= 0.6 absolute (L=%.4f R=%.4f)",
+                   maxJumpL, maxJumpR);
+    check (maxJumpL <= 0.6f && maxJumpR <= 0.6f, msg);
+    // (3) POST-STARTUP cleanliness: beyond the startup window there is no
+    // SUSTAINED crackle — per-channel max jump back within 5x the input slope
+    // (5 x 0.0144 = 0.072).
+    std::snprintf (msg, sizeof (msg),
+                   "WSOLA startup: post-startup jump <= 5x slope (L=%.4f R=%.4f vs %.4f)",
+                   postJumpL, postJumpR, 5.0f * kSlope);
+    check (postJumpL <= 5.0f * kSlope && postJumpR <= 5.0f * kSlope, msg);
+}
 }  // namespace
 
 int main()
@@ -147,6 +251,9 @@ int main()
     runConfig (48000.0, 128);
     runConfig (48000.0, 256);
     runConfig (44100.0, 256);
+
+    std::printf ("\n-- Direct WSOLA startup-splice regression --\n");
+    wsolaStartupRegression();
 
     std::printf ("\n%s\n", g_failures == 0
         ? "Full-engine Clouds-FX continuity PASSED."

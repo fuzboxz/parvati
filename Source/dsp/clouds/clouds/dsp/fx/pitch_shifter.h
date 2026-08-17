@@ -47,6 +47,7 @@ class PitchShifter {
     size_ = 2047.0f;
     target_size_ = 2047.0f;
     spread_ = 0.0f;
+    offR_ = 0.0f;
   }
   
   void Clear() {
@@ -96,20 +97,51 @@ class PitchShifter {
     c.Interpolate(left, half, 1.0f - tri);
     c.Write(input_output->l, 0.0f);
 
-    // Optional stereo SPREAD (Parvati add): offset the right channel's two
-    // read taps by a fraction of the window so L and R read different points in
-    // the buffer -> instant chorusy stereo width. spread_=0 reproduces the
-    // original mono-window behaviour bit-for-bit (phaseR/halfR == phase/half).
-    const float rOff = spread_ * size_;
-    float phaseR = phase + rOff;
-    if (phaseR >= size_) phaseR -= size_;
-    float halfR = half + rOff;
-    if (halfR >= size_) halfR -= size_;
+    // Stereo SPREAD (Parvati add) — wrap/gain-zero invariant.
+    //
+    // A dual-tap pitch shifter reads two windows a half-window apart and
+    // crossfades them with a triangle envelope (tri / 1-tri). It is
+    // click-free ONLY when each read position wraps at a sample where ITS
+    // OWN envelope gain is zero: the `phase` tap must wrap when tri == 0
+    // (phase_ == 0 or 1) and the `half` tap when 1-tri == 0 (phase_ == 0.5).
+    // The original Clouds code satisfies this by construction (both taps
+    // derive from the same phase_).
+    //
+    // The original Parvati stereo-spread implementation offset the R taps
+    // by rOff = spread_ * size_ but kept the SHARED tri as the crossfade
+    // envelope. The R taps then wrap at phase_ = 1 - rOff/size_ and
+    // phase_ = 0.5 - rOff/size_ — points where tri is ~2*rOff/size_, NOT
+    // zero — so the R read position teleported while its gain was non-zero:
+    // a periodic discontinuity proportional to Spread (the reported
+    // one-sided crackle; spread=0 was exact mono, hence invisible to tests).
+    //
+    // Fix: the R channel gets its OWN crossfade phase, phaseR_ = wrap(phase_ +
+    // offR_), where offR_ is the rate-limited normalized spread offset
+    // (glides like size_ instead of jumping on a spread change). Its own
+    // triangle triR is zero exactly at phaseR_'s own wrap points, so the R
+    // taps wrap on THEIR gain-zero crossings — same invariant as L. L and R
+    // stay phase-locked to the same ratio/size glide (they differ only by
+    // the constant offR_), and offR_ == 0 collapses to the original mono
+    // path bit-for-bit (triR == tri, phaseR/halfR == phase/half).
+    offR_ += size_coeff * (spread_ - offR_);
+    float phaseR_ = phase_ + offR_;
+    if (phaseR_ >= 1.0f) {
+      phaseR_ -= 1.0f;
+    }
+    if (phaseR_ <= 0.0f) {
+      phaseR_ += 1.0f;
+    }
+    float triR = 2.0f * (phaseR_ >= 0.5f ? 1.0f - phaseR_ : phaseR_);
+    float phaseR = phaseR_ * size_;
+    float halfR = phaseR + size_ * 0.5f;
+    if (halfR >= size_) {
+      halfR -= size_;
+    }
 
     c.Read(input_output->r, 1.0f);
     c.Write(right, 0.0f);
-    c.Interpolate(right, phaseR, tri);
-    c.Interpolate(right, halfR, 1.0f - tri);
+    c.Interpolate(right, phaseR, triR);
+    c.Interpolate(right, halfR, 1.0f - triR);
     c.Write(input_output->r, 0.0f);
   }
   
@@ -122,7 +154,10 @@ class PitchShifter {
   }
 
   // Stereo spread: 0 = both channels share the read window (mono); 1 = the
-  // right channel's taps are offset by up to one window length. (Parvati add.)
+  // right channel's read window is offset by up to one full window length.
+  // The offset itself is RATE-LIMITED per sample (offR_, like size_) so a
+  // spread knob move glides instead of jumping the R read position.
+  // (Parvati add.)
   inline void set_spread(float spread) {
     spread_ = spread;
   }
@@ -134,7 +169,8 @@ class PitchShifter {
   float ratio_;
   float size_;
   float target_size_;
-  float spread_;   // right-channel tap offset (0..1 of window) — Parvati add
+  float spread_;   // target normalized R-window offset (0..1) — Parvati add
+  float offR_;     // rate-limited current R-window offset (0..1) — Parvati add
   
   DISALLOW_COPY_AND_ASSIGN(PitchShifter);
 };

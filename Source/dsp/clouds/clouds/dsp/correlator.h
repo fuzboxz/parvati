@@ -68,17 +68,25 @@ class Correlator {
   uint32_t* source_;
   uint32_t* destination_;
   
-  int32_t offset_;
-  int32_t increment_;
-  int32_t size_;
-  int32_t candidate_;
+  // PARVATI PATCH: default member initializers. The class keeps an empty
+  // constructor and Init() (correlator.cc) sets only offset_/best_match_/
+  // done_, leaving increment_/size_/candidate_/best_score_ indeterminate at
+  // construction. best_match() reads increment_ (multiplied by best_match_,
+  // currently 0, so the value is masked) - an indeterminate read is still
+  // undefined behavior on every pre-search call. Deterministic zeros/unity
+  // cost nothing and keep the pre-search best_match() semantics identical
+  // (offset_ + 0).
+  int32_t offset_ = 0;
+  int32_t increment_ = 65536;
+  int32_t size_ = 0;
+  int32_t candidate_ = 0;
 
-  uint32_t best_score_;
-  int32_t best_match_;
+  uint32_t best_score_ = 0;
+  int32_t best_match_ = 0;
   
-  int32_t trace_;
+  int32_t trace_ = 0;
   
-  bool done_;
+  bool done_ = true;
   
   DISALLOW_COPY_AND_ASSIGN(Correlator);
 };
