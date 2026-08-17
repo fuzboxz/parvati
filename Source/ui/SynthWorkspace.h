@@ -112,7 +112,8 @@ public:
     int barPreferredWidth() const;
 
     /** Show/hide the central mod-pill bar seam. Hiding COLLAPSES the bar row
-        (its height rejoins the content rows — see resized()); it does NOT
+        (its height goes to the top (synth/fx) row only — the bottom row keeps
+        its size; see resized()); it does NOT
         tear the bar down, so re-showing is a cheap relayout. Mirrored by
         FxWorkspace so SYNTH<->FX never reflows on the difference. */
     void setModBarVisible (bool visible)

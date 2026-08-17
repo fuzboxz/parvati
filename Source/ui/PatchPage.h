@@ -7,7 +7,10 @@
 // each Part through simple controls (a VOICE COUNT 1..16, not a card bitmask:
 // the 6-voicecard masks are derived by the engine). It also HOSTS the editor's
 // existing Section::Global ParamPage (patch-wide knobs + the voice-activity
-// meter decoration) below the 6 part rows.
+// meter decoration) at the top of the scrolled body, and MERGES its own
+// 6-part voice-allocation table into that page's Global panel (via the
+// page's external-decoration slot), so ONE bordered Global section holds the
+// global knobs, the voice meter AND the part-allocation table.
 //
 // Design: /tmp/parvati_patch_design.md ("Phase 2"). Phase 1 output
 // (Source/ui/PatchArrangement.h) supplies applyArrangement/inferArrangement.
@@ -35,8 +38,9 @@ class ThemeManager;
 class ParamPage;
 
 //==============================================================================
-// Patch page: arrangement selector + 6 Part rows + the hosted patch-wide
-// ParamPage. Refreshed/relanguaged/rethemed by the editor exactly like the old
+// Patch page: arrangement selector + the hosted patch-wide ParamPage (whose
+// Global panel contains the merged 6-part allocation table) + the voice-pool
+// view. Refreshed/relanguaged/rethemed by the editor exactly like the old
 // editor-chrome hooks the editor calls.
 class PatchPage : public juce::Component
 {
@@ -56,9 +60,13 @@ public:
 
     // Parent the editor's existing Section::Global ParamPage (filter_card /
     // vca_curve / filter_drive / part* / master FX mix, plus the voice-activity
-    // meter decoration) BELOW the 6 part rows. PatchPage does NOT own it (the
-    // editor retains ownership); it only reparents + positions it. The hosted
-    // page is reflowed to the row width in resized().
+    // meter decoration) at the TOP of the scrolled body, and attach this page's
+    // PartTablePanel into that page's "Global" group as an EXTERNAL decoration
+    // (non-owning — see setGroupExternalDecoration), so the 6-part
+    // voice-allocation table renders INSIDE the bordered Global panel, below
+    // the global knobs and the voice meter. PatchPage does NOT own the hosted
+    // page (the editor retains ownership); it only reparents + positions it.
+    // The hosted page is reflowed to the row width in resized().
     void hostParamPage (juce::Component* paramPage);
 
     // Inject the state provider for the global voice-pool view (the pool
@@ -117,9 +125,10 @@ private:
     juce::ComboBox arrangementCombo_;   // 6 selectable items (ids 1..6); Custom = no selection
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 
-    // T4 scroll safety net: the 6 part rows + the hosted patch-wide ParamPage
+    // T4 scroll safety net: the hosted patch-wide ParamPage (whose Global
+    // panel carries the merged part-allocation table) + the voice-pool view
     // live inside this vertical Viewport, so a short host frame (small AUv3
-    // pane) SCROLLS instead of clipping the lower rows / page unrecoverably.
+    // pane) SCROLLS instead of clipping the lower content unrecoverably.
     // At the tuned design size the body fits and reflowToWidth-style sizing
     // grows it to the view height, so no scrollbar ever appears. ScrollBody
     // (declared BEFORE the viewport so the viewport — which views it — is
@@ -130,14 +139,22 @@ private:
     juce::Viewport viewport_;
 
     // Global voice-pool view (owned) + its caption. Lives INSIDE the scrolled
-    // body below the 6 part rows and above the hosted Global ParamPage, so the
+    // body BELOW the hosted Global ParamPage (the bottom of the body), so the
     // whole-part picture is reachable exactly where parts are configured.
     juce::Label voicePoolCaption_;
     std::unique_ptr<VoicePoolView> voicePoolView_;
 
-    // One row per Part (0..5). Defined in the .cpp.
+    // The 6-part voice-allocation table container: parents the PartRows and
+    // is itself attached into the HOSTED page's "Global" group as an external
+    // decoration (hostParamPage), so the table renders inside that panel.
+    // Defined in the .cpp; declares its natural height as kTableH.
+    class PartTablePanel;
+    std::unique_ptr<PartTablePanel> tablePanel_;
+
+    // One row per Part (0..5), parented into tablePanel_ (which lays them out).
+    // Defined in the .cpp.
     class PartRow;
-    std::array<std::unique_ptr<PartRow>, 6> rows_;
+    std::array<std::unique_ptr<PartRow>, 6> rows_;   // declared AFTER tablePanel_: rows (children of the panel) are destroyed first
 
     bool refreshing_ = false;   // guards onChange during programmatic updates
 

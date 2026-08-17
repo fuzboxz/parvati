@@ -4,7 +4,101 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **FX crash + crackle root causes (deep audio/memory audit).** The
+  Wavefolder hard crash was an out-of-bounds read in the fold waveshaper:
+  the LUT lookup index was never clamped (valid |sl| ≤ 2.295), so max Drive
+  plus a loud chord's summed voice output read past `lut_bipolar_fold`
+  into rodata garbage (crackle) or off the module (SIGSEGV; NaN input made
+  the int cast UB). The index is now clamped to the valid domain (both
+  channels) and the per-part FX chain input rides a unity-gain soft-limit
+  knee (8·SoftLimit(s/8), transparent below unity, hard-capped ±16).
+  Also fixed: Reverb tank state could seed from uninitialized heap (NaN
+  forever); the Warps SRC_DOWN fast/circular path switch left a stale
+  history pointer (periodic crackle in Wavefolder/RingMod at ≥88.2 kHz —
+  measured 1.66-sample discontinuities, now exactly the signal slope);
+  no guard against host blocks larger than prepared (6×-amplified heap
+  overflow in the Wavefolder scratch) — clamped at both the processor and
+  chain layers; the deferred-parameter drain allocated under its spinlock
+  (audio thread could spin against a malloc — priority inversion); FX
+  parameter automation allocated strings on the render thread (now
+  deferred off-thread like arp/seq); the FV-1 clocked delay stepped its
+  delay length on tempo changes (now a per-sample Q.16 glide).
+- **Pitch Shifter right-channel crackle with Spread > 0.** The stereo
+  spread offset shared the left channel's crossfade window, so the right
+  taps wrapped the delay window where the envelope gain was NOT zero — a
+  periodic right-only discontinuity scaling with Spread. The right channel
+  now has its own crossfade phase (rate-limited offset, phase-locked to L);
+  spread=0 stays bit-identical mono. New regression: R/L jump symmetry.
+- **WSOLA Stretch startup splice transient.** The first correlator-placed
+  window ramped to full gain exactly as it stepped onto the first recorded
+  sample (an instantaneous step, right-channel-worst with phase-offset
+  input). The startup window is now head-anchored so its gain ramp fades
+  the recorded audio in; new startup-symmetry + post-startup-cleanliness
+  regressions. (A per-effect sweep across all 15 FX types x parameter
+  corners found no other one-sided discontinuities.)
+- **FX audio-thread allocation elimination (deferred audit items).** FX
+  type changes no longer construct/destroy/free processors on the audio
+  thread: the message thread builds + prepares the replacement and stages
+  it (3-state CAS per slot); the audio thread installs it with pointer
+  moves only; a 60 Hz reaper frees the retired processor. The per-voice
+  filter-oversampling change (up to 96 `juce::dsp::Oversampling` rebuilds
+  in one callback) uses the same staged-swap pattern with a belt-and-braces
+  AT fallback. `FxChain::latency()` reports the staged type immediately
+  (PDC/dry-alignment planning no longer lags one install behind).
+- **FX card header geometry.** The power-indicator hit band no longer
+  overlaps the type dropdown at the narrowest cards (44×22 header band,
+  combo exactly centred, overlap-gate clean at the 800 px floor).
+
 ### Changed
+- **Patch page: one merged Global section + honest voice counts.** The
+  hosted Part/Play group is merged INTO Global (one 11-control panel:
+  part volume/octave/tuning/spread/scale/legato/portamento/polyphony +
+  VCA curve/filter card/drive), and the hosted page now lays out at its
+  NATURAL height (new `reflowToWidth(w, -1)` natural-height mode) — the
+  ~160px viewport-fill void between the global section and the part rows
+  is gone. The per-part Ch column widens for "Omni", the Legato On/Off
+  combo readout gets room for its widest choice, and `Voices Y/96` (+ the
+  voice-pool picture) counts ASSIGNED slots (`getPartVoiceSlots`), not the
+  audio-thread allocation snapshot — one active part with 1 voice reads
+  `Voices 1/96`.
+- **FX: indicator-dot power toggles + a diagram-safe ROUTING column.** The
+  per-slot on/off power glyph is replaced by a bordered circle filled with
+  the FX accent when enabled and grey when bypassed (same click wiring,
+  44pt target). The ROUTING column floor rises 176 → 232pt (19%, capped
+  288) so the series/parallel flow diagram never clamps its blocks into
+  the OUT label.
+- **Multi loads reset voice settings to init.** Loading a `.MUL` or a
+  `.parvati` multi first resets every Part's voice slots to the engine init
+  allocation (Part 1 = 6 voices, others disabled) — a file that does not
+  carry voice settings for a Part can no longer inherit the previous
+  multi's leftover counts; files that DO carry slots still round-trip them.
+- **Filter oversampling defaults to 2x, supports 8x.** New instances (and
+  states that never persisted a factor) run the filter at 2x; the combo
+  gains "Ultra (8x)" and the whole chain (voices, latency probe, clamps)
+  accepts 1/2/4/8. Persisted factors — including 1x — restore unchanged.
+- **Big two-octave keyboard overlay.** The on-screen keyboard shows exactly
+  C3–C5 (25 keys, ~80pt white keys) and the overlay strip grows 76 → 246pt
+  — tall enough to cover the entire bottom row (generator editor + mod/FX
+  matrix) when [KBD] is on; the pitch/mod wheels widen to match. QWERTY
+  musical typing is clamped inside the visible window.
+- **[KBD] stays visible in Patch mode + workspace rows rebalanced.** The
+  virtual keyboard overlay (and the pitch/mod wheels) is re-lifted above
+  the full-page Patch overlay whenever it is toggled on or the Patch page
+  is entered with [KBD] active (previously entering Patch mode buried a
+  visible keyboard under the overlay); a showing Settings side panel is
+  re-lifted last so it still covers the keyboard. The SYNTH/FX workspace
+  bottom row (active generator editor + mod/FX matrix) now keeps the height
+  it has with the [MOD] pill bar shown and is capped at exactly four
+  matrix rows (+ header/add chrome); hiding the pill bar grows only the
+  top synth/fx section, and the matrix scrolls inside its own viewport for
+  longer routing lists. SYNTH and FX keep byte-identical row math so the
+  mode toggle never reflows.
+- **Patch page: Part/Play + Global knobs on top, Polyphony column shrunk.**
+  The hosted patch-wide ParamPage (Part/Play + Global groups) now leads the
+  scrolled body (part rows and the voice-pool view follow below), and each
+  part row's Polyphony column is sized to its dropdown (140pt) instead of
+  stretching across the leftover row tail.
 - **Voice-first Patch page: voice counts are the user model, cards are
   derived.** On real Ambika hardware a voice IS a voicecard (the digital
   voice section lives on the card), so Parvati now exposes exactly that: a

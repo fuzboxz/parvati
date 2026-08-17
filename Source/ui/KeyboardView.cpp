@@ -62,6 +62,12 @@ namespace
                  static_cast<int> (std::round (a.getWidth())),
                  static_cast<int> (std::round (a.getHeight())) };
     }
+
+    // The musical-typing row's TOP semitone offset (';' = +16 above
+    // octaveBase_; keep in sync with KeyboardView::qwertyMap()). Referenced
+    // by comments only now: the row always fits the two-octave window
+    // (16 < 24 semitones) because Z/X move the base and the window together.
+    [[maybe_unused]] constexpr int kQwertyTopOffset = 16;
 } // namespace
 
 //==============================================================================
@@ -95,7 +101,20 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
 
         owner.mouseDownNotesBySource_[src] = midiNoteNumber;
         owner.fireNoteCallback (midiNoteNumber, true, owner.velocityFromEvent (e));
+        // Continuous pressure starts with the strike: the press Y IS the first
+        // pressure sample (lower on the key = harder press).
+        owner.firePressureFromEvent (e);
         return true;   // base lights the key via the shared state_
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        // Continuous pressure on EVERY drag move (even within the same key):
+        // sliding a held finger up/down the key tracks "pressure" live. The
+        // base class handles the key-sweep lighting; mouseDraggedToKey below
+        // fires the note retargets.
+        owner.firePressureFromEvent (e);
+        juce::MidiKeyboardComponent::mouseDrag (e);
     }
 
     bool mouseDraggedToKey (int midiNoteNumber, const juce::MouseEvent& e) override
@@ -105,12 +124,13 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         // re-lights each swept key as it goes; keeping the engine on the FIRST
         // note (the old visual-only behaviour) read as a stuck note during every
         // slide. Velocity is recomputed from the drag position via the SAME
-        // top-of-key=louder rule as a press (a drag carries no fresh strike
-        // velocity, and JUCE's own drag handling derives velocity from position
-        // the same way). Cross-source dedup mirrors the base class's finger
-        // dedup in updateNoteUnderMouse: only release the old note when no OTHER
-        // source still holds it, and only sound the new note when no other
-        // source is already sounding it (two fingers on one key = one note).
+        // y-position=pressure rule as a press (lower on the key = louder; a
+        // drag carries no fresh strike velocity, and JUCE's own drag handling
+        // derives velocity from position the same way). Cross-source dedup
+        // mirrors the base class's finger dedup in updateNoteUnderMouse: only
+        // release the old note when no OTHER source still holds it, and only
+        // sound the new note when no other source is already sounding it (two
+        // fingers on one key = one note).
         const int src = e.source.getIndex();
         const auto it = owner.mouseDownNotesBySource_.find (src);
         if (it != owner.mouseDownNotesBySource_.end() && it->second != midiNoteNumber)
@@ -284,9 +304,15 @@ KeyboardView::KeyboardView()
     keyboard_ = std::make_unique<KeyComp> (*this);
     addAndMakeVisible (*keyboard_);
 
-    // ~5 octaves (C2..C7) with scroll arrows so narrow windows can still pan.
-    keyboard_->setAvailableRange (36, 96);
-    keyboard_->setScrollButtonsVisible (true);
+    // TWO OCTAVES only (default C3..C5 — kRangeLow..kRangeHigh): large keys
+    // beat range on a touch strip. resized() stretches the window's 15 white
+    // keys across the full component width, so there is never anything to
+    // pan — no scroll arrows (the old 5-octave range needed them only
+    // because the keys were small). The window FOLLOWS the Ableton-style Z/X
+    // octave base (applyQwertyWindow); it is always C..C, so the white-key
+    // count (15) never changes.
+    keyboard_->setAvailableRange (octaveBase_, octaveBase_ + (kRangeHigh - kRangeLow));
+    keyboard_->setScrollButtonsVisible (false);
 
     // Computer-keyboard play: this component owns the focus so it receives the
     // musical-typing keys (the inner KeyComp never takes focus itself).
@@ -297,8 +323,9 @@ KeyboardView::KeyboardView()
     setTitle ("Virtual Keyboard");
     setDescription ("Virtual keyboard");
     setHelpText ("Click a key, or type on the computer keyboard (A W S D F G H J K L ; with "
-                 "W E T Y U O P for the sharps) to play notes. Z and X shift the octave "
-                 "down and up.");
+                 "W E T Y U O P for the sharps) to play notes inside the two visible "
+                 "octaves. Z and X shift the octave down and up (the visible window "
+                 "follows); C and V decrease and increase the velocity.");
 
     applyThemeColours();   // fallback colours until added to the themed tree
 }
@@ -308,6 +335,11 @@ KeyboardView::~KeyboardView() {}
 //==============================================================================
 void KeyboardView::latchNoteOn (int midiNote, float velocity)
 {
+    // Notes OUTSIDE the visible window (kRangeLow..kRangeHigh) are accepted by
+    // the state but never drawn — MidiKeyboardComponent ignores notes beyond
+    // its available range — so engine activity outside the two visible octaves
+    // lights no key (and the matching noteOff below clears it cleanly). That is
+    // the accepted contract: the mirror covers exactly the visible window.
     state_.noteOn (kLatchChannel, midiNote, juce::jlimit (0.0f, 1.0f, velocity));
 }
 
@@ -319,6 +351,19 @@ void KeyboardView::latchNoteOff (int midiNote)
 void KeyboardView::setNoteCallback (NoteCallback cb)
 {
     noteCallback_ = std::move (cb);
+}
+
+void KeyboardView::setPressureCallback (PressureCallback cb)
+{
+    pressureCallback_ = std::move (cb);
+}
+
+void KeyboardView::setSettingsChangedCallback (SettingsChangedCallback cb)
+{
+    onSettingsChanged_ = std::move (cb);
+    // Report the initial state so the host can prime its display.
+    if (onSettingsChanged_)
+        onSettingsChanged_ (octaveBase_, qwertyVelocity127());
 }
 
 //==============================================================================
@@ -360,12 +405,17 @@ void KeyboardView::paint (juce::Graphics& g)
 
 void KeyboardView::resized()
 {
-    // Span the full width: size one white key so the fixed range [36,96]
-    // fills the component. Without this the MidiKeyboardComponent left-aligns
-    // the keys at its default width and leaves an empty block on the right.
-    const int lo = 36, hi = 96;
+    // Span the full width: size one white key so the two-octave window
+    // [octaveBase_, octaveBase_ + span] fills the component. A C..C window
+    // holds 15 white keys (C D E F G A B x2 + the closing C), so each white
+    // key is ~80pt wide at a 1200pt strip — the LARGE-key brief. Without this
+    // the MidiKeyboardComponent left-aligns the keys at its default width and
+    // leaves an empty block on the right. Vertically the KeyComp is bounds-fed
+    // below and fills the FULL component height natively (no fixed-height
+    // override anywhere; a horizontal MidiKeyboardComponent draws its keys
+    // edge-to-edge top-to-bottom), so the tall strip stays fully covered.
     int whiteKeys = 0;
-    for (int n = lo; n <= hi; ++n)
+    for (int n = octaveBase_; n <= octaveBase_ + (kRangeHigh - kRangeLow); ++n)
     {
         const int d = n % 12;
         if (d == 0 || d == 2 || d == 4 || d == 5 || d == 7 || d == 9 || d == 11)
@@ -373,8 +423,29 @@ void KeyboardView::resized()
     }
     if (whiteKeys > 0 && getWidth() > 0)
         keyboard_->setKeyWidth (static_cast<float> (getWidth()) / static_cast<float> (whiteKeys));
-    keyboard_->setScrollButtonsVisible (false);   // keys fill the width: nothing to scroll
+    keyboard_->setScrollButtonsVisible (false);   // the window fills the width: nothing to scroll
     keyboard_->setBounds (getLocalBounds());
+}
+
+void KeyboardView::applyQwertyWindow()
+{
+    // Called after a Z/X octave shift: move the visible window to the new base
+    // (always C..C, so the white-key count and key width are unchanged) and
+    // re-layout. setAvailableRange does not repaint the key geography until
+    // the component re-lays out, hence the resized() call.
+    keyboard_->setAvailableRange (octaveBase_, octaveBase_ + (kRangeHigh - kRangeLow));
+    resized();
+}
+
+void KeyboardView::shiftOctave (int semitones)
+{
+    // GUI octave switch (the wheels panel's [<][>] buttons): the same move as
+    // the Z/X keys, expressed as a semitone delta (callers pass whole
+    // octaves). Clamped to the MIDI range, window follows, settings reported.
+    octaveBase_ = juce::jlimit (0, 127 - (kRangeHigh - kRangeLow), octaveBase_ + semitones);
+    applyQwertyWindow();
+    if (onSettingsChanged_)
+        onSettingsChanged_ (octaveBase_, qwertyVelocity127());
 }
 
 //==============================================================================
@@ -440,12 +511,25 @@ void KeyboardView::fireNoteCallback (int midiNote, bool isOn, float velocity)
         noteCallback_ (midiNote, isOn, velocity);
 }
 
+void KeyboardView::firePressureFromEvent (const juce::MouseEvent& e)
+{
+    // Same y-position=pressure mapping as velocityFromEvent (lower on the key
+    // = harder). Called on note-on and on every drag move so a held finger's
+    // up/down motion tracks aftertouch live.
+    if (pressureCallback_)
+        pressureCallback_ (velocityFromEvent (e));
+}
+
 float KeyboardView::velocityFromEvent (const juce::MouseEvent& e) const
 {
+    // Y-position "pressure": the LOWER the touch on the key, the LOUDER the
+    // note (like pressing deeper into a key / MPE pressure). Full 0..1 range
+    // across the strip height — the top of a key plays pianissimo, the bottom
+    // fortissimo. Used on press AND on drag-retarget, so a glissando that
+    // slides down the keys crescendos.
     const int h = juce::jmax (1, getHeight());
-    // Click near the top of a key => louder (like striking the end of a key).
     const float norm = juce::jlimit (0.0f, 1.0f, e.position.y / static_cast<float> (h));
-    return 0.3f + 0.7f * (1.0f - norm);
+    return 1.0f - norm;
 }
 
 bool KeyboardView::noteHeldByOtherSource (int midiNote, int exceptSource) const
@@ -462,7 +546,9 @@ const std::map<char, int>& KeyboardView::qwertyMap()
     // Standard musical-typing layout, value = semitone offset from octaveBase_.
     // White keys: A S D F G H J K L  (C D E F G A B C D)
     // Black keys: W E   T Y U   O P  (C# D#  F# G# A#  D#... in next octave)
-    // Spans 17 semitones (C..E of the next octave).
+    // Spans 17 semitones (C..E of the next octave) — every offset lands inside
+    // the visible two-octave window because Z/X move the base and the window
+    // together (see kQwertyTopOffset in the anonymous namespace above).
     static const std::map<char, int> m = {
         { 'a', 0  }, { 'w', 1  }, { 's', 2  }, { 'e', 3  }, { 'd', 4  },
         { 'f', 5  }, { 't', 6  }, { 'g', 7  }, { 'y', 8  }, { 'h', 9  },
@@ -495,7 +581,9 @@ bool KeyboardView::keyPressed (const juce::KeyPress& key)
         return false;
 
     // Never hijack modifier combos (Cmd/Ctrl/Alt) so the editor's Cmd +/-/0
-    // zoom and host shortcuts still work while the keyboard has focus.
+    // zoom, Undo/Cut/Copy/Paste and host shortcuts still work while the
+    // keyboard has focus (the octave/velocity controls are BARE keys below —
+    // Cmd+Z/X/C/V stay the app's Undo/Cut/Copy/Paste).
     const auto& mods = key.getModifiers();
     if (mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown())
         return false;
@@ -503,15 +591,37 @@ bool KeyboardView::keyPressed (const juce::KeyPress& key)
     const auto wc = key.getTextCharacter();
     const char c = static_cast<char> (juce::CharacterFunctions::toLowerCase (wc));
 
-    // Octave shift: Z = down an octave, X = up an octave.
+    // Ableton-style controls. Z/X shift the octave: the base moves by whole
+    // octaves across the FULL MIDI range and the visible two-octave window
+    // FOLLOWS (applyQwertyWindow) — the QWERTY row stays anchored at the
+    // window's bottom C. C/V adjust the musical-typing velocity in steps of
+    // 20/127 (Ableton Live's computer-keyboard scheme; default 100/127).
+    // Every change reports through the settings channel (the editor surfaces
+    // it in the status/tooltip bar).
     if (c == 'z')
     {
         octaveBase_ = juce::jmax (0, octaveBase_ - 12);
+        applyQwertyWindow();
+        if (onSettingsChanged_) onSettingsChanged_ (octaveBase_, qwertyVelocity127());
         return true;
     }
     if (c == 'x')
     {
-        octaveBase_ = juce::jmin (127 - 16, octaveBase_ + 12);
+        octaveBase_ = juce::jmin (127 - (kRangeHigh - kRangeLow), octaveBase_ + 12);
+        applyQwertyWindow();
+        if (onSettingsChanged_) onSettingsChanged_ (octaveBase_, qwertyVelocity127());
+        return true;
+    }
+    if (c == 'c')
+    {
+        qwertyVelocity_ = juce::jmax (1.0f / 127.0f, qwertyVelocity_ - 20.0f / 127.0f);
+        if (onSettingsChanged_) onSettingsChanged_ (octaveBase_, qwertyVelocity127());
+        return true;
+    }
+    if (c == 'v')
+    {
+        qwertyVelocity_ = juce::jmin (1.0f, qwertyVelocity_ + 20.0f / 127.0f);
+        if (onSettingsChanged_) onSettingsChanged_ (octaveBase_, qwertyVelocity127());
         return true;
     }
 
@@ -524,10 +634,14 @@ bool KeyboardView::keyPressed (const juce::KeyPress& key)
     if (heldNotes_.find (c) != heldNotes_.end())
         return true;
 
-    const int note = juce::jlimit (0, 127, octaveBase_ + it->second);
+    // In-window by construction (the row spans 16 semitones above the base,
+    // the window 24 — and Z/X move both together); the jlimit documents +
+    // enforces the contract as a safety net.
+    const int note = juce::jlimit (octaveBase_, octaveBase_ + (kRangeHigh - kRangeLow),
+                                   octaveBase_ + it->second);
     heldNotes_[c] = note;
-    fireNoteCallback (note, true, 0.8f);
-    latchNoteOn (note, 0.8f);
+    fireNoteCallback (note, true, qwertyVelocity_);
+    latchNoteOn (note, qwertyVelocity_);
     return true;
 }
 

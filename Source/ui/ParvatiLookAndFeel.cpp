@@ -181,9 +181,15 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
                                         int thumbStartPosition, int thumbSize,
                                         bool isMouseOver, bool isMouseDown)
 {
-    // Faint track behind the thumb.
+    // Faint track behind the thumb — inset 1px top/bottom (vertical) or
+    // left/right (horizontal) so the track never butts the viewport edge: the
+    // little whitespace reads as padding and keeps neighbouring chrome (the
+    // separator rules) visually distinct from the scrollbar.
     g.setColour (scrollbar.findColour (juce::ScrollBar::trackColourId));
-    g.fillRect (x, y, width, height);
+    if (isVertical)
+        g.fillRect (x, y + 1, width, juce::jmax (0, height - 2));
+    else
+        g.fillRect (x + 1, y, juce::jmax (0, width - 2), height);
 
     if (thumbSize <= 0)
         return;

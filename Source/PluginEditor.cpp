@@ -281,6 +281,68 @@ public:
 private:
     juce::String text_, tip_;
 };
+
+//==============================================================================
+// ChromeRule — the 1px separator rules delimiting the chrome bands (below the
+// header / above the status strip). A dedicated NON-INTERACTIVE child, not a
+// stroke in ParvatiEditor::paint(): children overdraw the editor's own paint,
+// so a painted rule at the pageSelector_/patchPage_ boundary is invisible
+// however it is coloured. These are added LAST in the constructor's child
+// order, so they stay above the content + overlays (a hair-line over the
+// keyboard overlay's bottom edge reads as its border). Solid theme
+// textSecondary: dark grey on the dark themes, near-black on the light ones —
+// always a visible rule against backgroundBase.
+class ChromeRule : public juce::Component
+{
+public:
+    // @p shadowBelow: the rule's soft depth gradient points DOWN (under the
+    // header rule: the workspace below reads recessed) or UP (above the status
+    // rule: the tooltip bar reads as a raised footer).
+    explicit ChromeRule (bool shadowBelow)
+        : shadowBelow_ (shadowBelow) { setInterceptsMouseClicks (false, false); }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+        const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme() : nullptr;
+        const juce::Colour rule (t != nullptr ? t->textSecondary
+                                              : juce::Colours::darkgrey);
+        // DEPTH: a 1px rule + a ~5px soft gradient falloff on the recessed
+        // side, tinted with the rule colour. Reads as a drop shadow on dark
+        // themes and a soft shading band on light ones — the chrome bands
+        // (header / tooltip bar) appear raised over the recessed workspace.
+        constexpr int kShadowH = 5;
+        const int w = getWidth();
+        const int h = getHeight();
+        if (h <= 1 || w <= 0)
+        {
+            g.fillAll (rule);   // degenerate (no shadow room): plain rule
+            return;
+        }
+        juce::ColourGradient grad (rule.withMultipliedAlpha (0.35f), 0.0f, 0.0f,
+                                   rule.withMultipliedAlpha (0.0f),  0.0f, (float) kShadowH,
+                                   false);
+        if (shadowBelow_)
+        {
+            g.fillRect (0, 0, w, 1);                       // the rule
+            grad.point1 = { 0.0f, 1.0f };
+            grad.point2 = { 0.0f, 1.0f + (float) kShadowH };
+            g.setGradientFill (grad);
+            g.fillRect (0, 1, w, kShadowH);                // falloff below
+        }
+        else
+        {
+            g.fillRect (0, h - 1, w, 1);                   // the rule
+            grad.point1 = { 0.0f, (float) (h - 1) };
+            grad.point2 = { 0.0f, (float) (h - 1 - kShadowH) };
+            g.setGradientFill (grad);
+            g.fillRect (0, h - 1 - kShadowH, w, kShadowH); // falloff above
+        }
+    }
+
+private:
+    bool shadowBelow_;
+};
 }  // namespace
 
 //==============================================================================
@@ -971,14 +1033,18 @@ void ParamControl::resized()
         // the cell), while the DRAWN dropdown stays a compact 28pt strip
         // centred inside it via the "parvatiComboVisualH" property set in the
         // constructor — so dense rows keep their exact look yet a finger gets
-        // a full-size target. Width stays fit-to-text (longest choice + 26px
-        // chrome: 6px left pad + amber chevron + slack). There is NO fixed
-        // width cap — each dropdown is exactly as wide as its longest option
-        // (narrow lists get narrow dropdowns) — but it never exceeds the cell
-        // width so dense rows (Mod / Modifier) stay compact. Centred in the
-        // cell.
+        // a full-size target. Width stays fit-to-text (longest choice + 34px
+        // chrome: the L&F's positionComboBoxText insets the inline text by
+        // 24px, so the text area gets longest-choice + 10px of room — the old
+        // +26 chrome left longest + 2px, which clipped the trailing glyph of
+        // short-but-full values like part_legato's "Off" the moment the
+        // measure-time and draw-time font metrics drifted at all). There is
+        // NO fixed width cap — each dropdown is exactly as wide as its longest
+        // option (narrow lists get narrow dropdowns) — but it never exceeds
+        // the cell width so dense rows (Mod / Modifier) stay compact. Centred
+        // in the cell.
         const int comboH = juce::jmin (44, b.getHeight());
-        const int textW = maxChoiceTextWidth() + 26;
+        const int textW = maxChoiceTextWidth() + 34;
         const int comboW = juce::jlimit (28, juce::jmax (28, b.getWidth()), textW);
         comboBox_->setBounds (b.withSizeKeepingCentre (comboW, comboH));
     }
@@ -1629,6 +1695,11 @@ void ParamPage::layoutGroups (int targetWidth)
         // below its control cells so the panel height includes it.
         if (g.decoration != nullptr)
             g.naturalHeight += g.decorationH + kDecorationGap;
+        // A group's EXTERNAL (non-owned) decoration reserves room BELOW the
+        // owned one (e.g. the Patch page's part-allocation table under the
+        // Global panel's voice meter), so it is inside the same border.
+        if (g.externalDecoration != nullptr)
+            g.naturalHeight += g.externalDecorationH + kDecorationGap;
     }
 
     // Greedy left-to-right flow. A row wraps when the next panel would overflow
@@ -1757,10 +1828,10 @@ void ParamPage::layoutGroups (int targetWidth)
     // Prefer the editor-supplied tab height (reliable for every tab); fall back
     // to the parent Viewport's physical height for standalone / headless use.
     int viewH = centerHeight_;
-    if (viewH <= 0)
+    if (viewH == 0)   // not supplied by the caller: parent-Viewport fallback (standalone / headless). -1 = natural-height mode (see reflowToWidth): no fill, no fallback.
         if (auto* vp = findParentComponentOfClass<juce::Viewport>())
             viewH = vp->getHeight();
-    contentHeight_ = juce::jmax (naturalH, viewH);
+    contentHeight_ = juce::jmax (naturalH, viewH);   // viewH == -1 keeps naturalH
 }
 
 void ParamPage::applyLayout()
@@ -1772,6 +1843,8 @@ void ParamPage::applyLayout()
             g.groupComp->setVisible (visible);
         if (g.decoration != nullptr)
             g.decoration->setVisible (visible);
+        if (g.externalDecoration != nullptr)
+            g.externalDecoration->setVisible (visible);
         if (g.inlinePreview != nullptr)
             g.inlinePreview->setVisible (visible);
         if (! visible)
@@ -1875,13 +1948,21 @@ void ParamPage::applyLayout()
             g.inlinePreview->setBounds (pc.reduced (3));
         }
 
-        // A group's decoration (if any) spans the panel width below the cells.
+        // A group's decoration (if any) spans the panel width below the cells;
+        // an EXTERNAL (non-owned) decoration spans the panel width below THAT,
+        // so both sit inside the same bordered panel.
         const int rows = ((int) g.controlIndices.size() + cols - 1) / cols;
+        int decY = inner.getY() + rows * g.cellH + kDecorationGap;
         if (g.decoration != nullptr)
         {
-            const int decY = inner.getY() + rows * g.cellH + kDecorationGap;
             g.decoration->setBounds (
                 juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), g.decorationH));
+            decY += g.decorationH + kDecorationGap;
+        }
+        if (g.externalDecoration != nullptr)
+        {
+            g.externalDecoration->setBounds (
+                juce::Rectangle<int> (inner.getX(), decY, inner.getWidth(), g.externalDecorationH));
         }
     }
 }
@@ -1964,6 +2045,28 @@ void ParamPage::setGroupDecoration (const juce::String& groupName,
 
     // Recompute the layout so contentHeight_ already accounts for the new
     // decoration when the editor sizes this page immediately afterwards.
+    layoutGroups (juce::jmax (940, getWidth()));
+    applyLayout();
+}
+
+void ParamPage::setGroupExternalDecoration (const juce::String& groupName,
+                                             juce::Component* external, int height)
+{
+    // NON-OWNED second decoration slot (setGroupDecoration is single-slot per
+    // group): this page only PARENTS + positions the component — the caller
+    // keeps ownership and must outlive this page (see the header contract).
+    if (external == nullptr)
+        return;
+    addAndMakeVisible (external);
+    for (auto& g : groups_)
+        if (g.name == groupName)
+        {
+            g.externalDecoration = external;
+            g.externalDecorationH = juce::jmax (0, height);
+        }
+
+    // Recompute the layout so contentHeight_ already accounts for the reserved
+    // height when the owner sizes this page immediately afterwards.
     layoutGroups (juce::jmax (940, getWidth()));
     applyLayout();
 }
@@ -2147,7 +2250,14 @@ void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
         return;
     // Record the tab content height so layoutGroups can vertically centre short
     // pages consistently across ALL tabs (not just the current one).
-    centerHeight_ = juce::jmax (0, viewportHeight);
+    // viewportHeight < 0 = NATURAL-HEIGHT mode: layoutGroups skips BOTH the
+    // fill-to-viewport grow and the parent-Viewport fallback, so the page keeps
+    // exactly its natural content height. Used by a host that stacks more
+    // content below the page inside a scroll body (PatchPage hosts the Global
+    // page above the 6 part rows): the fallback would stretch the page to the
+    // scroll view's full height and leave a large void between the page's
+    // last panel and whatever follows it.
+    centerHeight_ = (viewportHeight < 0) ? -1 : juce::jmax (0, viewportHeight);
     // Lay out for the requested width, then adopt the resulting height so the
     // parent Viewport scrolls vertically only. setSize() re-triggers resized()
     // which re-lays-out to the same width (cheap rectangle math).
@@ -2700,6 +2810,23 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     p >= 0 && p < static_cast<int> (frame.parts.size()))
                     frame.parts[(size_t) p].voices.push_back (
                         { av->isDisplayedActive(), av->getDisplayedNote() });
+        // Row lengths follow the ASSIGNED slots (getPartVoiceSlots), the same
+        // basis as the Patch page's "Voices Y/96" readout — NOT the physical
+        // voice-object counts just collected, which ride the audio-thread
+        // allocation rebuild (they lag a fresh slots edit and double CHAIN
+        // parts' sets). Activities are taken from the actual voices in pool
+        // order; a stale-longer set is truncated and a stale-shorter one padded
+        // with idle entries, so every row always shows exactly its assigned
+        // count (1 active part with 1 voice -> one square, total 1/96).
+        for (int part = 0; part < static_cast<int> (frame.parts.size()); ++part)
+        {
+            auto& v = frame.parts[(size_t) part].voices;
+            const int slots = e.getPartVoiceSlots (part);
+            if (static_cast<int> (v.size()) > slots)
+                v.resize (static_cast<size_t> (juce::jmax (0, slots)));
+            while (static_cast<int> (v.size()) < slots)
+                v.push_back ({ false, -1 });
+        }
         return frame;
     });
     if (globalPage_ != nullptr)
@@ -2734,11 +2861,25 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // visibility toggles here). See resized() for the overlay placement + z-order.
     kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
     kbdToggleButton_.setClickingTogglesState (true);
-    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the dense no-scrollbar workspace fits 1280x620 without reserving the 76px keyboard strip (toggle [KBD] to float it on top)
+    kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the workspace keeps its full height with the keyboard hidden; toggling [KBD] floats the TALL two-octave strip over the bottom row (it covers the generator editor + matrix; the content never moves)
     kbdToggleButton_.onClick = [this] {
         const bool on = kbdToggleButton_.getToggleState();
-        if (keyboardView_ != nullptr) keyboardView_->setVisible (on);
-        if (wheels_       != nullptr) wheels_->setVisible (on);
+        // Turning [KBD] ON while the Patch page is showing also needs toFront:
+        // the Patch overlay was lifted above the keyboard when the page was
+        // entered, so a newly shown keyboard must re-lift itself (and the
+        // wheels) above it to actually appear in Patch mode.
+        if (keyboardView_ != nullptr)
+        {
+            keyboardView_->setVisible (on);
+            if (on && currentTopPage_ == 2)
+                keyboardView_->toFront (false);
+        }
+        if (wheels_ != nullptr)
+        {
+            wheels_->setVisible (on);
+            if (on && currentTopPage_ == 2)
+                wheels_->toFront (false);
+        }
     };
     addAndMakeVisible (kbdToggleButton_);
 
@@ -2792,6 +2933,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         settingsPanelHost_->showOrHide (! settingsPanelHost_->isPanelShowing());
         settingsButton_.setToggleState (settingsPanelHost_->isPanelShowing(),
                                         juce::dontSendNotification);
+        // Patch mode: the overlay's toFront lifted it above the panel when the
+        // page was entered, so a newly shown panel re-lifts itself above it
+        // (the keyboard overlay stays under the panel either way).
+        if (settingsPanelHost_->isPanelShowing() && currentTopPage_ == 2)
+            settingsPanelHost_->toFront (false);
     };
     addAndMakeVisible (settingsButton_);
 
@@ -2799,12 +2945,38 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Click-to-play routes MIDI into the processor's MidiMessageCollector
     // (thread-safe); the timer mirrors sounding notes back as latch highlights.
     keyboardView_ = std::make_unique<KeyboardView>();
+    // Ableton-style settings feedback: every Z/X (octave) or C/V (velocity)
+    // change surfaces in the status/tooltip bar as a ~2.5 s transient (the
+    // same channel tap-to-assign uses), e.g. "Keyboard: octave C4–C6  ·  velocity 100".
+    // The initial prime from setSettingsChangedCallback is swallowed (a fresh
+    // instance shows nothing until the user actually changes something).
+    keyboardView_->setSettingsChangedCallback ([] (int base, int vel)
+    {
+        static bool primed = false;   // swallow the one initial-state report
+        if (! primed) { primed = true; return; }
+        ParamControl::postTransientStatus (
+            TRANS ("Keyboard: octave ") + midiNoteName (base) + "\u2013" + midiNoteName (base + 24)
+                + "  \u00b7  " + TRANS ("velocity") + " " + juce::String (vel),
+            75);   // ~2.5 s @ 30 Hz (rapid Z Z Z / V V V re-post one live readout)
+    });
     keyboardView_->setNoteCallback ([this] (int note, bool on, float vel) {
         int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
         if (ch == 0) ch = 1;   // Omni -> inject on channel 1
         const int status   = on ? (0x90 | ((ch - 1) & 0xf)) : (0x80 | ((ch - 1) & 0xf));
         const int velocity = on ? juce::jlimit (0, 127, juce::roundToInt (vel * 127.0f)) : 0;
         processorRef_.addMidiEvent (juce::MidiMessage (status, note, velocity));
+    });
+    // Continuous Y-position pressure -> CHANNEL PRESSURE (Aftertouch): moving
+    // a held finger up/down a key tracks AT live (SynthEngine::handleChannelPressure
+    // routes it per-voice to MOD_SRC_AFTERTOUCH). Fires on every drag move and
+    // with each strike; released notes are unaffected (their pressure simply
+    // stops updating — the engine holds the last value per voice, like a real
+    // channel-pressure stream).
+    keyboardView_->setPressureCallback ([this] (float pressure) {
+        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
+        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int value = juce::jlimit (0, 127, juce::roundToInt (pressure * 127.0f));
+        processorRef_.addMidiEvent (juce::MidiMessage::channelPressureChange (ch, value));
     });
     addAndMakeVisible (*keyboardView_);
     keyboardView_->refresh();
@@ -2822,6 +2994,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         if (ch == 0) ch = 1;   // Omni -> inject on channel 1
         const int mv = juce::jlimit (0, 127, juce::roundToInt (v * 127.0f));
         processorRef_.addMidiEvent (juce::MidiMessage::controllerEvent (ch, 1, mv));   // CC1 = mod wheel
+    };
+    // Octave [<][>] under the pitch wheel: drive the same Ableton-style octave
+    // shift as the Z/X keys. shiftOctave clamps at the MIDI edges, moves the
+    // visible window and fires the settings-changed tooltip readout.
+    wheels_->onOctaveShift = [this] (int steps)
+    {
+        if (keyboardView_ != nullptr)
+            keyboardView_->shiftOctave (steps * 12);
     };
     addAndMakeVisible (*wheels_);
     // Computer-keyboard (musical-typing) play is a STANDALONE-only affordance.
@@ -2923,6 +3103,15 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         settingsButton_.setToggleState (isShown, juce::dontSendNotification);
     };
     addAndMakeVisible (*settingsPanelHost_);
+
+    // ---- Chrome separator rules (LAST children => topmost): 1px hair-lines
+    //      5px below the header (end-to-end) and 5px above the status strip
+    //      (~95% width, centred). Positioned in resized() from the bands. See
+    //      ChromeRule for why these are components. ----
+    headerRule_ = std::make_unique<ChromeRule> (true);   // shadow falls below
+    statusRule_ = std::make_unique<ChromeRule> (false);  // shadow falls above
+    addAndMakeVisible (*headerRule_);
+    addAndMakeVisible (*statusRule_);
 
     // Refresh the Patch page (~30 Hz) so it tracks the edited part.
     startTimerHz (30);
@@ -3218,6 +3407,27 @@ void ParvatiEditor::timerCallback()
         // (Drained once at the top of this callback — transientStatus.)
         if (transientStatus.isNotEmpty())
             tip = transientStatus;
+
+        // Keyboard idle readout: when nothing else is showing and the pointer
+        // hovers the virtual keyboard (or its [KBD] toggle), display the
+        // CURRENT Ableton-style musical-typing settings (octave window +
+        // velocity) so they are discoverable without pressing Z/X/C/V first.
+        if (tip.isEmpty() && keyboardView_ != nullptr)
+        {
+            const auto rel = getMouseXYRelative();
+            for (auto* c = getComponentAt (rel); c != nullptr; c = c->getParentComponent())
+            {
+                if (c == keyboardView_.get() || c == wheels_.get() || c == &kbdToggleButton_)
+                {
+                    const int base = keyboardView_->qwertyOctaveBase();
+                    tip = TRANS ("Keyboard: octave ") + midiNoteName (base) + "\u2013"
+                            + midiNoteName (base + 24) + "  \u00b7  "
+                            + TRANS ("velocity") + " "
+                            + juce::String (keyboardView_->qwertyVelocity127());
+                    break;
+                }
+            }
+        }
         if (statusTooltipLabel_.getText() != tip)
             statusTooltipLabel_.setText (tip, juce::dontSendNotification);
     }
@@ -3368,11 +3578,23 @@ void ParvatiEditor::showTopPage (int idx)
         pageSelector_.setCurrentTabIndex (idx, false);
     if (patchPage_ != nullptr) patchPage_->setVisible (idx == 2);
 
-    // The full-page child covers the content area; bring it to the front (above
-    // the keyboard overlay). PatchPage::resized lays out its rows + hosts /
-    // reflows the globalPage_, so no reflow is needed here.
+    // The full-page child covers the content area; bring it to the front
+    // (above the keyboard overlay). PatchPage::resized lays out its rows + hosts /
+    // reflows the globalPage_, so no reflow is needed here. The keyboard overlay
+    // must stay visible in Patch mode too: after the Patch overlay is lifted, a
+    // [KBD]-on keyboard (+ wheels) is re-lifted above it, and a showing Settings
+    // side panel is re-lifted LAST so it still covers the keyboard
+    // (patchPage_->toFront raised it above everything, including the panel).
     if (idx == 2 && patchPage_ != nullptr)
+    {
         patchPage_->toFront (true);
+        if (keyboardView_ != nullptr && keyboardView_->isVisible())
+            keyboardView_->toFront (false);
+        if (wheels_ != nullptr && wheels_->isVisible())
+            wheels_->toFront (false);
+        if (settingsPanelHost_ != nullptr && settingsPanelHost_->isPanelShowing())
+            settingsPanelHost_->toFront (false);
+    }
 
     // Sync all three header page buttons to the active page.
     synthModeButton_.setToggleState (idx == 0, juce::dontSendNotification);
@@ -3581,7 +3803,8 @@ void ParvatiEditor::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
     // The whole UI (header included) is one flat windowBackground — no tinted
-    // band, no grey divider lines (borderless aesthetic).
+    // band. The chrome separators are ChromeRule CHILD components (the editor's
+    // own paint is overdrawn by the content children — see ChromeRule).
     g.fillAll (theme.backgroundBase);
 
     // Header logo cluster: [brand icon] [gap] [white "Parvati" text], painted
@@ -3638,9 +3861,18 @@ void ParvatiEditor::resized()
     }
 #endif
 
+#if ! JUCE_IOS
+    // Desktop (non-iPadOS): a little air between the window's top edge and
+    // the header. iPadOS already gets its safe-area top inset above; a
+    // borderless plugin window shows the header kissing the window frame
+    // otherwise.
+    area = area.withTrimmedTop (kDesktopTopPad);
+#endif
+
     // ---- Bottom status strip = LOWEST band: [n/denom] + tooltip bar ----
     {
-        auto strip = area.removeFromBottom (kVoiceStripH).reduced (6, 1);
+        statusBand_ = area.removeFromBottom (kVoiceStripH);
+        auto strip = statusBand_.reduced (6, 1);
         statusCountLabel_.setBounds (strip.removeFromLeft (48));
         statusLoadLabel_.setBounds (strip.removeFromLeft (96));
         statusTooltipLabel_.setBounds (strip);
@@ -3653,6 +3885,7 @@ void ParvatiEditor::resized()
 
     // ---- Header (36px row): [logo+version] (left) | Patch/Part menu (centre) | icons+[KBD] (right) ----
     auto header = area.removeFromTop (kHeaderH);
+    headerBand_ = header;   // geometry source for the headerRule_ separator
     // A kBarHeight-tall strip vertically centred in the 36px header holds every
     // header control (the logo block uses the same strip height).
     auto bar = header.withTrimmedTop ((kHeaderH - kBarHeight) / 2)
@@ -3733,11 +3966,20 @@ void ParvatiEditor::resized()
         fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
     }
 
+    // ---- Chrome-rule clearance: the separator rules (topmost ChromeRule
+    //      components) sit 5px below the header and 5px above the status
+    //      strip. The content area starts BELOW the header rule and stops
+    //      ABOVE the status rule (5 gap + 1 rule on each side), so nothing —
+    //      including the workspace's top-row scrollbar — starts above/behind
+    //      the rules, and the chrome reads as an evenly inset frame. ----
+    area = area.withTrimmedTop (kChromeRuleGap + 1)
+               .withTrimmedBottom (kChromeRuleGap + 1);
+
     // ---- Page selector [SYNTH] + integrated content (no void) ----
     // pageSelector_ (a single-tab TabbedComponent, bar hidden via depth 0) fills
     // the remaining area and sizes SYNTH (SynthWorkspace) into all of it — butted
-    // directly under the header. SynthWorkspace lays out its 3 columns + nested
-    // tab groups in its own resized().
+    // directly under the header rule's clearance. SynthWorkspace lays out its 3
+    // columns + nested tab groups in its own resized().
     pageSelector_.setBounds (area);
 
     // The Patch page overlay covers exactly the content area when toggled on.
@@ -3749,17 +3991,25 @@ void ParvatiEditor::resized()
     // ---- Keyboard OVERLAY: floats over the bottom of the content area ----
     // `area` is the full content rect (status strip + header already trimmed);
     // the workspace + overlays above were given ALL of it, so they keep their
-    // full height. The keyboard (incl. the pitch/mod wheels to its left) is now
+    // full height. The keyboard (incl. the pitch/mod wheels to its left) is
     // positioned absolutely over the bottom kKeyboardH pixels of that rect and
     // shown/hidden purely via setVisible() — toggling [KBD] never resizes the
-    // content above. Z-order: keyboardView_ is added AFTER pageSelector_ so it
-    // already paints above the workspace; the Patch overlay calls
-    // toFront() when shown so they cover the keyboard, and the Settings side
-    // panel (added last) stays above it too. No toFront() is called here so a
-    // resize while a modal is open never lifts the keyboard above it.
+    // content above. The strip is TALL (kKeyboardH == the workspace bottom-row
+    // cap), so [KBD]-on covers the ENTIRE bottom row — the active generator
+    // editor + the mod/FX matrix hide underneath it. Z-order: keyboardView_ is
+    // added AFTER pageSelector_ so it already paints above the workspace; the
+    // Patch overlay lifts itself toFront when shown and the keyboard overlay is
+    // then re-lifted above it (see showTopPage / the [KBD] toggle) so [KBD]
+    // stays visible in Patch mode. The Settings side panel (added last) stays
+    // above it too — showTopPage / the gear click re-lift it above the patch
+    // overlay. No toFront() is called here so a resize while a modal is open
+    // never lifts the keyboard above it.
     if (keyboardView_ != nullptr)
     {
-        constexpr int kWheelsW = 76;
+        // The wheels panel widens with the tall strip (was 76 at the flat
+        // 76px strip) so the pitch/mod wheel arcs stay proportionate at the
+        // full two-octave keyboard height.
+        constexpr int kWheelsW = 100;
         const bool kbdVisible = kbdToggleButton_.getToggleState();
         auto bottomStrip = area.withHeight (juce::jmin (kKeyboardH, area.getHeight()))
                                .withY (area.getBottom() - juce::jmin (kKeyboardH, area.getHeight()));
@@ -3769,6 +4019,23 @@ void ParvatiEditor::resized()
         keyboardView_->setVisible (kbdVisible);
         if (wheels_ != nullptr)
             wheels_->setVisible (kbdVisible);
+    }
+
+    // ---- Chrome separator rules (components; geometry from the bands):
+    //      LAST in resized() so the bands are final. Header rule: 1px rule +
+    //      a 5px depth falloff BELOW it (bounds include the shadow room);
+    //      status rule: 1px rule + a 5px falloff ABOVE it. The rules sit 5px
+    //      from their bands; the falloff extends into the already-reserved
+    //      kChromeRuleGap+1 content clearance, so nothing is overlapped. ----
+    if (headerRule_ != nullptr)
+        headerRule_->setBounds (headerBand_.getX(), headerBand_.getBottom() + kChromeRuleGap,
+                                headerBand_.getWidth(), 1 + kChromeShadowH);
+    if (statusRule_ != nullptr)
+    {
+        const int inset = juce::roundToInt (static_cast<float> (statusBand_.getWidth()) * 0.025f);
+        statusRule_->setBounds (statusBand_.getX() + inset,
+                                statusBand_.getY() - kChromeRuleGap - 1 - kChromeShadowH,
+                                statusBand_.getWidth() - 2 * inset, 1 + kChromeShadowH);
     }
 }
 

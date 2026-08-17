@@ -210,6 +210,15 @@ void FxWorkspace::paint (juce::Graphics& g)
     g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
+namespace
+{
+// Bottom-row cap: exactly 4 rows visible in the bottom-right matrix view -
+// 2*4 outer inset + 22 header + 4 gap + 4 first-row inset + 4 * (row + gap).
+// The rows scroll inside the view's own Viewport, so a longer routing list
+// stays reachable; the freed height goes to the top (synth/fx) row.
+constexpr int kBottomRowMaxH = 8 + 22 + 4 + 4 + 4 * (FxMatrixView::kRowHeight + 4);
+}
+
 void FxWorkspace::resized()
 {
     auto area = getLocalBounds();
@@ -217,31 +226,39 @@ void FxWorkspace::resized()
         return;
 
     // ---- 3 rows: TOP (slots) | MIDDLE (bar) | BOTTOM (generators | matrix) ----
-    // Mirrors SynthWorkspace: the bar is a fixed-height full-width seam; the
-    // remaining height splits between the top main row and the bottom row.
-    // The FX slot cards get slightly less of the remaining height (0.40 vs a
-    // symmetric 0.5) so each card is shorter and the freed height goes to the
-    // bottom (matrix + generator editor).
-    constexpr float kTopRatio = 0.40f;
-    // The bar seam COLLAPSES when hidden ([MOD] header toggle) — mirrored with
+    // The bottom row keeps the height it would have WITH the bar shown and is
+    // capped at kBottomRowMaxH (exactly 4 matrix rows + chrome); everything
+    // else - including the freed bar strip when [MOD] hides the seam - goes to
+    // the TOP row, so toggling the pill bar grows the fx section only (the
+    // matrix + generator-editor bottom section keeps its size). Mirrored with
     // SynthWorkspace so switching SYNTH<->FX never reflows on the difference.
+    constexpr float kBottomShare = 0.60f;
+    const int withBarH = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
+    const int bottomH = juce::jmin (juce::roundToInt (static_cast<float> (withBarH) * kBottomShare),
+                                    kBottomRowMaxH);
     const int barH = modBarVisible_ ? CentralModBar::kBarHeight : 0;
-    const int remaining = juce::jmax (0, area.getHeight() - barH);
-    const int mainH = juce::roundToInt (static_cast<float> (remaining) * kTopRatio);
+    const int mainH = juce::jmax (0, area.getHeight() - barH - bottomH);
 
     auto mainRow  = area.removeFromTop (mainH);
     auto barRow   = area.removeFromTop (barH);
-    auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
+    auto bottomRow = area;   // exactly bottomH (mainH consumes the rest)
 
     // ---- Upper region: 4 columns [ ROUTING | FX1 | FX2 | FX3 ] ----
-    // A slim ROUTING column (FLOW topology + MIX + master EQ) on the left, then
-    // three equal-width FX-slot cards. SPACIOUS layout (synth-page parity): a
-    // uniform kGap margin is taken off ALL FOUR sides of the top row AND placed
-    // between every column, so the borderless card panels sit in generous
-    // whitespace (page backgroundBase) instead of butting each other and the
-    // workspace edges — mirroring how the synth page's kMargin insets its
-    // GroupComponent cards. Each card gets the remaining height and sizes its
-    // knobs/visualizer internally.
+    // The ROUTING column (FLOW topology + MIX + master EQ) on the left, then
+    // three equal-width FX-slot cards. The routing column is sized for its
+    // flow diagram, not "slim": the [◀][diagram][▶] row costs 2x44pt steppers
+    // + 2x6pt bar padding, and the Series diagram needs midW >= 3x22pt blocks
+    // + 4x2pt gaps + IN 20 + OUT 26 + 8pt frame inset = 228pt of column —
+    // below that the blocks clamp to their 22pt floor and the last one juts
+    // into OUT (the "ruined diagram" look). The 232pt floor renders Series
+    // cleanly (22pt blocks, 3pt gaps); 19% grows it toward the comfortable
+    // 3x40pt-block layout, capped at 288pt. SPACIOUS layout (synth-page
+    // parity): a uniform kGap margin is taken off ALL FOUR sides of the top row
+    // AND placed between every column, so the borderless card panels sit in
+    // generous whitespace (page backgroundBase) instead of butting each other
+    // and the workspace edges — mirroring how the synth page's kMargin insets
+    // its GroupComponent cards. Each card gets the remaining height and sizes
+    // its knobs/visualizer internally.
     constexpr int kGap = 8;
     // R3: the top row's NATURAL height — the routing bar's stacked rows (flow
     // diagram 50 + EQ 60 + Dry/Wet band) need ~190px, and the FX-slot cards'
@@ -262,7 +279,11 @@ void FxWorkspace::resized()
     const int viewH = juce::jmax (kTopRowNaturalH, mainRow.getHeight());
     auto layoutTopRow = [&] (int w)
     {
-        const int routeW = juce::jlimit (176, 248, (w - 3 * kGap) * 16 / 100);
+        // 232pt floor = the diagram's no-overlap Series minimum (see the
+        // column comment above); 288pt cap keeps the cards roomy on wide
+        // frames. At the 1024pt editor floor: routeW 232 -> cards 768/3 = 256pt
+        // each (well above the ~200pt card comfort floor).
+        const int routeW = juce::jlimit (232, 288, (w - 3 * kGap) * 19 / 100);
         const int cardsRegionW = juce::jmax (0, w - routeW - 3 * kGap);
         const int cardW = cardsRegionW / 3;
 

@@ -16,17 +16,30 @@
 namespace
 {
 //==============================================================================
-// PowerToggle — the Enable/Bypass button. Draws the IEC 5009 power glyph (a
-// vertical bar rising into an open-topped arc) with juce::Path, so there is NO
-// unicode/font dependency (mirrors IconButton's glyph recipe). The glyph reads
-// accentSecondary (the orange FX/bypass accent) when the slot is ENABLED and
-// reads dimmed (textDisabled) when bypassed. Its toggle STATE is driven from the
-// fx{N}_enable APVTS Value by FxSlotCard; clicking flips that Value (handled by
-// the card's onClick), so this button does NOT toggle its own state on click.
+// PowerToggle — the Enable/Bypass button. Draws an INDICATOR DOT: a compact
+// bordered circle (~12pt) FILLED with accentSecondary (the FX accent) when
+// the slot is ENABLED and filled grey (textDisabled — the theme's "bypassed /
+// inactive" grey) when bypassed, with an outline-colour border ring that
+// brightens on hover (the tap affordance). Pure juce primitives
+// (fillEllipse/drawEllipse — no path, no unicode/font dependency). Its toggle
+// STATE is driven from the fx{N}_enable APVTS Value by FxSlotCard; clicking
+// flips that Value (handled by the card's onClick), so this button does NOT
+// toggle its own state on click.
 class PowerToggle : public juce::Button
 {
 public:
     PowerToggle() : juce::Button ({}) { setClickingTogglesState (false); }
+
+    // Pin the drawn LAMP to an explicit centre, as an offset from the button's
+    // TOP-LEFT (the hit area stays the FULL bounds). The header-left placement
+    // sizes the button as a 44x44 corner band whose centre falls mid-type-row;
+    // the lamp must instead align with the painted "FX N" title's optical
+    // middle (see FxSlotCard::resized). A negative x keeps the default:
+    // centred in the bounds.
+    void setLampCentreOffset (juce::Point<float> centreFromTopLeft)
+    {
+        lampCentre_ = centreFromTopLeft;
+    }
 
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
@@ -36,52 +49,50 @@ public:
 
         const juce::Colour accent = t ? t->accentSecondary : parvati::parvatiFallbackAccent;
         const juce::Colour text   = t ? t->textPrimary     : juce::Colour (0xffe8e8ee);
-        const juce::Colour dim    = t ? t->textDisabled    : text.withAlpha (0.35f);
+        const juce::Colour grey   = t ? t->textDisabled    : juce::Colour (0xff6b7280);
+        const juce::Colour ring   = t ? t->outline         : text.withAlpha (0.45f);
 
-        juce::Colour c = (getToggleState() || isButtonDown) ? accent : dim;
-        if (! getToggleState() && isMouseOverButton)
-            c = text.brighter (0.20f);
+        const bool on = getToggleState() || isButtonDown;
+
+        // Fill: accent lamp when enabled, the theme's inactive grey when
+        // bypassed (visible on every theme — dark: mid grey, light: warm grey).
+        juce::Colour fill = on ? accent : grey;
         if (! isEnabled())
-            c = text.withAlpha (0.25f);
+            fill = fill.withAlpha (0.25f);
 
-        g.setColour (c);
+        // Border ring: the panel outline colour, brightened on hover so the
+        // dot reads as tappable (the only hover affordance; no behaviour
+        // change — the click wiring is the card's onClick).
+        juce::Colour border = ring;
+        if (isMouseOverButton)
+            border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
+        if (! isEnabled())
+            border = ring.withAlpha (0.30f);
 
-        // ---- Glyph pinning: the drawn power glyph is NOT scaled from the
-        // button bounds. The button's HIT area is a 44x44 card corner (HIG #1
-        // — see FxSlotCard::resized()), but the icon itself is pinned to a
-        // small fixed rect at the button's top-right corner — its original
-        // 10x12 header-band spot — so growing the tappable region leaves the
-        // desktop look byte-identical. (Clamped into bounds for degenerate
-        // button sizes, e.g. unplaced cards in tests.) ----
+        // ---- Dot pinning: the drawn circle is a compact ~12pt lamp centred on
+        // the pinned lampCentre_ (default: the bounds centre), so the button's
+        // HIT area can be the full 44x44 card-corner band (HIG #1 — see
+        // FxSlotCard::resized()) while the lamp reads as a small status
+        // indicator next to the title, not a button face. (Clamped into the
+        // bounds for degenerate button sizes, e.g. unplaced cards in tests.) ----
         const auto b = getLocalBounds().toFloat();
-        const float bw = b.getWidth();
-        const float bh = b.getHeight();
-        const auto r = juce::Rectangle<float> (juce::jmax (0.0f, bw - 18.0f),
-                                              juce::jlimit (0.0f, juce::jmax (0.0f, bh - 12.0f), 8.0f),
-                                              juce::jmin (10.0f, bw),
-                                              juce::jmin (12.0f, bh));
-        const auto c2 = r.getCentre();
-        const float rad = juce::jmin (r.getWidth(), r.getHeight()) * 0.42f;
+        const float dot = juce::jlimit (5.0f, 12.0f,
+                                        juce::jmin (b.getWidth(), b.getHeight()) * 0.45f);
+        const auto centre = lampCentre_.x >= 0.0f
+            ? juce::Point<float> (juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getWidth() - dot * 0.5f), lampCentre_.x),
+                                  juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getHeight() - dot * 0.5f), lampCentre_.y))
+            : b.getCentre();
+        const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
 
-        // Open-topped arc (~270 deg, gap at the top): two quadratic beziers that
-        // leave a vertical slit through which the central bar rises.
-        const float leftX  = c2.x - rad * 0.92f;
-        const float rightX = c2.x + rad * 0.92f;
-        const float topY   = c2.y - rad * 1.15f;
-        const float botY   = c2.y + rad * 1.05f;
-
-        juce::Path arc;
-        arc.startNewSubPath (leftX, botY);
-        arc.quadraticTo (c2.x - rad * 1.30f, c2.y, leftX, topY);          // lower-left -> upper-left
-        arc.startNewSubPath (rightX, botY);
-        arc.quadraticTo (c2.x + rad * 1.30f, c2.y, rightX, topY);         // lower-right -> upper-right
-        g.strokePath (arc, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved));
-
-        // Central vertical bar from the centre up to the top of the arc slit.
-        g.drawLine (juce::Line<float> (c2.x, c2.y + rad * 0.35f, c2.x, topY), 2.2f);
+        g.setColour (fill);
+        g.fillEllipse (r);
+        g.setColour (border);
+        g.drawEllipse (r, 1.5f);
     }
 
 private:
+    juce::Point<float> lampCentre_ { -1.0f, -1.0f };   // <0 x => centre in bounds
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PowerToggle)
 };
 
@@ -242,6 +253,16 @@ constexpr int kVisMax      = 30;     // visualizer band cap (compact — shorter
 constexpr float kBypassedAlpha = 0.5f;
 constexpr float kCorner        = 7.0f; // card panel corner radius (synth GroupComponent parity)
 
+// Header-left LAMP geometry (the enable indicator dot beside the "FX N"
+// title): a 12pt dot whose centre sits on the title band's optical middle
+// (kPad + kHeaderH/2 vertically) and kPad in from the left edge horizontally.
+// The toggle's hit band is the 44pt-wide HEADER band (44 x kPad+kHeaderH) —
+// see FxSlotCard::resized().
+constexpr float kLampDotW  = 12.0f;                              // lamp diameter
+constexpr float kLampCx    = static_cast<float> (kPad) + kLampDotW * 0.5f;   // 12
+constexpr float kLampCy    = static_cast<float> (kPad) + static_cast<float> (kHeaderH) * 0.5f;   // title optical middle
+constexpr int   kLampTitleGap = 5;   // lamp -> title gap
+
 // Fit-to-text width of a ComboBox's longest item, measured in the active
 // LookAndFeel combo font (mirrors ParamControl::maxChoiceTextWidth) so the FX
 // type dropdown sizes itself exactly like the Osc "Shape" / Filter "Mode"
@@ -329,6 +350,9 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     typeNext_->onClick = [this] { stepType (+1); };
 
     // ---- Power/bypass toggle (bound to the 0..1 enable Int via a Value) ----
+    // Drawn as the header-left LAMP beside the "FX N" title (see resized());
+    // disabled wholesale for a None slot (refreshEnabled) — None IS the
+    // disabled state.
     powerToggle_ = std::make_unique<PowerToggle> ();
     powerToggle_->setTooltip ("FX " + juce::String (slot_ + 1) + " enable / bypass");
     addAndMakeVisible (*powerToggle_);
@@ -437,14 +461,27 @@ void FxSlotCard::refreshEnabled()
     // Read the LIVE enable value (0..1 Int param).
     auto* p = processor_.getApvts ().getParameter (prefix_ + "enabled");
     const bool on = (p != nullptr ? juce::roundToInt (p->getValue ()) : 0) != 0;
+    const bool none = static_cast<FxType> (currentTypeIndex ()) == FxType::None;
     if (powerToggle_ != nullptr)
+    {
         powerToggle_->setToggleState (on, juce::dontSendNotification);
+        // NONE IS the disabled state — the slot processes nothing by
+        // definition, so "bypassing" it is a no-op that would only dirty the
+        // enabled param in the patch. The toggle therefore goes
+        // NON-INTERACTIVE for a None slot (juce disabled buttons receive no
+        // mouse events, so onClick never fires) and its dot paints the
+        // disabled look (grey + alpha — see paintButton). Nothing is WRITTEN
+        // to the enabled param here: a None slot's enabled byte is already
+        // semantically moot. Re-enabled the moment a real type is selected
+        // (handleAsyncUpdate runs this on every type change).
+        powerToggle_->setEnabled (! none);
+    }
 
     // Bypass affordance: recess the LIVE controls (knobs + visualizer + type
     // combo) when the slot is bypassed, so a disabled slot reads as inactive at a
     // glance — without it a bypassed slot's knobs stay full-brightness and look
-    // live. NON-colour (alpha only): the panel / title / power glyph keep full
-    // alpha so the bypass state + slot identity stay legible. setAlpha is
+    // live. NON-colour (alpha only): the panel / title / power indicator dot keep
+    // full alpha so the bypass state + slot identity stay legible. setAlpha is
     // compositing-only (it does NOT disable interaction), so the values remain
     // editable even while bypassed.
     const float contentAlpha = on ? 1.0f : kBypassedAlpha;
@@ -580,21 +617,37 @@ void FxSlotCard::resized()
     if (area.isEmpty())
         return;
 
-    // ---- Header row: title (upper-left, painted) + power toggle (top-right).
+    // ---- Header row: power lamp (top-left) + title (painted, follows it).
     //      The toggle is the ONLY per-slot enable/bypass control, and the old
     //      16px header strip left it a ~10x12pt hit rect — reliably missed by a
-    //      fingertip. Its HIT area is now the full 44x44 card corner (HIG #1);
-    //      paintButton pins the small glyph to its original header-corner spot
-    //      so the visual result is unchanged — only the tappable region grows.
-    //      The band laps over the top of the type row's right margin, so the
-    //      combo is re-fronted below: a wide, row-filling combo keeps its own
-    //      top-right corner taps, and the toggle keeps everything else. ----
-    // (The remaining header band is the title, painted in paint() — no child.)
+    //      fingertip. Its HIT area is the card's full header band
+    //      (44 x (kPad + kHeaderH) = 44x22 at the card's TOP-LEFT; full 44pt
+    //      HIG WIDTH, height clamped to the header so it never laps into the
+    //      type row) so the lamp it draws sits NEXT TO the "FX N" title
+    //      (header reads [lamp][FX1]); the ~12pt dot is pinned
+    //      onto the title band's optical middle via setLampCentreOffset, so
+    //      the tappable region never moves the lamp away from the title.
+    //      (The earlier 44x44 corner-lap trick reached down over the type
+    //      row's left edge — with the combo now HORIZONTALLY CENTRED that lap
+    //      overlaps it at the narrow floor (layout-overlap gate at 800x400);
+    //      the band is header-only now, which removes the overlap at every
+    //      width by construction while the combo stays exactly centred.) ----
     area.removeFromTop (kHeaderH);
     if (powerToggle_ != nullptr)
     {
-        const int hit = juce::jmin (kPowerHitSize, getWidth(), getHeight());
-        powerToggle_->setBounds (getLocalBounds().removeFromTop (hit).removeFromRight (hit));
+        // 44pt-wide HIG target, height = the header band (kPad + kHeaderH;
+        // stops at the header divider — the type row below starts at
+        // kPad + kHeaderH + kHalfGap, so the two never intersect).
+        const int hitW = juce::jmin (kPowerHitSize, getWidth ());
+        const int hitH = juce::jmin (kPad + kHeaderH, getHeight ());
+        powerToggle_->setBounds (getLocalBounds ().removeFromTop (hitH).removeFromLeft (hitW));
+        // The lamp is pinned to the title band's optical middle
+        // (kLampCx/kLampCy are relative to the card's top-left == the band's
+        // top-left). powerToggle_ is declared as its juce::Button base in the
+        // header (PowerToggle is file-local), so downcast to the concrete
+        // type we constructed.
+        if (auto* lamp = static_cast<PowerToggle*> (powerToggle_.get ()))
+            lamp->setLampCentreOffset ({ kLampCx, kLampCy });
     }
 
     if (area.isEmpty())
@@ -602,33 +655,32 @@ void FxSlotCard::resized()
     area.removeFromTop (kHalfGap);   // gap below the header divider
 
     // ---- Type row: the algorithm dropdown as a STYLED combo (Osc "Shape" /
-    //      Filter "Mode" parity) — 28px tall, fit-to-text width, centred. The
-    //      combo already inherits the editor-wide ComboBox theme colours
-    //      (backgroundInput fill, amber accentPrimary chevron, borderless) via
-    //      the LookAndFeel — identical to the synth selectors — so only the SIZE
-    //      is set here (was previously full-width / 20px). ----
+    //      Filter "Mode" parity) — fit-to-text width, HORIZONTALLY CENTRED in
+    //      the card width. The combo already inherits the editor-wide ComboBox
+    //      theme colours (backgroundInput fill, amber accentPrimary chevron,
+    //      borderless) via the LookAndFeel — identical to the synth selectors
+    //      — so only the SIZE + position are set here. ----
     if (typeCombo_ != nullptr && area.getHeight() > kTypeRowH)
     {
         auto typeRow = area.removeFromTop (kTypeRowH);
-        // R3: the power toggle's 44x44 corner hit band laps the type row's
-        // right edge — RESERVE that span instead of letting the centred combo
-        // overlap it (the combo shrinks/left-centres in the remaining width;
-        // wide cards are unaffected). The toFront below stays as a belt-and-
-        // braces guard only.
-        auto avail = typeRow;
-        if (powerToggle_ != nullptr)
-            avail.removeFromRight (juce::jmin (kPowerHitSize, avail.getWidth() / 2));
+        // CENTRED IN THE FULL ROW: the old code trimmed the power toggle's
+        // corner band off the RIGHT before centring, which shifted the combo
+        // left of centre by half the band — the "dropdown looks off-centre"
+        // report. The toggle band is HEADER-ONLY now (44x22, ends at the
+        // header divider ~2px above this row), so a centred fit-to-text combo
+        // can never intersect it at any card width.
         const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
-        const int comboW = juce::jmin (avail.getWidth(),
-                                       juce::jlimit (kComboMinW, juce::jmax (kComboMinW, avail.getWidth()), textW));
+        const int comboW = juce::jmin (typeRow.getWidth (),
+                                       juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth ()), textW));
         // The whole algorithm selector is ONE 44pt-tall tap target that opens
-        // the effect picker. Centred, fit-to-text width; the 44pt combo fills
-        // the 44pt row. (The prev/next chevrons are not placed.)
-        const int comboX = avail.getX() + (avail.getWidth() - comboW) / 2;
-        typeCombo_->setBounds (comboX, typeRow.getY(), comboW, kComboH);
-        // Keep the combo ABOVE the power toggle's 44x44 corner hit band (see
-        // the header comment above): hit-testing walks siblings front-first,
-        // so the combo wins wherever the two overlap.
+        // the effect picker. Centred in the card width, fit-to-text width;
+        // the 44pt combo fills the 44pt row. (The prev/next chevrons are not
+        // placed.)
+        const int comboX = typeRow.getX () + (typeRow.getWidth () - comboW) / 2;
+        typeCombo_->setBounds (comboX, typeRow.getY (), comboW, kComboH);
+        // Defensive z-order guard: hit-testing walks siblings front-first, so
+        // the combo wins any future overlap (none exists with the
+        // header-only band above).
         typeCombo_->toFront (false);
         area.removeFromTop (kHalfGap);
     }
@@ -686,7 +738,6 @@ void FxSlotCard::paint (juce::Graphics& g)
 
     const juce::Colour panel   = t ? t->containerFill   : juce::Colour (0xff202028);
     const juce::Colour title   = t ? t->textSecondary   : juce::Colour (0xffb0b0bc);
-    const juce::Colour accent  = t ? t->accentSecondary : parvati::parvatiFallbackAccent;
 
     const auto r = getLocalBounds ().toFloat ();
 
@@ -696,22 +747,20 @@ void FxSlotCard::paint (juce::Graphics& g)
     g.setColour (panel);
     g.fillRoundedRectangle (r, kCorner);
 
-    // ---- Title "FX N" upper-left: BOLD + UPPERCASE (14px), mirroring the synth
-    //      card GroupComponent header. An accent tick sits just left of the text
-    //      (the FX-slot accent marker); the power toggle lives top-right. ----
+    // ---- Title "FX N" header: LAMP (top-left, drawn by the PowerToggle
+    //      child) + title text following it — the header reads [lamp][FX1]
+    //      left-to-right. BOLD + UPPERCASE (14px), mirroring the synth card
+    //      GroupComponent header. ----
     juce::Font font = lnf != nullptr ? lnf->appFont (14.0f, juce::Font::bold)
                                     : juce::Font (juce::FontOptions (14.0f, juce::Font::bold));
     const juce::String name = "FX" + juce::String (slot_ + 1);   // "FX1" (uppercase)
-    const int tickX  = kPad + 2;
-    const int titleX = tickX + 6;
+    // kLampTitleGap right of the 12pt lamp sits the title text. (The old
+    // accent tick between the lamp and the title went away with the lamp
+    // redesign — one indicator glyph per header is enough.)
+    const int titleX = kPad + static_cast<int> (kLampDotW) + kLampTitleGap;
     const int titleW = juce::jmax (0, getWidth() - titleX - kPad);
     const juce::Rectangle<int> titleRect (titleX, kPad, titleW, kHeaderH);
 
-    g.setColour (accent);
-    g.fillRoundedRectangle (juce::Rectangle<float> (static_cast<float> (tickX),
-                                                    static_cast<float> (kPad + 6),
-                                                    2.5f, static_cast<float> (kHeaderH - 12)),
-                            1.2f);
     g.setColour (title);
     g.setFont (font);
     g.drawText (name, titleRect, juce::Justification::centredLeft, true);

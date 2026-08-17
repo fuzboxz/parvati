@@ -181,9 +181,11 @@ public:
             voicesCaption_.setBounds (col.removeFromTop (12));
             voicesCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
-        // Ch
+        // Ch (68pt: the widest item "Omni" + the combo's dropdown-arrow
+        // reserve at 13pt text needs ~64pt — 56 truncated it; the row still
+        // consumes ~712pt, well inside the 1024 floor)
         {
-            auto col = b.removeFromLeft (56);
+            auto col = b.removeFromLeft (68);
             chCaption_.setBounds (col.removeFromTop (12));
             channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
@@ -210,11 +212,11 @@ public:
             tuneCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         b.removeFromLeft (8);
-        // Poly (remaining width)
+        // Poly (sized to the dropdown width - no longer the row tail)
         {
-            auto col = b;
+            auto col = b.removeFromLeft (juce::jmin (140, b.getWidth()));
             polyCaption_.setBounds (col.removeFromTop (12));
-            polyCombo_.setBounds (col.withSizeKeepingCentre (juce::jmin (140, col.getWidth()), juce::jmin (44, col.getHeight())));
+            polyCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
     }
 
@@ -501,9 +503,49 @@ private:
 };
 
 //==============================================================================
+// The 6-part voice-allocation table: a plain container that PARENTS the six
+// PartRows (PatchPage keeps owning them via rows_) and lays them out exactly
+// as the old layoutScrollBody did — 6 rows of height 56 with 4px gaps, a 4px
+// inset so the rows sit inside the hosting Global panel's border. The panel
+// itself is attached into the HOSTED ParamPage's "Global" group as an
+// EXTERNAL decoration (hostParamPage), so the table renders inside that
+// bordered panel, below the global knobs and the voice meter. It paints
+// nothing (the owning group panel's theme background shows through).
+class PatchPage::PartTablePanel : public juce::Component
+{
+public:
+    explicit PartTablePanel (PatchPage& owner) : owner_ (owner) {}
+
+    // Natural panel height: 4px top inset + 6 rows x 56 + 5 gaps x 4 + 4px
+    // bottom inset. The reserved external-decoration height the hosted page
+    // uses for the group's layout (see hostParamPage).
+    static constexpr int kTableH = 4 + 6 * 56 + 5 * 4 + 4;
+
+    void resized() override
+    {
+        constexpr int rowH = 56;
+        constexpr int rowGap = 4;
+        constexpr int inset = 4;
+        auto b = getLocalBounds().reduced (inset, inset);
+        for (int i = 0; i < kNumParts; ++i)
+        {
+            // rows_ is PatchPage-private; a nested class has access.
+            owner_.rows_[ (size_t) i]->setBounds (b.removeFromTop (rowH));
+            b.removeFromTop (rowGap);
+        }
+    }
+
+private:
+    PatchPage& owner_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PartTablePanel)
+};
+
+//==============================================================================
 PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
     : proc_ (processor), themeManager_ (themeManager),
-      scrollBody_ (std::make_unique<ScrollBody> (*this))
+      scrollBody_ (std::make_unique<ScrollBody> (*this)),
+      tablePanel_ (std::make_unique<PartTablePanel> (*this))
 {
     heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
     heading_.setJustificationType (juce::Justification::centredLeft);
@@ -528,12 +570,16 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     for (int i = 0; i < kNumParts; ++i)
     {
         rows_[ (size_t) i] = std::make_unique<PartRow> (*this, i);
-        scrollBody_->addAndMakeVisible (*rows_[ (size_t) i]);
+        // The rows live inside the table panel (their layout lives in its
+        // resized()); the panel is attached into the hosted page's Global
+        // group in hostParamPage.
+        tablePanel_->addAndMakeVisible (*rows_[ (size_t) i]);
     }
 
     // ---- Global voice-pool view: the whole-patch picture lives ONLY here
-    // (the Global page's VoiceMeter is part-relative). Below the 6 part rows,
-    // above the hosted Global ParamPage — right where parts are configured.
+    // (the Global page's VoiceMeter is part-relative). Below the hosted Global
+    // ParamPage (bottom of the scrolled body; the part rows live INSIDE that
+    // page's Global panel) — right where parts are configured.
     // The provider is injected by the editor (setVoicePoolProvider), so the
     // view stays engine-decoupled exactly like the meter.
     voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
@@ -687,15 +733,18 @@ void PatchPage::openTuningEditor (int part)
 
 void PatchPage::updateVoicesTotal()
 {
-    // Pool budget: the sum of the per-part ALLOCATED counts. voiceCount_ is
-    // the audio-thread-published snapshot (rebuildVoiceAllocation), so after a
-    // voice-count edit the label settles on the next process block — the same
-    // freshness as the status-strip denominator, and never a lie about the
-    // ACTUAL allocation (a message-thread re-derivation would miss CHAIN's
-    // doubled voice sets).
+    // Pool budget: the sum of the per-part ASSIGNED slots (getPartVoiceSlots)
+    // — the user-configured counts the rows below this label edit, read
+    // immediately on the message thread. The old basis (the
+    // audio-thread-published voiceCount_ snapshot) was wrong for this readout:
+    // it lagged a fresh slots edit until the next process block (so a part
+    // lowered to 1 kept reading 16) and reflected CHAIN's doubled voice sets,
+    // so the label disagreed with the rows. Assigned slots are the honest
+    // "how big is my patch" number: one active part with 1 voice reads
+    // "Voices 1/96".
     int voices = 0;
     for (int p = 0; p < kNumParts; ++p)
-        voices += proc_.getEngine().getPart (p).voiceCount_.load();
+        voices += proc_.getEngine().getPartVoiceSlots (p);
     voicesTotalLabel_.setText (TRANS ("Voices") + " " + juce::String (voices) + "/"
                                    + juce::String (kNumVoices),
                                juce::dontSendNotification);
@@ -763,34 +812,40 @@ void PatchPage::layoutScrollBody()
         return;
 
     // Lay the body out at the given width; returns the natural height used
-    // (rows first, then the hosted page reflowed to the same width — exactly
-    // the old direct layout, just expressed in the body's local coordinates).
+    // (the hosted patch-wide ParamPage — whose Global panel CONTAINS the
+    // 6-part voice-allocation table as an external decoration — then the
+    // voice-pool view at the bottom, just expressed in the body's local
+    // coordinates).
     auto layoutAtWidth = [this] (int cw)
     {
-        constexpr int rowH = 56;
-        constexpr int rowGap = 4;
         int y = 0;
-        for (int i = 0; i < kNumParts; ++i)
+        // Hosted patch-wide ParamPage (Part/Play + Global panels with the
+        // merged allocation table) FIRST — the page-top position keeps the
+        // patch-wide controls immediately visible; the voice-pool view follows
+        // below. The part rows are laid out by tablePanel_'s resized() (the
+        // table is INSIDE the hosted page), so nothing but the page bounds
+        // happens here.
+        if (hostedParamPage_ != nullptr)
         {
-            rows_[ (size_t) i]->setBounds (0, y, cw, rowH);
-            y += rowH + rowGap;
+            // -1 = NATURAL-HEIGHT reflow: the hosted page is sized to its
+            // wrapped content only. With 0 the reflow falls back to THIS
+            // page's scroll Viewport height and stretches the hosted page to
+            // fill it — a big void below the Global panel.
+            hostedParamPage_->reflowToWidth (juce::jmax (200, cw), -1);
+            hostedParamPage_->setBounds (0, y, cw,
+                                         juce::jmax (200, hostedParamPage_->getContentHeight()));
+            y += hostedParamPage_->getHeight();
+            y += 10;   // gap below the hosted page, before the voice-pool view
         }
-        // Global voice-pool view: caption + the compact 6-part grid. The view
-        // sizes itself to its FIXED height (its rows/geometry are fixed; only
-        // the width is elastic), so it never destabilises the body height.
-        y += 10;   // gap below the part rows
+        // Global voice-pool view: caption + the compact 6-part grid — LAST in
+        // the body (below the hosted page with its merged allocation table).
+        // The view sizes itself to its FIXED height (its rows/geometry are
+        // fixed; only the width is elastic), so it never destabilises the
+        // body height.
         voicePoolCaption_.setBounds (0, y, cw, 16);
         y += 18;
         voicePoolView_->setBounds (0, y, cw, VoicePoolView::kHeight);
         y += VoicePoolView::kHeight;
-        if (hostedParamPage_ != nullptr)
-        {
-            y += 8;   // breathing room below the last row
-            hostedParamPage_->reflowToWidth (juce::jmax (200, cw), 0);
-            hostedParamPage_->setBounds (0, y, cw,
-                                         juce::jmax (200, hostedParamPage_->getContentHeight()));
-            y += hostedParamPage_->getHeight();
-        }
         return y;
     };
 
@@ -816,9 +871,23 @@ void PatchPage::hostParamPage (juce::Component* paramPage)
 {
     hostedParamPage_ = dynamic_cast<ParamPage*> (paramPage);
     // The hosted page lives INSIDE the scrolled body so it scrolls together
-    // with the rows (T4). Editor retains ownership; reparent only.
+    // with the voice-pool view (T4). Editor retains ownership; reparent only.
     if (hostedParamPage_ != nullptr)
+    {
         scrollBody_->addAndMakeVisible (hostedParamPage_);
+        // END STATE: the hosted page renders [Part / Play panel] then [Global
+        // panel: 3 global knobs + the VoiceMeter strip + the 6-part
+        // voice-allocation table], followed by this page's voice-pool view —
+        // ONE bordered Global section holding the allocation table. The table
+        // rides the page's EXTERNAL decoration slot (non-owning):
+        // PatchPage keeps owning tablePanel_ (which parents the rows); the
+        // page only parents + positions it. Contract: tablePanel_ must
+        // outlive the hosted page, or no relayout may run after this page
+        // dies (JUCE removes the child cleanly on destruction, so teardown
+        // itself is safe in any order).
+        hostedParamPage_->setGroupExternalDecoration ("Global", tablePanel_.get (),
+                                                      PartTablePanel::kTableH);
+    }
     resized();
 }
 

@@ -222,6 +222,15 @@ void SynthWorkspace::paint (juce::Graphics& g)
     g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
+namespace
+{
+// Bottom-row cap: exactly 4 rows visible in the bottom-right matrix view -
+// 2*4 outer inset + 22 header + 4 gap + 4 first-row inset + 4 * (row + gap).
+// The rows scroll inside the view's own Viewport, so a longer routing list
+// stays reachable; the freed height goes to the top (synth/fx) row.
+constexpr int kBottomRowMaxH = 8 + 22 + 4 + 4 + 4 * (ModMatrixView::kRowHeight + 4);
+}
+
 void SynthWorkspace::resized()
 {
     auto area = getLocalBounds();
@@ -229,20 +238,24 @@ void SynthWorkspace::resized()
         return;
 
     // ---- 3 rows: TOP (main) | MIDDLE (bar) | BOTTOM (generators | matrix) ----
-    // The bar is a fixed-height full-width seam; the remaining height splits
-    // evenly between the top main row and the bottom row (as the prior 50/50).
-    // The seam COLLAPSES when the bar is hidden ([MOD] header toggle): its
-    // height joins `remaining`, so hiding the pill bar hands the full strip
-    // back to the content rows (the pill bar is a power-user surface, not a
-    // requirement — modulation is also reachable via the Mod Matrix rows and
-    // tap-to-assign).
+    // The bottom row keeps the height it would have WITH the bar shown and is
+    // capped at kBottomRowMaxH (exactly 4 matrix rows + chrome); everything
+    // else - including the freed bar strip when [MOD] hides the seam - goes to
+    // the TOP row, so toggling the pill bar grows the synth section only (the
+    // envelope/matrix bottom section keeps its size). Mirrored by FxWorkspace
+    // so SYNTH<->FX never reflows on the difference. (The pill bar is a
+    // power-user surface, not a requirement — modulation is also reachable via
+    // the Mod Matrix rows and tap-to-assign.)
+    constexpr float kBottomShare = 0.60f;
+    const int withBarH = juce::jmax (0, area.getHeight() - CentralModBar::kBarHeight);
+    const int bottomH = juce::jmin (juce::roundToInt (static_cast<float> (withBarH) * kBottomShare),
+                                    kBottomRowMaxH);
     const int barH = modBarVisible_ ? CentralModBar::kBarHeight : 0;
-    const int remaining = juce::jmax (0, area.getHeight() - barH);
-    const int mainH = juce::roundToInt (static_cast<float> (remaining) * 0.40f);   // match FxWorkspace so SYNTH<->FX doesn't reflow
+    const int mainH = juce::jmax (0, area.getHeight() - barH - bottomH);
 
     auto mainRow  = area.removeFromTop (mainH);
     auto barRow   = area.removeFromTop (barH);
-    auto bottomRow = area;   // remaining (mainH or mainH + 1px remainder)
+    auto bottomRow = area;   // exactly bottomH (mainH consumes the rest)
 
     // ---- Main row columns: OSCILLATORS 40% | MIXER 20% | FILTER 40% ----
     // The columns live inside topRowHost_ (viewed by topRowViewport_): each

@@ -5,14 +5,15 @@
 // owns the per-slot effect's entire control surface, replacing the prior
 // generic ParamPage knob grid with a structured modular layout:
 //
-//   HEADER  (~16px):  FX N (upper-left, bold uppercase 14px — synth GroupComponent
-//       header parity) + a compact power/bypass toggle in the TOP-RIGHT corner.
-//       The toggle's HIT area is the full 44x44 card corner (kPowerHitSize, the
-//       HIG touch minimum) while its glyph stays pinned to the small header spot,
-//       so the look is unchanged and only the tappable region grows. The
-//       Enable/Bypass control is a POWER toggle button (the IEC glyph), NOT a
-//       rotary knob: it reads accentSecondary (orange) when the slot is enabled
-//       and dimmed when bypassed.
+//   HEADER  (~16px):  a compact enable/bypass LAMP (top-LEFT, next to the
+//       title) + FX N (bold uppercase 14px — synth GroupComponent header
+//       parity). The toggle's HIT area is the full 44x44 card corner
+//       (kPowerHitSize, the HIG touch minimum) while its ~12pt bordered dot
+//       stays pinned to the title band, so the look is a small status lamp
+//       and only the tappable region is large. The dot reads accentSecondary
+//       (orange) filled when the slot is enabled, grey when bypassed, and the
+//       disabled look (grey + alpha) when the type is None (not toggleable —
+//       None IS the disabled state).
 //   ROW 1  (~28px):  the fx{N}_type juce::ComboBox (the algorithm selector,
 //       auto-populated with the effect list) sized as a STYLED combo — 28px
 //       tall, fit-to-text width, centred — matching the Osc "Shape" / Filter

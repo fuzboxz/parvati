@@ -6,6 +6,12 @@
 // stays where dropped. Themed via the inherited ParvatiLookAndFeel (read in
 // paint()). The editor wires onPitch / onMod to the engine as MIDI pitch-bend
 // / CC1 (mod wheel) on the current Part's channel.
+//
+// Under the PITCH wheel (left column, above the caption strip) sits a compact
+// [<][>] octave-switch row mirroring the Z/X musical-typing keys: it fires
+// onOctaveShift(+/-1) (octave steps), which the editor routes into
+// KeyboardView::shiftOctave (clamped at the MIDI edges; the visible piano
+// window follows and the settings-changed tooltip readout fires).
 
 #pragma once
 
@@ -23,6 +29,10 @@ public:
     std::function<void (float)> onPitch;
     /** Mod-wheel value, 0.0 .. 1.0. Fired on drag. */
     std::function<void (float)> onMod;
+    /** Octave-switch request from the [<][>] buttons: @p steps is +/-1 octave
+        (the buttons are unit steps; the editor multiplies by 12 semitones for
+        KeyboardView::shiftOctave). Fired on click. */
+    std::function<void (int)> onOctaveShift;
 
     WheelsComponent();
     ~WheelsComponent() override;
@@ -47,6 +57,12 @@ private:
     // strip initiates the assignment drag. Concrete type is file-local in the .cpp.
     std::unique_ptr<juce::Component> pitchDrag_;
     std::unique_ptr<juce::Component> modDrag_;
+
+    // [<][>] octave switch under the pitch wheel (see onOctaveShift). Plain
+    // themed TextButtons — no custom painting (ParvatiLookAndFeel styles them
+    // like every other button in the chrome).
+    std::unique_ptr<juce::TextButton> octaveDown_;
+    std::unique_ptr<juce::TextButton> octaveUp_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WheelsComponent)
 };

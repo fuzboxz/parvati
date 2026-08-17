@@ -22,6 +22,7 @@
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
 #include "ui/KeyboardView.h"
+#include "ui/NoteName.h"       // midiNoteName (keyboard-settings tooltip)
 #include "ui/ModDestMap.h"
 #include "ui/ModMatrixView.h"
 #include "ui/WheelsComponent.h"
@@ -397,6 +398,23 @@ public:
     // new height takes effect immediately. No-op if @p groupName is unknown.
     void setGroupDecorationHeight (const juce::String& groupName, int height);
 
+    // Attach an EXTERNAL (non-owned) decoration component to a named group
+    // panel: laid out below the group's owned decoration (if any), spanning
+    // the panel width, with @p height reserved in the group's computed size.
+    // setGroupDecoration is single-slot per group (GroupLayout::decoration),
+    // so a second, caller-owned component (e.g. the Patch page's 6-part
+    // voice-allocation table merged into the Global panel) rides THIS slot.
+    // LIFETIME CONTRACT: the caller keeps ownership and must outlive this page
+    // (or guarantee no relayout runs after the owner dies). This page only
+    // PARENTS the component (addAndMakeVisible) and positions it in applyLayout
+    // — JUCE removes a destroyed child from its parent cleanly, so teardown is
+    // safe in any order; a relayout after the owner's destruction would
+    // position a dangling pointer, hence the contract. No-op (besides the
+    // parenting, which is reversed on destruction) if @p groupName does not
+    // match an existing group.
+    void setGroupExternalDecoration (const juce::String& groupName,
+                                     juce::Component* external, int height);
+
     // Show only the named group panels (hide the rest) and re-layout so the page
     // contains just that subset. Used by GroupPager sub-tabs to paginate a dense
     // section (e.g. OSC1/OSC2, MOD MATRIX slots 1-4/5-8) WITHOUT regenerating a
@@ -423,6 +441,8 @@ private:
         juce::GroupComponent* groupComp = nullptr;
         juce::Component* decoration = nullptr;  // optional aux component laid out below the cells
         juce::Component* inlinePreview = nullptr;  // optional preview laid out INLINE (OSC: beside the shape combo)
+        juce::Component* externalDecoration = nullptr;  // optional NON-OWNED component below the owned decoration (see setGroupExternalDecoration)
+        int externalDecorationH = 0;      // reserved height for externalDecoration (0 = none attached)
         int internalCols = 1;             // cell columns inside the panel
         int cellW = 0, cellH = 0;         // per-control cell size for this group
         bool singleRow = false;           // mod/modifier 3-wide horizontal strip
@@ -717,6 +737,12 @@ private:
     juce::Label versionLabel_;
     juce::Rectangle<int> logoArea_;   // set in resized(); paint() draws the icon + "Parvati" text here
 
+    // Chrome bands (set in resized()): the separator rules' geometry source
+    // (see ChromeRule — the rules are components, NOT strokes here, because
+    // children overdraw the editor's own paint).
+    juce::Rectangle<int> headerBand_, statusBand_;
+    std::unique_ptr<juce::Component> headerRule_, statusRule_;   // ChromeRule (file-local)
+
     // Brand icon: the embedded parvati_logo.svg (true vector art) parsed once
     // into a juce::Drawable. It carries its OWN brand colours and is drawn as-is
     // (NOT theme-tinted); only the adjacent "Parvati" text re-colours with the
@@ -730,9 +756,19 @@ private:
 public:
     static constexpr int kBarHeight   = 44;   // full-height icon strip (44pt targets)
     static constexpr int kHeaderH     = 44;   // header height (unified)
+    static constexpr int kDesktopTopPad = 5;   // non-iOS: air between the window's top edge and the header
+    static constexpr int kChromeRuleGap = 5;   // gap between a chrome band and its separator rule (rule is 1px)
+    static constexpr int kChromeShadowH = 5;   // depth-falloff height beside a chrome rule (see ChromeRule)
 private:
     static constexpr int kPageTabsH   = 28;  // top-level [SYNTH | GLOBAL] page-selector strip
-    static constexpr int kKeyboardH   = 76;   // bottom virtual-keyboard strip (flat, panel-integrated)
+    // Bottom keyboard overlay strip. TALL two-octave keyboard (KeyboardView
+    // shows exactly C3..C5 with keys stretched to the strip width): 246 == the
+    // workspace bottom-row cap kBottomRowMaxH = 8+22+4+4+4*(48+4) in
+    // SynthWorkspace.cpp / FxWorkspace.cpp, so [KBD]-on covers the ENTIRE
+    // bottom row (generator editor + mod/FX matrix). Keep in sync with that
+    // constant (no shared include: PluginEditor.h must not pull the matrix
+    // headers).
+    static constexpr int kKeyboardH   = 246;
     static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
     static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
 
