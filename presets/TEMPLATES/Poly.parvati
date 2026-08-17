@@ -5,11 +5,11 @@ parvati_version: 0.1.0
 name: "Poly"
 author: ""
 parts:
-  - channel: 1
+  - channel: 0
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 63
-    voice_slots: 6
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw

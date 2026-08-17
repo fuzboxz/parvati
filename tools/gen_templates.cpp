@@ -1,12 +1,15 @@
 // tools/gen_templates.cpp
 //
 // Generates the 5 stock init templates as full-fidelity .parvati multis into
-// presets/TEMPLATES/. Each template is produced by configuring a FRESH
-// processor's init state (polyphony mode / per-part voice allocation), flushing
-// the deferred allocation rebuild, then parvati::preset::serializeParvatiMulti().
-// Run from the repo root via the `parvati_gen_templates` CMake target whenever
-// the init state or the set of templates changes; the output is embedded into
-// the plugin binary at build time.
+// presets/TEMPLATES/. Each template — including Drum Kit (GM) — is produced by
+// applying the corresponding ARRANGEMENT preset (Source/ui/PatchArrangement.cpp
+// — the same table the Patch page's arrangement selector drives) to a FRESH
+// processor, so loading one shows its arrangement name in the Patch page
+// instead of "Custom". The Drum Kit (GM) file adds the bespoke drum CONTENT
+// (part names + tuned percussive patches) on top of the arrangement's routing
+// (6 parts x 1 mono voice, Omni, single GM note zones).
+// Run from the repo root whenever the arrangement table or the drum kit
+// changes; the output is embedded into the plugin binary at build time.
 //
 //   cmake --build build --target parvati_gen_templates && ./build/parvati_gen_templates
 
@@ -22,58 +25,28 @@
 
 #include "ParvatiPreset.h"
 #include "PluginProcessor.h"
-#include "ParameterLayout.h"
 #include "SynthEngine.h"
 #include "dsp/patch.h"
+#include "ui/PatchArrangement.h"
 
 namespace
 {
-// One stock init template. part0Poly is the `part_polyphony` value
-// (0 = MONO, 1 = POLY, 2 = UNISON_2X).
-struct TemplateSpec
+// One processBlock over silence: services the deferred voice-allocation
+// rebuild (applyArrangement marks it dirty) so the serialized state is
+// consistent — serializeParvatiMulti reads engine storage directly.
+void flushDeferredRebuild (ParvatiAudioProcessor& proc)
 {
-    const char* file;
-    const char* name;
-    int     part0Poly;
-    uint8_t part0Alloc;
-    uint8_t part1Alloc;
-    int     part0Legato;   // PartData legato byte (1 = mono plays legato: no env re-attack on overlapping notes)
-};
+    juce::AudioBuffer<float> buf (2, 256);
+    buf.clear();
+    juce::MidiBuffer midi;
+    proc.processBlock (buf, midi);
+}
 
-// Build one template from a freshly-prepared processor and write it to
-// <outDir>/<spec.file>. Returns true on success.
-bool writeTemplate (const TemplateSpec& s, const juce::File& outDir)
+// Serialize the processor as a multi and write it to @p out ATOMICALLY
+// (TemporaryFile): either the full new file or none of it.
+bool writeMultiFile (ParvatiAudioProcessor& proc, const juce::File& out)
 {
-    ParvatiAudioProcessor proc;
-    proc.prepareToPlay (48000.0, 256);   // seeds the init patch + single-part default + Hardware
-
-    // Edit Part 0's polyphony mode (PartData byte 15 via the APVTS bridge).
-    proc.getApvts().getParameterAsValue ("part_select")     = 1.0f;
-    proc.getApvts().getParameterAsValue ("part_polyphony")  = static_cast<float> (s.part0Poly);
-    proc.getApvts().getParameterAsValue ("part_legato")     = static_cast<float> (s.part0Legato);
-
-    // Per-part voice allocation. Single-part templates own all 6 voicecards on
-    // Part 0 (0x3f); the Multitimbral template splits them 3+3 (0x15 / 0x2a).
-    proc.getEngine().setPartVoiceAllocation (0, s.part0Alloc);
-    proc.getEngine().setPartVoiceAllocation (1, s.part1Alloc);
-    for (int p = 2; p < SynthEngine::getNumParts(); ++p)
-        proc.getEngine().setPartVoiceAllocation (p, 0);
-
-    proc.setLoadedProgramName (s.name);
-    proc.syncAllParamsToEngine();
-
-    // Flush the deferred voice-allocation rebuild so the serialized state is
-    // consistent (serializeParvatiMulti reads engine storage directly).
-    {
-        juce::AudioBuffer<float> buf (2, 256);
-        buf.clear();
-        juce::MidiBuffer midi;
-        proc.processBlock (buf, midi);
-    }
-
     const juce::String yaml = parvati::preset::serializeParvatiMulti (proc);
-    const juce::File out    = outDir.getChildFile (s.file);
-
     juce::TemporaryFile tmp (out);
     {
         juce::FileOutputStream os (tmp.getFile());
@@ -82,7 +55,11 @@ bool writeTemplate (const TemplateSpec& s, const juce::File& outDir)
             std::fprintf (stderr, "gen_templates: cannot open %s\n", out.getFullPathName().toRawUTF8());
             return false;
         }
-        os.writeText (yaml, false, false, nullptr);
+        if (! os.writeText (yaml, false, false, nullptr))
+        {
+            std::fprintf (stderr, "gen_templates: cannot write %s\n", out.getFullPathName().toRawUTF8());
+            return false;
+        }
         os.flush();
     }
     if (! tmp.overwriteTargetFileWithTemporary())
@@ -90,18 +67,55 @@ bool writeTemplate (const TemplateSpec& s, const juce::File& outDir)
         std::fprintf (stderr, "gen_templates: cannot write %s\n", out.getFullPathName().toRawUTF8());
         return false;
     }
+    return true;
+}
 
-    std::printf ("  wrote %-22s  (%d bytes, alloc0=0x%02x alloc1=0x%02x, poly0=%d)\n",
-                 out.getFileName().toRawUTF8(), (int) yaml.length(),
-                 (unsigned) s.part0Alloc, (unsigned) s.part1Alloc, s.part0Poly);
+// ---- Named templates: applyArrangement is the SINGLE SOURCE OF TRUTH ----
+//
+// No APVTS edits and NO syncAllParamsToEngine() here: applyArrangement writes
+// polyphony/spread engine-direct (applyPartByte), and a bulk APVTS->engine
+// sync would clobber those with the fresh processor's init parameter values.
+// Instead the APVTS is refreshed FROM the engine (loadPartIntoApvts) — the
+// same one-way re-sync PatchPage::onArrangementChanged performs after a UI
+// apply. Serialization reads engine storage, so the bytes that round-trip are
+// exactly the arrangement's.
+struct ArrangementSpec
+{
+    const char*  file;
+    Arrangement  id;
+};
+
+bool writeArrangementTemplate (const ArrangementSpec& s, const juce::File& outDir)
+{
+    ParvatiAudioProcessor proc;
+    proc.prepareToPlay (48000.0, 256);   // seeds the init patch + single-part default + Hardware
+
+    SynthEngine& engine = proc.getEngine();
+    applyArrangement (engine, s.id);
+
+    // The multi's `name:` — the arrangement's own label ("Mono" / "Poly" /
+    // "Unison" / "Multitimbral"), which also matches the Patch page combo.
+    proc.setLoadedProgramName (arrangementLabel (s.id));
+    proc.loadPartIntoApvts (engine.getCurrentPart());   // engine -> APVTS (one-way)
+    flushDeferredRebuild (proc);
+
+    const juce::File out = outDir.getChildFile (s.file);
+    if (! writeMultiFile (proc, out))
+        return false;
+
+    std::printf ("  wrote %-22s  (arrangement: %s)\n",
+                 out.getFileName().toRawUTF8(), arrangementLabel (s.id));
     return true;
 }
 
 // ---- Drum Kit (GM) ----
-// A 6-part GM-mapped drum multi: one MIDI note per Part via keyzone
-// low == high, Omni channel (works on any incoming MIDI channel), one
-// voicecard each, 4 voice slots + CYCLIC for round-robin repeats, and a short
-// percussive patch per drum (seeded from the init patch, then tuned).
+// A 6-part GM-mapped drum multi on top of the built-in Drum Kit ARRANGEMENT
+// preset (single source of truth): 6 parts x 1 mono voice (a repeat retriggers
+// the single voice — the latest hit always sounds), Omni channel (works on any
+// incoming MIDI channel), each Part mapped to one GM percussion note via
+// keyzone low == high, and a short percussive patch per drum (seeded from the
+// init patch, then tuned). Concurrency comes from the 6 independent parts
+// (a beat = one voice in each struck drum's part).
 struct DrumSpec
 {
     const char* name;
@@ -133,15 +147,18 @@ bool writeDrumKitTemplate (const juce::File& outDir)
     proc.prepareToPlay (48000.0, 256);
     SynthEngine& engine = proc.getEngine();
 
+    // Routing + polyphony FIRST: the built-in Drum Kit ARRANGEMENT preset is
+    // the single source of truth (6 parts x 1 voice, MONO, Omni, single GM
+    // note zones {36,38,39,42,46,45} in part order) — the same table the
+    // Patch page's selector drives, so the loaded template re-infers as
+    // "Drum Kit" (not "Custom"). Exactly like the four named templates.
+    applyArrangement (engine, Arrangement::DrumKit);
+
+    // Bespoke drum CONTENT on top: part names + tuned percussive patches.
     for (int p = 0; p < kNumDrums; ++p)
     {
         const DrumSpec& d = kDrums[p];
 
-        // Routing: Omni channel, single-note keyzone, one card, 4 slots CYCLIC.
-        engine.setPartMidiChannel (p, 0);   // 0 = Omni: the kit answers on ANY channel
-        engine.setPartKeyZone (p, d.note, d.note);
-        engine.setPartVoiceAllocation (p, static_cast<uint8_t> (1u << p));
-        engine.setPartVoiceSlots (p, 4);
         engine.setPartName (p, d.name);
 
         // Patch: seed from the init patch, then tune into a percussive drum.
@@ -166,42 +183,81 @@ bool writeDrumKitTemplate (const juce::File& outDir)
         patch[51] = ambika::dsp::MOD_DST_OSC_1_2_COARSE;
         patch[52] = static_cast<uint8_t> (d.pitchDropAmount);
         engine.getPart (p).patchBytes.loadFrom (patch.data());
-
-        // PartData byte 15 = polyphony: CYCLIC (3) for round-robin repeats.
-        engine.getPart (p).partBytes[15] = 3;
     }
-    engine.markAllocationDirty();
     proc.setLoadedProgramName ("Drum Kit (GM)");
+    flushDeferredRebuild (proc);
 
-    // Flush the deferred rebuild so the serialized state is consistent.
-    {
-        juce::AudioBuffer<float> buf (2, 256);
-        buf.clear();
-        juce::MidiBuffer midi;
-        proc.processBlock (buf, midi);
-    }
-
-    const juce::String yaml = parvati::preset::serializeParvatiMulti (proc);
-    const juce::File out    = outDir.getChildFile ("Drum Kit (GM).parvati");
-    juce::TemporaryFile tmp (out);
-    {
-        juce::FileOutputStream os (tmp.getFile());
-        if (! os.openedOk())
-        {
-            std::fprintf (stderr, "gen_templates: cannot open %s\n", out.getFullPathName().toRawUTF8());
-            return false;
-        }
-        os.writeText (yaml, false, false, nullptr);
-        os.flush();
-    }
-    if (! tmp.overwriteTargetFileWithTemporary())
-    {
-        std::fprintf (stderr, "gen_templates: cannot write %s\n", out.getFullPathName().toRawUTF8());
+    const juce::File out = outDir.getChildFile ("Drum Kit (GM).parvati");
+    if (! writeMultiFile (proc, out))
         return false;
-    }
-    std::printf ("  wrote %-22s  (%d bytes, 6 GM drums: 36/38/39/42/45/46)\n",
-                 out.getFileName().toRawUTF8(), (int) yaml.length());
+    std::printf ("  wrote %-22s  (arrangement: Drum Kit; 6 GM drums: 36/38/39/42/45/46)\n",
+                 out.getFileName().toRawUTF8());
     return true;
+}
+
+// ---- Round-trip verification ----
+// The contract the Patch page relies on: loading a template through the REAL
+// load path must leave the engine in a state inferArrangement maps back to its
+// arrangement (else the page would show "Custom"). The drum kit is verified
+// the SAME way (it must re-infer as Drum Kit) plus its bespoke content
+// (1 mono voice / GM zones / names per part).
+int g_verifyFailures = 0;
+void verify (bool ok, const juce::String& msg)
+{
+    std::printf ("  %-4s %s\n", ok ? "PASS" : "FAIL", msg.toRawUTF8());
+    if (! ok) ++g_verifyFailures;
+}
+
+int verifyArrangementTemplate (const ArrangementSpec& s, const juce::File& outDir)
+{
+    ParvatiAudioProcessor chk;
+    chk.prepareToPlay (48000.0, 256);
+    const juce::File f = outDir.getChildFile (s.file);
+    const bool loaded = chk.loadParvatiMultiFile (f);
+    flushDeferredRebuild (chk);   // service the deferred allocation rebuild
+
+    const Arrangement inferred = inferArrangement (chk.getEngine());
+    const bool pass = loaded && inferred == s.id;
+    verify (pass, juce::String (s.file) + ": loads + infers back to '"
+                      + arrangementLabel (s.id) + "' (got '" + arrangementLabel (inferred) + "')");
+    return pass ? 1 : 0;
+}
+
+int verifyDrumKitTemplate (const juce::File& outDir)
+{
+    ParvatiAudioProcessor chk;
+    chk.prepareToPlay (48000.0, 256);
+    const juce::File f = outDir.getChildFile ("Drum Kit (GM).parvati");
+    const bool loaded = chk.loadParvatiMultiFile (f);
+    flushDeferredRebuild (chk);
+    SynthEngine& engine = chk.getEngine();
+    verify (loaded, "Drum Kit (GM).parvati loads");
+
+    // THE point of this template: it must re-infer as the built-in Drum Kit
+    // arrangement (the Patch page shows "Drum Kit", not "Custom").
+    const Arrangement inferred = inferArrangement (engine);
+    const bool arrPass = loaded && inferred == Arrangement::DrumKit;
+    verify (arrPass, "Drum Kit (GM).parvati: loads + infers back to 'Drum Kit' (got '"
+                        + juce::String (arrangementLabel (inferred)) + "')");
+
+    int okCount = arrPass ? 2 : (loaded ? 1 : 0);
+    for (int p = 0; p < kNumDrums; ++p)
+    {
+        const DrumSpec& d = kDrums[p];
+        const bool slots = engine.getPartVoiceSlots (p) == 1;
+        const bool mono  = engine.getPart (p).partBytes[15] == 0;
+        const bool zone  = engine.getPartKeyrangeLow (p) == d.note
+                        && engine.getPartKeyrangeHigh (p) == d.note;
+        const bool named = engine.getPartName (p) == d.name;
+        const bool pass  = slots && mono && zone && named;
+        verify (pass, juce::String ("drum part ") + juce::String (p) + " (" + d.name + "): 1slot="
+                      + juce::String ((int) slots) + " MONO=" + juce::String ((int) mono)
+                      + " zone lo=" + juce::String (engine.getPartKeyrangeLow (p))
+                      + " hi=" + juce::String (engine.getPartKeyrangeHigh (p))
+                      + " (want " + juce::String (d.note) + ") named=" + juce::String ((int) named));
+        if (pass) ++okCount;
+    }
+    return okCount == 2 + kNumDrums ? 1 : 0;
 }
 }  // namespace
 
@@ -218,17 +274,18 @@ int main()
         return 1;
     }
 
-    const std::vector<TemplateSpec> specs = {
-        { "Mono.parvati",         "Monotimbral Mono",   0, 0x01, 0x00, 1 },
-        { "Poly.parvati",         "Poly",               1, 0x3f, 0x00, 0 },
-        { "Unison.parvati",       "Unison 2x",          2, 0x3f, 0x00, 0 },
-        { "Multitimbral.parvati", "Multitimbral (3+3)", 1, 0x15, 0x2a, 0 },
+    const std::vector<ArrangementSpec> specs = {
+        { "Mono.parvati",         Arrangement::Mono         },
+        { "Poly.parvati",         Arrangement::Poly         },
+        { "Unison.parvati",       Arrangement::Unison       },
+        { "Multitimbral.parvati", Arrangement::Multitimbral },
     };
 
-    std::printf ("Generating %zu templates -> %s\n", specs.size(), outDir.getFullPathName().toRawUTF8());
+    std::printf ("Generating %zu arrangement templates + Drum Kit (GM) -> %s\n",
+                 specs.size(), outDir.getFullPathName().toRawUTF8());
     int ok = 0;
     for (const auto& s : specs)
-        if (writeTemplate (s, outDir))
+        if (writeArrangementTemplate (s, outDir))
             ++ok;
     const bool drumOk = writeDrumKitTemplate (outDir);
     if (drumOk) ++ok;
@@ -238,33 +295,15 @@ int main()
     if (ok != total)
         return 1;
 
-    // ---- Round-trip verification: reload each template via the real load path
-    // and assert the global Voice Mode + Part 0 polyphony were applied. ----
+    // ---- Round-trip verification through the REAL load path. ----
     std::printf ("Verifying round-trip ...\n");
     int verified = 0;
     for (const auto& s : specs)
-    {
-        ParvatiAudioProcessor chk;
-        chk.prepareToPlay (48000.0, 256);
-        const juce::File f = outDir.getChildFile (s.file);
-        const bool loaded = chk.loadParvatiMultiFile (f);
-        const int pb15pre = chk.getEngine().getPart (0).partBytes[15];   // before servicing
-        const float apvtsPoly = chk.getApvts().getParameter ("part_polyphony")->getValue();
-        // Service the deferred allocation rebuild (sets Part.polyphonyMode from
-        // partBytes[15]) before reading it back — loadParvatiMultiFile marks it
-        // dirty but does not run the audio thread itself.
-        { juce::AudioBuffer<float> b (2, 256); b.clear(); juce::MidiBuffer m; chk.processBlock (b, m); }
-        // Polyphony lives in PartData byte 15 (synced into Part.polyphonyMode by
-        // the rebuild above); read it from the engine's Part 0 storage.
-        chk.getApvts().getParameterAsValue ("part_select") = 1.0f;
-        chk.syncAllParamsToEngine();
-        const int poly0   = chk.getEngine().getPart (0).polyphonyMode;
-        const bool pass   = loaded && poly0 == s.part0Poly;
-        std::printf ("  %-22s load=%d pb15pre=%d apvtsPoly=%.2f poly0=%d (exp %d)  %s\n",
-                     s.file, (int) loaded, pb15pre, (double) apvtsPoly, poly0, s.part0Poly,
-                     pass ? "OK" : "FAIL");
-        if (pass) ++verified;
-    }
-    std::printf ("gen_templates verify: %d/%zu passed\n", verified, (int) specs.size());
-    return verified == (int) specs.size() ? 0 : 2;
+        verified += verifyArrangementTemplate (s, outDir);
+    verified += verifyDrumKitTemplate (outDir);
+
+    std::printf ("gen_templates verify: %d/%d passed\n", verified, total);
+    if (g_verifyFailures > 0 || verified != total)
+        return 2;
+    return 0;
 }

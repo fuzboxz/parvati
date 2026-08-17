@@ -92,21 +92,24 @@ public:
             c->getProperties().set ("parvatiComboVisualH", 24);
 
         // ---- Voices: this Part's voice count drawn from the shared 96-voice
-        // pool (1..16). Any combination of counts is legal (pool = 6x16, so
-        // every Part can be maxed simultaneously); the 6 hardware voicecards
-        // are DERIVED from these counts for the individual outputs + the .MUL
-        // export. No "0" item: a Part is disabled by an arrangement preset
-        // or a loaded multi (a disabled Part shows "0" with no selection). ----
-        for (int n = 1; n <= kMaxVoicesPerPart; ++n)
-            voicesCombo_.addItem (juce::String (n), n);
-        voicesCombo_.setTextWhenNothingSelected ("0");
+        // pool (0..16). 0 DISABLES the Part (no voice for it in the pool; the
+        // row dims); any combination of counts is legal (pool = 6x16, so every
+        // Part can be maxed simultaneously); the 6 hardware voicecards are
+        // DERIVED from these counts for the individual outputs + the .MUL
+        // export. Combo id = count + 1 (JUCE ids must be non-zero). ----
+        for (int n = 0; n <= kMaxVoicesPerPart; ++n)
+            voicesCombo_.addItem (juce::String (n), n + 1);
         voicesCombo_.onChange = [this] { onVoicesChanged(); };
+        // Localised (TRANS per sentence — the codebase idiom for multi-line
+        // tooltips is concatenation of TRANS fragments, since TRANS must wrap
+        // each COMPLETE source string to hit the translation table).
         voicesCombo_.setTooltip (
-            "How many voices this part plays at once, drawn from the shared "
-            "96-voice pool (1-16). Every part can be maxed out at the same "
-            "time — the pool holds 6 x 16. The hardware voicecards are shared "
-            "out automatically for the individual outputs and the .MUL "
-            "hardware export.");
+            TRANS ("How many voices this part plays at once, drawn from the shared ")
+            + TRANS ("96-voice pool (0-16). 0 disables the part entirely — it gets no ")
+            + TRANS ("voice in the pool and stops sounding. Every part can be maxed out ")
+            + TRANS ("at the same time — the pool holds 6 x 16. The hardware voicecards ")
+            + TRANS ("are shared out automatically for the individual outputs and the ")
+            + TRANS (".MUL hardware export."));
         addAndMakeVisible (voicesCombo_);
 
         // ---- Ch: Omni (0) + 1..16 (id = channel + 1). ----
@@ -229,11 +232,10 @@ public:
     void refresh()
     {
         refreshing_ = true;
-        // Voice count: 1..16 selects the matching item; 0 (a DISABLED part)
-        // clears the selection so the combo shows its "0" placeholder.
-        const int slots = engine_.getPartVoiceSlots (partIndex_);
-        voicesCombo_.setSelectedId (juce::jlimit (0, kMaxVoicesPerPart, slots),
-                                    juce::dontSendNotification);
+        // Voice count 0..16: combo id = count + 1 (0 = a DISABLED part, a real
+        // selectable item — never a ghosted placeholder).
+        const int slots = juce::jlimit (0, kMaxVoicesPerPart, engine_.getPartVoiceSlots (partIndex_));
+        voicesCombo_.setSelectedId (slots + 1, juce::dontSendNotification);
         refreshNameDisplay();
 
         channelCombo_.setSelectedId (static_cast<int> (engine_.getPartChannel (partIndex_)) + 1,
@@ -267,7 +269,13 @@ public:
 
         {
             const int prev = channelCombo_.getSelectedId();
-            channelCombo_.clear();
+            // dontSendNotification: the DEFAULT clear() posts an async change
+            // message that fires onChange AFTER the rebuild has restored the
+            // selection below — onChannelChanged would then re-run with a
+            // possibly-stale combo and overwrite engine state (same fix as the
+            // voices/tune combos: a programmatic rebuild must never drive the
+            // write path).
+            channelCombo_.clear (juce::dontSendNotification);
             channelCombo_.addItem (TRANS ("Omni"), 1);
             for (int c = 1; c <= 16; ++c)
                 channelCombo_.addItem (juce::String (c), c + 1);
@@ -275,7 +283,8 @@ public:
         }
         {
             const int prev = polyCombo_.getSelectedId();
-            polyCombo_.clear();
+            // Same dontSendNotification fix as the channel combo above.
+            polyCombo_.clear (juce::dontSendNotification);
             polyCombo_.addItem (TRANS ("Mono"), 1);
             polyCombo_.addItem (TRANS ("Poly"), 2);
             polyCombo_.addItem (TRANS ("Unison 2x"), 3);
@@ -284,13 +293,13 @@ public:
             polyCombo_.setSelectedId (prev, juce::dontSendNotification);
         }
         // The Voices items are bare numbers (language-independent); only the
-        // selection needs re-applying after the clear.
+        // selection needs re-applying after the clear (combo id = count + 1).
         {
             voicesCombo_.clear (juce::dontSendNotification);
-            for (int n = 1; n <= kMaxVoicesPerPart; ++n)
-                voicesCombo_.addItem (juce::String (n), n);
+            for (int n = 0; n <= kMaxVoicesPerPart; ++n)
+                voicesCombo_.addItem (juce::String (n), n + 1);
             voicesCombo_.setSelectedId (
-                juce::jlimit (0, kMaxVoicesPerPart, engine_.getPartVoiceSlots (partIndex_)),
+                juce::jlimit (0, kMaxVoicesPerPart, engine_.getPartVoiceSlots (partIndex_)) + 1,
                 juce::dontSendNotification);
         }
         {
@@ -316,22 +325,29 @@ public:
                             juce::dontSendNotification);
     }
 
-    // The Voices combo's currently-displayed voice count (1..16; 0 = no
-    // selection = a disabled part).
+    // The Poly combo's currently-displayed mode (0..4 = the combo id - 1).
+    int displayedPolyphony() const
+    {
+        const int id = polyCombo_.getSelectedId();
+        return juce::jlimit (0, 4, id - 1);
+    }
+
+    // The Voices combo's currently-displayed voice count (0..16; 0 = the
+    // part is disabled — a real selected item, not a placeholder).
     int displayedVoiceSlots() const
     {
         const int id = voicesCombo_.getSelectedId();
-        return juce::jlimit (0, kMaxVoicesPerPart, id);
+        return juce::jlimit (0, kMaxVoicesPerPart, id - 1);   // combo id = count + 1
     }
 
     // Test/automation hook: set the Voices combo as if the user chose it, then
-    // run the normal engine write path (onVoicesChanged -> setPartVoiceSlots).
-    // JUCE does not fire a combo's onChange for a programmatic setSelectedId.
-    // 0 clamps to 1 (the combo offers no "0"; a real user pick always enables).
+    // run the normal engine write path (onVoicesChanged -> disable or
+    // setPartVoiceSlots). JUCE does not fire a combo's onChange for a
+    // programmatic setSelectedId. 0 DISABLES the part (the combo's "0" item).
     void chooseVoiceSlots (int slots)
     {
         refreshing_ = true;
-        voicesCombo_.setSelectedId (juce::jlimit (1, kMaxVoicesPerPart, slots),
+        voicesCombo_.setSelectedId (juce::jlimit (0, kMaxVoicesPerPart, slots) + 1,
                                     juce::dontSendNotification);
         refreshing_ = false;
         onVoicesChanged();
@@ -408,9 +424,15 @@ private:
     void onVoicesChanged()
     {
         if (refreshing_) return;
-        // The combo's id IS the voice count (1..16); no selection (0) never
-        // reaches here (an onChange only fires on a real pick).
-        engine_.setPartVoiceSlots (partIndex_, voicesCombo_.getSelectedId());
+        // The combo's id is the voice count + 1 (0..16). A 0 count DISABLES
+        // the Part via the legacy materialization path (a zero mask
+        // materializes 0 slots — the engine's only disable entry point; the
+        // public setPartVoiceSlots clamps 0 to 1 by design).
+        const int slots = juce::jlimit (0, kMaxVoicesPerPart, voicesCombo_.getSelectedId() - 1);
+        if (slots == 0)
+            engine_.setPartVoiceAllocation (partIndex_, 0);
+        else
+            engine_.setPartVoiceSlots (partIndex_, slots);
         owner_.postPartEdit();
     }
 
@@ -600,32 +622,6 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
         tablePanel_->addAndMakeVisible (*rows_[ (size_t) i]);
     }
 
-    // ---- Global voice-pool view: the whole-patch picture lives ONLY here
-    // (the bottom status strip's count is part-relative). Below the hosted
-    // Global ParamPage (bottom of the scrolled body; the part rows live INSIDE
-    // that page's Global panel) — right where parts are configured.
-    // The provider is injected by the editor (setVoicePoolProvider), so the
-    // view stays engine-decoupled.
-    voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
-    voicePoolCaption_.setFont (juce::FontOptions (11.0f));
-    voicePoolCaption_.setJustificationType (juce::Justification::centredLeft);
-    voicePoolCaption_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
-    voicePoolCaption_.setTooltip (
-        "Every part draws its voices from one shared 96-voice pool. Each part "
-        "can use up to 16 voices at once; each row's count shows how many of "
-        "its allocated voices are sounding. The hardware voicecards are "
-        "shared out automatically for the individual outputs and the .MUL "
-        "hardware export.");
-    scrollBody_->addAndMakeVisible (voicePoolCaption_);
-    voicePoolView_ = std::make_unique<VoicePoolView>();
-    voicePoolView_->setTooltip (
-        "Every part draws its voices from one shared 96-voice pool. Each part "
-        "can use up to 16 voices at once; each row's count shows how many of "
-        "its allocated voices are sounding. The hardware voicecards are "
-        "shared out automatically for the individual outputs and the .MUL "
-        "hardware export.");
-    scrollBody_->addAndMakeVisible (*voicePoolView_);
-
     // T4 scroll safety net: the rows + the hosted global page scroll vertically
     // inside a Viewport. At the tuned design size the body fits (it is grown to
     // the view height — no scrollbar, no layout change vs the old direct
@@ -652,17 +648,12 @@ void PatchPage::paint (juce::Graphics& g)
 void PatchPage::applyThemeColors()
 {
     const auto theme = themeManager_.getCurrentTheme();
-    const auto accent = theme.accentPrimary;
-    voicesTotalLabel_.setColour (juce::Label::textColourId, accent);
-    voicePoolCaption_.setColour (juce::Label::textColourId, theme.textSecondary);
-    if (voicePoolView_ != nullptr)
-        voicePoolView_->refresh();   // colours are read at paint time
+    voicesTotalLabel_.setColour (juce::Label::textColourId, theme.accentPrimary);
     repaint();
 }
 
 void PatchPage::refreshLanguage()
 {
-    voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
     buildArrangementCombo();
     for (auto& r : rows_)
         r->refreshLanguage();
@@ -672,15 +663,24 @@ void PatchPage::refreshLanguage()
 
 void PatchPage::buildArrangementCombo()
 {
+    // The 5 selectable templates (ids 1..5, matching Arrangement order) + a
+    // separator + "Custom" as a REAL but DISABLED item (id 6): Custom is
+    // infer-only state, never user-selectable — but a selected-but-disabled
+    // item still displays at full strength, so a loaded patch that matches no
+    // preset never renders as a ghosted textWhenNothingSelected placeholder
+    // (juce draws that at 50% alpha — the wrong-style "Custom" text bug).
     const int prev = arrangementCombo_.getSelectedId();
-    arrangementCombo_.clear();
-    arrangementCombo_.setTextWhenNothingSelected (TRANS ("Custom"));
-    arrangementCombo_.addItem (TRANS ("Mono"), 1);
-    arrangementCombo_.addItem (TRANS ("Single"), 2);
-    arrangementCombo_.addItem (TRANS ("Dual Layer"), 3);
-    arrangementCombo_.addItem (TRANS ("Dual Split"), 4);
-    arrangementCombo_.addItem (TRANS ("Quad Split"), 5);
-    arrangementCombo_.addItem (TRANS ("Multi 6"), 6);
+    // dontSendNotification: the DEFAULT clear() posts an async change message
+    // that fires onChange AFTER the rebuild has restored the selection below —
+    // onArrangementChanged would then re-apply a possibly-stale template over
+    // engine state (e.g. right after a host recall the page has not re-read
+    // yet). A programmatic rebuild must never drive the write path.
+    arrangementCombo_.clear (juce::dontSendNotification);
+    for (int i = 0; i < arrangementCount(); ++i)
+        arrangementCombo_.addItem (TRANS (arrangementLabel (static_cast<Arrangement> (i))), i + 1);
+    arrangementCombo_.addSeparator();
+    arrangementCombo_.addItem (TRANS ("Custom"), 6);
+    arrangementCombo_.setItemEnabled (6, false);
     arrangementCombo_.setSelectedId (prev, juce::dontSendNotification);
 }
 
@@ -688,8 +688,10 @@ void PatchPage::setArrangementFromEngine()
 {
     const Arrangement a = inferArrangement (proc_.getEngine());
     refreshing_ = true;
+    // Custom is the combo's REAL (disabled, infer-only) id-6 item — a full-
+    // strength label, never the ghosted nothing-selected placeholder.
     if (a == Arrangement::Custom)
-        arrangementCombo_.setSelectedId (0, juce::dontSendNotification);   // shows "Custom"
+        arrangementCombo_.setSelectedId (6, juce::dontSendNotification);
     else
         arrangementCombo_.setSelectedId (static_cast<int> (a) + 1, juce::dontSendNotification);
     refreshing_ = false;
@@ -699,7 +701,7 @@ void PatchPage::onArrangementChanged()
 {
     if (refreshing_) return;
     const int id = arrangementCombo_.getSelectedId();
-    if (id < 1 || id > arrangementCount()) return;
+    if (id < 1 || id > arrangementCount()) return;   // id 6 (Custom) can never fire: it is disabled
     applyArrangement (proc_.getEngine(), static_cast<Arrangement> (id - 1));
     refresh();
     // applyArrangement writes each part's polyphony ENGINE-DIRECT (setCurrentPart
@@ -713,6 +715,8 @@ void PatchPage::onArrangementChanged()
 Arrangement PatchPage::getDisplayedArrangement() const
 {
     const int id = arrangementCombo_.getSelectedId();
+    if (id == 6)
+        return Arrangement::Custom;   // the infer-only tail item
     return (id >= 1 && id <= arrangementCount())
         ? static_cast<Arrangement> (id - 1) : Arrangement::Custom;
 }
@@ -735,9 +739,15 @@ int PatchPage::getDisplayedVoiceSlots (int part) const
     return rows_[(size_t) part]->displayedVoiceSlots();
 }
 
+int PatchPage::getDisplayedPolyphony (int part) const
+{
+    if (part < 0 || part >= kNumParts) return -1;
+    return rows_[(size_t) part]->displayedPolyphony();
+}
+
 void PatchPage::chooseVoiceSlots (int part, int slots)
 {
-    if (part < 0 || part >= kNumParts) return;   // slots clamped inside the row (0 -> 1)
+    if (part < 0 || part >= kNumParts) return;   // slots clamped inside the row (0 disables the part)
     rows_[(size_t) part]->chooseVoiceSlots (slots);
 }
 
@@ -808,9 +818,8 @@ void PatchPage::resized()
     // the per-part rows it configures, not above them.
     auto area = getLocalBounds().reduced (16);
 
-    // The whole body (hosted Global panel + part rows + voice-pool view)
-    // scrolls vertically inside the Viewport when it overflows (T4 safety
-    // net).
+    // The whole body (hosted Global panel with its part rows) scrolls
+    // vertically inside the Viewport when it overflows (T4 safety net).
     viewport_.setBounds (area);
     layoutScrollBody();
 }
@@ -823,19 +832,16 @@ void PatchPage::layoutScrollBody()
         return;
 
     // Lay the body out at the given width; returns the natural height used
-    // (the hosted patch-wide ParamPage — whose Global panel CONTAINS the
-    // 6-part voice-allocation table as an external decoration — then the
-    // voice-pool view at the bottom, just expressed in the body's local
-    // coordinates).
+    // (just the hosted patch-wide ParamPage — whose Global panel CONTAINS the
+    // 6-part voice-allocation table as an external decoration — expressed in
+    // the body's local coordinates).
     auto layoutAtWidth = [this] (int cw)
     {
         int y = 0;
         // Hosted patch-wide ParamPage (Part/Play + Global panels with the
-        // merged allocation table) FIRST — the page-top position keeps the
-        // patch-wide controls immediately visible; the voice-pool view follows
-        // below. The part rows are laid out by tablePanel_'s resized() (the
-        // table is INSIDE the hosted page), so nothing but the page bounds
-        // happens here.
+        // merged allocation table) — the whole body. The part rows are laid
+        // out by tablePanel_'s resized() (the table is INSIDE the hosted
+        // page), so nothing but the page bounds happens here.
         if (hostedParamPage_ != nullptr)
         {
             // -1 = NATURAL-HEIGHT reflow: the hosted page is sized to its
@@ -846,17 +852,8 @@ void PatchPage::layoutScrollBody()
             hostedParamPage_->setBounds (0, y, cw,
                                          juce::jmax (200, hostedParamPage_->getContentHeight()));
             y += hostedParamPage_->getHeight();
-            y += 10;   // gap below the hosted page, before the voice-pool view
+            y += 10;   // breathing gap below the hosted page at the body tail
         }
-        // Global voice-pool view: caption + the compact 6-part grid — LAST in
-        // the body (below the hosted page with its merged allocation table).
-        // The view sizes itself to its FIXED height (its rows/geometry are
-        // fixed; only the width is elastic), so it never destabilises the
-        // body height.
-        voicePoolCaption_.setBounds (0, y, cw, 16);
-        y += 18;
-        voicePoolView_->setBounds (0, y, cw, VoicePoolView::kHeight);
-        y += VoicePoolView::kHeight;
         return y;
     };
 
@@ -882,14 +879,12 @@ void PatchPage::hostParamPage (juce::Component* paramPage)
 {
     hostedParamPage_ = dynamic_cast<ParamPage*> (paramPage);
     // The hosted page lives INSIDE the scrolled body so it scrolls together
-    // with the voice-pool view (T4). Editor retains ownership; reparent only.
+    // with the part rows (T4). Editor retains ownership; reparent only.
     if (hostedParamPage_ != nullptr)
     {
         scrollBody_->addAndMakeVisible (hostedParamPage_);
         // END STATE: the hosted page renders [Part / Play panel] then [Global
-        // panel: 3 global knobs + the 6-part voice-allocation table], followed
-        // by this page's voice-pool view — ONE bordered Global section holding
-        // the allocation table. The table
+        // panel: 3 global knobs + the 6-part voice-allocation table]. The table
         // rides the page's EXTERNAL decoration slot (non-owning):
         // PatchPage keeps owning tablePanel_ (which parents the rows); the
         // page only parents + positions it. Contract: tablePanel_ must
@@ -900,10 +895,4 @@ void PatchPage::hostParamPage (juce::Component* paramPage)
                                                       PartTablePanel::kTableH);
     }
     resized();
-}
-
-void PatchPage::setVoicePoolProvider (std::function<VoicePoolFrame()> provider)
-{
-    if (voicePoolView_ != nullptr)
-        voicePoolView_->setStateProvider (std::move (provider));
 }

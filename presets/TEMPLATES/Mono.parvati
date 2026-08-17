@@ -2,10 +2,10 @@
 format: parvati-multi
 version: 1
 parvati_version: 0.1.0
-name: "Monotimbral Mono"
+name: "Mono"
 author: ""
 parts:
-  - channel: 1
+  - channel: 0
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 1
@@ -115,7 +115,7 @@ parts:
       part_tuning: 0
       part_spread: 0
       part_raga: 0            # Off
-      part_legato: 1            # On
+      part_legato: 0            # Off
       part_portamento: 0
       part_polyphony: 0            # Mono
       seq_length_1: 16

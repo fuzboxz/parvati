@@ -4,15 +4,22 @@
 // the engine purely through its EXISTING public setters (the engine internals,
 // voice allocators, file formats and audio-thread code are untouched).
 //
-// VOICE-FIRST MODEL (Task 2, 2026-08): the six templates are VOICE-BUDGET
+// VOICE-FIRST MODEL (Task 2, 2026-08): the five templates are VOICE-BUDGET
 // presets over the engine's 96-voice pool — each Part carries a voice count
-// (1..kMaxVoicesPerPart) and the 6-voicecard bitmask is DERIVED from those
-// counts (mul_export::deriveMasks; contiguous proportional share, min 1 per
-// active Part). The old card-count presets (Stack 2/Split 2/Layer 2 card
-// splits) are gone: with any combination of counts legal (pool = 6x16), a
-// preset is just a convenient starting point of counts + zones + channels +
-// polyphony. "Mono" is a TRUE mono preset: 1 voice + MONO polyphony = one
-// retriggering voice, no unison.
+// (0..kMaxVoicesPerPart; 0 = the Part is DISABLED) and the 6-voicecard bitmask
+// is DERIVED from those counts (mul_export::deriveMasks; contiguous
+// proportional share, min 1 per active Part). With any combination of counts
+// legal (pool = 6x16), a preset is just a convenient starting point of counts
+// + zones + channels + polyphony + spread:
+//
+//   Mono          — 1 part, 1 voice, MONO polyphony (one retriggering voice).
+//   Poly          — 1 part, 16 voices, POLY.
+//   Unison        — 1 part, 16 voices, MONO (a 16-voice unison stack) with a
+//                   per-voice detune spread so the stack reads fat, not flat.
+//   Multitimbral  — 6 parts, 16 voices each, all MONO, one per MIDI channel
+//                   1..6 (individually addressable).
+//   Drum Kit      — 6 parts, 1 voice each, all MONO, Omni, each Part mapped to
+//                   a single GM drum note (36/38/39/42/46/45).
 //
 // ----------------------------------------------------------------------------
 // Engine-API note (behaviour is identical to what the spec names; the engine
@@ -42,34 +49,35 @@
 enum class Arrangement
 {
     Mono,
-    Single,
-    DualLayer,
-    DualSplit,
-    QuadSplit,
-    Multi6,
+    Poly,
+    Unison,
+    Multitimbral,
+    DrumKit,
     Custom
 };
 
-// Human label: "Mono" / "Single" / "Dual Layer" / "Dual Split" / "Quad Split"
-// / "Multi 6" / "Custom".
+// Human label: "Mono" / "Poly" / "Unison" / "Multitimbral" / "Drum Kit" /
+// "Custom".
 const char* arrangementLabel (Arrangement a);
 
-// Number of built-in (selectable, non-Custom) arrangement templates (= 6).
+// Number of built-in (selectable, non-Custom) arrangement templates (= 5).
 int arrangementCount();
 
 // Write the template's full 6-Part state into the engine via its EXISTING public
-// setters: voice counts (setPartVoiceSlots 1..16; 0 = disable via the legacy
-// setPartVoiceAllocation(part,0) path), MIDI channels (setPartMidiChannel), key
-// zones (setPartKeyZone) and polyphony (setCurrentPart + applyPartByte(15)).
-// The voicecard bitmasks are NOT written — they are DERIVED from the voice
-// counts by the engine (rebuildVoiceAllocation). Polyphony is written LAST.
-// The original currentPart is restored on return. applyArrangement(Custom) is a
-// no-op (Custom is inferred, never applied).
+// setters: voice counts (0 = disable via the legacy setPartVoiceAllocation(part,0)
+// path; 1..16 via setPartVoiceSlots), MIDI channels (setPartMidiChannel), key
+// zones (setPartKeyZone), polyphony and spread (setCurrentPart +
+// applyPartByte(15) / applyPartByte(3)). The voicecard bitmasks are NOT written
+// — they are DERIVED from the voice counts by the engine
+// (rebuildVoiceAllocation). Polyphony + spread are written LAST. The original
+// currentPart is restored on return. applyArrangement(Custom) is a no-op
+// (Custom is inferred, never applied).
 void applyArrangement (SynthEngine& engine, Arrangement a);
 
 // Exact-preset inference from engine state; Custom if nothing matches. A state
-// matches iff EVERY part's voice count, MIDI channel, key zone and polyphony
-// (PartData byte 15) equal the template's table (the applyArrangement round-trip
-// is exact by construction). Reads getPartVoiceSlots / getPartChannel /
-// getPartKeyrangeLow/High / getPartPolyphony (all const). Read-only.
+// matches iff EVERY part's voice count, MIDI channel, key zone, polyphony
+// (PartData byte 15) and spread (PartData byte 3) equal the template's table
+// (the applyArrangement round-trip is exact by construction). Reads
+// getPartVoiceSlots / getPartChannel / getPartKeyrangeLow/High /
+// getPartPolyphony / getPartSpread (all const). Read-only.
 Arrangement inferArrangement (const SynthEngine& engine);

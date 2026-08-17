@@ -2,14 +2,14 @@
 format: parvati-multi
 version: 1
 parvati_version: 0.1.0
-name: "Multitimbral (3+3)"
+name: "Multitimbral"
 author: ""
 parts:
   - channel: 1
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 7
-    voice_slots: 3
+    voice_allocation: 1
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -117,7 +117,7 @@ parts:
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -271,8 +271,8 @@ parts:
   - channel: 2
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 56
-    voice_slots: 3
+    voice_allocation: 2
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -380,7 +380,7 @@ parts:
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -534,8 +534,8 @@ parts:
   - channel: 3
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
+    voice_allocation: 4
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -643,7 +643,7 @@ parts:
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -797,8 +797,8 @@ parts:
   - channel: 4
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
+    voice_allocation: 8
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -906,7 +906,7 @@ parts:
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -1060,8 +1060,8 @@ parts:
   - channel: 5
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
+    voice_allocation: 16
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -1169,7 +1169,7 @@ parts:
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16
@@ -1323,8 +1323,8 @@ parts:
   - channel: 6
     keyzone_low: 0
     keyzone_high: 127
-    voice_allocation: 0
-    voice_slots: 0
+    voice_allocation: 32
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -1432,7 +1432,7 @@ parts:
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 1            # Poly
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16

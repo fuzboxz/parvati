@@ -3,10 +3,10 @@
 // voice-first model note and the design spec references.
 //
 // Handoff note (Phase 2/3, NOT fixed here): applyArrangement writes polyphony
-// directly via applyPartByte, so after a UI apply the APVTS `part_polyphony`
-// param for an edited part can be stale until the next part-switch re-sync —
-// PatchPage::onArrangementChanged already triggers the same part-param re-sync
-// the loader uses after applying.
+// and spread directly via applyPartByte, so after a UI apply the APVTS
+// `part_polyphony` / `part_spread` params for an edited part can be stale until
+// the next part-switch re-sync — PatchPage::onArrangementChanged already
+// triggers the same part-param re-sync the loader uses after applying.
 
 #include "PatchArrangement.h"
 
@@ -14,8 +14,9 @@
 
 // Polyphony modes (SynthEngine.h:49), PartData byte 15:
 // MONO=0, POLY=1, UNISON_2X=2, CYCLIC=3, CHAIN=4. Only MONO and POLY are used
-// by the built-in templates (Mono = TRUE mono: 1 voice + MONO mode; everything
-// else POLY).
+// by the built-in templates (Mono = TRUE mono: 1 voice + MONO mode; Unison =
+// MONO mode with the whole 16-voice stack sounding per note; Drum Kit = 1 voice
+// MONO per drum part).
 namespace
 {
 constexpr uint8_t kPolyMono = 0;
@@ -23,9 +24,9 @@ constexpr uint8_t kPolyPoly = 1;
 
 // Per-arrangement full 6-Part state. Channels: 0 = Omni, else 1..16. An inactive
 // Part (voices 0) is reset to a clean default: channel = partIndex + 1 (the
-// engine constructor default), zone 0..127, poly POLY — so state stays
-// deterministic and Single/Mono are a no-op on a freshly-constructed engine
-// apart from Part 0's own voice count/poly. (The channel contribution of an
+// engine constructor default), zone 0..127, poly POLY, spread 0 — so state stays
+// deterministic and Mono/Poly are a no-op on a freshly-constructed engine apart
+// from Part 0's own voice count/poly/spread. (The channel contribution of an
 // inactive Part is functionally irrelevant — the Part has no voices.)
 struct Template
 {
@@ -36,12 +37,13 @@ struct Template
     int          lo       [kNumParts];   // key-zone low per part
     int          hi       [kNumParts];   // key-zone high per part
     uint8_t      poly     [kNumParts];   // polyphony mode per part
+    uint8_t      spread   [kNumParts];   // per-voice detune spread (PartData byte 3)
 };
 
-// The six voice-budget templates (the 96-voice pool model: any combination of
+// The five voice-budget templates (the 96-voice pool model: any combination of
 // counts is legal, so these are starting points, not budget partitions).
-// Split points are chosen so each split region starts on a C (MIDI 36/48/60/84
-// in the zone tables below).
+// The Drum Kit zones are single GM percussion notes (lo == hi) so each Part is
+// exactly one drum.
 constexpr Template kTemplates[] = {
     // Mono: TRUE mono — one Part, 1 voice, MONO polyphony (one retriggering
     // voice, no unison), full zone, Omni.
@@ -49,45 +51,48 @@ constexpr Template kTemplates[] = {
       { 1, 0, 0, 0, 0, 0 },
       { 0, 2, 3, 4, 5, 6 },
       { 0, 0, 0, 0, 0, 0 }, { 127, 127, 127, 127, 127, 127 },
-      { kPolyMono, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly } },
+      { kPolyMono, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly },
+      { 0, 0, 0, 0, 0, 0 } },
 
-    // Single: one Part maxed — 16 voices, full zone, Omni.
-    { Arrangement::Single, "Single",
+    // Poly: one Part maxed — 16 voices, POLY, full zone, Omni.
+    { Arrangement::Poly, "Poly",
       { 16, 0, 0, 0, 0, 0 },
       { 0, 2, 3, 4, 5, 6 },
       { 0, 0, 0, 0, 0, 0 }, { 127, 127, 127, 127, 127, 127 },
-      { kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly } },
+      { kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly },
+      { 0, 0, 0, 0, 0, 0 } },
 
-    // Dual Layer: two Parts, 8+8, both full zone, both Omni (both sound
-    // together on the same input).
-    { Arrangement::DualLayer, "Dual Layer",
-      { 8, 8, 0, 0, 0, 0 },
-      { 0, 0, 3, 4, 5, 6 },
+    // Unison: one Part, 16 voices, MONO — the whole 16-voice stack sounds on
+    // every note (the engine's unison size for MONO is the Part's voice count),
+    // with a per-voice detune SPREAD so the stack reads fat: drift =
+    // voiceIndex * spread in 1/128-semitone units, so spread 8 spaces adjacent
+    // voices ~6 cents apart (~94 cents across the stack).
+    { Arrangement::Unison, "Unison",
+      { 16, 0, 0, 0, 0, 0 },
+      { 0, 2, 3, 4, 5, 6 },
       { 0, 0, 0, 0, 0, 0 }, { 127, 127, 127, 127, 127, 127 },
-      { kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly } },
+      { kPolyMono, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly },
+      { 8, 0, 0, 0, 0, 0 } },
 
-    // Dual Split: two Parts, 8+8, key split [0..47] / [48..127], both Omni.
-    { Arrangement::DualSplit, "Dual Split",
-      { 8, 8, 0, 0, 0, 0 },
-      { 0, 0, 3, 4, 5, 6 },
-      { 0, 48, 0, 0, 0, 0 }, { 47, 127, 127, 127, 127, 127 },
-      { kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly } },
-
-    // Quad Split: four Parts, 8 each, key splits [0..35] / [36..59] /
-    // [60..83] / [84..127], all Omni.
-    { Arrangement::QuadSplit, "Quad Split",
-      { 8, 8, 8, 8, 0, 0 },
-      { 0, 0, 0, 0, 5, 6 },
-      { 0, 36, 60, 84, 0, 0 }, { 35, 59, 83, 127, 127, 127 },
-      { kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly } },
-
-    // Multi 6: all six Parts maxed — the whole 96-voice pool, one Part per
-    // MIDI channel 1..6 (individually addressable, like the old Multi 6).
-    { Arrangement::Multi6, "Multi 6",
+    // Multitimbral: all six Parts maxed — 16 voices each, all MONO (per-part
+    // monophonic), one Part per MIDI channel 1..6 (individually addressable).
+    { Arrangement::Multitimbral, "Multitimbral",
       { 16, 16, 16, 16, 16, 16 },
       { 1, 2, 3, 4, 5, 6 },
       { 0, 0, 0, 0, 0, 0 }, { 127, 127, 127, 127, 127, 127 },
-      { kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly, kPolyPoly } },
+      { kPolyMono, kPolyMono, kPolyMono, kPolyMono, kPolyMono, kPolyMono },
+      { 0, 0, 0, 0, 0, 0 } },
+
+    // Drum Kit: six Parts, 1 voice each, all MONO (a drum is one-shot — mono
+    // means the latest hit retriggers the same voice), all Omni (the kit
+    // answers on ANY channel), each mapped to a single GM percussion note
+    // (Kick 36 / Snare 38 / Clap 39 / Closed Hat 42 / Open Hat 46 / Tom 45).
+    { Arrangement::DrumKit, "Drum Kit",
+      { 1, 1, 1, 1, 1, 1 },
+      { 0, 0, 0, 0, 0, 0 },
+      { 36, 38, 39, 42, 46, 45 }, { 36, 38, 39, 42, 46, 45 },
+      { kPolyMono, kPolyMono, kPolyMono, kPolyMono, kPolyMono, kPolyMono },
+      { 0, 0, 0, 0, 0, 0 } },
 };
 
 const Template* findTemplate (Arrangement a)
@@ -138,12 +143,13 @@ void applyArrangement (SynthEngine& engine, Arrangement a)
         engine.setPartKeyZone       (p, t->lo[p], t->hi[p]);
     }
 
-    // 2) Polyphony LAST, via the EXISTING public pair (the spec's
-    //    setPartByte(part,15,mode) does not exist; see header deviation note).
+    // 2) Polyphony + spread LAST, via the EXISTING public pair (PartData bytes
+    //    15 and 3 — see the header deviation note).
     for (int p = 0; p < kNumParts; ++p)
     {
         engine.setCurrentPart (p);
         engine.applyPartByte (15, t->poly[p]);
+        engine.applyPartByte (3, t->spread[p]);
     }
 
     engine.setCurrentPart (savedPart);
@@ -151,11 +157,12 @@ void applyArrangement (SynthEngine& engine, Arrangement a)
 
 Arrangement inferArrangement (const SynthEngine& engine)
 {
-    // Exact-preset match: every Part's voice count, channel, key zone and
-    // polyphony must equal the template's table (the applyArrangement
-    // round-trip is exact by construction — including the INACTIVE Parts'
-    // channel/zone/poly defaults, which apply also writes). Any deviation is
-    // Custom; the caller (Patch page) then shows the combo's "Custom" label.
+    // Exact-preset match: every Part's voice count, channel, key zone,
+    // polyphony and spread must equal the template's table (the
+    // applyArrangement round-trip is exact by construction — including the
+    // INACTIVE Parts' channel/zone/poly/spread defaults, which apply also
+    // writes). Any deviation is Custom; the caller (Patch page) then selects
+    // the combo's "Custom" item.
     for (const auto& t : kTemplates)
     {
         bool match = true;
@@ -166,6 +173,7 @@ Arrangement inferArrangement (const SynthEngine& engine)
             if (engine.getPartKeyrangeLow (p) != t.lo[p])               { match = false; break; }
             if (engine.getPartKeyrangeHigh (p) != t.hi[p])              { match = false; break; }
             if (engine.getPartPolyphony (p) != t.poly[p])               { match = false; break; }
+            if (engine.getPartSpread (p) != t.spread[p])                { match = false; break; }
         }
         if (match)
             return t.id;

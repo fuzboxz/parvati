@@ -51,7 +51,7 @@ descriptor-driven view of the engine. We are not emulating the Ambika hardware U
 ### D. Visualization ("modern experience")
 12. **Envelope display** — ADSR shape reacting to A/D/S/R knobs.
 13. **Virtual keyboard** — `MidiKeyboardComponent` showing/triggering notes, per-part channel colour.
-14. **Voice activity meter** — per-part allocator state (one cell per allocated voice, up to 16; the global 96-voice pool view lives on the Patch page).
+14. **Voice activity meter** — per-part allocator state (one cell per allocated voice, up to 16; the former global 96-voice pool view on the Patch page was removed — the per-part Voices rows now carry the allocation picture).
 15. **Step-sequencer grid editor** — replace 32 raw sliders with a 16-step grid.
 16. **Oscilloscope/spectrum** (lower priority).
 

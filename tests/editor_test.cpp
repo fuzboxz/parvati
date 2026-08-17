@@ -14,6 +14,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "PatchFile.h"              // AmbikaProgram parse (expected .PRO PartData bytes)
 #include "ui/CentralModBar.h"     // [MOD] toggle check (dynamic_cast target)
 
 // Headless run-loop pump for the asynchronous triggerClick (Apple-only; the
@@ -300,16 +301,16 @@ int main()
         auto& engine = proc.getEngine();
         auto popcount = [] (uint8_t m) { int n = 0; for (int b = 0; b < 6; ++b) if (m & (1u << b)) ++n; return n; };
 
-        // Single: part 0 maxed (16 voices), everything else disabled.
-        applyArrangement (engine, Arrangement::Single);
+        // Poly: part 0 maxed (16 voices), everything else disabled.
+        applyArrangement (engine, Arrangement::Poly);
         patchPage->refresh();
-        check (patchPage->getDisplayedVoiceSlots (0) == 16, "Single: part 0 shows 16 voices");
-        check (patchPage->getDisplayedVoiceSlots (1) == 0, "Single: part 1 shows 0 (disabled)");
-        check (patchPage->getDisplayedArrangement() == Arrangement::Single,
-               "Single: arrangement inferred as Single");
+        check (patchPage->getDisplayedVoiceSlots (0) == 16, "Poly: part 0 shows 16 voices");
+        check (patchPage->getDisplayedVoiceSlots (1) == 0, "Poly: part 1 shows 0 (disabled)");
+        check (patchPage->getDisplayedArrangement() == Arrangement::Poly,
+               "Poly: arrangement inferred as Poly");
         // The derived cards follow the counts: one active part owns all 6.
         check (popcount (engine.getPartVoiceAllocation (0)) == 6,
-               "Single: derived mask gives part 0 all 6 cards");
+               "Poly: derived mask gives part 0 all 6 cards");
 
         // TRUE Mono preset: part 0 = 1 voice + MONO polyphony, others disabled.
         applyArrangement (engine, Arrangement::Mono);
@@ -319,27 +320,39 @@ int main()
         check (patchPage->getDisplayedArrangement() == Arrangement::Mono,
                "Mono: arrangement inferred as Mono");
 
-        // Engine -> GUI reflection: load Multi6 (16 each, ch 1..6), refresh,
-        // confirm the page mirrors it and re-infers Multi6.
-        applyArrangement (engine, Arrangement::Multi6);
+        // Engine -> GUI reflection: load Multitimbral (16 each, ch 1..6),
+        // refresh, confirm the page mirrors it and re-infers Multitimbral.
+        applyArrangement (engine, Arrangement::Multitimbral);
         patchPage->refresh();
         bool allSixteen = true;
         for (int p = 0; p < 6; ++p)
             if (patchPage->getDisplayedVoiceSlots (p) != 16) allSixteen = false;
-        check (allSixteen, "Multi6: every part shows 16 voices (engine->GUI reflection)");
-        check (patchPage->getDisplayedArrangement() == Arrangement::Multi6,
-               "Multi6: arrangement inferred as Multi6");
+        check (allSixteen, "Multitimbral: every part shows 16 voices (engine->GUI reflection)");
+        check (patchPage->getDisplayedArrangement() == Arrangement::Multitimbral,
+               "Multitimbral: arrangement inferred as Multitimbral");
+
+        // Drum Kit: six 1-voice Omni parts on single GM note zones.
+        applyArrangement (engine, Arrangement::DrumKit);
+        patchPage->refresh();
+        bool oneEach = true;
+        for (int p = 0; p < 6; ++p)
+            if (patchPage->getDisplayedVoiceSlots (p) != 1) oneEach = false;
+        check (oneEach, "Drum Kit: every part shows 1 voice (engine->GUI reflection)");
+        check (patchPage->getDisplayedArrangement() == Arrangement::DrumKit,
+               "Drum Kit: arrangement inferred as Drum Kit");
 
         // ---- [7b] Voice counts (per-part pool allocation) via the Patch page
         // ----
         // Drives the REAL Voices-combo path (onVoicesChanged ->
-        // setPartVoiceSlots) and the engine->GUI reflection (refresh re-reads
-        // the counts into the combo). The combo offers 1..16 (no "0":
-        // disabling is the arrangements'/loaders' job — a real pick always
-        // enables).
+        // setPartVoiceSlots / the 0-disable) and the engine->GUI reflection
+        // (refresh re-reads the counts into the combo). The combo offers
+        // 0..16: 0 DISABLES the part (the "0" item — a real pick, not a
+        // ghosted placeholder).
         std::printf ("\n[7b] Voice counts via PatchPage\n");
+        applyArrangement (engine, Arrangement::Multitimbral);
+        patchPage->refresh();
         check (patchPage->getDisplayedVoiceSlots (0) == 16,
-               "default: part 0 Voices combo shows 16 (Multi6 preset)");
+               "default: part 0 Voices combo shows 16 (Multitimbral preset)");
         patchPage->chooseVoiceSlots (0, 10);
         check (engine.getPartVoiceSlots (0) == 10,
                "UI voices: part 0 engine slots == 10");
@@ -348,14 +361,218 @@ int main()
         patchPage->refresh();
         check (patchPage->getDisplayedVoiceSlots (0) == 10,
                "UI voices: refresh keeps part 0 at 10 (engine->GUI reflection)");
-        // 0 is clamped to 1 (the combo offers no "0" — a pick always enables).
+        // 0 is a REAL pick now: it disables the part (0 engine slots, the
+        // "0" combo item selected at full strength — not a placeholder), and
+        // the non-template state re-infers Custom (the combo's real disabled
+        // id-6 item, never ghosted text).
         patchPage->chooseVoiceSlots (0, 0);
-        check (engine.getPartVoiceSlots (0) == 1,
-               "UI voices: chooseVoiceSlots(0) clamps to 1 (enables, never disables)");
+        check (engine.getPartVoiceSlots (0) == 0,
+               "UI voices: chooseVoiceSlots(0) disables the part (0 slots)");
+        check (patchPage->getDisplayedVoiceSlots (0) == 0,
+               "UI voices: part 0 combo shows the real \"0\" item");
+        check (patchPage->getDisplayedArrangement() == Arrangement::Custom,
+               "UI voices: 10/0/16x4 mix re-infers Custom (real combo item, no ghost)");
+        // Re-enable: a positive pick revives the part.
+        patchPage->chooseVoiceSlots (0, 4);
+        check (engine.getPartVoiceSlots (0) == 4,
+               "UI voices: re-picking 4 re-enables the part");
+
+        // ---- [7c] Stock template FILES through the REAL load path ----
+        // Mirrors ParvatiEditor::applyPatchFile exactly (loadParvatiMultiFile
+        // + patchPage->refresh()): loads the shipped presets/TEMPLATES/*.parvati
+        // and asserts the Patch page's rows/arrangement reflect the loaded
+        // multi — the end-to-end engine->GUI reflection after a file load.
+        std::printf ("\n[7c] stock templates via the real load path\n");
+        const juce::File tplDir = juce::File::getCurrentWorkingDirectory()
+                                      .getChildFile ("presets/TEMPLATES");
+        const juce::File polyFile  = tplDir.getChildFile ("Poly.parvati");
+        const juce::File multiFile = tplDir.getChildFile ("Multitimbral.parvati");
+        const juce::File drumFile  = tplDir.getChildFile ("Drum Kit (GM).parvati");
+        check (polyFile.existsAsFile() && multiFile.existsAsFile() && drumFile.existsAsFile(),
+               "stock templates present (run parvati_gen_templates first)");
+        if (polyFile.existsAsFile())
+        {
+            check (proc.loadParvatiMultiFile (polyFile), "load path: Poly.parvati loads");
+            patchPage->refresh();
+            const int polyRows[6] = { 16, 0, 0, 0, 0, 0 };
+            bool polyMirrored = true;
+            for (int p = 0; p < 6; ++p)
+                if (patchPage->getDisplayedVoiceSlots (p) != polyRows[p]) polyMirrored = false;
+            check (polyMirrored,
+                   "load path: Poly rows mirror 16/0/0/0/0/0 (Custom-style load no longer mis-styled)");
+            check (patchPage->getDisplayedArrangement() == Arrangement::Poly,
+                   "load path: Poly.parvati re-infers as Poly");
+        }
+        if (multiFile.existsAsFile())
+        {
+            check (proc.loadParvatiMultiFile (multiFile), "load path: Multitimbral.parvati loads");
+            patchPage->refresh();
+            bool sixMaxed = true;
+            for (int p = 0; p < 6; ++p)
+                if (patchPage->getDisplayedVoiceSlots (p) != 16) sixMaxed = false;
+            check (sixMaxed, "load path: Multitimbral rows mirror 6 x 16");
+            check (patchPage->getDisplayedArrangement() == Arrangement::Multitimbral,
+                   "load path: Multitimbral.parvati re-infers as Multitimbral");
+        }
+        if (drumFile.existsAsFile())
+        {
+            // The shipped GM kit matches the built-in Drum Kit arrangement
+            // preset exactly (6 x 1 mono voice, GM single-note zones) plus its
+            // bespoke drum content (names + tuned patches, which inferArrangement
+            // ignores) — so the page must show "Drum Kit", not Custom.
+            check (proc.loadParvatiMultiFile (drumFile), "load path: Drum Kit (GM).parvati loads");
+            patchPage->refresh();
+            bool allOne = true;
+            for (int p = 0; p < 6; ++p)
+                if (patchPage->getDisplayedVoiceSlots (p) != 1) allOne = false;
+            check (allOne, "load path: Drum Kit rows mirror 1 voice/part");
+            check (patchPage->getDisplayedArrangement() == Arrangement::DrumKit,
+                   "load path: Drum Kit (GM).parvati re-infers as Drum Kit");
+        }
+
+        // ---- [7d] EDITOR-LEVEL load wiring: the REAL user entry points ----
+        // filesDropped is the actual drag-drop path (not the processor method
+        // the [7c] block called directly): drop -> applyPatchFile -> load ->
+        // patchPage->refresh(). Every check here asserts the page reflects the
+        // load WITHOUT any manual refresh call from the test.
+        std::printf ("\n[7d] editor-level load wiring (filesDropped / page reveal)\n");
+        auto* parEd = dynamic_cast<ParvatiEditor*> (editor);
+        check (parEd != nullptr, "editor casts to ParvatiEditor (drop-target seam)");
+        if (parEd != nullptr)
+        {
+            // (a) Multi drop: Poly.parvati through filesDropped alone.
+            if (polyFile.existsAsFile())
+            {
+                parEd->filesDropped (juce::StringArray (polyFile.getFullPathName()), 0, 0);
+                bool polyMirrored = true;
+                for (int p = 0; p < 6; ++p)
+                    if (patchPage->getDisplayedVoiceSlots (p) != (p == 0 ? 16 : 0)) polyMirrored = false;
+                check (polyMirrored,
+                       "drop(multi): rows mirror 16/0/0/0/0/0 with NO manual refresh");
+                check (patchPage->getDisplayedArrangement() == Arrangement::Poly,
+                       "drop(multi): arrangement re-infers Poly with NO manual refresh");
+            }
+
+            // (b) Single-patch (.PRO) drop: the CURRENT part's Poly + Tune
+            // combos must mirror the loaded PartData (a .PRO load rewrites
+            // byte 15 + byte 4 of the current part). A custom tuning is armed
+            // FIRST so the 12-EDO case also pins the stale-custom clear: the
+            // factory .PRO carries raga byte 0 (verified below from the parsed
+            // file), which must leave resolvedTuningMode at 0 — not the armed
+            // 33 — and the row must show it.
+            {
+                const juce::File factDir = juce::File::getCurrentWorkingDirectory()
+                                               .getChildFile ("presets/FACTORY/A");
+                juce::Array<juce::File> pros = factDir.findChildFiles (
+                    juce::File::findFiles, false, "*.pro");   // case-insensitive
+                check (! pros.isEmpty(), "factory .PRO bank present (presets/FACTORY/A)");
+                if (! pros.isEmpty())
+                {
+                    AmbikaProgram expect;
+                    check (parseAmbikaProgramFile (pros[0], expect) && expect.hasPart,
+                           "factory .PRO parses (PartData present)");
+                    // Arm a custom tuning so a stale flag would show as 33.
+                    int16_t offs[12] = { 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+                    engine.setPartTuningCustom (0, offs);
+                    check (engine.resolvedTuningMode (0) == 33,
+                           "precondition: custom tuning armed (resolved mode 33)");
+
+                    parEd->filesDropped (juce::StringArray (pros[0].getFullPathName()), 0, 0);
+                    const int cur = engine.getCurrentPart();
+                    std::snprintf (msg, sizeof (msg),
+                                  "drop(.PRO): Poly combo mirrors engine byte 15 [combo=%d engine=%d]",
+                                  patchPage->getDisplayedPolyphony (cur),
+                                  (int) engine.getPartPolyphony (cur));
+                    check (patchPage->getDisplayedPolyphony (cur)
+                               == (int) engine.getPartPolyphony (cur), msg);
+                    std::snprintf (msg, sizeof (msg),
+                                  "drop(.PRO): Tune combo mirrors resolved mode [combo=%d engine=%d fileByte4=%d]",
+                                  patchPage->getDisplayedTuningMode (0),
+                                  engine.resolvedTuningMode (0), (int) expect.part[4]);
+                    check (patchPage->getDisplayedTuningMode (0)
+                               == engine.resolvedTuningMode (0), msg);
+                    if (expect.part[4] == 0)
+                        check (engine.resolvedTuningMode (0) == 0,
+                               "drop(.PRO): stale custom tuning cleared (12-EDO file resolves 0, not 33)");
+                }
+            }
+
+            // (c) CORRUPT .parvati multi drop: validation must fail BEFORE any
+            // engine mutation (the old path ran resetAllVoices + slot resets
+            // first, so a failed load silently re-partitioned the pool).
+            {
+                engine.setPartVoiceSlots (0, 11);   // distinctive state to detect mutation
+                patchPage->refresh();
+                juce::File corrupt = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                         .getChildFile ("parvati_corrupt_test.parvati");
+                check (corrupt.replaceWithText (
+                           "format: parvati-multi\nparts: [\n"),
+                       "corrupt .parvati test file written");
+                const int slotsBefore[6] = { engine.getPartVoiceSlots (0),
+                                             engine.getPartVoiceSlots (1),
+                                             engine.getPartVoiceSlots (2),
+                                             engine.getPartVoiceSlots (3),
+                                             engine.getPartVoiceSlots (4),
+                                             engine.getPartVoiceSlots (5) };
+                parEd->filesDropped (juce::StringArray (corrupt.getFullPathName()), 0, 0);
+                bool unchanged = true;
+                for (int p = 0; p < 6; ++p)
+                    if (engine.getPartVoiceSlots (p) != slotsBefore[p]) unchanged = false;
+                check (unchanged,
+                       "drop(corrupt): failed multi load leaves voice slots untouched");
+                check (engine.getPartVoiceSlots (0) == 11,
+                       "drop(corrupt): part 0 keeps its 11 slots (no init reset)");
+                corrupt.deleteFile();
+            }
+
+            // (d) Page-reveal refresh: an engine-direct edit behind the UI's
+            // back (the host state restore stand-in) must surface when the
+            // Patch page is revealed — setCurrentTopPage is the public page
+            // switch the header [Patch] button drives.
+            {
+                parEd->setCurrentTopPage (0);   // leave the Patch page first
+                engine.setPartVoiceSlots (0, 7);
+                parEd->setCurrentTopPage (2);   // reveal -> showTopPage refresh
+                check (patchPage->getDisplayedVoiceSlots (0) == 7,
+                       "page reveal: hidden-page engine edit (7 slots) surfaces on reveal");
+                parEd->setCurrentTopPage (0);   // restore the SYNTH page for later sections
+            }
+
+            // (e) Header min-width fit: at the 1024px minimum editor width the
+            // [FX] mode button keeps its full 50px width (the left cluster
+            // budget: presetW was trimmed 168 -> 156 so the cluster fits).
+            {
+                const int prevW = editor->getWidth(), prevH = editor->getHeight();
+                editor->setSize (1024, 500);
+                std::function<juce::TextButton* (juce::Component*)> findFx =
+                    [&] (juce::Component* c) -> juce::TextButton*
+                {
+                    // The [FX] mode toggle is a DIRECT header child of the editor
+                    // (y inside the 44px header band); nested pages have no "FX"
+                    // TextButton, but stay defensive via the parent check.
+                    if (auto* b = dynamic_cast<juce::TextButton*> (c))
+                        if (b->getButtonText() == "FX" && b->getParentComponent() == dynamic_cast<juce::Component*> (parEd))
+                            return b;
+                    for (auto* ch : c->getChildren())
+                        if (auto* r = findFx (ch)) return r;
+                    return nullptr;
+                };
+                if (auto* fxBtn = findFx (parEd))
+                {
+                    std::snprintf (msg, sizeof (msg),
+                                  "header fit @1024: [FX] keeps full 50px width [got %d]",
+                                  fxBtn->getWidth());
+                    check (fxBtn->getWidth() >= 50, msg);
+                }
+                else
+                    check (false, "header fit @1024: [FX] button found");
+                editor->setSize (prevW, prevH);   // restore
+            }
+        }
 
         // ---- [8] The pool has NO per-row cap: every part can be maxed ----
         std::printf ("\n[8] every part can be maxed simultaneously\n");
-        applyArrangement (engine, Arrangement::Multi6);   // 6 x 16 = the whole pool
+        applyArrangement (engine, Arrangement::Multitimbral);   // 6 x 16 = the whole pool
         patchPage->refresh();
         patchPage->chooseVoiceSlots (0, 16);
         patchPage->chooseVoiceSlots (1, 16);

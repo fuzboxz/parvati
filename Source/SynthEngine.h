@@ -465,6 +465,13 @@ public:
     // stay const-correct. Default POLY (1) for an out-of-range part.
     uint8_t getPartPolyphony (int part) const { return ok (part) ? parts_[(size_t) part].partBytes[15] : 1; }
 
+    // PartData byte 3 = per-voice detune spread (firmware PartData.spread,
+    // uint8): applied per voice as `voiceIndex * spread` in 1/128-semitone
+    // units (SynthEngine.cpp / part.cc). Additive const read so callers (e.g.
+    // arrangement inference) can stay const-correct. Default 0 for an
+    // out-of-range part.
+    uint8_t getPartSpread (int part) const { return ok (part) ? parts_[(size_t) part].partBytes[3] : 0; }
+
     // ---- Voicecard masks (DERIVED from the voice slots) ----
     // The firmware 6-voicecard bitmask is no longer user state: voiceSlots is
     // the single source of truth and rebuildVoiceAllocation derives each

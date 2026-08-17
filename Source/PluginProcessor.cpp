@@ -833,6 +833,15 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     // ValueTree/timer-deferred, so an explicit sync guarantees correctness).
     syncAllParamsToEngine();
 
+    // Tuning-faithful load (mirrors the .parvati/.MUL paths): a .PRO carries
+    // the raga preset byte (PartData 4) but NO custom table, so a leftover
+    // customTuningActive flag from an earlier edit would keep
+    // resolvedTuningMode at 33 (custom) even when the loaded program says
+    // 12-EDO (byte 4 == 0). A program loads into the CURRENT part only; a
+    // non-zero byte already wins the resolution order, so no clearing there.
+    if (part84[4] == 0)
+        engine_.clearPartTuningCustom (engine_.getCurrentPart());
+
     // An Ambika program carries NO FX information, so the previously-loaded
     // patch's FX would otherwise remain active. The reset runs AFTER
     // syncAllParamsToEngine() below (which re-applies EVERY param incl. fx from
@@ -943,6 +952,16 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
         auto& part = engine_.getPart (i);
         if (multi.parts[(size_t) i].hasPatch) part.patchBytes = multi.parts[(size_t) i].patch;
         if (multi.parts[(size_t) i].hasPart)  part.partBytes  = multi.parts[(size_t) i].part;
+
+        // Tuning-faithful load (mirrors the .parvati path): an .MUL carries
+        // the raga preset byte (PartData 4) but NO custom table, so a leftover
+        // customTuningActive flag from an earlier edit would keep
+        // resolvedTuningMode at 33 (custom) even when the loaded file says
+        // 12-EDO (byte 4 == 0). The file IS the whole truth for tuning here:
+        // clear the flag whenever the incoming byte is 0 (a non-zero byte
+        // already wins the resolution order, so no clearing is needed there).
+        if (multi.parts[(size_t) i].hasPart && multi.parts[(size_t) i].part[4] == 0)
+            engine_.clearPartTuningCustom (i);
 
         // An Ambika multi carries NO FX information -> reset every Part's FX to
         // a clean slate so the previously-loaded multi's FX does not survive the
@@ -1226,6 +1245,19 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
         juce::FileInputStream in (file);
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
+    }
+    // VALIDATE FIRST, MUTATE LATER: parse the document and confirm the
+    // `parts:` array exists BEFORE any engine mutation runs. A malformed file
+    // (or a non-multi document) previously left the engine already reset to
+    // the init allocation — a failed load mutated the synth under a stale UI
+    // (resetAllVoices + resetVoiceSlotsToInit had run, then applyParvatiMulti
+    // returned false after them). applyParvatiMulti re-parses internally; this
+    // pre-parse is the same cheap check hoisted ahead of the resets so a
+    // failed load leaves the engine + UI exactly as they were.
+    {
+        const juce::var tree = parvati::preset::parseParvatiYaml (text);
+        if (! tree.isObject() || tree["parts"].getArray() == nullptr)
+            return false;
     }
     // Clean slate before applying the new Parvati-native multi: kill sounding
     // voices AND reset the per-part voice slots to the engine init allocation

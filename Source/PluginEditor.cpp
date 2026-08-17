@@ -9,7 +9,6 @@
 #include "ui/OscPreviewDisplay.h"
 #include "ui/MulExportDialog.h"
 #include "ui/PatchPage.h"
-#include "ui/VoicePoolView.h"   // VoiceFrame/VoiceActivity (the voice-pool provider below)
 #include "ui/ParamHelp.h"
 #include "ui/SynthParamLabels.h"
 #include "ui/SynthWorkspace.h"
@@ -2787,50 +2786,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     patchPage_->setVisible (false);
     // Relabel the top-bar Part selector when a part name/alias is edited.
     patchPage_->onPartNamesChanged = [this] { refreshPartComboNames(); };
-    // Global voice-pool view (Patch page only — the whole-patch picture).
-    // Per part: its label (name/alias or the translated "Part N" placeholder,
-    // exactly what the Patch rows show) + one entry per ALLOCATED voice.
-    // The pool voices are re-TAGGED with their owning part by
-    // rebuildVoiceAllocation, so the sort key is the part tag — the same
-    // source of truth as the part-relative meter provider. ONE pass over the
-    // 96-voice pool per poll (each voice lands in its tag's row); the view's
-    // timer only runs while the Patch page is on-screen.
-    patchPage_->setVoicePoolProvider ([this]() {
-        VoicePoolFrame frame;
-        auto& e = processorRef_.getEngine();
-        for (int part = 0; part < static_cast<int> (frame.parts.size()); ++part)
-        {
-            auto& pf = frame.parts[(size_t) part];
-            const auto name = e.getPartName (part);
-            pf.label = name.isNotEmpty() ? name
-                                         : TRANS ("Part") + " " + juce::String (part + 1);
-        }
-        for (int vi = 0; vi < e.getNumVoices(); ++vi)
-            if (auto* av = e.getAmbikaVoice (vi); av != nullptr)
-                if (const int p = av->getPartIndex();
-                    p >= 0 && p < static_cast<int> (frame.parts.size()))
-                    frame.parts[(size_t) p].voices.push_back (
-                        { av->isDisplayedActive(), av->getDisplayedNote() });
-        // Row lengths follow the ASSIGNED slots (getPartVoiceSlots), the same
-        // basis as the Patch page's "Voices Y/96" readout — NOT the physical
-        // voice-object counts just collected, which ride the audio-thread
-        // allocation rebuild (they lag a fresh slots edit and double CHAIN
-        // parts' sets). Activities are taken from the actual voices in pool
-        // order; a stale-longer set is truncated and a stale-shorter one padded
-        // with idle entries, so every part row always reports exactly its
-        // assigned count (1 active part with 1 voice -> one lit row, total
-        // 1/96).
-        for (int part = 0; part < static_cast<int> (frame.parts.size()); ++part)
-        {
-            auto& v = frame.parts[(size_t) part].voices;
-            const int slots = e.getPartVoiceSlots (part);
-            if (static_cast<int> (v.size()) > slots)
-                v.resize (static_cast<size_t> (juce::jmax (0, slots)));
-            while (static_cast<int> (v.size()) < slots)
-                v.push_back ({ false, -1 });
-        }
-        return frame;
-    });
     if (globalPage_ != nullptr)
         patchPage_->hostParamPage (globalPage_);   // reparents the Section::Global ParamPage into the Patch page
 
@@ -3148,11 +3103,9 @@ ParvatiEditor::~ParvatiEditor()
     // Clear callbacks that capture `this` before the owning components are
     // destroyed during the reverse-order member teardown (defensive: the
     // components stop their own timers in their destructors, but nulling the
-    // providers avoids any lingering reference).
+    // callbacks avoids any lingering reference).
     if (keyboardView_ != nullptr)
         keyboardView_->setNoteCallback (nullptr);
-    if (patchPage_ != nullptr)
-        patchPage_->setVoicePoolProvider (nullptr);
     // Detach from the theme broadcaster and release the L&F BEFORE the member
     // objects (themeManager_, lnf_) and the base Component are destroyed, so the
     // ChangeBroadcaster never calls back into a half-dead editor and no child
@@ -3538,6 +3491,13 @@ void ParvatiEditor::showTopPage (int idx)
     if (idx == 2 && patchPage_ != nullptr)
     {
         patchPage_->toFront (true);
+        // The page re-reads the engine every time it is REVEALED. Engine state
+        // can change under a hidden page with no editor notification — a host
+        // state restore (setStateInformation) rewrites the engine directly and
+        // has no editor hook, and engine-direct loads from tools/tests bypass
+        // applyPatchFile too. refresh() is idempotent + guarded (no onChange
+        // fires), so this is cheap on the common no-change path.
+        patchPage_->refresh();
         if (keyboardView_ != nullptr && keyboardView_->isVisible())
             keyboardView_->toFront (false);
         if (wheels_ != nullptr && wheels_->isVisible())
@@ -3901,20 +3861,35 @@ void ParvatiEditor::resized()
     {
         patchCaption_.setVisible (false);   // "Patch:" label removed
         partCaption_.setVisible (false);    // "Part:" label removed (dropdown only)
-        const int presetW   = (presetBrowser_ != nullptr) ? 168 : 0;   // narrower patch dropdown
+        const int presetW   = (presetBrowser_ != nullptr) ? 156 : 0;   // min-width fit (see below)
         const int partComboW = 88;
         const int gapW = 6;
         const int globalW = 64;
         const int modeW = 50;   // [Synth]/[FX] toggle buttons (radio group)
 
+        // Left-cluster budget at the 1024px MINIMUM editor width
+        // (setResizeLimits): right cluster 486 (7x44 icons + gaps + Load/Save)
+        // + insets 12 + edge 8 + logo ~70+16 + this cluster 156+6+64+6+88+6+50+6+50
+        // = 1024. presetW is 156 (was 168): at 168 the cluster ran ~12px over,
+        // truncating [FX] to ~38px; 156 lands exactly on the budget so every
+        // control keeps its designed width at the minimum frame.
+
         auto cluster = bar;   // left-aligned: follows the logo block directly
+        // Whitespace between EVERY left-cluster element (preset | Patch | Part |
+        // Synth | FX) so each control breathes a couple of pixels on its right
+        // instead of butting directly against the next one.
         if (presetBrowser_ != nullptr)
+        {
             presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
-        cluster.removeFromLeft (gapW);   // small gap between the Patch dropdown and the Patch button
+            cluster.removeFromLeft (gapW);
+        }
         globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Patch page overlay toggle (between Patch dropdown and Part)
+        cluster.removeFromLeft (gapW);
         partCombo_.setBounds (cluster.removeFromLeft (partComboW));
+        cluster.removeFromLeft (gapW);
         // Synth/FX mode toggle (radio group) after Part.
         synthModeButton_.setBounds (cluster.removeFromLeft (modeW));
+        cluster.removeFromLeft (gapW);
         fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
     }
 
@@ -4170,8 +4145,8 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
 {
     // .MUL -> multitimbral multi (all 6 Parts); .PRO -> single program;
     // .parvati -> Parvati-native YAML (patch or multi, sniffed by format:).
+    // Both kinds refresh the Patch page on success (see the tail).
     bool ok = false;
-    bool isMulti = false;
 
     if (f.hasFileExtension (".parvati"))
     {
@@ -4180,30 +4155,29 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
             text = in.readEntireStreamAsString();
         const juce::String fmt = parvati::preset::detectParvatiFormat (text);
         if (fmt == parvati::preset::kFormatMulti)
-        {
-            isMulti = true;
             ok = processorRef_.loadParvatiMultiFile (f);
-        }
         else
-        {
             ok = processorRef_.loadParvatiPatchFile (f);
-        }
     }
     else
     {
-        isMulti = f.hasFileExtension (".mul");
-        ok = isMulti ? processorRef_.loadMultiFile (f)
-                     : processorRef_.loadProgramFile (f);
+        ok = f.hasFileExtension (".mul") ? processorRef_.loadMultiFile (f)
+                                         : processorRef_.loadProgramFile (f);
     }
 
     if (ok)
     {
         if (presetBrowser_ != nullptr)
             presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
-        // A multi rewrites every part's channel / key zone / voice allocation /
-        // polyphony, so force the Patch page to re-read (and re-infer the
-        // arrangement) even though the edited part is unchanged.
-        if (isMulti && patchPage_ != nullptr)
+        // EVERY successful load refreshes the Patch page, not just multis. A
+        // multi rewrites every part's channel / key zone / voice allocation /
+        // polyphony, and a SINGLE-patch load (.PRO / .parvati patch) rewrites
+        // the current part's PartData bytes — poly (byte 15), raga preset
+        // (byte 4), spread (byte 3) — which the page's Poly / Tune combos
+        // mirror. refresh() is a cheap guarded engine re-read (no onChange
+        // fires), so calling it on the patch-only path too keeps the rows
+        // honest without touching the engine.
+        if (patchPage_ != nullptr)
             patchPage_->refresh();
     }
 }

@@ -2,16 +2,16 @@
 //
 // A custom Component (no APVTS descriptor magic) that replaces the separate
 // Multi/Setup + Global pages. It lets the user pick a high-level arrangement
-// (Mono/Single/Dual Layer/Dual Split/Quad Split/Multi 6 — voice-budget presets
-// over the 96-voice pool) which auto-configures all 6 Parts, then fine-tunes
-// each Part through simple controls (a VOICE COUNT 1..16, not a card bitmask:
-// the 6-voicecard masks are derived by the engine). It also HOSTS the editor's
-// existing Section::Global ParamPage (patch-wide knobs) at the top of the
-// scrolled body, and MERGES its own arrangement summary (Mono/Single/Dual
-// Layer/... + the "Voices Y/96" readout) and 6-part voice-allocation table
-// into that page's Global panel (via the page's external-decoration slot),
-// so ONE bordered Global section holds the global knobs, the arrangement
-// summary AND the part-allocation table.
+// (Mono/Poly/Unison/Multitimbral/Drum Kit — voice-budget presets over the
+// 96-voice pool) which auto-configures all 6 Parts, then fine-tunes each Part
+// through simple controls (a VOICE COUNT 0..16, not a card bitmask: the
+// 6-voicecard masks are derived by the engine; 0 = the Part is DISABLED). It
+// also HOSTS the editor's existing Section::Global ParamPage (patch-wide
+// knobs) at the top of the scrolled body, and MERGES its own arrangement
+// summary (Mono/Poly/... + the "Voices Y/96" readout) and 6-part
+// voice-allocation table into that page's Global panel (via the page's
+// external-decoration slot), so ONE bordered Global section holds the global
+// knobs, the arrangement summary AND the part-allocation table.
 //
 // Design: /tmp/parvati_patch_design.md ("Phase 2"). Phase 1 output
 // (Source/ui/PatchArrangement.h) supplies applyArrangement/inferArrangement.
@@ -32,7 +32,6 @@
 #include <memory>
 
 #include "PatchArrangement.h"   // Arrangement (getDisplayedArrangement return type)
-#include "VoicePoolView.h"    // VoicePoolFrame (setVoicePoolProvider type)
 
 class ParvatiAudioProcessor;
 class ThemeManager;
@@ -40,9 +39,9 @@ class ParamPage;
 
 //==============================================================================
 // Patch page: arrangement selector + the hosted patch-wide ParamPage (whose
-// Global panel contains the merged 6-part allocation table) + the voice-pool
-// view. Refreshed/relanguaged/rethemed by the editor exactly like the old
-// editor-chrome hooks the editor calls.
+// Global panel contains the merged 6-part allocation table). Refreshed/
+// relanguaged/rethemed by the editor exactly like the old editor-chrome hooks
+// the editor calls.
 class PatchPage : public juce::Component
 {
 public:
@@ -68,13 +67,6 @@ public:
     // NOT own the hosted page (the editor retains ownership); it only reparents
     // + positions it. The hosted page is reflowed to the row width in resized().
     void hostParamPage (juce::Component* paramPage);
-
-    // Inject the state provider for the global voice-pool view (the pool
-    // picture lives ONLY here — the bottom status strip's count is
-    // part-relative). The editor builds a VoicePoolFrame (per part: label + one
-    // entry per allocated voice) at ~30 Hz; the view owns nothing from the
-    // engine.
-    void setVoicePoolProvider (std::function<VoicePoolFrame()> provider);
 
     // Re-read all 6 Parts' engine state into the rows (voice count, channel,
     // key zone, polyphony) WITHOUT firing onChange, then re-infer the
@@ -104,17 +96,23 @@ public:
     // headless tests (instantiate TuningEditor directly instead).
     void chooseTuningMode (int part, int mode);
     // Currently-displayed voice count for @p part from its Voices combo
-    // (1..16; 0 = no selection = a DISABLED part — the combo offers no 0 item,
-    // disabling is the arrangements'/loaders' job; -1 for an out-of-range part).
+    // (0..16; 0 = the Part is DISABLED — a real "0" item, selected at full
+    // strength; -1 for an out-of-range part).
     int getDisplayedVoiceSlots (int part) const;
     // Set @p part's voice count as if the user chose it in the Voices combo:
     // sets the selection then runs the normal engine write path
-    // (onVoicesChanged -> setPartVoiceSlots). JUCE does not fire a combo's
-    // onChange for a programmatic setSelectedId, hence the explicit drive.
-    // @p slots is clamped into the combo's 1..16 range (0 clamps to 1 —
-    // enabling a disabled part; the public engine setter likewise never
-    // disables).
+    // (onVoicesChanged -> setPartVoiceSlots, or the legacy
+    // setPartVoiceAllocation(part,0) disable for 0 — the public slots setter
+    // clamps 0 to 1 by design). JUCE does not fire a combo's onChange for a
+    // programmatic setSelectedId, hence the explicit drive.
+    // @p slots is clamped into the combo's 0..16 range.
     void chooseVoiceSlots (int part, int slots);
+    // Currently-displayed polyphony mode for @p part from its Poly combo
+    // (0 = MONO, 1 = POLY, 2 = UNISON 2x, 3 = CYCLIC, 4 = CHAIN;
+    // -1 for an out-of-range part). Same observe-only hook contract as
+    // getDisplayedVoiceSlots: editor-load tests assert the combo mirrors the
+    // engine's PartData byte 15 after a file load.
+    int getDisplayedPolyphony (int part) const;
 
 private:
     ParvatiAudioProcessor& proc_;
@@ -125,27 +123,20 @@ private:
     // (the 44pt summary row above the 6 part rows — see PartTablePanel), so
     // the arrangement sits with the per-part rows it configures.
     juce::Label voicesTotalLabel_;       // "Voices Y/96" pool-budget readout (summary row, right of the arrangement combo)
-    juce::ComboBox arrangementCombo_;   // 6 selectable items (ids 1..6); Custom = no selection
+    juce::ComboBox arrangementCombo_;   // 5 template items (ids 1..5) + separator + a DISABLED infer-only "Custom" item (id 6)
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 
     // T4 scroll safety net: the hosted patch-wide ParamPage (whose Global
-    // panel carries the merged part-allocation table) + the voice-pool view
-    // live inside this vertical Viewport, so a short host frame (small AUv3
-    // pane) SCROLLS instead of clipping the lower content unrecoverably.
-    // At the tuned design size the body fits and reflowToWidth-style sizing
-    // grows it to the view height, so no scrollbar ever appears. ScrollBody
-    // (declared BEFORE the viewport so the viewport — which views it — is
-    // destroyed first) is the scrolled content component, defined in the .cpp
-    // like PartRow.
+    // panel carries the merged part-allocation table) lives inside this
+    // vertical Viewport, so a short host frame (small AUv3 pane) SCROLLS
+    // instead of clipping the lower content unrecoverably. At the tuned design
+    // size the body fits and reflowToWidth-style sizing grows it to the view
+    // height, so no scrollbar ever appears. ScrollBody (declared BEFORE the
+    // viewport so the viewport — which views it — is destroyed first) is the
+    // scrolled content component, defined in the .cpp like PartRow.
     class ScrollBody;
     std::unique_ptr<ScrollBody> scrollBody_;
     juce::Viewport viewport_;
-
-    // Global voice-pool view (owned) + its caption. Lives INSIDE the scrolled
-    // body BELOW the hosted Global ParamPage (the bottom of the body), so the
-    // whole-part picture is reachable exactly where parts are configured.
-    juce::Label voicePoolCaption_;
-    std::unique_ptr<VoicePoolView> voicePoolView_;
 
     // The 6-part voice-allocation table container: parents the PartRows and
     // is itself attached into the HOSTED page's "Global" group as an external

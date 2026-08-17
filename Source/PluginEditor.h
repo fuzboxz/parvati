@@ -567,6 +567,15 @@ public:
     // tools must drive the page switch without simulating clicks).
     void setCurrentTopPage (int pageIndex);
 
+    // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL/.parvati
+    // files. DECLARED PUBLIC (the base is inherited privately): the drop entry
+    // filesDropped -> applyPatchFile is the REAL user load path (drag-drop onto
+    // the editor), and headless tests drive exactly that seam instead of
+    // re-implementing the load routing (the private-inheritance conversion
+    // ParvatiEditor* -> FileDragAndDropTarget* is inaccessible outside).
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files, int x, int y) override;
+
 private:
     // Active voices of the CURRENT part (pool voices filtered by their part
     // tag + the SF-1 atomic activity snapshot) — the numerator of the bottom
@@ -581,10 +590,6 @@ private:
     void showTopPage (int pageIndex);      // 0=Synth 1=FX 2=Patch
     void reparentGeneratorTo (bool toFx);  // move the shared generator between workspaces
 
-    // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL files.
-    bool isInterestedInFileDrag (const juce::StringArray& files) override;
-    void filesDropped (const juce::StringArray& files, int x, int y) override;
-
     // juce::DragAndDropContainer — detect the start/end of an internal
     // mod-source drag (payload "parvatiModSrc:<enum>") to toggle the drag-drop
     // affordance: valid destination knobs light up as drop zones and every
@@ -595,8 +600,11 @@ private:
     void dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details) override;
     void dragOperationEnded   (const juce::DragAndDropTarget::SourceDetails&) override;
 
-    // juce::Timer — keep the Patch page (arrangement + part rows) reflecting the
-    // live engine state (~30 Hz); a forced refresh also runs after a .MUL load.
+    // juce::Timer — periodic status upkeep (bottom-strip voice count, part-name
+    // relabel, CPU readout). The Patch page is NOT timer-refreshed: it re-reads
+    // the engine on every successful load path (applyPatchFile) and every time
+    // it is revealed (showTopPage(2)), which covers host state restores too
+    // (a restore rewrites the engine; the next reveal re-reads it).
     void timerCallback() override;
 
     // juce::ChangeListener — re-apply the L&F theme + repaint when the
@@ -778,8 +786,9 @@ private:
     IconButton       settingsButton_ { IconButton::Icon::Gear };   // gear icon, top-right
 
     // Virtual keyboard (bottom strip) + status bar (count + tooltip). Voice
-    // activity is read from the engine directly by the status-strip count and
-    // the Patch page's voice-pool view; no per-voice cells meter exists.
+    // activity is read from the engine directly by the status-strip count;
+    // no per-voice cells meter exists (the former Patch-page voice-pool view
+    // was removed — the per-part Voices rows carry the allocation picture).
     std::unique_ptr<KeyboardView>    keyboardView_;
     std::unique_ptr<WheelsComponent> wheels_;   // pitch + mod wheels (left of keyboard)
     ParamPage*  globalPage_ { nullptr };        // Global page overlay (toggled by globalButton_; hosted by the Patch page)

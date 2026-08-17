@@ -2,14 +2,14 @@
 format: parvati-multi
 version: 1
 parvati_version: 0.1.0
-name: "Unison 2x"
+name: "Unison"
 author: ""
 parts:
-  - channel: 1
+  - channel: 0
     keyzone_low: 0
     keyzone_high: 127
     voice_allocation: 63
-    voice_slots: 6
+    voice_slots: 16
     name: ""
     params:
       osc1_shape: 1            # Saw
@@ -113,11 +113,11 @@ parts:
       part_volume: 120
       part_octave: 0
       part_tuning: 0
-      part_spread: 0
+      part_spread: 8
       part_raga: 0            # Off
       part_legato: 0            # Off
       part_portamento: 0
-      part_polyphony: 2            # Unison 2x
+      part_polyphony: 0            # Mono
       seq_length_1: 16
       seq_length_2: 16
       seq_length_3: 16

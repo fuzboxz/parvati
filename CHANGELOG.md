@@ -5,6 +5,31 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **Patch-loading UI wiring (end-to-end review pass): every load path now
+  refreshes the Patch page, and failed loads never mutate the engine.**
+  Single-patch loads (.PRO / .parvati patch) previously skipped the Patch
+  page refresh (only multis refreshed), so the current part's Poly / Tune
+  combos went stale after a drop; the refresh now runs on EVERY successful
+  load. The page also re-reads the engine each time it is REVEALED — a host
+  state restore (setStateInformation) rewrites the engine with no editor
+  notification, so the previously hidden page caught up only on the next
+  file load. Corrupt .parvati multi files failed validation only AFTER
+  `resetAllVoices()` + the init slot reset had already run, silently
+  re-partitioning the pool on a failed load; validation now parses the
+  document before any mutation. .MUL / .PRO loads never cleared a stale
+  custom-tuning flag, so a loaded 12-EDO file stayed stuck showing "Custom…"
+  (resolved mode 33) — the file is the whole tuning truth on those formats,
+  so a zero raga byte now clears the flag (mirrors the .parvati path). The
+  language-switch combo rebuilds no longer fire a stale async `onChange`
+  (the default `ComboBox::clear()` notification re-ran the arrangement /
+  channel / poly write paths with a pre-rebuild selection, silently
+  overwriting engine state — now `dontSendNotification` like the voices /
+  tune combos). Header left cluster min-width fit at the 1024px floor
+  (preset dropdown 168 -> 156; [FX] kept ~38px, now its full 50px — pinned
+  by a new editor test). FR/DE translation gaps closed ("Tune",
+  "Custom…"; the Voices tooltip is TRANS-wrapped). New editor test section
+  drives the REAL user entry points: `filesDropped` (multi + single .PRO +
+  corrupt-file no-mutation) and the page-reveal refresh.
 - **Note-onset crackle with the FV-1 distortion FX (Overdrive / Wavemangler)
   — shaper aliasing at the 32.768 kHz internal rate.** Symptom: with an FX
   slot active, EVERY key press started with a short crackle/fizz burst that
@@ -51,6 +76,30 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   (tail 0.77) vs 0.995 (tail 0.97) with 2 dB margin.
 
 ### Changed
+- **Patch page voice/part configuration presets rebuilt around the voice-first
+  model; 0 voices is a real per-part setting.** The arrangement selector's
+  six legacy card-split templates (Single / Dual Layer / Dual Split / Quad
+  Split / Multi 6 + Mono) are replaced by five voice/part presets:
+  **Mono** (1 part, 1 voice, mono), **Poly** (1 part, 16 voices, poly),
+  **Unison** (1 part, 16 voices, mono with a per-voice detune spread so the
+  stack reads fat, not flat), **Multitimbral** (6 parts, 16 voices each, mono,
+  one part per MIDI channel 1..6) and **Drum Kit** (6 parts, 1 voice each,
+  mono, Omni, each part mapped to a single GM drum note). Per-part Voices is
+  now 0..16 where 0 DISABLES the part (picked as a real combo item, not a
+  ghosted placeholder) — the 6 hardware voicecards stay derived from the
+  counts. **Custom is now a normal selected combo item instead of ghosted
+  placeholder text** (drawn at half opacity through the default
+  nothing-selected path), fixing the wrong "Custom" style shown when opening
+  a patch that matches no preset. The bottom Voice-pool section was dropped
+  from the Patch page (the per-part Voices totals + "Voices Y/96" readout in
+  the table cover it); with it went the 30 Hz provider poll. Stock templates
+  regenerated to the new presets — every template INCLUDING Drum Kit (GM) is
+  generated from its arrangement preset as the single source of truth, so it
+  loads showing "Drum Kit" (6 x 1 mono voice, GM zones) instead of Custom;
+  Unison carries its spread byte. Header left cluster (preset |
+  Patch | Part | Synth | FX) gained consistent pixel gaps between every
+  element. Editor test now loads the shipped template files through the real
+  load path and asserts the Patch page mirrors them.
 - **FX-page labels/readouts fit the knobs (hard 6-char rule).** "Echo" ->
   "Digital Echo", "LUT Distortion" -> "Wavemangler" (display-only; the choice
   stores the index), and the Wavemangler's Shape knob is labelled
@@ -609,7 +658,8 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
     export keeps the faithful bitmask representation.
   - New **Drum Kit (GM)** template: a 6-part drum multi with one GM note
     per part (Kick 36 / Snare 38 / Clap 39 / Closed Hat 42 / Open Hat 46 /
-    Tom 45), Omni channel, 4 slots + CYCLIC round-robin per drum, named
+    Tom 45), Omni channel, 1 mono voice per drum (matching the built-in
+    Drum Kit arrangement, so it loads showing "Drum Kit"), named
     parts, and short percussive patches (noise hats, pitch-dropped
     sine kick/tom).
   - Tests: `voice_slots_test`, `drum_kit_test`; multitimbral/multi_load/
