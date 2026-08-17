@@ -469,6 +469,50 @@ int main()
         check (masterAtDefault, "v2 blob: every Part's master section loads at defaults");
     }
 
+    // ---------------------------------------------------------------------
+    // [6] Filter-oversampling UI pref: default 2x, 8x supported + round-trips,
+    //     unsupported factors clamp, a persisted 1x state still restores 1x.
+    // ---------------------------------------------------------------------
+    std::printf ("\n[6] Filter oversampling pref: default 2x, 8x max, clamping\n");
+    {
+        // Fresh instance: the default is 2x (raised from 1x in 2026-08).
+        ParvatiAudioProcessor a;
+        a.prepareToPlay (48000.0, 256);
+        check (a.getUiOversampling() == 2, "fresh processor defaults to 2x oversampling");
+
+        // 8x (the new maximum) is accepted; unsupported factors snap to the
+        // nearest supported one (1 / 2 / 4 / 8).
+        a.setOversamplingFactor (8);
+        check (a.getUiOversampling() == 8, "8x oversampling accepted (new maximum)");
+        a.setOversamplingFactor (16);
+        check (a.getUiOversampling() == 8, "16 clamps down to 8");
+        a.setOversamplingFactor (3);
+        check (a.getUiOversampling() == 4, "3 clamps up to 4");
+        a.setOversamplingFactor (1);
+        check (a.getUiOversampling() == 1, "1x (the bit-identical path) still selectable");
+
+        // The persisted factor survives a host-state round-trip (8 stored).
+        a.setOversamplingFactor (8);
+        juce::MemoryBlock blob;
+        a.getStateInformation (blob);
+        ParvatiAudioProcessor b;
+        b.prepareToPlay (48000.0, 256);
+        b.setStateInformation (blob.getData(), (int) blob.getSize());
+        check (b.getUiOversampling() == 8, "8x survives a host-state round-trip");
+
+        // A state PERSISTED at 1x restores 1x: the default change applies only
+        // to NEW states (the stored property wins over the fallback default).
+        ParvatiAudioProcessor c;
+        c.prepareToPlay (48000.0, 256);
+        c.setOversamplingFactor (1);
+        juce::MemoryBlock oneX;
+        c.getStateInformation (oneX);
+        ParvatiAudioProcessor d;
+        d.prepareToPlay (48000.0, 256);
+        d.setStateInformation (oneX.getData(), (int) oneX.getSize());
+        check (d.getUiOversampling() == 1, "a persisted 1x state restores 1x (not the new 2x default)");
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "HOST-STATE TEST: FAILURES" : "HOST-STATE TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

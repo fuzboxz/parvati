@@ -28,7 +28,7 @@ public:
         @param onSmoothingChanged   fired when the parameter-smoothing toggle flips
                                  (editor enables/disables engine smoothing).
         @param onOversamplingChanged fired when the filter-quality combo changes
-                                 (1/2/4); the processor already applies + persists
+                                 (1/2/4/8); the processor already applies + persists
                                  it, this is an editor-side hook.
         @param onLanguageChanged    fired when the language combo changes; the editor
                                  persists the pref, installs the LocalisedStrings,
@@ -58,7 +58,7 @@ public:
 
 private:
     // (Re)build the Filter Quality combo from TRANS() labels. The item IDs
-    // (1/2/4) are stable across languages, so the selection survives a rebuild.
+    // (1/2/4/8) are stable across languages, so the selection survives a rebuild.
     void populateOversamplingCombo();
     // Index <-> persisted-code helpers for the Language combo (which uses
     // index+1 as its item ID). An unknown code maps to index 0 ("auto").

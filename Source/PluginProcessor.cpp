@@ -53,12 +53,32 @@ void ParvatiAudioProcessor::DeferredParamRing::push (int index, float value) noe
 
 juce::Array<ParvatiAudioProcessor::DeferredParamRing::Entry> ParvatiAudioProcessor::DeferredParamRing::drain() noexcept
 {
-    juce::Array<Entry> out;
+    // FX audit finding 4: the previous drain built the juce::Array WHILE
+    // HOLDING the spinlock -- juce::Array::add can MALLOC, and the audio
+    // thread's push() spins unbounded against the flag: if the OS preempts
+    // this (message) thread inside that malloc, the audio thread burns its
+    // entire block budget spinning -> overrun -> crackle. Copy into a
+    // FIXED-capacity local array under the lock instead (a bounded copy of
+    // trivially-copyable 8-byte entries -- provably allocation-free), then
+    // build the returned Array AFTER the lock is released (still the message
+    // thread, where allocating is safe).
+    decltype (slots) snapshot;   // same fixed capacity as the ring (64)
+    uint32_t n = 0;
     while (lock.test_and_set (std::memory_order_acquire)) {}
-    for (uint32_t i = 0; i < count.load (std::memory_order_relaxed); ++i)
-        out.add (slots[i]);
-    count.store (0, std::memory_order_relaxed);
+    {
+        n = count.load (std::memory_order_relaxed);
+        if (n > slots.size())   // defensive: count never exceeds capacity
+            n = (uint32_t) slots.size();
+        for (uint32_t i = 0; i < n; ++i)
+            snapshot[i] = slots[i];
+        count.store (0, std::memory_order_relaxed);
+    }
     lock.clear (std::memory_order_release);
+
+    juce::Array<Entry> out;
+    out.ensureStorageAllocated ((int) n);   // one reservation, then cheap adds
+    for (uint32_t i = 0; i < n; ++i)
+        out.add (snapshot[i]);
     return out;
 }
 
@@ -70,6 +90,13 @@ void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
     // loadPartIntoApvts + syncAllParamsToEngine), the same work a GUI edit
     // performs -- safe and correct here, and NOT safe on the audio thread
     // (which is why parameterChanged defers them).
+
+    // Audit F1/F3 reaper: free the audio objects the audio thread parked when
+    // installing staged swaps (FX processors on a type change, per-voice
+    // Oversampling on a filter-quality change). One walk over 6 chains + 96
+    // voices, almost always a no-op (a dirty flag gates the frees).
+    owner.engine_.reapRetiredAudioObjects();
+
     const auto entries = owner.deferredParams_.drain();
     for (const auto& e : entries)
     {
@@ -81,6 +108,14 @@ void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
             owner.applyArpParameter (d, e.value);
         else if (d.isSequencer)
             owner.applySequencerParameter (d, e.value);
+        else if (d.isFx)
+            // FX params deferred from the audio thread (host automation):
+            // applyFxParameter allocates (juce::String/substring/std::string
+            // keys), so it must not run on the render thread. The engine stages
+            // every FX value through the fxDirty_ atomics, so the <=16 ms
+            // deferral is inaudible; latest-wins coalescing matches automation
+            // burst semantics exactly.
+            owner.applyFxParameter (d, e.value);
         else if (d.paramID == "part_select")
             owner.onPartSelect (static_cast<int> (e.value));
     }
@@ -131,6 +166,14 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // thread), satisfying juce::Timer's threading requirement.
     deferredTimer_ = std::make_unique<DeferredParamTimer> (*this);
     deferredTimer_->startTimerHz (60);
+
+    // Apply the DEFAULT filter-oversampling factor (2x since the 2026-08
+    // default change) so a FRESH instance runs its filter at what the Settings
+    // panel will show: the engine voices stage the factor (serviced on their
+    // next prepare/audio block) and the latency probe reports the OS group
+    // delay. A host-state restore re-applies the PERSISTED factor on top of
+    // this (setStateData -> setOversamplingFactor), which is idempotent.
+    setOversamplingFactor (uiOversampling_);
 }
 
 ParvatiAudioProcessor::~ParvatiAudioProcessor()
@@ -148,6 +191,11 @@ ParvatiAudioProcessor::~ParvatiAudioProcessor()
 void ParvatiAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     hostSampleRate_ = sampleRate;   // cache for the audio-thread latency re-report
+    // Cache the prepared block size for processBlock's overflow clamp (FX
+    // audit F3/F6): every engine-side scratch buffer is sized from this value,
+    // so a host block larger than prepared must never reach the renderers
+    // unchecked. Mirrors the engine's own jmax(1, ...) floor.
+    preparedMaxBlock_.store (juce::jmax (1, samplesPerBlock), std::memory_order_relaxed);
     engine_.prepare (sampleRate, samplesPerBlock);
 
     // The MidiMessageCollector (UI keyboard click-play injection) must know the
@@ -305,15 +353,36 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // No post-processing stage: hardware Ambika has no master limiter — the
     // voicecard output feeds the analog VCA only, so the engine's per-voice
     // VCA is the final gain stage.
-    engine_.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
+
+    // ---- Host block-size clamp (FX audit F3/F6) ----
+    // Every engine-side buffer (voicecard buffers, FX-output buffers, each
+    // FxChain's dry/wet scratch and every FX processor's internal scratch --
+    // worst case FxWavefolder's 6x-oversampled osL_/osR_, sized maxBlock*6+8
+    // at prepare) is sized from prepareToPlay's samplesPerBlock. A host that
+    // renders a LARGER block than it prepared (buffer-size transitions,
+    // offline/freeze renders, some AU/AUv3 hosts -- JUCE does not universally
+    // guarantee numSamples <= samplesPerBlock) would overrun all of them (a
+    // 6x-amplified heap OOB WRITE with the Wavefolder). Clamp once here and
+    // use the clamped count for every engine render + the bus mixing below, so
+    // an oversized block degrades to a truncated render with a silent tail
+    // instead of smashing the heap. MIDI collection and the transport clock
+    // keep the FULL count (no memory exposure; the clock stays in real time).
+    // preparedMaxBlock_ == 0 (not yet prepared) bypasses the clamp, keeping
+    // the old behaviour for degenerate pre-prepare blocks.
+    const int prepared = preparedMaxBlock_.load (std::memory_order_relaxed);
+    const int numSamples = (prepared > 0) ? juce::jmin (buffer.getNumSamples(), prepared)
+                                          : buffer.getNumSamples();
+
+    engine_.renderNextBlock (buffer, midiMessages, 0, numSamples);
 
     // Render the per-part FX chains into their stereo FX-output buffers (host
     // rate). This runs AFTER renderNextBlock (so the voicecard buffers hold the
     // full block) and BEFORE the main-bus sum (which now sources the main bus
     // from the FX-output buffers). With all fx*_enabled=0 the chains are dry
     // copies, so the main bus is audible-identical to the pre-FX mix. The aux
-    // buses remain raw voicecard taps (dry).
-    engine_.renderPartFx (buffer.getNumSamples());
+    // buses remain raw voicecard taps (dry). Clamped to the prepared block
+    // size (see the clamp above): the chains' scratch is prepare-sized.
+    engine_.renderPartFx (numSamples);
 
     // ---- Multi-output bus mixing (Ambika hardware: 6 individual voicecard
     // outputs + a global mix) ----
@@ -322,7 +391,9 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // pre-multi-out single-buffer mix (each voice's mono signal, duplicated to
     // L+R by the dry-copy chain). When the main bus is mono, only L is written.
     // Aux buses (VC1..VC6): each ENABLED aux bus copies its DRY voicecard output.
-    const int numSamples = buffer.getNumSamples();
+    // The mixing below reads the prepare-sized FX/voicecard buffers, so it uses
+    // the CLAMPED numSamples defined above the renderers; the tail of an
+    // oversized host block stays silent (the buffer was cleared full-size).
     const auto& vcBuffers = engine_.getVoiceCardBuffers();
     const auto& fxBuffers = engine_.getFxOutputBuffers();
 
@@ -414,12 +485,15 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
     // Off-message-thread dispatch (host automation on the render thread, or the
     // CC/NRPN map inside processBlock): the arp/seq classes write the engine's
     // pendingConfig_ seqlock (single-writer invariant; a second writer tears
-    // it), and part_select runs loadPartIntoApvts' ~250 ValueTree+UndoManager
-    // writes -- neither is audio-thread work. Defer to the 60 Hz message-thread
-    // drain (DeferredParamTimer) instead. On the message thread (GUI edits,
+    // it), part_select runs loadPartIntoApvts' ~250 ValueTree+UndoManager
+    // writes, and the FX params run applyFxParameter's juce::String/substring/
+    // std::string key traffic (heap ops) -- none of it is audio-thread work.
+    // Defer to the 60 Hz message-thread drain (DeferredParamTimer) instead: the
+    // engine stages every one of these through atomics + dirty flags, so a
+    // <=16 ms deferral is inaudible. On the message thread (GUI edits,
     // syncAllParamsToEngine) everything stays synchronous: zero added latency.
     if (! juce::MessageManager::existsAndIsCurrentThread()
-        && (d.isArp || d.isSequencer || d.paramID == "part_select"))
+        && (d.isArp || d.isSequencer || d.isFx || d.paramID == "part_select"))
     {
         deferredParams_.push (it->second, newValue);
         return;
@@ -850,8 +924,14 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
         return false;
 
     // Clean slate: kill every sounding voice before the new multi configures
-    // all 6 Parts (avoids stuck notes from the previous multi's routing).
+    // all 6 Parts (avoids stuck notes from the previous multi's routing)...
     engine_.resetAllVoices();
+    // ...and reset the per-part VOICE SLOTS to the engine init allocation
+    // (Part 0 = 6 voices, Parts 1..5 disabled) so the multi applies over a
+    // defined state instead of the previous multi's leftover counts. The
+    // .MUL's own MultiData part_mapping_ masks then overwrite every Part
+    // below (parseAmbikaMultiFile only accepts files that carry MultiData).
+    resetVoiceSlotsToInit();
 
     // Load every Part's patch + PartData bytes, plus its MIDI channel, key
     // zone, and voice allocation (from MultiData.part_mapping_[i]:
@@ -1147,12 +1227,34 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
     }
-    // Clean slate before applying the new Parvati-native multi.
+    // Clean slate before applying the new Parvati-native multi: kill sounding
+    // voices AND reset the per-part voice slots to the engine init allocation
+    // (Part 0 = 6 voices, Parts 1..5 disabled) — the format is human-editable,
+    // so a parts list shorter than 6 (or a part node without voice_slots /
+    // voice_allocation keys) would otherwise inherit the PREVIOUS multi's
+    // leftover counts. applyParvatiMulti then restores the file's explicit
+    // slots over the init state (a saved file always carries all 6).
     engine_.resetAllVoices();
+    resetVoiceSlotsToInit();
     if (! parvati::preset::applyParvatiMulti (*this, text))
         return false;
     loadedProgramName_ = file.getFileNameWithoutExtension();
     return true;
+}
+
+//==========================================================================
+void ParvatiAudioProcessor::resetVoiceSlotsToInit()
+{
+    // Mirror of the SynthEngine constructor's kInitVoiceAllocation
+    // { 0x3f, 0, 0, 0, 0, 0 } (SynthEngine.cpp): Part 0 materializes 6 slots
+    // (popcount of 0x3f), Parts 1..5 are disabled. Public setters only — the
+    // public setPartVoiceSlots clamps 0 to 1, so disabling rides the legacy
+    // setPartVoiceAllocation(part, 0) zero-mask path. Each setter defers the
+    // pool re-partition to the audio thread (markAllocationDirty); the
+    // multi loaders mark again after applying the file's own data.
+    engine_.setPartVoiceSlots (0, 6);
+    for (int p = 1; p < SynthEngine::getNumParts(); ++p)
+        engine_.setPartVoiceAllocation (p, 0);
 }
 
 //==============================================================================
@@ -1203,7 +1305,11 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             uiZoom_ = static_cast<double> (tree.getProperty ("ui_zoom", 1.0));
             uiTooltips_ = static_cast<bool> (tree.getProperty ("ui_tooltips", true));
             uiSmoothing_ = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
-            uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 1));
+            // Fallback default 2: the 2026-08 default change (1x -> 2x). A
+            // state that PERSISTED the property keeps its stored factor
+            // (including 1x); only states from before the property existed
+            // (or with it absent) get the new default.
+            uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 2));
             uiFontMode_ = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
             uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
 
@@ -1281,7 +1387,12 @@ void ParvatiAudioProcessor::rebuildOsLatencyProbe()
     // the message thread is race-free.
     if (uiOversampling_ > 1)
     {
-        const size_t factorExp = (uiOversampling_ >= 4) ? 2 : 1;
+        // juce::dsp::Oversampling takes a power-of-2 EXPONENT: 2^factorExp.
+        // 2x -> 1, 4x -> 2, 8x -> 3. Min-phase IIR half-band = minimal latency;
+        // max quality steepens the transition band. Integer latency is enabled
+        // so getLatencyInSamples() is a whole number of INPUT samples (clean for
+        // host PDC reporting).
+        const size_t factorExp = (uiOversampling_ >= 8) ? 3 : (uiOversampling_ >= 4) ? 2 : 1;
         osLatencyProbe_ = std::make_unique<juce::dsp::Oversampling<float>> (
             1u,
             factorExp,
@@ -1321,12 +1432,17 @@ int ParvatiAudioProcessor::computePluginLatency (double hostSampleRate) const
 
 void ParvatiAudioProcessor::setOversamplingFactor (int factor)
 {
-    if (factor != 1 && factor != 2 && factor != 4)
-        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : 4);
+    // Supported factors: 1 / 2 / 4 / 8 (powers of two up to the 8x UI maximum).
+    // Anything else snaps to the nearest supported factor.
+    if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
+        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
 
     uiOversampling_ = factor;                 // persist
     rebuildOsLatencyProbe();                  // message-thread safe (no audio)
-    engine_.setOversamplingFactor (factor);   // per-voice: deferred to audio thread
+    // Per-voice: PRE-BUILD + stage each voice's replacement Oversampling here
+    // (message thread; audit F3) — the audio thread installs with pointer
+    // moves only. Idle voices install on their next rendered note.
+    engine_.setOversamplingFactor (factor);
     latencyDirty_.store (true, std::memory_order_release);   // report next block
 }
 

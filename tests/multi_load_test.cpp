@@ -249,6 +249,103 @@ int main()
                "part0 keeps its derived share (no card stealing under slots)");
     }
 
+    // ---- [4] Multi-load resets voice slots to init before the file applies ----
+    // Stale-voice regression: a multi file that does not carry per-part voice
+    // settings must never inherit the PREVIOUS state's slot counts. Both
+    // loaders reset every Part to the engine init allocation (Part 0 = 6
+    // voices, Parts 1..5 disabled) BEFORE the file applies its own data.
+    std::printf ("\n[4] Multi-load resets voice slots to init (stale-voice bug)\n");
+    {
+        auto popcount = [] (uint8_t v) { int c = 0; while (v) { c += v & 1; v >>= 1; } return c; };
+
+        // 4a) .parvati multi with a SHORT parts list (human-editable format:
+        //     only part 0 present, and without a voice_slots key): the parts
+        //     the file does not mention must land at INIT, not stay polluted.
+        {
+            ParvatiAudioProcessor proc;
+            proc.prepareToPlay (48000.0, 256);
+            renderOnce (proc);
+            auto& engine = proc.getEngine();
+            // Pollute every Part's slots (the stale state being guarded
+            // against): part0=1, parts1-5=16.
+            engine.setPartVoiceSlots (0, 1);
+            for (int p = 1; p < 6; ++p) engine.setPartVoiceSlots (p, 16);
+            renderOnce (proc);
+
+            const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                .getChildFile ("parvati_multi_reset_test.parvati");
+            tmp.replaceWithText (
+                "format: parvati-multi\n"
+                "version: 3\n"
+                "name: \"Reset Test\"\n"
+                "parts:\n"
+                "  - channel: 1\n");
+            check (proc.loadParvatiMultiFile (tmp), "short .parvati multi loads");
+            renderOnce (proc);
+
+            // Part 0 (mentioned but WITHOUT voice_slots) + Parts 1..5 (not
+            // mentioned at all) all land on the INIT allocation { 6, 0, 0,
+            // 0, 0, 0 } — the pollution (1/16/16/16/16/16) is gone.
+            check (engine.getPartVoiceSlots (0) == 6, "part0 (no voice_slots key) resets to init 6, not stale 1");
+            bool parts15AtInit = true;
+            for (int p = 1; p < 6; ++p)
+                parts15AtInit = parts15AtInit && engine.getPartVoiceSlots (p) == 0;
+            check (parts15AtInit, "parts 1..5 (absent from the file) reset to init 0, not stale 16");
+            tmp.deleteFile();
+        }
+
+        // 4b) EXPLICIT slots still win (the bug is stale state, not explicit
+        //     state): a .parvati multi carrying voice_slots restores them over
+        //     the init reset (format round-tripping is preserved).
+        {
+            ParvatiAudioProcessor proc;
+            proc.prepareToPlay (48000.0, 256);
+            renderOnce (proc);
+            auto& engine = proc.getEngine();
+            engine.setPartVoiceSlots (0, 1);
+            engine.setPartVoiceSlots (1, 1);
+            renderOnce (proc);
+
+            const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                .getChildFile ("parvati_multi_explicit_slots_test.parvati");
+            tmp.replaceWithText (
+                "format: parvati-multi\n"
+                "version: 3\n"
+                "name: \"Explicit Test\"\n"
+                "parts:\n"
+                "  - channel: 1\n"
+                "    voice_slots: 9\n");
+            check (proc.loadParvatiMultiFile (tmp), ".parvati multi with explicit voice_slots loads");
+            renderOnce (proc);
+            check (engine.getPartVoiceSlots (0) == 9, "explicit voice_slots: 9 wins over the init reset");
+            check (engine.getPartVoiceSlots (1) == 0, "unmentioned part 1 still resets to init 0 (not stale 1)");
+            tmp.deleteFile();
+        }
+
+        // 4c) .MUL applies its OWN MultiData masks over the reset: loading a
+        //     factory .MUL from a polluted state lands exactly on the file's
+        //     popcount-per-mask, not on the pollution and not on init.
+        {
+            ParvatiAudioProcessor proc;
+            proc.prepareToPlay (48000.0, 256);
+            renderOnce (proc);
+            auto& engine = proc.getEngine();
+            engine.setPartVoiceSlots (0, 16);
+            engine.setPartVoiceSlots (3, 16);
+            renderOnce (proc);
+
+            check (proc.loadMultiFile (f), "loadMultiFile over polluted slots succeeds");
+            renderOnce (proc);
+            bool matchesFile = true;
+            for (int i = 0; i < 6; ++i)
+            {
+                const uint8_t mask = m.multiData[(size_t) (i * 4) + 3];
+                matchesFile = matchesFile && engine.getPartVoiceSlots (i) == popcount (mask);
+            }
+            check (matchesFile, ".MUL masks win: every part's slots == popcount(part_mapping_[i].voice_allocation)");
+        }
+    }
+
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "MULTI LOAD TEST: FAILURES" : "MULTI LOAD TEST: ALL CHECKS PASSED",
                  g_failures);

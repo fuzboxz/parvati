@@ -113,10 +113,11 @@ public:
     // zipper-noise reduction). Propagates to all voices + persists the pref.
     void setParameterSmoothing (bool smoothing);
 
-    // Enable optional FILTER oversampling (1 / 2 / 4). 1 = off (default, the
-    // audio path is bit-identical). Propagates to every voice + persists the
-    // pref + recomputes + reports the plugin latency (the OS filter adds a few
-    // samples of group delay on top of the resampler latency).
+    // Enable optional FILTER oversampling (1 / 2 / 4 / 8). Default 2 (the
+    // constructor applies it); 1 = the bit-identical no-OS path. Propagates to
+    // every voice + persists the pref + recomputes + reports the plugin latency
+    // (the OS filter adds a few samples of group delay on top of the resampler
+    // latency).
     void setOversamplingFactor (int factor);
 
     // Exposed for the (Phase 4) GUI and external control.
@@ -193,6 +194,17 @@ public:
     bool saveParvatiMultiFile (const juce::File& file);   // all 6 parts
     bool loadParvatiMultiFile (const juce::File& file);
 
+    // Multi-load hygiene: reset every Part's voice slots to the ENGINE INIT
+    // allocation (Part 0 = 6 voices, the popcount of the constructor's 0x3f
+    // init bitmask; Parts 1..5 disabled) BEFORE a multi file applies its own
+    // per-part data, so a file that does not carry voice settings for a Part
+    // never inherits the PREVIOUS multi's leftover counts (stale-voice bug:
+    // a short/legacy .parvati parts list, or any future MultiData-less .MUL
+    // acceptance). Public setters only: setPartVoiceSlots for the enabled
+    // Part 0 and the legacy setPartVoiceAllocation(part, 0) disable path for
+    // the rest. Called by loadMultiFile + loadParvatiMultiFile.
+    void resetVoiceSlotsToInit();
+
     // ---- Ambika .MUL (multi) support ----
     // Load a .MUL: configures all 6 Parts (patches + PartData + MIDI channel +
     // key zone + voice allocation from MultiData.part_mapping_[], and per-part
@@ -245,10 +257,14 @@ private:
     // (AUv3 render events / VST3 process()), and MidiParameterMap's CC/NRPN
     // setter (called from processBlock) routes through setValueNotifyingHost
     // -- so this callback can run on the AUDIO thread. Most branches only stage
-    // atomics (RT-safe); the three unsafe classes (arp/seq -> the pendingConfig_
-    // seqlock writers; part_select -> loadPartIntoApvts' ValueTree+UndoManager
-    // writes) are DEFERRED to the message thread via deferredParams_ when the
-    // callback is off the message thread (see DeferredParamRing).
+    // atomics (RT-safe); the unsafe classes are DEFERRED to the message thread
+    // via deferredParams_ when the callback is off the message thread (see
+    // DeferredParamRing): arp/seq (they write the pendingConfig_ seqlock -- a
+    // second writer tears it), part_select (loadPartIntoApvts' ~250
+    // ValueTree+UndoManager writes), and the FX params (applyFxParameter builds
+    // juce::String/substring/std::string lookup keys = heap traffic on the
+    // render thread; the engine stages FX values through fxDirty_ atomics
+    // anyway, so a <=16 ms deferral is inaudible).
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
     // ---- Deferred audio-thread-origin parameter writes (message-thread drain) ----
@@ -273,8 +289,12 @@ private:
         // RT-safe push (audio thread): acquires the spinlock (bounded hold: a
         // short scan + store), coalesces same-index entries, drops on overflow.
         void push (int index, float value) noexcept;
-        // Message-thread drain: swaps the ring into a local snapshot and clears
-        // it, so the apply path never runs under the spinlock.
+        // Message-thread drain: copies the ring into a FIXED-CAPACITY local
+        // snapshot under the spinlock (a bounded copy of trivially-copyable
+        // entries -- NO allocation inside the critical section) and clears it;
+        // the returned juce::Array is built AFTER the lock is released, so a
+        // heap allocation can never stall the audio thread's push() spin
+        // (priority inversion -> block overrun).
         juce::Array<Entry> drain() noexcept;
     };
 
@@ -364,7 +384,7 @@ private:
     double       uiZoom_ { 1.0 };
     bool         uiTooltips_ { true };
     bool         uiSmoothing_ { false };   // default OFF -> bit-identical audio
-    int          uiOversampling_ { 1 };    // 1 / 2 / 4; default 1 -> bit-identical
+    int          uiOversampling_ { 2 };    // 1 / 2 / 4 / 8; default 2x (1 = bit-identical path)
     int          uiFontMode_ { 0 };        // LEGACY: persisted for old states only (font selector removed; UI is sans-serif)
     juce::String uiLanguage_ { "auto" };   // editor chrome language (auto/en/fr)
 
@@ -380,6 +400,19 @@ private:
     // standalone / headless contexts (bus not fully enabled), so the audio-thread
     // latency re-report uses this authoritative value instead.
     double hostSampleRate_ = 0.0;
+
+    // Block size cached from prepareToPlay. Every engine-side scratch buffer is
+    // sized from it (voicecard buffers, FX-output buffers, each FxChain's dry/
+    // wet scratch, and the per-processor oversampled scratch -- worst case the
+    // Wavefolder's 6x osL_/osR_ at maxBlock*6+8). processBlock clamps the host
+    // block against this so an over-prepared host block (a prepare/process
+    // contract violation that does occur in the wild: buffer-size transitions,
+    // offline/freeze renders) degrades to a truncated render instead of a heap
+    // OOB write (FX audit F3/F6). Atomic + relaxed: hosts that overlap
+    // prepareToPlay with a running callback would otherwise risk a torn read;
+    // worst case the clamp briefly uses the previous block size. 0 = not yet
+    // prepared (the clamp is bypassed, preserving the old behaviour).
+    std::atomic<int> preparedMaxBlock_ { 0 };
 
     // Filter-OS latency probe + a dirty flag so a live factor change (UI)
     // re-reports the latency from processBlock (prepareToPlay also reports it).

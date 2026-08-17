@@ -94,14 +94,15 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // ---- Filter Quality (oversampling) ----
     // Oversamples ONLY the digital filter MODEL (not the oscillators, which stay
     // at the fixed 39216 Hz internal rate for authenticity) to reduce the
-    // filter's aliasing for higher fidelity. The item ID is the factor (1/2/4).
-    // Default "Standard" (1x) keeps the audio path bit-identical.
+    // filter's aliasing for higher fidelity. The item ID is the factor
+    // (1/2/4/8). Default "High" (2x); "Standard" (1x) keeps the audio path
+    // bit-identical.
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
     osLabel_.setFont (juce::FontOptions (14.0f));
     osLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (osLabel_);
 
-    // The combo items are chrome (localised); the IDs (1/2/4) are stable and
+    // The combo items are chrome (localised); the IDs (1/2/4/8) are stable and
     // persist separately, so a language switch only relabels them.
     populateOversamplingCombo();
     osCombo_.setSelectedId (proc_.getUiOversampling(), juce::dontSendNotification);
@@ -161,6 +162,7 @@ void SettingsPanel::populateOversamplingCombo()
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Standard (1\xc3\x97)")), 1);   // 1x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("High (2\xc3\x97)")),     2);   // 2x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Maximum (4\xc3\x97)")),  4);   // 4x
+    osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Ultra (8\xc3\x97)")),    8);   // 8x
 }
 
 int SettingsPanel::languageIndexFromCode (const juce::String& code) const
