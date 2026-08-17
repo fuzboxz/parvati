@@ -37,7 +37,6 @@ class ParvatiAudioProcessor;
 void refreshFontsIn (juce::Component* root, const ParvatiLookAndFeel& lnf);
 #include "ui/SettingsPanel.h"
 #include "ui/ThemeManager.h"
-#include "ui/VoiceMeter.h"
 #include "ui/IconButton.h"
 #include "ui/PresetBrowser.h"
 
@@ -626,9 +625,10 @@ private:
     // the on-screen +/-/0 buttons so both use one code path.
     void applyZoom (double zoom);
 
-    // The Patch page is owned here and shown as an overlay over the content
-    // area. It hosts the editor-owned Section::Global ParamPage (patch-wide
-    // knobs + the voice-activity meter decoration) below its 6 part rows.
+    // The Patch page is owned here and shown as a full-page view over the
+    // content area. It hosts the editor-owned Section::Global ParamPage
+    // (patch-wide knobs) with this page's 6-part allocation table (and the
+    // arrangement summary) merged into its Global panel.
     std::unique_ptr<PatchPage> patchPage_;
     // Generated ParamPages — EDITOR-OWNED. Every page is created here so every
     // APVTS attachment and the verified byte-bridge survive the layout
@@ -769,8 +769,7 @@ private:
     // constant (no shared include: PluginEditor.h must not pull the matrix
     // headers).
     static constexpr int kKeyboardH   = 246;
-    static constexpr int kMeterStripH = 52;   // (legacy) voice-meter strip height
-    static constexpr int kVoiceStripH = 22;   // compact voice-meter strip at the very bottom
+    static constexpr int kVoiceStripH = 22;   // compact status strip at the very bottom
 
     // ---- Phase 4a: visualization + settings integration ----
     // Settings side panel (owned here; content owned by the SidePanel).
@@ -778,14 +777,12 @@ private:
     SettingsPanel* settingsPanel_ { nullptr };
     IconButton       settingsButton_ { IconButton::Icon::Gear };   // gear icon, top-right
 
-    // Virtual keyboard (bottom strip) + status bar (count + tooltip). The voice
-    // ACTIVITY cells live on the Global page (globalVoiceMeter_, owned by that
-    // page as a decoration); the bottom strip shows only the active-count + a
-    // hover-tooltip bar (the cells + "Voices" word were removed per request).
+    // Virtual keyboard (bottom strip) + status bar (count + tooltip). Voice
+    // activity is read from the engine directly by the status-strip count and
+    // the Patch page's voice-pool view; no per-voice cells meter exists.
     std::unique_ptr<KeyboardView>    keyboardView_;
     std::unique_ptr<WheelsComponent> wheels_;   // pitch + mod wheels (left of keyboard)
-    VoiceMeter* globalVoiceMeter_ { nullptr };  // cells display; owned by the Global ParamPage
-    ParamPage*  globalPage_ { nullptr };        // Global page overlay (toggled by globalButton_; owns the meter as a decoration)
+    ParamPage*  globalPage_ { nullptr };        // Global page overlay (toggled by globalButton_; hosted by the Patch page)
     // (FX-slot cards FX1/FX2/FX3 are owned by fxSlotCards_ above; the FX routing
     // bar is owned by fxRoutingBar_ above — both hosted NON-owned by fxWorkspace_.)
 
@@ -821,25 +818,9 @@ private:
     // addAndMakeVisible re-parents it cleanly (a JUCE Component has one parent).
     int  activeGeneratorModSrc_ { 0 };   // current active generator (MOD_SRC_*); default ENV 1
 
-    juce::Label statusCountLabel_;              // bottom-left "n/denom" active-voice count
-    juce::Label statusLoadLabel_;               // realtime audio-load % + overrun count (overrun probe)
-    juce::Label statusTooltipLabel_;            // bottom hover-tooltip bar (fills the rest)
-
-    // Right-click on statusLoadLabel_ resets the overrun probe's peak/count
-    // (so you can reset -> reproduce -> read the peak for a specific episode).
-    // Touch too: the readout has no other touch function, and iPad has no
-    // right-click — without this the reset would be unreachable while its
-    // tooltip advertises it.
-    struct LoadLabelMouseListener : juce::MouseListener
-    {
-        ParvatiAudioProcessor& proc;
-        explicit LoadLabelMouseListener (ParvatiAudioProcessor& p) : proc (p) {}
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            if (e.mods.isRightButtonDown() || e.source.isTouch())
-                proc.resetAudioLoadProbe();
-        }
-    } loadMouseListener_;
+    juce::Label statusCountLabel_;              // bottom-right "n/denom" active-voice count (just left of the CPU readout)
+    juce::Label statusLoadLabel_;               // realtime audio-load % ("CPU N%", rightmost in the strip; current block only)
+    juce::Label statusTooltipLabel_;            // bottom hover-tooltip bar (fills the strip left of the indicators)
 
     // Keyboard latching state: notes currently lit on the virtual keyboard so
     // we only fire latchNoteOn/Off on actual transitions (avoids stuck lamps).
@@ -849,13 +830,11 @@ private:
     // ---- Status-strip audio-load readout anti-flicker + idle-poll state ----
     // The per-block load probe jitters 0<->1% from render-timing noise; without
     // the hold gate below the "CPU N%" text (and with it the whole editor
-    // repaint region) churned ~20x/sec at idle. lastLoadPct_/lastLoadOverruns_
-    // seed impossible values so the very first tick always publishes.
+    // repaint region) churned ~20x/sec at idle. lastLoadPct_ seeds an
+    // impossible value so the very first tick always publishes.
     int lastLoadPct_ { -999 };          // last displayed current-load percentage
-    int lastLoadOverruns_ { -1 };       // last displayed overrun count
     juce::Time lastLoadTextUpdate_;     // last time the load text was refreshed
     juce::Colour lastLoadColour_ {};    // last applied load-label colour ({} => unset)
-    juce::String lastLoadTip_;          // last applied load-label tooltip text
 
     // ---- Adaptive editor-timer rate (30 Hz active / 4 Hz idle) ----
     // Idle = no sounding voices, no transient status draining, no modal popup,

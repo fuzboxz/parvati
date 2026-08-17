@@ -5,6 +5,175 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **Note-onset crackle with the FV-1 distortion FX (Overdrive / Wavemangler)
+  — shaper aliasing at the 32.768 kHz internal rate.** Symptom: with an FX
+  slot active, EVERY key press started with a short crackle/fizz burst that
+  subsided as the envelope settled (the attack peak drives the nonlinear
+  table deepest). Root cause: a hard-nonlinear transfer curve generates
+  harmonics far above the 16.384 kHz internal Nyquist, which FOLD back as
+  INHARMONIC components — noise-like fizz locked to the waveform corners,
+  not musical distortion. Measured with a new direct probe
+  (`parvati_fv1_alias_probe`, EXCLUDE_FROM_ALL): at a 3 kHz input the worst
+  folded spur sat only **16 dB below the fundamental** (1 kHz: 32 dB) —
+  clearly audible; through the full engine the dense onset impulse train
+  peaked 0.176-0.183 (Overdrive) / 0.11-0.14 (LUT Dist). Fix: the two
+  hard-nonlinear FV-1 effects now run their TABLE stage inside a **6x
+  oversampled domain** — the vendored Warps polyphase FIR
+  (`SampleRateConverter<SRC_UP/DOWN,6,48>`) the Wavefolder/RingMod slots
+  already use — with the Q.23 saturating fixed-point shaper evaluated per
+  oversampled sample (the chip-contract DSP is unchanged; only the linear
+  rate conversion around it is float, exactly like the Warps slots). Tone
+  LP / Level / clock-jitter / the shape-crossfade clock stay at the 1x rate
+  (linear stages and internal-sample-defined timings do not alias).
+  Measured after: worst inharmonic spur **-45 dB at 3 kHz** (1 kHz: -55,
+  220 Hz: -87); engine-level onset impulses 0.138 / 0.107 (the remaining
+  wrap-locked steps are the driven table squaring the saw — the effect's
+  sound); real-Standalone verification (device callback + restored state +
+  virtual-MIDI note, via the new `tools/state_donor.cpp` +
+  `tools/vmidi_probe.cpp` harness) reproduced the burst pre-fix and
+  confirmed the drop post-fix. Along the way the LUT shape-switch crossfade
+  got BETTER too (slope excess 0.042 -> 0.018 — the 6x path smooths the
+  morph), after fixing a first-restructure bug where the fade advanced for
+  the whole block before the table ever evaluated (caught by
+  `parvati_fv1_newfamily_test`: 0.136, now 0.018). Onset-regression bounds
+  tightened: Overdrive 0.20 -> 0.16 (documented measured character), LUT
+  Dist rejoins the default 0.10 class (measured 0.055-0.066).
+- **LUT Distortion shape-switch crackle + Digital Echo feedback honesty**
+  (subagent-driven fix pair). Switching LUT shapes mid-audio swapped the
+  wavetable pointer instantly — two transfer curves at one sample value
+  jumped the output (measured **0.19** switch-caused excess slope). Shape
+  changes now crossfade old->new over 128 internal samples (~3.9 ms) with a
+  per-sample Q.14 fade (fixed-point, lock-free state); post-fix **0.042**,
+  pinned by a phase-robust regression (8 alternating 0->8 switches vs
+  no-switch reference renders). Digital Echo's feedback mapped the knob to a
+  0.95 internal max while displaying 100% — the display lied. Now 0.995
+  (-0.044 dB/repeat, reads-as-infinite); regression discriminates 0.95
+  (tail 0.77) vs 0.995 (tail 0.97) with 2 dB margin.
+
+### Changed
+- **FX-page labels/readouts fit the knobs (hard 6-char rule).** "Echo" ->
+  "Digital Echo", "LUT Distortion" -> "Wavemangler" (display-only; the choice
+  stores the index), and the Wavemangler's Shape knob is labelled
+  "Wavetable". Digital Echo's Spread param relabelled "Stereo"; LUT shapes
+  shortened ("SFold", "Asym", "HGate"). Every Hz readout on the FX page now
+  uses the synth filter's compact style ("820Hz", "1k2", "2k6", "15k"),
+  times integer ms when >= 10 ("250ms"), decay one decimal ("1.6s"), rates
+  spaceless ("0.87Hz"), shifter signed-compact. The FX-routing master-EQ row
+  label "Low" -> "Low Cut" (it is a low-cut high-pass). New regression sweeps
+  all 24 types x 5 params x raw 0..127 (15,360 samples): every readout <= 6
+  chars, plus choice-list rename anchors.
+
+### Added
+- **Nine new FV-1-style effects** (second wave, all inside the chip's 32K-word
+  delay RAM / saturating Q.23 contract; enum values append-only so presets
+  are safe): **Overdrive** (asymmetric 12AX7 LUT, Drive 1-16x + Bias),
+  **LUT Distortion** (16 stepped weird waveshapes: Clip/Soft/Tube/Wrap/OctUp/
+  Fuzz/Square/Steps/SinFold/Cheby2/Cheby3/AsymCub/Mirror/HalfGate/Crush4/
+  Sparse, Drive + shared-clock Jitter +-12 samples + Tone — no bitcrushing,
+  the Clocked Delay's Grit owns that), **Compressor** (clean 2:1-10:1 leveling,
+  knob-set attack/release), **Gate** (Threshold=0 = fully disabled — the knob
+  turns it off; attack/hold/release), **Chorus** (detuned dual-voice),
+  **Flanger** (0.15-6 ms, 180-deg stereo sweeps, 0.92 damped feedback),
+  **Echo** (ping-pong, 10-470 ms/side, consumes the ENTIRE 32K RAM budget
+  exactly), **Room** (Schroeder: 4 combs + decorrelated stereo AP chains),
+  **Spring** (two dispersive allpass-cascade springs — real chirp/boing).
+  Categories now: Delay 3, Distortion 3, Dynamics 3, Mod 6 (Phaser already
+  existed — no duplicate added), Pitch/Time 4, Reverb 5. Per-effect labels/
+  readouts/engagement defaults wired; combined JUCE-free unit test
+  (parvati_fv1_newfamily_test) + param-coverage + onset-regression coverage
+  for all 24 effects (measured-character bounds documented for the
+  distortion family).
+- **Categorized FX-type dropdown with submenus.** The FX-slot picker now
+  groups effects by what they do: "None" plus one SUBMENU per category,
+  alphabetical — Delay (Clocked Delay, Looping Delay), Distortion
+  (Wavefolder), Dynamics (Vinyl Compressor), Mod (Ensemble, Frequency
+  Shifter, Phaser, Ring Modulator), Pitch/Time (Pitch Shifter, Resonator,
+  Spectral, Pitch Stretch), Reverb (CVerb, Diffuser, Plate) — effects
+  alphabetical inside. 7 top-level entries instead of 16 flat rows, so the
+  popup fits short panes. Display-only: the combo's internal items (and the
+  APVTS choice list hosts see) stay in enum order, so serialization, host
+  automation, and the < > step buttons are untouched; the collapsed combo
+  keeps the plain effect name. The Resonator files under Pitch/Time (its
+  defining control is Pitch — it re-rings the input at the tuned pitch; a
+  modal bank is the filter-domain dual of a tuned delay network). New
+  regression pins the display-order invariants (every type exactly once,
+  None first, categories ascending).
+- **FX display renames:** "WSOLA Stretch" -> "Pitch Stretch" and "Plate
+  Reverb" -> "Plate" (display-only — the APVTS choice stores the index,
+  never the text, so saved sessions/presets are unaffected).
+
+### Changed
+- **Vinyl Compressor retuned to the SP-303/404 "Vinyl Sim COMP" character.**
+  Grounded in the Roland spec (COMP = "the compression feel, a unique part
+  of the analog record's sound"; NOISE; WOW FLUT — the old-school 303/505
+  "slower heavy, warpy" flutter) and producer descriptions (warm, gluey,
+  snare-friendly squash). Compression is far deeper: threshold now sweeps
+  1.0→0.04 (was →0.1), ratio 4:1→~16:1 (was fixed 4:1), makeup 1→6 (was
+  1→4) with a 0.8 ms attack / 250 ms release envelope — measured: a 15:1
+  input-level ratio is crushed to 1.17:1 at full Compress, and quiet
+  material is pushed UP (the SP glue). New character stage: a fixed-point
+  cubic soft-saturation "lathe" after the makeup (unity slope at zero,
+  flat-top above the knee, drive rises with Compress) — the analog warmth.
+  Wow/flutter is the old-school SP warble and now AUDIBLE: slow heavy
+  0.4 Hz wow (≤ 300 samples ≈ 2.3 % pitch deviation) + 3.1 Hz flutter
+  (≤ 24 samples ≈ 1.4 %) on the 50 ms delay; the first tune (24/6 samples
+  = 0.18 % deviation) sat below the ~0.3 % slow-FM hearing threshold —
+  measured period swing is now 12 % p-p, pinned by a new zero-crossing
+  audibility regression (≥ 1.5 %). The Pitch knob is relabelled "Wow/Flut". The crackle is now a SUBTLE noise floor instead of
+  full-scale pops: sparse (~0.6 %) decaying soft ticks with u²-skewed
+  amplitudes (ceiling ~0.18, measured max 0.138 at full knob vs 1.0
+  before) + a low ~-54 dB hiss; Age LP range widened to 700..15 kHz.
+  Card default Crackle lowered to 0.14. Tests rewritten to the SP
+  semantics (squash ratio, tick ceiling, hiss floor, flat-topping
+  character); all FX + FV-1 suites pass.
+
+### Fixed
+- **"Loud crackle at note start with FX" — the binaries in use were stale
+  (built before the FX crash/crackle fixes). First found for the installed
+  plug-in bundles (Aug 11, even pre-FV-1); the remaining report was the
+  STANDALONE: /Applications/Parvati.app was an Aug 16 build — after the
+  FV-1 family but before the Aug-17 `69e678d` crackle fixes — because the
+  `deploy` target built the Standalone but never INSTALLED it (README kept
+  the .app copy as a manual step). Investigation across ALL 15 FX on current
+  code (fresh-start note onsets at 44.1/48/96 kHz × buffers 64–1024, single
+  note / 50 % mix / 6-note vel-127 chord, plus mid-note enable / type-change /
+  dry-wet steps) found no onset crackle: worst impulse ≤ 0.09 (VinylComp's
+  designed crackle knob) vs the dry baseline 0.06. Rebuilding the exact
+  commits the stale binaries matched reproduced the report: Wavefolder 0.61
+  (247 impulses, the LUT-overrun rodata garbage) and RingModulator 0.98.
+  Fix: rebuilt + reinstalled VST3 / AU / CLAP AND the Standalone
+  (`cmake --build build_release --target deploy` now also installs
+  Parvati.app into /Applications with an ad-hoc re-sign — a plain cp leaves
+  JUCE's resource-referencing signature invalid; AU validation passes, the
+  standalone launches/quits cleanly). New onset regression
+  (`parvati_fx_onset_regression_test`, built by default) pins all 15 FX'
+  first 250 ms — the region the continuity regression deliberately skips.
+  Also fixed that regression's params: `fx1_param3 = 64` (64/127 = 0.504 >
+  the 0.5 threshold) FREEZES LoopingDelay/WSOLA into a silent empty
+  buffer, so their wet path was never actually tested; params are now
+  freeze-safe and the buffer FX' real wet output is asserted.
+  Known non-crackle follow-up found by the new chord scenario: Reverb can
+  peak ~1.6 (> 0 dBFS) on a loud 6-note chord at full wet (tank build-up,
+  ~330 ms in).
+- **FX onset regression coverage validated + hardened.** The new
+  `parvati_fx_onset_regression_test` is now PROVEN to fail on the pre-fix
+  commit d2669c4 (built and run in a worktree): RingModulator fails every
+  scenario (0.34–0.98, the stale Warps SRC history pointer) and
+  VinylCompressor fails onset (0.18–0.21) — while all 60 checks pass on the
+  fixed tree. Fixes found while validating: the Wavefolder override bound
+  the wrong slot (Tone is param4, not param3 — the tone LP stayed engaged,
+  masking, and Bias was slammed to +0.2); Wavefolder now runs the all-64 grid
+  whose 2 kHz tone LP separates legit fold HF (fixed tree ≈0.09) from the
+  impulsive pre-fix LUT garbage; measured-character bounds (0.16) documented
+  for Wavefolder (fold slope-gain on loud attacks, 0.098 chord),
+  VinylCompressor and Phaser (FV-1 designed lo-fi resampling/fixed-point
+  floor 0.112–0.136 — identical before/after the fixes, i.e. character);
+  a sustain window (0.25–1.2 s) catches mid-note crackle beyond any
+  onset-only window. The Wavefolder LUT-overrun defect is pinned directly:
+  the `parvati_clouds_fx_test` LUT-domain checks were tightened from a
+  1e3 no-garbage bound to rails-bounded (|out| ≤ 1.2; fixed peak 0.935,
+  pre-fix 1.7e30) plus continuous-under-overrun (worst delta < 0.7; fixed
+  0.439, pre-fix ~1e36) — validated both ways on d2669c4.
 - **FX crash + crackle root causes (deep audio/memory audit).** The
   Wavefolder hard crash was an out-of-bounds read in the fold waveshaper:
   the LUT lookup index was never clamped (valid |sl| ≤ 2.295), so max Drive
@@ -51,6 +220,30 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   combo exactly centred, overlap-gate clean at the 800 px floor).
 
 ### Changed
+- **Status strip + chrome cleanup: right-side indicators, no per-voice
+  indicators.** The bottom status strip keeps ONLY the current
+  CPU% (`CPU N%`, the current block's render-time/budget ratio — the peak /
+  overrun suffix, its colour keying and the right-click probe reset are
+  gone) and moves BOTH indicators to the right edge (`CPU %` rightmost, the
+  `0/16` part-relative voice count just left of it; the hover-tooltip bar
+  fills the left). The [KBD] keyboard-overlay toggle keeps its 44px target
+  at the far right of the header's icon cluster. The per-voice `V1..V16`
+  activity indicators are REMOVED: the part-relative VoiceMeter component is
+  deleted entirely, and the Patch page's voice-pool view drops its per-voice
+  squares (each row keeps its part label + `active/allocated` count and the
+  `X/96` total). The Patch/Global panel now also hosts the ARRANGEMENT
+  selector (Mono/Single/Dual Layer/Dual Split/Quad Split/Multi 6) and the
+  `Voices Y/96` readout as a 44pt summary row above the 6 part rows (the
+  page-level heading chrome is gone — the panel reads top-down:
+  arrangement, then the parts it configures), and the per-part Zone Low/High
+  knobs ignore the mouse wheel (an unhandled wheel scrolls the page instead
+  of tweaking the knob). The wheels panel's `[<][>]` octave-switch buttons
+  grow from a 22x18 chevron to a 44x44 HIG touch target (pinned by the sizing
+  test). The voice-pool view's 30 Hz poll is now gated on
+  `isShowing()` (the old `visibilityChanged` gate never fired for the nested
+  view when an ancestor page hid, so the provider ran at full rate while the
+  Patch page was off-screen). The GitHub Actions workflow is removed; the perf
+  gates stay runnable locally (`parvati_perf_smoke_test`, `tools/profile_ui.sh`).
 - **Patch page: one merged Global section + honest voice counts.** The
   hosted Part/Play group is merged INTO Global (one 11-control panel:
   part volume/octave/tuning/spread/scale/legato/portamento/polyphony +

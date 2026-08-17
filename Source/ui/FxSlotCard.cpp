@@ -144,10 +144,16 @@ private:
 // FxTypeCombo — the effect picker. The whole "< None >" selector is one
 // 44pt-tall tap target (HIG #4); the prev/next chevron step buttons are not
 // placed. JUCE's default ComboBox popup item rows (~24pt) are below the HIG
-// touch minimum, so showPopup() rebuilds the popup from the combo's OWN items
-// at a 44pt standard item height. Selecting an item writes through
-// setSelectedItemIndex, which the ComboBoxAttachment syncs to the APVTS — so the
-// byte-bridge + per-type knob refresh are unchanged.
+// touch minimum, so showPopup() rebuilds the popup at a 44pt standard item
+// height. 16 flat entries overflow short panes, so the popup is CATEGORIZED
+// SUBMENUS: "None" plus one submenu per category (alphabetical — see
+// fxTypeDisplayOrder()/fxCategoryOf() in FxTypes.h), effects alphabetical by
+// display name inside. The combo's INTERNAL items stay in ENUM order
+// (ComboBoxAttachment syncs by item INDEX == choice index), so each popup
+// item writes setSelectedItemIndex(enumValue) and the tick reads
+// getSelectedItemIndex() (== enum value). The collapsed combo keeps showing
+// the PLAIN effect name (its internal item text). The APVTS choice list (host
+// surface) stays flat — categories are Parvati-UI only.
 class FxTypeCombo : public juce::ComboBox
 {
 public:
@@ -157,18 +163,38 @@ public:
     {
         juce::PopupMenu menu;
         menu.setLookAndFeel (&getLookAndFeel());
+        // The combo's internal items are enum-ordered, so the selected index
+        // IS the FxType enum value, and getItemText(enum) is the plain label.
         const int current = getSelectedItemIndex();
-        for (int i = 0; i < getNumItems(); ++i)
+        auto addItem = [this, current] (juce::PopupMenu& m, FxType t)
         {
+            const auto ev = static_cast<int> (t);
             juce::PopupMenu::Item item;
-            item.text     = getItemText (i);
-            item.itemID   = getItemId (i);
-            item.isTicked = (i == current);
-            // SafePointer: the popup is modal but ASYNC — the card (and this
-            // combo) can be torn down while it is open (page switch / teardown).
+            item.text     = getItemText (ev);   // plain name inside the submenu
+            item.itemID   = getItemId (ev);
+            item.isTicked = (ev == current);
             juce::Component::SafePointer<FxTypeCombo> safe { this };
-            item.action   = [safe, i] { if (safe != nullptr) safe->setSelectedItemIndex (i, juce::sendNotificationSync); };
-            menu.addItem (std::move (item));
+            item.action   = [safe, ev] { if (safe != nullptr) safe->setSelectedItemIndex (ev, juce::sendNotificationSync); };
+            m.addItem (std::move (item));
+        };
+
+        addItem (menu, FxType::None);   // uncategorized: always first, plain item
+
+        // One submenu per category, in the (alphabetical) FxCategory order.
+        // Header item IDs must merely be unique vs the selectable IDs above,
+        // hence the offset above the choice-ID range.
+        for (int ci = 1; ci < static_cast<int> (FxCategory::Reverb) + 1; ++ci)
+        {
+            const auto cat = static_cast<FxCategory> (ci);
+            juce::PopupMenu sub;
+            sub.setLookAndFeel (&getLookAndFeel());
+            for (FxType t : fxTypeDisplayOrder())
+                if (fxCategoryOf (t) == cat)
+                    addItem (sub, t);
+            if (sub.getNumItems() == 0)
+                continue;
+            // addSubMenu: non-selectable category header with an arrow
+            menu.addSubMenu (fxCategoryName (cat), std::move (sub));
         }
         // The completion callback is NOT optional: stock ComboBox::showPopup
         // finishes with comboBoxPopupMenuFinishedCallback -> hidePopup(), which
@@ -220,8 +246,18 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
         case FxType::ClockedDelay:    return { 1, 80, { 54, 38, 25,  0, 0 } }; // Sync(1/4) / Feedback(0.3) / TapeAge(0.2) / Grit(off=24-bit)
         case FxType::Ensemble:        return { 1, 70, { 40, 60, 30, 50, 0 } }; // Rate(~1 Hz) / Depth(7 ms) / Center(7 ms) / Feedback(gentle)
         case FxType::PlateReverb:     return { 1, 60, { 25, 62, 70, 30, 0 } }; // Predelay(20 ms) / Decay(~2 s) / Damping(~5 kHz) / Mod(light)
-        case FxType::VinylCompressor: return { 1, 80, { 51, 38, 25, 57, 0 } }; // Compress(0.4) / Pitch(0.3) / Crackle(0.2) / Age(6 kHz)
+        case FxType::VinylCompressor: return { 1, 80, { 51, 38, 18, 57, 0 } }; // Compress(0.4) / Wow(0.3) / Crackle(0.14, subtle) / Age(6 kHz)
         case FxType::Phaser:          return { 1, 60, { 47, 89, 85, 76, 0 } }; // Rate(~0.5 Hz) / Depth(0.7) / Feedback(0.3) / Center(800 Hz)
+        // FV-1 second wave (2026-08-17).
+        case FxType::Overdrive:       return { 1, 80, { 50, 50, 80, 64, 0 } }; // Drive(4x) / Bias(centre) / Tone(bright) / Level(1.0)
+        case FxType::LutDistortion:   return { 1, 80, { 50,  0, 25, 80, 0 } }; // Drive(4x) / Shape(0=Clip) / Jitter(subtle) / Tone(bright)
+        case FxType::Compressor:      return { 1, 90, { 50, 40, 50, 64, 0 } }; // Amount(mid) / Attack(5 ms) / Release(~110 ms) / Level(1.0)
+        case FxType::Gate:            return { 1, 90, { 50, 50, 40, 50, 0 } }; // Threshold(mid; 0=off) / Attack(~1 ms) / Hold(60 ms) / Release(~70 ms)
+        case FxType::Chorus:          return { 1, 70, { 45, 50, 55, 10, 0 } }; // Rate(~0.9 Hz) / Depth(3 ms) / Center(~13 ms) / Feedback(light)
+        case FxType::Flanger:         return { 1, 70, { 40, 60, 50, 60, 0 } }; // Rate(~0.3 Hz) / Depth(2.7 ms) / Manual(~3 ms) / Feedback(0.55)
+        case FxType::Echo:            return { 1, 80, { 55, 50, 70, 30, 0 } }; // Time(~250 ms) / Feedback(0.48) / Tone(~4 kHz) / Spread(1.3x)
+        case FxType::Room:            return { 1, 60, { 55, 60, 80, 80, 0 } }; // Decay(~1.6 s) / Damp(~3 kHz) / Width(stereo) / Tone(bright)
+        case FxType::Spring:          return { 1, 60, { 45, 55, 65, 90, 0 } }; // Decay(~1.3 s) / Damp(~2.4 kHz) / Chirp(~0.74) / Width(stereo)
         case FxType::None:
         case FxType::Count:   break;
     }

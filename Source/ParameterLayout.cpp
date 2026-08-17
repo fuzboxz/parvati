@@ -111,18 +111,9 @@ juce::StringArray makeModifierOps()
     return { "None", "Sum", "Product", "Attenuate", "Max", "Min", "XOR", "GE", "LE", "Quantize", "Lag" };
 }
 
-// FxType choice list (FxType::None..Phaser — the FV-1 family is APPEND-ONLY).
-// Matches the enum order. Display-only: the stored value is the choice INDEX
-// (APVTS flushToTree serializes the denormalized float, never the text), so
-// renaming a label — e.g. "Reverb" -> "CVerb" — never breaks saved sessions/presets.
-juce::StringArray makeFxTypes()
-{
-    return { "None", "Diffuser", "Pitch Shifter", "CVerb",
-             "Looping Delay", "WSOLA Stretch", "Spectral",
-             "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator",
-             "Clocked Delay", "Ensemble", "Plate Reverb",
-             "Vinyl Compressor", "Phaser" };
-}
+// FxType choice list — hoisted OUT of the anonymous namespace (external
+// linkage) so tests can pin the DISPLAY labels; see the definition after the
+// namespace close and the declaration in ParameterLayout.h.
 
 // FxTopology choice list (Series / Parallel12to3 / Parallel1to23), shown as
 // human signal-FLOW strings in the compact routing bar's FLOW dropdown. Exactly
@@ -241,6 +232,24 @@ uint8_t initPartByte (int offset)
 // processor can link it. InitPatch::bytes lives in the anonymous namespace but
 // is reachable from anywhere in this TU.
 const uint8_t* getControllerInitPatchBytes() { return InitPatch::bytes; }
+
+// FxType choice list (FxType::None..Spring — the FV-1 family is APPEND-ONLY).
+// Matches the enum order. Display-only: the stored value is the choice INDEX
+// (APVTS flushToTree serializes the denormalized float, never the text), so
+// renaming a label — e.g. "Reverb" -> "CVerb", "Echo" -> "Digital Echo",
+// "LUT Distortion" -> "LUT" -> "Wavemangler" — never breaks saved sessions/presets.
+// External linkage (outside the anonymous namespace) + declared in
+// ParameterLayout.h so tests/fx_param_coverage_test.cpp can pin the labels.
+juce::StringArray makeFxTypes()
+{
+    return { "None", "Diffuser", "Pitch Shifter", "CVerb",
+             "Looping Delay", "Pitch Stretch", "Spectral",
+             "Wavefolder", "Frequency Shifter", "Ring Modulator", "Resonator",
+             "Clocked Delay", "Ensemble", "Plate",
+             "Vinyl Compressor", "Phaser",
+             "Overdrive", "Wavemangler", "Compressor", "Gate",
+             "Chorus", "Flanger", "Digital Echo", "Room", "Spring" };
+}
 
 const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
 {

@@ -141,7 +141,8 @@ WheelsComponent::WheelsComponent()
     // musical-typing keys. Emits onOctaveShift(+/-1) (unit octave steps); the
     // editor multiplies by 12 and routes into KeyboardView::shiftOctave.
     // Plain themed TextButtons (ParvatiLookAndFeel styles them like the
-    // header icon buttons — no custom painting).
+    // header icon buttons — no custom painting) at the kOctBtnSize 44pt HIG
+    // touch target.
     octaveDown_ = std::make_unique<juce::TextButton> ("<");
     octaveUp_   = std::make_unique<juce::TextButton> (">");
     octaveDown_->setTooltip ("Octave down (Z)");
@@ -185,23 +186,24 @@ void WheelsComponent::resized()
     auto labelStrip = b.removeFromBottom (14);   // the PITCH/MOD caption drag strip
 
     // BOTH columns are split vertically: each wheel keeps the upper region,
-    // and a 22pt button row sits at its BOTTOM (above the caption strip) —
-    // [<] under the PITCH label, [>] under the MOD label (one per column).
+    // and a kOctBtnSize (44pt HIG) button row sits at its BOTTOM (above the
+    // caption strip) — [<] under the PITCH label, [>] under the MOD label
+    // (one per column).
     const int half = b.getWidth() / 2;
     auto leftCol    = b.removeFromLeft (half);
-    auto leftOctRow = leftCol.removeFromBottom (22);
-    auto rightOctRow = b.removeFromBottom (22);
+    auto leftOctRow = leftCol.removeFromBottom (kOctBtnSize);
+    auto rightOctRow = b.removeFromBottom (kOctBtnSize);
     pitch_->setBounds (leftCol.reduced (5, 2));
     mod_->setBounds (b.reduced (5, 2));
 
-    // [<] in the left row, [>] in the right row: a compact 22x18 chevron,
-    // centred in its column (the 50pt half of the 100pt wheels strip; a
-    // narrower column shrinks the button instead of overflowing).
-    constexpr int kOctBtnW = 22, kOctBtnH = 18;
-    const int btnW  = juce::jmin (kOctBtnW, juce::jmax (6, leftOctRow.getWidth()));
-    const int btnWR = juce::jmin (kOctBtnW, juce::jmax (6, rightOctRow.getWidth()));
-    octaveDown_->setBounds (leftOctRow.withSizeKeepingCentre (btnW, kOctBtnH));
-    octaveUp_->setBounds (rightOctRow.withSizeKeepingCentre (btnWR, kOctBtnH));
+    // [<] in the left row, [>] in the right row: a 44x44 HIG touch target,
+    // centred in its column (the 50pt half of the 100pt wheels strip leaves
+    // a 3pt margin; a narrower column shrinks the button instead of
+    // overflowing — the jmin guard is defensive only).
+    const int btnW  = juce::jmin (kOctBtnSize, juce::jmax (6, leftOctRow.getWidth()));
+    const int btnWR = juce::jmin (kOctBtnSize, juce::jmax (6, rightOctRow.getWidth()));
+    octaveDown_->setBounds (leftOctRow.withSizeKeepingCentre (btnW, kOctBtnSize));
+    octaveUp_->setBounds (rightOctRow.withSizeKeepingCentre (btnWR, kOctBtnSize));
 
     const int halfL = labelStrip.getWidth() / 2;
     pitchDrag_->setBounds (labelStrip.removeFromLeft (halfL));

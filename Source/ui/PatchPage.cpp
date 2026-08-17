@@ -122,6 +122,10 @@ public:
             s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
             s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
             s.setRange (0.0, 127.0, 1.0);
+            // The knob is drag-only: a wheel over it must never tweak the
+            // value (same idiom as the ParamControl cells / the FX knobs) —
+            // an unhandled wheel bubbles up so it scrolls the page instead.
+            s.setScrollWheelEnabled (false);
             // Show the MIDI note name ("C4") instead of the raw 0..127 number.
             s.textFromValueFunction = [] (double v) {
                 return midiNoteName (juce::roundToInt (v));
@@ -506,20 +510,27 @@ private:
 // The 6-part voice-allocation table: a plain container that PARENTS the six
 // PartRows (PatchPage keeps owning them via rows_) and lays them out exactly
 // as the old layoutScrollBody did — 6 rows of height 56 with 4px gaps, a 4px
-// inset so the rows sit inside the hosting Global panel's border. The panel
-// itself is attached into the HOSTED ParamPage's "Global" group as an
-// EXTERNAL decoration (hostParamPage), so the table renders inside that
-// bordered panel, below the global knobs and the voice meter. It paints
-// nothing (the owning group panel's theme background shows through).
+// inset so the rows sit inside the hosting Global panel's border. ABOVE the
+// rows it carries the patch ARRANGEMENT summary row (the arrangement combo +
+// the "Voices Y/96" readout — PatchPage-owned, parented here), so the Global
+// panel reads top-down: arrangement, then the per-part rows it configures.
+// The panel itself is attached into the HOSTED ParamPage's "Global" group as
+// an EXTERNAL decoration (hostParamPage), so the table renders inside that
+// bordered panel, below the global knobs. It paints nothing (the owning group
+// panel's theme background shows through).
 class PatchPage::PartTablePanel : public juce::Component
 {
 public:
     explicit PartTablePanel (PatchPage& owner) : owner_ (owner) {}
 
-    // Natural panel height: 4px top inset + 6 rows x 56 + 5 gaps x 4 + 4px
-    // bottom inset. The reserved external-decoration height the hosted page
-    // uses for the group's layout (see hostParamPage).
-    static constexpr int kTableH = 4 + 6 * 56 + 5 * 4 + 4;
+    // Summary row height + gap above the part rows.
+    static constexpr int kSummaryH = 44;
+    static constexpr int kSummaryGap = 8;
+    // Natural panel height: 4px top inset + the arrangement summary row
+    // (44px + 8px gap) + 6 rows x 56 + 5 gaps x 4 + 4px bottom inset. The
+    // reserved external-decoration height the hosted page uses for the
+    // group's layout (see hostParamPage).
+    static constexpr int kTableH = 4 + kSummaryH + kSummaryGap + 6 * 56 + 5 * 4 + 4;
 
     void resized() override
     {
@@ -527,6 +538,20 @@ public:
         constexpr int rowGap = 4;
         constexpr int inset = 4;
         auto b = getLocalBounds().reduced (inset, inset);
+
+        // ---- Arrangement summary row: the arrangement combo (220pt wide, a
+        // 44pt HIG tap band with a 26pt visual box — same idiom as the part
+        // rows) + the "Voices Y/96" pool-budget readout to its right.
+        // PatchPage-owned members parented into this panel (a nested class
+        // has access). ----
+        {
+            auto summary = b.removeFromTop (kSummaryH);
+            owner_.arrangementCombo_.setBounds (summary.removeFromLeft (220));
+            summary.removeFromLeft (12);
+            owner_.voicesTotalLabel_.setBounds (summary);
+        }
+        b.removeFromTop (kSummaryGap);
+
         for (int i = 0; i < kNumParts; ++i)
         {
             // rows_ is PatchPage-private; a nested class has access.
@@ -547,16 +572,15 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
       scrollBody_ (std::make_unique<ScrollBody> (*this)),
       tablePanel_ (std::make_unique<PartTablePanel> (*this))
 {
-    heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
-    heading_.setJustificationType (juce::Justification::centredLeft);
-    heading_.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    addAndMakeVisible (heading_);
-
     buildArrangementCombo();
     arrangementCombo_.onChange = [this] { onArrangementChanged(); };
-    // HIG touch target: 26pt visual box inside a 44pt tap band (see resized).
+    // HIG touch target: 26pt visual box inside a 44pt tap band (the summary
+    // row's full height — see PartTablePanel::resized).
     arrangementCombo_.getProperties().set ("parvatiComboVisualH", 26);
-    addAndMakeVisible (arrangementCombo_);
+    // The arrangement selector + the pool-budget readout live INSIDE the
+    // Global panel's table (the summary row above the 6 part rows), not on
+    // the page chrome — the panel reads top-down: arrangement, then the rows.
+    tablePanel_->addAndMakeVisible (arrangementCombo_);
 
     // Pool-budget readout: how many of the 96 pool voices are allocated
     // across all parts (sum of the per-part voiceCount_ snapshots) — the only
@@ -565,7 +589,7 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     voicesTotalLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
     voicesTotalLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
     voicesTotalLabel_.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (voicesTotalLabel_);
+    tablePanel_->addAndMakeVisible (voicesTotalLabel_);
 
     for (int i = 0; i < kNumParts; ++i)
     {
@@ -577,27 +601,29 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     }
 
     // ---- Global voice-pool view: the whole-patch picture lives ONLY here
-    // (the Global page's VoiceMeter is part-relative). Below the hosted Global
-    // ParamPage (bottom of the scrolled body; the part rows live INSIDE that
-    // page's Global panel) — right where parts are configured.
+    // (the bottom status strip's count is part-relative). Below the hosted
+    // Global ParamPage (bottom of the scrolled body; the part rows live INSIDE
+    // that page's Global panel) — right where parts are configured.
     // The provider is injected by the editor (setVoicePoolProvider), so the
-    // view stays engine-decoupled exactly like the meter.
+    // view stays engine-decoupled.
     voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
     voicePoolCaption_.setFont (juce::FontOptions (11.0f));
     voicePoolCaption_.setJustificationType (juce::Justification::centredLeft);
     voicePoolCaption_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
     voicePoolCaption_.setTooltip (
         "Every part draws its voices from one shared 96-voice pool. Each part "
-        "can use up to 16 voices at once; the squares light up while its "
-        "voices sound. The hardware voicecards are shared out automatically "
-        "for the individual outputs and the .MUL hardware export.");
+        "can use up to 16 voices at once; each row's count shows how many of "
+        "its allocated voices are sounding. The hardware voicecards are "
+        "shared out automatically for the individual outputs and the .MUL "
+        "hardware export.");
     scrollBody_->addAndMakeVisible (voicePoolCaption_);
     voicePoolView_ = std::make_unique<VoicePoolView>();
     voicePoolView_->setTooltip (
         "Every part draws its voices from one shared 96-voice pool. Each part "
-        "can use up to 16 voices at once; the squares light up while its "
-        "voices sound. The hardware voicecards are shared out automatically "
-        "for the individual outputs and the .MUL hardware export.");
+        "can use up to 16 voices at once; each row's count shows how many of "
+        "its allocated voices are sounding. The hardware voicecards are "
+        "shared out automatically for the individual outputs and the .MUL "
+        "hardware export.");
     scrollBody_->addAndMakeVisible (*voicePoolView_);
 
     // T4 scroll safety net: the rows + the hosted global page scroll vertically
@@ -627,7 +653,6 @@ void PatchPage::applyThemeColors()
 {
     const auto theme = themeManager_.getCurrentTheme();
     const auto accent = theme.accentPrimary;
-    heading_.setColour (juce::Label::textColourId, accent);
     voicesTotalLabel_.setColour (juce::Label::textColourId, accent);
     voicePoolCaption_.setColour (juce::Label::textColourId, theme.textSecondary);
     if (voicePoolView_ != nullptr)
@@ -637,7 +662,6 @@ void PatchPage::applyThemeColors()
 
 void PatchPage::refreshLanguage()
 {
-    heading_.setText (TRANS ("Patch"), juce::dontSendNotification);
     voicePoolCaption_.setText (TRANS ("Voice pool"), juce::dontSendNotification);
     buildArrangementCombo();
     for (auto& r : rows_)
@@ -778,28 +802,15 @@ void PatchPage::partNamesChanged()
 
 void PatchPage::resized()
 {
+    // No page-level heading chrome: the scrolled body starts directly at the
+    // hosted Global panel, whose table's first row IS the arrangement summary
+    // (the combo + the "Voices Y/96" readout) — the arrangement lives with
+    // the per-part rows it configures, not above them.
     auto area = getLocalBounds().reduced (16);
 
-    heading_.setBounds (area.removeFromTop (30));
-    // 10pt (not 6): the arrangement combo's 44pt tap band is centred on the
-    // 26pt top row and reaches 9pt above it — a 6pt gap made it clip 3pt into
-    // the heading (R3 sibling-overlap).
-    area.removeFromTop (10);
-    {
-        // The top row is a 26pt band; the arrangement combo's TAP band is
-        // grown to 44pt centred on it (transparent padding into the gaps
-        // above/below — the 26pt visual box via "parvatiComboVisualH" — so no
-        // sibling moves and the page height is unchanged).
-        auto topRow = area.removeFromTop (26);
-        arrangementCombo_.setBounds (topRow.removeFromLeft (220)
-                                         .withSizeKeepingCentre (220, 44));
-        topRow.removeFromLeft (12);
-        voicesTotalLabel_.setBounds (topRow.removeFromLeft (170));
-    }
-    area.removeFromTop (10);
-
-    // Everything below the fixed header chrome (rows + hosted page) scrolls
-    // vertically inside the Viewport when it overflows (T4 safety net).
+    // The whole body (hosted Global panel + part rows + voice-pool view)
+    // scrolls vertically inside the Viewport when it overflows (T4 safety
+    // net).
     viewport_.setBounds (area);
     layoutScrollBody();
 }
@@ -876,9 +887,9 @@ void PatchPage::hostParamPage (juce::Component* paramPage)
     {
         scrollBody_->addAndMakeVisible (hostedParamPage_);
         // END STATE: the hosted page renders [Part / Play panel] then [Global
-        // panel: 3 global knobs + the VoiceMeter strip + the 6-part
-        // voice-allocation table], followed by this page's voice-pool view —
-        // ONE bordered Global section holding the allocation table. The table
+        // panel: 3 global knobs + the 6-part voice-allocation table], followed
+        // by this page's voice-pool view — ONE bordered Global section holding
+        // the allocation table. The table
         // rides the page's EXTERNAL decoration slot (non-owning):
         // PatchPage keeps owning tablePanel_ (which parents the rows); the
         // page only parents + positions it. Contract: tablePanel_ must

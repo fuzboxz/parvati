@@ -25,6 +25,20 @@ constraint set.
   (after upsample) emulates the hardware ADC/DAC response. **-3 dB cutoff in
   [14.5, 15.5] kHz.** Implemented as two cascaded RBJ biquads (4th-order
   Butterworth, 24 dB/oct) at 15 kHz — a steep simple-IIR, not a polyphase FIR.
+* **Nonlinear-stage oversampling (2026-08-17 exception):** the two
+  hard-nonlinear effects (Overdrive, LUT Distortion) run their wavetable
+  stage inside a **6x oversampled domain** — the vendored Warps polyphase FIR
+  (`warps::SampleRateConverter<SRC_UP/DOWN,6,48>`) the Wavefolder/RingMod
+  slots already use — with the Q.23 saturating shaper evaluated per
+  oversampled sample. The "no modern anti-alias filter" rule above governs
+  the RATE BRIDGE (linear host<->internal resampling); it cannot govern the
+  harmonics a hard shaper GENERATES: those fold at the 16.384 kHz internal
+  Nyquist into inharmonic crackle (measured worst spur only 16 dB below the
+  fundamental at a 3 kHz input — the audible note-onset crackle burst), and
+  no input/output LP can undo a fold. Linear stages (Tone LP, Level, clock
+  jitter) and internal-sample-defined timings (the shape-crossfade clock)
+  stay at the 1x rate. Post-fix worst folded spur: -45 dB at 3 kHz
+  (`parvati_fv1_alias_probe`).
 * **Memory limit:** **≤ 32,768 samples** of total delay memory per effect (1.0 s
   at 32.768 kHz). Each effect `static_assert`s its total.
 * **Arithmetic:** audio path in **24-bit fixed-point (Q.23 signed)** with
@@ -99,18 +113,92 @@ Dry/Wet). DSP workers MUST use these exact 0..1 -> physical mappings so the
   `{347, 113}` samples. Total well under the 32,768 budget. Coeffs quantized to
   14-bit via q14().
 
-### 4. VinylCompressor — labels {"Compress","Pitch","Crackle","Age"}
-* **Compress (p0):** `0..1` macro. Threshold `th = 1.0 - 0.9*p` (lowers); makeup
-  gain `mg = 1.0 + 3.0*p`. Ratio fixed ~4:1; feed-forward peak.
-* **Pitch (p1):** `0..1` -> dual-LFO (0.5 Hz + 4.0 Hz, sine LUT) depth `0..~3`
-  samples on a 50 ms delay read pointer.
-* **Crackle (p2):** `0..1` -> output level of an LCG crackle (impulse when LFG
-  value > 0.98). `level = p`.
-* **Age (p3):** `1000..15000` Hz (`fc = 1000*pow(15,p)`); 1-pole LP post-compressor.
-* Envelope: abs() + one-pole RC, attack 2 ms (`aA = 1-exp(-1/(0.002*32768))`),
-  release 150 ms. 50 ms delay = 1638 samples.
+### 4. VinylCompressor — labels {"Compress","Wow/Flut","Crackle","Age"}
+Tuned after the Roland SP-303/SP-404 "Vinyl Sim" COMP (deep analog-record
+squash + glue + warpy wow + subtle noise floor).
+* **Compress (p0):** `0..1` macro. Threshold `th = 1.0 - 0.96*p` (down to
+  0.04); ratio `4:1 .. ~16:1` (gain exponent `0.75 + 0.19*p`); makeup
+  `mg = 1.0 + 5.0*p` (max 6.0, push quiet material UP); feed-forward peak.
+  A fixed-point cubic soft-saturation "lathe" follows the makeup: drive
+  `a = 0.06 + 0.25*p` (unity slope at 0, flat-top above the knee — analog
+  glue/warmth rising with Compress).
+* **Wow/Flut (p1):** `0..1` -> slow heavy WOW (0.4 Hz, depth `0..300`
+  samples = ~2.3 % pitch deviation) + fast flutter (3.1 Hz, `0..24` samples
+  = ~1.4 %) on a 50 ms delay read pointer — the audible old-school
+  SP-303/505 "thumb on the record" warble. (Depth matters: a 24-sample wow
+  is only 0.18 % deviation — below the ~0.3 % slow-FM hearing threshold,
+  i.e. inaudible; measured period swing at full depth is 12 % p-p. Max
+  delay value ~1963 stays inside the 2048 ring.)
+* **Crackle (p2):** `0..1` -> SUBTLE vinyl noise floor: soft ticks (trigger
+  when LCG value > 0.994, ~0.6 % density; decaying ~2-3 sample envelope;
+  `u^2`-skewed small amplitudes; ceiling ~0.18*p) + low hiss (~-54 dB).
+  Never full-scale pops.
+* **Age (p3):** `700..15000` Hz (`fc = 700*pow(15000/700,p)`); 1-pole LP
+  post-compressor.
+* Envelope: abs() + one-pole RC, attack 0.8 ms (`aA = 1-exp(-1/(0.0008*32768))`),
+  release 250 ms (the SP pump). 50 ms delay = 1638 samples; max wow/flutter
+  swing ~1963 stays inside the 2048 ring.
 
-### 5. Phaser — labels {"Rate","Depth","Feedback","Center"}
+### 5. Overdrive — labels {"Drive","Bias","Tone","Level"} (2026-08-17)
+* **Drive (p0):** `1..16x` pre-gain (log) into a 1024-entry asymmetric
+  12AX7-ish soft-clip LUT (the "EEPROM table" idiom). Integer 2x stages + a
+  14-bit fractional remainder realize >2x gains in the fixed-point path.
+* **Bias (p1):** `-0.3..+0.3` table-index offset (even harmonics / asymmetry).
+* **Tone (p2):** `700..15000` Hz post-LP.
+* **Level (p3):** `0..2` output trim.
+
+### 6. LUT Distortion — labels {"Drive","Shape","Jitter","Tone"} (2026-08-17)
+The "super digital" wavetable distortion: 16 stepped weird shapes.
+* **Drive (p0):** `1..8x` pre-gain into the table index.
+* **Shape (p1):** 16 wavetables — Clip / Soft / Tube / Wrap / OctUp / Fuzz /
+  Square / Steps / SinFold / Cheby2 / Cheby3 / AsymCub / Mirror / HalfGate /
+  Crush4 / Sparse (all 1024-entry, Q.14, built once at construction).
+* **Jitter (p2):** shared-clock timing wobble — an LCG noise one-pole-smoothed
+  into a +-12-sample read-position wobble on a 64-sample input delay; ONE
+  wobble for both channels (a single crystal). 0 = fixed 1-sample read.
+* **Tone (p3):** `700..15000` Hz post-LP.
+* No bitcrushing (the Clocked Delay's Grit owns that).
+
+### 7. Compressor — labels {"Amount","Attack","Release","Level"} (2026-08-17)
+* **Amount (p0):** threshold `1.0 -> 0.05`, ratio `2:1 -> 10:1`, makeup `1 -> 3`.
+* **Attack (p1):** `0.5..50 ms` (log). **Release (p2):** `20..500 ms` (log).
+* **Level (p3):** `0..2` trim.
+
+### 8. Gate — labels {"Thresh","Attack","Hold","Release"} (2026-08-17)
+* **Thresh (p0):** `0 = DISABLED` (always open, transparent — the knob turns
+  the gate off) .. `0.7` of full scale.
+* **Attack (p1):** `0.05..10 ms`. **Hold (p2):** `0..150 ms`.
+  **Release (p3):** `5..500 ms`. ~2.7 ms peak detector; clickless one-pole gain.
+
+### 9. Chorus — labels {"Rate","Depth","Center","Feedback"} (2026-08-17)
+* **Rate (p0):** `0.1..8 Hz` (log, both LFOs together). **Depth (p1):** `0..6 ms`.
+* **Center (p2):** `5..25 ms`. **Feedback (p3):** `0..0.5`.
+* Two detuned SIN-LFO voices (R trails 108 deg), panned hard L/R (AN-0001 style).
+
+### 10. Flanger — labels {"Rate","Depth","Manual","Feedback"} (2026-08-17)
+* **Rate (p0):** `0.05..3 Hz`. **Depth (p1):** `0..4.5 ms`.
+* **Manual (p2):** `0.15..6 ms` base delay. **Feedback (p3):** `0..0.92`
+  (8 kHz loop damper). L/R sweeps 180 deg apart.
+
+### 11. Echo — labels {"Time","Feedback","Tone","Spread"} (2026-08-17)
+* **Time (p0):** `10..470 ms` per side (log). **Feedback (p1):** `0..0.95`.
+* **Tone (p2):** `700..12000` Hz loop damper. **Spread (p3):** R time `1..2x`.
+* Ping-pong: L tap -> R line; damped R tap + input -> L line. The two 16384
+  rings consume EXACTLY the 32768-word FV-1 RAM budget.
+
+### 12. Room — labels {"Decay","Damp","Width","Tone"} (2026-08-17)
+* Schroeder: 4 parallel lowpass combs {1687,1601,2053,2251} -> two
+  decorrelated series-allpass chains (L {191,281}, R {179,271}).
+* **Decay (p0):** `0.1..3 s`. **Damp (p1):** `500..12000` Hz.
+  **Width (p2):** mono <-> stereo. **Tone (p3):** `700..15000` Hz output LP.
+
+### 13. Spring — labels {"Decay","Damp","Chirp","Width"} (2026-08-17)
+* Two springs: driver soft-clip -> loop [~35 ms delay -> SIX short allpasses
+  (the dispersion: transients chirp/boing) -> damping LP] -> feedback ~0.97 max.
+* **Decay (p0):** `0.2..4 s`. **Damp (p1):** `500..8000` Hz.
+  **Chirp (p2):** AP coefficient `0.35..0.95`. **Width (p3):** mono <-> stereo.
+
+### 14. Phaser — labels {"Rate","Depth","Feedback","Center"}
 * **Rate (p0):** `0.1..8.0` Hz (`rate = 0.1*pow(80,p)`). Triangle LUT LFO.
 * **Depth (p1):** `0..1` LFO amplitude on the allpass coefficient.
 * **Feedback (p2):** `-0.9..0.9`.

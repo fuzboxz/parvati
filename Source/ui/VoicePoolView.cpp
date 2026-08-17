@@ -21,8 +21,15 @@ VoicePoolView::~VoicePoolView()
 
 void VoicePoolView::visibilityChanged()
 {
-    // Hidden (another top page active) -> stop polling; shown -> resume.
-    if (isVisible())
+    // OWN-visibility flips only (this component being shown/hidden directly).
+    // They are harmless either way: the EFFECTIVE poll gate is the
+    // isShowing() check at the top of timerCallback(). Component::setVisible
+    // notifies only the component itself, so an ANCESTOR toggle (the editor
+    // hiding the whole Patch page when another top page is selected) never
+    // reaches this nested view — visibilityChanged alone cannot gate the
+    // poll. Kept so a direct show/hide of the view itself also manages the
+    // timer.
+    if (isShowing())
         startTimerHz (30);
     else
         stopTimer();
@@ -85,17 +92,33 @@ const ParvatiTheme* VoicePoolView::currentTheme() const noexcept
 
 void VoicePoolView::timerCallback()
 {
+    // The effective poll gate: poll ONLY while actually on-screen. The view
+    // lives INSIDE the Patch page's scrolled body, so it is off-screen
+    // whenever another top page is active — but that hide toggles an
+    // ANCESTOR's visibility, which never fires this view's
+    // visibilityChanged() (and isVisible() here is the always-true own flag).
+    // isShowing() walks the ancestor chain (and the desktop), so the 30 Hz
+    // provider pass — 6 label builds + a 96-voice walk each tick — stops the
+    // moment the Patch page is hidden, and resumes when it is shown again.
+    // (pollNow(), the test hook, bypasses this gate: a headless test instance
+    // has no desktop ancestor, so isShowing() would be permanently false.)
+    if (! isShowing())
+        return;
+
+    applyFrame();
+}
+
+void VoicePoolView::applyFrame()
+{
     if (! provider_)
         return;
 
     const auto frame = provider_();
 
     // Diff the frame into the rows: a LABEL or SIZE change re-layouts (a
-    // card/slot edit or a rename), per-voice flips just repaint. Cell state
-    // beyond a shrunk allocation is dropped so a later grow starts clean.
-    // `allocated` keeps the FULL frame size (a CHAIN part can exceed the
-    // 16-square display cap) so the counts never under-report — see the
-    // header contract.
+    // card/slot edit or a rename), a count change just repaints. `allocated`
+    // keeps the FULL frame size (a CHAIN part's doubled set counts too) so
+    // the counts never under-report — see the header contract.
     bool changed   = false;
     bool relayout  = false;
     int  totalActive = 0;
@@ -112,35 +135,18 @@ void VoicePoolView::timerCallback()
         }
 
         const int allocated = static_cast<int> (pf.voices.size());
-        const int n = juce::jmin (allocated, kMaxCellsPerPart);
-        if (n != row.cellCount)
-        {
-            row.cellCount = n;
-            for (int c = n; c < kMaxCellsPerPart; ++c)
-                row.active[(size_t) c] = false;
-            relayout = true;
-        }
         if (allocated != row.allocated)
         {
             row.allocated = allocated;
-            changed = true;   // the "active/allocated" (or "+N") text changed
+            relayout = true;
         }
 
-        // Counts always cover the FULL allocation, not just the displayed
-        // squares (a CHAIN row's voices 17..32 count too).
+        // Counts always cover the FULL allocation (a CHAIN row's voices
+        // 17..32 count too).
         int act = 0;
         for (const auto& v : pf.voices)
             if (v.active)
                 ++act;
-        for (int c = 0; c < n; ++c)
-        {
-            const bool a = pf.voices[(size_t) c].active;
-            if (row.active[(size_t) c] != a)
-            {
-                row.active[(size_t) c] = a;
-                changed = true;
-            }
-        }
         totalActive += act;
         if (row.activeCount != act)
         {
@@ -172,15 +178,13 @@ void VoicePoolView::timerCallback()
 
 void VoicePoolView::paint (juce::Graphics& g)
 {
-    // Compact 6-row grid (one row per Part): truncated label | one square per
-    // ALLOCATED voice (filled accent = active, outline = idle) | a tiny
-    // "active/allocated" count. The top band carries the total allocation
-    // "X/96". A card-less (0-voice) part stays listed but dimmed, mirroring
-    // the Patch page's inactive rows. Text follows the active font mode.
+    // Compact 6-row grid (one row per Part): truncated label (left) | a tiny
+    // "active/allocated" count (right). The top band carries the total
+    // allocation "X/96". A card-less (0-voice) part stays listed but dimmed,
+    // mirroring the Patch page's inactive rows. Text follows the active font
+    // mode.
     const ParvatiTheme* t = currentTheme();
     const juce::Colour panel    = t ? t->backgroundPanel : juce::Colour (0xff24242e);
-    const juce::Colour outlineC = t ? t->outline         : juce::Colour (0xff3c3c4a);
-    const juce::Colour accent   = t ? t->accentPrimary   : parvati::parvatiFallbackAccent;
     const juce::Colour text     = t ? t->textPrimary     : juce::Colour (0xffe8e8ee);
     const juce::Colour textDim  = t ? t->textSecondary   : juce::Colour (0xff9a9aa8);
 
@@ -202,13 +206,12 @@ void VoicePoolView::paint (juce::Graphics& g)
                 getLocalBounds().reduced (3).removeFromTop (15),
                 juce::Justification::centredRight, false);
 
-    constexpr float sq = 7.0f;   // square indicator edge
     for (int p = 0; p < kNumParts; ++p)
     {
         const auto& row = rows_[(size_t) p];
         // Inactive part: dim the whole row like the Patch page does (still
         // visible so the 6-part structure reads at a glance).
-        const float alpha = row.cellCount == 0 ? 0.4f : 1.0f;
+        const float alpha = row.allocated == 0 ? 0.4f : 1.0f;
 
         juce::String label = row.label;
         // Truncate to ~6 chars + ellipsis: the rows are narrow by design and
@@ -221,39 +224,6 @@ void VoicePoolView::paint (juce::Graphics& g)
         g.setColour (textDim.withMultipliedAlpha (alpha));
         g.drawText (label, row.labelRect, juce::Justification::centredLeft, true);
 
-        for (int c = 0; c < row.cellCount; ++c)
-        {
-            const bool active = row.active[(size_t) c];
-            const auto r = row.cellsRect.toFloat();
-            const juce::Rectangle<float> sqRect (r.getX() + static_cast<float> (c) * (sq + 3.0f),
-                                                 r.getCentreY() - sq * 0.5f, sq, sq);
-            if (active)
-            {
-                g.setColour (accent.withMultipliedAlpha (alpha));
-                g.fillRect (sqRect);
-            }
-            else
-            {
-                g.setColour (outlineC.withMultipliedAlpha (alpha));
-                g.drawRect (sqRect, 1.0f);
-            }
-        }
-
-        // CHAIN rows can own more voices than the 16-square display cap;
-        // summarise the rest with a dim "+N" so a row never under-reports
-        // its allocation (the count text carries the exact numbers).
-        if (row.allocated > row.cellCount)
-        {
-            const auto r = row.cellsRect.toFloat();
-            const float x = r.getX() + static_cast<float> (row.cellCount) * (sq + 3.0f);
-            g.setColour (textDim.withMultipliedAlpha (alpha));
-            g.drawText ("+" + juce::String (row.allocated - row.cellCount),
-                        juce::Rectangle<float> (x, r.getY(),
-                                                juce::jmax (1.0f, r.getRight() - x),
-                                                r.getHeight()).toNearestInt(),
-                        juce::Justification::centredLeft, false);
-        }
-
         // A card-less (disabled) part reads "—" rather than a confusing "0/0".
         const juce::String countText = row.allocated == 0
             ? juce::String (juce::CharPointer_UTF8 ("\xE2\x80\x94"))
@@ -265,10 +235,10 @@ void VoicePoolView::paint (juce::Graphics& g)
 
 void VoicePoolView::layoutRows()
 {
-    // Fixed geometry (compact by design — the view sits between the part rows
-    // and the hosted Global page inside the Patch page's scrolled body):
-    // 3pt inset, a 15pt total band, then six 13pt rows with 1pt gaps
-    // (kHeight is the authoritative height budget).
+    // Fixed geometry (compact by design — the view sits below the hosted
+    // Global page inside the Patch page's scrolled body): 3pt inset, a 15pt
+    // total band, then six 13pt rows with 1pt gaps (kHeight is the
+    // authoritative height budget).
     auto area = getLocalBounds().reduced (3);
     area.removeFromTop (15);
     area.removeFromTop (3);
@@ -287,7 +257,6 @@ void VoicePoolView::layoutRows()
         r.removeFromLeft (6);
         row.countRect = r.removeFromRight (countW);
         r.removeFromRight (6);
-        row.cellsRect = r;
     }
 }
 

@@ -6,11 +6,12 @@
 // over the 96-voice pool) which auto-configures all 6 Parts, then fine-tunes
 // each Part through simple controls (a VOICE COUNT 1..16, not a card bitmask:
 // the 6-voicecard masks are derived by the engine). It also HOSTS the editor's
-// existing Section::Global ParamPage (patch-wide knobs + the voice-activity
-// meter decoration) at the top of the scrolled body, and MERGES its own
-// 6-part voice-allocation table into that page's Global panel (via the
-// page's external-decoration slot), so ONE bordered Global section holds the
-// global knobs, the voice meter AND the part-allocation table.
+// existing Section::Global ParamPage (patch-wide knobs) at the top of the
+// scrolled body, and MERGES its own arrangement summary (Mono/Single/Dual
+// Layer/... + the "Voices Y/96" readout) and 6-part voice-allocation table
+// into that page's Global panel (via the page's external-decoration slot),
+// so ONE bordered Global section holds the global knobs, the arrangement
+// summary AND the part-allocation table.
 //
 // Design: /tmp/parvati_patch_design.md ("Phase 2"). Phase 1 output
 // (Source/ui/PatchArrangement.h) supplies applyArrangement/inferArrangement.
@@ -59,21 +60,20 @@ public:
     void resized() override;
 
     // Parent the editor's existing Section::Global ParamPage (filter_card /
-    // vca_curve / filter_drive / part* / master FX mix, plus the voice-activity
-    // meter decoration) at the TOP of the scrolled body, and attach this page's
-    // PartTablePanel into that page's "Global" group as an EXTERNAL decoration
-    // (non-owning — see setGroupExternalDecoration), so the 6-part
-    // voice-allocation table renders INSIDE the bordered Global panel, below
-    // the global knobs and the voice meter. PatchPage does NOT own the hosted
-    // page (the editor retains ownership); it only reparents + positions it.
-    // The hosted page is reflowed to the row width in resized().
+    // vca_curve / filter_drive / part* / master FX mix) at the TOP of the
+    // scrolled body, and attach this page's PartTablePanel into that page's
+    // "Global" group as an EXTERNAL decoration (non-owning — see
+    // setGroupExternalDecoration), so the 6-part voice-allocation table renders
+    // INSIDE the bordered Global panel, below the global knobs. PatchPage does
+    // NOT own the hosted page (the editor retains ownership); it only reparents
+    // + positions it. The hosted page is reflowed to the row width in resized().
     void hostParamPage (juce::Component* paramPage);
 
     // Inject the state provider for the global voice-pool view (the pool
-    // picture lives ONLY here — the Global page's VoiceMeter is part-relative).
-    // Same decoupled pattern as the meter: the editor builds a VoicePoolFrame
-    // (per part: label + one entry per allocated voice) at ~30 Hz; the view
-    // owns nothing from the engine.
+    // picture lives ONLY here — the bottom status strip's count is
+    // part-relative). The editor builds a VoicePoolFrame (per part: label + one
+    // entry per allocated voice) at ~30 Hz; the view owns nothing from the
+    // engine.
     void setVoicePoolProvider (std::function<VoicePoolFrame()> provider);
 
     // Re-read all 6 Parts' engine state into the rows (voice count, channel,
@@ -120,8 +120,11 @@ private:
     ParvatiAudioProcessor& proc_;
     ThemeManager& themeManager_;
 
-    juce::Label heading_;
-    juce::Label voicesTotalLabel_;       // "Voices Y/96" pool-budget readout (next to the arrangement combo)
+    // The arrangement selector + the "Voices Y/96" pool-budget readout have
+    // NO page-level heading chrome: both live INSIDE the Global panel's table
+    // (the 44pt summary row above the 6 part rows — see PartTablePanel), so
+    // the arrangement sits with the per-part rows it configures.
+    juce::Label voicesTotalLabel_;       // "Voices Y/96" pool-budget readout (summary row, right of the arrangement combo)
     juce::ComboBox arrangementCombo_;   // 6 selectable items (ids 1..6); Custom = no selection
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 

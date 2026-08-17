@@ -9,6 +9,7 @@
 #include "ui/OscPreviewDisplay.h"
 #include "ui/MulExportDialog.h"
 #include "ui/PatchPage.h"
+#include "ui/VoicePoolView.h"   // VoiceFrame/VoiceActivity (the voice-pool provider below)
 #include "ui/ParamHelp.h"
 #include "ui/SynthParamLabels.h"
 #include "ui/SynthWorkspace.h"
@@ -1697,7 +1698,7 @@ void ParamPage::layoutGroups (int targetWidth)
             g.naturalHeight += g.decorationH + kDecorationGap;
         // A group's EXTERNAL (non-owned) decoration reserves room BELOW the
         // owned one (e.g. the Patch page's part-allocation table under the
-        // Global panel's voice meter), so it is inside the same border.
+        // Global panel's knobs), so it is inside the same border.
         if (g.externalDecoration != nullptr)
             g.naturalHeight += g.externalDecorationH + kDecorationGap;
     }
@@ -2091,9 +2092,9 @@ void ParamPage::setGroupInlinePreview (const juce::String& groupName,
 void ParamPage::setGroupDecorationHeight (const juce::String& groupName, int height)
 {
     // Override the reserved room for the named group's decoration (below its
-    // control cells). Used for the compact Global voice strip (smaller than the
-    // 80px reserved for the Env/LFO ADSR/LFO previews). Re-lays out so the new
-    // height takes effect immediately.
+    // control cells). Used for the compact Filter response curve (smaller
+    // than the 80px reserved for the Env/LFO ADSR/LFO previews). Re-lays out
+    // so the new height takes effect immediately.
     for (auto& g : groups_)
         if (g.name == groupName)
             g.decorationH = juce::jmax (0, height);
@@ -2269,7 +2270,7 @@ void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
 
 //==============================================================================
 ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
-    : juce::AudioProcessorEditor (&p), processorRef_ (p), loadMouseListener_ (p)
+    : juce::AudioProcessorEditor (&p), processorRef_ (p)
 {
     // The UI is landscape-only (no portrait layout exists). Lock the device to
     // the two landscape orientations. The iOS/Android peer consults this live in
@@ -2581,7 +2582,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         }
 
         if (pg.s == Section::Global)
-            globalPage_ = page.get();   // voice-activity cells attach here as a decoration
+            globalPage_ = page.get();   // hosted (reparented) into the Patch page below
 
         page->setSize (page->getContentWidth(), page->getContentHeight());
         ParamPage* rawPage = page.get();
@@ -2776,10 +2777,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // ---- Patch page overlay (custom component, not descriptor-generated) ----
     // The Patch page replaces the old separate Multi/Setup + Global pages: it
-    // hosts the editor-owned Section::Global ParamPage (patch-wide knobs + the
-    // voice-activity meter decoration) below its 6 part rows. A header "Patch"
-    // button (next to the Part dropdown) toggles this page as an overlay over
-    // the tab area. globalPage_ ownership stays in generatedPages_; hostParamPage
+    // hosts the editor-owned Section::Global ParamPage (patch-wide knobs) with
+    // its 6 part rows merged into the Global panel. A header "Patch" button
+    // (next to the Part dropdown) toggles this page as a full-page view.
+    // globalPage_ ownership stays in generatedPages_; hostParamPage
     // only reparents it into the Patch page.
     patchPage_ = std::make_unique<PatchPage> (processorRef_, themeManager_);
     addChildComponent (patchPage_.get());   // owned here; invisible until toggled
@@ -2816,8 +2817,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // allocation rebuild (they lag a fresh slots edit and double CHAIN
         // parts' sets). Activities are taken from the actual voices in pool
         // order; a stale-longer set is truncated and a stale-shorter one padded
-        // with idle entries, so every row always shows exactly its assigned
-        // count (1 active part with 1 voice -> one square, total 1/96).
+        // with idle entries, so every part row always reports exactly its
+        // assigned count (1 active part with 1 voice -> one lit row, total
+        // 1/96).
         for (int part = 0; part < static_cast<int> (frame.parts.size()); ++part)
         {
             auto& v = frame.parts[(size_t) part].voices;
@@ -2858,7 +2860,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // toggling only shows/hides it. The content area keeps its FULL height
     // whether or not the keyboard is visible, so the synth controls never move
     // (the keyboard bounds are positioned once in resized() and only its
-    // visibility toggles here). See resized() for the overlay placement + z-order.
+    // visibility toggles here). See resized() for the overlay placement +
+    // z-order.
     kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
     kbdToggleButton_.setClickingTogglesState (true);
     kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the workspace keeps its full height with the keyboard hidden; toggling [KBD] floats the TALL two-octave strip over the bottom row (it covers the generator editor + matrix; the content never moves)
@@ -3011,45 +3014,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     keyboardView_->setComputerKeyboardEnabled (
         processorRef_.wrapperType == juce::AudioProcessor::wrapperType_Standalone);
 
-    // ---- Voice activity cells live on the Global page; the bottom strip shows
-    // only the active-count + a hover-tooltip bar (cells + "Voices" word were
-    // removed per request). Build the cells meter, wire it, and attach it to the
-    // Global page's "Global" group as a decoration (owned by the page). ----
-    {
-        auto vm = std::make_unique<VoiceMeter>();
-        vm->setStateProvider ([this]() {
-            // PART-RELATIVE frame: one entry per ALLOCATED voice of the
-            // current part, in pool order (0..16 entries; empty = a disabled
-            // part, a valid all-dim frame). The pool is partitioned in part
-            // order but voices are re-TAGGED with their owning part by
-            // rebuildVoiceAllocation, so the filter is the part tag — the old
-            // first-six-pool-indices view always showed Part 1 regardless of
-            // the selection.
-            std::vector<VoiceActivity> v;
-            auto& e = processorRef_.getEngine();
-            const int curPart = e.getCurrentPart();
-            v.reserve (static_cast<size_t> (
-                e.getPart (curPart).voiceCount_.load()));
-            for (int i = 0; i < e.getNumVoices(); ++i)
-            {
-                auto* av = e.getAmbikaVoice (i);
-                if (av == nullptr || av->getPartIndex() != curPart)
-                    continue;
-                // SF-1: read the lock-free atomic snapshot instead of the
-                // non-atomic SynthesiserVoice::currentlyPlayingNote.
-                v.push_back ({ av->isDisplayedActive(), av->getDisplayedNote() });
-            }
-            return v;
-        });
-        globalVoiceMeter_ = vm.get();
-        if (globalPage_ != nullptr)
-        {
-            globalPage_->setGroupDecoration ("Global", std::move (vm));
-            // Compact the voice strip: ~32px instead of the 80px reserved for the
-            // Env/LFO ADSR/LFO previews (those keep kDecorationH via the default).
-            globalPage_->setGroupDecorationHeight ("Global", 32);
-        }
-    }
+    // (No per-voice activity cells exist: the per-part V1..V16 meter was
+    // removed from the Global panel and the whole-patch squares from the
+    // voice-pool view. Voice activity is carried by the bottom status strip's
+    // part-relative count and the Patch page's per-part active/allocated
+    // counts.)
 
     // ---- Bottom status strip: compact active-voice count + tooltip bar ----
     statusCountLabel_.setJustificationType (juce::Justification::centred);
@@ -3061,18 +3030,19 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
                                juce::dontSendNotification);
     addAndMakeVisible (statusCountLabel_);
-    // Realtime audio-load / overrun probe readout (see ParvatiAudioProcessor::
-    // getAudioLoadCurrent/Peak/getAudioOverrunCount). Shows "CPU 42%" in green,
-    // amber near the limit, red on an overrun ("CPU 98% !3"). Updated at 30 Hz
-    // in timerCallback(). Pure read of the processor's atomics (message thread).
+    // Realtime audio-load readout (see ParvatiAudioProcessor::
+    // getAudioLoadCurrent). Shows "CPU 42%" in green, amber above 70%, red
+    // above 90% (the CURRENT block only — peak/overrun diagnostics are gone
+    // from the readout per request). Updated at 30 Hz in timerCallback().
+    // Pure read of the processor's atomic (message thread). Fixed tooltip —
+    // no interaction on the label.
     statusLoadLabel_.setJustificationType (juce::Justification::centred);
     statusLoadLabel_.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     statusLoadLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
-    statusLoadLabel_.setTooltip ("Audio-thread realtime load (peak since reset) + overrun count. "
-                                 "Approaching 100% means xruns/crackle. Right-click (or tap on touch) to reset the peak.");
+    statusLoadLabel_.setTooltip ("Audio-thread realtime load (current block). "
+                                 "Near 100% = dropouts/crackle.");
     addAndMakeVisible (statusLoadLabel_);
-    statusLoadLabel_.addMouseListener (&loadMouseListener_, false);   // right-click resets the probe
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
     statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
     statusTooltipLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
@@ -3179,8 +3149,6 @@ ParvatiEditor::~ParvatiEditor()
     // destroyed during the reverse-order member teardown (defensive: the
     // components stop their own timers in their destructors, but nulling the
     // providers avoids any lingering reference).
-    if (globalVoiceMeter_ != nullptr)
-        globalVoiceMeter_->setStateProvider (nullptr);
     if (keyboardView_ != nullptr)
         keyboardView_->setNoteCallback (nullptr);
     if (patchPage_ != nullptr)
@@ -3318,50 +3286,41 @@ void ParvatiEditor::timerCallback()
         if (statusCountLabel_.getText() != countText)
             statusCountLabel_.setText (countText, juce::dontSendNotification);
 
-        // ---- Realtime audio-load probe readout (overrun diagnosis) ----
-        // Shows the current block's CPU% (render-time / real-time-budget) and,
-        // if any block overran its budget, a "!N" overrun count. Colour flips to
-        // amber above 70%, red above 90% or on any overrun — so a glance at the
+        // ---- Realtime audio-load readout ----
+        // Shows the current block's CPU% (render-time / real-time budget).
+        // Colour flips to amber above 70%, red above 90% — so a glance at the
         // strip tells you whether audible crackle coincides with the audio
         // thread being starved (e.g. by GUI render load on a shared core).
+        // (The peak/overrun diagnostics were dropped from the READOUT per
+        // request; the processor's probe APIs remain available for tooling.)
         {
             const double cur = processorRef_.getAudioLoadCurrent();
-            const double peak = processorRef_.getAudioLoadPeak();
-            const uint64_t over = processorRef_.getAudioOverrunCount();
             const int curPct = juce::jlimit (0, 999, juce::roundToInt (cur * 100.0));
-            const int peakPct = juce::jlimit (0, 999, juce::roundToInt (peak * 100.0));
             // Anti-flicker hold gate: the per-block probe jitters 0<->1% from
             // render-timing noise, which used to re-set this label ~20x/sec at
             // idle (each text change repaints the whole status strip, and with
             // it the editor). The readout now updates only when the value MOVES
-            // MEANINGFULLY (>=2 percentage points), a fresh overrun count
-            // appears (never held — overruns are the thing being diagnosed),
-            // or 500 ms elapsed since the last refresh (a genuinely drifting
-            // load still tracks). The existing text-comparison guard stays as
-            // the final gate below.
-            const bool overrunsChanged = static_cast<int> (over) != lastLoadOverruns_;
+            // MEANINGFULLY (>=2 percentage points) or 500 ms elapsed since the
+            // last refresh (a genuinely drifting load still tracks). The
+            // existing text-comparison guard stays as the final gate below.
             const bool movedEnough = std::abs (curPct - lastLoadPct_) >= 2;
             const bool holdElapsed = juce::Time::getCurrentTime() - lastLoadTextUpdate_
                                      > juce::RelativeTime::milliseconds (500);
-            if (overrunsChanged || movedEnough || holdElapsed)
+            if (movedEnough || holdElapsed)
             {
-                juce::String loadText = "CPU " + juce::String (curPct) + "%";
-                if (over > 0) loadText += " !" + juce::String ((int) over);   // overrun count
+                const juce::String loadText = "CPU " + juce::String (curPct) + "%";
                 if (statusLoadLabel_.getText() != loadText)
                     statusLoadLabel_.setText (loadText, juce::dontSendNotification);
                 lastLoadPct_ = curPct;
-                lastLoadOverruns_ = static_cast<int> (over);
                 lastLoadTextUpdate_ = juce::Time::getCurrentTime();
             }
-            // Colour by headroom (peak drives the colour; overruns force red).
+            // Colour by headroom (the CURRENT percentage drives the colour).
             auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
             const ParvatiTheme* th = lnf ? lnf->getTheme() : nullptr;
             const juce::Colour ok     = th ? th->textSecondary : juce::Colour (0xff9a9aa8);
             const juce::Colour warn   = th ? th->accentPrimary  : parvati::parvatiFallbackAccent;
             const juce::Colour danger = juce::Colour (0xffe0584a);
-            const juce::Colour c = (over > 0 || peak >= 0.90) ? danger
-                                  : peak >= 0.70                ? warn
-                                                                : ok;
+            const juce::Colour c = cur >= 0.90 ? danger : cur >= 0.70 ? warn : ok;
             // setColour marks the label dirty even when the colour is unchanged
             // — gate on an actual change so an idle tick never repaints.
             if (c != lastLoadColour_)
@@ -3369,18 +3328,9 @@ void ParvatiEditor::timerCallback()
                 statusLoadLabel_.setColour (juce::Label::textColourId, c);
                 lastLoadColour_ = c;
             }
-            // Keep the tooltip current with the peak (so the hovered help shows
-            // the worst-case seen, not just the live value). The text is rebuilt
-            // every tick — only push it through setTooltip when it actually
-            // differs (setTooltip dirties the component regardless).
-            juce::String loadTip = "Audio-thread realtime load: now " + juce::String (curPct)
-                + "%, peak " + juce::String (peakPct) + "%" + (over > 0 ? (", " + juce::String ((int) over) + " overruns") : juce::String())
-                + ". Near/over 100% = xruns/crackle. Right-click to reset the peak.";
-            if (loadTip != lastLoadTip_)
-            {
-                statusLoadLabel_.setTooltip (loadTip);
-                lastLoadTip_ = loadTip;
-            }
+            // The tooltip is a fixed string (set once in the ctor) — the live
+            // value is the label text itself, so there is no per-tick tooltip
+            // rebuild to guard.
         }
 
         // Tooltip bar: the help text of the control under the mouse (walks up
@@ -3640,8 +3590,6 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // Phase 4a: refresh visualization components so they pick up the new colours.
     if (keyboardView_ != nullptr)
         keyboardView_->refresh();
-    if (globalVoiceMeter_ != nullptr)
-        globalVoiceMeter_->refresh();
     repaint();
 }
 
@@ -3869,12 +3817,15 @@ void ParvatiEditor::resized()
     area = area.withTrimmedTop (kDesktopTopPad);
 #endif
 
-    // ---- Bottom status strip = LOWEST band: [n/denom] + tooltip bar ----
+    // ---- Bottom status strip = LOWEST band: [tooltip bar] + [n/denom] +
+    //      [CPU %] on the RIGHT (indicators hug the right edge; the hover
+    //      tooltip fills the left). ----
     {
         statusBand_ = area.removeFromBottom (kVoiceStripH);
         auto strip = statusBand_.reduced (6, 1);
-        statusCountLabel_.setBounds (strip.removeFromLeft (48));
-        statusLoadLabel_.setBounds (strip.removeFromLeft (96));
+        statusLoadLabel_.setBounds (strip.removeFromRight (96));
+        strip.removeFromRight (8);
+        statusCountLabel_.setBounds (strip.removeFromRight (48));
         statusTooltipLabel_.setBounds (strip);
     }
 
@@ -3895,14 +3846,15 @@ void ParvatiEditor::resized()
     // Right cluster (removeFromRight => first item ends up rightmost): system
     // icons, then the [KBD] toggle at the far right.
     // Right cluster = a coherent toolbar grouped [Load][Save] | [Undo][Redo] |
-    // [Zoom +/0/-] | [Gear] | [KBD]. The icon/zoom buttons share a uniform 4px
-    // gap; an 8px gap separates the history/zoom/view icons from the file group.
-    // Save/Load are trimmed (100/80 -> 84/70) so the cluster stays compact and
-    // never collides with the centred Patch/Part cluster at the default width.
-    // Every icon is a 44x44 touch target with >=8pt gaps, and the three
-    // zoom buttons (+/-/0) are folded into one "..." overflow popup so the grown
-    // cluster still fits the 1280pt editor width. [KBD] is already 44pt wide.
-    kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] (already 44pt wide)
+    // [Zoom +/0/-] | [Gear] | [MOD] | [MAP] | [KBD]. The icon/zoom buttons
+    // share a uniform gap; an 8px gap separates the history/zoom/view icons
+    // from the file group. Save/Load are trimmed (100/80 -> 84/70) so the
+    // cluster stays compact and never collides with the centred Patch/Part
+    // cluster at the default width. Every icon is a 44x44 touch target with
+    // >=8pt gaps, and the three zoom buttons (+/-/0) are folded into one "..."
+    // overflow popup so the grown cluster still fits the 1280pt editor width.
+    // [KBD] is already 44pt wide.
+    kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] keyboard-overlay toggle (far right)
     bar.removeFromRight (8);
     modBarToggleButton_.setBounds (bar.removeFromRight (44)); // [MOD] mod-pill bar seam toggle (left of [KBD])
     bar.removeFromRight (8);
@@ -4000,10 +3952,10 @@ void ParvatiEditor::resized()
     // added AFTER pageSelector_ so it already paints above the workspace; the
     // Patch overlay lifts itself toFront when shown and the keyboard overlay is
     // then re-lifted above it (see showTopPage / the [KBD] toggle) so [KBD]
-    // stays visible in Patch mode. The Settings side panel (added last) stays
-    // above it too — showTopPage / the gear click re-lift it above the patch
-    // overlay. No toFront() is called here so a resize while a modal is open
-    // never lifts the keyboard above it.
+    // stays visible in Patch mode.
+    // The Settings side panel (added last) stays above it too — showTopPage /
+    // the gear click re-lift it above the patch overlay. No toFront() is called
+    // here so a resize while a modal is open never lifts the keyboard above it.
     if (keyboardView_ != nullptr)
     {
         // The wheels panel widens with the tall strip (was 76 at the flat

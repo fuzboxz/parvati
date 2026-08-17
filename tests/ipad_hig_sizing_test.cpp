@@ -17,6 +17,7 @@
 #include "ui/FxMatrixView.h"       // kRowHeight / kAddButtonH
 #include "ui/FxSlotCard.h"         // kPowerHitSize (FX power-toggle hit area)
 #include "ui/FxRoutingBar.h"       // kStepBtnW/kStepBtnH/kEqKnobSize (routing-bar targets)
+#include "ui/WheelsComponent.h"    // kOctBtnSize (wheels octave-switch targets)
 #include "ui/ParvatiLookAndFeel.h" // kPopupRowHeight (default popup rows)
 
 namespace
@@ -46,6 +47,7 @@ static_assert (FxRoutingBar::kEqKnobSize == 44, "FX master-EQ dial must be 44 (H
 static_assert (ModMatrixView::kAddButtonH == 44, "mod-matrix Add button must be 44 tall (HIG)");
 static_assert (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button must be 44 tall (HIG)");
 static_assert (ParvatiLookAndFeel::kPopupRowHeight == 44, "default popup-menu rows must be 44 (HIG)");
+static_assert (WheelsComponent::kOctBtnSize == 44, "wheels octave-switch buttons must be 44 (HIG)");
 
 int main()
 {
@@ -66,6 +68,7 @@ int main()
     check (ModMatrixView::kAddButtonH == 44, "mod-matrix Add button == 44");
     check (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button == 44");
     check (ParvatiLookAndFeel::kPopupRowHeight == 44, "default popup-menu row == 44");
+    check (WheelsComponent::kOctBtnSize == 44, "wheels octave-switch button == 44");
 
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "HIG SIZING TEST: FAILURES" : "HIG SIZING TEST: ALL CHECKS PASSED",

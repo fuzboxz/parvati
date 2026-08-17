@@ -33,6 +33,15 @@ int activeParamCount (FxType t) noexcept
         case FxType::PlateReverb:     return 4;
         case FxType::VinylCompressor: return 4;
         case FxType::Phaser:          return 4;
+        case FxType::Overdrive:       return 4;
+        case FxType::LutDistortion:   return 4;
+        case FxType::Compressor:      return 4;
+        case FxType::Gate:            return 4;
+        case FxType::Chorus:          return 4;
+        case FxType::Flanger:         return 4;
+        case FxType::Echo:            return 4;
+        case FxType::Room:            return 4;
+        case FxType::Spring:          return 4;
         case FxType::None:
         case FxType::Count:   return 0;
     }
@@ -121,7 +130,7 @@ const char* paramLabel (FxType t, int idx) noexcept
             break;
         case FxType::VinylCompressor:
             if (idx == 0) return "Compress";
-            if (idx == 1) return "Pitch";
+            if (idx == 1) return "Wow/Flut";
             if (idx == 2) return "Crackle";
             if (idx == 3) return "Age";
             break;
@@ -130,6 +139,62 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 1) return "Depth";
             if (idx == 2) return "Feedback";
             if (idx == 3) return "Center";
+            break;
+        case FxType::Overdrive:
+            if (idx == 0) return "Drive";
+            if (idx == 1) return "Bias";
+            if (idx == 2) return "Tone";
+            if (idx == 3) return "Level";
+            break;
+        case FxType::LutDistortion:
+            if (idx == 0) return "Drive";
+            if (idx == 1) return "Wavetable";   // the 16-shape LUT (was "Shape")
+            if (idx == 2) return "Jitter";
+            if (idx == 3) return "Tone";
+            break;
+        case FxType::Compressor:
+            if (idx == 0) return "Amount";
+            if (idx == 1) return "Attack";
+            if (idx == 2) return "Release";
+            if (idx == 3) return "Level";
+            break;
+        case FxType::Gate:
+            if (idx == 0) return "Thresh";
+            if (idx == 1) return "Attack";
+            if (idx == 2) return "Hold";
+            if (idx == 3) return "Release";
+            break;
+        case FxType::Chorus:
+            if (idx == 0) return "Rate";
+            if (idx == 1) return "Depth";
+            if (idx == 2) return "Center";
+            if (idx == 3) return "Feedback";
+            break;
+        case FxType::Flanger:
+            if (idx == 0) return "Rate";
+            if (idx == 1) return "Depth";
+            if (idx == 2) return "Manual";
+            if (idx == 3) return "Feedback";
+            break;
+        case FxType::Echo:
+            if (idx == 0) return "Time";
+            if (idx == 1) return "Feedback";
+            if (idx == 2) return "Tone";
+            // "Stereo" (not "Stereo Spread"): the slot-card cell caption is
+            // narrow; the short form still carries the meaning (R-time spread).
+            if (idx == 3) return "Stereo";
+            break;
+        case FxType::Room:
+            if (idx == 0) return "Decay";
+            if (idx == 1) return "Damp";
+            if (idx == 2) return "Width";
+            if (idx == 3) return "Tone";
+            break;
+        case FxType::Spring:
+            if (idx == 0) return "Decay";
+            if (idx == 1) return "Damp";
+            if (idx == 2) return "Chirp";
+            if (idx == 3) return "Width";
             break;
         case FxType::None:
         case FxType::Count:
@@ -142,18 +207,58 @@ const char* paramLabel (FxType t, int idx) noexcept
 // when within half a knob quantization step (range/127 steps => half-step =
 // range/254). Without this, a +/-12 range over 127 steps (~0.189/step) shows
 // "6.9" then "7.1" with no "7.0" in between; the snap makes every integer land.
+// NO " st" suffix: the widest signed value with it ("-24.0 st") busts the
+// hard 6-char FX-cell budget, and the knob caption ("Pitch") carries the unit.
 static juce::String formatSemis (double semis, double range) noexcept
 {
     const double halfStep = range / 254.0;
     const double nearest  = std::round (semis);
     if (std::fabs (semis - nearest) <= halfStep + 1e-9)
         semis = nearest;
-    return juce::String (semis >= 0.0 ? "+" : "") + juce::String (semis, 1) + " st";
+    return juce::String (semis >= 0.0 ? "+" : "") + juce::String (semis, 1);
+}
+
+// Compact FX-page Hz readout, mirroring the synth filter's electronic-component
+// style: below 1 kHz -> integer + "Hz" ("820Hz"); 1..10 kHz -> one-decimal
+// k-notation with 'k' replacing the decimal point ("1k2", "2k6", "6k7"); at
+// or above 10 kHz -> integer kHz ("12k", "15k"). Rounding that carries into
+// the next integer kHz (9950 Hz -> "10k") lands in the hundreds >= 100 branch.
+static juce::String formatHz (double hz) noexcept
+{
+    if (hz < 1000.0)
+        return juce::String (juce::roundToInt (hz)) + "Hz";
+    const int hundreds = juce::roundToInt (hz / 100.0);   // nearest 100 Hz
+    if (hundreds >= 100)
+        return juce::String (hundreds / 10) + "k";        // 10k, 12k, 15k...
+    return juce::String (hundreds / 10) + "k" + juce::String (hundreds % 10);   // 1k2..9k9
+}
+
+// Compact FX-page milliseconds readout: integer-rounded with NO decimals once
+// the value reaches 10 ms ("10ms", "250ms", "470ms"); sub-10 ms values keep
+// the requested decimals (1 => "0.5ms"/"2.5ms"; 2 => "0.05ms"/"9.97ms") —
+// every form stays <= 6 chars.
+static juce::String formatMs (double ms, int decimals) noexcept
+{
+    if (ms < 10.0)
+        return juce::String (ms, decimals) + "ms";
+    return juce::String (juce::roundToInt (ms)) + "ms";
+}
+
+// Compact seconds readout (decay tails): one decimal, no space — "0.1s".."4.0s"
+// (two decimals + space, "1.60 s", busts the 6-char cell budget).
+static juce::String formatSecs (double s) noexcept
+{
+    return juce::String (s, 1) + "s";
 }
 
 //==============================================================================
 // Per-param meaningful-unit value readout (DISPLAY-ONLY; stored value unchanged).
 // p = value0to127/127.0 mirrors the DSP normalization (SynthEngine / ParamControl).
+// HARD RULE: every string this returns is <= 6 characters — the FX-slot knob
+// cell is narrow. Hz use the compact "820Hz"/"2k6" style (formatHz), times are
+// space-free ms (formatMs), rates are space-free "0.87Hz", decays one-decimal
+// "1.6s". tests/fx_param_coverage_test.cpp sweeps every (type, idx, value)
+// triple and asserts the budget.
 juce::String paramValueText (FxType t, int idx, double value0to127)
 {
     const double p = value0to127 / 127.0;
@@ -178,7 +283,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
 
         case FxType::Reverb:
             if (idx == 0)   // Predelay -> 0..200 ms (mirrors FxReverb's 0.2 s cap)
-                return juce::String (juce::roundToInt (p * 200.0)) + " ms";
+                return formatMs (p * 200.0, 1);
             break;
 
         case FxType::WSOLAStretch:
@@ -210,7 +315,9 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
                 f = f <= 0.4 ? f * f * f * 62.5
                              : 4.0 * std::pow (2.0, 180.0 * (f - 0.4) / 12.0);
                 const double hz = f * dir;
-                return juce::String (hz > 0.0 ? "+" : "") + juce::String (juce::roundToInt (hz)) + " Hz";
+                // Compact + signed, no spaces: "+230Hz" small, "+1k2" large.
+                return juce::String (hz > 0.0 ? "+" : (hz < 0.0 ? "-" : ""))
+                       + formatHz (std::fabs (hz));
             }
             break;
 
@@ -218,9 +325,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 0)   // Carrier -> Hz (20..4000, log)
             {
                 const double hz = 20.0 * std::pow (200.0, p);
-                if (hz < 1000.0)
-                    return juce::String (juce::roundToInt (hz)) + " Hz";
-                return juce::String (hz / 1000.0, 2) + " kHz";
+                return formatHz (hz);   // "20Hz".."999Hz" / "1k0".."4k0"
             }
             break;
 
@@ -232,54 +337,125 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
                 return kDiv[i];
             }
             if (idx == 1)   // Feedback -> 0..95 %
-                return juce::String (juce::roundToInt (p * 95.0)) + " %";
+                return juce::String (juce::roundToInt (p * 95.0)) + "%";
             if (idx == 3)   // Grit -> 24-bit..8-bit
                 return juce::String (24 - juce::roundToInt (p * 16.0)) + "-bit";
             break;
 
         case FxType::Ensemble:
             if (idx == 0)   // Rate -> 0.1..8 Hz (log)
-                return juce::String (0.1 * std::pow (80.0, p), 2) + " Hz";
+                return juce::String (0.1 * std::pow (80.0, p), 2) + "Hz";   // "0.10Hz".."8.00Hz"
             if (idx == 1)   // Depth -> 0..15 ms
-                return juce::String (p * 15.0, 1) + " ms";
+                return formatMs (p * 15.0, 1);
             if (idx == 2)   // Center -> 2..25 ms
-                return juce::String (2.0 + p * 23.0, 1) + " ms";
+                return formatMs (2.0 + p * 23.0, 1);
             if (idx == 3)   // Feedback -> -90..+90 %
-                return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + " %";
+                return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + "%";
             break;
 
         case FxType::PlateReverb:
             if (idx == 0)   // Predelay -> 0..100 ms
-                return juce::String (juce::roundToInt (p * 100.0)) + " ms";
+                return formatMs (p * 100.0, 1);
             if (idx == 1)   // Decay -> 0.1..4.0 s
-                return juce::String (0.1 + p * 3.9, 2) + " s";
+                return formatSecs (0.1 + p * 3.9);
             if (idx == 2)   // Damping -> 500..12000 Hz (log)
-            {
-                const double hz = 500.0 * std::pow (24.0, p);
-                return hz < 1000.0 ? juce::String (juce::roundToInt (hz)) + " Hz"
-                                   : juce::String (hz / 1000.0, 2) + " kHz";
-            }
+                return formatHz (500.0 * std::pow (24.0, p));
             break;
 
         case FxType::VinylCompressor:
-            if (idx == 3)   // Age -> 1000..15000 Hz (log)
-            {
-                const double hz = 1000.0 * std::pow (15.0, p);
-                return hz < 1000.0 ? juce::String (juce::roundToInt (hz)) + " Hz"
-                                   : juce::String (hz / 1000.0, 2) + " kHz";
-            }
+            if (idx == 3)   // Age -> 700..15000 Hz (log)
+                return formatHz (700.0 * std::pow (15000.0 / 700.0, p));
             break;
 
         case FxType::Phaser:
             if (idx == 0)   // Rate -> 0.1..8 Hz (log)
-                return juce::String (0.1 * std::pow (80.0, p), 2) + " Hz";
+                return juce::String (0.1 * std::pow (80.0, p), 2) + "Hz";   // "0.10Hz".."8.00Hz"
             if (idx == 2)   // Feedback -> -90..+90 %
-                return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + " %";
+                return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + "%";
             if (idx == 3)   // Center -> 200..2000 Hz (log)
+                return formatHz (200.0 * std::pow (10.0, p));   // "200Hz".."2k0"
+            break;
+
+        // ---- FV-1 second wave readouts ----
+        case FxType::Overdrive:
+            if (idx == 0)   // Drive -> 1..16x (log)
+                return juce::String (std::pow (16.0, p), 1) + "x";
+            if (idx == 1)   // Bias -> -0.3..+0.3
+                return juce::String ((p - 0.5) * 0.6, 2);
+            if (idx == 2)   // Tone -> 700..15000 Hz (log)
+                return formatHz (700.0 * std::pow (15000.0 / 700.0, p));
+            if (idx == 3)   // Level -> 0..2
+                return juce::String (p * 2.0, 2);
+            break;
+
+        case FxType::LutDistortion:
+            if (idx == 0)   // Drive -> 1..8x
+                return juce::String (1.0 + p * 7.0, 1) + "x";
+            if (idx == 1)   // Shape -> 16 stepped names
             {
-                const double hz = 200.0 * std::pow (10.0, p);
-                return juce::String (juce::roundToInt (hz)) + " Hz";
+                static const char* const kShapes[] = {
+                    "Clip", "Soft", "Tube", "Wrap", "OctUp", "Fuzz", "Square",
+                    "Steps", "SFold", "Cheby2", "Cheby3", "Asym", "Mirror",
+                    "HGate", "Crush4", "Sparse" };   // 16 entries, all <= 6 chars (cell budget)
+                return kShapes[juce::jlimit (0, 15, juce::roundToInt (p * 16.0))];
             }
+            if (idx == 3)   // Tone -> 700..15000 Hz (log)
+                return formatHz (700.0 * std::pow (15000.0 / 700.0, p));
+            break;
+
+        case FxType::Compressor:
+            if (idx == 1)   // Attack -> 0.5..50 ms (log)
+                return formatMs (0.5 * std::pow (100.0, p), 1);
+            if (idx == 2)   // Release -> 20..500 ms (log)
+                return formatMs (20.0 * std::pow (25.0, p), 1);
+            if (idx == 3)   // Level -> 0..2
+                return juce::String (p * 2.0, 2);
+            break;
+
+        case FxType::Gate:
+            if (idx == 0)   // Threshold -> 0..-3 dB (0 = off)
+                return p < 0.005 ? "Off" : juce::String (juce::roundToInt (p * 100.0)) + "%";
+            if (idx == 1)   // Attack -> 0.05..10 ms (log)
+                return formatMs (0.05 * std::pow (200.0, p), 2);
+            if (idx == 2)   // Hold -> 0..150 ms
+                return formatMs (p * 150.0, 1);
+            if (idx == 3)   // Release -> 5..500 ms (log)
+                return formatMs (5.0 * std::pow (100.0, p), 1);
+            break;
+
+        case FxType::Chorus:
+            if (idx == 0)   // Rate -> 0.1..8 Hz (log)
+                return juce::String (0.1 * std::pow (80.0, p), 2) + "Hz";   // "0.10Hz".."8.00Hz"
+            if (idx == 1)   // Depth -> 0..6 ms
+                return formatMs (p * 6.0, 1);
+            if (idx == 2)   // Center -> 5..25 ms
+                return formatMs (5.0 + p * 20.0, 1);
+            break;
+
+        case FxType::Flanger:
+            if (idx == 0)   // Rate -> 0.05..3 Hz (log)
+                return juce::String (0.05 * std::pow (60.0, p), 2) + "Hz";   // "0.05Hz".."3.00Hz"
+            if (idx == 1)   // Depth -> 0..4.5 ms
+                return formatMs (p * 4.5, 1);
+            if (idx == 2)   // Manual -> 0.15..6 ms
+                return formatMs (0.15 + p * 5.85, 2);
+            break;
+
+        case FxType::Echo:
+            if (idx == 0)   // Time -> 10..470 ms (log)
+                return formatMs (10.0 * std::pow (47.0, p), 1);
+            if (idx == 2)   // Tone -> 700..12000 Hz (log)
+                return formatHz (700.0 * std::pow (12000.0 / 700.0, p));
+            if (idx == 3)   // Spread -> R time 1..2x
+                return juce::String (1.0 + p, 2) + "x";
+            break;
+
+        case FxType::Room:
+        case FxType::Spring:
+            if (idx == 0)   // Decay
+                return formatSecs (0.1 + p * (t == FxType::Spring ? 3.9 : 2.9));
+            if (idx == 1)   // Damp
+                return formatHz (500.0 * std::pow (t == FxType::Spring ? 16.0 : 24.0, p));
             break;
 
         default:

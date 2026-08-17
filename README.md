@@ -68,7 +68,8 @@ cp -R build/Parvati_artefacts/Release/Standalone/Parvati.app /Applications/
 ```
 
 (On macOS the one-command `cmake --build build_release --target deploy` builds
-all formats, renders `./screens`, and installs VST3 + AU + CLAP for you.)
+all formats, renders `./screens`, and installs VST3 + AU + CLAP into
+`~/Library/Audio/Plug-Ins` **and the Standalone into `/Applications`** for you.)
 
 Restart your DAW and rescan plugins. To run the AU for the first time you may
 need to clear the quarantine attribute:

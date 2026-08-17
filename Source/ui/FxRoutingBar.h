@@ -8,7 +8,7 @@
 //   | ROUTING                       |   bold 14px header (sibling-card style)
 //   | FLOW: [ Series ...        |v] |   juce::ComboBox bound to `fx_topo`
 //   | MIX:        ( dial )          |   rotary knob bound to `fx_mix`
-//   | [ Low ][ Mid ][ High ]        |   3-band master EQ bound to fx_eq_*
+//   | [ HPF ][ Mid ][ High ]       |   3-band master EQ bound to fx_eq_*
 //   +-------------------------------+
 //
 // Rendered as a borderless sibling card (containerFill, 7px corners, no outline)
@@ -67,7 +67,7 @@ private:
     juce::Slider mixKnob_;          // bound to fx_mix (synth-style rotary, value drawn in-ring)
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttach_;
 
-    // ---- 3-band master EQ (Low / Mid / High) — synth-style rotary knobs ----
+    // ---- 3-band master EQ (HPF / Mid / High) — synth-style rotary knobs ----
     std::array<juce::Slider, 3>           eqKnobs_;
     std::array<juce::Label, 3>            eqLabels_;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> eqAttach_;

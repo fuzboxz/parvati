@@ -5,11 +5,10 @@
 // juce_core. Used by the synth readout formatter (SynthParamLabels) and the
 // Patch page key-zone knobs.
 //
-// (Consolidation note: VoiceMeter::midiNoteName and the local kNoteNames in
-// FxSlotLabels.cpp implement the IDENTICAL math. This is the canonical home;
-// deduping those two callers onto it is a mechanical, verified-identical
-// follow-up — deliberately deferred here so the just-shipped FX code is not
-// perturbed.)
+// (Consolidation note: the local kNoteNames in FxSlotLabels.cpp implements
+// the IDENTICAL math. This is the canonical home; deduping that caller onto
+// it is a mechanical, verified-identical follow-up — deliberately deferred
+// here so the just-shipped FX code is not perturbed.)
 
 #pragma once
 

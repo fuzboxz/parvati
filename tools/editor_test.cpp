@@ -18,8 +18,9 @@
 // is reparented at startup, the rest stay unparented until their pill is clicked.
 // A ParamPage OWNS its ParamControls whether parented or not, so this test
 // enumerates every page via ParvatiEditor::allGeneratedPages() and counts the
-// controls directly (parented or not). The Global ParamPage is a direct-child
-// overlay toggled by the header "Global" button. This test verifies:
+// controls directly (parented or not). The Global ParamPage is hosted INSIDE
+// the Patch page (hostParamPage) and shown by its header "Patch" button.
+// This test verifies:
 //   - createEditor() returns a non-null AudioProcessorEditor
 //   - the top-level page selector has exactly 1 tab ([SYNTH])
 //   - every patch/part descriptor EXCEPT `part_select` and the mod-matrix slot
@@ -37,7 +38,8 @@
 //   - every generated ParamPage reports a sane (overlap-free, width-filling) layout
 //   - the Sequencer page is present among the generated pages; it has exactly 3
 //     marked Length controls + correct step dimming
-//   - Voice activity meter (cells) exists on the Global page
+//   - the voice-activity CELLS meter is GONE; the global voice-POOL view
+//     (labels + active/allocated counts) lives on the Patch page
 //   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
 //
 // Build: cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
@@ -543,22 +545,13 @@ int main()
         }
 
         // ------------------------------------------------------------------
-        // [10] Voice activity CELLS live on the Global page (a decoration).
-        // ------------------------------------------------------------------
-        std::printf ("\n[10] Voice meter (cells) on the Global page\n");
-        // globalPage_ is now a permanent (invisible) direct-child overlay, so its
-        // VoiceMeter decoration is always in the component tree — no tab switch
-        // is needed to surface it.
-        auto* meter = findFirst<VoiceMeter> (ed);
-        check (meter != nullptr, "voice meter (cells) exists on the Global page");
-        if (meter != nullptr)
-            check (meter->getActiveVoiceCount() >= 0,
-                   "voice meter reports an active-voice count (part-relative view)");
-
-        // The GLOBAL pool picture lives ONLY on the Patch page (the meter
-        // above is part-relative): the view is a permanent child of the
+        // [10] Voice activity: the per-voice CELLS meter was REMOVED (no
+        // VoiceMeter exists anywhere in the tree). The GLOBAL pool picture
+        // lives ONLY on the Patch page: the view is a permanent child of the
         // Patch page's scrolled body, so it is in the tree regardless of the
         // active page.
+        // ------------------------------------------------------------------
+        std::printf ("\n[10] Voice pool view on the Patch page (no cells meter)\n");
         auto* pool = findFirst<VoicePoolView> (ed);
         check (pool != nullptr, "voice pool view exists on the Patch page");
         if (pool != nullptr)
@@ -567,9 +560,9 @@ int main()
 
         // Headless provider test on a STANDALONE instance (the editor's own
         // view keeps its real provider): a CHAIN part can own up to 2 x 16
-        // voices — the view DISPLAYS 16 squares but every count (per-row and
-        // the X/96 total) must reflect the FULL frame, so it never contradicts
-        // the status strip or the Patch page's "Voices Y/96" readout.
+        // voices — every count (per-row and the X/96 total) must reflect the
+        // FULL frame, so it never contradicts the status strip or the Patch
+        // page's "Voices Y/96" readout.
         {
             VoicePoolView standalone;
             standalone.setBounds (0, 0, 1024, VoicePoolView::kHeight);
@@ -577,15 +570,15 @@ int main()
             f.parts[0].label = "Chain";
             f.parts[0].voices.assign (20, VoiceActivity { false, -1 });
             f.parts[0].voices[2].active  = true;
-            f.parts[0].voices[17].active = true;   // active BEYOND the 16th square
+            f.parts[0].voices[17].active = true;
             f.parts[1].label = "P2";
             f.parts[1].voices.assign (3, VoiceActivity { true, 60 });
             standalone.setStateProvider ([f]() { return f; });
             standalone.pollNow();
             check (standalone.getAllocatedVoiceCount() == 23,
-                   "pool view counts the FULL frame (20 CHAIN + 3), not the 16-square cap");
+                   "pool view counts the FULL frame (20 CHAIN + 3)");
             check (standalone.getActiveVoiceCount() == 5,
-                   "pool view counts active voices beyond the 16th square (2 + 3)");
+                   "pool view counts active voices across the FULL frame (2 + 3)");
         }
 
         // ------------------------------------------------------------------

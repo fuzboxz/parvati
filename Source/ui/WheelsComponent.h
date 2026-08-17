@@ -7,11 +7,13 @@
 // paint()). The editor wires onPitch / onMod to the engine as MIDI pitch-bend
 // / CC1 (mod wheel) on the current Part's channel.
 //
-// Under the PITCH wheel (left column, above the caption strip) sits a compact
+// Under the PITCH wheel (left column, above the caption strip) sits a
 // [<][>] octave-switch row mirroring the Z/X musical-typing keys: it fires
 // onOctaveShift(+/-1) (octave steps), which the editor routes into
 // KeyboardView::shiftOctave (clamped at the MIDI edges; the visible piano
-// window follows and the settings-changed tooltip readout fires).
+// window follows and the settings-changed tooltip readout fires). Each
+// button is a kOctBtnSize (44pt) HIG touch target — one per column, centred
+// under its wheel.
 
 #pragma once
 
@@ -37,6 +39,11 @@ public:
     WheelsComponent();
     ~WheelsComponent() override;
 
+    // Octave-switch button size (width == height): a 44pt HIG touch target,
+    // the same minimum every other interactive chrome control meets. Public so
+    // the HIG sizing-contract test can static_assert it.
+    static constexpr int kOctBtnSize = 44;
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -60,7 +67,7 @@ private:
 
     // [<][>] octave switch under the pitch wheel (see onOctaveShift). Plain
     // themed TextButtons — no custom painting (ParvatiLookAndFeel styles them
-    // like every other button in the chrome).
+    // like every other button in the chrome) — sized to kOctBtnSize (44pt HIG).
     std::unique_ptr<juce::TextButton> octaveDown_;
     std::unique_ptr<juce::TextButton> octaveUp_;
 

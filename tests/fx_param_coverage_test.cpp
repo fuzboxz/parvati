@@ -17,6 +17,16 @@
 //  7. testMasterSection     — fx_mix / fx_eq_low / fx_eq_mid / fx_eq_high.
 //  8. testFxModMatrix       — all 18 FxModDestination reach the DSP via the
 //                             full engine path (CONST source + amount depth).
+//  9. testConditionDependentParams — Clouds params live only under their DSP
+//                             condition (looper Size/Pitch @freeze, Spectral
+//                             Position @freeze-choreography).
+// 10. testFxReadoutBudget    — every FX-page knob readout (paramValueText) is
+//                             <= 6 chars at raw values 0..127 (hard cell rule),
+//                             plus exact-string anchors for the compact Hz/ms
+//                             formats and the LUT shape-name renames.
+// 11. testFxTypeChoiceLabels — makeFxTypes() display renames ("Digital Echo",
+//                             "Wavemangler") with the choice INDEX order unchanged
+//                             (presets store the index, so renames are safe).
 //
 // Built by default. Run with: ./build_release/parvati_fx_param_coverage_test
 
@@ -42,6 +52,7 @@
 #include "ui/FxSlotLabels.h"          // activeParamCount (authoritative live-param count)
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
+#include "ParameterLayout.h"          // makeFxTypes (FX-type choice display labels)
 
 namespace
 {
@@ -135,9 +146,9 @@ void makeTone (float* L, float* R, int n, float amp = 0.4f, double freq = 220.0)
     }
 }
 
-// The full 15 non-None effect list (in FxType order) with display names.
+// The full 24 non-None effect list (in FxType order) with display names.
 struct EffectEntry { FxType type; const char* name; };
-const std::array<EffectEntry, 15> kEffects = {{
+const std::array<EffectEntry, 24> kEffects = {{
     { FxType::Diffuser,        "Diffuser" },
     { FxType::PitchShifter,    "PitchShifter" },
     { FxType::Reverb,          "Reverb" },
@@ -153,6 +164,15 @@ const std::array<EffectEntry, 15> kEffects = {{
     { FxType::PlateReverb,     "PlateReverb" },
     { FxType::VinylCompressor, "VinylCompressor" },
     { FxType::Phaser,          "Phaser" },
+    { FxType::Overdrive,       "Overdrive" },
+    { FxType::LutDistortion,   "LutDistortion" },
+    { FxType::Compressor,      "Compressor" },
+    { FxType::Gate,            "Gate" },
+    { FxType::Chorus,          "Chorus" },
+    { FxType::Flanger,         "Flanger" },
+    { FxType::Echo,            "Echo" },
+    { FxType::Room,            "Room" },
+    { FxType::Spring,          "Spring" },
 }};
 }  // namespace
 
@@ -161,7 +181,7 @@ const std::array<EffectEntry, 15> kEffects = {{
 // ---------------------------------------------------------------------------
 static void testFxTable()
 {
-    std::printf ("(1) FX factory + type() for all 16 FxType values\n");
+    std::printf ("(1) FX factory + type() for all 25 FxType values\n");
 
     // None => nullptr (the chain treats a None slot as a passthrough).
     check (createFxProcessor (FxType::None) == nullptr,
@@ -177,7 +197,7 @@ static void testFxTable()
             check (fx->type() == e.type,
                    std::string (e.name) + ": type() matches enum");
     }
-    check (nonNull == 15, "all 15 non-None effects build via the factory");
+    check (nonNull == 24, "all 24 non-None effects build via the factory");
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +346,15 @@ static void testPerEffectParamSweep()
         const float impulse = (i % 32 == 0) ? 0.45f : 0.0f;
         bbL[i] = bbR[i] = toneL[i] + impulse;
     }
+    // Loud/soft HALVES: periodic amplitude steps that OPEN and CLOSE a gate
+    // (a steady-always-loud signal keeps it permanently open, making
+    // Attack/Hold/Release legitimately inert under the probe).
+    float gateL[kBlock], gateR[kBlock];
+    for (int i = 0; i < kBlock; ++i)
+    {
+        const float g = (i < kBlock / 2) ? 1.0f : 0.05f;
+        gateL[i] = gateR[i] = g * toneL[i];
+    }
 
     // Per-effect config: which input, the baseline param vector, and warmup.
     struct EffCfg { const float* inL; const float* inR; float base[5]; int warmup; };
@@ -349,6 +378,24 @@ static void testPerEffectParamSweep()
             // line fills and the feedback comb differentiates within warmup.
             case FxType::ClockedDelay: c.base[0] = 0.9f; c.warmup = 60; break;
             case FxType::Ensemble:     c.warmup = 40; break;
+            // Dynamics (Attack/Release/Hold are TRANSIENT params — inert on a
+            // steady signal whose envelope never crosses the threshold):
+            // Compressor -> broadband transients + a LOW threshold (p0=0.8 ->
+            // th 0.24, under the bb envelope ~0.3) so gain reduction is live;
+            // Gate -> loud/soft halves + LOW threshold (p0=0.3 -> th 0.21,
+            // under the loud half's peaks) + HOLD 0 so it actually closes.
+            case FxType::Compressor:   c.inL = bbL; c.inR = bbR; c.base[0] = 0.8f; break;
+            case FxType::Gate:         c.inL = gateL; c.inR = gateR;
+                                       c.base[0] = 0.3f; c.base[2] = 0.0f; break;
+            // Modulated delays: tank/line fill.
+            case FxType::Chorus:
+            case FxType::Flanger:      c.warmup = 40; break;
+            // Echo: the baseline Time (~68 ms) needs ~90 blocks to fill before
+            // the feedback comb can differentiate the waveform.
+            case FxType::Echo:         c.warmup = 120; break;
+            // Long-tail FV-1 reverbs: tank fill.
+            case FxType::Room:
+            case FxType::Spring:       c.warmup = 90; break;
             default: break;
         }
         return c;
@@ -967,6 +1014,113 @@ static void testConditionDependentParams()
     }
 }
 
+// ---------------------------------------------------------------------------
+// 10. FX-page readout budget: EVERY knob value string on the FX page is
+//     <= 6 characters (hard cell-width rule). Sweeps the whole kEffects table
+//     x idx 0..4 x EVERY raw 0..127 value (which covers the mandated probe set
+//     0/32/64/96/127), then pins exact-string anchors for the compact formats
+//     (Hz "2k6" style, integer ms >= 10, one-decimal seconds, signed compact
+//     FrequencyShifter) and the LUT shape-name renames.
+// ---------------------------------------------------------------------------
+static void testFxReadoutBudget()
+{
+    std::printf ("(10) FX-page readout strings <= 6 chars (every type x idx x raw 0..127)\n");
+
+    int offenders = 0;
+    constexpr int kSamples = (int) kEffects.size() * 5 * 128;
+    for (const auto& e : kEffects)
+        for (int idx = 0; idx < 5; ++idx)
+            for (int raw = 0; raw <= 127; ++raw)
+            {
+                const juce::String s = paramValueText (e.type, idx, raw);
+                if (s.length() > 6)
+                {
+                    ++offenders;
+                    char msg[160];
+                    std::snprintf (msg, sizeof (msg),
+                        "%s p%d @raw%d: readout \"%s\" is %d chars (>6)",
+                        e.name, idx, raw, s.toRawUTF8(), s.length());
+                    check (false, msg);
+                }
+            }
+    char msg[96];
+    std::snprintf (msg, sizeof (msg), "all %d readout samples <= 6 chars", kSamples);
+    check (offenders == 0, msg);
+
+    // Exact-string anchors: compact Hz / ms / s / signed-Hz formats.
+    struct Anchor { FxType t; const char* name; int idx; int raw; const char* want; };
+    const Anchor anchors[] = {
+        // Hz -> electronic-component k-notation at/above 1 kHz ("2k0"); integer
+        // kHz at/above 10 kHz ("12k", "15k").
+        { FxType::Phaser,          "Phaser",          3, 127, "2k0"   },  // Center 200..2000 Hz, max
+        { FxType::VinylCompressor, "VinylCompressor", 3, 127, "15k"   },  // Age 700..15000 Hz, max
+        { FxType::Overdrive,       "Overdrive",       2, 127, "15k"   },  // Tone 700..15000 Hz, max
+        { FxType::PlateReverb,     "PlateReverb",     2, 127, "12k"   },  // Damping 500..12000 Hz, max
+        { FxType::Echo,            "Echo",            2, 127, "12k"   },  // Tone 700..12000 Hz, max
+        // Hz below 1 kHz -> integer + "Hz" (no space).
+        { FxType::Phaser,          "Phaser",          3,   0, "200Hz" },  // Center min
+        // Times: integer ms with no decimals at/above 10 ms; sub-10 keeps one.
+        { FxType::Echo,            "Echo",            0,   0, "10ms"  },  // Time 10..470 ms
+        { FxType::Echo,            "Echo",            0, 127, "470ms" },
+        { FxType::Compressor,      "Compressor",      1,   0, "0.5ms" },  // Attack min (sub-10)
+        { FxType::Compressor,      "Compressor",      1, 127, "50ms"  },  // Attack max (integer)
+        // Decay seconds: one decimal, no space ("4.0s", not "4.00 s").
+        { FxType::PlateReverb,     "PlateReverb",     1, 127, "4.0s"  },
+        { FxType::Room,            "Room",            0, 127, "3.0s"  },
+        { FxType::Spring,          "Spring",          0, 127, "4.0s"  },
+        // FrequencyShifter: signed compact, no spaces ("+2k0" / "-2k0").
+        { FxType::FrequencyShifter,"FrequencyShifter",0, 127, "+2k0"  },
+        { FxType::FrequencyShifter,"FrequencyShifter",0,   0, "-2k0"  },
+        // Rates: no space ("8.00Hz").
+        { FxType::Ensemble,        "Ensemble",        0, 127, "8.00Hz" },
+        // Percentages: no space.
+        { FxType::ClockedDelay,    "ClockedDelay",    1, 127, "95%"   },
+        // Bit crush: 6 chars, at budget.
+        { FxType::ClockedDelay,    "ClockedDelay",    3,   0, "24-bit" },
+        // LUT shape renames (STEP ORDER unchanged: idx 8 SFold, 11 Asym, 13 HGate).
+        { FxType::LutDistortion,   "LutDistortion",   1,   0, "Clip"   },
+        { FxType::LutDistortion,   "LutDistortion",   1,  64, "SFold"  },
+        { FxType::LutDistortion,   "LutDistortion",   1,  88, "Asym"   },
+        { FxType::LutDistortion,   "LutDistortion",   1, 104, "HGate"  },
+        { FxType::LutDistortion,   "LutDistortion",   1, 127, "Sparse" },
+    };
+    for (const auto& a : anchors)
+    {
+        const juce::String got = paramValueText (a.t, a.idx, a.raw);
+        char m[160];
+        std::snprintf (m, sizeof (m), "anchor %s p%d @raw%d == \"%s\" (got \"%s\")",
+                       a.name, a.idx, a.raw, a.want, got.toRawUTF8());
+        check (got == a.want, m);
+    }
+
+    // Echo param4 label rename: "Stereo" (cell too narrow for "Stereo Spread").
+    check (juce::String (paramLabel (FxType::Echo, 3)) == "Stereo",
+           "Echo p4 label == \"Stereo\" (renamed from \"Spread\")");
+}
+
+// ---------------------------------------------------------------------------
+// 11. makeFxTypes() display labels: "Echo" -> "Digital Echo" and
+//     "LUT Distortion" -> "LUT" -> "Wavemangler" — DISPLAY-ONLY renames.
+//     choice INDEX, so the entry COUNT and the enum->index mapping must be
+//     untouched (asserted via the jassert-equivalent size check + by-index lookups).
+// ---------------------------------------------------------------------------
+static void testFxTypeChoiceLabels()
+{
+    std::printf ("(11) makeFxTypes() display renames (index order unchanged)\n");
+
+    const juce::StringArray types = makeFxTypes();
+    check (types.size() == (int) FxType::Count,
+           "choice list still has FxType::Count entries (no index remap)");
+    check (types[(int) FxType::Echo] == "Digital Echo",
+           "idx 22 (FxType::Echo) label == \"Digital Echo\"");
+    check (types[(int) FxType::LutDistortion] == "Wavemangler",
+           "idx 17 (FxType::LutDistortion) label == \"LUT\"");
+    check (! types.contains ("Echo"),
+           "no bare \"Echo\" label remains");
+    check (! types.contains ("LUT Distortion"),
+           "no \"LUT Distortion\" label remains");
+}
+
 int main()
 {
     std::printf ("=== Parvati FX parameter + module coverage ===\n\n");
@@ -979,6 +1133,8 @@ int main()
     testMasterSection();
     testFxModMatrix();
     testConditionDependentParams();
+    testFxReadoutBudget();
+    testFxTypeChoiceLabels();
 
     if (g_drifts > 0)
         std::printf ("\n--- %d DRIFT%s SURFACED (triage in tests/COVERAGE_FINDINGS.md) ---\n",

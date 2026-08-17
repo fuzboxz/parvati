@@ -1,5 +1,5 @@
 // Clouds + Warps + Rings FX module (Diffuser / Pitch Shifter / Reverb /
-// Looping Delay / WSOLA Stretch / Spectral / Wavefolder / Frequency Shifter /
+// Looping Delay / Pitch Stretch (WSOLA) / Spectral / Wavefolder / Frequency Shifter /
 // Ring Modulator / Resonator) port verification.
 //
 // Proves each vendored FX module builds via the factory, reports the
@@ -93,9 +93,9 @@ int main()
     constexpr int kBlock = 256;
     constexpr double kRate = 48000.0;
 
-    // Enum sanity: None + 6 Clouds + 3 Warps + 1 Rings + 5 FV-1 == 16.
-    check (static_cast<int> (FxType::Count) == 16,
-           "FxType::Count == 16 (None + 6 Clouds + 3 Warps + 1 Rings + 5 FV-1)");
+    // Enum sanity: None + 6 Clouds + 3 Warps + 1 Rings + 14 FV-1 == 25.
+    check (static_cast<int> (FxType::Count) == 25,
+           "FxType::Count == 25 (None + 6 Clouds + 3 Warps + 1 Rings + 14 FV-1)");
 
     // A non-trivial input: a decaying 220 Hz tone burst on both channels so every
     // module has broadband energy to act on (repeats each block so a multi-block
@@ -821,28 +821,29 @@ int main()
         check (eq (paramValueText (FxType::Resonator, 0, 0.0),    "C1"), "UNITS: Resonator 0 -> C1");
         check (eq (paramValueText (FxType::Resonator, 0, 63.5),  "C4"), "UNITS: Resonator 63.5 -> C4");
         check (eq (paramValueText (FxType::Resonator, 0, 127.0), "C7"), "UNITS: Resonator 127 -> C7");
-        // PitchShifter Pitch (was 'Ratio') -> +/-12 st
-        check (eq (paramValueText (FxType::PitchShifter, 0, 0.0),    "-12.0 st"), "UNITS: PitchShifter 0 -> -12.0 st");
-        check (eq (paramValueText (FxType::PitchShifter, 0, 63.5),  "+0.0 st"),  "UNITS: PitchShifter 63.5 -> +0.0 st");
-        check (eq (paramValueText (FxType::PitchShifter, 0, 127.0), "+12.0 st"), "UNITS: PitchShifter 127 -> +12.0 st");
-        check (eq (paramValueText (FxType::PitchShifter, 0, 101.0), "+7.0 st"),  "UNITS: PitchShifter 101 -> +7.0 st (integer-snap; was 6.9..7.1 with no 7.0)");
+        // PitchShifter Pitch (was 'Ratio') -> +/-12 st (compact: no " st" —
+        // the 6-char FX-cell budget; the knob caption carries the unit)
+        check (eq (paramValueText (FxType::PitchShifter, 0, 0.0),    "-12.0"), "UNITS: PitchShifter 0 -> -12.0");
+        check (eq (paramValueText (FxType::PitchShifter, 0, 63.5),  "+0.0"),  "UNITS: PitchShifter 63.5 -> +0.0");
+        check (eq (paramValueText (FxType::PitchShifter, 0, 127.0), "+12.0"), "UNITS: PitchShifter 127 -> +12.0");
+        check (eq (paramValueText (FxType::PitchShifter, 0, 101.0), "+7.0"),  "UNITS: PitchShifter 101 -> +7.0 (integer-snap; was 6.9..7.1 with no 7.0)");
         // WSOLA/Spectral/LoopingDelay pitch -> +/-24 st
-        check (eq (paramValueText (FxType::WSOLAStretch, 0, 127.0),  "+24.0 st"), "UNITS: WSOLA 127 -> +24.0 st");
-        check (eq (paramValueText (FxType::Spectral, 0, 0.0),         "-24.0 st"), "UNITS: Spectral 0 -> -24.0 st");
-        check (eq (paramValueText (FxType::LoopingDelay, 2, 127.0),  "+24.0 st"), "UNITS: LoopingDelay p2 127 -> +24.0 st");
-        // FrequencyShifter Shift -> Hz (non-linear; 0 at centre)
-        check (eq (paramValueText (FxType::FrequencyShifter, 0, 63.5), "0 Hz"),   "UNITS: FreqShifter 63.5 -> 0 Hz");
-        check (paramValueText (FxType::FrequencyShifter, 0, 0.0).contains ("-2048 Hz"), "UNITS: FreqShifter 0 -> -2048 Hz");
-        check (paramValueText (FxType::FrequencyShifter, 0, 127.0).contains ("+2048 Hz"), "UNITS: FreqShifter 127 -> +2048 Hz");
-        // RingModulator Carrier -> Hz/kHz (20..4000, log)
-        check (eq (paramValueText (FxType::RingModulator, 0, 0.0),   "20 Hz"),    "UNITS: RingMod 0 -> 20 Hz");
-        check (eq (paramValueText (FxType::RingModulator, 0, 127.0), "4.00 kHz"), "UNITS: RingMod 127 -> 4.00 kHz");
+        check (eq (paramValueText (FxType::WSOLAStretch, 0, 127.0),  "+24.0"), "UNITS: WSOLA 127 -> +24.0");
+        check (eq (paramValueText (FxType::Spectral, 0, 0.0),         "-24.0"), "UNITS: Spectral 0 -> -24.0");
+        check (eq (paramValueText (FxType::LoopingDelay, 2, 127.0),  "+24.0"), "UNITS: LoopingDelay p2 127 -> +24.0");
+        // FrequencyShifter Shift -> Hz (non-linear; 0 at centre; compact k-notation)
+        check (eq (paramValueText (FxType::FrequencyShifter, 0, 63.5), "0Hz"),   "UNITS: FreqShifter 63.5 -> 0Hz");
+        check (eq (paramValueText (FxType::FrequencyShifter, 0, 0.0), "-2k0"), "UNITS: FreqShifter 0 -> -2k0 (was -2048 Hz)");
+        check (eq (paramValueText (FxType::FrequencyShifter, 0, 127.0), "+2k0"), "UNITS: FreqShifter 127 -> +2k0 (was +2048 Hz)");
+        // RingModulator Carrier -> Hz/kHz (20..4000, log; compact)
+        check (eq (paramValueText (FxType::RingModulator, 0, 0.0),   "20Hz"),    "UNITS: RingMod 0 -> 20Hz");
+        check (eq (paramValueText (FxType::RingModulator, 0, 127.0), "4k0"), "UNITS: RingMod 127 -> 4k0 (was 4.00 kHz)");
         // LoopingDelay Freeze -> On/Off (threshold p > 0.5)
         check (eq (paramValueText (FxType::LoopingDelay, 3, 63.0), "Off"), "UNITS: LoopingDelay freeze 63 -> Off");
         check (eq (paramValueText (FxType::LoopingDelay, 3, 64.0), "On"),  "UNITS: LoopingDelay freeze 64 -> On");
         // Reverb Predelay (idx0) -> 0..200 ms; Diffusion (idx1) -> % (signal-path reorder)
-        check (eq (paramValueText (FxType::Reverb, 0, 0.0),   "0 ms"),   "UNITS: Reverb Predelay 0 -> 0 ms");
-        check (paramValueText (FxType::Reverb, 0, 127.0).contains ("200 ms"), "UNITS: Reverb Predelay 127 -> ~200 ms");
+        check (eq (paramValueText (FxType::Reverb, 0, 0.0),   "0.0ms"),   "UNITS: Reverb Predelay 0 -> 0.0ms");
+        check (paramValueText (FxType::Reverb, 0, 127.0).contains ("200ms"), "UNITS: Reverb Predelay 127 -> ~200ms");
         check (eq (paramValueText (FxType::Reverb, 1, 64.0), "50%"), "UNITS: Reverb Diffusion 64 -> 50% (idx1 post-reorder)");
         // WSOLA Freeze (idx3) -> On/Off
         check (eq (paramValueText (FxType::WSOLAStretch, 3, 63.0), "Off"), "UNITS: WSOLA freeze 63 -> Off");
@@ -939,8 +940,43 @@ int main()
             check (finite, "Wavefolder LUT-domain: hot +/-8 input @ max drive+fold stays finite (no OOB garbage)");
             {
                 char msg[96];
-                std::snprintf (msg, sizeof (msg), "Wavefolder LUT-domain: output bounded |out| < 1e3 (peak %.3f)", (double) peak);
-                check (peak < 1.0e3f, msg);
+                std::snprintf (msg, sizeof (msg), "Wavefolder LUT-domain: bounded at the LUT rails |out| <= 1.2 (peak %.3f)", (double) peak);
+                check (peak <= 1.2f, msg);
+            }
+
+            // Continuity under deep overrun: a 0.9-peak sine with +/-4 bursts
+            // (sl up to ~16) must fold to a CONTINUOUS saturated waveform —
+            // the pre-fix unclamped lookup read adjacent rodata and produced
+            // garbage discontinuities (validated ~1e35-scale deltas on the
+            // pre-fix commit d2669c4; the fixed path measures ~0.44 at worst,
+            // the band-limited burst edges through the saturating fold).
+            // reset() first: the preceding +/-8 test leaves the SRC history
+            // charged at the rails, and its (legit) settling transient would
+            // inflate the delta (~0.85); params persist across reset().
+            fx->reset();
+            {
+                float sigL[kBlock], sigR[kBlock];
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    const float t = static_cast<float> (i) / static_cast<float> (kRate);
+                    float s = 0.9f * std::sin (2.0f * 3.14159265f * 220.0f * t);
+                    if (i >= 64 && i < 68)   s = 4.0f;
+                    if (i >= 192 && i < 196) s = -4.0f;
+                    sigL[i] = sigR[i] = s;
+                }
+                // re-enter the max drive+fold setting (unchanged since above)
+                for (int i = 0; i < kBlock; ++i) { hotOutL[i] = sigL[i]; hotOutR[i] = sigR[i]; }
+                fx->process (hotOutL, hotOutR, kBlock);
+                float worstDelta = 0.0f;
+                for (int i = 1; i < kBlock; ++i)
+                {
+                    worstDelta = std::fmax (worstDelta, std::fabs (hotOutL[i] - hotOutL[i - 1]));
+                    worstDelta = std::fmax (worstDelta, std::fabs (hotOutR[i] - hotOutR[i - 1]));
+                }
+                char msg[128];
+                std::snprintf (msg, sizeof (msg),
+                               "Wavefolder LUT-domain: continuous under overrun (worst delta %.3f < 0.7)", (double) worstDelta);
+                check (worstDelta < 0.7f, msg);
             }
 
             // In-range behaviour unchanged: drive=1x (param1=0), |in|<=0.5 ->
@@ -953,6 +989,40 @@ int main()
             check (r.nonSilent, "Wavefolder LUT-domain: in-range path still non-silent");
             check (r.differs, "Wavefolder LUT-domain: in-range path still folds (differs from dry)");
         }
+    }
+
+    // ---- FX category display-order regression (dropdown grouping) ----
+    // fxTypeDisplayOrder(): every FxType exactly once (a dropped/duplicated
+    // entry would silently desync the popup's display position -> enum-value
+    // mapping), None first, and the category ascending along the list (None,
+    // then Delay < Distortion < Dynamics < Mod < Pitch/Time < Reverb).
+    {
+        const auto order = fxTypeDisplayOrder();
+        check ((int) order.size() == (int) FxType::Count,
+               "categories: display order covers every FxType");
+        bool seen[static_cast<size_t> (FxType::Count)] {};
+        bool allOnce = true;
+        for (FxType t : order)
+        {
+            const auto i = static_cast<size_t> (t);
+            if (i >= (size_t) FxType::Count || seen[i]) { allOnce = false; continue; }
+            seen[i] = true;
+        }
+        check (allOnce, "categories: each type appears EXACTLY once");
+        check (order[0] == FxType::None, "categories: None listed first");
+        bool ascending = true;
+        int prevCat = 0;
+        for (size_t i = 0; i < order.size(); ++i)
+        {
+            const int c = static_cast<int> (fxCategoryOf (order[i]));
+            if (c < prevCat) ascending = false;
+            prevCat = c;
+        }
+        check (ascending, "categories: category order ascending (alphabetical)");
+        check (fxCategoryOf (FxType::None) == FxCategory::None,
+               "categories: None is uncategorized");
+        check (fxCategoryOf (FxType::Resonator) == FxCategory::PitchTime,
+               "categories: Resonator filed under Pitch/Time (tuned ringing)");
     }
 
     // ---- PitchShifter stereo-spread discontinuity regression (2026-08 fix) ----

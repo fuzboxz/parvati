@@ -45,6 +45,13 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors();
 // Build the APVTS ParameterLayout from the descriptor table.
 juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout();
 
+// FxType choice-list DISPLAY labels ("None", "Diffuser", ..., "Digital Echo",
+// "Room", "Spring"), one per FxType enum value in order. The stored parameter
+// value is the choice INDEX (never the text), so label renames are
+// serialization-safe; exposed (external linkage) so tests can pin the labels
+// and the count against the enum.
+juce::StringArray makeFxTypes();
+
 // The controller-side init patch (Part::InitPatch(DEFAULT)) as raw Patch bytes
 // (112). Used to seed every Part to the audible factory patch on prepare so a
 // freshly-loaded plugin does not leave Parts 1..5 on the silent voicecard

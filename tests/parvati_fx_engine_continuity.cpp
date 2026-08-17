@@ -90,8 +90,13 @@ std::vector<float> render (int fxType, double sr, int bufferSize, double durSec)
     setChoice (proc, "fx1_type", fxType);
     setInt (proc, "fx1_enabled", 1);
     setInt (proc, "fx1_drywet", 127);                       // full wet
+    // Freeze-safe params: param3 (Looper/WSOLA Freeze, >0.5 holds the loop)
+    // must stay BELOW the >0.5 threshold -- 64/127 = 0.504 FREEZES the
+    // buffer-based FX into a silent empty buffer, silently degrading this
+    // test to a dry-copy check for them (their wet path -- the thing under
+    // test -- was never exercised before this fix).
     for (int k = 1; k <= 4; ++k)
-        setInt (proc, ("fx1_param" + std::to_string (k)).c_str(), 64);   // 0.5 (no modulation)
+        setInt (proc, ("fx1_param" + std::to_string (k)).c_str(), k == 3 ? 32 : 64);   // ~0.5, freeze params safe
 
     // flush one block so the FX state + note-on settle
     { juce::AudioBuffer<float> f (2, bufferSize); f.clear(); juce::MidiBuffer e; proc.processBlock (f, e); }

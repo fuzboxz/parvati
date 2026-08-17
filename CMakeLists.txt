@@ -744,6 +744,7 @@ set(_parvati_fv1_tests
     fv1_plate_reverb_test
     fv1_vinyl_compressor_test
     fv1_phaser_test
+    fv1_newfamily_test
 )
 foreach(_t ${_parvati_fv1_tests})
     add_executable(parvati_${_t} tests/${_t}.cpp)
@@ -761,6 +762,22 @@ foreach(_t ${_parvati_fv1_tests})
         target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1VinylCompressor.cpp)
     elseif(_t STREQUAL "fv1_phaser_test")
         target_sources(parvati_${_t} PRIVATE Source/dsp/fx/fv1/Fv1Phaser.cpp)
+    elseif(_t STREQUAL "fv1_newfamily_test")
+        # The distortion pair now oversamples its table stage with the vendored
+        # Warps polyphase FIR (anti-crackle), so their compile needs the clouds
+        # include root (warps/ + stmlib/) like the Warps-FX targets.
+        target_include_directories(parvati_${_t} SYSTEM PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+        target_sources(parvati_${_t} PRIVATE
+            Source/dsp/fx/fv1/Fv1Overdrive.cpp
+            Source/dsp/fx/fv1/Fv1LutDistortion.cpp
+            Source/dsp/fx/fv1/Fv1Compressor.cpp
+            Source/dsp/fx/fv1/Fv1Gate.cpp
+            Source/dsp/fx/fv1/Fv1Chorus.cpp
+            Source/dsp/fx/fv1/Fv1Flanger.cpp
+            Source/dsp/fx/fv1/Fv1Echo.cpp
+            Source/dsp/fx/fv1/Fv1Room.cpp
+            Source/dsp/fx/fv1/Fv1Spring.cpp)
     endif()
 endforeach()
 
@@ -846,6 +863,75 @@ target_include_directories(parvati_fx_diffuser_diag_test PRIVATE Source)
 target_include_directories(parvati_fx_diffuser_diag_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
 target_compile_features(parvati_fx_diffuser_diag_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_fx_diffuser_diag_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Settings round-trip check: loads a crafted Parvati.settings exactly like the
+# standalone does and verifies the filterState restore. EXCLUDE_FROM_ALL.
+add_executable(parvati_settings_roundtrip EXCLUDE_FROM_ALL
+    tools/settings_roundtrip.cpp
+)
+target_include_directories(parvati_settings_roundtrip PRIVATE Source)
+target_compile_features(parvati_settings_roundtrip PRIVATE cxx_std_17)
+target_link_libraries(parvati_settings_roundtrip PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# FV-1 nonlinear-FX aliasing probe (diagnostic): sine/saw inputs, impulse
+# census + inharmonic-spur Goertzel vs the fundamental. EXCLUDE_FROM_ALL.
+add_executable(parvati_fv1_alias_probe EXCLUDE_FROM_ALL
+    tests/parvati_fv1_alias_probe.cpp
+)
+target_include_directories(parvati_fv1_alias_probe PRIVATE Source)
+target_include_directories(parvati_fv1_alias_probe SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fv1_alias_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_fv1_alias_probe PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# State donor: writes a Parvati processor state blob with FX1 = <type> enabled
+# (for feeding the real Standalone's settings filterState). EXCLUDE_FROM_ALL.
+add_executable(parvati_state_donor EXCLUDE_FROM_ALL
+    tools/state_donor.cpp
+)
+target_include_directories(parvati_state_donor PRIVATE Source)
+target_compile_features(parvati_state_donor PRIVATE cxx_std_17)
+target_link_libraries(parvati_state_donor PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# FX crackle scenario-matrix probe — per FX type, measures the worst
+# discontinuity after each realistic user event (note onset fresh/after silence,
+# enable mid-note, type change mid-note, dry/wet step, 50% mix onset).
+# Diagnostic only (prints a table).
+# Run with: ./build/parvati_fx_matrix_probe_test
+add_executable(parvati_fx_matrix_probe_test EXCLUDE_FROM_ALL
+    tests/parvati_fx_matrix_probe.cpp
+)
+target_include_directories(parvati_fx_matrix_probe_test PRIVATE Source)
+target_compile_features(parvati_fx_matrix_probe_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_matrix_probe_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# FX note-ONSET crackle regression — renders a fresh-start note onset (no
+# warmup flush) through the real processBlock path with EACH of the 15 FX
+# types (single note + a 6-note vel-127 chord) and asserts the first 250 ms
+# (the region the continuity regression deliberately skips) is crack-free.
+# Pins the stale-build defect class (Wavefolder LUT overrun 0.61 / RingMod
+# 0.98 measured on the pre-2026-08-17 binaries). Built by default.
+# Run with: ./build/parvati_fx_onset_regression_test
+add_executable(parvati_fx_onset_regression_test
+    tests/parvati_fx_onset_regression.cpp
+)
+target_include_directories(parvati_fx_onset_regression_test PRIVATE Source)
+target_compile_features(parvati_fx_onset_regression_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_onset_regression_test PRIVATE
     Parvati
 )
 
@@ -1448,8 +1534,9 @@ target_link_libraries(parvati_fx_param_coverage_test PRIVATE
 # ------------------------------------------------------------------------------
 # `deploy` — one-command release workflow: build ALL plugin formats (VST3, AU,
 # CLAP, Standalone) + render ./screens from the latest source + install the
-# built bundles into the user plug-in folders. Use this instead of a plain
-# build so the installed plug-ins and the screenshots are never stale (a plain
+# built bundles into the user plug-in folders AND the Standalone into
+# /Applications. Use this instead of a plain build so the installed
+# plug-ins / app and the screenshots are never stale (a plain
 # `--target Parvati` does NOT rebuild the VST3/AU/CLAP format wrappers).
 # macOS-only (APPLE AND NOT PARVATI_IOS): the AU target only exists on macOS
 # and ~/Library/Audio/Plug-Ins is the macOS install root — Linux/Windows
@@ -1461,6 +1548,17 @@ set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
 # when PARVATI_BUILD_CLAP=OFF (Parvati_CLAP then simply does not exist).
 set(_parvati_deploy_depends Parvati_VST3 Parvati_AU Parvati_Standalone screens)
 set(_parvati_deploy_commands "")
+# The Standalone is BUILT above (Parvati_Standalone dep) and additionally
+# INSTALLED into /Applications — without this the .app the user actually
+# runs stays stale while the plug-in formats update (the 2026-08-17
+# "standalone still crackles after deploy" miss). Ad-hoc re-sign after the
+# copy (JUCE's built bundle signature references resources the plain cp
+# invalidates; `codesign -v` complains and Gatekeeper can refuse it).
+list(APPEND _parvati_deploy_commands
+    COMMAND ${CMAKE_COMMAND} -E echo "deploy: install Standalone -> /Applications"
+    COMMAND rm -rf "/Applications/Parvati.app"
+    COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app" "/Applications/Parvati.app"
+    COMMAND codesign --force --sign - "/Applications/Parvati.app")
 if(PARVATI_BUILD_CLAP)
     list(APPEND _parvati_deploy_depends Parvati_CLAP)
     list(APPEND _parvati_deploy_commands
@@ -1480,9 +1578,9 @@ add_custom_target(deploy
     COMMAND rm -rf "${_parvati_plugins_dir}/Components/Parvati.component"
     COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component" "${_parvati_plugins_dir}/Components/Parvati.component"
     ${_parvati_deploy_commands}
-    COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed plug-in bundles"
+    COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed plug-in bundles + standalone"
     DEPENDS ${_parvati_deploy_depends}
-    COMMENT "Build all formats + render screens + install VST3/AU/CLAP"
+    COMMENT "Build all formats + render screens + install VST3/AU/CLAP + Standalone"
     VERBATIM
 )
 endif()

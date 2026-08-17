@@ -32,14 +32,20 @@ enum class FxType : uint8_t {
     // enum value, so inserting/reordering would remap existing presets.
     ClockedDelay = 11, Ensemble = 12, PlateReverb = 13,
     VinylCompressor = 14, Phaser = 15,
+    // FV-1 family, second wave (2026-08-17): the bread-and-butter + quirky
+    // set. APPEND-ONLY (same serialization rule as above).
+    Overdrive = 16, LutDistortion = 17, Compressor = 18, Gate = 19,
+    Chorus = 20, Flanger = 21, Echo = 22, Room = 23, Spring = 24,
     Count
 };
 // choice list string: { "None", "Diffuser", "Pitch Shifter", "CVerb",
-//                       "Looping Delay", "WSOLA Stretch", "Spectral",
+//                       "Looping Delay", "Pitch Stretch", "Spectral",
 //                       "Wavefolder", "Frequency Shifter", "Ring Modulator",
 //                       "Resonator",
-//                       "Clocked Delay", "Ensemble", "Plate Reverb",
-//                       "Vinyl Compressor", "Phaser" }
+//                       "Clocked Delay", "Ensemble", "Plate",
+//                       "Vinyl Compressor", "Phaser",
+//                       "Overdrive", "LUT", "Compressor", "Gate",
+//                       "Chorus", "Flanger", "Digital Echo", "Room", "Spring" }
 //   (Diffuser / PitchShifter / Reverb are ports of the Mutable Instruments
 //    Clouds `dsp/fx` chain; LoopingDelay / WSOLAStretch / Spectral are the Clouds
 //    looping / WSOLA / phase-vocoder modes; Wavefolder / FrequencyShifter /
@@ -88,4 +94,108 @@ inline std::array<int, 3> fxOrderPermutation (uint8_t idx)
         case 4: return { 2, 0, 1 };
         case 5: return { 2, 1, 0 };
     }
+}
+
+// ----------------------------------------------------------------------------
+// Effect categories — DISPLAY-ONLY grouping for the FX-slot type dropdown
+// (what-effect-does-what discoverability). The APVTS choice list (host surface)
+// stays FLAT and enum-ordered: the stored value is the enum/choice index, so
+// categories never touch serialization, host automation, or the < > step
+// buttons. Only Parvati's own FxTypeCombo popup presents the grouped order.
+enum class FxCategory : uint8_t {
+    None = 0,        // the None slot — uncategorized, always listed first
+    Delay,           // repeats/echoes of the past
+    Distortion,      // waveshaping / harmonics generation
+    Dynamics,        // level control / compression / leveling
+    Mod,             // periodic modulation of the signal
+    PitchTime,       // pitch + time-domain transformation
+    Reverb           // space / diffusion / decay
+};
+// NOTE: the enum order above IS the alphabetical category display order
+// (Delay < Distortion < Dynamics < Mod < Pitch/Time < Reverb) — keep it that
+// way if values are ever appended.
+
+inline const char* fxCategoryName (FxCategory c) noexcept
+{
+    switch (c)
+    {
+        case FxCategory::Delay:      return "Delay";
+        case FxCategory::Distortion: return "Distortion";
+        case FxCategory::Dynamics:   return "Dynamics";
+        case FxCategory::Mod:        return "Mod";
+        case FxCategory::PitchTime:  return "Pitch/Time";
+        case FxCategory::Reverb:     return "Reverb";
+        case FxCategory::None:       break;
+    }
+    return "";
+}
+
+// Category of each effect (see docs/FX_FV1_DESIGN.md + FxProcessors.h for the
+// per-effect signal paths backing these):
+//   Diffuser -> Reverb (an allpass diffusion smear — the front half of a
+//     reverb; where someone hunting "that smeary space sound" looks),
+//   PitchShifter/WSOLA/Spectral/Resonator -> Pitch/Time (the Resonator is the
+//     filter-domain dual of a tuned delay/comb network — its defining control
+//     is Pitch: it re-rings the input at the tuned pitch),
+//   Ensemble/Phaser/FrequencyShifter/RingModulator -> Mod,
+//   Wavefolder -> Distortion, VinylCompressor -> Dynamics,
+//   ClockedDelay/LoopingDelay -> Delay, Reverb/PlateReverb -> Reverb.
+inline FxCategory fxCategoryOf (FxType t) noexcept
+{
+    switch (t)
+    {
+        case FxType::Diffuser:        return FxCategory::Reverb;
+        case FxType::PitchShifter:    return FxCategory::PitchTime;
+        case FxType::Reverb:          return FxCategory::Reverb;
+        case FxType::LoopingDelay:    return FxCategory::Delay;
+        case FxType::WSOLAStretch:    return FxCategory::PitchTime;
+        case FxType::Spectral:        return FxCategory::PitchTime;
+        case FxType::Wavefolder:      return FxCategory::Distortion;
+        case FxType::FrequencyShifter:return FxCategory::Mod;
+        case FxType::RingModulator:   return FxCategory::Mod;
+        case FxType::Resonator:       return FxCategory::PitchTime;
+        case FxType::ClockedDelay:    return FxCategory::Delay;
+        case FxType::Ensemble:        return FxCategory::Mod;
+        case FxType::PlateReverb:     return FxCategory::Reverb;
+        case FxType::VinylCompressor: return FxCategory::Dynamics;
+        case FxType::Phaser:          return FxCategory::Mod;
+        case FxType::Overdrive:       return FxCategory::Distortion;
+        case FxType::LutDistortion:   return FxCategory::Distortion;
+        case FxType::Compressor:      return FxCategory::Dynamics;
+        case FxType::Gate:            return FxCategory::Dynamics;
+        case FxType::Chorus:          return FxCategory::Mod;
+        case FxType::Flanger:         return FxCategory::Mod;
+        case FxType::Echo:            return FxCategory::Delay;
+        case FxType::Room:            return FxCategory::Reverb;
+        case FxType::Spring:          return FxCategory::Reverb;
+        case FxType::None:
+        case FxType::Count:     break;
+    }
+    return FxCategory::None;
+}
+
+// The DROPDOWN display order: None first, then categories alphabetically
+// (the FxCategory enum order), effects alphabetically by display name within
+// a category. DISPLAY ONLY — the ComboBox's internal items stay in ENUM order
+// (ComboBoxAttachment syncs by item INDEX, so position == choice index there;
+// the popup's action lambda maps back through this table). Pinned by
+// parvati_clouds_fx_test (all types exactly once; category order ascending).
+inline std::array<FxType, static_cast<size_t> (FxType::Count)> fxTypeDisplayOrder() noexcept
+{
+    return { {
+        FxType::None,
+        // Delay
+        FxType::ClockedDelay, FxType::Echo, FxType::LoopingDelay,
+        // Distortion
+        FxType::LutDistortion, FxType::Overdrive, FxType::Wavefolder,
+        // Dynamics
+        FxType::Compressor, FxType::Gate, FxType::VinylCompressor,
+        // Mod
+        FxType::Chorus, FxType::Ensemble, FxType::Flanger, FxType::FrequencyShifter,
+        FxType::Phaser, FxType::RingModulator,
+        // Pitch/Time
+        FxType::PitchShifter, FxType::Resonator, FxType::Spectral, FxType::WSOLAStretch,
+        // Reverb (CVerb is the DISPLAY label of FxType::Reverb — see makeFxTypes)
+        FxType::Reverb, FxType::Diffuser, FxType::PlateReverb, FxType::Room, FxType::Spring
+    } };
 }

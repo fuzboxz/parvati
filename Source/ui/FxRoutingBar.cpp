@@ -22,19 +22,21 @@ namespace
     constexpr int kKnobSize   = 52;   // Mix rotary dial (synth-parity)
     constexpr int kFlowRowH   = 50;   // [◀][flow diagram][▶] row height (hosts the 44pt steppers)
     constexpr int kCtrlRowH   = 58;   // [Dry/Wet knob] row height (tightened)
-    // [Low][Mid][High] EQ knob row. 14pt caption + 2pt gap + the 44pt dial
+    // [LowCut][Mid][High] EQ knob row. 14pt caption + 2pt gap + the 44pt dial
     // (kEqKnobSize, declared in the header for the HIG test) = 60: the row is
     // tall enough that the dial is no longer clamped by the cell (it was
     // drawing at 36px when the row was 52). At the DEFAULT editor size the
     // ctrl row below stays at its current (starved) allocation — see the
     // resized() comment.
-    constexpr int kEqRowH     = 60;   // [Low][Mid][High] EQ knob row height
+    constexpr int kEqRowH     = 60;   // [LowCut][Mid][High] EQ knob row height
 
 // FX master-EQ / mix readout strings (compact, <=5 chars, no space -> fit the
 // 44px EQ dial above the painter's 9px floor). Self-contained here so the FX
 // routing bar stays independent of the synth formatter (ui/SynthParamLabels).
 //   fx_eq_low  0..127 (0=off, else HP 20..1500 Hz) — FxChain.cpp:308-312.
 //   fx_eq_mid/high 0..127 (64=unity, +-12 dB)      — FxChain.cpp:319/330.
+// The Hz readout uses the synth's electronic-component k-notation ("1k5" for
+// 1500 Hz) so the longest string is "999Hz" (5 chars).
 juce::String eqLowToString (double v)
 {
     const int iv = juce::roundToInt (v);
@@ -42,7 +44,8 @@ juce::String eqLowToString (double v)
     const double t = static_cast<double> (iv - 1) / 126.0;
     const double hz = 20.0 * std::pow (1500.0 / 20.0, t);
     if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";   // "20Hz".."999Hz"
-    return juce::String (hz / 1000.0, 1) + "kHz";                          // "1.5kHz"
+    const int hundreds = juce::roundToInt (hz / 100.0);                   // 1500 -> 15
+    return juce::String (hundreds / 10) + "k" + juce::String (hundreds % 10);   // "1k0".."1k5"
 }
 juce::String eqDbToString (double v)
 {
@@ -300,11 +303,13 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
         return juce::String (juce::roundToInt (juce::jlimit (0.0, 127.0, v) / 127.0 * 100.0)) + "%";
     };
 
-    // ---- 3-band master EQ (Low / Mid / High): synth-style rotaries bound to
+    // ---- 3-band master EQ (Low Cut / Mid / High): synth-style rotaries bound to
     //      fx_eq_low / fx_eq_mid / fx_eq_high (0..127). The value renders in-ring
-    //      via the editor-wide LookAndFeel, identical to the Dry/Wet knob. ----
+    //      via the editor-wide LookAndFeel, identical to the Dry/Wet knob. The
+    //      low band is a LOW-CUT high-pass, so its caption is "Low Cut" (user
+    //      request), not "Low". ----
     const char* const eqIds[3]   = { "fx_eq_low", "fx_eq_mid", "fx_eq_high" };
-    const char* const eqNames[3] = { "Low", "Mid", "High" };
+    const char* const eqNames[3] = { "Low Cut", "Mid", "High" };
     for (std::size_t i = 0; i < 3; ++i)
     {
         eqLabels_[i].setText (TRANS (eqNames[i]), juce::dontSendNotification);
@@ -415,7 +420,7 @@ void FxRoutingBar::resized()
         if ((eqH > 0 || ctrlH > 0) && area.getHeight() > kGap) area.removeFromTop (kGap);
     }
 
-    // ---- EQ row: [Low][Mid][High] synth-style rotary knobs (3 equal cells) ----
+    // ---- EQ row: [LowCut][Mid][High] synth-style rotary knobs (3 equal cells) ----
     if (eqH > 0)
     {
         auto eqRow = area.removeFromTop (eqH);

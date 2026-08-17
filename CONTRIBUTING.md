@@ -53,12 +53,12 @@ sanity check are especially good guards for UI work.
 
 Two layers guard the UI against perf regressions:
 
-1. **CI: `parvati_perf_smoke_test`** (`.github/workflows/ci.yml`) — headless,
-   runs on every push/PR. It constructs the full editor and pumps the JUCE
+1. **`parvati_perf_smoke_test`** (`tests/perf_smoke_test.cpp`) — headless,
+   runs locally on demand. It constructs the full editor and pumps the JUCE
    message loop for 10 s against CPU-time and message-thread-congestion
    budgets. It catches the timer/message-storm class of regression (e.g. a
    ComboBox `clear()` arming a deferred `onChange` that re-enters its own
-   rebuild — that one cost a full core at idle). Run it locally with
+   rebuild — that one cost a full core at idle). Run it with
    `./build/parvati_perf_smoke_test`. Budgets live at the top of
    `tests/perf_smoke_test.cpp`; if a legitimate feature raises the floor,
    re-measure and update the constant together with the measurement comment.
@@ -68,9 +68,9 @@ Two layers guard the UI against perf regressions:
    measures idle CPU, active CPU (while `tools/ui_drag_helper.swift` drags
    the mouse in circles), and jassert noise, against the budgets in its
    config block (override via `PROFILE_IDLE_MAX` / `PROFILE_ACTIVE_MAX` /
-   `PROFILE_MAX_ASSERTS`). It cannot run on CI: posting CGEvents needs
-   Accessibility permission for the calling terminal. Run it after UI perf
-   work:
+   `PROFILE_MAX_ASSERTS`). It needs a real GUI session: posting CGEvents
+   requires Accessibility permission for the calling terminal. Run it after UI
+   perf work:
 
    ```bash
    tools/profile_ui.sh                 # defaults to build_release

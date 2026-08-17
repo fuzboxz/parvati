@@ -12,6 +12,15 @@
 #include "dsp/fx/fv1/Fv1PlateReverb.h"
 #include "dsp/fx/fv1/Fv1VinylCompressor.h"
 #include "dsp/fx/fv1/Fv1Phaser.h"
+#include "dsp/fx/fv1/Fv1Overdrive.h"
+#include "dsp/fx/fv1/Fv1LutDistortion.h"
+#include "dsp/fx/fv1/Fv1Compressor.h"
+#include "dsp/fx/fv1/Fv1Gate.h"
+#include "dsp/fx/fv1/Fv1Chorus.h"
+#include "dsp/fx/fv1/Fv1Flanger.h"
+#include "dsp/fx/fv1/Fv1Echo.h"
+#include "dsp/fx/fv1/Fv1Room.h"
+#include "dsp/fx/fv1/Fv1Spring.h"
 
 #include "SynthEngine.h"   // FxType enumerators (factory switch)
 
@@ -797,6 +806,16 @@ std::unique_ptr<FxProcessor> createFxProcessor (FxType t)
         case FxType::PlateReverb:     return std::make_unique<parvati::fv1::Fv1PlateReverb>();
         case FxType::VinylCompressor: return std::make_unique<parvati::fv1::Fv1VinylCompressor>();
         case FxType::Phaser:          return std::make_unique<parvati::fv1::Fv1Phaser>();
+        // FV-1 family, second wave (2026-08-17).
+        case FxType::Overdrive:       return std::make_unique<parvati::fv1::Fv1Overdrive>();
+        case FxType::LutDistortion:   return std::make_unique<parvati::fv1::Fv1LutDistortion>();
+        case FxType::Compressor:      return std::make_unique<parvati::fv1::Fv1Compressor>();
+        case FxType::Gate:            return std::make_unique<parvati::fv1::Fv1Gate>();
+        case FxType::Chorus:          return std::make_unique<parvati::fv1::Fv1Chorus>();
+        case FxType::Flanger:         return std::make_unique<parvati::fv1::Fv1Flanger>();
+        case FxType::Echo:            return std::make_unique<parvati::fv1::Fv1Echo>();
+        case FxType::Room:            return std::make_unique<parvati::fv1::Fv1Room>();
+        case FxType::Spring:          return std::make_unique<parvati::fv1::Fv1Spring>();
         case FxType::None:
         case FxType::Count:   break;
     }
