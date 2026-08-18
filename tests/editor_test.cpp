@@ -29,6 +29,8 @@
 #include "ui/PatchPage.h"
 #include "ui/PatchArrangement.h"
 #include "ui/SettingsPanel.h"           // language-switch no-op check
+#include "ui/FxSlotCard.h"             // [12b] the seeding seam (W10)
+#include "ui/PresetBrowser.h"          // [17] the scan-cache seams (W10)
 #include "ui/ThemeManager.h"
 #include "ui/TuningEditor.h"           // custom-tuning popover (direct instantiation)
 
@@ -855,46 +857,154 @@ int main()
     }
 
     // ------------------------------------------------------------------
-    // [12] FX type UNDO does not seed engagement defaults over the restored
-    // params (W7): JUCE replays a transaction's actions in reverse order, so
-    // the fx{N}_type write is restored LAST — FxSlotCard's seeding listener
-    // then fired DURING the undo replay and clobbered the just-restored
-    // params with the new type's defaults. The isPerformingUndoRedo guard
-    // keeps undo a faithful restore. (FxSlotCard lives in the FX workspace,
-    // built at editor construction — its APVTS listener is live regardless
-    // of which page is visible.)
+    // [12] FX type change: engagement defaults seed ONLY on a UI pick (W10,
+    // lane-A finding 1b). parameterChanged fires identically for host
+    // automation / NRPN writes of fx{N}_type — those must NOT clobber the
+    // current param values with the incoming type's defaults. The seeding
+    // seam (FxSlotCard::seedEngagementDefaultsForType) is invoked by the UI
+    // paths (the type-combo popup pick + stepType) BEFORE the param write;
+    // the listener never seeds. The W7 undo case is subsumed (nothing seeds
+    // in the listener, so an undo replay can never seed) and still pinned.
+    // (FxSlotCard lives in the FX workspace, built at editor construction —
+    // its APVTS listener + the cards are live regardless of the page shown.)
     // ------------------------------------------------------------------
-    std::printf ("\n[12] FX type undo keeps the restored parameter values\n");
+    std::printf ("\n[12] FX type seeds only on UI picks (automation-safe)\n");
     {
         auto& apvts = proc.getApvts();
         auto& um = proc.getUndoManager();
         auto setP = [&apvts] (const char* id, float v) { apvts.getParameterAsValue (id) = v; };
         const auto raw = [&apvts] (const char* id) { return apvts.getRawParameterValue (id)->load(); };
 
+        // Locate the FX1 card in the component tree (for the seam call).
+        // The pageSelector_ TabbedComponent UNPARENTS non-current tab contents
+        // (juce_TabbedComponent.cpp removeChildComponent on tab switch), so the
+        // FX workspace + its slot cards are only IN the tree while the FX page
+        // is the current one — switch there for the hunt, restore SYNTH after.
+        FxSlotCard* fxCard1 = nullptr;
+        {
+            auto* parEd = dynamic_cast<ParvatiEditor*> (editor);
+            if (parEd != nullptr) parEd->setCurrentTopPage (1);
+            std::function<void (juce::Component*)> hunt = [&] (juce::Component* c)
+            {
+                if (c == nullptr || fxCard1 != nullptr) return;
+                if (auto* card = dynamic_cast<FxSlotCard*> (c)) { fxCard1 = card; return; }
+                for (int i = 0; i < c->getNumChildComponents(); ++i)
+                    hunt (c->getChildComponent (i));
+            };
+            hunt (editor);
+            if (parEd != nullptr) parEd->setCurrentTopPage (0);
+        }
+        check (fxCard1 != nullptr, "FX1 card found in the component tree");
+
         // Drain the part-switch undo invalidation armed during editor startup
         // (undoSafe would otherwise CLEAR the history on its first call — the
         // W2 cross-part-corruption guard doing its job).
         proc.undoSafe();
         um.clearUndoHistory();
-        setP ("fx1_type", 1.0f);      // a first non-None type (seeds once)
+
+        // (a) Baseline: pick type 1 via a plain param write (the automation
+        //     stand-in — no seed now), then set a distinct user value.
+        setP ("fx1_type", 1.0f);
         um.beginNewTransaction();
         setP ("fx1_param1", 9.0f);    // the user's custom value on type 1
         um.beginNewTransaction();
-        setP ("fx1_type", 5.0f);      // a different type (seeds ITS defaults)
-        check (raw ("fx1_type") == 5.0f, "precondition: type switched (5)");
-        check (raw ("fx1_param1") != 9.0f,
-               "precondition: the switch seeded its own param1 default");
 
-        proc.undoSafe();              // undo the type switch only (synchronous replay)
-        check (raw ("fx1_type") == 1.0f, "undo restores the original type (1)");
+        // (b) AUTOMATION STAND-IN: a direct fx1_type write must NOT clobber.
+        setP ("fx1_type", 5.0f);      // host automation lane / NRPN equivalent
+        check (raw ("fx1_type") == 5.0f, "automation: type switched (5)");
         check (raw ("fx1_param1") == 9.0f,
+               "automation: param1 NOT clobbered by the type write (listener never seeds)");
+
+        // (c) UI SEAM: the explicit seam seeds the type's engagement defaults.
+        if (fxCard1 != nullptr)
+        {
+            um.beginNewTransaction();
+            fxCard1->seedEngagementDefaultsForType (5);   // same type: its defaults
+            check (raw ("fx1_param1") != 9.0f,
+                   "UI seam: seeding lands (param1 now the type-5 engagement default)");
+            check (raw ("fx1_enabled") == 1.0f && raw ("fx1_drywet") != 0.0f,
+                   "UI seam: enabled + an audible drywet seeded");
+            check (raw ("fx1_type") == 5.0f,
+                   "UI seam: seeding does not touch the type param itself");
+        }
+
+        // (d) W7 undo pin: undo across a type change keeps the restored params
+        //     (nothing seeds in parameterChanged anymore; this pins it — a
+        //     future re-introduction of listener-side seeding fails here).
+        um.beginNewTransaction();
+        setP ("fx1_param1", 7.0f);    // the user's value on type 5
+        um.beginNewTransaction();
+        setP ("fx1_type", 1.0f);      // switch back (automation-style: no seed)
+        check (raw ("fx1_param1") == 7.0f,
+               "undo precondition: params survive the type switch");
+        proc.undoSafe();              // undo the type switch only (synchronous replay)
+        check (raw ("fx1_type") == 5.0f, "undo restores the type (5)");
+        check (raw ("fx1_param1") == 7.0f,
                "undo keeps the restored param1 (no seed-during-replay clobber)");
 
-        proc.undoSafe();              // undo the param edit too (synchronous replay)
-        // (The default param1 of type 1 is whatever fxTypeDefaults(1) says —
-        //  NOT asserted; only that undo history is exhausted cleanly.)
         um.clearUndoHistory();
         setP ("fx1_type", 0.0f);      // None: leave FX idle for later sections
+    }
+
+    // ------------------------------------------------------------------
+    // [17] PresetBrowser menu cache (W10, lane-A finding 5): the directory
+    // scan + the per-.PRO name parse run ONCE per generation — a cached
+    // rebuild costs no disk scan and no re-parse (the old code rescanned and
+    // re-parsed every factory .PRO on EVERY open, synchronously on the
+    // message thread). invalidate() — the editor's save seam — forces the
+    // rescan; an externally changed directory (mtime) also self-heals.
+    // ------------------------------------------------------------------
+    std::printf ("\n[17] PresetBrowser caches the scan + .PRO name parse\n");
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                             .getChildFile ("parvati_presetbrowser_cache_test");
+        tmp.deleteRecursively();
+        auto mkDir = [] (const juce::File& d) { d.createDirectory(); return d; };
+        const auto templatesDir = mkDir (tmp.getChildFile ("TEMPLATES"));
+        const auto userDir      = mkDir (tmp.getChildFile ("USER"));
+        const auto factoryDir   = mkDir (tmp.getChildFile ("FACTORY"));
+        const auto factoryA     = mkDir (factoryDir.getChildFile ("A"));
+        const auto multiDir     = mkDir (tmp.getChildFile ("FACTORY_MULTI"));
+        check (userDir.getChildFile ("zeta.parvati").replaceWithText ("format: parvati-multi\nparts: []\n"),
+               "test setup: user preset file written");
+        check (factoryA.getChildFile ("000.PRO").replaceWithText ("not-a-pro", false),
+               "test setup: factory .PRO written (parse fails -> filename label)");
+        check (multiDir.getChildFile ("00.MUL").replaceWithText ("x"), "test setup: factory .MUL written");
+        check (templatesDir.getChildFile ("tpl").replaceWithText ("x"), "test setup: template written");
+
+        PresetBrowser browser (templatesDir, userDir, factoryDir, multiDir,
+                               [] (const juce::File&) {});
+        juce::PopupMenu m;
+        browser.buildMenu (m);
+        check (browser.debugScanCount() == 1, "first open scans once");
+        const int parses = browser.debugParseCount();
+        check (parses >= 1, ".PRO name parsed on the first scan");
+        check (browser.debugTreeHasLeafLabel ("zeta"), "user preset present in the cached tree");
+        check (browser.debugTreeHasLeafLabel ("000"), "factory .PRO leaf present (filename fallback label)");
+
+        juce::PopupMenu m2;
+        browser.buildMenu (m2);
+        check (browser.debugScanCount() == 1, "second open is served from the cache (no rescan)");
+        check (browser.debugParseCount() == parses, "cached rebuild re-parses no .PRO names");
+
+        browser.invalidate();
+        juce::PopupMenu m3;
+        browser.buildMenu (m3);
+        check (browser.debugScanCount() == 2, "invalidate() forces the rescan (the save seam)");
+        check (browser.debugParseCount() > parses, "rescan re-parses the .PRO names");
+
+        // External add (no invalidate): the directory mtime must move — sleep
+        // past the millisecond resolution juce::Time keeps so the delta is
+        // deterministic on every filesystem.
+        juce::Thread::sleep (25);
+        check (userDir.getChildFile ("newleaf.parvati").replaceWithText ("x"),
+               "test setup: external file added to USER");
+        juce::PopupMenu m4;
+        browser.buildMenu (m4);
+        check (browser.debugScanCount() == 3, "external USER change self-invalidates via dir mtime");
+        check (browser.debugTreeHasLeafLabel ("newleaf"), "the external file appears at the next open");
+
+        tmp.deleteRecursively();
     }
 
     // ---- teardown ----

@@ -105,6 +105,17 @@ public:
         ParamControl::reapplyCategoryColours() pass. */
     void applyThemeColors();
 
+    /** Seed the per-type ENGAGEMENT defaults (enabled / drywet / param1..5 of
+        @p newTypeIndex, a FxType choice index) onto the APVTS, for a
+        USER-INITIATED type change ONLY (the type-combo popup pick and the
+        prev/next chevrons call this BEFORE they write the type param).
+        parameterChanged("fx{N}_type") deliberately NEVER seeds: the same
+        listener fires for host automation / NRPN / undo-replay / part loads,
+        where seeding would clobber the current parameter values with the
+        incoming type's defaults (W10, lane-A finding 1b). None has no
+        defaults and seeds nothing. Public for the editor-level tests. */
+    void seedEngagementDefaultsForType (int newTypeIndex);
+
 private:
     // APVTS::Listener — fires on ANY fx{N}_type / fx{N}_enabled change (combo
     // edit, host automation, preset load). A Value::Listener on a separate

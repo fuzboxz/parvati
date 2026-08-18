@@ -818,23 +818,33 @@ int main()
                                visibleKnobs);
                 check (visibleKnobs == 0, msg);
 
-                // Engagement defaults: selecting a type seeds audible per-type
-                // param defaults (the card's parameterChanged applies them on the
-                // message thread). A LATER param write — as a preset/part load does
-                // (descriptor order sets type THEN params) — must OVERRIDE that
-                // default, so saved patches keep their own values (preset-safe).
+                // Engagement defaults (W10): seeding lives ONLY at the UI
+                // seams (FxSlotCard::seedEngagementDefaultsForType, called by
+                // the type-combo popup pick and stepType BEFORE the type write).
+                // A PLAIN param write (host automation / NRPN / preset-load
+                // stand-in) must NOT seed — it would clobber live values. A
+                // LATER param write — as a preset/part load does (descriptor
+                // order sets type THEN params) — must OVERRIDE the seed, so
+                // saved patches keep their own values (preset-safe).
                 {
                     apvts.getParameterAsValue ("fx1_type") = 2.0f;      // Delay
-                    const int p1AfterType = juce::roundToInt (apvts.getParameterAsValue ("fx1_param1").getValue());
+                    const int p1PlainWrite = juce::roundToInt (apvts.getParameterAsValue ("fx1_param1").getValue());
                     std::snprintf (msg, sizeof (msg),
-                                   "fx1_type=Delay seeds param1=50 (engagement default) [got %d]",
-                                   p1AfterType);
-                    check (p1AfterType == 50, msg);
+                                   "fx1_type=Delay plain write seeds NOTHING (automation cannot clobber) [got %d]",
+                                   p1PlainWrite);
+                    check (p1PlainWrite == 0, msg);
+
+                    cards[0]->seedEngagementDefaultsForType (2);        // Delay (the UI-pick seam)
+                    const int p1AfterSeed = juce::roundToInt (apvts.getParameterAsValue ("fx1_param1").getValue());
+                    std::snprintf (msg, sizeof (msg),
+                                   "fx1_type=Delay UI seam seeds param1=50 (engagement default) [got %d]",
+                                   p1AfterSeed);
+                    check (p1AfterSeed == 50, msg);
 
                     apvts.getParameterAsValue ("fx1_param1") = 100.0f;  // override (preset value / user tweak)
                     const int p1AfterOverride = juce::roundToInt (apvts.getParameterAsValue ("fx1_param1").getValue());
                     std::snprintf (msg, sizeof (msg),
-                                   "param write after type overrides the engagement default [got %d]",
+                                   "param write after seed overrides the engagement default [got %d]",
                                    p1AfterOverride);
                     check (p1AfterOverride == 100, msg);
                 }

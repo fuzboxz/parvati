@@ -6,10 +6,13 @@
 //   User ▸ (recursively scanned nested folders; .PRO/.MUL/.parvati)
 //   Factory ▸ A / B / F / S ▸ (.PRO patches per bank)
 //   Multi ▸ (factory .MUL multis)
-// The menu is rebuilt on every open (so newly saved user presets appear) and
-// each leaf carries its own File -> onSelect callback (no external ID map).
-// .PRO leaf labels use the embedded program name (AmbikaProgram); others use the
-// file name. Load… / drag-drop are unaffected (handled by the editor).
+// The menu tree is rebuilt from a disk CACHE (W10, lane-A finding 5): the
+// scan + the per-.PRO name parse run at most once per GENERATION — the editor
+// bumps the generation via invalidate() after every successful save, and the
+// cache also self-invalidates when any previously-seen directory's mtime
+// changed (external adds/removes/renames, e.g. the iOS Files app). Each leaf
+// carries its own File -> onSelect callback (no external ID map).
+// Load… / drag-drop are unaffected (handled by the editor).
 
 #pragma once
 
@@ -18,6 +21,8 @@
 #include "PatchFile.h"   // AmbikaProgram + parseAmbikaProgramFile (.PRO names)
 
 #include <functional>
+#include <map>
+#include <vector>
 
 class PresetBrowser : public juce::Component
 {
@@ -41,31 +46,157 @@ public:
         nameBtn_.setButtonText (name.isEmpty() ? TRANS ("(select a patch)") : name);
     }
 
+    /** Drop the cached preset tree (W10): the NEXT buildMenu()/showMenu()
+        rescans the directories and re-parses .PRO names. The editor calls
+        this after every SUCCESSFUL save (a new/overwritten file must appear
+        at the next open); loads need no invalidation (they change no files).
+        Externally modified directories (Files app) are caught separately by
+        the mtime check, so they do not depend on this call. */
+    void invalidate() { cacheValid_ = false; }
+
     void resized() override { nameBtn_.setBounds (getLocalBounds()); }
 
+    // ---- cache observables (headless test seams; not used by the UI) ----
+    /** Number of full disk scans performed since construction (a cached
+        rebuild does not bump this). */
+    int debugScanCount() const noexcept { return scanCount_; }
+    /** Number of .PRO name parses performed since construction (parsing is
+        cached with the tree — a cached rebuild does not re-parse). */
+    int debugParseCount() const noexcept { return parseCount_; }
+    /** True if the cached tree carries a leaf labelled @p label (exact). */
+    bool debugTreeHasLeafLabel (const juce::String& label) const
+    {
+        return treeHasLeafLabel (cachedTree_, label);
+    }
+
 private:
+    // ---- the cached menu tree (pure data; PopupMenu is built from it) ----
+    struct Leaf { juce::File file; juce::String label; };
+    struct MenuNode
+    {
+        juce::String title;                       // sub-menu title (folder / bank name)
+        std::vector<MenuNode> subs;
+        std::vector<Leaf> leaves;
+    };
+
+public:
+    /** Build the preset menu from the cache (rescanning first if the cache
+        was invalidated or a watched directory changed). Public so the
+        headless tests drive the exact showMenu() menu-build path — only the
+        final showMenuAsync needs a desktop. */
+    void buildMenu (juce::PopupMenu& menu)
+    {
+        if (! cacheValid_ || watchedDirsChanged())
+            scanInto (cachedTree_);
+        menu = juce::PopupMenu();   // order: Factory (banks + Multi), User, Templates
+        juce::PopupMenu factorySub;
+        static const char* const kBanks[] = { "A", "B", "F", "S" };   // actual Ambika bank dirs
+        for (size_t b = 0; b < sizeof (kBanks) / sizeof (kBanks[0]); ++b)
+            if (cachedTree_.subs.size() > b && cachedTree_.subs[b].leaves.size() > 0)
+                factorySub.addSubMenu (kBanks[b], menuFromNode (cachedTree_.subs[b]));
+        // Factory multis (.MUL) nest at the bottom of Factory.
+        addSubIfAny (factorySub, TRANS ("Multi"), menuFromNode (cachedTree_.subs[4]));
+        if (factorySub.getNumItems() > 0)
+            menu.addSubMenu (TRANS ("Factory"), factorySub);
+
+        addSubIfAny (menu, TRANS ("User"), menuFromNode (cachedTree_.subs[5]));
+        addSubIfAny (menu, TRANS ("Templates"), menuFromNode (cachedTree_.subs[6]));
+    }
+
     void showMenu()
     {
         juce::PopupMenu menu;
-        // Order: Factory (banks + Multi), User, Templates.
-        juce::PopupMenu factorySub;
-        static const char* const kBanks[] = { "A", "B", "F", "S" };   // actual Ambika bank dirs
-        for (const char* bank : kBanks)
-        {
-            auto bankSub = buildFlatSub (factoryDir_.getChildFile (bank), "*.PRO", true);
-            if (bankSub.getNumItems() > 0)
-                factorySub.addSubMenu (bank, bankSub);
-        }
-        // Factory multis (.MUL) nest at the bottom of Factory.
-        addSubIfAny (factorySub, TRANS ("Multi"), buildFlatSub (factoryMultiDir_, "*.MUL", false));
-        menu.addSubMenu (TRANS ("Factory"), factorySub);
-
-        menu.addSubMenu (TRANS ("User"), buildRecursiveSub (userDir_));
-
-        addSubIfAny (menu, TRANS ("Templates"), buildFlatSub (templatesDir_, "*.parvati", false));
-
+        buildMenu (menu);
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (&nameBtn_));
+    }
+
+private:
+    // subs layout produced by scanInto (parallel to kBanks + the fixed tail):
+    //   0..3 = factory banks A/B/F/S, 4 = factory multi, 5 = user, 6 = templates.
+    void scanInto (MenuNode& root)
+    {
+        root = MenuNode();
+        dirMtimes_.clear();
+        static const char* const kBanks[] = { "A", "B", "F", "S" };
+        for (const char* bank : kBanks)
+            scanFlatInto (root.subs.emplace_back(), factoryDir_.getChildFile (bank), "*.PRO", true).title = bank;
+        scanFlatInto (root.subs.emplace_back(), factoryMultiDir_, "*.MUL", false);
+        scanRecursiveInto (root.subs.emplace_back(), userDir_);
+        scanFlatInto (root.subs.emplace_back(), templatesDir_, "*.parvati", false);
+        cacheValid_ = true;
+        ++scanCount_;
+    }
+
+    void recordDir (const juce::File& dir)
+    {
+        dirMtimes_[dir.getFullPathName()] = dir.getLastModificationTime();
+    }
+    // A watched directory's mtime moved (or the dir vanished) — the entry
+    // list can no longer match the cache. One stat per previously-seen dir;
+    // NO filesystem watcher threads. Catches external adds/removes/renames
+    // (including NEW folders: creating a child changes the parent's mtime).
+    // An in-place content rewrite that keeps the entry list identical is the
+    // editor-save case — invalidate() covers it.
+    bool watchedDirsChanged() const
+    {
+        for (const auto& [path, mtime] : dirMtimes_)
+        {
+            const juce::File dir (path);
+            if (! dir.isDirectory() || dir.getLastModificationTime() != mtime)
+                return true;
+        }
+        return false;
+    }
+
+    MenuNode& scanFlatInto (MenuNode& node, const juce::File& dir, const juce::String& wildcard, bool parseName)
+    {
+        if (! dir.isDirectory())
+            return node;
+        recordDir (dir);
+        juce::Array<juce::File> files;
+        dir.findChildFiles (files, juce::File::findFiles, false, wildcard);
+        files.sort();
+        for (const auto& f : files)
+            node.leaves.push_back ({ f, patchLabel (f, parseName) });
+        return node;
+    }
+
+    void scanRecursiveInto (MenuNode& node, const juce::File& dir)
+    {
+        if (! dir.isDirectory())
+            return;
+        recordDir (dir);
+        juce::Array<juce::File> entries;
+        dir.findChildFiles (entries, juce::File::findDirectories | juce::File::findFiles, false);
+        entries.sort();
+        for (const auto& e : entries)
+        {
+            if (e.isDirectory())
+            {
+                auto& sub = node.subs.emplace_back();
+                sub.title = e.getFileName();
+                scanRecursiveInto (sub, e);
+            }
+            else if (e.hasFileExtension (".pro") || e.hasFileExtension (".mul") || e.hasFileExtension (".parvati"))
+            {
+                node.leaves.push_back ({ e, patchLabel (e, e.hasFileExtension (".pro")) });
+            }
+        }
+    }
+
+    juce::PopupMenu menuFromNode (const MenuNode& node)
+    {
+        juce::PopupMenu sub;
+        for (const auto& s : node.subs)
+        {
+            auto child = menuFromNode (s);
+            if (child.getNumItems() > 0)
+                sub.addSubMenu (s.title, child);
+        }
+        for (const auto& l : node.leaves)
+            addLeaf (sub, l.file, l.label);
+        return sub;
     }
 
     static void addSubIfAny (juce::PopupMenu& parent, const juce::String& title, juce::PopupMenu sub)
@@ -74,59 +205,29 @@ private:
             parent.addSubMenu (title, std::move (sub));
     }
 
-    // One level: list files matching @p wildcard in @p dir, sorted.
-    juce::PopupMenu buildFlatSub (const juce::File& dir, const juce::String& wildcard, bool parseName)
+    static bool treeHasLeafLabel (const MenuNode& node, const juce::String& label)
     {
-        juce::PopupMenu sub;
-        if (! dir.isDirectory())
-            return sub;
-        juce::Array<juce::File> files;
-        dir.findChildFiles (files, juce::File::findFiles, false, wildcard);
-        files.sort();
-        for (const auto& f : files)
-            addLeaf (sub, f, parseName);
-        return sub;
+        for (const auto& l : node.leaves)
+            if (l.label == label) return true;
+        for (const auto& s : node.subs)
+            if (treeHasLeafLabel (s, label)) return true;
+        return false;
     }
 
-    // Recursive: a folder becomes a submenu; a preset file becomes a leaf. Lets
-    // the user organize USER/ into nested categories.
-    juce::PopupMenu buildRecursiveSub (const juce::File& dir)
-    {
-        juce::PopupMenu sub;
-        if (! dir.isDirectory())
-            return sub;
-        juce::Array<juce::File> entries;
-        dir.findChildFiles (entries, juce::File::findDirectories | juce::File::findFiles, false);
-        entries.sort();
-        for (const auto& e : entries)
-        {
-            if (e.isDirectory())
-            {
-                auto childSub = buildRecursiveSub (e);
-                if (childSub.getNumItems() > 0)
-                    sub.addSubMenu (e.getFileName(), childSub);
-            }
-            else if (e.hasFileExtension (".pro") || e.hasFileExtension (".mul") || e.hasFileExtension (".parvati"))
-            {
-                addLeaf (sub, e, e.hasFileExtension (".pro"));
-            }
-        }
-        return sub;
-    }
-
-    void addLeaf (juce::PopupMenu& m, const juce::File& f, bool parseName)
+    void addLeaf (juce::PopupMenu& m, const juce::File& f, const juce::String& label)
     {
         // SafePointer guard: the leaf action runs after the async menu
         // dismisses — the PresetBrowser (editor-owned) may already be deleted
         // if the host closed the plugin window while the popup was open.
         juce::Component::SafePointer<PresetBrowser> safe (this);
-        m.addItem (patchLabel (f, parseName), [safe, f] { if (safe != nullptr && safe->onSelect_) safe->onSelect_ (f); });
+        m.addItem (label, [safe, f] { if (safe != nullptr && safe->onSelect_) safe->onSelect_ (f); });
     }
 
-    static juce::String patchLabel (const juce::File& f, bool parseName)
+    juce::String patchLabel (const juce::File& f, bool parseName)
     {
         if (parseName)
         {
+            ++parseCount_;   // .PRO parsing is cached with the tree (W10)
             AmbikaProgram prog;
             if (parseAmbikaProgramFile (f, prog) && prog.name.isNotEmpty())
                 return prog.name;
@@ -137,6 +238,13 @@ private:
     juce::TextButton nameBtn_;
     juce::File templatesDir_, userDir_, factoryDir_, factoryMultiDir_;
     OnSelect onSelect_;
+
+    // ---- the cache (W10) ----
+    MenuNode cachedTree_;
+    bool cacheValid_ = false;
+    std::map<juce::String, juce::Time> dirMtimes_;   // dir path -> mtime at scan time
+    int scanCount_  = 0;
+    int parseCount_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PresetBrowser)
 };

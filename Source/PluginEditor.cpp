@@ -4270,7 +4270,10 @@ void ParvatiEditor::openSaveDialog()
                 mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
 #endif
                 if (presetBrowser_ != nullptr)
+                {
                     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+                    presetBrowser_->invalidate();   // W10: a save changed the preset tree -> rescan at the next open
+                }
             }
             else
             {
@@ -4307,7 +4310,10 @@ void ParvatiEditor::openSaveParvatiDialog()
                 mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
 #endif
                 if (presetBrowser_ != nullptr)
+                {
                     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+                    presetBrowser_->invalidate();   // W10: a save changed the preset tree -> rescan at the next open
+                }
             }
             else
             {
@@ -4387,7 +4393,10 @@ void ParvatiEditor::afterMultiSaved (const juce::File& f)
     mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
 #endif
     if (presetBrowser_ != nullptr)
+    {
         presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+        presetBrowser_->invalidate();   // W10: a save changed the preset tree -> rescan at the next open
+    }
 }
 void ParvatiEditor::applyPatchFile (const juce::File& f)
 {

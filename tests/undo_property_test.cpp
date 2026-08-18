@@ -46,6 +46,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -55,7 +56,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginProcessor.h"
+#include "PluginEditor.h"              // setCurrentTopPage (the FX-card tree hunt)
 #include "SynthEngine.h"
+#include "ui/FxSlotCard.h"             // the seeding seam (W10)
 #include "dsp/fx/FxTypes.h"
 
 namespace
@@ -168,6 +171,27 @@ int main()
     std::unique_ptr<juce::AudioProcessorEditor> editor (proc.createEditor());
     check (editor != nullptr, "editor created (live FxSlotCards for the seeding cases)");
 
+    // Locate the FX1 card for the seeding seam (W10): engagement defaults are
+    // seeded ONLY at the UI seams now, so the fx cases drive
+    // seedEngagementDefaultsForType + the type write explicitly. The
+    // pageSelector_ TabbedComponent unparents non-current tab contents, so the
+    // hunt runs on the FX page (then restores SYNTH).
+    FxSlotCard* fx1 = nullptr;
+    {
+        auto* parEd = dynamic_cast<ParvatiEditor*> (editor.get());
+        if (parEd != nullptr) parEd->setCurrentTopPage (1);
+        std::function<void (juce::Component*)> hunt = [&] (juce::Component* c)
+        {
+            if (c == nullptr || fx1 != nullptr) return;
+            if (auto* card = dynamic_cast<FxSlotCard*> (c)) { fx1 = card; return; }
+            for (int i = 0; i < c->getNumChildComponents(); ++i)
+                hunt (c->getChildComponent (i));
+        };
+        hunt (editor.get());
+        if (parEd != nullptr) parEd->setCurrentTopPage (0);
+    }
+    check (fx1 != nullptr, "FX1 card found (the seeding seam is reachable)");
+
     // ------------------------------------------------------------------
     // [0] CANARY: the comparator itself. Two snapshots of the same state
     // must be identical (else the harness is invalid), and a 1-byte-doctored
@@ -239,47 +263,66 @@ int main()
     // re-entrantly inside the SAME transaction; one undo must still return
     // the full state exactly (type + seeds).
     // ------------------------------------------------------------------
-    std::printf ("\n[2] fx1_type write: seeds land + undo restores everything\n");
+    std::printf ("\n[2] fx1_type: plain write seeds NOTHING; the UI seam seeds + undoes atomically\n");
     {
         // Default slot: type None -> { enabled 0, drywet 0, param1..5 0 }.
         check (rawIs (proc, "fx1_type", 0.0f), "precondition: fx1 slot starts as None");
 
+        // (a) W10: a PLAIN param write (host automation / NRPN stand-in) must
+        //     NOT seed — the listener never seeds anymore.
+        newTransaction (proc);
+        writeParam (proc, "fx1_type", (float) FxType::Overdrive);
+        check (rawIs (proc, "fx1_type", (float) FxType::Overdrive), "plain write: type moved");
+        check (rawIs (proc, "fx1_enabled", 0.0f) && rawIs (proc, "fx1_drywet", 0.0f)
+                   && rawIs (proc, "fx1_param1", 0.0f),
+               "plain write: NO engagement seeding (automation cannot clobber)");
+        proc.undoSafe();
+        check (rawIs (proc, "fx1_type", 0.0f), "plain write undone (back to None)");
+
+        // (b) The UI-pick shape (W10): the seam seeds BEFORE the type write,
+        //     all in ONE transaction. Overdrive engagement defaults
+        //     (FxSlotCard.cpp fxTypeDefaults): enabled=1, drywet=80,
+        //     param1=50. Pinning the exact table values proves the SEEDING
+        //     ran, not just that "something changed".
         newTransaction (proc);
         const auto before = snapshot (proc);
+        if (fx1 != nullptr)
+            fx1->seedEngagementDefaultsForType (static_cast<int> (FxType::Overdrive));
         writeParam (proc, "fx1_type", (float) FxType::Overdrive);
-
-        // Overdrive engagement defaults (FxSlotCard.cpp fxTypeDefaults):
-        // enabled=1, drywet=80, param1=50. Pinning the exact table values
-        // proves the SEEDING ran synchronously (the listener path), not just
-        // that "something changed".
         check (rawIs (proc, "fx1_enabled", 1.0f),  "engagement seed: fx1_enabled -> 1");
         check (rawIs (proc, "fx1_drywet", 80.0f), "engagement seed: fx1_drywet -> 80");
         check (rawIs (proc, "fx1_param1", 50.0f), "engagement seed: fx1_param1 -> 50");
 
         proc.undoSafe();
         const auto after = snapshot (proc);
-        check (bytesIdentical (before, after), "type + 7 seed writes undone in ONE step (full state byte-equal)");
+        check (bytesIdentical (before, after), "seed writes + type undone in ONE step (full state byte-equal)");
     }
 
     // ------------------------------------------------------------------
     // [3] W7 lane-A class: undoing a type switch must restore the previous
     // type's USER values, not re-apply engagement defaults on the replayed
-    // type write (the seeding listener fires during undo; the
-    // isPerformingUndoRedo guard must keep it silent).
+    // type write. (W10: the listener never seeds at all now, so the replay
+    // is trivially silent — pinned anyway: re-introducing listener-side
+    // seeding must fail here.)
     // ------------------------------------------------------------------
     std::printf ("\n[3] type-switch undo restores USER values, not seeds\n");
     {
-        // Start clean: Chorus with its seeds, then a DISTINCTIVE user param.
+        // Start clean: Chorus via the UI seam (seeds param1=45), then a
+        // DISTINCTIVE user param.
         newTransaction (proc);
-        writeParam (proc, "fx1_type", (float) FxType::Chorus);   // seeds param1=45
+        if (fx1 != nullptr)
+            fx1->seedEngagementDefaultsForType (static_cast<int> (FxType::Chorus));
+        writeParam (proc, "fx1_type", (float) FxType::Chorus);
         newTransaction (proc);
         writeParam (proc, "fx1_param1", 33.0f);                  // the user's value
         check (rawIs (proc, "fx1_type", (float) FxType::Chorus), "precondition: type is Chorus");
         check (rawIs (proc, "fx1_param1", 33.0f), "precondition: user param1 = 33");
 
-        // Switch to Flanger in its own transaction: seeds param1=40 (and the
-        // other Flanger defaults) INSIDE that transaction.
+        // Switch to Flanger via the seam in its own transaction: seeds
+        // param1=40 (and the other Flanger defaults) INSIDE that transaction.
         newTransaction (proc);
+        if (fx1 != nullptr)
+            fx1->seedEngagementDefaultsForType (static_cast<int> (FxType::Flanger));
         writeParam (proc, "fx1_type", (float) FxType::Flanger);
         check (rawIs (proc, "fx1_param1", 40.0f), "Flanger switch seeded param1 = 40 (engagement ran)");
 

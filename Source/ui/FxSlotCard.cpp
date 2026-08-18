@@ -157,7 +157,16 @@ private:
 class FxTypeCombo : public juce::ComboBox
 {
 public:
-    FxTypeCombo() : juce::ComboBox ({}) {}
+    // W10 (lane-A finding 1b): onUserPick is invoked by the popup item actions
+    // for a REAL USER PICK, just before the item writes the selection. The
+    // owning FxSlotCard installs the seeding seam
+    // (seedEngagementDefaultsForType) — the APVTS listener cannot distinguish a
+    // user pick from host automation / NRPN / undo replay (all fire
+    // parameterChanged), so the seed must originate at the UI seams. NOT fired
+    // for the attachment's external sync path.
+    using OnUserPick = std::function<void (FxType)>;
+
+    explicit FxTypeCombo (OnUserPick onUserPick) : juce::ComboBox ({}), onUserPick_ (std::move (onUserPick)) {}
 
     void showPopup() override
     {
@@ -174,7 +183,12 @@ public:
             item.itemID   = getItemId (ev);
             item.isTicked = (ev == current);
             juce::Component::SafePointer<FxTypeCombo> safe { this };
-            item.action   = [safe, ev] { if (safe != nullptr) safe->setSelectedItemIndex (ev, juce::sendNotificationSync); };
+            item.action   = [safe, ev, t] { if (safe != nullptr)
+                {
+                    if (safe->onUserPick_)
+                        safe->onUserPick_ (t);   // seed BEFORE the param write (W10)
+                    safe->setSelectedItemIndex (ev, juce::sendNotificationSync);
+                } };
             m.addItem (std::move (item));
         };
 
@@ -212,17 +226,20 @@ public:
                                         safe->hidePopup();
                                 }));
     }
+
+private:
+    OnUserPick onUserPick_;
 };
 
 // Per-type ENGAGEMENT defaults applied the moment a user selects an effect
 // type. The generic slot params all default to 0 — silent (Delay time=0,
 // drywet=0 = fully dry, enabled=0 = bypassed) — so picking a type otherwise
 // sounds like "nothing happened". These seed each effect with an audible,
-// characteristic starting point. Applied from parameterChanged() ONLY on a real
-// fx{N}_type change (never at construction). The dispatch semantics this relies
-// on: listener dispatch is synchronous ON THE CALLING THREAD, and the only
-// FX setters parameterChanged routes to here are the RT-safe fxState atomics
-// (audio-thread-safe from any thread). For the GUI/message-thread part load
+// characteristic starting point. Applied ONLY from the UI seams (the type
+// combo's popup pick and stepType, via seedEngagementDefaultsForType — W10),
+// never from parameterChanged (that listener also fires for host automation /
+// NRPN / undo replay / part loads, where seeding would clobber live values).
+// For the GUI/message-thread part load
 // the descriptor order is type, enabled, drywet, param1..5, so a load that sets
 // type THEN params overrides these — saved patches keep their own values.
 struct FxTypeDefaults { uint8_t enabled; uint8_t drywet; uint8_t p[5]; };
@@ -361,7 +378,11 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // FxTypeCombo rebuilds the popup at a 44pt item height (HIG picker). It IS-A
     // juce::ComboBox, so the ComboBoxAttachment + addItemList below are unchanged.
     // The prev/next chevrons are not placed (see resized()).
-    typeCombo_ = std::make_unique<FxTypeCombo> ();
+    typeCombo_ = std::make_unique<FxTypeCombo> (
+        // W10: the combo's USER PICK drives the seeding seam explicitly (the
+        // popup item action calls it before writing the param). Nothing else
+        // seeds — see seedEngagementDefaultsForType.
+        [this] (FxType t) { seedEngagementDefaultsForType (static_cast<int> (t)); });
     // The FX number stays OUTSIDE the TRANS'd fragments (suffix-key pattern,
     // same idiom as FxRoutingBar's "FX master EQ " + band name) so FR/DE can
     // translate the tail ("FX 2 algorithme" / "FX 2 Algorithmus").
@@ -468,7 +489,36 @@ void FxSlotCard::stepType (int delta)
     const int nxt = juce::jlimit (0, kLast, cur + delta);
     if (nxt == cur)
         return;
+    seedEngagementDefaultsForType (nxt);   // W10: UI-originated -> seed BEFORE the write
     processor_.getApvts().getParameterAsValue (prefix_ + "type") = nxt;
+}
+
+void FxSlotCard::seedEngagementDefaultsForType (int newTypeIndex)
+{
+    // W10 (lane-A finding 1b): the ONLY seeding path. Called by the UI seams
+    // (type-combo popup pick via FxTypeCombo::onUserPick, and stepType) before
+    // they write the type param. The per-type ENGAGEMENT defaults give a newly
+    // picked effect an audible, characteristic starting point (generic slot
+    // params all default to 0 = silent). parameterChanged() must NOT seed: the
+    // same listener fires for host automation / NRPN writes of fx{N}_type
+    // (which must preserve the current params) and for undo replay / part
+    // loads (which write their own full param set around the type write).
+    // Undo transaction shape (W7): the seed writes land BEFORE the type write,
+    // so a replay restores the type FIRST — with no listener-side seeding the
+    // restored params survive untouched either way.
+    const auto t = static_cast<FxType> (juce::jlimit (0, static_cast<int> (FxType::Count) - 1,
+                                                       newTypeIndex));
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (mm == nullptr || ! mm->isThisTheMessageThread())
+        return;
+    if (t == FxType::None)
+        return;
+    const auto d = fxTypeDefaults (t);
+    auto& apvts  = processor_.getApvts();
+    apvts.getParameterAsValue (prefix_ + "enabled") = (float) d.enabled;
+    apvts.getParameterAsValue (prefix_ + "drywet")  = (float) d.drywet;
+    for (int k = 0; k < 5; ++k)
+        apvts.getParameterAsValue (prefix_ + "param" + juce::String (k + 1)) = (float) d.p[k];
 }
 
 void FxSlotCard::refreshFromType()
@@ -537,38 +587,21 @@ void FxSlotCard::parameterChanged (const juce::String& id, float /*newValue*/)
     if (id != prefix_ + "type" && id != prefix_ + "enabled")
         return;
 
-    // The per-type ENGAGEMENT defaults must be seeded SYNCHRONOUSLY on the
-    // message thread for a TYPE change, BEFORE a preset/part load's subsequent
-    // param writes (descriptor order: type, enabled, drywet, param1..5) override
-    // them — so saved patches keep their own values. (Seeding writes 'enabled',
-    // which re-fires parameterChanged("enabled") re-entrantly; that just re-
-    // requests the deferred refresh below — harmless.)
     if (id == prefix_ + "type")
     {
-        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
-        if (mm != nullptr && mm->isThisTheMessageThread()
-            // UNDO/REDO REPLAY MUST NOT SEED (W7, lane-A finding 1): JUCE
-            // restores a transaction's actions in reverse order, so the type
-            // write is restored LAST — this listener then fires with the
-            // restored type and would OVERWRITE the params that were restored
-            // moments earlier with the new type's engagement defaults (undoing
-            // Chorus->Flanger destroyed the user's Chorus values). Same guard
-            // idiom as ParvatiAudioProcessor::onPartSelect. A genuine UI pick
-            // (combo / chevron / preset-load write) is never inside an undo
-            // replay, so normal seeding is unchanged.
-            && ! processor_.getUndoManager().isPerformingUndoRedo())
-        {
-            const auto t = static_cast<FxType> (currentTypeIndex());
-            if (t != FxType::None)
-            {
-                const auto d = fxTypeDefaults (t);
-                auto& apvts  = processor_.getApvts();
-                apvts.getParameterAsValue (prefix_ + "enabled") = (float) d.enabled;
-                apvts.getParameterAsValue (prefix_ + "drywet")  = (float) d.drywet;
-                for (int k = 0; k < 5; ++k)
-                    apvts.getParameterAsValue (prefix_ + "param" + juce::String (k + 1)) = (float) d.p[k];
-            }
-        }
+        // W10 (lane-A finding 1b): NO SEEDING HERE ANYMORE. This listener fires
+        // for host automation / NRPN writes of fx{N}_type and for undo replay /
+        // part loads just like a UI pick — seeding on any of those would
+        // CLOBBER the current enabled/drywet/param1..5 with the incoming
+        // type's engagement defaults (an automation lane moving fx1_type used
+        // to reset the user's knob values on every step). The engagement
+        // defaults are now seeded ONLY at the UI seams
+        // (FxTypeCombo::onUserPick + stepType -> seedEngagementDefaultsForType)
+        // BEFORE they write the type param. Loads/undo still land their own
+        // full param sets in descriptor order (type, enabled, drywet,
+        // param1..5), exactly as before — the seed was transient there.
+        // (The old W7 isPerformingUndoRedo guard is subsumed: nothing seeds
+        // here at all.)
     }
 
     // The visual REFRESH (refreshFromType / refreshEnabled -> resized() ->

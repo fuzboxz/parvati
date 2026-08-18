@@ -4,6 +4,35 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Changed
+- **PresetBrowser menu cache (Wave 10).** The preset menu's directory scan
+  and the per-factory-`.PRO` name parse ran synchronously on the message
+  thread on EVERY open (all 4 banks x 128 programs parsed each time) —
+  visible open-jank on a large USER library and constant churn against the
+  factory tree. The scanned tree + parsed labels are now cached: a rebuild
+  costs only PopupMenu construction from cached data. The cache is dropped
+  by the new `PresetBrowser::invalidate()` (wired into every successful
+  editor save: .PRO / .parvati / .MUL) and self-heals when any
+  previously-seen directory's mtime changed (external adds/removes/renames
+  via the Files app — one `stat` per known directory, no filesystem
+  watcher). Headless cache-contract test added ([17] in the editor tests:
+  scan/parse counts + external-change pickup).
+- **FX engagement defaults seed only on UI picks (Wave 10).** Host
+  automation / NRPN writes of `fx{N}_type` used to fire the same
+  `parameterChanged` path as a combo pick, clobbering the current
+  enabled/drywet/param1..5 with the incoming type's engagement defaults on
+  every automation step. The seeding moved to an explicit seam
+  (`FxSlotCard::seedEngagementDefaultsForType`), called by the type-combo
+  popup item action and the prev/next chevrons BEFORE the param write; the
+  listener now only reflects. The W7 undo guard is subsumed (nothing seeds
+  in the listener, so undo replay can never seed — still pinned by the
+  editor test, now alongside the automation no-clobber pin and the seam
+  seeding pin).
+- **Part-combo 30 Hz relabel churn (Wave 10, verified).** The display-string
+  cache from the earlier fix (`partComboLabelCache_`) already reduced the
+  30 Hz poll to a 6-string compare with change-only `changeItemText` —
+  verified against the current tree; no further change needed.
+
 ### Added
 - **Adaptive header for AUv3 compact panes (Wave 9).** AUv3 hosts
   force-resize the editor to the pane (the 1024pt `setResizeLimits` floor is
