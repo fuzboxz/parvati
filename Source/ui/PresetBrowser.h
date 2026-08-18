@@ -118,6 +118,13 @@ private:
     {
         root = MenuNode();
         dirMtimes_.clear();
+        // F-w10-4: the four ROOTS are always recorded (present or not) so an
+        // externally created root invalidates the cache. Nested dirs absent
+        // at scan time are covered by their recorded parent's mtime.
+        recordRoot (factoryDir_);
+        recordRoot (factoryMultiDir_);
+        recordRoot (userDir_);
+        recordRoot (templatesDir_);
         static const char* const kBanks[] = { "A", "B", "F", "S" };
         for (const char* bank : kBanks)
             scanFlatInto (root.subs.emplace_back(), factoryDir_.getChildFile (bank), "*.PRO", true).title = bank;
@@ -130,20 +137,36 @@ private:
 
     void recordDir (const juce::File& dir)
     {
-        dirMtimes_[dir.getFullPathName()] = dir.getLastModificationTime();
+        dirMtimes_[dir.getFullPathName()] = { dir.getLastModificationTime(), true };
     }
-    // A watched directory's mtime moved (or the dir vanished) — the entry
+    // F-w10-4 (bug hunt 2026-08-18): record a watch ROOT even when it does
+    // not (yet) exist — external creation mid-session then flips `present`
+    // and invalidates the cache. A root that stays absent is NOT a change
+    // (the empty subtree stays honestly empty).
+    void recordRoot (const juce::File& dir)
+    {
+        const bool present = dir.isDirectory();
+        dirMtimes_[dir.getFullPathName()] = { dir.getLastModificationTime(), present };
+    }
+    // A watched directory's mtime moved, appeared or vanished — the entry
     // list can no longer match the cache. One stat per previously-seen dir;
     // NO filesystem watcher threads. Catches external adds/removes/renames
-    // (including NEW folders: creating a child changes the parent's mtime).
-    // An in-place content rewrite that keeps the entry list identical is the
-    // editor-save case — invalidate() covers it.
+    // (including NEW folders: creating a child changes the parent's mtime)
+    // and, since W11, externally created ROOT directories (they start absent
+    // and flip `present`). RESIDUAL, accepted by design: a write that
+    // PRESERVES the directory mtime exactly (same-millisecond on coarse
+    // filesystems; rsync -a style timestamp restores) stays cached-stale
+    // until the next save-invalidate or any other real change — the editor
+    // save paths call invalidate() precisely for that case.
     bool watchedDirsChanged() const
     {
-        for (const auto& [path, mtime] : dirMtimes_)
+        for (const auto& [path, entry] : dirMtimes_)
         {
             const juce::File dir (path);
-            if (! dir.isDirectory() || dir.getLastModificationTime() != mtime)
+            const bool now = dir.isDirectory();
+            if (now != entry.second)
+                return true;
+            if (entry.second && dir.getLastModificationTime() != entry.first)
                 return true;
         }
         return false;
@@ -242,7 +265,7 @@ private:
     // ---- the cache (W10) ----
     MenuNode cachedTree_;
     bool cacheValid_ = false;
-    std::map<juce::String, juce::Time> dirMtimes_;   // dir path -> mtime at scan time
+    std::map<juce::String, std::pair<juce::Time, bool>> dirMtimes_;   // dir path -> {mtime at scan time, existed then} (F-w10-4 roots track presence)
     int scanCount_  = 0;
     int parseCount_ = 0;
 

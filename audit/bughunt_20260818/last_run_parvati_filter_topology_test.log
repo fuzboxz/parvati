@@ -1,0 +1,16 @@
+[1] The 3 filter cards render distinct output levels
+     RMS  Ladder=0.09500  SSM2164=0.07315  SVF=0.08490
+  ok  : 3 distinct output levels (Ladder / SSM2164 / SVF)
+
+[2] The 3 cards are distinct FILTERS (pairwise sample-diff RMS)
+     diff RMS  Ladder-SSM2164=0.08240  Ladder-SVF=0.08078  SSM2164-SVF=0.10137
+  ok  : ladder != 4P (2xSVF cascade): diff 0.08240 > 1e-3
+  ok  : ladder != SVF (4-pole vs 2-pole): diff 0.08078 > 1e-3
+  ok  : 4P (2xSVF) != SVF: diff 0.10137 > 1e-3
+
+[3] Ladder Filter Drive is wired (output changes with drive)
+     Ladder RMS  drive1.0=0.10547  drive12.0=0.13249  diffRMS=0.15142
+  ok  : Filter Drive changes the ladder output (diff 0.15142 > 1e-3)
+  ok  : Ladder RMS differs between drive 1.0 and 12.0
+
+FILTER TOPOLOGY TEST: ALL CHECKS PASSED (0 failures)

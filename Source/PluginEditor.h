@@ -56,7 +56,8 @@ class EnvelopeDisplay;
 class ParamControl : public juce::Component,
                      public juce::TooltipClient,
                      public juce::AudioProcessorValueTreeState::Listener,
-                     public juce::DragAndDropTarget
+                     public juce::DragAndDropTarget,
+                     public juce::AsyncUpdater   // F-ui-1: audio-thread param writes defer GUI refresh here
                    , private juce::Timer   // long-press -> context menu (armed on touch only)
 {
 public:
@@ -263,6 +264,14 @@ protected:
     // Re-enable/dim this step based on its sibling sequence length (steps at
     // index >= length are disabled => the LookAndFeel omits the fill arc).
     void refreshStepEnabled();
+    // F-ui-1 (bug hunt 2026-08-18): APVTS listeners fire synchronously on the
+    // WRITING thread, and two real paths write from the audio/render thread
+    // (the NRPN/CC map inside processBlock, and host automation —
+    // setValueNotifyingHost from the host's process call). parameterChanged
+    // therefore DEFERS here when off the message thread (coalesced async
+    // refresh from CURRENT state — the FxSlotCard pattern). Idempotent full
+    // refresh; safe to run redundantly.
+    void handleAsyncUpdate() override;
     // Map a step paramID (seq1_step* / seq2_step* / seqnote_step*|vel*) to its
     // sibling length param (seq_length_1/2/3); empty for non-steps.
     static juce::String siblingLengthParamFor (const juce::String& stepID);

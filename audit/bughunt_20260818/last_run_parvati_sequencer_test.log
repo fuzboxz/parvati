@@ -1,0 +1,10 @@
+[1] Note sequence emits distinct pitches
+     distinct sequencer notes on voices: 4 ( 48 52 55 60)  audio peak: 0.4418
+  ok  : note sequence produces >= 2 distinct pitches
+  ok  : note sequence produces audible audio
+
+[2] SEQ_1 modulation reaches the voices
+     distinct SEQ_1 values seen at voice 0: 2 ( 127 0 )
+  ok  : SEQ_1 modulation reaches a voice with >= 2 distinct values
+
+SEQUENCER TEST: ALL CHECKS PASSED (0 failures)

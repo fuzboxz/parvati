@@ -1,0 +1,202 @@
+[1] Editor construction
+  ok  : createEditor() returns non-null
+  ok  : editor is a juce::AudioProcessorEditor
+
+[2] Part selector -> engine current part
+  ok  : part_select=2 => engine current part is 1 (0-based) [was 1]
+
+[3] Per-part MIDI channel round-trip (part 1)
+  ok  : setPartMidiChannel(1,5) => getPartChannel==5 [getter=5]
+  ok  : Part(1).midiChannel reflects the value [struct=5]
+
+[4] Theme category tokens (positional-init guard)
+  ok  : Carbon: 5 category colours are opaque
+  ok  : Carbon: 5 category colours are pairwise-distinct
+  ok  : Carbon: isDark == true
+  ok  : Carbon: keyWhite is opaque
+  ok  : Carbon: keyWhite is distinct from the black-key colour
+  ok  : Carbon: category colours match the spec hues
+  ok  : Midnight: 5 category colours are opaque
+  ok  : Midnight: 5 category colours are pairwise-distinct
+  ok  : Midnight: isDark == true
+  ok  : Midnight: keyWhite is opaque
+  ok  : Midnight: keyWhite is distinct from the black-key colour
+  ok  : Midnight: category colours match the spec hues
+  ok  : Obsidian: 5 category colours are opaque
+  ok  : Obsidian: 5 category colours are pairwise-distinct
+  ok  : Obsidian: isDark == true
+  ok  : Obsidian: keyWhite is opaque
+  ok  : Obsidian: keyWhite is distinct from the black-key colour
+  ok  : Obsidian: category colours match the spec hues
+  ok  : Paper: 5 category colours are opaque
+  ok  : Paper: 5 category colours are pairwise-distinct
+  ok  : Paper: isDark == false
+  ok  : Paper: keyWhite is opaque
+  ok  : Paper: keyWhite is distinct from the black-key colour
+  ok  : Paper: category colours match the spec hues
+  ok  : Crimson: 5 category colours are opaque
+  ok  : Crimson: 5 category colours are pairwise-distinct
+  ok  : Crimson: isDark == true
+  ok  : Crimson: keyWhite is opaque
+  ok  : Crimson: keyWhite is distinct from the black-key colour
+  ok  : Crimson: category colours match the spec hues
+  ok  : Legacy: 5 category colours are opaque
+  ok  : Legacy: 5 category colours are pairwise-distinct
+  ok  : Legacy: isDark == false
+  ok  : Legacy: keyWhite is opaque
+  ok  : Legacy: keyWhite is distinct from the black-key colour
+  ok  : Legacy: category colours match the spec hues
+
+[5] filter_card placement (Global page)
+  ok  : filter_card is on the Global page
+  ok  : filter_card is NOT on the Filter page
+  ok  : vca_curve stays on the Global page
+  ok  : filter_drive stays on the Global page
+
+[6] Patch page present
+  ok  : PatchPage found in the editor component tree
+  ok  : PatchPage body scrolls in a juce::Viewport (T4)
+  ok  : PatchPage body never under-fills the view
+  ok  : PatchPage body overflows (scrolls) in a 1024x500 frame [body=748 view=519]
+
+[7] Arrangements + voice counts via PatchPage
+  ok  : Poly: part 0 shows 16 voices
+  ok  : Poly: part 1 shows 0 (disabled)
+  ok  : Poly: arrangement inferred as Poly
+  ok  : Poly: derived mask gives part 0 all 6 cards
+  ok  : Mono: part 0 shows 1 voice
+  ok  : Mono: part 0 poly is MONO (true mono)
+  ok  : Mono: arrangement inferred as Mono
+  ok  : Multitimbral: every part shows 16 voices (engine->GUI reflection)
+  ok  : Multitimbral: arrangement inferred as Multitimbral
+  ok  : Drum Kit: every part shows 1 voice (engine->GUI reflection)
+  ok  : Drum Kit: arrangement inferred as Drum Kit
+
+[7b] Voice counts via PatchPage
+  ok  : default: part 0 Voices combo shows 16 (Multitimbral preset)
+  ok  : UI voices: part 0 engine slots == 10
+  ok  : UI voices: part 0 combo shows 10
+  ok  : UI voices: refresh keeps part 0 at 10 (engine->GUI reflection)
+  ok  : UI voices: chooseVoiceSlots(0) disables the part (0 slots)
+  ok  : UI voices: part 0 combo shows the real "0" item
+  ok  : UI voices: 10/0/16x4 mix re-infers Custom (real combo item, no ghost)
+  ok  : UI voices: re-picking 4 re-enables the part
+
+[7c] stock templates via the real load path
+  ok  : stock templates present (run parvati_gen_templates first)
+  ok  : load path: Poly.parvati loads
+  ok  : load path: Poly rows mirror 16/0/0/0/0/0 (Custom-style load no longer mis-styled)
+  ok  : load path: Poly.parvati re-infers as Poly
+  ok  : load path: Multitimbral.parvati loads
+  ok  : load path: Multitimbral rows mirror 6 x 16
+  ok  : load path: Multitimbral.parvati re-infers as Multitimbral
+  ok  : load path: Drum Kit (GM).parvati loads
+  ok  : load path: Drum Kit rows mirror 1 voice/part
+  ok  : load path: Drum Kit (GM).parvati re-infers as Drum Kit
+
+[7d] editor-level load wiring (filesDropped / page reveal)
+  ok  : editor casts to ParvatiEditor (drop-target seam)
+  ok  : drop(multi): rows mirror 16/0/0/0/0/0 with NO manual refresh
+  ok  : drop(multi): arrangement re-infers Poly with NO manual refresh
+  ok  : factory .PRO bank present (presets/FACTORY/A)
+  ok  : factory .PRO parses (PartData present)
+  ok  : precondition: custom tuning armed (resolved mode 33)
+  ok  : drop(.PRO): Poly combo mirrors engine byte 15 [combo=1 engine=1]
+  ok  : drop(.PRO): Tune combo mirrors resolved mode [combo=0 engine=0 fileByte4=0]
+  ok  : drop(.PRO): stale custom tuning cleared (12-EDO file resolves 0, not 33)
+  ok  : corrupt .parvati test file written
+  ok  : drop(corrupt): failed multi load leaves voice slots untouched
+  ok  : drop(corrupt): part 0 keeps its 11 slots (no init reset)
+  ok  : page reveal: hidden-page engine edit (7 slots) surfaces on reveal
+  ok  : header fit @1024: [FX] keeps full 50px width [got 50]
+  ok  : partCombo label: renamed part shows immediately (no part switch)
+  ok  : visible mirror: out-of-band slots write surfaces with NO manual refresh
+  ok  : visible mirror: second poll with no change is a no-op
+  ok  : visible mirror: host-automation raga write surfaces in the Tune combo
+  ok  : visible mirror: raga back to 12-EDO surfaces too
+
+[8] every part can be maxed simultaneously
+  ok  : All six parts maxed: engine total == 96 (whole pool, no cap)
+  ok  : Derived cards: exactly 6, disjoint, shared across the 6 parts
+
+[9] Per-part tuning via PatchPage
+  ok  : Tune: part 0 starts at 12-EDO
+  ok  : Tune: preset 5 written to PartData byte 4
+  ok  : Tune: resolved mode reports the preset
+  ok  : Tune: combo reflects the preset
+  ok  : Tune: per-part byte writes stay isolated
+  ok  : Tune: refresh mirrors engine mode
+  ok  : TuningEditor prefills from the resolved preset
+  ok  : TuningEditor applies live (callback fired)
+  ok  : row edit activates custom mode
+  ok  : custom table = preset prefill + the edited row
+  ok  : readout shows quantized cents (17 units)
+  ok  : [Clear] zeros the table, stays Custom
+  ok  : Scala import accepted (muted class)
+  ok  : kbm 'x' class carries the mute sentinel
+  ok  : muted row reads as an em dash
+  ok  : malformed .scl rejected
+  ok  : rejected import leaves the table untouched
+  ok  : 12-EDO writes raga byte 0
+  ok  : 12-EDO clears the custom flag (D4)
+  ok  : Tune: combo back to 12-EDO
+  ok  : precondition: APVTS part_raga == 12 (stale-preset scenario armed)
+  ok  : popover edit arms the custom table (mode 33)
+  ok  : popover edit re-syncs the APVTS part_raga to 0 (no stale preset byte)
+
+[MOD] mod-pill bar toggle
+  ok  : [MOD] bar-toggle button exists in the header (tooltip: pill bar)
+  ok  : [MOD] bar toggle defaults to ON (bar shown)
+  ok  : CentralModBar found in the workspace
+  ok  : bar visible before the toggle
+  ok  : [MOD] bar toggle OFF hides the bar (seam collapses)
+  ok  : [MOD] bar toggle ON re-shows the bar
+
+[16] SettingsPanel: language switch fires no uncommanded writes
+  ok  : Settings: refreshLanguage fires NO oversampling write (async clear purged)
+  ok  : Settings: refreshLanguage fires NO language write
+  ok  : Settings: non-default Filter Quality selection preserved
+
+[12] FX type seeds only on UI picks (automation-safe)
+  ok  : FX1 card found in the component tree
+  ok  : automation: type switched (5)
+  ok  : automation: param1 NOT clobbered by the type write (listener never seeds)
+  ok  : UI seam: seeding lands (param1 now the type-5 engagement default)
+  ok  : UI seam: enabled + an audible drywet seeded
+  ok  : UI seam: seeding does not touch the type param itself
+  ok  : [12d] FX1 type combo found
+  ok  : [12d] down-arrow consumed by the combo
+  ok  : [12d] keyboard arrow advances the type
+  ok  : [12d] keyboard pick SEEDS engagement defaults (was: silent effect)
+  ok  : [12e] same-item pick keeps the type
+  ok  : [12e] same-item pick does NOT re-seed (user knobs survive)
+  ok  : [12e] different-item pick switches the type
+  ok  : [12e] different-item pick seeds its defaults
+  ok  : undo precondition: params survive the type switch
+  ok  : undo restores the type (5)
+  ok  : undo keeps the restored param1 (no seed-during-replay clobber)
+
+[17] PresetBrowser caches the scan + .PRO name parse
+  ok  : test setup: user preset file written
+  ok  : test setup: factory .PRO written (parse fails -> filename label)
+  ok  : test setup: factory .MUL written
+  ok  : test setup: template written
+  ok  : first open scans once
+  ok  : .PRO name parsed on the first scan
+  ok  : user preset present in the cached tree
+  ok  : factory .PRO leaf present (filename fallback label)
+  ok  : second open is served from the cache (no rescan)
+  ok  : cached rebuild re-parses no .PRO names
+  ok  : invalidate() forces the rescan (the save seam)
+  ok  : rescan re-parses the .PRO names
+  ok  : test setup: external file added to USER
+  ok  : external USER change self-invalidates via dir mtime
+  ok  : the external file appears at the next open
+  ok  : test setup: mtime-preserving external file added
+  ok  : RESIDUAL pinned: mtime-preserving external write stays cached (by design)
+  ok  : RESIDUAL pinned: the ghost file is not in the cached tree (by design)
+  ok  : late-root: first open scans once
+  ok  : late-root: external creation of an absent root invalidates the cache
+  ok  : late-root: the externally created root's preset appears
+
+EDITOR TEST: ALL CHECKS PASSED (0 failures)

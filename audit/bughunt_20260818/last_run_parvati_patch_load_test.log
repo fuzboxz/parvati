@@ -1,0 +1,27 @@
+=== Parvati Patch-Load + DSP Regression ===
+
+[B4] No stuck voice after switching a preset mid-note
+  ok  : a held note triggers a voice
+  ok  : Poly template loaded mid-note
+  ok  : no voice stuck after the switch (active=0, expect 0)
+
+[B5] Mix Crush alters the rendered output
+  ok  : crush=0 produces audible output
+  ok  : crush=28 still produces audible output
+  ok  : crush materially alters the waveform (256/256 samples differ)
+
+[B8] Multitimbral MIDI input (loaded Multitimbral template)
+  ok  : Multitimbral template loaded
+  ok  : MIDI ch1 triggers Part 0 voices
+  ok  : MIDI ch2 triggers Part 1 voices (multitimbral input)
+  ok  : same-block: ch1 -> Part 0
+  ok  : same-block: ch2 -> Part 1
+  ok  : template: Part 0 on MIDI ch 1
+  ok  : template: Part 1 on MIDI ch 2
+
+[B9] Multi-load does not clobber Part 0 (engine authoritative)
+  ok  : Mono template loaded
+  ok  : Part 0 osc1_shape in engine storage = 1 (Saw, not clobbered)
+  ok  : APVTS osc1_shape reflects engine (1, expect 1)
+
+PATCH-LOAD TEST: ALL CHECKS PASSED (0 failures)

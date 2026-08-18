@@ -133,8 +133,19 @@ var parseScalar (const juce::String& v)
 // baseIndent. Returns the parsed node and consumes lines.
 struct ParseResult { juce::var value; int next; };
 
-ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent)
+// Depth cap for the recursive descent (bug hunt 2026-08-18, F-state-1): a
+// crafted .parvati with thousands of increasing-indent lines would recurse
+// once per level and overflow the stack (an uncaught host crash). The emitter
+// never nests deeper than ~6; 64 is a generous ceiling. At the cap the parse
+// refuses: it consumes nothing, so the whole document parses to a shallow /
+// truncated object and the format-sniffing load validation rejects the file
+// cleanly instead of crashing.
+constexpr int kMaxYamlDepth = 64;
+
+ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent, int depth = 0)
 {
+    if (depth > kMaxYamlDepth)
+        return { juce::var(), i };   // refuse: consume nothing -> invalid doc downstream
     const int n = (int) lines.size();
 
     // Indentation of the next content line if it is a child of the current
@@ -157,7 +168,7 @@ ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent)
                 // list item is a nested block on the following (deeper) lines
                 const int ci = childIndent (i + 1, baseIndent);
                 if (ci < 0) { arr.add (var()); ++i; }
-                else { auto pr = parseBlock (lines, i + 1, ci); arr.add (pr.value); i = pr.next; }
+                else { auto pr = parseBlock (lines, i + 1, ci, depth + 1); arr.add (pr.value); i = pr.next; }
             }
             else
             {
@@ -174,7 +185,7 @@ ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent)
                     {
                         const int ci = childIndent (i + 1, itemIndent);
                         if (ci < 0) { obj->setProperty (k, var()); ++i; }
-                        else { auto pr = parseBlock (lines, i + 1, ci); obj->setProperty (k, pr.value); i = pr.next; }
+                        else { auto pr = parseBlock (lines, i + 1, ci, depth + 1); obj->setProperty (k, pr.value); i = pr.next; }
                     }
                     else
                     {
@@ -199,7 +210,7 @@ ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent)
                     {
                         const int ci = childIndent (i + 1, itemIndent);
                         if (ci < 0) { obj->setProperty (k, var()); ++i; }
-                        else { auto pr = parseBlock (lines, i + 1, ci); obj->setProperty (k, pr.value); i = pr.next; }
+                        else { auto pr = parseBlock (lines, i + 1, ci, depth + 1); obj->setProperty (k, pr.value); i = pr.next; }
                     }
                     else
                     {
@@ -226,7 +237,7 @@ ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent)
         {
             const int ci = childIndent (i + 1, baseIndent);
             if (ci < 0) { obj->setProperty (k, var()); ++i; }
-            else { auto pr = parseBlock (lines, i + 1, ci); obj->setProperty (k, pr.value); i = pr.next; }
+            else { auto pr = parseBlock (lines, i + 1, ci, depth + 1); obj->setProperty (k, pr.value); i = pr.next; }
         }
         else
         {
@@ -268,7 +279,7 @@ juce::var parseParvatiYaml (const juce::String& text)
     // Find the base indentation of the first content line; everything top-level
     // sits at that indent.
     const int base = lines.front().indent;
-    return parseBlock (lines, 0, base).value;
+    return parseBlock (lines, 0, base, 0).value;
 }
 
 // ---- emit ------------------------------------------------------------------
@@ -425,7 +436,14 @@ float partRaw (SynthEngine& engine, int partIndex, const PatchParamDescriptor& d
         if (d.paramID == "seq_length_2") return static_cast<float> (pc.seqLength[1]);
         if (d.paramID == "seq_length_3") return static_cast<float> (pc.seqLength[2]);
         // Step params: byteOffset is the controller PartData offset; the
-        // sequence_data[] region is offset by -16 within PartData.
+        // sequence_data[] region is offset by -16 within PartData. Guard the
+        // region exactly like the apply side (~:824 — bug hunt 2026-08-18,
+        // F-state-6): only 16..79 map into seqData[0..63]; any other
+        // descriptor byteOffset reads out of bounds. (Every seq-step
+        // descriptor in the table sits in 16..79 today, so this is a
+        // hardening guard, not a behaviour change.)
+        if (d.byteOffset < 16 || d.byteOffset >= 80)
+            return 0.0f;
         return static_cast<float> (pc.seqData[(size_t) (d.byteOffset - 16)]);
     }
     if (d.isFx)
@@ -962,9 +980,23 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
             (void) (int) oobj->getProperty ("voice_mode");
         }
         for (const auto& p : oobj->getProperties())
-            if (p.name.toString() != "voice_mode")
-                if (auto* param = proc.getApvts().getParameter (p.name.toString()))
-                    param->setValueNotifyingHost (param->convertTo0to1 ((float) p.value));
+        {
+            // W11 (F-state-5): only REAL option descriptors may be applied
+            // here — the serializer emits only isOption params under
+            // `options:`, but this loop used to accept ANY APVTS paramID, so a
+            // hand-edited per-part key (e.g. osc1_shape) wrote into the
+            // PRE-LOAD current part (part_select is reset to Part 0 only
+            // below). part_select itself is excluded: applying it mid-load
+            // re-enters the part-switch path against half-loaded state.
+            // (voice_mode stays parsed-and-ignored above for legacy files.)
+            const PatchParamDescriptor* d = nullptr;
+            for (const auto& desc : descs)
+                if (desc.paramID == p.name.toString()) { d = &desc; break; }
+            if (d == nullptr || ! d->isOption || d->paramID == "part_select")
+                continue;
+            if (auto* param = proc.getApvts().getParameter (p.name.toString()))
+                param->setValueNotifyingHost (param->convertTo0to1 ((float) p.value));
+        }
     }
 
     // Show Part 0 in the editor. Engine storage is authoritative after the

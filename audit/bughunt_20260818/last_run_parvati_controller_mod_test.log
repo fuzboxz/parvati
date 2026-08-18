@@ -1,0 +1,9 @@
+[1] Global MIDI controllers -> mod-matrix sources (audibility)
+  ok  : mod wheel (CC1) -> Cutoff audible (rms 0=0.09874 127=0.10631 diff=0.00758, need >0.0050)
+  ok  : breath (CC2) -> Cutoff audible (rms 0=0.09874 127=0.10803 diff=0.00929, need >0.0050)
+  ok  : foot pedal (CC4) -> Cutoff audible (rms 0=0.09874 127=0.10803 diff=0.00929, need >0.0050)
+
+[2] Per-voice channel pressure (MPE expression)
+  ok  : channel pressure -> Cutoff (MPE) audible (rms 0=0.09874 127=0.10803 diff=0.00929, need >0.0050)
+
+CONTROLLER MOD TEST: ALL PASSED (0 failures)

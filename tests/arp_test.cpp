@@ -214,6 +214,86 @@ int main()
                "pre-arp note releases after enabling the arp (no stuck sustain)");
     }
 
+    // ---- chord-direction release regression (bug hunt 2026-08-18, F-eng-2):
+    // the firmware kills the note DIRECTLY at key-up in chord trigger mode
+    // ("the chord trigger mode doesn't really clean after itself" —
+    // ambika_reference/controller/part.cc:341-354). The port dropped that
+    // branch: a released chord voice kept ringing (each step only re-triggers
+    // HELD keys, no off is ever sent), and on the LAST key-up
+    // allNotesOff()'s chord branch looped the already-EMPTY held-key stack —
+    // every chord voice stranded until CC123 / voice-steal.
+    std::printf ("\n[arp_test] chord-direction release regression (F-eng-2)\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.setPlayHead (&playHead);
+        proc.prepareToPlay (48000.0, 256);
+        proc.syncAllParamsToEngine();
+
+        auto activePart0 = [&]() {
+            int n = 0;
+            for (int vi : proc.getEngine().getPart (0).voiceIndices)
+                if (auto* av = proc.getEngine().getAmbikaVoice (vi))
+                    if (av->isVoiceActive()) ++n;
+            return n;
+        };
+
+        // Arp mode, CHORD direction (choice index 5), 1/16 resolution.
+        proc.getApvts().getParameterAsValue ("arp_mode") = 1.0f;
+        proc.getApvts().getParameter ("arp_direction")->setValueNotifyingHost (
+            juce::jmap (5.0f, 0.0f, 5.0f, 0.0f, 1.0f));   // Chord
+        proc.getApvts().getParameter ("arp_resolution")->setValueNotifyingHost (
+            juce::jmap (10.0f, 0.0f, 14.0f, 0.0f, 1.0f));  // 1/16
+
+        // Hold a 3-note chord long enough for >= 2 arp steps (chord mode
+        // triggers every held note each step).
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 100), 0);
+            midi.addEvent (juce::MidiMessage::noteOn (1, 64, (uint8_t) 100), 0);
+            midi.addEvent (juce::MidiMessage::noteOn (1, 67, (uint8_t) 100), 0);
+            proc.processBlock (buf, midi);
+        }
+        renderIdleBlocks (proc, 100);   // ~0.5 s: >= 1 full chord step at 120bpm/1/16
+        const int activeWhileHeld = activePart0();
+        std::printf ("     active Part-0 voices while chord held: %d\n", activeWhileHeld);
+        check (activeWhileHeld >= 1, "chord mode triggers held notes");
+
+        // Release ONE key mid-phrase: that pitch must stop (firmware kills it
+        // at key-up). Pre-fix it rang until the next voice-steal.
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer off;
+            off.addEvent (juce::MidiMessage::noteOff (1, 64), 0);
+            proc.processBlock (buf, off);
+        }
+        renderIdleBlocks (proc, 300);   // let the release tail decay
+        // Notes 60/67 are still HELD — they legitimately remain active.
+        const int activeAfterPartial = activePart0();
+        std::printf ("     active after releasing one chord key: %d\n", activeAfterPartial);
+        check (activeAfterPartial < activeWhileHeld || activeWhileHeld == 1,
+               "releasing one chord key retires its voice (firmware key-up kill)");
+
+        // Release the remaining keys: EVERY voice must retire. Pre-fix,
+        // allNotesOff()'s chord branch iterated the now-empty stack and all
+        // voices stayed stuck.
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer off;
+            off.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+            off.addEvent (juce::MidiMessage::noteOff (1, 67), 0);
+            proc.processBlock (buf, off);
+        }
+        renderIdleBlocks (proc, 300);
+        const int activeAfterAll = activePart0();
+        std::printf ("     active after releasing all chord keys: %d (expect 0)\n", activeAfterAll);
+        check (activeAfterAll == 0,
+               "chord voices all retire on key release (no stranded chord voices)");
+    }
+
     // ---- unclamped loaded arp bytes: a raw PartData mode 5 must not silence
     // the part, and a raw arpOctave 0 must stage >= 1 (the Random direction's
     // octave-wrap loop never terminated with range 0 — an audio-thread hang).

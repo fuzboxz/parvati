@@ -1,0 +1,116 @@
+[1] Editor construction
+  ok  : createEditor() returns an AudioProcessorEditor
+
+[2] Top-level page selector (expected 2: SYNTH + FX; Global is a header-button overlay)
+     top-level tabs = 2
+  ok  : exactly 2 top-level page tabs ([SYNTH][FX]); Global is a header-button overlay
+
+[3] ParamControl coverage (generated pages = 9)
+     descriptors = 260, expected cells = 139, found = 139
+  ok  : one ParamControl per descriptor (except part_select + mod-matrix), across all nesting
+
+[3c] MOD MATRIX: a ModMatrixView is a DIRECT child of SynthWorkspace
+  ok  : a ModMatrixView is present in the editor tree
+  ok  : ModMatrixView is a direct child of SynthWorkspace (no longer tab content)
+
+[3c-fx] FX MATRIX: an FxMatrixView is a DIRECT child of FxWorkspace
+  ok  : an FxMatrixView is present in the editor tree (FX tab)
+  ok  : FxMatrixView is a direct child of FxWorkspace
+  ok  : an FxWorkspace is present in the editor tree (FX tab)
+
+[3d] CentralModBar generator pill surfaces the right page
+  ok  : SynthWorkspace present (CentralModBar host)
+  ok  : LFO generator page found
+  ok  : LFO_1 pill reparents the LFO page into the active-editor host [parent=set]
+  ok  : Sequencer generator page found
+  ok  : NOTE pill reparents the Sequencer page into the active-editor host [parent=set]
+  ok  : active-editor host is a juce::Viewport (T4 scroll safety net)
+  ok  : the active generator page is the host viewport's viewed component
+  ok  : generator page never under-fills the host view (no gap below a fitting page)
+
+[3b] Page grouping (Oscillators / Global)
+     Oscillators page found = 1 (8 osc controls); Global page found = 1 (11 controls)
+  ok  : Oscillators page has exactly 8 osc_* controls
+  ok  : Global page has 11 controls incl. filter_card + vca_curve + part_raga
+
+[4] Top-bar Part selector is wired to the engine
+  ok  : part_select=3 => engine current part is 2 (0-based) [was 2]
+
+[5] Multi page: per-part MIDI channel round-trips
+  ok  : setPartMidiChannel(2,7) => getPartChannel==7 [was 7]
+
+[6] Default editor size
+     1280 x 634 (bar preferred=1580, unused for sizing)
+  ok  : default editor size is 1280 x 634 [was 1280 x 634]
+
+[7] Layout sanity (every surfaced page: no overlaps, fills width)
+     sane pages = 9 / 9
+  ok  : every surfaced ParamPage reports a well-formed group grid
+
+[8] Mixer sub-section: mix_sub_shape spans 2 cells
+  ok  : Mixer page (mix_sub_shape) exists
+  ok  : mix_sub_shape width 598 >= 1.8x mix_sub width 296
+  ok  : mix_sub x 623 is right of mix_sub_shape right 617
+     mix_sub_shape=598x58 @x=19 ; mix_sub=296x58 @x=623
+
+[9] Sequencer length marking + step dimming
+  ok  : Sequencer page exists
+     Length controls = 3 (expect 3)
+  ok  : exactly 3 marked Length controls (Seq1/2/Note)
+  ok  : length control reports a visible label
+  ok  : length control reports a visible label
+  ok  : length control reports a visible label
+     seq1 enabled<4=4 dimmed>=4=12 seq2-all-enabled=1
+  ok  : Seq1 steps 0..3 enabled after length=4
+  ok  : Seq1 steps 4..15 dimmed after length=4
+  ok  : Seq2 steps unaffected by Seq1 length
+
+[12] Modulation ring schema (per-source concentric arcs)
+  ok  : filter1_cutoff ParamControl exists
+  ok  : filter1_cutoff has a Slider child
+  ok  : arc0 colour follows source category (Env 1)
+  ok  : arc0 colour follows source category (LFO 2)
+  ok  : arc0 colour follows source category (Voice LFO)
+  ok  : arc0 colour follows source category (Seq 1)
+  ok  : arc0 colour follows source category (Arp Step)
+  ok  : arc0 colour follows source category (Op 4)
+  ok  : arc0 colour follows source category (Velocity)
+  ok  : one active slot => parvatiModN=1 [was 1]
+  ok  : parvatiModAmt0 == 30
+  ok  : legacy parvatiModDepth key removed
+  ok  : two sources => parvatiModN=2 [was 2]
+  ok  : second arc parvatiModCol1 == catLfo (magenta)
+  ok  : parvatiModAmt1 == -20
+  ok  : moving slot1 dest away => parvatiModN=1 [was 1]
+
+[13] FX top-section layout (cards + routing bar)
+     FxSlotCards found = 3 (expect 3)
+  ok  : exactly 3 FxSlotCards present (FX1/FX2/FX3)
+  ok  : every FxSlotCard has positive width + height
+  ok  : the 3 FxSlotCards are side-by-side (no horizontal overlap)
+  ok  : FX1 card owns 6 ParamControls (param1..5 + drywet) [found 6]
+  ok  : FX1 card has a type ComboBox
+  ok  : FX1 card has a power/bypass Button
+  ok  : FX1 card has an FxSlotVisualizer
+  ok  : FX2 card owns 6 ParamControls (param1..5 + drywet) [found 6]
+  ok  : FX2 card has a type ComboBox
+  ok  : FX2 card has a power/bypass Button
+  ok  : FX2 card has an FxSlotVisualizer
+  ok  : FX3 card owns 6 ParamControls (param1..5 + drywet) [found 6]
+  ok  : FX3 card has a type ComboBox
+  ok  : FX3 card has a power/bypass Button
+  ok  : FX3 card has an FxSlotVisualizer
+  ok  : an FxRoutingBar is present (FX tab)
+  ok  : FxRoutingBar has positive width + height
+  ok  : FxRoutingBar has a global Mix Slider
+  ok  : FxRoutingBar has the ◀ ▶ topology steppers
+  ok  : fx1_type=None => 0 visible knobs (Dry/Wet hidden on None) [found 0]
+  ok  : fx1_type=Delay plain write seeds NOTHING (automation cannot clobber) [got 0]
+  ok  : fx1_type=Delay UI seam seeds param1=50 (engagement default) [got 50]
+  ok  : param write after seed overrides the engagement default [got 100]
+  ok  : FX1 type combo has 25 items [got 25]
+  ok  : FX1 type combo: menuActive false before first open
+  ok  : FX1 type combo: popup active after click
+  ok  : FX1 type combo: menuActive resets after dismissal (dropdown reopenable) [got 0]
+
+EDITOR TEST: ALL CHECKS PASSED (0 failures)

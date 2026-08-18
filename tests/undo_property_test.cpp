@@ -9,15 +9,20 @@
 //     - a controller-side choice write (arp_mode — pendingConfig_/seqlock)
 //     - a SIGNED patch-byte write (mod1_amount, -63..63)
 //     - an FX param write (fx1_param1 — fxState atomics)
-//     - an FX TYPE change (fx1_type — fires the FxSlotCard engagement seeding
-//       which re-writes enabled/drywet/param1..5 re-entrantly; one transaction
-//       must undo as ONE step and the replay must NOT re-seed)
+//     - an FX TYPE change (fx1_type — W10: seeding lives ONLY at the UI seams
+//       (the type-combo popup pick / keyboard arrows / stepType chevrons, via
+//       seedEngagementDefaultsForType, all BEFORE the type write in ONE
+//       transaction); the listener NEVER seeds (the same parameterChanged
+//       fires for host automation / NRPN / undo replay / part loads, where
+//       seeding would clobber live values) — so a replayed type write is
+//       trivially seed-free and one transaction undoes as ONE step)
 //
 //   Plus the two corruption classes the waves found:
 //     [3] the W7 lane-A seed clobber: undoing a type switch must restore the
-//         PREVIOUS type's USER values, not its engagement defaults (the
-//         seeding listener fires on the replayed type write; the
-//         isPerformingUndoRedo guard must keep it silent).
+//         PREVIOUS type's USER values, not its engagement defaults. (W10
+//         note: the old isPerformingUndoRedo guard is GONE — subsumed by the
+//         no-listener-seeding contract; this case stays pinned so a future
+//         re-introduction of listener-side seeding fails here.)
 //     [4] the W2 cross-part doctrine: a part switch invalidates the stack —
 //         undoSafe() must sweep to canUndo()==false (NO replay into the new
 //         part), the new part's bytes stay untouched, and the old part keeps

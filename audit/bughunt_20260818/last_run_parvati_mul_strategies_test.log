@@ -1,0 +1,116 @@
+MUL STRATEGIES + NAMES TEST
+
+[A] strategy invariants (scenario matrix)
+  ok  : single-part-16 / AsIs: counts == own cards
+  ok  : single-part-16 / Proportional: conservation + min-1 + monotone
+  ok  : single-part-16 / EvenSplit: conservation + min-1
+  ok  : single-part-16 / Priority: served in order until cards run out
+  ok  : single-part-16 / MonoFold: proportional + folds only the constrained
+  ok  : single-part-16 / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : six-parts-16 / AsIs: counts == own cards
+  ok  : six-parts-16 / Proportional: conservation + min-1 + monotone
+  ok  : six-parts-16 / EvenSplit: conservation + min-1
+  ok  : six-parts-16 / Priority: served in order until cards run out
+  ok  : six-parts-16 / MonoFold: proportional + folds only the constrained
+  ok  : six-parts-16 / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : drum-kit-4 / AsIs: counts == own cards
+  ok  : drum-kit-4 / Proportional: conservation + min-1 + monotone
+  ok  : drum-kit-4 / EvenSplit: conservation + min-1
+  ok  : drum-kit-4 / Priority: served in order until cards run out
+  ok  : drum-kit-4 / MonoFold: proportional + folds only the constrained
+  ok  : drum-kit-4 / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : skewed-10-8-6 / AsIs: counts == own cards
+  ok  : skewed-10-8-6 / Proportional: conservation + min-1 + monotone
+  ok  : skewed-10-8-6 / EvenSplit: conservation + min-1
+  ok  : skewed-10-8-6 / Priority: served in order until cards run out
+  ok  : skewed-10-8-6 / MonoFold: proportional + folds only the constrained
+  ok  : skewed-10-8-6 / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : one-small-rest-big / AsIs: counts == own cards
+  ok  : one-small-rest-big / Proportional: conservation + min-1 + monotone
+  ok  : one-small-rest-big / EvenSplit: conservation + min-1
+  ok  : one-small-rest-big / Priority: served in order until cards run out
+  ok  : one-small-rest-big / MonoFold: proportional + folds only the constrained
+  ok  : one-small-rest-big / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : fits-exactly / AsIs: counts == own cards
+  ok  : fits-exactly / Proportional: conservation + min-1 + monotone
+  ok  : fits-exactly / EvenSplit: conservation + min-1
+  ok  : fits-exactly / Priority: served in order until cards run out
+  ok  : fits-exactly / MonoFold: proportional + folds only the constrained
+  ok  : fits-exactly / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : inactive-with-slots / AsIs: counts == own cards
+  ok  : inactive-with-slots / Proportional: conservation + min-1 + monotone
+  ok  : inactive-with-slots / EvenSplit: conservation + min-1
+  ok  : inactive-with-slots / Priority: served in order until cards run out
+  ok  : inactive-with-slots / MonoFold: proportional + folds only the constrained
+  ok  : inactive-with-slots / ChainSplit: segments conserved, heads CHAIN, units <= 6
+  ok  : six-request-3 / AsIs: counts == own cards
+  ok  : six-request-3 / Proportional: conservation + min-1 + monotone
+  ok  : six-request-3 / EvenSplit: conservation + min-1
+  ok  : six-request-3 / Priority: served in order until cards run out
+  ok  : six-request-3 / MonoFold: proportional + folds only the constrained
+  ok  : six-request-3 / ChainSplit: segments conserved, heads CHAIN, units <= 6
+
+[B] end-to-end: exported polyphony actually plays
+  ok  : export saves
+  ok  : hardware reload
+  ok  : single-part-16 strat=1: sustained notes == allocated cards per part
+  ok  : export saves
+  ok  : hardware reload
+  ok  : six-parts-16 strat=1: sustained notes == allocated cards per part
+  ok  : export saves
+  ok  : hardware reload
+  ok  : drum-kit-4 strat=1: sustained notes == allocated cards per part
+  ok  : export saves
+  ok  : hardware reload
+  ok  : skewed-10-8-6 strat=4: sustained notes == allocated cards per part
+  ok  : chain export
+  ok  : chain unit 1 reloads
+  ok  : chain unit 1 masks exact
+  ok  : chain unit 2 reloads
+  ok  : chain unit 2 masks exact
+  ok  : chain unit 3 reloads
+  ok  : chain unit 3 masks exact
+
+[C] unicode / name safety
+
+[C1] .parvati part-name round-trip
+  ok  : all 6 parts serialized on single lines
+  ok  : re-applies
+  ok  : unicode + escaped names round-trip exactly
+
+[C2] host-state name round-trip
+  ok  : v6 blob restores
+  ok  : unicode names survive the length-prefixed blob
+
+[C3] name sanitization
+  ok  : newline stripped by setPartName
+  ok  : tab stripped
+  ok  : sanitized names serialize as single-line tokens
+  ok  : document with previously-corrupting name still round-trips
+
+[C4] .MUL/.PRO name chunk under unicode
+  ok  : .PRO writes
+  ok  : "ASCII": name chunk is valid UTF-8 (5 bytes kept)
+  ok  : "ASCII": kept bytes <= 16 and no split code point
+  ok  : "ASCII": re-parse == whole-char prefix
+  ok  : .PRO writes
+  ok  : "Ünïcödé": name chunk is valid UTF-8 (11 bytes kept)
+  ok  : "Ünïcödé": kept bytes <= 16 and no split code point
+  ok  : "Ünïcödé": re-parse == whole-char prefix
+  ok  : .PRO writes
+  ok  : "日本語ドラム": name chunk is valid UTF-8 (15 bytes kept)
+  ok  : "日本語ドラム": kept bytes <= 16 and no split code point
+  ok  : "日本語ドラム": re-parse == whole-char prefix
+  ok  : .PRO writes
+  ok  : "🎹🎹🎹🎹🎹": name chunk is valid UTF-8 (16 bytes kept)
+  ok  : "🎹🎹🎹🎹🎹": kept bytes <= 16 and no split code point
+  ok  : "🎹🎹🎹🎹🎹": re-parse == whole-char prefix
+  ok  : .MUL writes
+  ok  : .MUL name truncates at a code-point boundary
+
+[C5] ASCII references unchanged
+  ok  : reference parses
+  ok  : reference rewrites
+  ok  : ASCII .MUL still byte-identical after the name refactor
+
+MUL STRATEGIES + NAMES TEST: ALL CHECKS PASSED (0 failures)

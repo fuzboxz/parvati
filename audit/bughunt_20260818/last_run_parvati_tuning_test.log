@@ -1,0 +1,64 @@
+parvati_tuning_test
+[vendored tables]
+  ok  : preset 1 (just) matches the firmware bytes verbatim
+  ok  : id 0 returns nullptr (no preset)
+  ok  : all 32 preset ids resolve to tables
+  ok  : all 32 preset names are non-empty
+  ok  : every table entry is within [-127,127] or the sentinel
+  ok  : id 16 (bageshree) aliases the kafi array
+  ok  : id 32 (rasia) aliases the yaman array
+  ok  : preset 30 (kaushik todi) mutes 7 classes (firmware data)
+  ok  : 12-EDO table is all zeros
+[startNote hook mapping]
+  ok  : 12-EDO: note14 == baseNote*128
+  ok  : raga preset: note14 == baseNote*128 + table[note % 12]
+  ok  : octave/tuning compose with the table (offsets add after octave*12)
+  ok  : spread drift adds after the table (unison pair {0,+40})
+  ok  : custom table applied at the hook
+  ok  : preset overrides the custom flag (D4)
+  ok  : resolvedTuningMode reports the preset
+  ok  : live part_raga=0 clears the dormant custom (D4 inverse — explicit 12-EDO)
+  ok  : clearPartTuningCustom returns to 12-EDO
+  ok  : custom-table sentinel survives storage (not clamped to +127)
+  ok  : custom-table muted class refuses notes
+  ok  : custom-table unmuted class accepts notes
+[sentinel gates]
+  ok  : muted classes produce no active voice (AcceptNote refusal)
+  ok  : in-scale classes still play under the raga
+[staging]
+  ok  : tuningDirty_ serviced before the next block's notes
+  ok  : byte-4 preset change applied via frameDirty_ push
+[engine state v7]
+  ok  : captureState produces a blob
+  ok  : v7 blob restores
+  ok  : restored modes + custom tables match (preset 5, customs 33 on parts 2/5)
+  ok  : restored preset is applied to new notes after the AT push
+  ok  : v6-view blob restores
+  ok  : v6 blob restores presets from byte 4, customs cleared (12-EDO)
+  ok  : future version strictly rejected
+.parvati tuning fields
+  ok  : custom mode serialized as 33
+  ok  : custom offsets serialized
+  ok  : preset mode serialized by id
+  ok  : applyParvatiMulti parses the tuning fields
+  ok  : round-tripped modes + custom table match
+  ok  : old-format multi (no tuning keys) still parses
+  ok  : old format loads as 12-EDO for customs, preset via params (forward-compat)
+part_raga=0 via APVTS clears custom
+  ok  : precondition: custom armed (mode 33)
+  ok  : precondition: preset 7 selected
+  ok  : part_raga=0 param write clears the custom flag (D4 inverse)
+  ok  : part_raga=7 selects preset 7
+  ok  : custom on part 2 survives a part switch (bulk sync does not clear)
+[standing bend pickup]
+  ok  : voice triggered before any wheel starts unbent
+  ok  : voice triggered after the wheel inherits the standing bend (+2 st)
+  ok  : the active pre-wheel voice was also bent by the wheel event itself
+  ok  : standing bend is per-channel (ch2 unaffected by the ch1 wheel)
+[.MUL raga byte round-trip]
+  ok  : saves .MUL with raga byte 7 on part 0
+  ok  : loads the .MUL back
+  ok  : raga byte 7 survives the .MUL round-trip
+  ok  : loaded raga resolves to preset 7
+  ok  : loaded raga is applied to new notes after the AT push
+ALL PASS

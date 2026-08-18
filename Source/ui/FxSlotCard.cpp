@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxSlotCard.h.
 
 #include "FxSlotCard.h"
-#include "FxSlotLabels.h"   // declarations for the activeParamCount/paramLabel defined below
+#include "FxSlotLabels.h"   // activeParamCount/paramLabel — defined in FxSlotLabels.cpp
 
 #include "FxSlotVisualizer.h"
 #include "ParvatiLookAndFeel.h"
@@ -157,10 +157,11 @@ private:
 class FxTypeCombo : public juce::ComboBox
 {
 public:
-    // W10 (lane-A finding 1b): onUserPick is invoked by the popup item actions
-    // for a REAL USER PICK, just before the item writes the selection. The
-    // owning FxSlotCard installs the seeding seam
-    // (seedEngagementDefaultsForType) — the APVTS listener cannot distinguish a
+    // W10 (lane-A finding 1b) + W10b (F-w10-1/-2): onUserPick is invoked by
+    // EVERY real user pick — the popup item actions AND keyboard arrow
+    // navigation — just before the selection write. The owning FxSlotCard
+    // installs the guarded seeding seam (pickTypeUserAction →
+    // seedEngagementDefaultsForType) — the APVTS listener cannot distinguish a
     // user pick from host automation / NRPN / undo replay (all fire
     // parameterChanged), so the seed must originate at the UI seams. NOT fired
     // for the attachment's external sync path.
@@ -183,12 +184,7 @@ public:
             item.itemID   = getItemId (ev);
             item.isTicked = (ev == current);
             juce::Component::SafePointer<FxTypeCombo> safe { this };
-            item.action   = [safe, ev, t] { if (safe != nullptr)
-                {
-                    if (safe->onUserPick_)
-                        safe->onUserPick_ (t);   // seed BEFORE the param write (W10)
-                    safe->setSelectedItemIndex (ev, juce::sendNotificationSync);
-                } };
+            item.action   = [safe, ev] { if (safe != nullptr) safe->pickItemIndex (ev); };
             m.addItem (std::move (item));
         };
 
@@ -225,6 +221,44 @@ public:
                                     if (safe != nullptr)
                                         safe->hidePopup();
                                 }));
+    }
+
+    // The guarded user-pick action SHARED by the popup item actions and
+    // keyboard navigation (W10b, lane F-w10-2). @p ev is the item INDEX == the
+    // FxType enum value (the combo's internal items are enum-ordered). A
+    // re-pick of the CURRENT selection is a NO-OP: the seam guard skips the
+    // seeding (which would clobber the user's knob tweaks) and JUCE's
+    // setSelectedItemIndex would early-out on the unchanged selection anyway —
+    // this mirrors stepType's `if (nxt == cur) return;`.
+    void pickItemIndex (int ev)
+    {
+        if (ev == getSelectedItemIndex())
+            return;
+        if (onUserPick_)
+            onUserPick_ (static_cast<FxType> (ev));   // guarded pick at the card seam (seed + write)
+        setSelectedItemIndex (ev, juce::sendNotificationSync);
+    }
+
+    bool keyPressed (const juce::KeyPress& key) override
+    {
+        // W10b (lane F-w10-1): the base class handles the arrow keys by nudging
+        // the selection DIRECTLY (ComboBox::keyPressed → nudgeSelectedItem — no
+        // popup, so the showPopup override never ran and onUserPick_ never
+        // fired): keyboard navigation changed the type with NO engagement
+        // seeding — a silent effect. Route keyboard changes through the same
+        // guarded pickItemIndex seam as a popup pick.
+        const int delta = (key == juce::KeyPress::upKey || key == juce::KeyPress::leftKey) ? -1
+                        : (key == juce::KeyPress::downKey || key == juce::KeyPress::rightKey) ? +1
+                        : 0;
+        if (delta != 0)
+        {
+            const int cur = getSelectedItemIndex();
+            const int nxt = juce::jlimit (0, getNumItems() - 1, cur + delta);
+            if (nxt != cur)   // at either list end: consumed, no change (stepType's guard shape)
+                pickItemIndex (nxt);
+            return true;
+        }
+        return juce::ComboBox::keyPressed (key);
     }
 
 private:
@@ -476,6 +510,17 @@ int FxSlotCard::currentTypeIndex() const
     // Mirrors FxSlotVisualizer::typeIndex().
     constexpr int kLast = static_cast<int> (FxType::Count) - 1;
     return juce::jlimit (0, kLast, juce::roundToInt (v * static_cast<float> (kLast)));
+}
+
+void FxSlotCard::simulateUserTypePickForTest (int typeIndex)
+{
+    // Test-only bridge to the combo's guarded pick seam (W10b) — the exact
+    // path a popup item action or a keyboard arrow drives. The member is the
+    // type-erased unique_ptr<juce::ComboBox>, but the concrete object is the
+    // file-local FxTypeCombo by construction (see the ctor).
+    if (typeCombo_ != nullptr)
+        static_cast<FxTypeCombo*> (typeCombo_.get())
+            ->pickItemIndex (juce::jlimit (0, static_cast<int> (FxType::Count) - 1, typeIndex));
 }
 
 void FxSlotCard::stepType (int delta)

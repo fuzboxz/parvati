@@ -16,6 +16,8 @@
 
 #include "dsp/oscillator.h"
 
+#include <algorithm>  // std::min (raw-byte wavetable index clamp)
+
 #include "dsp/constants.h"               // kAudioBlockSize
 #include "dsp/fixed_math.h"              // U8Mix, U24AddC, InterpolateSample, ...
 #include "dsp/random.h"                  // random()
@@ -456,8 +458,15 @@ void Oscillator::RenderFilteredNoise(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 void Oscillator::RenderInterpolatedWavetable(uint8_t* buffer) {
     // Which wavetable should we play?
+    // Raw-file bytes are unvalidated (bug hunt 2026-08-18, F-eng-1): shape_
+    // comes straight from a patch byte on the .MUL / host-state paths; the
+    // dispatch funnels every shape >= WAVEFORM_WAVETABLE_1 here, so a hostile
+    // byte (37..255) would offset past the 16*18-byte wav_res_wavetables.
+    // Valid wavetable shapes are WAVEFORM_WAVETABLE_1..WAVEFORM_WAVETABLE_16.
+    const uint8_t wavetableIndex = std::min (
+        static_cast<uint8_t> (shape_ - WAVEFORM_WAVETABLE_1), static_cast<uint8_t> (15));
     const uint8_t* wavetable_definition =
-        wav_res_wavetables + U8U8Mul(shape_ - WAVEFORM_WAVETABLE_1, 18);
+        wav_res_wavetables + U8U8Mul(wavetableIndex, 18);
     // Get a 8:8 value with the wave index in the first byte, and the
     // balance amount in the second byte.
     uint8_t num_steps = wavetable_definition[0];

@@ -329,6 +329,44 @@ static void testAudioRateModulation()
     }
 }
 
+// ---------------------------------------------------------------------------
+// (E) Regression: FxFrequencyShifter at its DEFAULT shift knob (0.5 => 0 Hz
+//     carrier) must render without reading past the end of the wav_sine_i/q
+//     tables. QuadratureOscillator::Render wraps phase with `if (phase <= 0)
+//     phase += 1;` — when phase lands EXACTLY on 0.0f, 0.0f+1.0f == 1.0f and
+//     the else-if never re-checks, so Interpolate(table, 1.0, 1024) read
+//     table[1025], one float PAST the 1025-entry global (ASan
+//     global-buffer-overflow; under the repo's ASan sweep this crashed
+//     BEFORE the wrap clamp and must be clean after).
+// ---------------------------------------------------------------------------
+static void testFrequencyShifterDefaultZeroHz()
+{
+    std::printf ("(E) FxFrequencyShifter default (0 Hz) render (quadrature phase-0 wrap OOB regression)\n");
+
+    constexpr int N = 128;   // >= 64 samples @48k
+    float inL[N], inR[N], outL[N], outR[N];
+    fillInput (inL, N, 48000.0);
+    for (int i = 0; i < N; ++i) inR[i] = inL[i];
+
+    // Freshly prepared chain, all five slot params at the 0.5 "noon" default
+    // (param[0] == shift == 0.5f => freqHz == 0.0f, phase_ == 0 from Init).
+    FxChain chain;
+    chain.prepare (48000.0, N);
+    chain.setTopology (FxTopology::Series);
+    chain.setSlotType (0, FxType::FrequencyShifter);
+    chain.setSlotEnabled (0, true);
+    chain.setSlotDryWet (0, 0.8f);
+    for (int k = 0; k < kNumFxSlotParams; ++k)
+        chain.setSlotParam (0, k, 0.5f);
+
+    chain.process (inL, inR, outL, outR, N);
+
+    check (allFinite (outL, N) && allFinite (outR, N),
+           "FxFrequencyShifter default (0 Hz) render: finite (quadrature phase-0 wrap OOB regression)");
+    check (allBounded (outL, N, 100.0f) && allBounded (outR, N, 100.0f),
+           "FxFrequencyShifter default (0 Hz) render: bounded (<100)");
+}
+
 int main()
 {
     std::printf ("=== FX mod-matrix @ 980 Hz verification ===\n\n");
@@ -336,6 +374,7 @@ int main()
     testVariableSubBlock();
     testDryPath();
     testAudioRateModulation();
+    testFrequencyShifterDefaultZeroHz();
 
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures == 0 ? "ALL PASS" : "FAILURES",

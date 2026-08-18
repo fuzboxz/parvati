@@ -1,0 +1,50 @@
+[1] Reference files present
+  ok  : reference 000.PRO exists
+  ok  : reference 000.MUL exists
+
+[2] PatchFile unit round-trip: .PRO (parse -> write -> parse)
+  ok  : parse reference .PRO
+  ok  : write .PRO
+  ok  : re-parse written .PRO
+  ok  : .PRO has flags equal
+  ok  : .PRO name round-trips
+  ok  : .PRO patch[112] byte-equal
+  ok  : .PRO part[84] byte-equal
+
+[3] PatchFile unit round-trip: .MUL (parse -> write -> parse)
+  ok  : parse reference .MUL
+  ok  : write .MUL
+  ok  : re-parse written .MUL
+  ok  : .MUL ok/hasMultiData equal
+  ok  : .MUL name round-trips
+  ok  : .MUL multiData[56] byte-equal
+  ok  : .MUL part 0 patch[112] byte-equal
+  ok  : .MUL part 0 part[84] byte-equal
+  ok  : .MUL part 1 patch[112] byte-equal
+  ok  : .MUL part 1 part[84] byte-equal
+  ok  : .MUL part 2 patch[112] byte-equal
+  ok  : .MUL part 2 part[84] byte-equal
+  ok  : .MUL part 3 patch[112] byte-equal
+  ok  : .MUL part 3 part[84] byte-equal
+  ok  : .MUL part 4 patch[112] byte-equal
+  ok  : .MUL part 4 part[84] byte-equal
+  ok  : .MUL part 5 patch[112] byte-equal
+  ok  : .MUL part 5 part[84] byte-equal
+
+[4] End-to-end .PRO (load -> save -> load into 2nd proc)
+  ok  : proc A loads reference .PRO
+  ok  : proc A saves .PRO
+  ok  : proc B loads saved .PRO
+     APVTS mismatches = 0
+  ok  : end-to-end .PRO: every APVTS value matches
+
+[5] End-to-end .MUL (load -> save -> load into 2nd proc)
+  ok  : proc A loads reference .MUL
+  ok  : proc A saves .MUL
+  ok  : proc B loads saved .MUL
+     per-part routing mismatches = 0
+  ok  : end-to-end .MUL: all 6 parts' channel/keyrange/alloc match
+     current-part APVTS mismatches = 0
+  ok  : end-to-end .MUL: current-part APVTS matches
+
+ROUNDTRIP TEST: ALL CHECKS PASSED (0 failures)

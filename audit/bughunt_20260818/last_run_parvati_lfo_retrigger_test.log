@@ -1,0 +1,13 @@
+phase-0 (fresh retrigger) value = 249
+
+[1] SLAVE mode retriggers LFO phase to 0
+     SLAVE retriggered=249  continued=11  fresh=249
+  ok  : SLAVE retrigger jumps back near phase-0 (|vR-fresh|<=10, was 0)
+  ok  : SLAVE without retrigger stays mid-cycle (|vC-fresh|>50, was 238)
+  ok  : retrigger changes the value vs no-retrigger (vR=249 != vC=11)
+
+[2] FREE mode does NOT retrigger (no-op)
+     FREE retriggered=11  continued=11
+  ok  : FREE retrigger is a no-op (vR == vC, 11 vs 11)
+
+LFO RETRIGGER TEST: ALL CHECKS PASSED (0 failures)

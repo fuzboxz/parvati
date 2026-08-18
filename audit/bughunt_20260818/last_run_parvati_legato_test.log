@@ -1,0 +1,26 @@
+[1] MONO note 60 held -> audible
+     peak = 1.47254 (expect > 0.010)
+  ok  : note 60 is audible
+
+[2] MONO overlap: note 64 while 60 held -> audible (legato re-trigger)
+     peak = 1.26752 (expect > 0.010)
+  ok  : overlap (legato) is audible -- not silenced by startVoice's Kill
+     active Part-0 voices after overlap = 6 (expect >= 1)
+  ok  : a Part-0 voice stays active across the legato re-trigger
+
+[2b] legato retrigger continuity (signal survives, bounded step)
+     settled slew = 0.1257, retrigger slew = 0.7118 (bound 0.85; a full resampler restart of all voices would slew ~1.4)
+  ok  : legato retrigger keeps a bounded step (no signal collapse)
+     mean |x| through the retrigger = 0.4176 (expect >= 0.05)
+  ok  : the note keeps sounding through the legato retrigger (no dropout)
+
+[3] release 64 -> slide-back to 60 (legato re-trigger on release)
+     peak = 1.22309 (expect > 0.010)
+  ok  : slide-back to 60 is audible
+  ok  : after release 64: MONO holds 60 again
+
+[4] release 60 -> silence
+     tail peak = 0.00000 (expect ~ 0)
+  ok  : final release decays to silence
+
+LEGATO TEST: ALL CHECKS PASSED (0 failures)

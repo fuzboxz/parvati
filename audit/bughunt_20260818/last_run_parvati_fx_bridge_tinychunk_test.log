@@ -1,0 +1,7 @@
+=== HostRateBridge tiny-chunk (m==0) dropout regression ===
+  1-sample blocks: zero-output samples=0 (must be 0); worstDelta=0.0135 (must be < 0.05)
+  ok  : 1-sample blocks: zero-output samples=0 (must be 0); worstDelta=0.0135 (must be < 0.05)
+  drift pattern {49,49,49,1}: zeros=0 (must be 0); worstDelta=0.0141 (must be < 0.02)
+  ok  : drift pattern {49,49,49,1}: zeros=0 (must be 0); worstDelta=0.0141 (must be < 0.02)
+
+All HostRateBridge tiny-chunk checks PASSED.

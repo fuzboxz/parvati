@@ -137,6 +137,11 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
 
 MulExportDialog::~MulExportDialog()
 {
+    // F-ui-2: drop the OWNED LookAndFeel reference BEFORE the unique_ptr
+    // member is destroyed (a lingering raw L&F pointer would dangle into the
+    // member-destruction window — the TuningEditor dtor pattern).
+    if (ownedLnf_ != nullptr)
+        setLookAndFeel (nullptr);
     previewViewport_.setViewedComponent (nullptr, false);
 }
 
@@ -246,12 +251,21 @@ void MulExportDialog::launch (juce::Component* parent,
 {
     auto* content = new MulExportDialog (setup, partNames, std::move (onDone), customTuningParts);
 
-    // Theme: inherit the launching editor's LookAndFeel so the dialog matches
-    // the active Parvati theme (the DialogWindow is its own desktop window
-    // and would otherwise fall back to the default JUCE look). The parent
-    // outlives the modal dialog; null parent (tests) keeps the default look.
+    // Theme: the dialog OWNS a ParvatiLookAndFeel copied from the launching
+    // editor's active theme (F-ui-2, bug hunt 2026-08-18). The DialogWindow is
+    // its own desktop window and CAN OUTLIVE the editor (host closes the
+    // plugin window mid-dialog) — borrowing &parent->getLookAndFeel() painted
+    // through freed memory in that window. The owned copy keeps the themed
+    // look while staying editor-independent (TuningEditor's pattern; the
+    // builtin theme structs are immortal function-local statics). Null parent
+    // (tests) keeps the default look.
     if (parent != nullptr)
-        content->setLookAndFeel (&parent->getLookAndFeel());
+        if (auto* plnf = dynamic_cast<ParvatiLookAndFeel*> (&parent->getLookAndFeel()))
+        {
+            content->ownedLnf_ = std::make_unique<ParvatiLookAndFeel>();
+            content->ownedLnf_->setTheme (*plnf->getTheme());
+            content->setLookAndFeel (content->ownedLnf_.get());
+        }
 
     // Height caps to the usable screen area (an AUv3 pane can be shorter than
     // the natural dialog height; the preview viewport absorbs the shortfall).

@@ -1,0 +1,62 @@
+DRUM KIT TEST
+  ok  : Drum Kit (GM).parvati loads
+
+[a] kit setup
+  ok  : loaded template re-infers as the built-in Drum Kit arrangement
+  ok  : Kick: part 0 named
+  ok  : Kick: 1 voice slot
+  ok  : Kick: single-note keyzone 36
+  ok  : Kick: one voicecard, Omni channel
+  ok  : Kick: MONO polyphony
+  ok  : Snare: part 1 named
+  ok  : Snare: 1 voice slot
+  ok  : Snare: single-note keyzone 38
+  ok  : Snare: one voicecard, Omni channel
+  ok  : Snare: MONO polyphony
+  ok  : Clap: part 2 named
+  ok  : Clap: 1 voice slot
+  ok  : Clap: single-note keyzone 39
+  ok  : Clap: one voicecard, Omni channel
+  ok  : Clap: MONO polyphony
+  ok  : Closed Hat: part 3 named
+  ok  : Closed Hat: 1 voice slot
+  ok  : Closed Hat: single-note keyzone 42
+  ok  : Closed Hat: one voicecard, Omni channel
+  ok  : Closed Hat: MONO polyphony
+  ok  : Open Hat: part 4 named
+  ok  : Open Hat: 1 voice slot
+  ok  : Open Hat: single-note keyzone 46
+  ok  : Open Hat: one voicecard, Omni channel
+  ok  : Open Hat: MONO polyphony
+  ok  : Tom: part 5 named
+  ok  : Tom: 1 voice slot
+  ok  : Tom: single-note keyzone 45
+  ok  : Tom: one voicecard, Omni channel
+  ok  : Tom: MONO polyphony
+  ok  : slots applied (1 pool voice per part)
+
+[b] GM note routing
+  ok  : note is audible
+  ok  : note 36 triggers only part 0 (Kick)
+  ok  : note is audible
+  ok  : note 38 triggers only part 1 (Snare)
+  ok  : note is audible
+  ok  : note 39 triggers only part 2 (Clap)
+  ok  : note is audible
+  ok  : note 42 triggers only part 3 (Closed Hat)
+  ok  : note is audible
+  ok  : note 46 triggers only part 4 (Open Hat)
+  ok  : note is audible
+  ok  : note 45 triggers only part 5 (Tom)
+  ok  : kit silent after all releases (one-shot decays)
+
+[c] concurrent drums
+  ok  : simultaneous kit notes are audible
+  ok  : 4 drums sounding concurrently (one voice each)
+
+[d] repeat retriggering
+  ok  : open-hat retriggers are audible
+  ok  : same-block repeats retrigger the single voice (never stack)
+  ok  : the single voice frees after the one-shot decays (no stuck voice)
+
+DRUM KIT TEST: ALL CHECKS PASSED (0 failures)

@@ -1,0 +1,173 @@
+=== Parvati load invariants (edge corpus) ===
+[ 1] arp_mode:0 (valid Off)
+  ok  : arp_mode:0 (valid Off): loads
+  ok  : arp_mode:0 (valid Off): post-load invariants hold (0 violations)
+  ok  : arp_mode:0 (valid Off): 32 blocks render finite (10 s watchdog)
+  ok  : arp_mode:0 (valid Off): live arp/seq == staged config after service
+[ 2] arp_mode:2 (valid Sequencer)
+  ok  : arp_mode:2 (valid Sequencer): loads
+  ok  : arp_mode:2 (valid Sequencer): post-load invariants hold (0 violations)
+  ok  : arp_mode:2 (valid Sequencer): 32 blocks render finite (10 s watchdog)
+  ok  : arp_mode:2 (valid Sequencer): live arp/seq == staged config after service
+[ 3] arp_mode:3 (clamps to 2)
+  ok  : arp_mode:3 (clamps to 2): loads
+  ok  : arp_mode:3 (clamps to 2): post-load invariants hold (0 violations)
+  ok  : arp_mode:3 (clamps to 2): 32 blocks render finite (10 s watchdog)
+  ok  : arp_mode:3 (clamps to 2): live arp/seq == staged config after service
+[ 4] arp_mode:5 (clamps to 2)
+  ok  : arp_mode:5 (clamps to 2): loads
+  ok  : arp_mode:5 (clamps to 2): post-load invariants hold (0 violations)
+  ok  : arp_mode:5 (clamps to 2): 32 blocks render finite (10 s watchdog)
+  ok  : arp_mode:5 (clamps to 2): live arp/seq == staged config after service
+[ 5] arp_mode:255 (clamps to 2)
+  ok  : arp_mode:255 (clamps to 2): loads
+  ok  : arp_mode:255 (clamps to 2): post-load invariants hold (0 violations)
+  ok  : arp_mode:255 (clamps to 2): 32 blocks render finite (10 s watchdog)
+  ok  : arp_mode:255 (clamps to 2): live arp/seq == staged config after service
+[ 6] arp_octave:0 (clamps to 1)
+  ok  : arp_octave:0 (clamps to 1): loads
+  ok  : arp_octave:0 (clamps to 1): post-load invariants hold (0 violations)
+  ok  : arp_octave:0 (clamps to 1): 32 blocks render finite (10 s watchdog)
+  ok  : arp_octave:0 (clamps to 1): live arp/seq == staged config after service
+[ 7] arp_octave:5 (clamps to 4)
+  ok  : arp_octave:5 (clamps to 4): loads
+  ok  : arp_octave:5 (clamps to 4): post-load invariants hold (0 violations)
+  ok  : arp_octave:5 (clamps to 4): 32 blocks render finite (10 s watchdog)
+  ok  : arp_octave:5 (clamps to 4): live arp/seq == staged config after service
+[ 8] arp_octave:255 (clamps to 4)
+  ok  : arp_octave:255 (clamps to 4): loads
+  ok  : arp_octave:255 (clamps to 4): post-load invariants hold (0 violations)
+  ok  : arp_octave:255 (clamps to 4): 32 blocks render finite (10 s watchdog)
+  ok  : arp_octave:255 (clamps to 4): live arp/seq == staged config after service
+[ 9] arp_direction:6 (clamps to 5)
+  ok  : arp_direction:6 (clamps to 5): loads
+  ok  : arp_direction:6 (clamps to 5): post-load invariants hold (0 violations)
+  ok  : arp_direction:6 (clamps to 5): 32 blocks render finite (10 s watchdog)
+  ok  : arp_direction:6 (clamps to 5): live arp/seq == staged config after service
+[10] arp_pattern:200 (clamps to 21)
+  ok  : arp_pattern:200 (clamps to 21): loads
+  ok  : arp_pattern:200 (clamps to 21): post-load invariants hold (0 violations)
+  ok  : arp_pattern:200 (clamps to 21): 32 blocks render finite (10 s watchdog)
+  ok  : arp_pattern:200 (clamps to 21): live arp/seq == staged config after service
+[11] arp_resolution:250 (clamps to 14)
+  ok  : arp_resolution:250 (clamps to 14): loads
+  ok  : arp_resolution:250 (clamps to 14): post-load invariants hold (0 violations)
+  ok  : arp_resolution:250 (clamps to 14): 32 blocks render finite (10 s watchdog)
+  ok  : arp_resolution:250 (clamps to 14): live arp/seq == staged config after service
+[12] seq_length_1:0 (clamps to 1)
+  ok  : seq_length_1:0 (clamps to 1): loads
+  ok  : seq_length_1:0 (clamps to 1): post-load invariants hold (0 violations)
+  ok  : seq_length_1:0 (clamps to 1): 32 blocks render finite (10 s watchdog)
+  ok  : seq_length_1:0 (clamps to 1): live arp/seq == staged config after service
+[13] seq_length_2:17 (clamps to 16)
+  ok  : seq_length_2:17 (clamps to 16): loads
+  ok  : seq_length_2:17 (clamps to 16): post-load invariants hold (0 violations)
+  ok  : seq_length_2:17 (clamps to 16): 32 blocks render finite (10 s watchdog)
+  ok  : seq_length_2:17 (clamps to 16): live arp/seq == staged config after service
+[14] channel:0 (Omni valid)
+  ok  : channel:0 (Omni valid): loads
+  ok  : channel:0 (Omni valid): post-load invariants hold (0 violations)
+  ok  : channel:0 (Omni valid): 32 blocks render finite (10 s watchdog)
+  ok  : channel:0 (Omni valid): live arp/seq == staged config after service
+[15] channel:16 (valid)
+  ok  : channel:16 (valid): loads
+  ok  : channel:16 (valid): post-load invariants hold (0 violations)
+  ok  : channel:16 (valid): 32 blocks render finite (10 s watchdog)
+  ok  : channel:16 (valid): live arp/seq == staged config after service
+[16] channel:17 (clamps to 16)
+  ok  : channel:17 (clamps to 16): loads
+  ok  : channel:17 (clamps to 16): post-load invariants hold (0 violations)
+  ok  : channel:17 (clamps to 16): 32 blocks render finite (10 s watchdog)
+  ok  : channel:17 (clamps to 16): live arp/seq == staged config after service
+[17] channel:255 (clamps to 16)
+  ok  : channel:255 (clamps to 16): loads
+  ok  : channel:255 (clamps to 16): post-load invariants hold (0 violations)
+  ok  : channel:255 (clamps to 16): 32 blocks render finite (10 s watchdog)
+  ok  : channel:255 (clamps to 16): live arp/seq == staged config after service
+[18] keyzone_low:200 (clamps to 127)
+  ok  : keyzone_low:200 (clamps to 127): loads
+  ok  : keyzone_low:200 (clamps to 127): post-load invariants hold (0 violations)
+  ok  : keyzone_low:200 (clamps to 127): 32 blocks render finite (10 s watchdog)
+  ok  : keyzone_low:200 (clamps to 127): live arp/seq == staged config after service
+[19] keyzone_high:300 (clamps to 127)
+  ok  : keyzone_high:300 (clamps to 127): loads
+  ok  : keyzone_high:300 (clamps to 127): post-load invariants hold (0 violations)
+  ok  : keyzone_high:300 (clamps to 127): 32 blocks render finite (10 s watchdog)
+  ok  : keyzone_high:300 (clamps to 127): live arp/seq == staged config after service
+[20] keyzone 90/40 inverted (wrap zone PRESERVED)
+  ok  : keyzone 90/40 inverted (wrap zone PRESERVED): loads
+  ok  : keyzone 90/40 inverted (wrap zone PRESERVED): post-load invariants hold (0 violations)
+  ok  : keyzone 90/40 inverted (wrap zone PRESERVED): 32 blocks render finite (10 s watchdog)
+  ok  : keyzone 90/40 inverted (wrap zone PRESERVED): live arp/seq == staged config after service
+[21] voice_slots:0 (disables part)
+  ok  : voice_slots:0 (disables part): loads
+  ok  : voice_slots:0 (disables part): post-load invariants hold (0 violations)
+  ok  : voice_slots:0 (disables part): 32 blocks render finite (10 s watchdog)
+  ok  : voice_slots:0 (disables part): live arp/seq == staged config after service
+[22] voice_slots:1 (valid)
+  ok  : voice_slots:1 (valid): loads
+  ok  : voice_slots:1 (valid): post-load invariants hold (0 violations)
+  ok  : voice_slots:1 (valid): 32 blocks render finite (10 s watchdog)
+  ok  : voice_slots:1 (valid): live arp/seq == staged config after service
+[23] voice_slots:16 (valid)
+  ok  : voice_slots:16 (valid): loads
+  ok  : voice_slots:16 (valid): post-load invariants hold (0 violations)
+  ok  : voice_slots:16 (valid): 32 blocks render finite (10 s watchdog)
+  ok  : voice_slots:16 (valid): live arp/seq == staged config after service
+[24] voice_slots:17 (clamps to 16)
+  ok  : voice_slots:17 (clamps to 16): loads
+  ok  : voice_slots:17 (clamps to 16): post-load invariants hold (0 violations)
+  ok  : voice_slots:17 (clamps to 16): 32 blocks render finite (10 s watchdog)
+  ok  : voice_slots:17 (clamps to 16): live arp/seq == staged config after service
+[25] voice_slots:99 (clamps to 16)
+  ok  : voice_slots:99 (clamps to 16): loads
+  ok  : voice_slots:99 (clamps to 16): post-load invariants hold (0 violations)
+  ok  : voice_slots:99 (clamps to 16): 32 blocks render finite (10 s watchdog)
+  ok  : voice_slots:99 (clamps to 16): live arp/seq == staged config after service
+[26] part_spread:255 (clamps to 40)
+  ok  : part_spread:255 (clamps to 40): loads
+  ok  : part_spread:255 (clamps to 40): post-load invariants hold (0 violations)
+  ok  : part_spread:255 (clamps to 40): 32 blocks render finite (10 s watchdog)
+  ok  : part_spread:255 (clamps to 40): live arp/seq == staged config after service
+[27] part_polyphony:6 (clamps to 4)
+  ok  : part_polyphony:6 (clamps to 4): loads
+  ok  : part_polyphony:6 (clamps to 4): post-load invariants hold (0 violations)
+  ok  : part_polyphony:6 (clamps to 4): 32 blocks render finite (10 s watchdog)
+  ok  : part_polyphony:6 (clamps to 4): live arp/seq == staged config after service
+[28] part_raga:33 (clamps to 32)
+  ok  : part_raga:33 (clamps to 32): loads
+  ok  : part_raga:33 (clamps to 32): post-load invariants hold (0 violations)
+  ok  : part_raga:33 (clamps to 32): 32 blocks render finite (10 s watchdog)
+  ok  : part_raga:33 (clamps to 32): live arp/seq == staged config after service
+[29] tuning_mode:33 + offsets (valid custom)
+  ok  : tuning_mode:33 + offsets (valid custom): loads
+  ok  : tuning_mode:33 + offsets (valid custom): post-load invariants hold (0 violations)
+  ok  : tuning_mode:33 + offsets (valid custom): 32 blocks render finite (10 s watchdog)
+  ok  : tuning_mode:33 + offsets (valid custom): live arp/seq == staged config after service
+[30] tuning_mode:34 (clamps to 33; no offsets -> untouched)
+  ok  : tuning_mode:34 (clamps to 33; no offsets -> untouched): loads
+  ok  : tuning_mode:34 (clamps to 33; no offsets -> untouched): post-load invariants hold (0 violations)
+  ok  : tuning_mode:34 (clamps to 33; no offsets -> untouched): 32 blocks render finite (10 s watchdog)
+  ok  : tuning_mode:34 (clamps to 33; no offsets -> untouched): live arp/seq == staged config after service
+[31] name 40 chars (sanitizes to <=16)
+  ok  : name 40 chars (sanitizes to <=16): loads
+  ok  : name 40 chars (sanitizes to <=16): post-load invariants hold (0 violations)
+  ok  : name 40 chars (sanitizes to <=16): 32 blocks render finite (10 s watchdog)
+  ok  : name 40 chars (sanitizes to <=16): live arp/seq == staged config after service
+[32] name with raw nested quotes
+  ok  : name with raw nested quotes: loads
+  ok  : name with raw nested quotes: post-load invariants hold (0 violations)
+  ok  : name with raw nested quotes: 32 blocks render finite (10 s watchdog)
+  ok  : name with raw nested quotes: live arp/seq == staged config after service
+  ok  : post: arp_mode:5 document loads
+  ok  : arp_mode:5 stages as 2 (Sequencer) [got 2] — the authoring-time finding stays fixed
+
+[canary] hand-broken engine must trip the checker (expected FAIL lines)
+      [violation] CANARY / channel part 0: 200 (want 0..16)
+      [violation] CANARY / keyzone-low part 0: 130 (want 0..127)
+      [violation] CANARY / arp-mode part 0: 5 (want 0..2)
+      [violation] CANARY / arp-octave part 0: 0 (want 1..4)
+      [violation] CANARY / seq-length part 0: 0 (want 1..16)
+  ok  : canary: hand-broken state trips >= 5 categories [got 5]
+
+LOAD-INVARIANTS TEST: ALL CHECKS PASSED (0 failures)

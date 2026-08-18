@@ -1,0 +1,45 @@
+=== synth param readout formatter ===
+
+(oscillators)
+  ok  : osc1_range 12 -> "+12st"
+  ok  : osc1_range -3 -> "-3st"
+  ok  : osc1_range 0 -> "0st"
+  ok  : osc1_detune 64 -> "+50ct"
+  ok  : osc1_detune -64 -> "-50ct"
+  ok  : osc1_param 64 -> "50%"
+(mixer)
+  ok  : mix_balance 32 (centre) -> "Ctr"
+  ok  : mix_balance 0 (full L, % elided) -> "L100"
+  ok  : mix_balance 63 (full R, symmetric, % elided) -> "R100"
+  ok  : mix_crush 0 -> "Off"
+  ok  : mix_fuzz 63 -> "100%"
+(filter)
+  ok  : filter1_cutoff 64 (finite Hz) -> "573Hz"
+  ok  : filter1_cutoff 0 (min Hz) -> "20Hz"
+  ok  : filter1_cutoff 127 (top -> kHz NkN notation: 15.6kHz -> 15k6) -> "15k6"
+  ok  : filter1_reso 63 -> "100%"
+(envelopes)
+  ok  : env1_attack 40 (finite ms) -> "173ms"
+  ok  : env1_sustain 95 -> "75%"
+(lfo rates)
+  ok  : env1_lfo_rate 10 (synced) -> "1/16"
+  ok  : env1_lfo_rate 39 (free) -> "0.24Hz"
+  ok  : voice_lfo_rate 72 (free) -> "4Hz"
+(mod / seq / arp / part)
+  ok  : mod1_amount 32 -> "+51%"
+  ok  : mod1_amount -32 -> "-51%"
+  ok  : seqnote_step0 0x80|60 (gate+note) -> "C4"
+  ok  : seqnote_step0 60 (gate off -> em dash) -> "—"
+  ok  : arp_octave 2 -> "2oct"
+  ok  : part_octave -1 -> "-1oct"
+  ok  : part_tuning 64 (1/128-st units -> 50 ct) -> "+50ct"
+  ok  : part_tuning 127 (max -> 99 ct) -> "+99ct"
+  ok  : part_tuning -127 (min -> -99 ct) -> "-99ct"
+  ok  : part_raga 0 (off) -> "12-EDO"
+  ok  : part_raga 1 (just) -> "Just"
+  ok  : part_raga 2 (pythagorean) -> "Pythagorean"
+  ok  : seq_length_1 16 -> "16"
+(fallback)
+  ok  : unknown id -> raw int -> "42"
+
+ALL PASS (0 failures)

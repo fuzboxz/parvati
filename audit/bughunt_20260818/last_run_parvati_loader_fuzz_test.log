@@ -1,0 +1,35 @@
+=== Parvati Loader Fuzzer + Rollback Checker (T1) ===
+
+[C] canaries
+  ok  : canary: snapshot is deterministic (reseed -> same bytes)
+  ok  : canary: snapshot has payload to alter
+      [diff] first differing byte at offset 6261 (0x6d vs 0x6c)
+  ok  : canary: comparator rejects a 1-byte diff
+  ok  : canary: watchdog times out on a non-terminating worker
+
+[F] corpus via real save paths
+  ok  : corpus: .PRO loads
+  ok  : corpus: .MUL(3+3) loads
+  ok  : corpus: .MUL(2+2+2) loads
+  ok  : corpus: rich .parvati multi loads
+  ok  : corpus: .parvati patch loads
+
+[1] truncation sweep
+
+[2] bit-flip sweep (routing / arp / part-param bytes)
+
+[3] structural .parvati edits
+
+[4] truncated engine-state blobs
+  ok  : state restore is idempotent (2nd restore == 1st, canonical)
+  ok  : blob trunc@623/12471
+  ok  : blob trunc@2494/12471
+  ok  : blob trunc@4364/12471
+  ok  : blob trunc@6235/12471
+  ok  : blob trunc@8106/12471
+  ok  : blob trunc@9976/12471
+  ok  : blob trunc@11473/12471
+  ok  : blob trunc@1 byte
+
+297 mutation cases, 0 failures
+LOADER FUZZ TEST: ALL CHECKS PASSED

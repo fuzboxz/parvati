@@ -1,0 +1,17 @@
+=== FX mod-matrix voice-source handling ===
+
+(1a) AC centering (PITCH_BEND at rest = neutral)
+  ok  : rest effParam=0.2520 (AC: ~base=0.2520; OLD DC would be ~0.7539)
+(1b) AC bipolar (up-bend -> 1, down-bend -> 0)
+  ok  : up-bend effParam max=1.0000 (expect > 0.92)
+  ok  : down-bend effParam min=0.0000 (expect < 0.08; OLD DC ~ 0.26)
+(2a) representative voice tracks the newest note (VELOCITY)
+  ok  : tracked voice switched on the newer note (v1=0, v2=1)
+  ok  : note1 effParam=0.7843 (~midi-vel 100 -> 0.7874)
+  ok  : note2 effParam=0.2353 (~midi-vel 30 -> 0.2362) — FX followed the newest note
+(2b) crossfade arms on voice change, then settles
+  ok  : after note1: crossfade settled (phase=1.000 == 1)
+  ok  : 1 block after the switch: crossfade ARMED (phase=0.133 in (0,1))
+  ok  : after ~5 ms: crossfade settled (phase=1.000 == 1)
+
+ALL PASS (0 failures)

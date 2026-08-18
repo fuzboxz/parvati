@@ -344,9 +344,17 @@ private:
     // published, the AT may install at any moment). The MT takes an unconsumed
     // Staged entry back to coalesce rapid changes; the AT installs via
     // CAS Staged->Empty and then owns pendingOs_ exclusively.
-    static constexpr int kOsStageEmpty   = 0;
-    static constexpr int kOsStageFilling = 1;
-    static constexpr int kOsStageStaged  = 2;
+    static constexpr int kOsStageEmpty     = 0;
+    static constexpr int kOsStageFilling   = 1;
+    static constexpr int kOsStageStaged    = 2;
+    // Bug hunt 2026-08-18 (TSan, same class as FxChain F-eng-3): the AT's
+    // consumeStagedOversampling used to CAS Staged->EMPTY before moving
+    // pendingOs_ out — the MT could then acquire and WRITE pendingOs_ while
+    // the AT was still between its CAS and its move (a verified data race /
+    // UAF window). Consuming marks the AT's exclusive ownership window; the
+    // MT's acquireOsStaging spins (neither of its CASes match Consuming) until
+    // the final Empty store below the move.
+    static constexpr int kOsStageConsuming = 3;
     std::unique_ptr<juce::dsp::Oversampling<float>> pendingOs_;
     std::atomic<int> osStageState_ { kOsStageEmpty };
 

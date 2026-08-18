@@ -1,0 +1,33 @@
+=== Full-engine Clouds-FX continuity regression ===
+Renders a sustained note through processBlock with each Clouds FX (no mod);
+asserts the main bus is click-free (worst impulse < 0.060).
+
+-- @48.0k, host buffer 128 --
+  ok  : Diffuser     @48k buf=128: worst impulse=0.0000 (must be < 0.060)
+  ok  : PitchShifter @48k buf=128: worst impulse=0.0186 (must be < 0.060)
+  ok  : Reverb       @48k buf=128: worst impulse=0.0000 (must be < 0.060)
+  ok  : LoopingDelay @48k buf=128: worst impulse=0.0000 (must be < 0.060)
+  ok  : WSOLA        @48k buf=128: worst impulse=0.0000 (must be < 0.060)
+  ok  : Spectral     @48k buf=128: worst impulse=0.0000 (must be < 0.060)
+-- @48.0k, host buffer 256 --
+  ok  : Diffuser     @48k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : PitchShifter @48k buf=256: worst impulse=0.0170 (must be < 0.060)
+  ok  : Reverb       @48k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : LoopingDelay @48k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : WSOLA        @48k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : Spectral     @48k buf=256: worst impulse=0.0000 (must be < 0.060)
+-- @44.1k, host buffer 256 --
+  ok  : Diffuser     @44k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : PitchShifter @44k buf=256: worst impulse=0.0217 (must be < 0.060)
+  ok  : Reverb       @44k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : LoopingDelay @44k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : WSOLA        @44k buf=256: worst impulse=0.0000 (must be < 0.060)
+  ok  : Spectral     @44k buf=256: worst impulse=0.0000 (must be < 0.060)
+
+-- Direct WSOLA startup-splice regression --
+  ok  : WSOLA startup: factory returns non-null
+  ok  : WSOLA startup: channel symmetry |L-R| <= 0.1 (L=0.2537 R=0.2504 diff=0.0032)
+  ok  : WSOLA startup: whole-run max jump <= 0.6 absolute (L=0.2537 R=0.2504)
+  ok  : WSOLA startup: post-startup jump <= 5x slope (L=0.0000 R=0.0000 vs 0.0720)
+
+Full-engine Clouds-FX continuity PASSED.

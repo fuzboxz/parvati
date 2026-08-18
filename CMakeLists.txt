@@ -1055,6 +1055,22 @@ target_link_libraries(parvati_modbar_click_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Audio-thread parameter delivery regression (bug hunt 2026-08-18, F-ui-1):
+# APVTS listeners fired on a non-message thread (host automation / the NRPN
+# map inside processBlock) used to mutate GUI state from ParamControl /
+# NoteStepControl listeners. Both now defer via AsyncUpdater. This test races
+# off-thread setValueNotifyingHost writes against renders with a live editor.
+# Built by default. Run: ./build/parvati_param_thread_test
+add_executable(parvati_param_thread_test
+    tests/param_thread_test.cpp
+)
+target_include_directories(parvati_param_thread_test PRIVATE Source)
+target_compile_features(parvati_param_thread_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_param_thread_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Layout overlap regression gate (R3). Sweeps compact editor sizes across all
 # three top-level pages and asserts no interactive siblings overlap and nothing
 # escapes its parent outside scrollable viewports — the systematic gate for

@@ -222,6 +222,18 @@ KbmFile parseKbm (const juce::String& text)
     if (! nextToken ("size (S)", t)) return f;
     if (! isDigits (t)) { f.error = "kbm: size (S) is not a non-negative integer: \"" + t + "\""; return f; }
     f.s = t.getIntValue();
+    // Hostile-input gate (bug hunt 2026-08-18, F-static-3): S is used for
+    // keys.reserve() below, so a crafted S (e.g. 999999999) would try to
+    // reserve gigabytes and throw bad_alloc (an uncaught host crash). Cap the
+    // UPPER bound at parse time, mirroring parseScl's tone-count gate. S = 0
+    // deliberately flows on: reserve(0) is free, and the specific
+    // "S = 0 (linear map) is unsupported" diagnostic in importScala is the
+    // better error for that semantic case (pinned by the existing test).
+    if (f.s < 0 || f.s > 1024)
+    {
+        f.error = "kbm: size (S) out of range (1..1024): \"" + t + "\"";
+        return f;
+    }
 
     if (! nextToken ("first note", t)) return f;
     if (! isDigits (t)) { f.error = "kbm: first note is not an integer: \"" + t + "\""; return f; }

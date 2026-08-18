@@ -1,0 +1,31 @@
+=== Parvati Multitimbral (6 Parts) ===
+[1] Each Part holds its own patch (Part 0 = SAW, Part 1 = SQUARE)
+     Part0 osc1 byte = 1 (expect 1 SAW), Part1 osc1 byte = 2 (expect 2 SQUARE)
+  ok  : Part 0 patch is SAW (byte 1)
+  ok  : Part 1 patch is SQUARE (byte 2)
+  ok  : Parts 0 and 1 hold DISTINCT patches
+
+[2] MIDI channel routing: ch1 -> Part0, ch2 -> Part1
+     ch1->voice 0 (Part0), ch2->voice 3 (Part1)
+  ok  : channel-1 note triggers a Part 0 voice
+  ok  : channel-2 note triggers a Part 1 voice
+
+[3] Channel-1 notes never steal a Part 1 voice
+     after 5 channel-1 notes: Part1 voices active = 0 (expect 0)
+  ok  : channel-1 notes do NOT steal Part 1 voices
+  ok  : channel-1 notes DID trigger Part 0 voices
+
+[4] Both Parts produce audible audio simultaneously
+     Part0 (ch1 SAW) peak = 0.2634,  Part1 (ch2 SQUARE) peak = 0.3892
+  ok  : Part 0 (channel 1) renders audible audio
+  ok  : Part 1 (channel 2) renders audible audio
+
+[5] Derived voicecard masks (contiguous share of the slots)
+     Part0 alloc = 0x0f (expect 0x0f), Part1 alloc = 0x10 (expect 0x10)
+  ok  : derived masks are disjoint (a card on <=1 Part)
+  ok  : derived: Part 0 owns vc0..3 (its 4 slots share)
+  ok  : derived: Part 1 owns vc4 (its 1 slot share)
+  ok  : rebuild: Part 0 owns 4 voices on vc0..3
+  ok  : rebuild: Part 1 owns 1 voice on vc4
+
+MULTITIMBRAL TEST: ALL CHECKS PASSED (0 failures)

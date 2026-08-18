@@ -1,0 +1,17 @@
+[1] 2 parts x (1 card, 16 slots): only the played part's FX gets signal
+  ok  : ch2 -> Part 1: played part FX audible (peak 0.3278)
+  ok  : ch2 -> Part 1: other part FX exactly silent (peak 0.00e+00)
+  ok  : ch1 -> Part 0: played part FX audible (peak 0.3278)
+  ok  : ch1 -> Part 0: other part FX exactly silent (peak 0.00e+00)
+
+[2] factory 0x15/0x2a bitmasks: only the played part's FX gets signal
+  ok  : ch1 -> Part 0: played part FX audible (peak 0.3278)
+  ok  : ch1 -> Part 0: other part FX exactly silent (peak 0.00e+00)
+  ok  : ch2 -> Part 1: played part FX audible (peak 0.3278)
+  ok  : ch2 -> Part 1: other part FX exactly silent (peak 0.00e+00)
+
+[3] default layout: dry FX output == sum of all 6 card buffers
+  ok  : safety knee is exercised (max deviation from raw sum > 1e-5)
+  ok  : dry FX output == knee(owned-card (all 6) sum), sample-exact
+
+PART-FX-ROUTING TEST: ALL CHECKS PASSED (0 failures)

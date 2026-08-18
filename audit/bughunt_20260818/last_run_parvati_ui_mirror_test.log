@@ -1,0 +1,36 @@
+=== Parvati UI Mirror Consistency (T4) ===
+  ok  : editor constructs (ParvatiEditor)
+  ok  : PatchPage found in the editor component tree
+  ok  : initial state mirrors the engine [clean]
+
+[0] canary: comparator detects staleness, poll seam heals
+  ok  : canary A: stale Voices combo reported [part 3 Voices combo shows 0, engine has 7]
+  ok  : canary A healed: poll seam re-syncs the Voices combo
+  ok  : canary B: stale name label reported [part 5 name label shows "Part 5", engine name is "CanaryName1"]
+  ok  : canary B healed: poll seam re-syncs the name label
+
+[1] apvts writes: part_select + part_polyphony + part_raga (poll seam)
+  ok  : apvts poly/raga write re-synced by the poll seam [clean]
+  ok  : apvts poly flip re-infers Custom (arrangement mirror moved)
+  ok  : engine part 3 byte 15 is UNISON_2X
+  ok  : apvts write re-synced by the reveal seam [clean]
+
+[2] engine-direct writes: slots/channel/zone/name (both seams)
+  ok  : hidden-page engine batch re-synced by the reveal seam [clean]
+  ok  : disabled part 2 shows 0 after the reveal refresh
+  ok  : visible-page engine batch re-synced by the poll seam [clean]
+
+[3] processor-level loads: templates + factory .PRO
+  ok  : Poly.parvati load mirrors (poll seam) [clean]
+  ok  : Poly.parvati re-infers the Poly arrangement
+  ok  : Drum Kit (GM) load mirrors (reveal seam) [clean]
+  ok  : factory .PRO load mirrors (poll seam) [clean]
+
+[4] host state recall with a live editor
+  ok  : state A recall mirrors (reveal seam) [clean]
+  ok  : state A recall restored the custom slots + name (engine side)
+  ok  : state A recall re-infers Custom
+  ok  : state B recall mirrors (poll seam) [clean]
+  ok  : layout detector still finds exactly 6 part rows
+
+UI MIRROR TEST: ALL CHECKS PASSED (0 failures)

@@ -514,8 +514,13 @@ int main (int argc, char** argv)
         }
         running.store (false, std::memory_order_relaxed);
         audio.join();
-        // Final drain: one timer tick past the last push.
-        pumpDeferredTimerMs (25);
+        // Final drain: BOUNDED CONVERGENCE, not a single pump (bug hunt
+        // 2026-08-18): a one-shot pumpDeferredTimerMs raced JUCE's timer-
+        // thread bookkeeping ~30% of runs (the deadline update vs the
+        // synchronous delivery), leaving entries pending. The semantic pinned
+        // is "the ring DOES drain" — pump until it has, then assert.
+        for (int i = 0; i < 250 && proc.getPendingDeferredCount() > 0; ++i)
+            pumpDeferredTimerMs (2);
 
         check (proc.getDroppedDeferredCount() == 0, "no deferred arp/seq writes dropped (ring never overflowed)");
         check (proc.getPendingDeferredCount() == 0, "deferred ring fully drained");
@@ -545,7 +550,10 @@ int main (int argc, char** argv)
             setter.join();
             check (proc.getEngine().getCurrentPart() == 0,
                 "deferred part_select not applied before the timer fires");
-            pumpDeferredTimerMs (25);
+            // Bounded convergence (same fix as the ring-drain check above): a
+            // single 25 ms pump raced the timer bookkeeping ~15% of runs.
+            for (int i = 0; i < 250 && proc.getEngine().getCurrentPart() != 2; ++i)
+                pumpDeferredTimerMs (2);
             check (proc.getEngine().getCurrentPart() == 2,
                 "deferred part_select applied: engine current part == 2");
             check (juce::roundToInt (proc.getApvts().getRawParameterValue ("part_select")->load()) == 3,

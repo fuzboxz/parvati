@@ -1,0 +1,18 @@
+[1] Parse real .PRO files (RIFF/MBKS)
+  ok  : 000.PRO exists in the reference tree
+  ok  : parse 000.PRO succeeds
+  ok  : 000.PRO yields a 112-byte Patch
+  ok  : 000.PRO yields an 84-byte Part
+  ok  : 000.PRO name == 'Junon'
+  ok  : garbage input rejected
+  ok  : parse 001.PRO succeeds
+     000 osc1.shape=15   001 osc1.shape=1
+
+[2] Load .PRO into ParvatiAudioProcessor
+  ok  : loadProgramFile(000.PRO) returns true
+     osc1_shape byte applied (before=1, after=15, patch[0]=15)
+  ok  : osc1_shape byte applied (before=1, after=15, patch[0]=15)
+  ok  : loaded program name == 'Junon'
+  ok  : loading 001.PRO changes osc1_shape (now 1 == byte 1)
+
+PATCH TEST: ALL CHECKS PASSED (0 failures)

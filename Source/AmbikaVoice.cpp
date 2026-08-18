@@ -110,8 +110,12 @@ void AmbikaVoice::setOversamplingFactor (int factor)
     // implies the active osFactor_ already equals @p factor: state Empty with
     // pendingOsFactor_ == factor means the last consume/prepare installed
     // exactly that value — osFactor_ itself is AT-owned and must not be read
-    // from this thread.) Redundant calls (the processor seeds every voice
-    // with the same factor) must not allocate 96 objects.
+    // from this thread.) CONSUMING also satisfies the early-out: the AT is
+    // installing exactly that staged factor, so re-staging is pointless (the
+    // audio-stopped-engine case never spins here either — the take-back CAS
+    // in acquireOsStaging succeeds immediately). Redundant calls (the
+    // processor seeds every voice with the same factor) must not allocate 96
+    // objects.
     if (pendingOsFactor_.load (std::memory_order_relaxed) == factor
         && osStageState_.load (std::memory_order_acquire) != kOsStageStaged)
         return;
@@ -184,8 +188,13 @@ bool AmbikaVoice::acquireOsStaging() noexcept
 bool AmbikaVoice::consumeStagedOversampling() noexcept
 {
     int expected = kOsStageStaged;
+    // Claim to CONSUMING, not Empty (bug hunt 2026-08-18 — mirrors the FxChain
+    // kStageConsuming fix): pendingOs_ stays AT-owned until the final store
+    // below, otherwise the MT's acquireOsStaging could start filling it while
+    // this thread is still mid-move-out. The CAS's release ordering only
+    // covers writes BEFORE it.
     if (! osStageState_.compare_exchange_strong (
-            expected, kOsStageEmpty, std::memory_order_acq_rel, std::memory_order_relaxed))
+            expected, kOsStageConsuming, std::memory_order_acq_rel, std::memory_order_relaxed))
         return false;
 
     // Pointer moves only: park the displaced object, install the staged one,
@@ -197,6 +206,10 @@ bool AmbikaVoice::consumeStagedOversampling() noexcept
     osFactor_ = pendingOsFactor_.load (std::memory_order_relaxed);
     prepareFilterAtOsRate();
     filter_.commit();
+
+    // pendingOs_ is free ONLY now (release-orders the move-out above before
+    // this store, so an MT that observes Empty cannot be racing our reads).
+    osStageState_.store (kOsStageEmpty, std::memory_order_release);
     return true;
 }
 

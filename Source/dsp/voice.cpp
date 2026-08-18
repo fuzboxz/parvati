@@ -30,6 +30,7 @@
 
 #include "dsp/voice.h"
 
+#include <algorithm>  // std::min (raw-byte LUT clamps)
 #include <cstring>  // memset
 
 #include "dsp/fixed_math.h"
@@ -103,6 +104,13 @@ static const Patch kInitPatch = {
 // Index helper for the LFO rate→increment map (see file header note).
 // `bpm` only affects the tempo-synced path (rate < kNumSyncedLfoRates).
 static inline uint16_t LfoRateToIncrement(uint8_t rate, double bpm) {
+    // Raw-file bytes are NOT validated upstream (a .MUL / host-state blob can
+    // carry any byte): the free-running branch indexes the 128-entry LUT with
+    // rate - kNumSyncedLfoRates, so clamp first (bug hunt 2026-08-18,
+    // F-static-1). Valid free-running rates are kNumSyncedLfoRates..
+    // kNumSyncedLfoRates+127 (=142); 143..255 clamp to 142 (max rate), which
+    // the byte-range APVTS path already guarantees for GUI/host writes.
+    rate = std::min (rate, static_cast<uint8_t> (kNumSyncedLfoRates + 127));
     if (rate >= kNumSyncedLfoRates) {
         return lut_res_lfo_increments[rate - kNumSyncedLfoRates];
     }
@@ -186,8 +194,13 @@ void Voice::Trigger(uint16_t note, uint8_t velocity, uint8_t legato) {
         pitch_value_ = pitch_target_;
     }
     int16_t delta = pitch_target_ - pitch_value_;
+    // Same raw-byte clamp as LfoRateToIncrement (bug hunt 2026-08-18,
+    // F-static-2): part_.portamento_time comes straight from a PartData byte
+    // that is not validated on the .MUL / state-restore path, and the LUT has
+    // 128 entries (valid 0..127). 128..255 clamp to 127 (longest glide).
+    const uint8_t portamentoClamped = std::min (part_.portamento_time, static_cast<uint8_t> (127));
     int32_t increment = ResourcesManager::Lookup<uint16_t, uint8_t>(
-        lut_res_env_portamento_increments, part_.portamento_time);
+        lut_res_env_portamento_increments, portamentoClamped);
     pitch_increment_ = static_cast<int16_t>((static_cast<int32_t>(delta) * increment) >> 16);
     if (pitch_increment_ == 0) {
         pitch_increment_ = (delta < 0) ? -1 : 1;
@@ -239,6 +252,11 @@ void Voice::LoadSources() {
         }
         uint8_t x = patch_.modifier[i].operands[0];
         uint8_t y = patch_.modifier[i].operands[1];
+        // Raw-file bytes are unvalidated (bug hunt 2026-08-18, F-eng-1): the
+        // operands index modulation_sources_[31]; clamp like the mod matrix
+        // below so a crafted .MUL / host-state blob cannot read OOB.
+        x = std::min (x, static_cast<uint8_t> (kNumModulationSources - 1));
+        y = std::min (y, static_cast<uint8_t> (kNumModulationSources - 1));
         x = modulation_sources_[x];
         y = modulation_sources_[y];
         uint8_t op = patch_.modifier[i].op;
@@ -311,6 +329,15 @@ void Voice::ProcessModulationMatrix() {
         }
         uint8_t source = patch_.modulation[i].source;
         uint8_t destination = patch_.modulation[i].destination;
+        // Raw-file bytes are unvalidated (bug hunt 2026-08-18, F-eng-1):
+        // .MUL loads and host-state restores push patch bytes straight into
+        // the voice (no APVTS round-trip — PluginProcessor.cpp:1046 /
+        // SynthEngine.cpp:686). `source` indexes modulation_sources_[31] and
+        // `destination` indexes dst_[19] — the latter is an OOB WRITE of up
+        // to ~510 bytes past the array on the audio thread. Clamp both.
+        // (The .PRO path is already clamped via the APVTS range.)
+        source      = std::min (source,      static_cast<uint8_t> (kNumModulationSources - 1));
+        destination = std::min (destination, static_cast<uint8_t> (kNumModulationDestinations - 1));
         uint8_t source_value = modulation_sources_[source];
         if (destination != MOD_DST_VCA) {
             int16_t modulation = dst_[destination];

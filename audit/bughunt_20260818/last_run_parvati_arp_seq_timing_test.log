@@ -1,0 +1,22 @@
+=== arp/seq timing + note lifecycle ===
+
+(A) Arpeggiator::clockTick fires once per prescaled step
+  ok  : resolution 13 -> prescaler 2
+  ok  : 20 ticks / prescaler 2 -> 10 fires (got 10)
+  ok  : resolution 6 (default) -> prescaler 24
+  ok  : 48 ticks / prescaler 24 -> 2 fires (got 2; was 48 pre-fix)
+
+(B) Sequencer allNotesOff + defensive self-clean
+  ok  : note step fires one note-on
+  ok  : no note-off on the first step
+  ok  : allNotesOff fires a note-off (releases the stranded note)
+  ok  : allNotesOff released the correct pitch (60)
+  ok  : allNotesOff is idempotent (no double note-off)
+  ok  : note-on fired, none off
+  ok  : clockTick self-cleans (else-branch) when keyHeld goes false
+(C) engine: NOTE seq releases on key-release (no stuck note)
+  ok  : seq produced audio while key held (peakDuring=0.4132)
+  ok  : seq cycled through >=2 distinct notes (got 5) -- not frozen on one
+  ok  : audio silent after key-release (peakAfter=0.0000, must be < 0.002) -- stuck note if high
+
+ALL PASS (0 failures)

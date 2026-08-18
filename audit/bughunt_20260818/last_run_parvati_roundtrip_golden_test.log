@@ -1,0 +1,140 @@
+=== TOOL 8: golden round-trip bytes ===
+
+[canary] byte comparator detects a 1-byte flip
+  ok  : canary: save the reference file
+  ok  : canary: read it back
+  ok  : canary: flip offset inside the file
+  ok  : canary: comparator flags the flip (first diff @200, want 200)
+
+[canary] title comparator detects a wrong expectation
+  ok  : canary: title comparator flags a mismatched expectation
+
+[plain] name = "Plain Patch"
+  ok  : .PRO [Plain Patch]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [Plain Patch]: title round-trips to the 16-byte form [Plain Patch]
+  ok  : .MUL [Plain Patch]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [Plain Patch]: title round-trips to the 16-byte form [Plain Patch]
+  ok  : .parvati-patch [plain]: adversarial-name file LOADS
+  ok  : .parvati-patch [plain]: parsed doc name == control-stripped input [Plain Patch]
+  ok  : .parvati-multi [plain]: adversarial-name file LOADS
+  ok  : .parvati-multi [plain]: parsed doc name == control-stripped input [Plain Patch]
+
+[double-quote] name = "He said "hi""
+  ok  : .PRO [He said "hi"]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [He said "hi"]: title round-trips to the 16-byte form [He said "hi"]
+  ok  : .MUL [He said "hi"]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [He said "hi"]: title round-trips to the 16-byte form [He said "hi"]
+  ok  : .parvati-patch [double-quote]: adversarial-name file LOADS
+  ok  : .parvati-patch [double-quote]: parsed doc name == control-stripped input [He said "hi"]
+  ok  : .parvati-multi [double-quote]: adversarial-name file LOADS
+  ok  : .parvati-multi [double-quote]: parsed doc name == control-stripped input [He said "hi"]
+
+[backslash] name = "back\slash"
+  ok  : .PRO [back\slash]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [back\slash]: title round-trips to the 16-byte form [back\slash]
+  ok  : .MUL [back\slash]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [back\slash]: title round-trips to the 16-byte form [back\slash]
+  ok  : .parvati-patch [backslash]: adversarial-name file LOADS
+  ok  : .parvati-patch [backslash]: parsed doc name == control-stripped input [back\slash]
+  ok  : .parvati-multi [backslash]: adversarial-name file LOADS
+  ok  : .parvati-multi [backslash]: parsed doc name == control-stripped input [back\slash]
+
+[both] name = "mix "q" and \ b"
+  ok  : .PRO [mix "q" and \ b]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [mix "q" and \ b]: title round-trips to the 16-byte form [mix "q" and \ b]
+  ok  : .MUL [mix "q" and \ b]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [mix "q" and \ b]: title round-trips to the 16-byte form [mix "q" and \ b]
+  ok  : .parvati-patch [both]: adversarial-name file LOADS
+  ok  : .parvati-patch [both]: parsed doc name == control-stripped input [mix "q" and \ b]
+  ok  : .parvati-multi [both]: adversarial-name file LOADS
+  ok  : .parvati-multi [both]: parsed doc name == control-stripped input [mix "q" and \ b]
+
+[utf8 e-acute] name = "CafÃ©"
+  ok  : .PRO [CafÃ©]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [CafÃ©]: title round-trips to the 16-byte form [CafÃ©]
+  ok  : .MUL [CafÃ©]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [CafÃ©]: title round-trips to the 16-byte form [CafÃ©]
+  ok  : .parvati-patch [utf8 e-acute]: adversarial-name file LOADS
+  ok  : .parvati-patch [utf8 e-acute]: parsed doc name == control-stripped input [CafÃ©]
+  ok  : .parvati-multi [utf8 e-acute]: adversarial-name file LOADS
+  ok  : .parvati-multi [utf8 e-acute]: parsed doc name == control-stripped input [CafÃ©]
+
+[utf8 note] name = "âª music"
+  ok  : .PRO [âª music]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [âª music]: title round-trips to the 16-byte form [âª music]
+  ok  : .MUL [âª music]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [âª music]: title round-trips to the 16-byte form [âª music]
+  ok  : .parvati-patch [utf8 note]: adversarial-name file LOADS
+  ok  : .parvati-patch [utf8 note]: parsed doc name == control-stripped input [âª music]
+  ok  : .parvati-multi [utf8 note]: adversarial-name file LOADS
+  ok  : .parvati-multi [utf8 note]: parsed doc name == control-stripped input [âª music]
+
+[utf8 ellipsis] name = "dot dot dot â¦"
+  ok  : .PRO [dot dot dot â¦]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [dot dot dot â¦]: title round-trips to the 16-byte form [dot dot dot â]
+  ok  : .MUL [dot dot dot â¦]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [dot dot dot â¦]: title round-trips to the 16-byte form [dot dot dot â]
+  ok  : .parvati-patch [utf8 ellipsis]: adversarial-name file LOADS
+  ok  : .parvati-patch [utf8 ellipsis]: parsed doc name == control-stripped input [dot dot dot â¦]
+  ok  : .parvati-multi [utf8 ellipsis]: adversarial-name file LOADS
+  ok  : .parvati-multi [utf8 ellipsis]: parsed doc name == control-stripped input [dot dot dot â¦]
+
+[utf8 emoji] name = "emoji ð¹"
+  ok  : .PRO [emoji ð¹]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [emoji ð¹]: title round-trips to the 16-byte form [emoji ð¹]
+  ok  : .MUL [emoji ð¹]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [emoji ð¹]: title round-trips to the 16-byte form [emoji ð¹]
+  ok  : .parvati-patch [utf8 emoji]: adversarial-name file LOADS
+  ok  : .parvati-patch [utf8 emoji]: parsed doc name == control-stripped input [emoji ð¹]
+  ok  : .parvati-multi [utf8 emoji]: adversarial-name file LOADS
+  ok  : .parvati-multi [utf8 emoji]: parsed doc name == control-stripped input [emoji ð¹]
+
+[utf8 >16B] name = "Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©"
+  ok  : .PRO [Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©]: title round-trips to the 16-byte form [Ã©Ã©Ã©Ã©]
+  ok  : .MUL [Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©]: title round-trips to the 16-byte form [Ã©Ã©Ã©Ã©]
+  ok  : .parvati-patch [utf8 >16B]: adversarial-name file LOADS
+  ok  : .parvati-patch [utf8 >16B]: parsed doc name == control-stripped input [Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©]
+  ok  : .parvati-multi [utf8 >16B]: adversarial-name file LOADS
+  ok  : .parvati-multi [utf8 >16B]: parsed doc name == control-stripped input [Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©Ã©]
+
+[40 chars] name = "01234567890123456789012345678901"
+  ok  : .PRO [012345678901234567890123]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [012345678901234567890123]: title round-trips to the 16-byte form [0123456789012345]
+  ok  : .MUL [012345678901234567890123]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [012345678901234567890123]: title round-trips to the 16-byte form [0123456789012345]
+  ok  : .parvati-patch [40 chars]: adversarial-name file LOADS
+  ok  : .parvati-patch [40 chars]: parsed doc name == control-stripped input [012345678901234567890123]
+  ok  : .parvati-multi [40 chars]: adversarial-name file LOADS
+  ok  : .parvati-multi [40 chars]: parsed doc name == control-stripped input [012345678901234567890123]
+
+[pad spaces] name = "  padded  "
+  ok  : .PRO [  padded  ]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [  padded  ]: title round-trips to the 16-byte form [  padded]
+  ok  : .MUL [  padded  ]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [  padded  ]: title round-trips to the 16-byte form [  padded]
+  ok  : .parvati-patch [pad spaces]: adversarial-name file LOADS
+  ok  : .parvati-patch [pad spaces]: parsed doc name == control-stripped input [  padded  ]
+  ok  : .parvati-multi [pad spaces]: adversarial-name file LOADS
+  ok  : .parvati-multi [pad spaces]: parsed doc name == control-stripped input [  padded  ]
+
+[control] name = "line\nbreak\ttab"
+  ok  : .PRO [line
+break	tab]: fixed point bytes(A)==bytes(B) (256 B)
+  ok  : .PRO [line
+break	tab]: title round-trips to the 16-byte form [linebreaktab]
+  ok  : .MUL [line
+break	tab]: fixed point bytes(A)==bytes(B) (1424 B)
+  ok  : .MUL [line
+break	tab]: title round-trips to the 16-byte form [linebreaktab]
+  ok  : .parvati-patch [control]: adversarial-name file LOADS
+  ok  : .parvati-patch [control]: parsed doc name == control-stripped input [linebreaktab]
+  ok  : .parvati-multi [control]: adversarial-name file LOADS
+  ok  : .parvati-multi [control]: parsed doc name == control-stripped input [linebreaktab]
+
+[fixed point] .parvati pairs with title == basename
+  ok  : .parvati-patch: fixed point bytes(A)==bytes(B) (6750 B, title==basename)
+  ok  : .parvati-multi: fixed point bytes(A)==bytes(B) (46207 B, title==basename)
+
+=== GOLDEN ROUND-TRIP: ALL CHECKS PASSED (0 failures) ===

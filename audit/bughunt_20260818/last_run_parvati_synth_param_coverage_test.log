@@ -1,0 +1,103 @@
+=== Parvati SYNTH parameter coverage ===
+[1] Parameter table
+     total descriptors: 260
+     synth (non-fx) descriptors: 182
+     byte-routed descriptors:    106
+  ok  : 182 synth params (260 total - 78 fx)
+  ok  : 106 byte-routed patch/part params
+  ok  : every synth descriptor has an APVTS parameter
+[2] Generic byte-routing sweep (every patch/part param)
+     params swept: 106
+  ok  : every routed byte equals parvatiValueToPatchByte()
+     (info) params where min-byte==max-byte: 0
+[3] Oscillator audio
+     osc1 SAW peak=0.1659  NONE peak=0.0107
+  ok  : osc1 SAW renders audible audio
+  ok  : osc1 NONE clearly quieter than SAW
+     osc2 SAW peak=0.1961  NONE peak=0.0087
+  ok  : osc2 SAW renders audible audio
+  ok  : osc2 NONE clearly quieter than SAW
+     osc1_range 0 -> 440.1 Hz, +12 -> 880.0 Hz (ratio 2.000)
+  ok  : osc1_range 0 pitch near A4 (200-600 Hz)
+  ok  : osc1_range +12 doubles pitch (~2x)
+     osc1_detune 0 zcr=0.01384, +64 zcr=0.01367
+  ok  : osc1_detune +64 changes the rendered waveform (beat shifts)
+     osc1_param 0 peak/zcr=0.2125/0.01123, 127 peak/zcr=0.0334/0.06550
+  ok  : osc1_param changes a SQUARE wave (timbre/PWM)
+[4] Mixer audio
+     balance=0 pitch=261.6 Hz (osc1), balance=63 pitch=131.5 Hz (osc2 -1oct)
+  ok  : mix_balance swaps osc1/osc2 energy (osc2 is an octave down)
+     SUM peak/zcr=0.2511/0.01761, RING peak/zcr=0.2654/0.01872
+  ok  : mix_op SUM vs RING_MOD differ
+     mix_sub 0 rms=0.0874, 63 rms=0.1480
+  ok  : mix_sub adds sub-oscillator energy (RMS up)
+     mix_noise 0 zcr=0.01813, 63 zcr=0.18917
+  ok  : mix_noise adds broadband (higher ZCR)
+     mix_fuzz 0 rms/zcr=0.0914/0.01758, 63 rms/zcr=0.1937/0.01764
+  ok  : mix_fuzz squares the signal up (higher RMS)
+     mix_crush 0 peak=0.2491, 31 peak=0.2576
+  ok  : mix_crush changes the signal peak (crush applied)
+     mix_crush zcr 0=0.01862 31=0.02048
+  ok  : mix_crush alters spectral content (ZCR)
+[5] Filter audio
+     cutoff 10 zcr=0.00291 (dark), 127 zcr=0.02189 (bright)
+  ok  : filter1_cutoff high is brighter than low (ZCR)
+     reso 0 peak=0.2160, 63 peak=0.2346
+  ok  : filter1_reso 63 adds a resonance peak/character
+     LP peak=0.3177 (fundamental passes), HP peak=0.0104 (fundamental cut)
+  ok  : filter1_mode LP vs HP differ (LP passes, HP cuts the fundamental at low cutoff)
+     filter_env(amt0) early zcr=0.01978, (amt63) early zcr=0.02295
+  ok  : filter_env amount opens the cutoff on the attack (brighter early)
+[6] Envelope audio
+     env1_atk 0 early-rms=0.08185, 127 early-rms=0.00220 (ratio 37.13)
+  ok  : env1_attack 0 louder early than 127 (attack shapes the ramp)
+     env2_atk 0 early-rms=0.08447, 127 early-rms=0.00208 (ratio 40.69)
+  ok  : env2_attack 0 louder early than 127 (attack shapes the ramp)
+     env3_atk 0 early-rms=0.08378, 127 early-rms=0.00227 (ratio 36.91)
+  ok  : env3_attack 0 louder early than 127 (attack shapes the ramp)
+[7] LFO audio (route LFO->cutoff, vary rate)
+     env1_lfo_rate slow var=4.824e-04, fast var=3.193e-06
+  ok  : env1 LFO->cutoff produces time-varying output (modulation present)
+  ok  : env1_lfo_rate slow vs fast produce different modulation
+     voice_lfo->cutoff windowed-RMS variance=3.255e-05
+  ok  : voice_lfo->cutoff produces time-varying output
+[8] Modulation matrix functional routing
+     mod const256->VCA peak=0.0453, const4->VCA peak=0.0007
+  ok  : mod source depth honored (CONST_256 >> CONST_4 on VCA)
+     mod const256->VCA amt -63 peak=0.0000 (inverts)
+  ok  : mod amount -63 inverts the VCA modulation (quieter)
+     mod env3->VCA +63 peak=0.0434 (env opens VCA at sustain)
+  ok  : mod ENV3->VCA opens the VCA (envelope routes)
+[9] Part param audio
+     part_volume 127 peak=0.2339, 10 peak=0.0186
+  ok  : part_volume higher => louder
+     part_octave 0 -> 440.0 Hz, +1 -> 880.0 Hz
+  ok  : part_octave +1 doubles pitch
+     polyphony modes finite: 5/5
+  ok  : all 5 polyphony modes render finite audio
+[10] Sequencer routing + functional
+     sequencer params exercised: 67
+  ok  : all 67 sequencer params set without crash
+  ok  : renders finite with extreme sequencer byte values
+     note-sequencer generated distinct notes: 1
+  ok  : note-sequencer fires a note when transport plays + a key is held
+[11] Arp functional
+     arp Off distinct generated notes: 0
+     arp On distinct generated notes: 3
+  ok  : arp On cycles multiple distinct pitches from a held chord
+  ok  : arp On generates more notes than arp Off
+  ok  : arp_resolution change accepted (no crash)
+[12] Options
+     vca_curve lin early/late=1.156, exp early/late=2.175
+  ok  : vca_curve exp vs linearized changes the amplitude shape
+     filter_card peaks: ladder=0.2158 ssm2164=0.2582 svf=0.2507
+  ok  : all 3 filter_card topologies render finite
+  ok  : filter_card topologies produce different audio
+     filter_drive 1.0 peak=0.2991, 12.0 peak=0.3379
+  ok  : filter_drive scales the ladder saturation
+     Part1 byte0=2 (SQUARE), Part2 byte0=3 (TRI), Part1 still=2
+  ok  : part_select=1 edits Part 1
+  ok  : part_select=2 edits Part 2 (independent)
+  ok  : Part 1 unchanged when editing Part 2
+
+=== ALL CHECKS PASSED (48 checks, 0 failures) ===

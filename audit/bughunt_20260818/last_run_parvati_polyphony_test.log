@@ -1,0 +1,51 @@
+[0] Hardware default voice count = 6 (expect 6)
+  ok  : default (Hardware) engine exposes 6 voices across parts
+[a] part_polyphony routing + default
+     default part_polyphony = 1 (expect 1 Poly)
+  ok  : default polyphony is Poly (1)
+     after set 2: partBytes[15]=2, polyphonyMode=2
+  ok  : part_polyphony routes to PartData byte 15 + engine mode
+
+[b] POLY: two notes -> two distinct voices
+     active=2 distinct pitches=2
+  ok  : POLY holds >= 2 voices for 2 notes
+  ok  : POLY voices hold both 60 and 64
+
+[c] MONO: note priority + retrigger on release
+     after 60+64: active=3 distinct=1 monoStack.top=64 (expect 1 / 64)
+  ok  : MONO sounds only one distinct pitch
+  ok  : MONO most-recent note (stack top) is the newer note (64)
+     after release 64: distinct=1 monoStack.top=60 (expect 60)
+  ok  : MONO retriggers the prior note (60) on release (stack top)
+
+[d] CYCLIC: three notes -> round-robin across voices
+     distinct active voices = 3 (expect 3)
+  ok  : CYCLIC spreads 3 notes across 3 distinct voices
+
+[e] UNISON_2X: one note -> two voices
+     voices holding note 60 = 2 (expect 2)
+  ok  : UNISON_2X triggers 2 voices for 1 note
+
+[f] SPREAD: per-voice detune across unison voices (MONO)
+  ok  : part_spread=40 routes to PartData byte 3
+     MONO spread=40 peak = 0.43857
+  ok  : MONO with spread>0 produces audible audio
+     |spread0 - spread40| RMS = 0.254805 (expect > 1e-3)
+  ok  : spread=40 output differs from spread=0 (per-voice detune)
+
+[g] CHAIN: internal voice doubling (auto-partner)
+  ok  : Part 0 base allocation = 3 voices (vc0..2)
+     CHAIN voiceIndices = 6 (expect 6: 3 base + 3 partner)
+  ok  : CHAIN doubles Part 0 to 6 voices (internal partner from free vc)
+     4 notes held -> distinct sounding = 4 (expect 4)
+  ok  : CHAIN sustains 4 distinct notes (> base 3) — doubled capacity
+     back to POLY: voiceIndices = 3 (expect 3)
+  ok  : POLY releases the CHAIN partner (back to 3 voices)
+
+[h] released voice frees with no ENV->VCA routing (envelopesDead)
+     note-on: active=1 (expect >= 1)
+  ok  : note 60 is active before release
+     after release+idle: active=0 (expect 0)
+  ok  : released voice freed via envelopesDead() (no ENV->VCA routing)
+
+POLYPHONY TEST: ALL CHECKS PASSED (0 failures)

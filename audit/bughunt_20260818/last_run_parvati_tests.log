@@ -1,0 +1,36 @@
+=== Parvati Phase-3 verification ===
+engine internal rate: 39216.0 Hz, block: 40 samples
+
+[1] Bit-exact AVR reference (avr-gcc + simavr)
+     avr-gcc: missing | simavr: missing
+     -> SKIPPED: requires both avr-gcc and simavr to be installed.
+        RESULT: bit-exact diff NOT RUN (toolchain missing).
+
+[2] Pitch tracking (saw osc1): ZCR octave + ACF refine
+  ok:   no NaN/inf in render (midi 57)
+     midi 57: expected  220.00 Hz | zcr  337.44 | raw-acf  220.04 | refined  220.04 Hz | err 0.018% (+0.3 cents)
+  ok:   pitch detected (non-zero) for midi 57
+  ok:   pitch within 1% of target for midi 57 (was 0.018%)
+  ok:   no NaN/inf in render (midi 69)
+     midi 69: expected  440.00 Hz | zcr  440.38 | raw-acf  440.11 | refined  440.11 Hz | err 0.024% (+0.4 cents)
+  ok:   pitch detected (non-zero) for midi 69
+  ok:   pitch within 1% of target for midi 69 (was 0.024%)
+  ok:   no NaN/inf in render (midi 81)
+     midi 81: expected  880.00 Hz | zcr  879.95 | raw-acf  879.61 | refined  879.61 Hz | err 0.044% (-0.8 cents)
+  ok:   pitch detected (non-zero) for midi 81
+  ok:   pitch within 1% of target for midi 81 (was 0.044%)
+
+[3] Envelope shape (env2 modulation source)
+     env2 attack=253  sustain-region=39  post-release-min=2
+  ok:   env2 rises on attack (>150, was 253)
+  ok:   env2 decays attack->sustain (253 > 39)
+  ok:   env2 decays toward silence after release (<10, was 2)
+     post-Kill output deviation from 128: 4 (faithful mixer attn)
+  ok:   Kill() centres the (osc-NONE) voice near 128 (dev<=8, was 4)
+
+[4] LFO sanity (voice LFO = MOD_SRC_LFO_4)
+     voice LFO range over render: [224, 255]
+  ok:   voice LFO stays within [0,255]
+  ok:   voice LFO actually moves (range>8)
+
+=== ALL CHECKS PASSED (0 failures) ===

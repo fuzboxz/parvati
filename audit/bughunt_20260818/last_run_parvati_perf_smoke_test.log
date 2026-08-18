@@ -1,0 +1,8 @@
+  ok  : editor constructs headlessly
+[perf smoke] 10.0 s pumped run loop: cpu 0.160 s (budget 0.8), probe gaps n=288 p99/max 37.5/39.6 ms (budgets 55/120)
+  ok  : total CPU time within budget
+  ok  : probe fired at a plausible rate (timers actually ran)
+  ok  : 99th-percentile message-thread gap within budget
+  ok  : worst message-thread gap within budget
+
+PASS (0 failures)

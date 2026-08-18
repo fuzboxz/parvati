@@ -1,0 +1,19 @@
+[HIG sizing contract] unified UI (single style, all platforms)
+  ok  : header height == 44
+  ok  : header icon strip == 44
+  ok  : page margin == 8
+  ok  : mod-bar height == 78
+  ok  : pill height == 56
+  ok  : pill gap == 8
+  ok  : mod-matrix row == 48
+  ok  : FX-matrix row == 48
+  ok  : FX power-toggle hit == 44
+  ok  : FX topology stepper width == 44
+  ok  : FX topology stepper height == 44
+  ok  : FX master-EQ dial == 44
+  ok  : mod-matrix Add button == 44
+  ok  : FX-matrix Add button == 44
+  ok  : default popup-menu row == 44
+  ok  : wheels octave-switch button == 44
+
+HIG SIZING TEST: ALL CHECKS PASSED (0 failures)

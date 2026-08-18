@@ -41,6 +41,10 @@ private:
     // Reset / Randomize) -> decode to the slider. Calls the base first so the
     // sibling-length step-dimming still runs.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
+    // F-ui-1: deferred half of parameterChanged when it fired on the audio
+    // thread (see ParamControl::handleAsyncUpdate) — decodes the CURRENT
+    // byte to the slider on the message thread.
+    void handleAsyncUpdate() override;
 
     // slider drag -> recompose + write the byte param.
     void sliderValueChanged();

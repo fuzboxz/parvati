@@ -1,0 +1,49 @@
+=== Parvati MIDI CC/NRPN parameter mapping (spec F.4) ===
+
+[1] NRPN sets the direct parameter value
+     NRPN(0,2) -> osc1_shape = 2 (expect 2)
+  ok  : NRPN addr 0 -> osc1_shape = 2 (SQUARE)
+     NRPN(16,96) -> filter1_cutoff = 96 (expect 96)
+  ok  : NRPN addr 16 -> filter1_cutoff = 96
+
+[2] NRPN value reaches the engine patch byte
+     engine part0 patchBytes[0] = 2 (expect 2)
+  ok  : NRPN osc1_shape reached engine patch byte 0
+
+[3] NRPN addresses each env-lfo slot (stride)
+     NRPN(32,50) -> engine patchBytes[32] (env2_attack) = 50 (expect 50)
+  ok  : NRPN addr 32 -> env2_attack byte 32 = 50
+
+[4] CC scales 7-bit to the parameter range
+     CC(74,64) -> filter1_cutoff = 64 (expect 64)
+  ok  : CC74 -> filter1_cutoff = 64 (scaled 1:1 for 0..127 range)
+     CC(7,100) -> part_volume = 100 (expect 100)
+  ok  : CC7 -> part_volume = 100
+
+[5] CC decodes stride instances (CC81 -> env2_attack)
+     CC(81,60) -> engine patchBytes[32] (env2_attack) = 60 (expect 60)
+  ok  : CC81 -> env2_attack byte 32 = 60 (stride decode)
+
+[6] CC scales to a signed range (osc1_range -24..24)
+     CC(14,0) -> osc1_range = -24 (expect -24)
+  ok  : CC14 v=0 -> osc1_range = -24 (signed scale min)
+     CC(14,127) -> osc1_range = 24 (expect 24)
+  ok  : CC14 v=127 -> osc1_range = 24 (signed scale max)
+
+[7] Unmapped CC is ignored (midi_cc_map[0] = 0xff)
+     osc1_shape before CC0 = 2, after = 2 (expect unchanged)
+  ok  : CC0 (unmapped) leaves osc1_shape unchanged
+
+[8] Unmapped NRPN address is ignored (addr 127 = polyphony, not exposed)
+     filter1_cutoff before = 64, after NRPN(127) = 64 (expect unchanged)
+  ok  : NRPN addr 127 (polyphony, unexposed) is ignored
+
+[NRPN signed] INT8 params honour two's complement
+     NRPN(3, 0xC0) -> osc1_detune = -64 (expect -64)
+  ok  : NRPN negative INT8 byte -> -64 (not saturated to +64)
+     engine patchBytes[3] = 192 (0xC0; expect 192 = 0xC0)
+  ok  : negative detune reaches the engine byte as 0xC0
+     NRPN(3, 0x40) -> osc1_detune = 64 (expect +64)
+  ok  : positive control: plain byte 64 -> +64
+
+=== ALL CHECKS PASSED (0 failures) ===

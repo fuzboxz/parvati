@@ -93,6 +93,16 @@ public:
     void noteOff (int note)
     {
         pressedKeys_.noteOff (static_cast<uint8_t> (note));
+        // W11 (F-eng-2, firmware part.cc:341-354): in CHORD direction the
+        // chord trigger mode "doesn't really clean after itself" — the
+        // firmware kills the note DIRECTLY at key-up (same branch as STEP
+        // mode) to avoid stuck notes. The port dropped this: the released
+        // pitch kept ringing (no off was ever sent — each step only
+        // re-triggers held keys), and on the LAST key-up allNotesOff()'s
+        // chord branch looped the already-empty stack, stranding every chord
+        // voice until CC123/voice-steal.
+        if (direction_ == static_cast<uint8_t> (ArpDirection::Chord))
+            internalNoteOff (static_cast<uint8_t> (note));
         // If no keys held, kill the last arp note.
         if (pressedKeys_.size() == 0)
             allNotesOff();

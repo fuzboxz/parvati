@@ -1,0 +1,29 @@
+[arp_test] active blocks: 363 / 562
+  ok  : arp produces sustained audio across many blocks
+[arp_test] energy mean=0.05056 stddev=0.04654
+  ok  : arp energy varies over time (note on/off dynamics)
+[arp_test] distinct arp notes generated: 48 60 (count=2)
+  ok  : arp produces at least 2 distinct pitches (octave cycling)
+[arp_test] descriptor count: 260 (expected 260 = 106 + 5 arp + 4 options + 67 sequencer + 78 fx)
+  ok  : descriptor table includes 5 arp params (+4 options + 67 sequencer + 78 fx)
+
+[arp_test] stuck-note regression: enable arp while a note sounds
+     active Part-0 voices with arp off, held: 1
+  ok  : direct note sounds with arp off
+     active Part-0 voices after release + decay: 0 (expect 0)
+  ok  : pre-arp note releases after enabling the arp (no stuck sustain)
+
+[arp_test] chord-direction release regression (F-eng-2)
+     active Part-0 voices while chord held: 3
+  ok  : chord mode triggers held notes
+     active after releasing one chord key: 2
+  ok  : releasing one chord key retires its voice (firmware key-up kill)
+     active after releasing all chord keys: 0 (expect 0)
+  ok  : chord voices all retire on key release (no stranded chord voices)
+
+[arp_test] raw PartData arp bytes are clamped at staging
+     staged arp mode after clamp: 2 (expect <= 2)
+  ok  : out-of-range arp mode clamps into Off/Arp/Sequencer
+  ok  : Random + octave 0 no longer hangs the audio thread (blocks return)
+
+ARP TEST: ALL CHECKS PASSED

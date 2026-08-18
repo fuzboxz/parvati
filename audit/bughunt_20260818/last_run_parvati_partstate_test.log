@@ -1,0 +1,26 @@
+[1] arp/seq edits survive a part-switch + .MUL save
+  ok  : proc A loads reference .MUL
+  ok  : Part 0 arp octave updated in the live object
+  ok  : Part 0 seq step 0 updated in the live object
+  ok  : switched to Part 1
+  ok  : proc A saves .MUL from Part 1
+  ok  : proc B loads the saved .MUL
+  ok  : part_select parameter matches the loaded state
+  ok  : engine current part matches the loaded state
+  ok  : byte edits route to the selected part (currentPart_ in sync)
+  ok  : Part 0 arp_octave preserved across part-switch + .MUL save
+  ok  : Part 0 seq1_step0 preserved across part-switch + .MUL save
+
+[2] every part seeds the audible controller init patch
+  ok  : all 6 parts seed osc1 = WAVEFORM_SAW (audible init patch)
+  ok  : all 6 parts carry firmware arp/seq init (octave 1 / res 10 / len 16)
+
+[3] .MUL load resets part_select (combo no longer desynced)
+  ok  : pre-load: Part 3 selected (sanity)
+  ok  : loads reference .MUL with Part 3 selected
+  ok  : part_select parameter is 1 after the .MUL load (was 4)
+  ok  : part_select parameter matches the loaded state
+  ok  : engine current part matches the loaded state
+  ok  : byte edits route to the selected part (currentPart_ in sync)
+
+PART-STATE TEST: ALL CHECKS PASSED (0 failures)

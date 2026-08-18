@@ -1,0 +1,45 @@
+=== Parvati Concurrency / Multithreaded Fuzz (mask=0xffff) ===
+
+[1] full parameter sweep (all parts, all params) vs audio
+  ok  : audio thread did not throw (23 blocks)
+  ok  : output stayed finite (no NaN/Inf)
+  ok  : no denormal floats (audio-thread stall risk)
+
+[1b] DSP extreme-shape render (every osc shape, maxed params)
+  ok  : every osc shape rendered finite output (OOB/UB shows under sanitizers)
+
+[2] chaos: full surface + engine modes + MIDI injection
+  ok  : chaos: audio thread did not throw
+  ok  : chaos: output stayed finite
+  ok  : chaos: no denormal floats
+  ok  : chaos: audio thread progressed under contention
+
+[3] polyphony stress vs audio
+  ok  : polyphony: audio thread did not throw
+  ok  : polyphony: output stayed finite
+
+[4] TekDrums multi: note-sequencer vs host state + loads
+  ok  : loaded a factory multi
+  ok  : TekDrums: audio thread did not throw
+  ok  : TekDrums: output stayed finite
+  ok  : TekDrums: note-sequencer produced audio
+
+[6] preset switching vs audio (all load paths)
+     preset pool: 39 files
+  ok  : preset switch: audio thread did not throw
+  ok  : preset switch: output stayed finite
+  ok  : preset switch: no denormal floats
+
+[5] engine still responds after the concurrent run
+  ok  : engine responds to a note (peak > 0.001)
+
+[7] deferred arp/seq/part_select: audio-thread writes drain to the MT
+  ok  : no deferred arp/seq writes dropped (ring never overflowed)
+  ok  : deferred ring fully drained
+  ok  : last CC104 arp_octave won (engine=3, last CC=64, expected=3)
+  ok  : deferred part_select not applied before the timer fires
+  ok  : deferred part_select applied: engine current part == 2
+  ok  : part_select parameter reflects the deferred selection
+  ok  : post-switch byte edit routes to the deferred-selected Part 2
+
+CONCURRENCY TEST: ALL CHECKS PASSED (0 failures)

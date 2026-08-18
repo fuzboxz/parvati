@@ -1,0 +1,44 @@
+  ok  : editor constructs
+  ok  : editor is a ParvatiEditor
+
+=== 1024x500 ===
+  [SYNTH] 0 violations
+  ok  : no layout violations on SYNTH page
+  [FX] 0 violations
+  ok  : no layout violations on FX page
+  [Patch] 0 violations
+  ok  : no layout violations on Patch page
+
+=== 1024x440 ===
+  [SYNTH] 0 violations
+  ok  : no layout violations on SYNTH page
+  [FX] 0 violations
+  ok  : no layout violations on FX page
+  [Patch] 0 violations
+  ok  : no layout violations on Patch page
+
+=== 1024x300 ===
+  [SYNTH] 0 violations
+  ok  : no layout violations on SYNTH page
+  [FX] 0 violations
+  ok  : no layout violations on FX page
+  [Patch] 0 violations
+  ok  : no layout violations on Patch page
+
+=== 800x400 ===
+  [SYNTH] 0 violations
+  ok  : no layout violations on SYNTH page
+  [FX] 0 violations
+  ok  : no layout violations on FX page
+  [Patch] 0 violations
+  ok  : no layout violations on Patch page
+
+=== 1280x634 ===
+  [SYNTH] 0 violations
+  ok  : no layout violations on SYNTH page
+  [FX] 0 violations
+  ok  : no layout violations on FX page
+  [Patch] 0 violations
+  ok  : no layout violations on Patch page
+
+PASS (0 failures)

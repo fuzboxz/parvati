@@ -392,6 +392,21 @@ void testMalformed()
         const auto r = parvati::importScala (kScl12tet, kbm);
         check (! r.ok && r.error.contains ("S = 0"), "kbm S = 0 (linear map) rejected");
     }
+    {   // Hostile huge S (bug hunt 2026-08-18, F-static-3/F-state-2): S fed
+        // keys.reserve() BEFORE any range gate, so a crafted S (e.g. 999999999)
+        // attempted a multi-GB allocation and an uncaught bad_alloc terminated
+        // the host. The parse-time cap must reject it cleanly (mirroring
+        // parseScl's 1..1024 tone gate) without allocating.
+        const char* kbm = "! hostile S\n 999999999\n 0\n 11\n 60\n 60\n 261.6255653\n 0\n";
+        const auto r = parvati::importScala (kScl12tet, kbm);
+        check (! r.ok && r.error.contains ("out of range"),
+               "kbm hostile S = 999999999 rejected at parse time (no giant reserve)");
+    }
+    {   // Same gate, just past the cap (1025) — the boundary itself.
+        const char* kbm = "! S one past cap\n 1025\n 0\n 11\n 60\n 60\n 261.6255653\n 0\n";
+        const auto r = parvati::importScala (kScl12tet, kbm);
+        check (! r.ok && r.error.contains ("out of range"), "kbm S = 1025 rejected (cap boundary)");
+    }
     {   // degree beyond the formal octave (D8).
         const char* kbm = "! degree beyond o\n 12\n 0\n 11\n 60\n 60\n 261.6255653\n 5\n 0\n 1\n 2\n 3\n 4\n 5\n 6\n 7\n 8\n 9\n 10\n 11\n";
         const auto r = parvati::importScala (kScl12tet, kbm);

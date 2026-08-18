@@ -116,6 +116,12 @@ public:
         defaults and seeds nothing. Public for the editor-level tests. */
     void seedEngagementDefaultsForType (int newTypeIndex);
 
+    /** Test-only (W10b): drive the type combo's GUARDED user-pick seam exactly
+        as the popup item actions and the keyboard arrows do — including the
+        same-item no-op guard (a re-pick of the current type must NOT re-seed
+        and clobber the user's knob values). */
+    void simulateUserTypePickForTest (int typeIndex);
+
 private:
     // APVTS::Listener — fires on ANY fx{N}_type / fx{N}_enabled change (combo
     // edit, host automation, preset load). A Value::Listener on a separate

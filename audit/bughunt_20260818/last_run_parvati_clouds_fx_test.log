@@ -1,0 +1,159 @@
+  ok  : FxType::Count == 25 (None + 6 Clouds + 3 Warps + 1 Rings + 14 FV-1)
+  ok  : Diffuser: factory returns non-null
+  ok  : Diffuser: type() matches
+  ok  : Diffuser: latency()==0 (no oversampling)
+  ok  : Diffuser: finite output
+  ok  : Diffuser: non-silent output
+  ok  : Diffuser: wet output differs from dry (full-wet diffusion)
+  ok  : PitchShifter: factory returns non-null
+  ok  : PitchShifter: type() matches
+  ok  : PitchShifter: finite output
+  ok  : PitchShifter: non-silent output
+  ok  : PitchShifter: output differs from dry (shift engaged)
+  ok  : Reverb: factory returns non-null
+  ok  : Reverb: type() matches
+  ok  : Reverb: finite output
+  ok  : Reverb: non-silent output
+  ok  : Reverb: wet tail differs from dry (full-wet reverb)
+  ok  : LoopingDelay: factory returns non-null
+  ok  : LoopingDelay: type() matches
+  ok  : LoopingDelay: finite output
+  ok  : LoopingDelay: non-silent output
+  ok  : LoopingDelay: output differs from dry (delay engaged)
+  ok  : WSOLAStretch: factory returns non-null
+  ok  : WSOLAStretch: type() matches
+  ok  : WSOLAStretch: finite output
+  ok  : WSOLAStretch: non-silent output
+  ok  : WSOLAStretch: output differs from dry (stretch engaged)
+  ok  : Spectral: factory returns non-null
+  ok  : Spectral: type() matches
+  ok  : Spectral: finite output
+  ok  : Spectral: non-silent output
+  ok  : Spectral: output differs from dry (spectral engaged)
+  ok  : Wavefolder: factory returns non-null
+  ok  : Wavefolder: type() matches
+  ok  : Wavefolder: latency()==8 (6x OS group delay)
+  ok  : Wavefolder: finite output
+  ok  : Wavefolder: non-silent output
+  ok  : Wavefolder: wet output differs from dry (fold > 0)
+  ok  : FrequencyShifter: factory returns non-null
+  ok  : FrequencyShifter: type() matches
+  ok  : FrequencyShifter: finite output
+  ok  : FrequencyShifter: non-silent output
+  ok  : FrequencyShifter: output differs from dry (shift engaged)
+  ok  : RingModulator: factory returns non-null
+  ok  : RingModulator: type() matches
+  ok  : RingModulator: latency()==8 (6x OS group delay)
+  ok  : RingModulator: finite output
+  ok  : RingModulator: non-silent output
+  ok  : RingModulator: output differs from dry (ring mod engaged)
+  ok  : Resonator: factory returns non-null
+  ok  : Resonator: type() matches
+  ok  : Resonator: latency()==0 (LTI modal filters)
+  ok  : Resonator: finite output
+  ok  : Resonator: non-silent output
+  ok  : Resonator: output differs from dry (modes excited)
+  ok  : Resonator: output bounded (< 10.0)
+  ok  : Resonator: finite output across sample rates (44.1k/48k/96k)
+  ok  : Resonator: finite output across sample rates (44.1k/48k/96k)
+  ok  : Resonator: finite output across sample rates (44.1k/48k/96k)
+  ok  : Resonator: L(odd) != R(even) for mono input (aux used, not discarded)
+  ok  : Resonator: Position knob changes output (live control)
+  ok  : Wavefolder: impulse peaks ~8 (6x OS active, not a no-op)
+  ok  : Wavefolder: impulse R peaks ~8 (symmetric latency)
+  ok  : Wavefolder: L/R latency symmetric
+  ok  : D1: dry impulse delayed off sample 0 (per-slot dry-delay comp active)
+  ok  : D1: dw=0.5 impulse peak near OS latency (~8), not split to sample 0
+  ok  : D1: out[0] well below peak (dry+wet aligned, not a sample-0 dry spike)
+  ok  : N1: input impulse delayed off sample 0 (masterMix dry-delay comp active)
+  ok  : N1: masterMix=0.5 impulse peak near chain latency (~8)
+  ok  : N1: out[0] well below peak (chain-out + input aligned)
+  ok  : N2: bypassing an OS slot produces no click (max step within 3x steady)
+  ok  : HARDEN-1: Resonator limiter bounds on-resonance build-up (< 1.5)
+  ok  : HARDEN-2a: fold 0.1 vs 0.9 produce different output (test premise)
+  ok  : HARDEN-2b: effect param applied RAW (block-1 == settled past OS delay; no smoothing slew)
+  ok  : HARDEN-3: freeze engages in 1 block (held loop plays, not ~8 ms-smeared)
+  ok  : HARDEN-4a: Position 0.25 -> R (even modes) non-silent
+  ok  : HARDEN-4b: Position 0.5 -> R (even modes) near-silent (center-pluck node)
+  ok  : DEDUP-1a: Diffuser exposes 0 param knobs (amount collapsed)
+  ok  : DEDUP-1b: Reverb exposes 5 param knobs (predelay/diffusion/time/tone/low-cut)
+  ok  : DEDUP-1c: Reverb p0 is 'Predelay' (signal-path order)
+  ok  : DEDUP-1d: Diffuser p0 label is '-' (no 'Amount')
+  ok  : DEDUP-2: Diffuser param[0] is ignored (amount fixed 1.0)
+  ok  : DEDUP-3a: chain Dry/Wet=0 -> output ≈ dry (diffuser fully bypassed)
+  ok  : DEDUP-3b: chain Dry/Wet=1 -> full-wet diffused output (differs from dry)
+  ok  : DEDUP-4a: 0 -> 0%
+  ok  : DEDUP-4b: 127 -> 100%
+  ok  : DEDUP-4c: 64 -> ~50%
+  ok  : UNITS: Resonator 0 -> C1
+  ok  : UNITS: Resonator 63.5 -> C4
+  ok  : UNITS: Resonator 127 -> C7
+  ok  : UNITS: PitchShifter 0 -> -12.0
+  ok  : UNITS: PitchShifter 63.5 -> +0.0
+  ok  : UNITS: PitchShifter 127 -> +12.0
+  ok  : UNITS: PitchShifter 101 -> +7.0 (integer-snap; was 6.9..7.1 with no 7.0)
+  ok  : UNITS: WSOLA 127 -> +24.0
+  ok  : UNITS: Spectral 0 -> -24.0
+  ok  : UNITS: LoopingDelay p2 127 -> +24.0
+  ok  : UNITS: FreqShifter 63.5 -> 0Hz
+  ok  : UNITS: FreqShifter 0 -> -2k0 (was -2048 Hz)
+  ok  : UNITS: FreqShifter 127 -> +2k0 (was +2048 Hz)
+  ok  : UNITS: RingMod 0 -> 20Hz
+  ok  : UNITS: RingMod 127 -> 4k0 (was 4.00 kHz)
+  ok  : UNITS: LoopingDelay freeze 63 -> Off
+  ok  : UNITS: LoopingDelay freeze 64 -> On
+  ok  : UNITS: Reverb Predelay 0 -> 0.0ms
+  ok  : UNITS: Reverb Predelay 127 -> ~200ms
+  ok  : UNITS: Reverb Diffusion 64 -> 50% (idx1 post-reorder)
+  ok  : UNITS: WSOLA freeze 63 -> Off
+  ok  : UNITS: WSOLA freeze 64 -> On
+  ok  : UNITS: Reverb p0 label is 'Predelay'
+  ok  : UNITS: Wavefolder p0 label is 'Drive'
+  ok  : UNITS: FreqShifter p1 label is 'Shape'
+  ok  : UNITS: PitchShifter p2 label is 'Spread'
+  ok  : UNITS: FxType::Reverb == 3 (rename preserved index)
+  ok  : ClockedDelay: factory returns non-null
+  ok  : ClockedDelay: type() matches
+  ok  : ClockedDelay: latency()==0
+  ok  : ClockedDelay: finite output
+  ok  : ClockedDelay: output differs from dry
+  ok  : Ensemble: factory returns non-null
+  ok  : Ensemble: type() matches
+  ok  : Ensemble: latency()==0
+  ok  : Ensemble: finite output
+  ok  : Ensemble: output differs from dry
+  ok  : PlateReverb: factory returns non-null
+  ok  : PlateReverb: type() matches
+  ok  : PlateReverb: latency()==0
+  ok  : PlateReverb: finite output
+  ok  : PlateReverb: output differs from dry
+  ok  : VinylCompressor: factory returns non-null
+  ok  : VinylCompressor: type() matches
+  ok  : VinylCompressor: latency()==0
+  ok  : VinylCompressor: finite output
+  ok  : VinylCompressor: output differs from dry
+  ok  : Phaser: factory returns non-null
+  ok  : Phaser: type() matches
+  ok  : Phaser: latency()==0
+  ok  : Phaser: finite output
+  ok  : Phaser: output differs from dry
+  ok  : Wavefolder LUT-domain: factory returns non-null
+  ok  : Wavefolder LUT-domain: hot +/-8 input @ max drive+fold stays finite (no OOB garbage)
+  ok  : Wavefolder LUT-domain: bounded at the LUT rails |out| <= 1.2 (peak 0.935)
+  ok  : Wavefolder LUT-domain: continuous under overrun (worst delta 0.439 < 0.7)
+  ok  : Wavefolder LUT-domain: in-range path still finite (clamp inactive below |sl| 2.29)
+  ok  : Wavefolder LUT-domain: in-range path still non-silent
+  ok  : Wavefolder LUT-domain: in-range path still folds (differs from dry)
+  ok  : categories: display order covers every FxType
+  ok  : categories: each type appears EXACTLY once
+  ok  : categories: None listed first
+  ok  : categories: category order ascending (alphabetical)
+  ok  : categories: None is uncategorized
+  ok  : categories: Resonator filed under Pitch/Time (tuned ringing)
+  ok  : PitchShifter spread: factory returns non-null
+  ok  : PitchShifter spread: R max-jump (0.1620) within 3x of L (0.1517)
+  ok  : PitchShifter spread: R max-jump (0.1620) bounded by 40x the sine slope (0.5760)
+  ok  : PitchShifter spread=0: fresh factory instance non-null
+  ok  : PitchShifter spread=0: L == R bit-identical (mono lock)
+
+CLOUDS FX TEST: ALL CHECKS PASSED (0 failures)

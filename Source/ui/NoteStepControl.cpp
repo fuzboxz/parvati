@@ -78,6 +78,16 @@ void NoteStepControl::sliderValueChanged()
 
 void NoteStepControl::parameterChanged (const juce::String& parameterID, float newValue)
 {
+    // F-ui-1 (bug hunt 2026-08-18): same audio-thread delivery hazard as the
+    // base (NRPN map inside processBlock / host automation) — the slider
+    // mutation below is message-thread-only. Defer and decode from CURRENT
+    // state in handleAsyncUpdate.
+    if (! juce::MessageManager::existsAndIsCurrentThread())
+    {
+        triggerAsyncUpdate();
+        return;
+    }
+
     // Base first: handles the sibling seq_length_* step-dimming.
     ParamControl::parameterChanged (parameterID, newValue);
 
@@ -89,5 +99,18 @@ void NoteStepControl::parameterChanged (const juce::String& parameterID, float n
     // re-entrant round-trip).
     slider_->setValue (byteToSlider (juce::roundToInt (newValue)),
                        juce::dontSendNotification);
+    slider_->repaint();
+}
+
+void NoteStepControl::handleAsyncUpdate()
+{
+    // F-ui-1: the deferred refresh — base refreshes (step dimming, mod tint,
+    // rings) plus this control's byte->slider decode, from CURRENT state.
+    ParamControl::handleAsyncUpdate();
+    if (slider_ == nullptr)
+        return;
+    if (auto* raw = processor_.getApvts().getRawParameterValue (paramID_))
+        slider_->setValue (byteToSlider (juce::roundToInt (raw->load())),
+                           juce::dontSendNotification);
     slider_->repaint();
 }

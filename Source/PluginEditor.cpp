@@ -559,6 +559,16 @@ int ParamControl::parseStepIndex (const juce::String& id)
 
 void ParamControl::parameterChanged (const juce::String& id, float)
 {
+    // F-ui-1 (bug hunt 2026-08-18): this listener ALSO fires on the audio
+    // thread — the in-processBlock NRPN/CC map (PluginProcessor.cpp) and host
+    // automation both call setValueNotifyingHost from the render thread.
+    // Component mutation (setEnabled/setColour/properties/repaint) is
+    // message-thread-only; defer to the coalesced async refresh.
+    if (! juce::MessageManager::existsAndIsCurrentThread())
+    {
+        triggerAsyncUpdate();
+        return;
+    }
     if (id == lengthParamID_)
         refreshStepEnabled();
     if (isModSourceCombo_ && id == paramIDStr_)   // selected mod source changed
@@ -568,6 +578,18 @@ void ParamControl::parameterChanged (const juce::String& id, float)
     // arc, an AMOUNT change resizes one (listeners cover all 42 synth mod params,
     // or 48 fxmod params for an FX knob).
     if (isModDestKnob_ && (id.startsWith ("mod") || id.startsWith ("fxmod")))
+        refreshModRing();
+}
+
+void ParamControl::handleAsyncUpdate()
+{
+    // F-ui-1: the deferred half of parameterChanged — runs on the message
+    // thread, from CURRENT state (the param id that triggered the deferral is
+    // irrelevant: every refresh below is idempotent and cheap).
+    refreshStepEnabled();   // self-guards on lengthParamID_ emptiness
+    if (isModSourceCombo_)
+        applyModSourceTint();
+    if (isModDestKnob_)
         refreshModRing();
 }
 
@@ -1322,8 +1344,12 @@ void ParamControl::showContextMenu()
     popupTooltipWindow_ = std::make_unique<juce::TooltipWindow>();
     popupTooltipWindow_->setLookAndFeel (&getLookAndFeel());
 
-    // withTargetComponent(this) so the menu inherits the editor's
-    // ParvatiLookAndFeel (themed colours + font) instead of the default L&F.
+    // F-ui-5 (bug hunt 2026-08-18): withTargetComponent only positions the
+    // menu / watches the target — it does NOT theme it (PopupMenu L&F comes
+    // solely from PopupMenu::setLookAndFeel in this JUCE; verified against
+    // juce_PopupMenu.cpp findLookAndFeel). Set it explicitly like the zoom
+    // overflow popup and FxTypeCombo do, so Reset/Randomize render themed.
+    menu.setLookAndFeel (&getLookAndFeel());
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                         [safe] (int)
                         {
@@ -3158,6 +3184,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
 ParvatiEditor::~ParvatiEditor()
 {
+    // F-ui-3 (bug hunt 2026-08-18): close any OPEN popup menu deterministically.
+    // Open menus (combo dropdowns, the zoom overflow popup, FX type pickers)
+    // hold a raw L&F pointer into this editor; JUCE's 20 Hz target-death timer
+    // would dismiss them only up to ~50 ms AFTER the target died, leaving a
+    // window where an OS-driven paint reads freed memory.
+    juce::PopupMenu::dismissAllActiveMenus();
+
     stopTimer();
     // Release EVERY note the on-screen/computer keyboard still holds BEFORE
     // the callback is nulled: a key physically held at teardown gets no

@@ -1,0 +1,50 @@
+[1] ladder tap == legacy 1-sample process(): cutoff sweep
+  ok  : sine   @    80 Hz (cutoff=80 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.120
+  ok  : output finite and non-trivial
+  ok  : random @    80 Hz (cutoff=80 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.104
+  ok  : output finite and non-trivial
+  ok  : sine   @   500 Hz (cutoff=500 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.680
+  ok  : output finite and non-trivial
+  ok  : random @   500 Hz (cutoff=500 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.236
+  ok  : output finite and non-trivial
+  ok  : sine   @  2000 Hz (cutoff=2000 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.669
+  ok  : output finite and non-trivial
+  ok  : random @  2000 Hz (cutoff=2000 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.476
+  ok  : output finite and non-trivial
+  ok  : sine   @  8000 Hz (cutoff=8000 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.632
+  ok  : output finite and non-trivial
+  ok  : random @  8000 Hz (cutoff=8000 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.948
+  ok  : output finite and non-trivial
+  ok  : sine   @ 12000 Hz (cutoff=12000 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.629
+  ok  : output finite and non-trivial
+  ok  : random @ 12000 Hz (cutoff=12000 res=0.30 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.949
+  ok  : output finite and non-trivial
+
+[2] resonance + drive sweeps
+  ok  : resonance 0.00 (cutoff=1500 res=0.00 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.614
+  ok  : output finite and non-trivial
+  ok  : resonance 0.50 (cutoff=1500 res=0.50 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.759
+  ok  : output finite and non-trivial
+  ok  : resonance 0.80 (cutoff=1500 res=0.80 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.870
+  ok  : output finite and non-trivial
+  ok  : resonance 0.95 (cutoff=1500 res=0.95 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.931
+  ok  : output finite and non-trivial
+  ok  : drive 1.0 (cutoff=1500 res=0.70 drive=1.0): 0/4096 mismatches, maxDiff=0, peak=0.725
+  ok  : output finite and non-trivial
+  ok  : drive 1.2 (cutoff=1500 res=0.70 drive=1.2): 0/4096 mismatches, maxDiff=0, peak=0.633
+  ok  : output finite and non-trivial
+  ok  : drive 2.0 (cutoff=1500 res=0.70 drive=2.0): 0/4096 mismatches, maxDiff=0, peak=0.533
+  ok  : output finite and non-trivial
+  ok  : drive 5.0 (cutoff=1500 res=0.70 drive=5.0): 0/4096 mismatches, maxDiff=0, peak=0.553
+  ok  : output finite and non-trivial
+  ok  : drive 12.0 (cutoff=1500 res=0.70 drive=12.0): 0/4096 mismatches, maxDiff=0, peak=0.591
+  ok  : output finite and non-trivial
+
+[3] other topologies' per-sample path sanity
+  ok  : 2-pole SVF lowpass: finite output, non-trivial (peak=0.4838)
+  ok  : 2-pole SVF bandpass: finite output, non-trivial (peak=0.0885)
+  ok  : 2-pole SVF highpass: finite output, non-trivial (peak=0.0335)
+  ok  : 2-pole SVF notch: finite output, non-trivial (peak=0.4677)
+  ok  : 4-pole SSM2164 cascade: finite output, non-trivial (peak=0.4683)
+
+ANALOG-FILTER TEST: ALL CHECKS PASSED (0 failures)

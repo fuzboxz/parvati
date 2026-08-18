@@ -1,0 +1,45 @@
+=== Parvati Layer-3b (APVTS parameter bridge) ===
+[1] Parameter descriptor table
+     total parameters: 260
+     groups: other=152 part=8 modif=12 mod=42 osc=8 mix=8 voice=2 env=21 filter=7
+  ok  : exposes exactly 260 parameters (106 patch/part + 5 arp + 4 options + 67 sequencer + 78 fx)
+  ok  : 8 oscillator params
+  ok  : 8 mixer params
+  ok  : 7 filter params (filter1 cutoff/reso/mode + env + lfo + filter_card + filter_drive)
+  ok  : 21 env+lfo params (3 units x 7)
+  ok  : 2 voice-LFO params
+  ok  : 42 modulation-matrix params (14 x src/dest/amount)
+  ok  : 12 modifier params (4 x in1/in2/op)
+  ok  : 8 part params (volume/octave/tuning/spread/raga/legato/portamento/polyphony)
+
+[2] APVTS contains every descriptor parameter ID
+     missing parameters in APVTS: 0
+  ok  : all descriptor paramIDs present in APVTS
+     osc1_shape default raw value = 1 (expect 1 = SAW)
+  ok  : osc1_shape default == SAW(1)
+
+[3] Parameter change drives the rendered audio
+     osc1=SAW  (note 60) peak = 0.16590
+  ok  : osc1=SAW renders audible audio (peak>0.01)
+     osc1=NONE (note 62) peak = 0.01067  (faithful mixer leakage; no master trim)
+  ok  : osc1=NONE leakage stays well below a live oscillator (peak<0.3)
+     osc1=SAW  (note 64) peak = 0.17174
+  ok  : osc1=SAW (restored) renders audible audio (peak>0.01)
+  ok  : NONE output is clearly quieter than SAW (<50%)
+
+[4] Filter mode parameter accepts all 4 modes (LP/BP/HP/Notch)
+     filter1_mode settable to all 4 modes: 4/4
+  ok  : filter1_mode round-trips LP/BP/HP/Notch
+
+[5] Per-part Octave/Tuning shift the rendered pitch
+  ok  : part_octave=0 routes to PartData byte 1
+  ok  : part_octave=1 routes to PartData byte 1
+     A4 @ octave0 = 440.05 Hz, @ octave+1 = 879.95 Hz (ratio 2.000)
+  ok  : octave0 pitch near A4 (200-600 Hz)
+  ok  : +1 octave doubles the frequency (~2x, 6% tol)
+  ok  : part_tuning=40 routes (signed) to PartData byte 2
+
+[6] part_select is non-automatable
+  ok  : part_select excluded from host automation (isAutomatable == false)
+
+=== ALL CHECKS PASSED (0 failures) ===

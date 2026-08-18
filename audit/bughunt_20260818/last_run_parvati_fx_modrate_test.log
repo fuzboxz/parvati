@@ -1,0 +1,112 @@
+=== FX mod-matrix @ 980 Hz verification ===
+
+(A) 980 Hz cadence (engine-level)
+  ok  : 256@48k: 7 process() calls (expect 5..7)
+  ok  : 32@48k: 1 process() call(s) (expect 1)
+(B) variable sub-block survival (chain-level)
+  ok  : Wavefolder(6xOS) @N=1: finite
+  ok  : Wavefolder(6xOS) @N=1: bounded (<100)
+  ok  : Wavefolder(6xOS) @N=32: finite
+  ok  : Wavefolder(6xOS) @N=32: bounded (<100)
+  ok  : Wavefolder(6xOS) @N=64: finite
+  ok  : Wavefolder(6xOS) @N=64: bounded (<100)
+  ok  : Wavefolder(6xOS) @N=128: finite
+  ok  : Wavefolder(6xOS) @N=128: bounded (<100)
+  ok  : Wavefolder(6xOS) @N=256: finite
+  ok  : Wavefolder(6xOS) @N=256: bounded (<100)
+  ok  : Wavefolder(6xOS) @N=512: finite
+  ok  : Wavefolder(6xOS) @N=512: bounded (<100)
+  ok  : RingMod(6xOS) @N=1: finite
+  ok  : RingMod(6xOS) @N=1: bounded (<100)
+  ok  : RingMod(6xOS) @N=32: finite
+  ok  : RingMod(6xOS) @N=32: bounded (<100)
+  ok  : RingMod(6xOS) @N=64: finite
+  ok  : RingMod(6xOS) @N=64: bounded (<100)
+  ok  : RingMod(6xOS) @N=128: finite
+  ok  : RingMod(6xOS) @N=128: bounded (<100)
+  ok  : RingMod(6xOS) @N=256: finite
+  ok  : RingMod(6xOS) @N=256: bounded (<100)
+  ok  : RingMod(6xOS) @N=512: finite
+  ok  : RingMod(6xOS) @N=512: bounded (<100)
+  ok  : native[0] @N=1: finite
+  ok  : native[0] @N=1: bounded (<100)
+  ok  : native[0] @N=32: finite
+  ok  : native[0] @N=32: bounded (<100)
+  ok  : native[0] @N=64: finite
+  ok  : native[0] @N=64: bounded (<100)
+  ok  : native[0] @N=128: finite
+  ok  : native[0] @N=128: bounded (<100)
+  ok  : native[0] @N=256: finite
+  ok  : native[0] @N=256: bounded (<100)
+  ok  : native[0] @N=512: finite
+  ok  : native[0] @N=512: bounded (<100)
+  ok  : native[1] @N=1: finite
+  ok  : native[1] @N=1: bounded (<100)
+  ok  : native[1] @N=32: finite
+  ok  : native[1] @N=32: bounded (<100)
+  ok  : native[1] @N=64: finite
+  ok  : native[1] @N=64: bounded (<100)
+  ok  : native[1] @N=128: finite
+  ok  : native[1] @N=128: bounded (<100)
+  ok  : native[1] @N=256: finite
+  ok  : native[1] @N=256: bounded (<100)
+  ok  : native[1] @N=512: finite
+  ok  : native[1] @N=512: bounded (<100)
+  ok  : native[2] @N=1: finite
+  ok  : native[2] @N=1: bounded (<100)
+  ok  : native[2] @N=32: finite
+  ok  : native[2] @N=32: bounded (<100)
+  ok  : native[2] @N=64: finite
+  ok  : native[2] @N=64: bounded (<100)
+  ok  : native[2] @N=128: finite
+  ok  : native[2] @N=128: bounded (<100)
+  ok  : native[2] @N=256: finite
+  ok  : native[2] @N=256: bounded (<100)
+  ok  : native[2] @N=512: finite
+  ok  : native[2] @N=512: bounded (<100)
+  ok  : native[3] @N=1: finite
+  ok  : native[3] @N=1: bounded (<100)
+  ok  : native[3] @N=32: finite
+  ok  : native[3] @N=32: bounded (<100)
+  ok  : native[3] @N=64: finite
+  ok  : native[3] @N=64: bounded (<100)
+  ok  : native[3] @N=128: finite
+  ok  : native[3] @N=128: bounded (<100)
+  ok  : native[3] @N=256: finite
+  ok  : native[3] @N=256: bounded (<100)
+  ok  : native[3] @N=512: finite
+  ok  : native[3] @N=512: bounded (<100)
+  ok  : native[4] @N=1: finite
+  ok  : native[4] @N=1: bounded (<100)
+  ok  : native[4] @N=32: finite
+  ok  : native[4] @N=32: bounded (<100)
+  ok  : native[4] @N=64: finite
+  ok  : native[4] @N=64: bounded (<100)
+  ok  : native[4] @N=128: finite
+  ok  : native[4] @N=128: bounded (<100)
+  ok  : native[4] @N=256: finite
+  ok  : native[4] @N=256: bounded (<100)
+  ok  : native[4] @N=512: finite
+  ok  : native[4] @N=512: bounded (<100)
+(C) dry path bit-identical (chain-level)
+  ok  : dry @N=1: L == inL
+  ok  : dry @N=1: R == inR
+  ok  : dry @N=32: L == inL
+  ok  : dry @N=32: R == inR
+  ok  : dry @N=49: L == inL
+  ok  : dry @N=49: R == inR
+  ok  : dry @N=128: L == inL
+  ok  : dry @N=128: R == inR
+  ok  : dry @N=256: L == inL
+  ok  : dry @N=256: R == inR
+  ok  : dry @N=512: L == inL
+  ok  : dry @N=512: R == inR
+(D) audio-rate FX-param modulation (engine-level)
+  ok  : D1: capture ring populated with a note (ringCount=5 >= 2)
+  ok  : D2a: effParam depth finite (low=0.9922, high=0.9922)
+  ok  : D2b: audio-rate mod at full depth (p-p@100Hz=0.9922 / p-p@5Hz=0.9922 = ratio 1.000, must be > 0.92 - a blanket 1 ms smoother gives ~0.87)
+(E) FxFrequencyShifter default (0 Hz) render (quadrature phase-0 wrap OOB regression)
+  ok  : FxFrequencyShifter default (0 Hz) render: finite (quadrature phase-0 wrap OOB regression)
+  ok  : FxFrequencyShifter default (0 Hz) render: bounded (<100)
+
+ALL PASS (0 failures)

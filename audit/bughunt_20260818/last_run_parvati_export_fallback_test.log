@@ -1,0 +1,101 @@
+EXPORT FALLBACK TEST
+
+[a] needsFallback
+  ok  : over-capacity setup needs a fallback
+  ok  : within-cards setup does not
+  ok  : AUTO-equivalent (requested == cards) does not
+
+[b] Proportional
+  ok  : largest-remainder split 10/8/6 -> 3/2/1 cards
+  ok  : no mode rewrites under Proportional
+  ok  : masks are contiguous in part order
+  ok  : six equal requests -> one card each (min-1 guarantee)
+
+[c] Priority
+  ok  : priority serves part 0 fully, starves the rest
+
+[d] EvenSplit
+  ok  : even split of 3 actives -> 2 cards each
+  ok  : capped small request redistributes its surplus
+
+[e] MonoFold
+  ok  : all constrained parts fold to MONO
+
+[f] ChainSplit
+  ok  : 24 requested cards -> 4 units (6+6+6+6)
+  ok  : unit 0: part 0 head = 6 cards
+  ok  : unit 0: part 0 head is CHAIN
+  ok  : unit 1: part 0 continues (4) + part 1 starts (2)
+  ok  : unit 1: part 0 final segment (6+4=10) keeps POLY
+  ok  : unit 1: part 1 non-final segment is CHAIN
+  ok  : final segment keeps its original mode (POLY)
+  ok  : segments sum to the full 24 requested
+
+[g] AsIs
+  ok  : AsIs rebuilds the engine's contiguous bitmasks unchanged
+
+[g2] preview/summary copy
+  ok  : one preview line per active part
+  ok  : named part + arrow + always-shown mode
+  ok  : unnamed part falls back to "Part N"
+  ok  : a rewritten mode is marked "switched"
+  ok  : single-file summary states the honest cost
+  ok  : chain summary states the unit count + full fidelity
+
+[h] end-to-end save/reload
+  ok  : saveMultiFile with strategy
+  ok  : .MUL re-parses
+  ok  : .MUL reloads via loadMultiFile
+  ok  : AsIs: reloaded bitmasks match the solver
+  ok  : AsIs: reloaded polyphony modes match
+  ok  : saveMultiFile with strategy
+  ok  : .MUL re-parses
+  ok  : .MUL reloads via loadMultiFile
+  ok  : Proportional: reloaded bitmasks match the solver
+  ok  : Proportional: reloaded polyphony modes match
+  ok  : saveMultiFile with strategy
+  ok  : .MUL re-parses
+  ok  : .MUL reloads via loadMultiFile
+  ok  : Priority: reloaded bitmasks match the solver
+  ok  : Priority: reloaded polyphony modes match
+  ok  : saveMultiFile with strategy
+  ok  : .MUL re-parses
+  ok  : .MUL reloads via loadMultiFile
+  ok  : EvenSplit: reloaded bitmasks match the solver
+  ok  : EvenSplit: reloaded polyphony modes match
+  ok  : saveMultiFile with strategy
+  ok  : .MUL re-parses
+  ok  : .MUL reloads via loadMultiFile
+  ok  : MonoFold: reloaded bitmasks match the solver
+  ok  : MonoFold: reloaded polyphony modes match
+
+[i] ChainSplit end-to-end
+  ok  : chain save succeeds
+  ok  : unit 0 file exists + parses
+  ok  : unit 0 carries identical routing
+  ok  : unit 1 file exists + parses
+  ok  : unit 1 carries identical routing
+  ok  : unit 2 file exists + parses
+  ok  : unit 2 carries identical routing
+  ok  : unit 3 file exists + parses
+  ok  : unit 3 carries identical routing
+
+[j] .parvati fidelity
+  ok  : native multi carries the exact slot counts
+  ok  : native multi re-applies
+  ok  : slots round-trip untouched (native format never degrades)
+
+[k] default legacy behaviour
+  ok  : saveMultiFile(file) compiles + saves
+  ok  : default = derived bitmasks (AsIs writes the engine's live,
+                       slots-derived contiguous masks; contiguous
+                       masks round-trip identically)
+
+[l] dialog wiring
+  ok  : dialog constructs with names + over-capacity setup
+  ok  : default preview renders (no crash)
+  ok  : no custom-tuning warning without custom parts
+  ok  : custom-tuning warning line shown
+  ok  : warning names the custom-tuned parts (name + Part N fallback)
+
+EXPORT FALLBACK TEST: ALL CHECKS PASSED (0 failures)

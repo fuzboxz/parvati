@@ -544,6 +544,18 @@ std::vector<TextEdit> multiEdits()
         { "raga300",           [] (const juce::String& t) { return replaceFirst (t, "part_raga:", "part_raga: 300 #"); } },
         { "brokenTopName",     [] (const juce::String& t) { return replaceFirst (t, "name: \"", "name: \"bad \"quoted\" "); } },
         { "dupPartsKey",       [] (const juce::String& t) { return t + "\nparts:\n  - channel: 9\n"; } },
+        { "deepNest",           [] (const juce::String&)
+                               {   // Hostile deep nesting (bug hunt 2026-08-18,
+                                   // F-state-1): thousands of increasing-indent
+                                   // lines made parseParvatiYaml recurse once
+                                   // per level (stack exhaustion -> host crash).
+                                   // With the depth cap the parse refuses; the
+                                   // load must FAIL CLEANLY and leave the state
+                                   // untouched (the runCase contract).
+                                   juce::String t = "format: parvati-multi\nversion: 1\nname: \"D\"\nparts:\n";
+                                   for (int k = 0; k < 5000; ++k)
+                                       t += juce::String::repeatedString (" ", 1 + k) + "a:\n";
+                                   return t; } },
     };
 }
 

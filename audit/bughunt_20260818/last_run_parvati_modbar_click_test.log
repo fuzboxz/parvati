@@ -1,0 +1,23 @@
+  ok  : editor constructs
+  ok  : SynthWorkspace found in the editor tree
+  ok  : active-editor host Viewport found (T4 restructure)
+  ok  : CentralModBar found in the editor tree
+
+[1] Pill hit-testing
+  ok  : generator pill (LFO 2) located via tooltip
+  ok  : getComponentAt(pill centre) reaches the pill
+
+[2] Real click selects a generator pill
+  ok  : click on LFO 2 pill swaps the active generator editor
+
+[3] Click selects the CLICKED generator's page
+  ok  : click on Env 1 swaps again (different page)
+
+[4] [MOD] mode suppression + restore
+  ok  : [MOD] on: pill click does NOT swap the editor (by design)
+  ok  : LFO 2 pill located for the restore probe
+  ok  : [MOD] off: pill click swaps the editor again
+
+[5] FX workspace pill selection
+
+PASS (0 failures)

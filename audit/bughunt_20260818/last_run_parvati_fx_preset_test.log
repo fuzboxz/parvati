@@ -1,0 +1,51 @@
+[1] .parvati MULTI round-trips FX on every Part
+  ok  : multi YAML carries fx1_type
+  ok  : multi YAML carries fxmod1_amount
+  ok  : multi YAML carries fx_topo
+  ok  : applyParvatiMulti parses + applies
+     Part 0 fxState mismatches = 0
+  ok  : Part 0 full fxState round-trips
+     Part 1 fxState mismatches = 0
+  ok  : Part 1 full fxState round-trips
+     Part 2 fxState mismatches = 0
+  ok  : Part 2 full fxState round-trips
+     Part 3 fxState mismatches = 0
+  ok  : Part 3 full fxState round-trips
+     Part 4 fxState mismatches = 0
+  ok  : Part 4 full fxState round-trips
+     Part 5 fxState mismatches = 0
+  ok  : Part 5 full fxState round-trips
+
+[2] .parvati PATCH (single, current part) round-trips FX
+  ok  : patch YAML carries fx1_type
+  ok  : patch YAML carries fxmod16_dest
+  ok  : applyParvatiPatch parses + applies
+     Part 0 fxState mismatches = 0
+  ok  : single-part .parvati round-trips Part 0 FX
+
+[3] .PRO (single-part) RESETS a pre-existing fxState to default
+  ok  : source Part 0 actually has non-default FX (sanity)
+  ok  : target Part 0 has non-default FX before the .PRO load (sanity)
+  ok  : .PRO saved
+  ok  : .PRO loaded
+  ok  : .PRO load RESETS a previously-painted fxState to defaults (Ambika format carries no FX)
+
+[4] .MUL (multi) RESETS every Part's pre-existing fxState to default
+  ok  : source Part 0 actually has non-default FX (sanity)
+  ok  : target has non-default FX before the .MUL load (sanity)
+  ok  : .MUL saved
+  ok  : .MUL loaded
+  ok  : .MUL load RESETS every Part's previously-painted fxState to defaults (Ambika format carries no FX)
+
+[5] Forward-compat: .parvati multi WITHOUT any fx params loads cleanly
+  ok  : legacy multi (no fx params) loads
+  ok  : Part 0 fxState stays at defaults for a pre-FX .parvati multi
+
+[1b] .parvati MULTI load STAGES slot types into the DSP chains
+  ok  : multi with part-3 FX saved
+  ok  : multi loads into a fresh engine
+  ok  : part 3 chain INSTALLS the loaded fx1_type (Reverb) — not just the atomic
+  ok  : untouched part 0 chain stays None
+  ok  : part 3 slot 2 stays None (file carried no fx2_type)
+
+FX PRESET TEST: ALL CHECKS PASSED (0 failures)

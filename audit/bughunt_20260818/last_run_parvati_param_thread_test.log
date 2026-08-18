@@ -1,0 +1,12 @@
+  ok  : editor created (live ParamControls / NoteStepControls)
+[1] off-thread setValueNotifyingHost with a live editor
+  ok  : target params exist (mod1_amount, seq_length_1)
+  ok  : [1] renders stay finite during off-thread param writes
+  ok  : [1] on-thread write after the storm lands (synchronous path intact)
+[2] off-thread seqnote step write (NoteStepControl deferral)
+  ok  : a sequencer step param exists (seq1_step0 / seqnote_step0)
+  ok  : [2] off-thread step writes defer cleanly (no assert, no race)
+[3] editor teardown with pending deferred refreshes
+  ok  : [3] editor destroyed with pending deferrals (clean teardown)
+
+PARAM THREAD TEST: ALL CHECKS PASSED (0 failures)

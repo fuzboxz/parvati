@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
 // FxSlotLabels — declarations for the per-FX-type active-parameter count and
-// semantic short parameter labels. The definitions live in FxSlotCard.cpp (they
-// are the source of truth for the live param-knob labels on an FX-slot card).
+// semantic short parameter labels. The definitions live in FxSlotLabels.cpp
+// (they are the source of truth for the live param-knob labels on an FX-slot
+// card).
 // This tiny dependency-free shard exposes them to FxMatrixView so the FX
 // mod-matrix's destination combo can show each slot's ACTUAL parameter names
 // (e.g. "FX1 Position/Size/Pitch/Freeze" for a Looping Delay) instead of the

@@ -1,0 +1,52 @@
+=== Parvati firmware parity oracle ===
+allowlist: 1 divergence(s)
+
+[1] channel acceptance (non-overlapping 3+3 split)
+  ok  : ch1 note accepted by the same part(s) [fw=0 pv=0]
+  ok  : ch1+ch2 notes accepted by the same part(s) [fw=0,1 pv=0,1]
+  ok  : ch3 (unrouted) note accepted by nobody new [fw=0,1 pv=0,1]
+  ok  : part 0 tuned 14-bit note (60 -> 7680) [fw=7680 pv=7680]
+  ok  : part 1 tuned 14-bit note (64 -> 8192) [fw=8192 pv=8192]
+
+[2] overlapping routing: Omni part + ch-2 part (multicast)
+  ok  : ch2 note while part 0 is Omni: EVERY accepting part plays (multicast) [fw=0,1 pv=0,1]
+  ok  : multicast note-off releases every accepting part [fw=0,1 pv=0,1]
+
+[3] wrap-around key zone (lo=100 hi=20)
+  ok  : note 5 inside wrap zone [100..20]: accepted by both [fw=1 pv=1]
+  ok  : note 60 outside wrap zone: rejected by both [fw=1 pv=1]
+
+[4] sustain pedal (CC64) swallow + drain
+  ok  : firmware retains the released key (flagged for pedal-up drain) [fw=1 pv=1]
+  ok  : firmware issued no Release/Kill while the pedal held the note [fw=0 pv=0]
+  ok  : Parvati swallowed the release (note 60 still sounding) [fw=60 pv=60]
+  ok  : firmware drained the sustained note on pedal-up [fw=0 pv=0]
+  ok  : firmware released the voice on pedal-up [fw=1 pv=1]
+  ok  : Parvati released the sustained voice on pedal-up (silent after the release tail)
+
+[5] all-notes-off (CC123) bookkeeping
+  ok  : direct-mode held keys cleared on CC123 [fw=0 pv=0]
+  ok  : Parvati released every part-0 voice on CC123 (silent after the tail)
+  ok  : firmware released the part-0 voices on CC123
+  ok  : arp-mode held keys cleared on CC123 [fw pressed / pv arp stack] [fw=0 pv=0]
+
+[6] CC1 mod-wheel routing (per channel)
+  ok  : part 0 (ch1) untouched by a ch2 CC1 [fw=-1 pv=0]
+  ok  : part 1 (ch2) received CC1 (40 << 1 = 80) [fw=80 pv=80]
+
+[7] polyphonic aftertouch
+  ok  : poly-AT writes MOD_SRC_AFTERTOUCH to the accepting part's voices [fw=90 pv=90]
+  ok  : poly-AT on ch2 leaves part 0 (ch1) untouched [fw=90 pv=90]
+
+[8] arp phrase restart (transport stopped)
+     first generated note of phrase 2: fw=67 pv=67
+  ok  : new phrase restarts the arp at pattern step 0 (both sides) [fw=67 pv=67]
+  ok  : phrase 2 generated at least two arp steps (restart step + one more)
+     first generated note of phrase 3 (transport running): fw=64 pv=64
+  ok  : while the transport plays, a new phrase does NOT restart (parity of position) [fw=64 pv=64]
+
+[9] sequencer velocity-0 decode
+  ok  : sequencer generated the programmed note (60) [fw=60 pv=60]
+  ok  : [velocity-zero-substitution] divergence still documented: gated step with velocity byte 0: firmware generates velocity 0, Parvati substitutes 100 [fw=0 pv=100]
+
+FIRMWARE PARITY TEST: ALL CHECKS PASSED (0 failures)

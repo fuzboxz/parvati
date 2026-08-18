@@ -1,0 +1,98 @@
+[1] YAML emit/parse round-trips a var tree
+  ok  : parsed tree is an object
+  ok  : version round-trips as int
+  ok  : nested param round-trips
+  ok  : negative int round-trips
+  ok  : vca_curve round-trips
+
+[2] .parvati patch round-trip: vca_curve/filter_card/arp survive
+  ok  : YAML contains vca_curve=1
+  ok  : YAML contains filter_card=2
+  ok  : YAML contains arp_mode=1
+  ok  : parvati_version is 0.1.0 (pre-release)
+  ok  : applyParvatiPatch parses + applies
+     APVTS mismatches = 0
+  ok  : end-to-end .parvati: EVERY APVTS value matches (incl options/arp)
+  ok  : vca_curve survives .parvati round-trip
+  ok  : filter_card survives .parvati round-trip
+  ok  : arp_mode survives .parvati round-trip
+
+[3] Contrast: .PRO of the same state DROPS the options
+  ok  : .PRO saved
+  ok  : .PRO loaded
+     .PRO keeps vca_curve=0, filter_card=0 (expect 0)
+  ok  : .PRO DROPS vca_curve (documenting the gap this format fixes)
+  ok  : .PRO DROPS filter_card (documenting the gap this format fixes)
+
+[4] Forward-compat: unknown keys + typo'd paramIDs are ignored
+  ok  : load succeeds with unknown keys
+  ok  : known value (osc1_shape=2) applied despite unknown keys
+  ok  : known value (env2_sustain=60) applied
+
+[5] .parvati MULTI round-trip (all 6 parts + routing)
+  ok  : multi YAML has format tag
+  ok  : applyParvatiMulti parses + applies
+     per-part routing mismatches = 0
+  ok  : all 6 parts' channel/keyrange/alloc match
+  ok  : Part 1 arp_octave preserved
+  ok  : Part 2 arp_resolution preserved
+  ok  : global filter_card option preserved
+  ok  : current-part APVTS matches after multi round-trip
+
+[6] stale custom tuning cleared by a .parvati PATCH load
+  ok  : precondition: custom table armed (mode 33)
+  ok  : T1 patch file written
+  ok  : T1: .parvati patch loads
+  ok  : T1: part_raga 0 patch load clears the stale custom (12-EDO)
+
+[7] stale custom tuning cleared by a .parvati MULTI load (12-EDO parts omit tuning_mode)
+  ok  : T2: all-12-EDO multi saved
+  ok  : T2: premise — 12-EDO parts serialize WITHOUT tuning_mode
+  ok  : precondition: customs armed on parts 0 and 3
+  ok  : T2: .parvati multi loads
+  ok  : T2: every part resolves 12-EDO after the load (armed customs cleared)
+
+[T3] Wave 2: degenerate multi docs rejected; missing routing keys default
+  ok  : T3: empty parts array rejected
+  ok  : T3: failed load leaves slots untouched (no init reset)
+  ok  : T3: failed load leaves part names untouched
+  ok  : T3: non-object parts entries rejected
+  ok  : T3: sparse multi loads
+  ok  : T3: part 1 gets INIT channel (2) — not the previous multi's 5
+  ok  : T3: part 1 gets INIT zone 0..127 — not the previous 36..60
+
+[T4] Wave 2: quoted top-level names round-trip
+  ok  : T4: multi with hostile name saved
+  ok  : T4: multi with hostile name LOADS (was a silent parse failure)
+  ok  : T4: saved document still parses after the hostile name
+  ok  : T4: name round-trips (quote + backslash unescaped, newline stripped)
+
+[T5] Wave 2: part NAMES lifecycle across loads
+  ok  : T5: Drum Kit loads
+  ok  : T5: Drum Kit part 0 named 'Kick'
+  ok  : T5: factory .MUL loads
+  ok  : T5: .MUL load clears every part name (no stale 'Kick')
+  ok  : T5: Drum Kit re-loads
+  ok  : T5: names restored from the .parvati multi
+  ok  : T5: .PRO loads into part 0
+  ok  : T5: .PRO patch load KEEPS the part name ('Kick' survives)
+
+[T6] Wave 2: undo cannot cross a part switch
+  ok  : T6: precondition — an edit is undoable
+  ok  : T6: precondition — switched to part 2
+  ok  : T6: undoSafe leaves no undoable action after a part switch
+  ok  : T6: undo after a part switch is a no-op (part 2 bytes untouched)
+  ok  : T6: part 1's edited byte stays edited (no phantom revert)
+
+[T7] Wave 2: corrupt .parvati PATCH leaves voices alone
+  ok  : T7: precondition — a voice is sounding
+  ok  : T7: corrupt patch rejected
+  ok  : T7: failed patch load does NOT kill the sounding voice
+
+[T8] Wave 3: hand-edited .parvati routing values are clamped
+  ok  : T8: clamped multi loads
+  ok  : T8: channel 17 clamps to 16 (was: uint8 wrap to a dead channel)
+  ok  : T8: wrap zone 100..20 PRESERVED (firmware low>high wrap; was: normalized 20..100)
+  ok  : T8: voice_slots still applies alongside the clamped routing
+
+PRESET TEST: ALL CHECKS PASSED (0 failures)

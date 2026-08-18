@@ -16,10 +16,12 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "MulExport.h"
+#include "ParvatiLookAndFeel.h"   // F-ui-2: the dialog's OWNED theme copy
 
 class MulExportDialog : public juce::Component
 {
@@ -68,6 +70,15 @@ private:
     parvati::mul_export::PreviewContext ctx_;
     std::array<bool, parvati::mul_export::kParts> customTuningParts_ {};
     DoneCallback onDone_;
+
+    // F-ui-2 (bug hunt 2026-08-18): the DialogWindow is its OWN desktop window
+    // and can OUTLIVE the launching editor (host closes the plugin window
+    // while the export dialog is open) — borrowing the editor's LookAndFeel
+    // painted through freed memory. The dialog therefore OWNS a
+    // ParvatiLookAndFeel copied from the parent's active theme (the TuningEditor
+    // pattern; the builtin theme structs are function-local statics in
+    // ParvatiTheme.cpp, so the copy stays valid after the editor dies).
+    std::unique_ptr<ParvatiLookAndFeel> ownedLnf_;   // null => default look (tests/null parent)
     bool fired_ = false;
 
     juce::Label heading_;

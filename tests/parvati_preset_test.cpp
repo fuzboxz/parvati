@@ -544,6 +544,57 @@ int main()
         f.deleteFile();
     }
 
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T9] W11: options: accepts ONLY option descriptors (F-state-5)\n");
+    {
+        // The serializer emits only isOption params under `options:`, but the
+        // loader used to apply ANY APVTS paramID found there — a hand-edited
+        // per-part key (osc1_shape) wrote into the PRE-LOAD current part,
+        // clobbering that part's just-loaded file bytes (part_select is reset
+        // to Part 0 only AFTER the options loop). Restricting to isOption
+        // descriptors (minus part_select) makes out-of-contract keys inert.
+        ParvatiAudioProcessor a, b;
+        a.prepareToPlay (48000.0, 512);
+        b.prepareToPlay (48000.0, 512);
+
+        // Give part 3 (0-based) a DISTINCTIVE osc1 shape byte via the engine
+        // (the file's part 3 will carry the same value through its params).
+        // Save a full multi, then hand-inject the hostile options key.
+        juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("parvati_t9_options.parvati");
+        check (a.saveParvatiMultiFile (f), "T9: reference multi saved");
+        juce::String txt;
+        if (juce::FileInputStream in (f); in.openedOk())
+            txt = in.readEntireStreamAsString();
+        // Append a hostile per-part key under the EXISTING options: block
+        // (the emitter always writes one; if not, add it after `name:`).
+        if (txt.contains ("options:"))
+        {
+            const int opos = txt.indexOf ("options:");
+            const int eol  = txt.indexOfChar (opos, '\n');
+            txt = txt.substring (0, eol) + "\n  osc1_shape: 5\n  part_select: 5" + txt.substring (eol);
+        }
+        else
+            txt += "\noptions:\n  osc1_shape: 5\n  part_select: 5\n";
+        f.replaceWithText (txt);
+
+        // Make the CURRENT part (pre-load) part 3 so a mis-applied options
+        // key would be observable there.
+        b.getApvts().getParameterAsValue ("part_select") = 3.0f;
+        const uint8_t before = b.getEngine().getPart (3).patchBytes[0];   // osc1 shape byte
+        check (b.loadParvatiMultiFile (f), "T9: multi with hostile options keys loads");
+        const uint8_t after = b.getEngine().getPart (3).patchBytes[0];
+        std::printf ("     part-3 osc1 shape byte: %d -> %d (hostile key wrote 5)\n",
+                     (int) before, (int) after);
+        check (after == before,
+               "T9: hostile per-part key under options: is IGNORED (no pre-load part clobber)");
+        // The load resets to Part 0 regardless of the injected part_select
+        // (part_select is 1-based: denormalized 1 == Part 0).
+        check (juce::roundToInt (b.getApvts().getRawParameterValue ("part_select")->load()) == 1,
+               "T9: injected options part_select is inert (loader still shows Part 0)");
+        f.deleteFile();
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "PRESET TEST: FAILURES" : "PRESET TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

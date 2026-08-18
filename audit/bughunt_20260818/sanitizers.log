@@ -1,0 +1,70 @@
+=== Parvati sanitizer sweep (concurrency x3) ===
+  JUCE=/Users/fuzboxz/JUCE  jobs=12
+
+--- configuring + building ASan+UBSan (build_san_asan) ---
+  running suite under ASan+UBSan...
+tools/run_sanitizers.sh: line 41: 68905 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_clouds_fx_test (run 1/1) — see /tmp/parvati_san_parvati_clouds_fx_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70: runtime error: left shift of 524275712 by 4 places cannot be represented in type 'int32_t' (aka 'int')
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70 
+tools/run_sanitizers.sh: line 41: 68910 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_concurrency_test (run 1/1) — see /tmp/parvati_san_parvati_concurrency_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/fx/fv1/Fv1Overdrive.cpp:136:80: runtime error: left shift of negative value -6704
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/fx/fv1/Fv1Overdrive.cpp:136:80 
+tools/run_sanitizers.sh: line 41: 68957 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fv1_newfamily_test (run 1/1) — see /tmp/parvati_san_parvati_fv1_newfamily_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/fx/fv1/Fv1Overdrive.cpp:136:80: runtime error: left shift of negative value -143
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/fx/fv1/Fv1Overdrive.cpp:136:80 
+tools/run_sanitizers.sh: line 41: 68968 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fx_bridge_pop_test (run 1/1) — see /tmp/parvati_san_parvati_fx_bridge_pop_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70: runtime error: left shift of 524262612 by 4 places cannot be represented in type 'int32_t' (aka 'int')
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70 
+tools/run_sanitizers.sh: line 41: 68994 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fx_engine_continuity_test (run 1/1) — see /tmp/parvati_san_parvati_fx_engine_continuity_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:169:70: runtime error: left shift of 524273675 by 4 places cannot be represented in type 'int32_t' (aka 'int')
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:169:70 
+tools/run_sanitizers.sh: line 41: 69017 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fx_modrate_test (run 1/1) — see /tmp/parvati_san_parvati_fx_modrate_test_0.log
+        ==69017==ERROR: AddressSanitizer: global-buffer-overflow on address 0x0001093c7804 at pc 0x000105286b70 bp 0x00016aee61f0 sp 0x00016aee61e8
+        SUMMARY: AddressSanitizer: global-buffer-overflow dsp.h:47 in stmlib::Interpolate(float const*, float, float)
+tools/run_sanitizers.sh: line 41: 69040 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fx_onset_regression_test (run 1/1) — see /tmp/parvati_san_parvati_fx_onset_regression_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:169:70: runtime error: left shift of 524272640 by 4 places cannot be represented in type 'int32_t' (aka 'int')
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:169:70 
+tools/run_sanitizers.sh: line 41: 69064 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fx_param_coverage_test (run 1/1) — see /tmp/parvati_san_parvati_fx_param_coverage_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70: runtime error: left shift of 524275712 by 4 places cannot be represented in type 'int32_t' (aka 'int')
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70 
+tools/run_sanitizers.sh: line 41: 69136 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_fx_stereo_balance_test (run 1/1) — see /tmp/parvati_san_parvati_fx_stereo_balance_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/stmlib/fft/shy_fft.h:299:11: runtime error: addition of unsigned offset to 0x000108088be8 overflowed to 0x000108088be4
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/stmlib/fft/shy_fft.h:299:11 
+tools/run_sanitizers.sh: line 41: 69144 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_host_state_test (run 1/1) — see /tmp/parvati_san_parvati_host_state_test_0.log
+        /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70: runtime error: left shift of 524275712 by 4 places cannot be represented in type 'int32_t' (aka 'int')
+        SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /Users/fuzboxz/parvati/Source/dsp/clouds/clouds/dsp/looping_sample_player.h:102:70 
+    FAIL: parvati_patch_arrangement_test (run 1/1) — see /tmp/parvati_san_parvati_patch_arrangement_test_0.log
+  [ASan+UBSan] 60/71 test runs passed
+
+--- configuring + building TSan (build_san_tsan) ---
+  running suite under TSan (concurrency_test x3)...
+tools/run_sanitizers.sh: line 41: 74860 Abort trap: 6           "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1
+    FAIL: parvati_concurrency_test (run 1/1) — see /tmp/parvati_san_parvati_concurrency_test_0.log
+        WARNING: ThreadSanitizer: data race (pid=74860)
+        SUMMARY: ThreadSanitizer: data race unique_ptr.h:288 in std::__1::unique_ptr<FxProcessor, std::__1::default_delete<FxProcessor>>::reset[abi:nqe210106](FxProcessor*)
+  [TSan] 70/71 test runs passed
+  repeating parvati_concurrency_test under TSan x3...
+tools/run_sanitizers.sh: line 102: 78033 Abort trap: 6           TSAN_OPTIONS="halt_on_error=1" "$SRC/build_san_tsan/parvati_concurrency_test" > "/tmp/parvati_san_conc_${i}.log" 2>&1
+    concurrency_test TSan run 1/3: FAIL
+        WARNING: ThreadSanitizer: data race (pid=78033)
+        SUMMARY: ThreadSanitizer: data race unique_ptr.h:288 in std::__1::unique_ptr<FxProcessor, std::__1::default_delete<FxProcessor>>::reset[abi:nqe210106](FxProcessor*)
+tools/run_sanitizers.sh: line 102: 78037 Abort trap: 6           TSAN_OPTIONS="halt_on_error=1" "$SRC/build_san_tsan/parvati_concurrency_test" > "/tmp/parvati_san_conc_${i}.log" 2>&1
+    concurrency_test TSan run 2/3: FAIL
+        WARNING: ThreadSanitizer: data race (pid=78037)
+        SUMMARY: ThreadSanitizer: data race unique_ptr.h:288 in std::__1::unique_ptr<FxProcessor, std::__1::default_delete<FxProcessor>>::reset[abi:nqe210106](FxProcessor*)
+tools/run_sanitizers.sh: line 102: 78042 Abort trap: 6           TSAN_OPTIONS="halt_on_error=1" "$SRC/build_san_tsan/parvati_concurrency_test" > "/tmp/parvati_san_conc_${i}.log" 2>&1
+    concurrency_test TSan run 3/3: FAIL
+        WARNING: ThreadSanitizer: data race (pid=78042)
+        SUMMARY: ThreadSanitizer: data race unique_ptr.h:288 in std::__1::unique_ptr<FxProcessor, std::__1::default_delete<FxProcessor>>::reset[abi:nqe210106](FxProcessor*)
+
+=== SANITIZER SWEEP: FAILURES (see /tmp/parvati_san_*.log) ===

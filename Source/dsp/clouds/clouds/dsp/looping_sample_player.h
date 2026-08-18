@@ -52,6 +52,11 @@ class LoopingSamplePlayer {
   LoopingSamplePlayer() { }
   ~LoopingSamplePlayer() { }
   
+  // PARVATI PATCH: Q12.20 -> ReadHermite fractional: take only the low 16 bits.
+  // `x << 4` overflows int32 (UB) whenever the integral part is nonzero;
+  // unsigned shift + truncate is bit-identical to the intended two's-complement result.
+  static inline uint16_t frac16FromQ12 (int32_t x) { return static_cast<uint16_t> ((static_cast<uint32_t> (x) << 4) & 0xffffu); }
+  
   void Init(int32_t num_channels) {
     num_channels_ = num_channels;
     phase_ = 0.0f;
@@ -99,12 +104,12 @@ class LoopingSamplePlayer {
         int32_t delay_int = (buffer->head() - 4 - size + buffer->size()) << 12;
         delay_int -= static_cast<int32_t>(delay * 4096.0f);
         
-        float l = buffer[0].ReadHermite((delay_int >> 12), delay_int << 4);
+        float l = buffer[0].ReadHermite((delay_int >> 12), frac16FromQ12 (delay_int));
         if (num_channels_ == 1) {
           *out++ = l;
           *out++ = l;
         } else if (num_channels_ == 2) {
-          float r = buffer[1].ReadHermite((delay_int >> 12), delay_int << 4);
+          float r = buffer[1].ReadHermite((delay_int >> 12), frac16FromQ12 (delay_int));
           *out++ = l;
           *out++ = r;
         }
@@ -151,12 +156,12 @@ class LoopingSamplePlayer {
         int32_t delay_int = (buffer->head() - 4 + buffer->size()) << 12;
         int32_t position = delay_int - static_cast<int32_t>(
               (loop_duration_ - phase_ + loop_point_) * 4096.0f);
-        float l = buffer[0].ReadHermite((position >> 12), position << 4);
+        float l = buffer[0].ReadHermite((position >> 12), frac16FromQ12 (position));
         if (num_channels_ == 1) {
           out[0] = l * gain;
           out[1] = l * gain;
         } else if (num_channels_ == 2) {
-          float r = buffer[1].ReadHermite((position >> 12), position << 4);
+          float r = buffer[1].ReadHermite((position >> 12), frac16FromQ12 (position));
           out[0] = l * gain;
           out[1] = r * gain;
         }
@@ -166,12 +171,12 @@ class LoopingSamplePlayer {
           int32_t position = delay_int - static_cast<int32_t>(
                 (-phase_ + tail_start_) * 4096.0f);
         
-          float l = buffer[0].ReadHermite((position >> 12), position << 4);
+          float l = buffer[0].ReadHermite((position >> 12), frac16FromQ12 (position));
           if (num_channels_ == 1) {
             out[0] += l * gain;
             out[1] += l * gain;
           } else if (num_channels_ == 2) {
-            float r = buffer[1].ReadHermite((position >> 12), position << 4);
+            float r = buffer[1].ReadHermite((position >> 12), frac16FromQ12 (position));
             out[0] += l * gain;
             out[1] += r * gain;
           }

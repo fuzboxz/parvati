@@ -133,7 +133,7 @@ void Fv1Overdrive::processSampleFx (int32_t lin, int32_t /*rin*/,
     int idx = (v >> 13) + 512 + biasIdx_;
     if (idx < 0)   idx = 0;
     if (idx > 1023) idx = 1023;
-    const int32_t y = static_cast<int32_t> (table_[static_cast<size_t> (idx)]) << 9;   // Q.14 -> Q.23
+    const int32_t y = static_cast<int32_t> (table_[static_cast<size_t> (idx)]) * 512;   // Q.14 -> Q.23
     lout = y;
     rout = y;
 }

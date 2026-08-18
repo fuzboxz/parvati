@@ -1,0 +1,83 @@
+EXPORT BYTES TEST
+
+[1] raw file equality vs hardware references
+  ok  : PROGRAM/BANK/A/000.PRO: reference exists
+  ok  : reference reads
+  ok  : parses
+  ok  : writes
+  ok  : written reads
+  ok  : PROGRAM/BANK/A/000.PRO: re-written file is byte-identical (256 bytes)
+  ok  : PROGRAM/BANK/A/001.PRO: reference exists
+  ok  : reference reads
+  ok  : parses
+  ok  : writes
+  ok  : written reads
+  ok  : PROGRAM/BANK/A/001.PRO: re-written file is byte-identical (256 bytes)
+  ok  : MULTI/BANK/A/000.MUL: reference exists
+  ok  : reference reads
+  ok  : parses
+  ok  : writes
+  ok  : written reads
+  ok  : MULTI/BANK/A/000.MUL: re-written file is byte-identical (1424 bytes)
+
+[2] chunk layout of a fresh .MUL export
+  ok  : exported
+  ok  : RIFF walks
+  ok  : 1 name + 1 MultiData + 6x2 part objs = 14 chunks
+  ok  : RIFF body size consistent
+  ok  : name chunk: tag + 16 bytes
+  ok  : name payload: string + space pad + NUL at byte 15 (hardware pattern)
+  ok  : MultiData obj: type prefix 0x04, 56-byte payload
+  ok  : all 12 per-part objs: correct type prefixes + payload sizes
+  ok  : objs interleave patch-then-part in part order after MultiData
+
+[3] strategy byte-level rewrites
+  ok  : no-fallback export
+  ok  : walks
+  ok  : strategy export saves
+  ok  : walks
+  ok  : AsIs: MultiData[i*4+3] masks byte-exact
+  ok  : AsIs: PartData[15] modes byte-exact
+  ok  : AsIs: patches/routing/other bytes untouched
+  ok  : strategy export saves
+  ok  : walks
+  ok  : Proportional: MultiData[i*4+3] masks byte-exact
+  ok  : Proportional: PartData[15] modes byte-exact
+  ok  : Proportional: patches/routing/other bytes untouched
+  ok  : strategy export saves
+  ok  : walks
+  ok  : Priority: MultiData[i*4+3] masks byte-exact
+  ok  : Priority: PartData[15] modes byte-exact
+  ok  : Priority: patches/routing/other bytes untouched
+  ok  : strategy export saves
+  ok  : walks
+  ok  : EvenSplit: MultiData[i*4+3] masks byte-exact
+  ok  : EvenSplit: PartData[15] modes byte-exact
+  ok  : EvenSplit: patches/routing/other bytes untouched
+  ok  : strategy export saves
+  ok  : walks
+  ok  : MonoFold: MultiData[i*4+3] masks byte-exact
+  ok  : MonoFold: PartData[15] modes byte-exact
+  ok  : MonoFold: patches/routing/other bytes untouched
+  ok  : strategy export saves
+  ok  : walks
+  ok  : ChainSplit: MultiData[i*4+3] masks byte-exact
+  ok  : ChainSplit: PartData[15] modes byte-exact
+  ok  : ChainSplit: patches/routing/other bytes untouched
+  ok  : chain export saves
+  ok  : unit 0 parses
+  ok  : unit 0: raw MultiData masks byte-exact
+  ok  : unit 1 parses
+  ok  : unit 1: raw MultiData masks byte-exact
+  ok  : unit 2 parses
+  ok  : unit 2: raw MultiData masks byte-exact
+  ok  : unit 3 parses
+  ok  : unit 3: raw MultiData masks byte-exact
+
+[4] .PRO parameter bytes at raw offsets
+  ok  : saves
+  ok  : walks
+  ok  : Patch + PartData objs found by type prefix
+  ok  : every mapped descriptor lands at its raw offset (173 checked)
+
+EXPORT BYTES TEST: ALL CHECKS PASSED (0 failures)

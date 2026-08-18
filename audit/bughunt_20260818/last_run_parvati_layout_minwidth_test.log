@@ -1,0 +1,291 @@
+[0] canary: predicates flag hand-broken rectangles
+  ok  : canary: zero-width control flagged
+  ok  : canary: zero-height control flagged
+  ok  : canary: healthy control passes
+  ok  : canary: 56px-deep overlap flagged
+  ok  : canary: adjacent (0 gap) controls pass
+  ok  : canary: 2px hairline graze passes
+  ok  : canary: disjoint controls pass
+  ok  : canary: the historical 38/50 [FX] squeeze flagged
+  ok  : canary: exactly 80% passes
+  ok  : canary: full natural width passes
+  ok  : canary: 49/50 fails the full designed-width gate
+  ok  : canary: designed width passes the full gate
+  ok  : editor constructs
+  ok  : editor is a ParvatiEditor
+
+=== 560x600 ===
+  audited 6 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 560 [97 5 156 44]
+  ok  : primary Load button visible + positive at 560 [276 5 54 44]
+  ok  : primary Save button visible + positive at 560 [336 5 64 44]
+  ok  : primary Undo button visible + positive at 560 [406 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 560 [510 5 44 44]
+  ok  : primary ... overflow visible + positive at 560 [458 5 44 44]
+
+=== 600x600 ===
+  audited 6 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 600 [97 5 156 44]
+  ok  : primary Load button visible + positive at 600 [316 5 54 44]
+  ok  : primary Save button visible + positive at 600 [376 5 64 44]
+  ok  : primary Undo button visible + positive at 600 [446 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 600 [550 5 44 44]
+  ok  : primary ... overflow visible + positive at 600 [498 5 44 44]
+
+=== 650x600 ===
+  audited 8 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [147]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 650 [97 5 147 44]
+  ok  : primary Load button visible + positive at 650 [314 5 54 44]
+  ok  : primary Save button visible + positive at 650 [374 5 64 44]
+  ok  : primary Undo button visible + positive at 650 [444 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 650 [600 5 44 44]
+  ok  : primary ... overflow visible + positive at 650 [548 5 44 44]
+
+=== 700x600 ===
+  audited 8 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 700 [97 5 156 44]
+  ok  : primary Load button visible + positive at 700 [364 5 54 44]
+  ok  : primary Save button visible + positive at 700 [424 5 64 44]
+  ok  : primary Undo button visible + positive at 700 [494 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 700 [650 5 44 44]
+  ok  : primary ... overflow visible + positive at 700 [598 5 44 44]
+
+=== 780x600 ===
+  audited 8 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 780 [97 5 156 44]
+  ok  : primary Load button visible + positive at 780 [444 5 54 44]
+  ok  : primary Save button visible + positive at 780 [504 5 64 44]
+  ok  : primary Undo button visible + positive at 780 [574 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 780 [730 5 44 44]
+  ok  : primary ... overflow visible + positive at 780 [678 5 44 44]
+
+=== 810x600 ===
+  audited 11 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [151]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 810 [97 5 151 44]
+  ok  : primary Load button visible + positive at 810 [318 5 54 44]
+  ok  : primary Save button visible + positive at 810 [378 5 64 44]
+  ok  : primary Undo button visible + positive at 810 [448 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 810 [760 5 44 44]
+  ok  : primary ... overflow visible + positive at 810 [552 5 44 44]
+
+=== 900x600 ===
+  audited 11 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 900 [97 5 156 44]
+  ok  : primary Load button visible + positive at 900 [408 5 54 44]
+  ok  : primary Save button visible + positive at 900 [468 5 64 44]
+  ok  : primary Undo button visible + positive at 900 [538 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 900 [850 5 44 44]
+  ok  : primary ... overflow visible + positive at 900 [642 5 44 44]
+
+=== 980x600 ===
+  audited 11 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 980 [97 5 156 44]
+  ok  : primary Load button visible + positive at 980 [488 5 54 44]
+  ok  : primary Save button visible + positive at 980 [548 5 64 44]
+  ok  : primary Undo button visible + positive at 980 [618 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 980 [930 5 44 44]
+  ok  : primary ... overflow visible + positive at 980 [722 5 44 44]
+
+=== 1024x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : preset browser keeps its DESIGNED width 156 at the 1024 floor [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : Patch page button keeps its DESIGNED width 64 at the 1024 floor [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : part combo keeps its DESIGNED width 88 at the 1024 floor [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : [FX] mode button keeps its DESIGNED width 50 at the 1024 floor [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1024 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1024 [532 5 54 44]
+  ok  : primary Save button visible + positive at 1024 [592 5 64 44]
+  ok  : primary Undo button visible + positive at 1024 [662 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1024 [974 5 44 44]
+  ok  : primary ... overflow visible + positive at 1024 [766 5 44 44]
+
+=== 1050x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1050 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1050 [558 5 54 44]
+  ok  : primary Save button visible + positive at 1050 [618 5 64 44]
+  ok  : primary Undo button visible + positive at 1050 [688 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1050 [1000 5 44 44]
+  ok  : primary ... overflow visible + positive at 1050 [792 5 44 44]
+
+=== 1099x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1099 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1099 [607 5 54 44]
+  ok  : primary Save button visible + positive at 1099 [667 5 64 44]
+  ok  : primary Undo button visible + positive at 1099 [737 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1099 [1049 5 44 44]
+  ok  : primary ... overflow visible + positive at 1099 [841 5 44 44]
+
+=== 1100x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1100 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1100 [608 5 54 44]
+  ok  : primary Save button visible + positive at 1100 [668 5 64 44]
+  ok  : primary Undo button visible + positive at 1100 [738 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1100 [1050 5 44 44]
+  ok  : primary ... overflow visible + positive at 1100 [842 5 44 44]
+
+=== 1152x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1152 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1152 [660 5 54 44]
+  ok  : primary Save button visible + positive at 1152 [720 5 64 44]
+  ok  : primary Undo button visible + positive at 1152 [790 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1152 [1102 5 44 44]
+  ok  : primary ... overflow visible + positive at 1152 [894 5 44 44]
+
+=== 1200x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1200 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1200 [708 5 54 44]
+  ok  : primary Save button visible + positive at 1200 [768 5 64 44]
+  ok  : primary Undo button visible + positive at 1200 [838 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1200 [1150 5 44 44]
+  ok  : primary ... overflow visible + positive at 1200 [942 5 44 44]
+
+=== 1280x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1280 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1280 [788 5 54 44]
+  ok  : primary Save button visible + positive at 1280 [848 5 64 44]
+  ok  : primary Undo button visible + positive at 1280 [918 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1280 [1230 5 44 44]
+  ok  : primary ... overflow visible + positive at 1280 [1022 5 44 44]
+
+=== 1440x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1440 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1440 [948 5 54 44]
+  ok  : primary Save button visible + positive at 1440 [1008 5 64 44]
+  ok  : primary Undo button visible + positive at 1440 [1078 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1440 [1390 5 44 44]
+  ok  : primary ... overflow visible + positive at 1440 [1182 5 44 44]
+
+=== 1600x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1600 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1600 [1108 5 54 44]
+  ok  : primary Save button visible + positive at 1600 [1168 5 64 44]
+  ok  : primary Undo button visible + positive at 1600 [1238 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1600 [1550 5 44 44]
+  ok  : primary ... overflow visible + positive at 1600 [1342 5 44 44]
+
+=== 1800x600 ===
+  audited 14 placed interactive header children
+  ok  : header set is non-degenerate (placed interactive children >= floor)
+  ok  : every placed interactive header child keeps positive width AND height
+  ok  : preset browser keeps >= 80% of natural width 156 [156]
+  ok  : Patch page button keeps >= 80% of natural width 64 [64]
+  ok  : part combo keeps >= 80% of natural width 88 [88]
+  ok  : [FX] mode button keeps >= 80% of natural width 50 [50]
+  ok  : no pairwise sibling overlap in the header row
+  ok  : primary preset browser visible + positive at 1800 [97 5 156 44]
+  ok  : primary Load button visible + positive at 1800 [1308 5 54 44]
+  ok  : primary Save button visible + positive at 1800 [1368 5 64 44]
+  ok  : primary Undo button visible + positive at 1800 [1438 5 44 44]
+  ok  : primary [KBD] toggle visible + positive at 1800 [1750 5 44 44]
+  ok  : primary ... overflow visible + positive at 1800 [1542 5 44 44]
+
+PASS (0 failures)

@@ -1,0 +1,60 @@
+=== Parvati FX stereo-balance investigation ===
+rate=48000 block=256  warmup=1.0s  measure=3.0s  (mono-correlated unless noted)
+
+--- SPECTRAL (mono-correlated, inL==inR) ---
+  pitch sweep:0.00           p=[0.00,0.50,0.50,0.50]  rmsL=0.49985 rmsR=0.49985  R/L=1.0000 (+0.00dB)
+  pitch sweep:0.25           p=[0.25,0.50,0.50,0.50]  rmsL=0.28157 rmsR=0.28157  R/L=1.0000 (+0.00dB)
+  pitch sweep:0.50           p=[0.50,0.50,0.50,0.50]  rmsL=0.16411 rmsR=0.16411  R/L=1.0000 (+0.00dB)
+  pitch sweep:0.75           p=[0.75,0.50,0.50,0.50]  rmsL=0.21425 rmsR=0.21425  R/L=1.0000 (+0.00dB)
+  pitch sweep:1.00           p=[1.00,0.50,0.50,0.50]  rmsL=0.29640 rmsR=0.29640  R/L=1.0000 (+0.00dB)
+  warp sweep :0.00           p=[0.50,0.00,0.50,0.50]  rmsL=0.00845 rmsR=0.00845  R/L=1.0000 (+0.00dB)
+  warp sweep :0.25           p=[0.50,0.25,0.50,0.50]  rmsL=0.00001 rmsR=0.00001  R/L=1.0000 (+0.00dB)
+  warp sweep :0.75           p=[0.50,0.75,0.50,0.50]  rmsL=0.21263 rmsR=0.21263  R/L=1.0000 (+0.00dB)
+  warp sweep :1.00           p=[0.50,1.00,0.50,0.50]  rmsL=0.00404 rmsR=0.00404  R/L=1.0000 (+0.00dB)
+  pos sweep  :0.00           p=[0.50,0.50,0.00,0.50]  rmsL=0.18978 rmsR=0.18978  R/L=1.0000 (+0.00dB)
+  pos sweep  :0.25           p=[0.50,0.50,0.25,0.50]  rmsL=0.16856 rmsR=0.16856  R/L=1.0000 (+0.00dB)
+  pos sweep  :0.75           p=[0.50,0.50,0.75,0.50]  rmsL=0.16856 rmsR=0.16856  R/L=1.0000 (+0.00dB)
+  pos sweep  :1.00           p=[0.50,0.50,1.00,0.50]  rmsL=0.18978 rmsR=0.18978  R/L=1.0000 (+0.00dB)
+  blur sweep :0.00           p=[0.50,0.50,0.50,0.00]  rmsL=0.00001 rmsR=0.00001  R/L=1.0000 (+0.00dB)
+  blur sweep :0.25           p=[0.50,0.50,0.50,0.25]  rmsL=0.14635 rmsR=0.17298  R/L=1.1820 (+1.45dB)
+  blur sweep :0.75           p=[0.50,0.50,0.50,0.75]  rmsL=0.15316 rmsR=0.15316  R/L=1.0000 (+0.00dB)
+  blur sweep :1.00           p=[0.50,0.50,0.50,1.00]  rmsL=1.23215 rmsR=1.23215  R/L=1.0000 (+0.00dB)
+  combo A                    p=[0.30,0.70,0.40,0.20]  rmsL=0.36855 rmsR=0.37221  R/L=1.0099 (+0.09dB)
+  combo B                    p=[0.70,0.30,0.60,0.80]  rmsL=0.00001 rmsR=0.00001  R/L=1.0000 (+0.00dB)
+  combo C                    p=[0.10,0.90,0.20,0.10]  rmsL=0.00001 rmsR=0.00001  R/L=1.0000 (+0.00dB)
+  combo D                    p=[0.90,0.10,0.80,0.90]  rmsL=0.00001 rmsR=0.00001  R/L=1.0000 (+0.00dB)
+  >> Spectral mono: max |R/L imbalance| over all configs = 1.45 dB
+
+--- SPECTRAL blur=0.25: multi-seed RNG probe (mono) ---
+  seed= 1  rmsL=0.13792 rmsR=0.13088  R/L=0.9489 (-0.46dB)
+  seed= 2  rmsL=0.17667 rmsR=0.16826  R/L=0.9524 (-0.42dB)
+  seed= 3  rmsL=0.14539 rmsR=0.15130  R/L=1.0407 (+0.35dB)
+  seed= 4  rmsL=0.15468 rmsR=0.18266  R/L=1.1809 (+1.44dB)
+  seed= 5  rmsL=0.14983 rmsR=0.12390  R/L=0.8270 (-1.65dB)
+  seed= 6  rmsL=0.15068 rmsR=0.15777  R/L=1.0471 (+0.40dB)
+  seed= 7  rmsL=0.12843 rmsR=0.15665  R/L=1.2198 (+1.73dB)
+  seed= 8  rmsL=0.15596 rmsR=0.14600  R/L=0.9361 (-0.57dB)
+  >> seeds on +side:4  -side:4   range [-1.65 .. 1.73] dB
+  >> If both signs appear, the blur<0.5 imbalance is STOCHASTIC
+     (texture-freeze variance), NOT a systematic channel bias.
+
+--- CONTROL effects (mono-correlated) ---
+  Diffuser                   p=[0.00,0.00,0.00,0.00]  rmsL=0.29094 rmsR=0.29124  R/L=1.0010 (+0.01dB)
+  Resonator pos0.25          p=[0.50,0.50,0.50,0.25]  rmsL=0.25266 rmsR=0.20048  R/L=0.7935 (-2.01dB)
+  Resonator pos0.50          p=[0.50,0.50,0.50,0.50]  rmsL=0.26253 rmsR=0.00001  R/L=0.0000 (-87.43dB)
+  Resonator pos0.75          p=[0.50,0.50,0.50,0.75]  rmsL=0.25266 rmsR=0.20048  R/L=0.7935 (-2.01dB)
+  >> Diffuser expected ~symmetric; Resonator pos0.50 expected R/even -> null.
+
+--- SPECTRAL (UN-correlated stereo, inL!=inR) ---
+  input (uncorrelated) R/L = 1.0003 (0.00 dB)
+  spectral default           p=[0.50,0.50,0.50,0.50]  rmsL=0.16411 rmsR=0.16436  R/L=1.0015 (+0.01dB)
+  spectral pitch0.30         p=[0.30,0.50,0.50,0.50]  rmsL=0.24980 rmsR=0.25043  R/L=1.0025 (+0.02dB)
+  spectral warp0.20          p=[0.50,0.20,0.50,0.50]  rmsL=0.00001 rmsR=0.00001  R/L=0.9999 (-0.00dB)
+  spectral blur0.25          p=[0.50,0.50,0.50,0.25]  rmsL=0.15668 rmsR=0.14253  R/L=0.9097 (-0.82dB)
+  >> If Spectral preserves the input R/L, it does NOT collapse the image.
+
+--- PARALLEL ROUTING verdict (from FxChain::renderParallel) ---
+  Each parallel slot copies BOTH inL and inR into its own wet buffer
+  and processes the full stereo pair; the wets are summed. -> TRUE parallel.
+
+=== END === (0 non-finite results)

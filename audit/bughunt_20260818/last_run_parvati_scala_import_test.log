@@ -1,0 +1,40 @@
+parvati_scala_import_test
+[corpus: expected tables]
+  ok  : F1 12tet imports
+  ok  : F1 all-zero table
+  ok  : F2 ji12 imports
+  ok  : F2 table matches hand-derived values
+  ok  : F3 penta standalone rejected (S != 12)
+  ok  : F3b penta.kbm imports
+  ok  : F3b table matches hand-derived values
+  ok  : F3b warns about muted classes
+  ok  : F4 edo19 standalone rejected (S != 12)
+  ok  : F4b edo19.kbm imports
+  ok  : F4b table matches hand-derived values
+  ok  : F4b notes the 19->12 subset mapping
+  ok  : F5 bohlen standalone rejected (S != 12)
+  ok  : F5 bohlen+kbm rejected on non-octave period
+  ok  : F6 root62 imports
+  ok  : F6 table matches hand-derived values
+  ok  : F7 x432 imports
+  ok  : F7 table matches hand-derived values (class 2 muted, others -41)
+[malformed inputs]
+  ok  : M1 short pitch block rejected with counts
+  ok  : M2 negative ratio rejected, value cited
+  ok  : M3 kbm 'y' key rejected, value cited
+  ok  : kbm with 11 key lines rejected (D7)
+  ok  : kbm S = 0 (linear map) rejected
+  ok  : kbm degree > o rejected, degree and o cited
+  ok  : o > N rejected
+  ok  : empty scl rejected
+  ok  : comma decimal rejected, token cited
+  ok  : R on an 'x' key rejected
+[grammar edges]
+  ok  : comments/junk/blank lines tolerated
+  ok  : negative cents accepted (-5.0 -> -6 units)
+  ok  : bare integer '2' parsed as 2/1
+  ok  : clamped class saturates at +127
+  ok  : clamp warning emitted
+  ok  : always-on resolution-cap warning present
+  ok  : N=2 still rejects on mapping size (extra lines irrelevant)
+ALL PASS

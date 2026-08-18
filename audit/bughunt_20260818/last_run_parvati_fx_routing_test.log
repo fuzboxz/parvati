@@ -1,0 +1,52 @@
+  ok  : topo 0 order 0: output finite
+  ok  : topo 0 order 0: wet output differs from dry
+  ok  : topo 0 order 1: output finite
+  ok  : topo 0 order 1: wet output differs from dry
+  ok  : topo 0 order 2: output finite
+  ok  : topo 0 order 2: wet output differs from dry
+  ok  : topo 0 order 3: output finite
+  ok  : topo 0 order 3: wet output differs from dry
+  ok  : topo 0 order 4: output finite
+  ok  : topo 0 order 4: wet output differs from dry
+  ok  : topo 0 order 5: output finite
+  ok  : topo 0 order 5: wet output differs from dry
+  ok  : topo 1 order 0: output finite
+  ok  : topo 1 order 0: wet output differs from dry
+  ok  : topo 1 order 1: output finite
+  ok  : topo 1 order 1: wet output differs from dry
+  ok  : topo 1 order 2: output finite
+  ok  : topo 1 order 2: wet output differs from dry
+  ok  : topo 1 order 3: output finite
+  ok  : topo 1 order 3: wet output differs from dry
+  ok  : topo 1 order 4: output finite
+  ok  : topo 1 order 4: wet output differs from dry
+  ok  : topo 1 order 5: output finite
+  ok  : topo 1 order 5: wet output differs from dry
+  ok  : topo 2 order 0: output finite
+  ok  : topo 2 order 0: wet output differs from dry
+  ok  : topo 2 order 1: output finite
+  ok  : topo 2 order 1: wet output differs from dry
+  ok  : topo 2 order 2: output finite
+  ok  : topo 2 order 2: wet output differs from dry
+  ok  : topo 2 order 3: output finite
+  ok  : topo 2 order 3: wet output differs from dry
+  ok  : topo 2 order 4: output finite
+  ok  : topo 2 order 4: wet output differs from dry
+  ok  : topo 2 order 5: output finite
+  ok  : topo 2 order 5: wet output differs from dry
+  ok  : exercised all 18 topology x order combos (3 x 6)
+  ok  : no enabled slot => dry passthrough (all topologies)
+  ok  : master defaults: finite output
+  ok  : global mix 0.5: finite output
+  ok  : global mix 0.5: differs from fully-wet defaults
+  ok  : master EQ mid boost: finite output
+  ok  : master EQ mid boost: differs from flat
+  ok  : bypassed slot => wet fades out (not hard-cut) next block
+  ok  : engage => block-1 wet < steady-state wet (fade-in, no full-wet slam)
+  ok  : B7: re-prepare preserves an enabled slot's wet state (output still wet, not dry)
+  ok  : D1 series: Wavefolder (OS) dry-delay blend is finite
+  ok  : D1 series: Wavefolder (OS) output differs from dry (fold engaged)
+  ok  : D2 parallel: Wavefolder(OS)||Diffuser wet-align blend is finite
+  ok  : D2 parallel: Wavefolder(OS)||Diffuser output differs from dry
+
+FX ROUTING TEST: ALL CHECKS PASSED (0 failures)

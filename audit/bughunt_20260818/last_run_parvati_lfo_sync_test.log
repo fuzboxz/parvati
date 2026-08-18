@@ -1,0 +1,13 @@
+[1] Tempo-synced LFO rates @ 120 BPM (triangle)
+   rate 6  (24 ticks -> 1/16): expected 2.00 Hz, measured 1.99 Hz (0.57%)
+  ok  : rate 6  (24 ticks -> 1/16): expected 2.00 Hz, measured 1.99 Hz (0.57%)
+   rate 9  (8 ticks): expected 6.00 Hz, measured 6.01 Hz (0.25%)
+  ok  : rate 9  (8 ticks): expected 6.00 Hz, measured 6.01 Hz (0.25%)
+   rate 12 (3 ticks): expected 16.00 Hz, measured 16.07 Hz (0.45%)
+  ok  : rate 12 (3 ticks): expected 16.00 Hz, measured 16.07 Hz (0.45%)
+
+[2] Free-running rate (105, ~11.6 Hz) is tempo-independent
+   free-running @60=11.67 Hz vs @240=11.67 Hz (0.00% apart)
+  ok  : free-running @60=11.67 Hz vs @240=11.67 Hz (0.00% apart)
+
+LFO SYNC TEST: ALL CHECKS PASSED (0 failures)

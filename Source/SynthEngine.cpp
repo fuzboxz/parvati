@@ -757,8 +757,19 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         {
             int restoredSlots = 0;
             for (uint8_t m = s.mask; m; m >>= 1) restoredSlots += m & 1;
-            part.voiceSlots.store (s.slots != 0 ? s.slots : (uint8_t) restoredSlots,
-                                   std::memory_order_relaxed);
+            // Clamp like the public setPartVoiceSlots (bug hunt 2026-08-18,
+            // F-state-5): s.slots is a raw blob byte (no upstream validation;
+            // restoredSlots' popcount is inherently <= 8 but the explicit
+            // file byte is not), and every nonzero voiceSlots consumer assumes
+            // 1..kMaxVoicesPerPart. A hostile/corrupt blob (e.g. 200) must
+            // clamp to 16 — while 0 (the legacy AUTO byte / a mask-empty
+            // disabled part) must stay 0: forcing it to 1 would steal a card
+            // and shift every later part's contiguous share (host_state_test
+            // [1] pins exactly that).
+            const int rawSlots = s.slots != 0 ? (int) s.slots : restoredSlots;
+            part.voiceSlots.store (
+                static_cast<uint8_t> (rawSlots == 0 ? 0 : juce::jlimit (1, kMaxVoicesPerPart, rawSlots)),
+                std::memory_order_relaxed);
             part.name = s.name;
         }
         else

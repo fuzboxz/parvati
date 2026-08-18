@@ -928,7 +928,54 @@ int main()
                    "UI seam: seeding does not touch the type param itself");
         }
 
-        // (d) W7 undo pin: undo across a type change keeps the restored params
+        // (d) W10b keyboard seam (F-w10-1): the focused combo's ARROW KEYS
+        //     must seed exactly like a popup pick. JUCE's base keyPressed
+        //     nudges the selection directly (no popup -> the showPopup
+        //     override never ran), so a keyboard type change used to land with
+        //     NO engagement defaults (a silent effect). FxTypeCombo now routes
+        //     the arrows through the guarded pick seam.
+        if (fxCard1 != nullptr)
+        {
+            juce::ComboBox* combo = nullptr;
+            for (auto* c : fxCard1->getChildren())
+                if ((combo = dynamic_cast<juce::ComboBox*> (c)))
+                    break;
+            check (combo != nullptr, "[12d] FX1 type combo found");
+            if (combo != nullptr)
+            {
+                um.beginNewTransaction();
+                const float typeBefore = raw ("fx1_type");
+                const bool moved = combo->keyPressed (juce::KeyPress (juce::KeyPress::downKey));
+                check (moved, "[12d] down-arrow consumed by the combo");
+                check (raw ("fx1_type") == typeBefore + 1.0f,
+                       "[12d] keyboard arrow advances the type");
+                check (raw ("fx1_enabled") == 1.0f,
+                       "[12d] keyboard pick SEEDS engagement defaults (was: silent effect)");
+            }
+        }
+
+        // (e) W10b same-item guard (F-w10-2): re-picking the CURRENT type
+        //     (a natural way to dismiss the picker) must be a NO-OP — the
+        //     unguarded seam re-seeded all 7 engagement defaults and clobbered
+        //     the user's knob tweaks with no type change.
+        if (fxCard1 != nullptr)
+        {
+            um.beginNewTransaction();
+            setP ("fx1_param1", 21.0f);   // the user's tweak on the CURRENT type
+            um.beginNewTransaction();
+            const float typeNow = raw ("fx1_type");
+            fxCard1->simulateUserTypePickForTest (juce::roundToInt (typeNow));   // same item
+            check (raw ("fx1_type") == typeNow, "[12e] same-item pick keeps the type");
+            check (raw ("fx1_param1") == 21.0f,
+                   "[12e] same-item pick does NOT re-seed (user knobs survive)");
+            // Contrast: picking a DIFFERENT item still seeds.
+            const int other = juce::roundToInt (typeNow) == 1 ? 2 : 1;
+            fxCard1->simulateUserTypePickForTest (other);
+            check (raw ("fx1_type") == (float) other, "[12e] different-item pick switches the type");
+            check (raw ("fx1_param1") != 21.0f, "[12e] different-item pick seeds its defaults");
+        }
+
+        // (f) W7 undo pin: undo across a type change keeps the restored params
         //     (nothing seeds in parameterChanged anymore; this pins it — a
         //     future re-introduction of listener-side seeding fails here).
         um.beginNewTransaction();
@@ -993,16 +1040,61 @@ int main()
         check (browser.debugScanCount() == 2, "invalidate() forces the rescan (the save seam)");
         check (browser.debugParseCount() > parses, "rescan re-parses the .PRO names");
 
-        // External add (no invalidate): the directory mtime must move — sleep
-        // past the millisecond resolution juce::Time keeps so the delta is
-        // deterministic on every filesystem.
+        // External add (no invalidate): the directory mtime must move. The
+        // sleep alone was filesystem-dependent (25 ms is invisible on 1-second-
+        // granularity filesystems like HFS+/FAT) — bump the directory mtime
+        // EXPLICITLY so the pickup is deterministic everywhere (W11).
         juce::Thread::sleep (25);
         check (userDir.getChildFile ("newleaf.parvati").replaceWithText ("x"),
                "test setup: external file added to USER");
+        userDir.setLastModificationTime (juce::Time::getCurrentTime()
+                                             + juce::RelativeTime::seconds (2));
         juce::PopupMenu m4;
         browser.buildMenu (m4);
         check (browser.debugScanCount() == 3, "external USER change self-invalidates via dir mtime");
         check (browser.debugTreeHasLeafLabel ("newleaf"), "the external file appears at the next open");
+
+        // DOCUMENTED RESIDUAL (W11, F-w10-3): a write that PRESERVES the
+        // directory mtime exactly is accepted-stale (same-ms granularity /
+        // timestamp-preserving restores). Pin that deterministically: add a
+        // file but restore the recorded mtime -> NO rescan. (invalidate()
+        // after a save covers the in-app writer.)
+        {
+            const juce::Time frozen = userDir.getLastModificationTime();
+            check (userDir.getChildFile ("ghost.parvati").replaceWithText ("x"),
+                   "test setup: mtime-preserving external file added");
+            userDir.setLastModificationTime (frozen);
+            juce::PopupMenu m5;
+            browser.buildMenu (m5);
+            check (browser.debugScanCount() == 3,
+                   "RESIDUAL pinned: mtime-preserving external write stays cached (by design)");
+            check (! browser.debugTreeHasLeafLabel ("ghost"),
+                   "RESIDUAL pinned: the ghost file is not in the cached tree (by design)");
+        }
+
+        // W11 (F-w10-4): a watch ROOT that was ABSENT at scan time and is
+        // created externally mid-session must invalidate the cache (the
+        // recorded `present` flag flips). Pre-fix, never-recorded roots left
+        // the new subtree invisible until a save-invalidate.
+        {
+            const auto lateUser = tmp.getChildFile ("LATE_USER");   // absent so far
+            PresetBrowser lateBrowser (templatesDir, lateUser, factoryDir, multiDir,
+                                       [] (const juce::File&) {});
+            juce::PopupMenu l1;
+            lateBrowser.buildMenu (l1);
+            check (lateBrowser.debugScanCount() == 1, "late-root: first open scans once");
+
+            lateUser.createDirectory();
+            lateUser.getChildFile ("appeared.parvati").replaceWithText ("x");
+            lateUser.setLastModificationTime (juce::Time::getCurrentTime()
+                                                 + juce::RelativeTime::seconds (2));
+            juce::PopupMenu l2;
+            lateBrowser.buildMenu (l2);
+            check (lateBrowser.debugScanCount() == 2,
+                   "late-root: external creation of an absent root invalidates the cache");
+            check (lateBrowser.debugTreeHasLeafLabel ("appeared"),
+                   "late-root: the externally created root's preset appears");
+        }
 
         tmp.deleteRecursively();
     }

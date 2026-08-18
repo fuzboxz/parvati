@@ -1,0 +1,12 @@
+=== mod-silence diagnostic ===
+mod11_amount (ENV3->VCA) BEFORE editor = 63  (init default 63)
+mod12_amount (Velocity->VCA)           = 16
+peak WITHOUT editor = 0.25504  (AUDIBLE)
+
+Creating editor (exercises ModMatrixView + ring listeners + drag affordance)...
+editor = 0x755120000
+mod11_amount AFTER editor + msg pump   = 63
+peak WITH editor    = 0.23176  (AUDIBLE)
+
+VERDICT:
+  editor preserves ENV->VCA amount AND audio stays audible: YES -> editor is NOT the cause; silence is persisted standalone state

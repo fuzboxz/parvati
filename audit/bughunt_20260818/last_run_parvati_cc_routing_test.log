@@ -1,0 +1,24 @@
+[1] sustain pedal: CC64 holds a released note, pedal-up releases
+  ok  : note sounds under the pedal
+  ok  : key release under the pedal KEEPS the voice sounding (swallowed)
+  ok  : pedal-up releases the sustained voice
+  ok  : without the pedal the release is immediate
+
+[2] sustain + arp: held-key stack survives the key release, drains on pedal-up
+  ok  : arp holds the key
+  ok  : key release under the pedal keeps the arp's held-key stack (pedal semantics)
+  ok  : pedal-up drains the held-key stack
+
+[3] CC123 all-notes-off clears arp stacks and stops voices
+  ok  : arp holds the key before CC123
+  ok  : CC123 clears the arp held-key stack
+  ok  : CC123 stops the part's sounding voices
+  ok  : CC123 under a held pedal is a no-op (firmware ignore_note_off gate)
+
+[4] CC1 mod wheel reaches only the channel-matching part's voices
+  ok  : both parts sound
+  ok  : wheel starts at 0 on both parts
+  ok  : CC1 on ch2 writes part 1's voices (value<<1)
+  ok  : CC1 on ch2 does NOT touch part 0's voices
+
+CC ROUTING TEST: ALL CHECKS PASSED (0 failures)

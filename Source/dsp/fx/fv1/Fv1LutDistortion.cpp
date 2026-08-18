@@ -228,10 +228,10 @@ int32_t Fv1LutDistortion::lutShape (int32_t x)
     if (idx < 0)    idx = 0;
     if (idx > 1023) idx = 1023;
     const int32_t yn = static_cast<int32_t> (shape_[static_cast<size_t> (idx)])
-                       << 9;   // Q.14 -> Q.23
+                       * 512;   // Q.14 -> Q.23
     if (fadeFrom_ == nullptr)
         return yn;
-    const int32_t yo = static_cast<int32_t> (fadeFrom_[static_cast<size_t> (idx)]) << 9;
+    const int32_t yo = static_cast<int32_t> (fadeFrom_[static_cast<size_t> (idx)]) * 512;
     const int16_t f = fade14_;
     const int16_t g = static_cast<int16_t> (8191 - f);
     return f24_addSat (f24_mulk (yo, g), f24_mulk (yn, f));

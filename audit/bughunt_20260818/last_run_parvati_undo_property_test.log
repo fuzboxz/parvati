@@ -1,0 +1,58 @@
+=== Parvati undo round-trip property (T7) ===
+  ok  : editor created (live FxSlotCards for the seeding cases)
+  ok  : FX1 card found (the seeding seam is reachable)
+
+[0] comparator canary
+  ok  : canary: snapshot deterministic (same state -> same bytes)
+  ok  : canary: snapshot has payload to doctor
+      [diff] first differing byte @ 6254 (0x76 vs 0x77)
+  ok  : canary: comparator rejects a 1-byte-doctored snapshot
+
+[1] ops battery: undo restores the full state byte-exactly
+      [diff] size 12509 vs 12510
+  ok  : op changed the visible state (mid != pre)
+  ok  : float patch-byte write (osc1_param)
+  ok  : single transaction fully consumed by one undo
+      [diff] first differing byte @ 372 (0x44 vs 0x48)
+  ok  : op changed the visible state (mid != pre)
+  ok  : choice write -> PartData byte 15 (part_polyphony)
+  ok  : single transaction fully consumed by one undo
+      [diff] first differing byte @ 361 (0x2e vs 0x50)
+  ok  : op changed the visible state (mid != pre)
+  ok  : choice write -> controller arp config (arp_mode)
+  ok  : single transaction fully consumed by one undo
+      [diff] size 12509 vs 12510
+  ok  : op changed the visible state (mid != pre)
+  ok  : signed patch-byte write (mod1_amount)
+  ok  : single transaction fully consumed by one undo
+      [diff] size 12509 vs 12510
+  ok  : op changed the visible state (mid != pre)
+  ok  : FX param write (fx1_param1)
+  ok  : single transaction fully consumed by one undo
+
+[2] fx1_type: plain write seeds NOTHING; the UI seam seeds + undoes atomically
+  ok  : precondition: fx1 slot starts as None
+  ok  : plain write: type moved
+  ok  : plain write: NO engagement seeding (automation cannot clobber)
+  ok  : plain write undone (back to None)
+  ok  : engagement seed: fx1_enabled -> 1
+  ok  : engagement seed: fx1_drywet -> 80
+  ok  : engagement seed: fx1_param1 -> 50
+  ok  : seed writes + type undone in ONE step (full state byte-equal)
+
+[3] type-switch undo restores USER values, not seeds
+  ok  : precondition: type is Chorus
+  ok  : precondition: user param1 = 33
+  ok  : Flanger switch seeded param1 = 40 (engagement ran)
+  ok  : undo: type back to Chorus
+  ok  : undo: param1 back to the USER value 33 (not Flanger's 40, not Chorus's seed 45)
+
+[4] part-switch doctrine: stack invalidated, no cross-part replay
+  ok  : precondition: part A's edit landed (patch byte moved)
+  ok  : precondition: switched to part B (index 1)
+  ok  : undoSafe swept the stack: canUndo == false
+  ok  : part B bytes UNTOUCHED by the swept undo (no cross-part replay)
+  ok  : part A retains its edit (undo did not replay into part A either)
+  ok  : the switch itself survives (not undoable by design)
+
+UNDO PROPERTY TEST: ALL CHECKS PASSED (0 failures)

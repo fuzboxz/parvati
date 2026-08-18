@@ -17,6 +17,12 @@ FxChain::FxChain()
     // defaults (None) so the MT no-op check starts coherent.
     mtLastType_.fill (static_cast<uint8_t> (FxType::None));
     pendingType_.fill (static_cast<uint8_t> (FxType::None));
+    // F-eng-3: -1 = "no staged swap" (None / factory-refused), so the AT-side
+    // latency() snapshot never misreads a value-initialized 0 as a real staged
+    // latency before the first stage (state==Empty gates it anyway — belt and
+    // braces, matching pendingType_'s defensive fill above).
+    for (auto& pl : pendingLatency_)
+        pl.store (-1, std::memory_order_relaxed);
     for (auto& st : stageState_)
         st.store (kStageEmpty, std::memory_order_relaxed);
     for (auto& r : retired_)
@@ -115,11 +121,14 @@ void FxChain::prepare (double rate, int maxBlock)
 // with pointer moves only).
 bool FxChain::acquireStagingSlot (int slot) noexcept
 {
-    // Spin over the 3-way stage state until this thread owns Filling. The only
-    // contending transition is an in-flight AT install (Staged->Empty, a few
-    // pointer moves inside one audio block), so the loop is bounded by
-    // microseconds, not by audio blocks -- an audio-stopped engine never spins
-    // here because the take-back CAS below succeeds immediately.
+    // Spin over the 4-way stage state until this thread owns Filling. The
+    // contending transitions are in-flight AT install work: the AT holds
+    // kStageConsuming for the microseconds its pointer moves take, then
+    // stores Empty. Neither CAS below matches kStageConsuming, so while the
+    // AT owns the install this loop yields and retries until that final
+    // Empty store -- bounded by microseconds, not by audio blocks. An
+    // audio-stopped engine never spins here because the take-back CAS below
+    // succeeds immediately.
     for (;;)
     {
         int cur = kStageEmpty;
@@ -153,6 +162,9 @@ void FxChain::setSlotType (int slot, FxType t)
     if (mtLastType_[(size_t) slot] == tv)
     {
         const int st = stageState_[(size_t) slot].load (std::memory_order_acquire);
+        // kStageConsuming deliberately does NOT match either arm: the AT is
+        // mid-install of this slot's pending_, so this call must stage a NEW
+        // swap and acquireStagingSlot spins until the AT's final Empty store.
         if (st == kStageEmpty
             || (st == kStageStaged && pendingType_[(size_t) slot] == tv))
             return;
@@ -172,10 +184,15 @@ void FxChain::setSlotType (int slot, FxType t)
             next->prepare (rate_, juce::jmax (1, maxBlock_));
             next->reset();
         }
+        // F-eng-3: publish the staged latency VALUE (not the pointer) for the
+        // audio-thread latency() snapshot; release-order it before kStageStaged.
+        pendingLatency_[(size_t) slot].store (next ? next->latency() : -1,
+                                              std::memory_order_release);
         pending_[(size_t) slot] = std::move (next);
     }
     else
     {
+        pendingLatency_[(size_t) slot].store (-1, std::memory_order_release);
         pending_[(size_t) slot].reset();
     }
     pendingType_[(size_t) slot] = tv;
@@ -194,9 +211,13 @@ void FxChain::consumePendingSwap (int slot) noexcept
     // AT (or the MT inside prepare, with the callback stopped): claim the
     // published swap, then own pending_ exclusively. Pointer moves only -- no
     // construction, no destruction except the documented parking-full case.
+    // The claim goes to kStageConsuming, NOT kStageEmpty: pending_ stays
+    // AT-owned until the final store below, otherwise the MT could acquire
+    // and fill pending_ while this thread is still between the CAS and its
+    // move-out (the release-store of the CAS only orders prior writes).
     int expected = kStageStaged;
     if (! stageState_[(size_t) slot].compare_exchange_strong (
-            expected, kStageEmpty, std::memory_order_acq_rel, std::memory_order_relaxed))
+            expected, kStageConsuming, std::memory_order_acq_rel, std::memory_order_relaxed))
         return;
 
     // Park the displaced processor (ownership passes to the MT reaper).
@@ -215,6 +236,10 @@ void FxChain::consumePendingSwap (int slot) noexcept
     // must be click-free.)
     wetFade_[(size_t) slot] = 0.0f;
     clearDelayRings();   // N3: latency may have changed -- flush stale ring history
+
+    // pending_ is free ONLY now (release orders the move-out above before
+    // this store, so an MT that observes Empty cannot be racing our reads).
+    stageState_[(size_t) slot].store (kStageEmpty, std::memory_order_release);
 }
 
 void FxChain::parkRetiredProcessor (FxProcessor* old) noexcept
@@ -520,9 +545,16 @@ int FxChain::latency() const noexcept
         // will run — reporting the old slot's latency after a setSlotType
         // would leave the alignment one install behind (the param-coverage
         // test reads it pre-render).
-        if (pending_[idx] != nullptr
-            && pendingType_[idx] != static_cast<uint8_t> (FxType::None))
-            return pending_[idx]->latency();
+        // F-eng-3: the staged value is read from the pendingLatency_ SNAPSHOT
+        // (never by dereferencing pending_, which the MT may be destroying on
+        // the take-back path while this runs on the audio thread). -1 encodes
+        // a staged None / factory refusal, which falls through to slots_.
+        if (stageState_[idx].load (std::memory_order_acquire) == kStageStaged)
+        {
+            const int pl = pendingLatency_[idx].load (std::memory_order_acquire);
+            if (pl >= 0)
+                return pl;
+        }
         if (slots_[idx] != nullptr
             && slotType_[idx] != static_cast<uint8_t> (FxType::None))
             return slots_[idx]->latency();

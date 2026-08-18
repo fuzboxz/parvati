@@ -1,0 +1,58 @@
+[1] arrangementCount() == 5 (built-in templates, excl. Custom)
+  ok  : arrangementCount() == 5
+
+[2] arrangementLabel() covers every enum value
+  ok  : label(Mono) == "Mono"
+  ok  : label(Poly) == "Poly"
+  ok  : label(Unison) == "Unison"
+  ok  : label(Multitimbral) == "Multitimbral"
+  ok  : label(Drum Kit) == "Drum Kit"
+  ok  : label(Custom) == "Custom"
+
+[3] applyArrangement writes the exact template table + infer round-trips
+-- Mono --
+  ok  : Mono: per-part voices/ch/zone/poly/spread match table
+  ok  : Mono: total voices == 1 (<= 96 pool)
+  ok  : Mono: derived cards == 1, disjoint (got 1)
+  ok  : Mono: inferArrangement round-trips to Mono
+-- Poly --
+  ok  : Poly: per-part voices/ch/zone/poly/spread match table
+  ok  : Poly: total voices == 16 (<= 96 pool)
+  ok  : Poly: derived cards == 6, disjoint (got 6)
+  ok  : Poly: inferArrangement round-trips to Poly
+-- Unison --
+  ok  : Unison: per-part voices/ch/zone/poly/spread match table
+  ok  : Unison: total voices == 16 (<= 96 pool)
+  ok  : Unison: derived cards == 6, disjoint (got 6)
+  ok  : Unison: inferArrangement round-trips to Unison
+-- Multitimbral --
+  ok  : Multitimbral: per-part voices/ch/zone/poly/spread match table
+  ok  : Multitimbral: total voices == 96 (<= 96 pool)
+  ok  : Multitimbral: derived cards == 6, disjoint (got 6)
+  ok  : Multitimbral: inferArrangement round-trips to Multitimbral
+-- Drum Kit --
+  ok  : Drum Kit: per-part voices/ch/zone/poly/spread match table
+  ok  : Drum Kit: total voices == 6 (<= 96 pool)
+  ok  : Drum Kit: derived cards == 6, disjoint (got 6)
+  ok  : Drum Kit: inferArrangement round-trips to Drum Kit
+
+[4] Custom detection (non-template states)
+  ok  : fresh engine (part0=6 voices, ch1) -> Custom (not a preset)
+  ok  : Poly layout + CYCLIC poly -> Custom
+  ok  : 16 voices + MONO poly + spread 0 != Unison preset (spread differs) -> Custom
+  ok  : Multitimbral with part1 on ch9 -> Custom
+  ok  : Unison with spread 3 -> Custom (spread is part of the match)
+  ok  : applyArrangement(Custom) is a no-op (still Custom)
+
+[5] Preset behaviour (the user-facing points)
+  ok  : Mono: part0 = 1 voice + MONO poly (true mono, no unison)
+  ok  : Mono: parts 1..5 disabled (0 voices)
+  ok  : Unison: part0 = 16 voices + MONO poly (16-voice unison)
+  ok  : Unison: part0 spread == 8 (detuned stack)
+  ok  : Drum Kit: every part = 1 voice
+  ok  : Drum Kit: every part Omni (channel 0)
+  ok  : Drum Kit: single-note zones (Kick 36, Tom 45)
+  ok  : Drum Kit: parts are MONO (one-shot drums)
+  ok  : Poly re-applied over Mono: part0 = 16 voices, POLY, spread 0
+
+PATCH ARRANGEMENT TEST: ALL CHECKS PASSED (0 failures)

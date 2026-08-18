@@ -1,0 +1,80 @@
+[1] Full 6-Part state survives a host-state round-trip
+  ok  : getStateInformation produced a non-empty block
+  ok  : Part 1 osc1_shape preserved
+  ok  : Part 1 midi channel preserved
+  ok  : Part 1 keyzone preserved
+  ok  : Part 1 voice slots preserved
+  ok  : Part 1 derived mask = contiguous 1-card share (vc4)
+  ok  : Part 1 arp octave preserved
+  ok  : Part 1 seq step preserved
+  ok  : Part 2 osc1_shape preserved
+  ok  : Part 2 midi channel preserved
+  ok  : Part 2 voice slots preserved
+  ok  : Part 2 derived mask = contiguous 1-card share (vc5)
+  ok  : Part 2 arp resolution preserved
+  ok  : current part preserved
+
+[2] Legacy state (no engine_state) restores the saved part + all params
+  ok  : fresh state carries engine_state
+  ok  : legacy state restores without throwing
+  ok  : all 260 APVTS params restored (mismatches=0)
+  ok  : legacy restore: part_select == 4 (Part 3)
+  ok  : legacy restore: engine current part == 3
+  ok  : legacy restore: part_tuning landed on Part 3
+  ok  : legacy restore: osc1_shape landed on Part 3
+  ok  : legacy restore: arp_octave landed on Part 3
+  ok  : legacy restore: seq1_step0 landed on Part 3
+  ok  : legacy restore: FX type/enabled landed on Part 3
+  ok  : legacy restore: Part 0 seeds init patch
+  ok  : legacy restore: post-restore edits route to Part 3
+
+[3] Per-part FX survives a host-state round-trip (binary v3)
+  ok  : source Part 1 has non-default FX (sanity)
+  ok  : source Part 4 has non-default FX (sanity)
+  ok  : getStateInformation produced a non-empty block
+  ok  : Part 1 fxState round-trips (binary v3)
+  ok  : Part 4 fxState round-trips (binary v3)
+  ok  : unpainted Part 0 fxState stays at defaults
+  ok  : unpainted Part 5 fxState stays at defaults
+  ok  : current part (1) preserved
+
+[4] v1 engine-state blob loads with FX at defaults
+  ok  : source Part 1 has non-default FX (sanity)
+  ok  : captured engine_state is a v7 blob large enough to derive v1
+  ok  : restoreState accepts the hand-crafted v1 blob
+  ok  : v1 blob: Part 1 patch bytes round-trip
+  ok  : v1 blob: Part 1 midi channel round-trips
+  ok  : v1 blob: every Part's fxState stays at defaults (FX absent in v1)
+
+[5] v2 engine-state blob loads with master section at defaults
+  ok  : source Part 1 has non-default FX incl. master (sanity)
+  ok  : captured engine_state is a v7 blob large enough to derive v2
+  ok  : restoreState accepts the hand-crafted v2 blob
+  ok  : v2 blob: only the 4 master fields differ from source (absent in v2)
+  ok  : v2 blob: every Part's master section loads at defaults
+
+[6] Filter oversampling pref: default 2x, 8x max, clamping
+  ok  : fresh processor defaults to 2x oversampling
+  ok  : 8x oversampling accepted (new maximum)
+  ok  : 16 clamps down to 8
+  ok  : 3 clamps up to 4
+  ok  : 1x (the bit-identical path) still selectable
+  ok  : 8x survives a host-state round-trip
+  ok  : a persisted 1x state restores 1x (not the new 2x default)
+
+[4] A state restore re-APPLIES the global option params to the engine
+  ok  : precondition: A's engine is exponential
+  ok  : restore re-applies vca_curve to the ENGINE (was: defaults + stale UI)
+  ok  : restore re-applies filter_drive to the ENGINE (kDriveValues[5] = 5.0)
+  ok  : filter_card restored in the APVTS (re-applied by the same loop)
+
+[8] truncated engine-state blob restores atomically (no partial apply)
+  ok  : [8] sanity: host state carries an engine blob
+  ok  : [8] sanity: engine blob is non-trivial
+  ok  : [8] every truncated blob is rejected (no false success)
+  ok  : [8] a rejected blob leaves the engine exactly as it was (no partial apply)
+  ok  : [8] control: the full blob restores
+  ok  : [8] control: the full blob actually applied A's state
+  ok  : [8b] part_select param re-echoed to the blob's current part after restore
+
+HOST-STATE TEST: ALL CHECKS PASSED (0 failures)

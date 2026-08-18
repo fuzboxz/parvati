@@ -71,6 +71,11 @@ class QuadratureOscillator {
       
       if (phase <= 0.0f) {
         phase += 1.0f;
+        // PARVATI PATCH: phase was exactly 0.0f -> 0.0f + 1.0f == 1.0f exactly;
+        // clamp back into [0,1) so Interpolate never reads table[1025] (the
+        // 1025th entry IS the wrap point; +1 past it is an OOB global read).
+        if (phase >= 1.0f)
+          phase = 0.0f;
       } else if (phase >= 1.0f) {
         phase -= 1.0f;
       }

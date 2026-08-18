@@ -155,21 +155,37 @@ private:
     std::array<int, 3> order_ { 0, 1, 2 };
 
     // ---- Staged type swap (MT builds / AT installs; audit F1) ----
-    // pending_ is owned by whichever side holds the 3-way stage state:
-    //   kStageEmpty   -> nobody owns it
-    //   kStageFilling -> the message thread is filling it (the AT ignores it)
-    //   kStageStaged  -> published; the AT may install it at any moment
+    // pending_ is owned by whichever side holds the 4-way stage state:
+    //   kStageEmpty     -> nobody owns it (free for the MT to fill)
+    //   kStageFilling   -> the message thread is filling it (the AT ignores it)
+    //   kStageStaged    -> published; the AT may install it at any moment
+    //   kStageConsuming -> the audio thread claimed a Staged swap and owns
+    //                      pending_ exclusively until it stores kStageEmpty
     // The message thread enters Filling via compare_exchange (from Empty, or
     // by taking an unconsumed Staged entry back -- the coalescing path: a
     // queued-but-never-audible swap is replaced, its object freed on the MT).
-    // The AT installs via CAS Staged->Empty and then owns pending_ exclusively.
-    // A plain pendingReady_ bool is NOT sufficient: after its exchange the AT
-    // is still mid-move, so "flag == false" would not make an MT overwrite
-    // race-free; the 3-state machine closes that window.
-    static constexpr int kStageEmpty   = 0;
-    static constexpr int kStageFilling = 1;
-    static constexpr int kStageStaged  = 2;
+    // The AT claims Staged->Consuming, moves pending_ into slots_ (pointer
+    // moves only), and only THEN stores Empty: pending_ is free ONLY after
+    // that final store. A plain pendingReady_ bool is NOT sufficient, and
+    // neither is claiming straight back to Empty: the release-store of the
+    // claim CAS only orders writes BEFORE the CAS, so an MT fill could start
+    // while the AT is still mid-move-out (TSan-verified race: setSlotType's
+    // pending_ write vs consumePendingSwap's move-out). The 4-state machine
+    // closes that window.
+    static constexpr int kStageEmpty     = 0;
+    static constexpr int kStageFilling   = 1;
+    static constexpr int kStageStaged    = 2;
+    static constexpr int kStageConsuming = 3;
     std::array<std::unique_ptr<FxProcessor>, kNumFxSlots> pending_;
+    // F-eng-3 (bug hunt 2026-08-18): latency() runs ON THE AUDIO THREAD (from
+    // process()) but used to dereference pending_ — MT-owned and DESTROYED by
+    // the take-back path — through a plain null test. Instead the MT publishes
+    // the staged slot's latency VALUE here (release-ordered before the
+    // kStageStaged store; -1 = staged None / factory-refused), and the AT
+    // reads this snapshot acquire-ordered. A take-back can race the read, but
+    // the value is a PLANNING query that converges next block (clearDelayRings
+    // flushes on install — N3); the pointer race (UAF) is gone.
+    std::array<std::atomic<int>, kNumFxSlots> pendingLatency_ {};   // -1 = None
     std::array<uint8_t, kNumFxSlots> pendingType_ {};   // type of pending_ (MT-written while Filling, AT-read after acquiring Staged)
     std::array<uint8_t, kNumFxSlots> mtLastType_ {};    // MT-side mirror of the last staged type (setSlotType no-op check)
     std::array<std::atomic<int>, kNumFxSlots> stageState_ {};   // kStageEmpty
@@ -313,12 +329,13 @@ private:
     void clearDelayRings() noexcept;
 
     // ---- Staged-swap internals ----
-    // MT: acquire the staging slot for @p slot (spin over the 3-way state;
+    // MT: acquire the staging slot for @p slot (spin over the 4-way state;
     // bounded -- Filling is only ever held by the single message thread, so a
     // failed CAS retries only against an in-flight AT install, microseconds).
     bool acquireStagingSlot (int slot) noexcept;
     // Shared install routine (AT service + prepare's MT consume): CAS
-    // Staged->Empty, then move pending_ into slots_ parking the old processor.
+    // Staged->Consuming, move pending_ into slots_ parking the old processor,
+    // then store Empty (pending_ is AT-owned until that final store).
     void consumePendingSwap (int slot) noexcept;
     // Park a displaced processor for the MT reaper (first empty atomic slot).
     void parkRetiredProcessor (FxProcessor* old) noexcept;

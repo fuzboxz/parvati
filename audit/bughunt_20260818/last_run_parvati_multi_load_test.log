@@ -1,0 +1,54 @@
+[1] Parse real .MUL (RIFF/MBKS)
+  ok  : 000.MUL exists in the reference tree
+  ok  : parse 000.MUL succeeds (MultiData found)
+  ok  : 000.MUL has a MultiData (56B) chunk
+  ok  : 000.MUL name is non-empty
+     multi name = 'TekDrums'
+     parts with a Patch: 6/6
+  ok  : at least 2 parts carry a Patch
+     PartMapping[0]: channel=1 low=0 high=127
+
+[2] Load .MUL into ParvatiAudioProcessor
+  ok  : loadMultiFile(000.MUL) returns true
+     part osc1.shape: 31 19 1 1 1 1 
+     parts loaded: 6
+  ok  : at least two parts have different osc1_shape (distinct patches)
+  ok  : Part 0 midiChannel (1) == MultiData pm[0].midi_channel (1)
+  ok  : loaded multi name reaches the processor
+
+[3] .MUL voice allocation + per-part arp/seq
+  ok  : exclusive: no voicecard owned by more than one Part
+  ok  : no voicecard lost between .MUL and the engine (total count)
+  ok  : voice allocation matches stored bitmasks (voices 2 expected / 2 actual)
+     (note: 000.MUL has no multi-voicecard part to stress-test)
+  ok  : per-part arp/seq mode pushed from .MUL PartData
+
+[4] Direct voice-allocation bitmask mapping
+  ok  : part0(2 slots) owns 2 voices on vc0,1
+  ok  : part1(1 slot) owns 1 voice on vc2
+  ok  : part2(2 slots) owns 2 voices on vc3,4
+  ok  : parts 3-5 (zero mask -> 0 slots) own no voices
+  ok  : equivalent: a 1-bit mask anywhere still maps to the derived 1-card share
+  ok  : part0 keeps its derived share (no card stealing under slots)
+
+[4] Multi-load resets voice slots to init (stale-voice bug)
+  ok  : short .parvati multi loads
+  ok  : part0 (no voice_slots key) resets to init 6, not stale 1
+  ok  : parts 1..5 (absent from the file) reset to init 0, not stale 16
+  ok  : .parvati multi with explicit voice_slots loads
+  ok  : explicit voice_slots: 9 wins over the init reset
+  ok  : unmentioned part 1 still resets to init 0 (not stale 1)
+  ok  : loadMultiFile over polluted slots succeeds
+  ok  : .MUL masks win: every part's slots == popcount(part_mapping_[i].voice_allocation)
+
+[6] Truncated .MUL (missing last part) is rejected, not half-loaded
+  ok  : [6] read the reference .MUL bytes
+  ok  : [6] every truncated .MUL is rejected (no routing/sound hybrid load)
+  ok  : [6] control: the full .MUL still loads
+
+[7] Hostile raw Patch/Part bytes clamp to their valid twins (F-eng-1)
+  ok  : [7] hostile-byte render is finite (no NaN/inf from OOB state)
+  ok  : [7] hostile-byte render is non-silent
+  ok  : [7] hostile bytes render byte-identical to the clamped twin (15360 samples)
+
+MULTI LOAD TEST: ALL CHECKS PASSED (0 failures)

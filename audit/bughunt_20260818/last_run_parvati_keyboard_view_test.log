@@ -1,0 +1,44 @@
+  ok  : inner MidiKeyboardComponent found as a child
+[0] Two-octave large-key window
+  ok  : visible range is exactly two octaves, C3..C5 (48..72)
+  ok  : the window's 15 white keys fill the 1200pt strip (~80pt each)
+  ok  : the KeyComp fills the FULL component height (tall strip, no fixed-height override)
+  ok  : keyboard hosted on the desktop for focus handling
+[1] Press C4 (60)
+  ok  : mouseDownOnKey returns true (base lights the key)
+  ok  : press fires exactly one note-on(60)
+[2] Drag onto D4 (62): real glissando retarget
+  ok  : mouseDraggedToKey returns true (base lights the swept key)
+  ok  : drag to a new key fires off(60) THEN on(62) — in that order
+[3] Drag within the SAME key (62): no retrigger
+  ok  : drag to the held key fires nothing
+[4] Drag back onto C4 (60)
+  ok  : drag back fires off(62) THEN on(60)
+[5] Release on the key
+  ok  : release fires exactly one off(60)
+[5b] Press/release C5 (72) — the window's top edge key
+  ok  : mouseDownOnKey returns true on the top key
+  ok  : top-edge key fires on(72) then exactly one off(72)
+[6] Press E4 (64), release off the keys
+  ok  : press + off-key release fires on(64) then exactly one off(64)
+[7] Ableton-style keyboard controls (octave + velocity)
+  ok  : X (octave up) handled
+  ok  : after X the visible window is C4..C6 (60..84)
+  ok  : after X, 'a' plays C4 (60) at the default velocity 100/127
+  ok  : V raises the typing velocity to 120/127
+  ok  : C twice lowers the typing velocity to 80/127
+  ok  : after Z the window is back to C3..C5 (48..72)
+  ok  : Z at the bottom clamps the window at MIDI 0
+  ok  : X at the top clamps the window at 127-24
+[7b] Settings-changed feedback channel
+  ok  : setSettingsChangedCallback primes with the initial state
+  ok  : V reports (current base, velocity 80+20=100)
+  ok  : C reports the stepped velocity (100-20=80)
+  ok  : Z reports the shifted octave base with the velocity kept
+  ok  : accessors mirror the reported state
+[7c] Continuous Y-pressure (aftertouch) channel
+  ok  : press at the key top reports a quiet initial pressure (>0.9)
+  ok  : dragging to the key bottom drives pressure hard (<0.15)
+  ok  : release emits no extra pressure events (stream holds last value)
+
+PASS (0 failures)

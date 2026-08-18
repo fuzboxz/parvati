@@ -19,6 +19,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PatchFile.h"
+#include "dsp/patch.h"   // ambika::dsp::Patch/Part + kNum* (the [7] hostile-byte clamps)
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 
@@ -394,6 +395,112 @@ int main()
             proc.prepareToPlay (48000.0, 256);
             check (proc.loadMultiFile (f), "[6] control: the full .MUL still loads");
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // [7] Hostile raw Patch/Part bytes are clamped at the DSP edge (bug hunt
+    //     2026-08-18, F-eng-1 / F-static-1/2). The .MUL and host-state paths
+    //     push patch/part bytes into the engine WITHOUT the APVTS round-trip
+    //     (PluginProcessor.cpp:1046, SynthEngine.cpp:686) — pre-fix, a raw
+    //     mod-matrix `destination` byte up to 255 indexed dst_[19] (an OOB
+    //     WRITE on the audio thread), `source`/modifier operands indexed
+    //     modulation_sources_[31], the LFO-rate and portamento bytes indexed
+    //     128-entry LUTs, and a raw oscillator shape byte walked past
+    //     wav_res_wavetables. The DSP now clamps every one of these at the
+    //     consumer; this test pins the CONTRACT deterministically: a fully
+    //     hostile byte set must render byte-identical to its clamped twin
+    //     (and finite, and non-silent).
+    // ---------------------------------------------------------------------
+    std::printf ("\n[7] Hostile raw Patch/Part bytes clamp to their valid twins (F-eng-1)\n");
+    {
+        // Forge two identical engines; A carries HOSTILE bytes (255/200-ish),
+        // B carries exactly what the clamps must reduce them to.
+        auto forge = [] (bool hostile) {
+            auto proc = std::make_unique<ParvatiAudioProcessor>();
+            proc->prepareToPlay (48000.0, 256);
+            proc->syncAllParamsToEngine();
+
+            ambika::dsp::Patch hp {};
+            const uint8_t src  = hostile ? 255 : (ambika::dsp::kNumModulationSources - 1);
+            const uint8_t dst  = hostile ? 250 : (ambika::dsp::kNumModulationDestinations - 1);
+            const uint8_t rate = hostile ? 255 : 142;   // kNumSyncedLfoRates + 127
+            const uint8_t shp  = hostile ? 255 : 36;    // WAVEFORM_WAVETABLE_16 (index 15)
+            // mod[0]: hostile SOURCE into a valid destination (filter cutoff —
+            // audible, and the clamp target of source 255 is the CONSTANT_4
+            // slot, identical in both twins).
+            hp.modulation[0] = { src, 12, 60 };
+            // mod[1]: hostile DESTINATION. Any OOB destination clamps to 18 ==
+            // MOD_DST_VCA — the MULTIPLICATIVE path, which a nonzero amount
+            // would use to silence the voice (source 30 is a CONSTANT).
+            // amount 0 keeps the VCA untouched while STILL exercising the
+            // dst_[destination] read-modify-write every block (the pre-fix
+            // OOB write happened regardless of amount).
+            hp.modulation[1] = { dst, dst, 0 };
+            hp.modifier[0].operands[0] = src;
+            hp.modifier[0].operands[1] = hostile ? 200 : 30;
+            hp.modifier[0].op = 1;                     // SUM (drives the operand loads)
+            hp.env_lfo[0].rate = rate;
+            hp.env_lfo[0].shape = 1;
+            hp.osc[0].shape = shp;
+            hp.osc[0].parameter = 64;
+            hp.osc[1].shape = shp;
+            auto& pb = proc->getEngine().getPart (0).patchBytes;
+            for (size_t i = 0; i < sizeof (hp); ++i)
+                pb[i] = reinterpret_cast<const uint8_t*> (&hp)[i];
+
+            ambika::dsp::Part pt {};
+            pt.volume = 100;
+            pt.portamento_time = hostile ? 255 : 127;
+            auto& pp = proc->getEngine().getPart (0).partBytes;
+            for (size_t i = 0; i < sizeof (pt); ++i)
+                pp[i] = reinterpret_cast<const uint8_t*> (&pt)[i];
+            return proc;
+        };
+
+        auto procA = forge (true);   // hostile
+        auto procB = forge (false);  // clamped twin
+
+        // Identical stimulus: a held two-note chord with portamento glide
+        // (exercises Trigger's portamento path) + several render blocks
+        // (exercises the mod matrix + LFO + wavetable every block).
+        auto renderStimulus = [] (ParvatiAudioProcessor& p, std::vector<float>& capture) {
+            for (int blk = 0; blk < 60; ++blk)
+            {
+                juce::AudioBuffer<float> buf (2, 256);
+                buf.clear();
+                juce::MidiBuffer midi;
+                if (blk == 0)
+                {
+                    midi.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 110), 0);
+                    midi.addEvent (juce::MidiMessage::noteOn (1, 67, (uint8_t) 90), 64);
+                }
+                p.processBlock (buf, midi);
+                for (int i = 0; i < 256; ++i)
+                    capture.push_back (buf.getSample (0, i));
+            }
+        };
+        std::vector<float> capA, capB;
+        renderStimulus (*procA, capA);
+        renderStimulus (*procB, capB);
+
+        bool finite = true;
+        for (float s : capA)
+            if (! std::isfinite (s)) { finite = false; break; }
+        check (finite, "[7] hostile-byte render is finite (no NaN/inf from OOB state)");
+
+        double energy = 0.0;
+        for (float s : capA) energy += (double) s * (double) s;
+        check (energy > 1.0, "[7] hostile-byte render is non-silent");
+
+        bool identical = capA.size() == capB.size();
+        if (identical)
+            for (size_t i = 0; i < capA.size(); ++i)
+                if (capA[i] != capB[i]) { identical = false; break; }
+        char msg[128];
+        std::snprintf (msg, sizeof (msg),
+                      "[7] hostile bytes render byte-identical to the clamped twin (%zu samples)",
+                      capA.size());
+        check (identical, msg);
     }
 
     std::printf ("\n%s (%d failures)\n",

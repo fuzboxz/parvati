@@ -1,0 +1,38 @@
+[1] paramID <-> MOD_DST round-trip for knob-backed destinations
+  ok  : all 11 knob-backed dests round-trip paramID <-> dest
+
+[2] no-knob destinations report no visible knob
+  ok  : all 8 no-knob destinations report no visible knob
+  ok  : non-destination paramID -> -1
+  ok  : bogus paramID -> -1
+  ok  : dest -1 -> no knob
+  ok  : dest -1 -> empty paramID
+  ok  : out-of-range dest -> empty paramID
+
+[3] aggregateAmount + slotsForDest (APVTS-driven)
+  ok  : cutoff aggregate == 20 + (-10) = 10
+  ok  : cutoff aggregate excluding slot 0 == -10
+  ok  : balance aggregate == 5
+  ok  : vca aggregate == 0 (neutralised)
+  ok  : invalid dest aggregate == 0
+  ok  : cutoff slots == {0, 4}
+  ok  : balance slots == {2}
+  ok  : vca slots == 11 (the 11 neutralised leftover slots)
+  ok  : invalid dest -> empty slot list
+
+[4] FX-dest domain (offset encoding + fxmod aggregation)
+  ok  : fx1_drywet -> 19 (FX_DST_FX1_DRYWET + offset)
+  ok  : fx1_param1 -> 20 (FX_DST_FX1_P1 + offset)
+  ok  : fx2_param2 -> 27
+  ok  : fx3_param4 -> 35 (FX_DST_FX3_P4 + offset)
+  ok  : unknown FX paramID -> -1
+  ok  : isFxDest(19) == true (first FX dest)
+  ok  : isFxDest(18) == false (last synth dest)
+  ok  : isFxDest(36) == true (last FX dest)
+  ok  : isFxDest(-1) == false
+  ok  : fx1_param1 aggregate == 25 + (-15) = 10
+  ok  : fx1_param1 aggregate excluding fxmod slot 0 == -15
+  ok  : fx1_drywet aggregate == 8
+  ok  : fx1_param1 fxmod slots == {0, 5}
+
+=== ALL CHECKS PASSED (0 failures) ===

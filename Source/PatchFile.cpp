@@ -24,7 +24,14 @@ size_t mbksBodyEnd (const void* data, size_t size)
     if (std::memcmp (b, "RIFF", 4) != 0 || std::memcmp (b + 8, "MBKS", 4) != 0)
         return 0;
     const uint32_t bodySize = readLE32 (b + 4);
-    return std::min<size_t> (size, static_cast<size_t> (8) + bodySize);
+    // Wrap-proof on any size_t width (bug hunt 2026-08-18, F-state-3): on a
+    // 32-bit size_t, `8 + bodySize` can wrap for a hostile bodySize near
+    // UINT32_MAX. `size >= 12` here, so `size - 8` cannot underflow, and
+    // `bodySize > size - 8` <=> `8 + bodySize > size`; only in the FALSE
+    // branch do we compute the sum — where it is <= size, hence wrap-free.
+    if (bodySize > size - 8)
+        return size;
+    return static_cast<size_t> (8) + bodySize;
 }
 
 // Shared RIFF "MBKS" chunk walker. Invokes `nameCb(bodyPtr, chunkSize)` for each
@@ -41,7 +48,10 @@ void walkMbks (const uint8_t* b, size_t size, size_t end, NameCb nameCb, ObjCb o
         const uint32_t csz = readLE32 (b + off + 4);
         const uint8_t* bodyPtr = b + off + 8;
 
-        if (static_cast<size_t> (off) + 8u + csz > size)
+        // Wrap-proof on any size_t width (bug hunt 2026-08-18, F-state-3):
+        // `off + 8 + csz` wraps on 32-bit size_t for a hostile csz near
+        // UINT32_MAX, passing the guard and reading OOB. Subtract instead.
+        if (csz > size || size - csz < off + 8)
             break;  // truncated
 
         if (std::memcmp (tag, "name", 4) == 0 && csz > 0)

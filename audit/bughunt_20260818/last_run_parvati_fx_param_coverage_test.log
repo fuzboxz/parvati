@@ -1,0 +1,486 @@
+=== Parvati FX parameter + module coverage ===
+
+(1) FX factory + type() for all 25 FxType values
+  ok  : None: factory returns nullptr
+  ok  : Diffuser: factory returns non-null
+  ok  : Diffuser: type() matches enum
+  ok  : PitchShifter: factory returns non-null
+  ok  : PitchShifter: type() matches enum
+  ok  : Reverb: factory returns non-null
+  ok  : Reverb: type() matches enum
+  ok  : LoopingDelay: factory returns non-null
+  ok  : LoopingDelay: type() matches enum
+  ok  : WSOLAStretch: factory returns non-null
+  ok  : WSOLAStretch: type() matches enum
+  ok  : Spectral: factory returns non-null
+  ok  : Spectral: type() matches enum
+  ok  : Wavefolder: factory returns non-null
+  ok  : Wavefolder: type() matches enum
+  ok  : FrequencyShifter: factory returns non-null
+  ok  : FrequencyShifter: type() matches enum
+  ok  : RingModulator: factory returns non-null
+  ok  : RingModulator: type() matches enum
+  ok  : Resonator: factory returns non-null
+  ok  : Resonator: type() matches enum
+  ok  : ClockedDelay: factory returns non-null
+  ok  : ClockedDelay: type() matches enum
+  ok  : Ensemble: factory returns non-null
+  ok  : Ensemble: type() matches enum
+  ok  : PlateReverb: factory returns non-null
+  ok  : PlateReverb: type() matches enum
+  ok  : VinylCompressor: factory returns non-null
+  ok  : VinylCompressor: type() matches enum
+  ok  : Phaser: factory returns non-null
+  ok  : Phaser: type() matches enum
+  ok  : Overdrive: factory returns non-null
+  ok  : Overdrive: type() matches enum
+  ok  : LutDistortion: factory returns non-null
+  ok  : LutDistortion: type() matches enum
+  ok  : Compressor: factory returns non-null
+  ok  : Compressor: type() matches enum
+  ok  : Gate: factory returns non-null
+  ok  : Gate: type() matches enum
+  ok  : Chorus: factory returns non-null
+  ok  : Chorus: type() matches enum
+  ok  : Flanger: factory returns non-null
+  ok  : Flanger: type() matches enum
+  ok  : Echo: factory returns non-null
+  ok  : Echo: type() matches enum
+  ok  : Room: factory returns non-null
+  ok  : Room: type() matches enum
+  ok  : Spring: factory returns non-null
+  ok  : Spring: type() matches enum
+  ok  : all 24 non-None effects build via the factory
+(2) per-effect finite output at {0, 0.5, 1.0} params
+  ok  : Diffuser @0.0: finite output
+  ok  : Diffuser @0.0: no subnormals
+  ok  : Diffuser @0.5: finite output
+  ok  : Diffuser @0.5: no subnormals
+  ok  : Diffuser @1.0: finite output
+  ok  : Diffuser @1.0: no subnormals
+  ok  : PitchShifter @0.0: finite output
+  ok  : PitchShifter @0.0: no subnormals
+  ok  : PitchShifter @0.5: finite output
+  ok  : PitchShifter @0.5: no subnormals
+  ok  : PitchShifter @1.0: finite output
+  ok  : PitchShifter @1.0: no subnormals
+  ok  : Reverb @0.0: finite output
+  ok  : Reverb @0.0: no subnormals
+  ok  : Reverb @0.5: finite output
+  ok  : Reverb @0.5: no subnormals
+  ok  : Reverb @1.0: finite output
+  ok  : Reverb @1.0: no subnormals
+  ok  : LoopingDelay @0.0: finite output
+  ok  : LoopingDelay @0.0: no subnormals
+  ok  : LoopingDelay @0.5: finite output
+  ok  : LoopingDelay @0.5: no subnormals
+  ok  : LoopingDelay @1.0: finite output
+  ok  : LoopingDelay @1.0: no subnormals
+  ok  : WSOLAStretch @0.0: finite output
+  ok  : WSOLAStretch @0.0: no subnormals
+  ok  : WSOLAStretch @0.5: finite output
+  ok  : WSOLAStretch @0.5: no subnormals
+  ok  : WSOLAStretch @1.0: finite output
+  ok  : WSOLAStretch @1.0: no subnormals
+  ok  : Spectral @0.0: finite output
+  ok  : Spectral @0.0: no subnormals
+  ok  : Spectral @0.5: finite output
+  ok  : Spectral @0.5: no subnormals
+  ok  : Spectral @1.0: finite output
+  ok  : Spectral @1.0: no subnormals
+  ok  : Wavefolder @0.0: finite output
+  ok  : Wavefolder @0.0: no subnormals
+  ok  : Wavefolder @0.5: finite output
+  ok  : Wavefolder @0.5: no subnormals
+  ok  : Wavefolder @1.0: finite output
+  ok  : Wavefolder @1.0: no subnormals
+  ok  : FrequencyShifter @0.0: finite output
+  ok  : FrequencyShifter @0.0: no subnormals
+  ok  : FrequencyShifter @0.5: finite output
+  ok  : FrequencyShifter @0.5: no subnormals
+  ok  : FrequencyShifter @1.0: finite output
+  ok  : FrequencyShifter @1.0: no subnormals
+  ok  : RingModulator @0.0: finite output
+  ok  : RingModulator @0.0: no subnormals
+  ok  : RingModulator @0.5: finite output
+  ok  : RingModulator @0.5: no subnormals
+  ok  : RingModulator @1.0: finite output
+  ok  : RingModulator @1.0: no subnormals
+  ok  : Resonator @0.0: finite output
+  ok  : Resonator @0.0: no subnormals
+  ok  : Resonator @0.5: finite output
+  ok  : Resonator @0.5: no subnormals
+  ok  : Resonator @1.0: finite output
+  ok  : Resonator @1.0: no subnormals
+  ok  : ClockedDelay @0.0: finite output
+  ok  : ClockedDelay @0.0: no subnormals
+  ok  : ClockedDelay @0.5: finite output
+  ok  : ClockedDelay @0.5: no subnormals
+  ok  : ClockedDelay @1.0: finite output
+  ok  : ClockedDelay @1.0: no subnormals
+  ok  : Ensemble @0.0: finite output
+  ok  : Ensemble @0.0: no subnormals
+  ok  : Ensemble @0.5: finite output
+  ok  : Ensemble @0.5: no subnormals
+  ok  : Ensemble @1.0: finite output
+  ok  : Ensemble @1.0: no subnormals
+  ok  : PlateReverb @0.0: finite output
+  ok  : PlateReverb @0.0: no subnormals
+  ok  : PlateReverb @0.5: finite output
+  ok  : PlateReverb @0.5: no subnormals
+  ok  : PlateReverb @1.0: finite output
+  ok  : PlateReverb @1.0: no subnormals
+  ok  : VinylCompressor @0.0: finite output
+  ok  : VinylCompressor @0.0: no subnormals
+  ok  : VinylCompressor @0.5: finite output
+  ok  : VinylCompressor @0.5: no subnormals
+  ok  : VinylCompressor @1.0: finite output
+  ok  : VinylCompressor @1.0: no subnormals
+  ok  : Phaser @0.0: finite output
+  ok  : Phaser @0.0: no subnormals
+  ok  : Phaser @0.5: finite output
+  ok  : Phaser @0.5: no subnormals
+  ok  : Phaser @1.0: finite output
+  ok  : Phaser @1.0: no subnormals
+  ok  : Overdrive @0.0: finite output
+  ok  : Overdrive @0.0: no subnormals
+  ok  : Overdrive @0.5: finite output
+  ok  : Overdrive @0.5: no subnormals
+  ok  : Overdrive @1.0: finite output
+  ok  : Overdrive @1.0: no subnormals
+  ok  : LutDistortion @0.0: finite output
+  ok  : LutDistortion @0.0: no subnormals
+  ok  : LutDistortion @0.5: finite output
+  ok  : LutDistortion @0.5: no subnormals
+  ok  : LutDistortion @1.0: finite output
+  ok  : LutDistortion @1.0: no subnormals
+  ok  : Compressor @0.0: finite output
+  ok  : Compressor @0.0: no subnormals
+  ok  : Compressor @0.5: finite output
+  ok  : Compressor @0.5: no subnormals
+  ok  : Compressor @1.0: finite output
+  ok  : Compressor @1.0: no subnormals
+  ok  : Gate @0.0: finite output
+  ok  : Gate @0.0: no subnormals
+  ok  : Gate @0.5: finite output
+  ok  : Gate @0.5: no subnormals
+  ok  : Gate @1.0: finite output
+  ok  : Gate @1.0: no subnormals
+  ok  : Chorus @0.0: finite output
+  ok  : Chorus @0.0: no subnormals
+  ok  : Chorus @0.5: finite output
+  ok  : Chorus @0.5: no subnormals
+  ok  : Chorus @1.0: finite output
+  ok  : Chorus @1.0: no subnormals
+  ok  : Flanger @0.0: finite output
+  ok  : Flanger @0.0: no subnormals
+  ok  : Flanger @0.5: finite output
+  ok  : Flanger @0.5: no subnormals
+  ok  : Flanger @1.0: finite output
+  ok  : Flanger @1.0: no subnormals
+  ok  : Echo @0.0: finite output
+  ok  : Echo @0.0: no subnormals
+  ok  : Echo @0.5: finite output
+  ok  : Echo @0.5: no subnormals
+  ok  : Echo @1.0: finite output
+  ok  : Echo @1.0: no subnormals
+  ok  : Room @0.0: finite output
+  ok  : Room @0.0: no subnormals
+  ok  : Room @0.5: finite output
+  ok  : Room @0.5: no subnormals
+  ok  : Room @1.0: finite output
+  ok  : Room @1.0: no subnormals
+  ok  : Spring @0.0: finite output
+  ok  : Spring @0.0: no subnormals
+  ok  : Spring @0.5: finite output
+  ok  : Spring @0.5: no subnormals
+  ok  : Spring @1.0: finite output
+  ok  : Spring @1.0: no subnormals
+(3) per-effect full-wet output differs from dry
+  ok  : Diffuser: full-wet output differs from dry
+  ok  : PitchShifter: full-wet output differs from dry
+  ok  : Reverb: full-wet output differs from dry
+  ok  : LoopingDelay: full-wet output differs from dry
+  ok  : WSOLAStretch: full-wet output differs from dry
+  ok  : Spectral: full-wet output differs from dry
+  ok  : Wavefolder: full-wet output differs from dry
+  ok  : FrequencyShifter: full-wet output differs from dry
+  ok  : RingModulator: full-wet output differs from dry
+  ok  : Resonator: full-wet output differs from dry
+  ok  : ClockedDelay: full-wet output differs from dry
+  ok  : Ensemble: full-wet output differs from dry
+  ok  : PlateReverb: full-wet output differs from dry
+  ok  : VinylCompressor: full-wet output differs from dry
+  ok  : Phaser: full-wet output differs from dry
+  ok  : Overdrive: full-wet output differs from dry
+  ok  : LutDistortion: full-wet output differs from dry
+  ok  : Compressor: full-wet output differs from dry
+  ok  : Gate: full-wet output differs from dry
+  ok  : Chorus: full-wet output differs from dry
+  ok  : Flanger: full-wet output differs from dry
+  ok  : Echo: full-wet output differs from dry
+  ok  : Room: full-wet output differs from dry
+  ok  : Spring: full-wet output differs from dry
+  ok  : None: all-None chain is a bit-identical dry passthrough
+(4) per-effect 5-param sweep (active moves waveform, inactive inert)
+  ok  : Diffuser p0 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Diffuser p1 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Diffuser p2 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Diffuser p3 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Diffuser p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Diffuser: 0 active params (amount pinned; chain Dry/Wet is the mix)
+  ok  : PitchShifter p0 (Pitch): moves steady waveform (maxDev=7.93e-01, active=3)
+  ok  : PitchShifter p1 (Size): moves steady waveform (maxDev=7.99e-01, active=3)
+  ok  : PitchShifter p2 (Spread): moves steady waveform (maxDev=6.24e-01, active=3)
+  ok  : PitchShifter p3 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : PitchShifter p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : PitchShifter: at least one active param moves waveform (3/3 did)
+  ok  : Reverb p0 (Predelay): moves steady waveform (maxDev=1.49e+00, active=5)
+  ok  : Reverb p1 (Diffusion): moves steady waveform (maxDev=1.56e+00, active=5)
+  ok  : Reverb p2 (Time): moves steady waveform (maxDev=2.48e-01, active=5)
+  ok  : Reverb p3 (Tone): moves steady waveform (maxDev=9.64e-01, active=5)
+  ok  : Reverb p4 (Low-Cut): moves steady waveform (maxDev=6.53e-01, active=5)
+  ok  : Reverb: at least one active param moves waveform (5/5 did)
+  ok  : LoopingDelay p0 (Position): moves steady waveform (maxDev=7.98e-01, active=4)
+  DRIFT: LoopingDelay p1 (Size): does NOT move steady waveform (maxDev=0.00e+00, active=4) -- invariant under probe (wired via setParams + FX mod-matrix dest test; see COVERAGE_FINDINGS.md)
+  DRIFT: LoopingDelay p2 (Pitch): does NOT move steady waveform (maxDev=0.00e+00, active=4) -- invariant under probe (wired via setParams + FX mod-matrix dest test; see COVERAGE_FINDINGS.md)
+  ok  : LoopingDelay p3 (Freeze): moves steady waveform (maxDev=4.00e-01, active=4)
+  ok  : LoopingDelay p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : LoopingDelay: at least one active param moves waveform (2/4 did)
+  ok  : WSOLAStretch p0 (Pitch): moves steady waveform (maxDev=8.04e-01, active=5)
+  ok  : WSOLAStretch p1 (Position): moves steady waveform (maxDev=7.98e-01, active=5)
+  ok  : WSOLAStretch p2 (Size): moves steady waveform (maxDev=5.61e-01, active=5)
+  ok  : WSOLAStretch p3 (Freeze): moves steady waveform (maxDev=4.01e-01, active=5)
+  ok  : WSOLAStretch p4 (Tone): moves steady waveform (maxDev=2.73e-01, active=5)
+  ok  : WSOLAStretch: at least one active param moves waveform (5/5 did)
+  ok  : Spectral p0 (Pitch): moves steady waveform (maxDev=1.09e+00, active=5)
+  ok  : Spectral p1 (Warp): moves steady waveform (maxDev=5.86e-01, active=5)
+  DRIFT: Spectral p2 (Position): does NOT move steady waveform (maxDev=0.00e+00, active=5) -- invariant under probe (wired via setParams + FX mod-matrix dest test; see COVERAGE_FINDINGS.md)
+  ok  : Spectral p3 (Blur): moves steady waveform (maxDev=1.75e+00, active=5)
+  ok  : Spectral p4 (Freeze): moves steady waveform (maxDev=5.86e-01, active=5)
+  ok  : Spectral: at least one active param moves waveform (4/5 did)
+  ok  : Wavefolder p0 (Drive): moves steady waveform (maxDev=1.01e+00, active=4)
+  ok  : Wavefolder p1 (Fold): moves steady waveform (maxDev=1.30e+00, active=4)
+  ok  : Wavefolder p2 (Bias): moves steady waveform (maxDev=9.44e-01, active=4)
+  ok  : Wavefolder p3 (Tone): moves steady waveform (maxDev=5.83e-01, active=4)
+  ok  : Wavefolder p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Wavefolder: at least one active param moves waveform (4/4 did)
+  ok  : FrequencyShifter p0 (Shift): moves steady waveform (maxDev=8.20e-01, active=4)
+  ok  : FrequencyShifter p1 (Shape): moves steady waveform (maxDev=8.92e-01, active=4)
+  ok  : FrequencyShifter p2 (Feedback): moves steady waveform (maxDev=1.55e-01, active=4)
+  ok  : FrequencyShifter p3 (Spread): moves steady waveform (maxDev=4.41e-01, active=4)
+  ok  : FrequencyShifter p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : FrequencyShifter: at least one active param moves waveform (4/4 did)
+  ok  : RingModulator p0 (Carrier): moves steady waveform (maxDev=1.12e+00, active=3)
+  ok  : RingModulator p1 (Shape): moves steady waveform (maxDev=1.07e+00, active=3)
+  ok  : RingModulator p2 (Drive): moves steady waveform (maxDev=5.72e-01, active=3)
+  ok  : RingModulator p3 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : RingModulator p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : RingModulator: at least one active param moves waveform (3/3 did)
+  ok  : Resonator p0 (Pitch): moves steady waveform (maxDev=1.41e+00, active=5)
+  ok  : Resonator p1 (Decay): moves steady waveform (maxDev=7.80e-01, active=5)
+  ok  : Resonator p2 (Bright): moves steady waveform (maxDev=7.79e-01, active=5)
+  ok  : Resonator p3 (Position): moves steady waveform (maxDev=4.78e-01, active=5)
+  ok  : Resonator p4 (Structure): moves steady waveform (maxDev=1.05e+00, active=5)
+  ok  : Resonator: at least one active param moves waveform (5/5 did)
+  ok  : ClockedDelay p0 (Sync): moves steady waveform (maxDev=5.74e-01, active=4)
+  ok  : ClockedDelay p1 (Feedback): moves steady waveform (maxDev=1.86e-01, active=4)
+  ok  : ClockedDelay p2 (Tape Age): moves steady waveform (maxDev=2.94e-01, active=4)
+  ok  : ClockedDelay p3 (Grit): moves steady waveform (maxDev=8.46e-03, active=4)
+  ok  : ClockedDelay p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : ClockedDelay: at least one active param moves waveform (4/4 did)
+  ok  : Ensemble p0 (Rate): moves steady waveform (maxDev=7.89e-01, active=4)
+  ok  : Ensemble p1 (Depth): moves steady waveform (maxDev=8.00e-01, active=4)
+  ok  : Ensemble p2 (Center): moves steady waveform (maxDev=4.36e-01, active=4)
+  ok  : Ensemble p3 (Feedback): moves steady waveform (maxDev=9.01e-01, active=4)
+  ok  : Ensemble p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Ensemble: at least one active param moves waveform (4/4 did)
+  ok  : PlateReverb p0 (Predelay): moves steady waveform (maxDev=7.54e-01, active=4)
+  ok  : PlateReverb p1 (Decay): moves steady waveform (maxDev=1.76e-03, active=4)
+  ok  : PlateReverb p2 (Damping): moves steady waveform (maxDev=2.98e-01, active=4)
+  ok  : PlateReverb p3 (Mod): moves steady waveform (maxDev=4.37e-01, active=4)
+  ok  : PlateReverb p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : PlateReverb: at least one active param moves waveform (4/4 did)
+  ok  : VinylCompressor p0 (Compress): moves steady waveform (maxDev=6.08e-01, active=4)
+  ok  : VinylCompressor p1 (Wow/Flut): moves steady waveform (maxDev=1.63e+00, active=4)
+  ok  : VinylCompressor p2 (Crackle): moves steady waveform (maxDev=5.39e-02, active=4)
+  ok  : VinylCompressor p3 (Age): moves steady waveform (maxDev=3.05e-01, active=4)
+  ok  : VinylCompressor p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : VinylCompressor: at least one active param moves waveform (4/4 did)
+  ok  : Phaser p0 (Rate): moves steady waveform (maxDev=9.54e-02, active=4)
+  ok  : Phaser p1 (Depth): moves steady waveform (maxDev=6.92e-02, active=4)
+  ok  : Phaser p2 (Feedback): moves steady waveform (maxDev=4.89e-01, active=4)
+  ok  : Phaser p3 (Center): moves steady waveform (maxDev=1.78e-01, active=4)
+  ok  : Phaser p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Phaser: at least one active param moves waveform (4/4 did)
+  ok  : Overdrive p0 (Drive): moves steady waveform (maxDev=3.14e-01, active=4)
+  ok  : Overdrive p1 (Bias): moves steady waveform (maxDev=3.66e-01, active=4)
+  ok  : Overdrive p2 (Tone): moves steady waveform (maxDev=6.24e-01, active=4)
+  ok  : Overdrive p3 (Level): moves steady waveform (maxDev=7.29e-01, active=4)
+  ok  : Overdrive p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Overdrive: at least one active param moves waveform (4/4 did)
+  ok  : LutDistortion p0 (Drive): moves steady waveform (maxDev=6.77e-01, active=4)
+  ok  : LutDistortion p1 (Wavetable): moves steady waveform (maxDev=7.89e-01, active=4)
+  ok  : LutDistortion p2 (Jitter): moves steady waveform (maxDev=7.93e-01, active=4)
+  ok  : LutDistortion p3 (Tone): moves steady waveform (maxDev=2.77e-01, active=4)
+  ok  : LutDistortion p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : LutDistortion: at least one active param moves waveform (4/4 did)
+  ok  : Compressor p0 (Amount): moves steady waveform (maxDev=7.18e-01, active=4)
+  ok  : Compressor p1 (Attack): moves steady waveform (maxDev=3.16e-01, active=4)
+  ok  : Compressor p2 (Release): moves steady waveform (maxDev=1.16e-01, active=4)
+  ok  : Compressor p3 (Level): moves steady waveform (maxDev=9.93e-01, active=4)
+  ok  : Compressor p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Compressor: at least one active param moves waveform (4/4 did)
+  ok  : Gate p0 (Thresh): moves steady waveform (maxDev=3.07e-01, active=4)
+  ok  : Gate p1 (Attack): moves steady waveform (maxDev=1.74e-01, active=4)
+  ok  : Gate p2 (Hold): moves steady waveform (maxDev=5.14e-02, active=4)
+  ok  : Gate p3 (Release): moves steady waveform (maxDev=2.25e-01, active=4)
+  ok  : Gate p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Gate: at least one active param moves waveform (4/4 did)
+  ok  : Chorus p0 (Rate): moves steady waveform (maxDev=8.83e-01, active=4)
+  ok  : Chorus p1 (Depth): moves steady waveform (maxDev=8.20e-01, active=4)
+  ok  : Chorus p2 (Center): moves steady waveform (maxDev=5.37e-01, active=4)
+  ok  : Chorus p3 (Feedback): moves steady waveform (maxDev=2.45e-01, active=4)
+  ok  : Chorus p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Chorus: at least one active param moves waveform (4/4 did)
+  ok  : Flanger p0 (Rate): moves steady waveform (maxDev=9.22e-01, active=4)
+  ok  : Flanger p1 (Depth): moves steady waveform (maxDev=1.12e+00, active=4)
+  ok  : Flanger p2 (Manual): moves steady waveform (maxDev=8.07e-01, active=4)
+  ok  : Flanger p3 (Feedback): moves steady waveform (maxDev=6.12e-01, active=4)
+  ok  : Flanger p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Flanger: at least one active param moves waveform (4/4 did)
+  ok  : Echo p0 (Time): moves steady waveform (maxDev=8.71e-01, active=4)
+  ok  : Echo p1 (Feedback): moves steady waveform (maxDev=6.43e-01, active=4)
+  ok  : Echo p2 (Tone): moves steady waveform (maxDev=9.04e-02, active=4)
+  ok  : Echo p3 (Stereo): moves steady waveform (maxDev=8.03e-01, active=4)
+  ok  : Echo p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Echo: at least one active param moves waveform (4/4 did)
+  ok  : Room p0 (Decay): moves steady waveform (maxDev=2.58e-03, active=4)
+  ok  : Room p1 (Damp): moves steady waveform (maxDev=4.90e-01, active=4)
+  ok  : Room p2 (Width): moves steady waveform (maxDev=3.27e-01, active=4)
+  ok  : Room p3 (Tone): moves steady waveform (maxDev=1.52e-01, active=4)
+  ok  : Room p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Room: at least one active param moves waveform (4/4 did)
+  ok  : Spring p0 (Decay): moves steady waveform (maxDev=2.01e-03, active=4)
+  ok  : Spring p1 (Damp): moves steady waveform (maxDev=7.94e-01, active=4)
+  ok  : Spring p2 (Chirp): moves steady waveform (maxDev=1.98e+00, active=4)
+  ok  : Spring p3 (Width): moves steady waveform (maxDev=2.50e-01, active=4)
+  ok  : Spring p4 (inactive): inert (maxDev=0.00e+00 < 1e-9)
+  ok  : Spring: at least one active param moves waveform (4/4 did)
+(5) effect latency (0 except Wavefolder/RingModulator = 8)
+  ok  : Diffuser: latency()==0
+  ok  : PitchShifter: latency()==0
+  ok  : Reverb: latency()==0
+  ok  : LoopingDelay: latency()==0
+  ok  : WSOLAStretch: latency()==0
+  ok  : Spectral: latency()==0
+  ok  : Wavefolder: latency()==8
+  ok  : FrequencyShifter: latency()==0
+  ok  : RingModulator: latency()==8
+  ok  : Resonator: latency()==0
+  ok  : ClockedDelay: latency()==0
+  ok  : Ensemble: latency()==0
+  ok  : PlateReverb: latency()==0
+  ok  : VinylCompressor: latency()==0
+  ok  : Phaser: latency()==0
+  ok  : Overdrive: latency()==0
+  ok  : LutDistortion: latency()==0
+  ok  : Compressor: latency()==0
+  ok  : Gate: latency()==0
+  ok  : Chorus: latency()==0
+  ok  : Flanger: latency()==0
+  ok  : Echo: latency()==0
+  ok  : Room: latency()==0
+  ok  : Spring: latency()==0
+  ok  : chain with one Wavefolder slot: latency()==8
+  ok  : chain with one RingModulator slot: latency()==8
+(6) topology x order routing
+  ok  : all-disabled chain: bit-identical dry passthrough
+  ok  : all 18 topology x order combos render finite
+  ok  : all 18 topology x order combos produce wet (differ from dry)
+(7) master section (mix + 3-band EQ)
+  ok  : master defaults: finite output
+  ok  : fx_mix=0: output == dry (masterMix fully dry)
+  ok  : fx_mix=127: output differs from dry (masterMix fully wet)
+  ok  : fx_eq_low high: low sine attenuated more than low-cut off
+  ok  : fx_eq_mid cut: mid sine level reduced vs flat (64)
+  ok  : fx_eq_high cut: high sine level reduced vs flat (64)
+(8) FX mod matrix — all 18 destinations reach the DSP
+  ok  : dest 0 (slot 0 field 0): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 0: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 1 (slot 0 field 1): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 1: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 2 (slot 0 field 2): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 2: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 3 (slot 0 field 3): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 3: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 4 (slot 0 field 4): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 4: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 5 (slot 0 field 5): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 5: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 6 (slot 1 field 0): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 6: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 7 (slot 1 field 1): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 7: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 8 (slot 1 field 2): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 8: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 9 (slot 1 field 3): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 9: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 10 (slot 1 field 4): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 10: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 11 (slot 1 field 5): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 11: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 12 (slot 2 field 0): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 12: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 13 (slot 2 field 1): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 13: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 14 (slot 2 field 2): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 14: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 15 (slot 2 field 3): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 15: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 16 (slot 2 field 4): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 16: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : dest 17 (slot 2 field 5): mod reaches DSP (consumed=0.754, expect=0.754, base=0.252)
+  ok  : dest 17: amount=0 -> no modulation (consumed=0.252, base=0.252)
+  ok  : source depth honored: CONST_256=1.000 >> CONST_4=0.016 (same amount 63)
+(9) condition-dependent Clouds params (correct DSP condition)
+  ok  : LoopingDelay Size (p1) @freeze moves output RMS (size0=0.0407 size1=0.0000)
+  ok  : LoopingDelay Pitch (p2) @freeze moves output RMS (p-24=0.2014 p+24=0.1138)
+  ok  : Spectral Position (p2) @freeze-choreography moves output RMS (pos0=0.3370 [frozen content] pos1=0.2968 [other slot])
+  ok  : Spectral Position confirmed live under freeze (static-position no-op is intended: each texture slot independently tracks live input)
+(10) FX-page readout strings <= 6 chars (every type x idx x raw 0..127)
+  ok  : all 15360 readout samples <= 6 chars
+  ok  : anchor Phaser p3 @raw127 == "2k0" (got "2k0")
+  ok  : anchor VinylCompressor p3 @raw127 == "15k" (got "15k")
+  ok  : anchor Overdrive p2 @raw127 == "15k" (got "15k")
+  ok  : anchor PlateReverb p2 @raw127 == "12k" (got "12k")
+  ok  : anchor Echo p2 @raw127 == "12k" (got "12k")
+  ok  : anchor Phaser p3 @raw0 == "200Hz" (got "200Hz")
+  ok  : anchor Echo p0 @raw0 == "10ms" (got "10ms")
+  ok  : anchor Echo p0 @raw127 == "470ms" (got "470ms")
+  ok  : anchor Compressor p1 @raw0 == "0.5ms" (got "0.5ms")
+  ok  : anchor Compressor p1 @raw127 == "50ms" (got "50ms")
+  ok  : anchor PlateReverb p1 @raw127 == "4.0s" (got "4.0s")
+  ok  : anchor Room p0 @raw127 == "3.0s" (got "3.0s")
+  ok  : anchor Spring p0 @raw127 == "4.0s" (got "4.0s")
+  ok  : anchor FrequencyShifter p0 @raw127 == "+2k0" (got "+2k0")
+  ok  : anchor FrequencyShifter p0 @raw0 == "-2k0" (got "-2k0")
+  ok  : anchor Ensemble p0 @raw127 == "8.00Hz" (got "8.00Hz")
+  ok  : anchor ClockedDelay p1 @raw127 == "95%" (got "95%")
+  ok  : anchor ClockedDelay p3 @raw0 == "24-bit" (got "24-bit")
+  ok  : anchor LutDistortion p1 @raw0 == "Clip" (got "Clip")
+  ok  : anchor LutDistortion p1 @raw64 == "SFold" (got "SFold")
+  ok  : anchor LutDistortion p1 @raw88 == "Asym" (got "Asym")
+  ok  : anchor LutDistortion p1 @raw104 == "HGate" (got "HGate")
+  ok  : anchor LutDistortion p1 @raw127 == "Sparse" (got "Sparse")
+  ok  : Echo p4 label == "Stereo" (renamed from "Spread")
+(11) makeFxTypes() display renames (index order unchanged)
+  ok  : choice list still has FxType::Count entries (no index remap)
+  ok  : idx 22 (FxType::Echo) label == "Digital Echo"
+  ok  : idx 17 (FxType::LutDistortion) label == "LUT"
+  ok  : no bare "Echo" label remains
+  ok  : no "LUT Distortion" label remains
+
+--- 3 DRIFTS SURFACED (triage in tests/COVERAGE_FINDINGS.md) ---
+
+=== ALL CHECKS PASSED (466/466 checks passed, 0 failures, 3 drifts) ===
