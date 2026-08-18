@@ -269,3 +269,125 @@ Any check that fails is either:
 - (B) an INTENDED behavior mismatch (the spec was wrong) -> correct the spec,
 - (C) a DESIGN DRIFT requiring user action -> record in COVERAGE_FINDINGS.md
       with the symptom, root cause, and recommended action.
+
+---
+
+## Deterministic tooling
+
+- **parvati_loader_fuzz_test** (`tests/loader_fuzz_test.cpp`, built by default):
+  loader fuzzer + rollback checker — ~300 deterministic mutated-file cases over
+  the four real save formats (.PRO/.MUL x2/.parvati multi+patch built via the
+  real save paths) plus truncated engine-state blobs. Pins two properties: a
+  load returning FALSE leaves the processor state BIT-IDENTICAL
+  (validate-before-mutate), and a load returning TRUE renders 32 blocks inside
+  a 10 s watchdog with finite audio (loaded-bytes audio-thread-hang class).
+  Canary self-checks prove the comparator and the watchdog detect what they
+  must. Run: ./build_release/parvati_loader_fuzz_test
+- **parvati_shadow_state_test** (`tests/shadow_state_test.cpp`, built by
+  default): shadow-state defaults property — loading a DEFAULTS-ONLY
+  .parvati multi (saved through the real path) into an engine polluted on
+  every mirrored surface (custom tuning tables, part names, staged FX slot
+  types, arp config, voice slots, channel/key zone, PartData bytes 3/4/15)
+  must leave it BIT-IDENTICAL to a fresh engine. The canary proves the diff
+  comparator reports every pollution category before the load. Run:
+  ./build_release/parvati_shadow_state_test
+- **parvati_ui_mirror_test** (`tests/ui_mirror_test.cpp`, built by default):
+  UI mirror consistency — after any engine mutation path (apvts writes,
+  engine-direct slot/channel/zone/name writes, processor-level loads, live-
+  editor state recall) the Patch page must display exactly the engine state
+  via both real seams (the reveal refresh and the pollPatchPageMirror
+  displayVersion poll); all 6 rows + arrangement + "Voices Y/96" compared, name
+  labels found by row layout geometry, canary proves the comparator detects a
+  stale pair. Run: ./build_release/parvati_ui_mirror_test
+- **parvati_load_invariants_test** (`tests/load_invariants_test.cpp`, built by
+  default): edge-corpus load invariants — any load that SUCCEEDS leaves the
+  engine inside its invariant ranges on every mirrored surface (staged arp/seq
+  config + the live objects after service, routing with lo<=hi, voice slots,
+  resolved tuning, installed FX slot types, sanitized names) and renders 32
+  blocks under a 10 s watchdog. Hand-written .parvati multi corpus with one
+  edge per case (arp_mode/octave/direction/pattern/resolution, seq lengths,
+  channel 0/1/16/17/255, keyzone clamp + inversion swap, slots 0/1/16/17/99,
+  spread/poly/raga bytes, tuning_mode 33/34, 40-char + quoted names); canary
+  proves the checker detects a hand-broken engine. Caught + fixed a live
+  instance at authoring time (the .parvati YAML path staged arp bytes raw —
+  arp_mode: 5 = silent part). Run: ./build_release/parvati_load_invariants_test
+- **parvati_check_combo_clear** (`tools/check_combo_clear.py`, ctest, no
+  build): static guard for the stale-async-onChange class — every
+  juce::ComboBox `.clear()`/`->clear()` in Source/ must pass
+  `juce::dontSendNotification` (JUCE's default `sendNotificationAsync`
+  queues an onChange that a later dontSendNotification setSelectedId cannot
+  cancel, so a rebuild fires the handler with no user action; caught twice
+  in the 2026-08 hunt — PatchPage refreshLanguage + SettingsPanel osCombo).
+  ComboBox-typed receivers resolved by declaration tracking + the known
+  combo-name set; an embedded canary (--self-test) must flag a seeded bad
+  snippet before the real scan runs. Allowlist
+  tools/check_combo_clear_allowlist.txt (aim empty). Run: ctest -R
+  parvati_check_combo_clear.
+- **parvati_check_async_this** (`tools/check_async_this.py`, ctest, no
+  build): static guard for the raw-`this`-in-async-callback crash-window
+  class — every lambda capturing `this` handed to an async UI sink
+  (PopupMenu showMenuAsync / item setAction / addItem on a tracked
+  juce::PopupMenu, ModalCallbackFunction::create, chooser launchAsync,
+  static dialog `launch` helpers, DialogWindow LaunchOptions spans) must be
+  SafePointer/WeakReference-guarded (guard in the capture init, earlier in
+  the statement, or the 5 preceding lines — a later sibling lambda's guard
+  deliberately does NOT mask an outer raw capture). Allowlist carries
+  hand-verified safe sites with justifications (member-owned FileChooser
+  completions — safe by the JUCE ~FileChooser cancellation contract).
+  Run: ctest -R parvati_check_async_this.
+- **parvati_roundtrip_golden_test** (`tests/roundtrip_golden_test.cpp`, built
+  by default): golden byte round-trip property — save -> load (fresh
+  processor) -> save is BYTE-IDENTICAL for every format pair (.PRO/.MUL/
+  .parvati patch/.parvati multi) over an adversarial program-name corpus
+  (double-quote / backslash / four UTF-8 kinds / >16-byte UTF-8 truncation /
+  40 chars / padded / control chars) on a rich seeded state (custom tunings,
+  part names, FX slot type, slots+routing, options), and the loaded title
+  equals the format-documented normalized form (16-byte chunk: control-strip
+  + code-point-safe truncation + trailing trim; .parvati doc name:
+  control-strip). The .parvati fixed point runs with title == file basename
+  (the documented filename-retitling); the adversarial corpus pins the
+  un-escaped-name class (a quote/newline name used to save an unloadable
+  file). Canary proves the byte comparator flags a 1-flipped-byte file.
+  Run: ./build_release/parvati_roundtrip_golden_test
+- **parvati_undo_property_test** (`tests/undo_property_test.cpp`, built by
+  default): undo round-trip property — one user op, one transaction, one
+  undoSafe() and the FULL host-visible state (APVTS tree + engine blob) must
+  return byte-identical to pre-op. Battery: float patch-byte / PartData
+  choice (byte 15) / controller arp choice / signed mod amount / FX param /
+  FX type (with the FxSlotCard engagement seeding firing re-entrantly inside
+  the same transaction — a live editor is created so the seeding path is
+  real). Plus the two corruption classes: the W7 seed-clobber (undo of a type
+  switch restores the USER values) and the W2 part-switch doctrine (stack
+  swept to canUndo==false, no cross-part replay, part A keeps its edit, the
+  switch survives). Canary: the byte comparator rejects a 1-byte-doctored
+  snapshot; mutation-tested (doctrine removal and undo-replay engine-push
+  skip both fail the suite; the unguarded seed replay is additionally
+  structurally no-op'd by JUCE's mid-undo perform() discard — documented in
+  the file header).
+  Run: ./build_release/parvati_undo_property_test
+- **parvati_layout_minwidth_test** (`tests/layout_minwidth_test.cpp`, built by
+  default): min-width header layout sweep — every placed interactive header
+  child (Button/ComboBox, direct + one level deep, effectively visible,
+  in-band, not offscreen; the folded "+"/"-"/"0" zoom trio is the documented
+  unplaced exception) keeps positive width AND height at every legal desktop
+  size (1024..1800 x 600); the preset browser / Patch button / part combo /
+  [FX] button keep >= 80% of their documented natural widths (156/64/88/50);
+  no pairwise header sibling overlap (2px tolerance). Canary: the raw
+  predicates flag a seeded zero-extent rect, a deep overlap, the historical
+  38-of-50 squeeze, and pass adjacent/hairline/compliant cases. Sub-1024 is
+  deliberately unswept (AUv3 collapse = known deferred item).
+  Run: ./build_release/parvati_layout_minwidth_test
+- **parvati_check_translations** (`tools/check_translations.py`, ctest, no
+  build): TRANS-key completeness — every TRANS() literal in Source/ must be a
+  key in BOTH the FR and DE tables of Source/ui/Translations.cpp, parsed
+  exactly as juce::LocalisedStrings parses them at runtime (escaped quotes,
+  \xNN hex byte escapes, adjacent-literal compiler concatenation; '+-joined'
+  TRANS fragments are each their own key). Fails on FR/DE asymmetry and on
+  duplicate keys within a block. Two-section allowlist
+  (tools/trans_allowlist.txt): ## intentional proper nouns (12-EDO, SYNTH/FX
+  glyphs), ## known-missing tracked gaps (56 tooltip-prose keys awaiting
+  translation) — a NEW missing key is in neither section and fails (ratchet).
+  Dynamic TRANS(<variable>) calls (21) are counted/reported, out of scanner
+  scope. All three scanners also run via one build target:
+  `cmake --build build_release --target parvati_static_checks`.
+  Run: ctest -R parvati_check_translations.

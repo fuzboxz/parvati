@@ -1,0 +1,5 @@
+# check_combo_clear allowlist — AIM FOR EMPTY.
+# One entry per line: <file>:<line>: <reason + tracking TODO>
+# Every entry is a KNOWN ComboBox clear() without dontSendNotification that is
+# provably safe today; each must carry a justification and a removal plan.
+# (No entries.)

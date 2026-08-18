@@ -61,3 +61,4 @@ asio_profiler_output/
 
 # --- Generated menu screenshots (tools/menu_shots.cpp) ---
 screens/
+__pycache__/

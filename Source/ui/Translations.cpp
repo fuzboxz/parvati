@@ -66,7 +66,6 @@ const juce::String& frenchChromeStrings()
         "\"Zone Low\" = \"Zone (bas)\"\n"
         "\"Zone High\" = \"Zone (haut)\"\n"
         "\"Polyphony\" = \"Polyphonie\"\n"
-        "\"Mono\" = \"Mono\"\n"
         "\"Poly\" = \"Poly\"\n"
         "\"Unison 2x\" = \"Unisson 2x\"\n"
         "\"Cyclic\" = \"Cyclique\"\n"
@@ -85,8 +84,8 @@ const juce::String& frenchChromeStrings()
         "\"Standard (1×)\" = \"Standard (1×)\"\n"
         "\"High (2×)\" = \"Élevée (2×)\"\n"
         "\"Maximum (4×)\" = \"Maximum (4×)\"\n"
+        "\"Ultra (8×)\" = \"Ultra (8×)\"\n"
         // ---- group-panel titles ----
-        "\"Mixer\" = \"Mixeur\"\n"
         "\"Sub Oscillator\" = \"Oscillateur secondaire\"\n"
         "\"Noise / Waveshaper\" = \"Bruit / Waveshaper\"\n"
         "\"Filter Mod\" = \"Modulation du filtre\"\n"
@@ -116,6 +115,8 @@ const juce::String& frenchChromeStrings()
         "\"Load Patch / Multi (.PRO / .MUL / .parvati)\" = \"Charger programme / multi (.PRO / .MUL / .parvati)\"\n"
         "\"Save Ambika Patch (.PRO)\" = \"Enregistrer le programme Ambika (.PRO)\"\n"
         "\"Save Parvati Patch (.parvati)\" = \"Enregistrer le programme Parvati (.parvati)\"\n"
+        "\"Ambika Multi (.MUL)\" = \"Multi Ambika (.MUL)\"\n"
+        "\"Save Ambika Multi (.MUL)\" = \"Enregistrer le multi Ambika (.MUL)\"\n"
         "\"Could not save file:\" = \"Impossible d'enregistrer le fichier :\"\n"
         "\"Could not load file:\" = \"Impossible de charger le fichier :\"\n"
         // ---- FX slot cards / wheels / export preview (suffix-key fragments) ----
@@ -207,7 +208,6 @@ const juce::String& germanChromeStrings()
         "\"Zone Low\" = \"Zone (tief)\"\n"
         "\"Zone High\" = \"Zone (hoch)\"\n"
         "\"Polyphony\" = \"Polyphonie\"\n"
-        "\"Mono\" = \"Mono\"\n"
         "\"Poly\" = \"Poly\"\n"
         "\"Unison 2x\" = \"Unison 2x\"\n"
         "\"Cyclic\" = \"Zyklisch\"\n"
@@ -226,8 +226,8 @@ const juce::String& germanChromeStrings()
         "\"Standard (1×)\" = \"Standard (1×)\"\n"
         "\"High (2×)\" = \"Hoch (2×)\"\n"
         "\"Maximum (4×)\" = \"Maximum (4×)\"\n"
+        "\"Ultra (8×)\" = \"Ultra (8×)\"\n"
         // ---- group-panel titles ----
-        "\"Mixer\" = \"Mixer\"\n"
         "\"Sub Oscillator\" = \"Sub-Oszillator\"\n"
         "\"Noise / Waveshaper\" = \"Rauschen / Waveshaper\"\n"
         "\"Filter Mod\" = \"Filtermod\"\n"
@@ -257,6 +257,8 @@ const juce::String& germanChromeStrings()
         "\"Load Patch / Multi (.PRO / .MUL / .parvati)\" = \"Programm / Multi laden (.PRO / .MUL / .parvati)\"\n"
         "\"Save Ambika Patch (.PRO)\" = \"Ambika-Programm speichern (.PRO)\"\n"
         "\"Save Parvati Patch (.parvati)\" = \"Parvati-Programm speichern (.parvati)\"\n"
+        "\"Ambika Multi (.MUL)\" = \"Ambika-Multi (.MUL)\"\n"
+        "\"Save Ambika Multi (.MUL)\" = \"Ambika-Multi (.MUL) speichern\"\n"
         "\"Could not save file:\" = \"Datei konnte nicht gespeichert werden:\"\n"
         "\"Could not load file:\" = \"Datei konnte nicht geladen werden:\"\n"
         // ---- FX slot cards / wheels / export preview (suffix-key fragments) ----

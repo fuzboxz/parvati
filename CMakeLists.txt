@@ -1070,6 +1070,23 @@ target_link_libraries(parvati_layout_overlap_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Min-width HEADER layout sweep (deterministic tooling, tool 11): the whole
+# legal desktop resize range (1024..1800) — every placed interactive header
+# child keeps positive extent, the four left-cluster reference controls keep
+# >= 80% of their documented natural widths (the historical [FX] 38-of-50
+# squeeze class), and no header siblings overlap. Sub-1024 (AUv3 panes) is the
+# known deferred item; the sweep floor IS the desktop resize minimum.
+# Run: ./build/parvati_layout_minwidth_test
+add_executable(parvati_layout_minwidth_test
+    tests/layout_minwidth_test.cpp
+)
+target_include_directories(parvati_layout_minwidth_test PRIVATE Source)
+target_compile_features(parvati_layout_minwidth_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_layout_minwidth_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # CI-portable headless perf regression gate (P3/PR3). Pumps the message loop
 # at the real timer cadence for ~10 s against CPU-time + tick-cost budgets —
 # catches the timer/message-storm class of regression (the PartRow combo
@@ -1452,6 +1469,103 @@ target_link_libraries(parvati_patch_load_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Deterministic tooling T1: loader fuzzer + rollback checker. Property: a load
+# returning FALSE must leave the processor state BIT-IDENTICAL
+# (validate-before-mutate — the failed-.parvati-load engine-reset class), and a
+# load returning TRUE must render 32 blocks inside a 10 s watchdog with finite
+# audio (the loaded arpOctave-0 audio-thread-hang class, re-proved from raw
+# file bytes). ~300 deterministic mutated cases over the four real save
+# formats + truncated engine-state blobs. Built by default.
+# Run with: ./build_release/parvati_loader_fuzz_test
+add_executable(parvati_loader_fuzz_test
+    tests/loader_fuzz_test.cpp
+)
+target_include_directories(parvati_loader_fuzz_test PRIVATE Source)
+target_compile_features(parvati_loader_fuzz_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_loader_fuzz_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling T3: edge-corpus load invariants. Any load that
+# SUCCEEDS must leave the engine inside its invariant ranges on every mirrored
+# surface (staged arp/seq config + live objects, routing, slots, tuning, FX
+# types, name) and render 32 blocks under a 10 s watchdog — the
+# unclamped-loaded-bytes class (arpMode=5 silent part, arpOctave=0 AT hang,
+# channel 17 dead part). Hand-written .parvati multi corpus, one edge per case;
+# a canary proves the checker can fail. Caught + fixed a live instance at
+# authoring time (the .parvati YAML path staged arp bytes raw).
+# Run with: ./build_release/parvati_load_invariants_test
+add_executable(parvati_load_invariants_test
+    tests/load_invariants_test.cpp
+)
+target_include_directories(parvati_load_invariants_test PRIVATE Source)
+target_compile_features(parvati_load_invariants_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_load_invariants_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling T7: undo round-trip property. One user op, one
+# transaction, one undoSafe() -> the FULL host-visible state (APVTS tree +
+# engine blob) must return BYTE-IDENTICAL to pre-op. Battery: patch-byte /
+# PartData-choice / controller-arp-choice / signed / FX-param / FX-type
+# (with the FxSlotCard engagement seeding firing re-entrantly inside the same
+# transaction). Plus the two corruption classes: the W7 seed-clobber (undo of
+# a type switch restores USER values — the replayed type write must not
+# re-seed) and the W2 part-switch doctrine (stack swept to canUndo==false, no
+# cross-part replay, part A keeps its edit, the switch survives). Canary: the
+# byte comparator rejects a 1-byte-doctored snapshot.
+# Run with: ./build_release/parvati_undo_property_test
+add_executable(parvati_undo_property_test
+    tests/undo_property_test.cpp
+)
+target_include_directories(parvati_undo_property_test PRIVATE Source)
+target_compile_features(parvati_undo_property_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_undo_property_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling T2: shadow-state defaults property. Loading a
+# DEFAULTS-ONLY .parvati multi (saved through the real path from a fresh
+# processor) into an engine polluted on every mirrored surface (custom tuning
+# tables, part names, staged FX slot types, arp config, voice slots, routing,
+# PartData bytes 3/4/15) must leave it BIT-IDENTICAL to a fresh engine — the
+# stale-shadow-state-survives-a-load class. Canary self-check proves the diff
+# comparator reports every pollution category. Built by default.
+# Run with: ./build_release/parvati_shadow_state_test
+add_executable(parvati_shadow_state_test
+    tests/shadow_state_test.cpp
+)
+target_include_directories(parvati_shadow_state_test PRIVATE Source)
+target_compile_features(parvati_shadow_state_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_shadow_state_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling T4: UI mirror consistency. Property: after ANY engine
+# mutation path (apvts parameter writes, engine-direct slot/channel/zone/name
+# writes, processor-level file loads, setStateInformation recall with a LIVE
+# editor), the Patch page displays EXACTLY the engine state — through BOTH
+# real user seams: the reveal refresh (setCurrentTopPage(2)) and the
+# visible-page poll mirror (pollPatchPageMirror / displayVersion). Mirrors
+# checked for all 6 parts: Voices combo, Tune combo, name labels (found by row
+# layout geometry), the arrangement combo and the "Voices Y/96" total. Canary
+# proves the comparator detects a stale (displayed != engine) pair. Built by
+# default.
+# Run with: ./build_release/parvati_ui_mirror_test
+add_executable(parvati_ui_mirror_test
+    tests/ui_mirror_test.cpp
+)
+target_include_directories(parvati_ui_mirror_test PRIVATE Source)
+target_compile_features(parvati_ui_mirror_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_ui_mirror_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Controller-modulation verification (mod wheel CC1 / breath CC2 / foot CC4 /
 # channel pressure): proves the global controllers + MPE per-voice expression are
 # wired to their mod-matrix sources and are AUDIBLE when routed to cutoff.
@@ -1630,3 +1744,115 @@ if(PARVATI_IOS)
         VERBATIM
     )
 endif()
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling T8: golden round-trip bytes. Property: save -> load
+# (fresh processor) -> save is BYTE-IDENTICAL for every format pair
+# (.PRO/.MUL/.parvati patch/.parvati multi) over an adversarial program-name
+# corpus (quotes / backslash / UTF-8 / 40 chars / padding / control chars) on
+# a rich seeded state, and the loaded title equals the format-documented
+# normalized name (16-byte chunk form / control-stripped .parvati doc name).
+# Historical instance: the un-escaped .parvati name corrupted the file on save
+# (unloadable). Canary proves the byte comparator flags a 1-flipped-byte file.
+# Built by default.
+# Run with: ./build_release/parvati_roundtrip_golden_test
+add_executable(parvati_roundtrip_golden_test
+    tests/roundtrip_golden_test.cpp
+)
+target_include_directories(parvati_roundtrip_golden_test PRIVATE Source)
+target_compile_features(parvati_roundtrip_golden_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_roundtrip_golden_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling T9: firmware parity oracle. Compiles the VENDORED
+# Ambika controller (ambika_reference/controller/{multi,part,resources,
+# voice_allocator}.cc + avrlib/random.cc) on the host through the recording
+# shims in tests/firmware_shim/ (tests/firmware_shim comes FIRST on the
+# include path so its headers shadow the AVR-dependent firmware headers; the
+# firmware tree itself is untouched) and drives firmware Multi and our
+# SynthEngine through identical scripted events (notes per channel, CC64
+# sustain, CC123 all-notes-off, CC1 mod-wheel, arp clocking, sequence bytes),
+# diffing per-event observables (accepting parts, tuned 14-bit notes, sustain
+# swallow/drain, held-key clearing, per-part mod writes, arp pattern
+# position, step decode). Known divergences live in
+# tests/firmware_parity_known_divergences.txt; the harness asserts each still
+# diverges (stale entry = fail) and hard-fails on any NEW divergence. The
+# --self-test canary proves the allowlist lock bites. Compile notes:
+# -Wno-c++11-narrowing matches avr-gcc's truncation of one 65536 table entry;
+# -Wl,-dead_strip drops the firmware's never-called MonoModeOn/PolyModeOn
+# (they reference TouchVoiceAllocation, which the firmware tree never defines
+# — AVR's --gc-sections strips them on device). Built by default.
+# Run with: ./build_release/parvati_firmware_parity_test
+#           ./build_release/parvati_firmware_parity_test --self-test
+add_executable(parvati_firmware_parity_test
+    tests/firmware_parity_test.cpp
+    tests/firmware_shim/shims.cc
+    ambika_reference/controller/multi.cc
+    ambika_reference/controller/part.cc
+    ambika_reference/controller/resources.cc
+    ambika_reference/controller/voice_allocator.cc
+    ambika_reference/avrlib/random.cc
+)
+target_include_directories(parvati_firmware_parity_test PRIVATE
+    tests/firmware_shim      # FIRST: shadows the AVR-dependent firmware headers
+    ambika_reference
+    Source
+)
+target_compile_features(parvati_firmware_parity_test PRIVATE cxx_std_17)
+target_compile_options(parvati_firmware_parity_test PRIVATE -Wno-c++11-narrowing)
+target_link_options(parvati_firmware_parity_test PRIVATE -Wl,-dead_strip)
+target_link_libraries(parvati_firmware_parity_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Deterministic tooling — static scanners registered as ctest entries.
+# (tool 5) ComboBox clear() notification guard: every juce::ComboBox clear()
+# must pass juce::dontSendNotification (stale-async-onChange class). The
+# script refuses to scan until its canary self-test proves the checker flags
+# a seeded bad snippet and passes a compliant one.
+# enable_testing() is a CMake BUILTIN command, so guarding it with
+# "NOT COMMAND enable_testing" never fires — call it unconditionally
+# (idempotent) so the add_test entries below are actually registered.
+enable_testing()
+add_test(NAME parvati_check_combo_clear
+         COMMAND python3 tools/check_combo_clear.py --self-test-and-scan
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# (tool 6) Raw-`this`-in-async-callback guard: every lambda handed to an
+# async UI API (PopupMenu showMenuAsync / setAction / addItem on a tracked
+# PopupMenu, ModalCallbackFunction::create, chooser launchAsync, static
+# dialog launch helpers) that captures `this` must be SafePointer/
+# WeakReference-guarded (or allowlisted with a hand-verified justification —
+# e.g. member-owned FileChooser completions, safe by the JUCE destructor
+# contract). The crash-window class: popup/dialog completions firing after
+# the host tore the editor down. Canary-gated like tool 5.
+add_test(NAME parvati_check_async_this
+         COMMAND python3 tools/check_async_this.py --self-test-and-scan
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# (tool 10) TRANS-key completeness: every TRANS() string literal in Source/
+# must be a key in BOTH the FR and the DE table of
+# Source/ui/Translations.cpp (parsed exactly as juce::LocalisedStrings
+# parses them at runtime — escaped quotes, \xNN hex byte escapes, adjacent-
+# literal concatenation), unless listed in tools/trans_allowlist.txt
+# (## intentional proper nouns / ## known-missing tracked gaps). Also fails
+# on FR/DE asymmetry and duplicate keys within a table block. Canary-gated
+# like tools 5/6: an in-memory table with one key stripped must be reported
+# before the real scan runs.
+add_test(NAME parvati_check_translations
+         COMMAND python3 tools/check_translations.py --self-test-and-scan
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# One build target that runs every static scanner in sequence (tools 5/6/10)
+# so a single `cmake --build --target parvati_static_checks` gates them in
+# CI without needing ctest. Fails (non-zero) if any scanner fails.
+add_custom_target(parvati_static_checks
+    COMMAND python3 tools/check_combo_clear.py --self-test-and-scan
+    COMMAND python3 tools/check_async_this.py --self-test-and-scan
+    COMMAND python3 tools/check_translations.py --self-test-and-scan
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Running static scanners (combo-clear / async-this / translations)"
+    VERBATIM)

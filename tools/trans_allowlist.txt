@@ -1,0 +1,87 @@
+# tools/trans_allowlist.txt — check_translations.py allowlist
+#
+# Two sections:
+#   ## intentional   — deliberately untranslated keys (proper nouns, product
+#                      terms, single-glyph labels). These should NEVER get a
+#                      translation; if one appears anyway it is fine.
+#   ## known-missing — REAL i18n gaps (tooltip prose, status-strip fragments,
+#                      dialog chrome awaiting translation). Listed so the
+#                      check stays green on the current tree while still
+#                      FAILING on any NEW omission (a new missing key is in
+#                      neither section -> violation). Shrinking this list is
+#                      progress; growing it needs a deliberate decision.
+#
+# One key per line, exactly as it appears in the TRANS() literal (leading/
+# trailing spaces are significant for the suffix-key fragment convention).
+#
+# Audit note (TOOL 10, 2026-08-18): the tuning preset names are NOT TRANS'd
+# (added via parvati::tuningPresetName without TRANS), so they cannot appear
+# here; parameter NAMES are hardware terms and stay raw by design (see the
+# table header comments in Source/ui/Translations.cpp).
+
+## intentional
+12-EDO
+>
+FX
+FX ROUTING
+M
+SYNTH
+Synth
+
+## known-missing
+ — tap a destination knob ([MOD] to exit)
+(select a patch)
++ Add Modulation
+.MUL hardware export.
+0 of 14 Used
+0 of 16 Used
+96-voice pool (0-16). 0 disables the part entirely — it gets no 
+Assign the next free slot
+Assigned
+Audio-thread realtime load (current block). Near 100% = dropouts/crackle.
+Clear
+Clear this modulation (free the slot)
+Custom scale, per note class. Steps of 1/128 semitone (≈ 0.78 ¢). Double-click a row to reset it.
+Decrease sequence length
+Done
+Drag onto a knob to assign this modulation
+Dry/Wet
+FX master EQ 
+FX page
+Factory
+Global FX wet/dry
+How many voices this part plays at once, drawn from the shared 
+Import .scl/.kbm…
+Import Scala tuning
+Increase sequence length
+Keyboard: octave 
+MOD assign armed: 
+Matrix Full (14/14)
+Matrix Full (16/16)
+Mod Matrix full
+Mute / bypass this modulation
+Next FX topology
+Previous FX topology
+Reset Zoom
+Reset this parameter to its default value
+Reset zoom
+Select exactly one .scl file (plus optionally one .kbm).
+Set this parameter to a random value
+Synth page
+Tap a mod source first
+Tap a mod source, then a knob
+Tap-to-assign modulation
+Toggle the modulation pill bar
+Toggle virtual keyboard
+Tuning
+User
+Zoom In
+Zoom Out
+Zoom in
+Zoom out
+are shared out automatically for the individual outputs and the 
+at the same time — the pool holds 6 x 16. The hardware voicecards 
+of 14 Used
+of 16 Used
+velocity
+voice in the pool and stops sounding. Every part can be maxed out 

@@ -772,22 +772,39 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                 const float raw = (float) p.value;
                 if (d->isArp)
                 {
-                    const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) raw);
-                    if (d->paramID == "arp_mode")            part.writePendingConfig ([v] (auto& c) { c.arpMode = v; });
-                    else if (d->paramID == "arp_direction")  part.writePendingConfig ([v] (auto& c) { c.arpDirection = v; });
-                    else if (d->paramID == "arp_octave")     { const uint8_t o = (uint8_t) juce::jlimit (1, 4, (int) raw); part.writePendingConfig ([o] (auto& c) { c.arpOctave = o; }); }
-                    else if (d->paramID == "arp_pattern")    part.writePendingConfig ([v] (auto& c) { c.arpPattern = v; });
-                    else if (d->paramID == "arp_resolution") part.writePendingConfig ([v] (auto& c) { c.arpResolution = v; });
+                    // Clamp to the DESCRIPTOR's own range (choices / int
+                    // bounds) BEFORE staging — the same rule applyParvatiPatch
+                    // applies via the APVTS and stageArpSeqFromPartBytes
+                    // applies for .MUL/.PRO/blob bytes (the wave-5 clamps).
+                    // Staging raw jlimit(0,255) bytes left a hand-edited
+                    // `arp_mode: 5` live as an active-but-not-Arp/Sequencer
+                    // part that silently swallowed notes (caught by
+                    // parvati_load_invariants_test at authoring time).
+                    const int v = (d->choices != nullptr)
+                        ? juce::jlimit (0, d->choices->size() - 1, (int) raw)
+                        : juce::jlimit (d->minValue, d->maxValue, (int) raw);
+                    const uint8_t cv = static_cast<uint8_t> (v);
+                    if (d->paramID == "arp_mode")            part.writePendingConfig ([cv] (auto& c) { c.arpMode = cv; });
+                    else if (d->paramID == "arp_direction")  part.writePendingConfig ([cv] (auto& c) { c.arpDirection = cv; });
+                    else if (d->paramID == "arp_octave")     part.writePendingConfig ([cv] (auto& c) { c.arpOctave = cv; });
+                    else if (d->paramID == "arp_pattern")    part.writePendingConfig ([cv] (auto& c) { c.arpPattern = cv; });
+                    else if (d->paramID == "arp_resolution") part.writePendingConfig ([cv] (auto& c) { c.arpResolution = cv; });
                     stagedArpSeq = true;
                 }
                 else if (d->isSequencer)
                 {
-                    const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) raw);
-                    if (d->paramID == "seq_length_1")      part.writePendingConfig ([v] (auto& c) { c.seqLength[0] = v; });
-                    else if (d->paramID == "seq_length_2") part.writePendingConfig ([v] (auto& c) { c.seqLength[1] = v; });
-                    else if (d->paramID == "seq_length_3") part.writePendingConfig ([v] (auto& c) { c.seqLength[2] = v; });
+                    // Same descriptor-range clamp as the arp branch above
+                    // (seq lengths are 1..16 in the descriptor table; a staged
+                    // 0 length wedges the sequencer's wrap logic).
+                    const int v = (d->choices != nullptr)
+                        ? juce::jlimit (0, d->choices->size() - 1, (int) raw)
+                        : juce::jlimit (d->minValue, d->maxValue, (int) raw);
+                    const uint8_t cv = static_cast<uint8_t> (v);
+                    if (d->paramID == "seq_length_1")      part.writePendingConfig ([cv] (auto& c) { c.seqLength[0] = cv; });
+                    else if (d->paramID == "seq_length_2") part.writePendingConfig ([cv] (auto& c) { c.seqLength[1] = cv; });
+                    else if (d->paramID == "seq_length_3") part.writePendingConfig ([cv] (auto& c) { c.seqLength[2] = cv; });
                     else if (d->byteOffset >= 16 && d->byteOffset < 80)
-                    { const int off = d->byteOffset - 16; part.writePendingConfig ([off,v] (auto& c) { c.seqData[(size_t) off] = v; }); }
+                    { const int off = d->byteOffset - 16; part.writePendingConfig ([off,cv] (auto& c) { c.seqData[(size_t) off] = cv; }); }
                     stagedArpSeq = true;
                 }
                 else if (d->isFx)

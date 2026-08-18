@@ -1,0 +1,18 @@
+# check_async_this allowlist — AIM FOR EMPTY.
+# One entry per line: <file>:<line>: <reason + tracking TODO>
+# Every entry is a KNOWN raw-`this` async-capture that is provably safe today;
+# each must carry a justification and a removal plan.
+#
+# Class: member-owned juce::FileChooser completions. JUCE contract (vendored
+# juce_FileChooser.cpp): ~FileChooser() sets asyncCallback = nullptr and the
+# native dialog pimpl is a MEMBER destroyed with the chooser, so a chooser
+# owned by a member of the enclosing component can never fire its completion
+# after that component dies. Verified 2026-08-18 against ~/JUCE 9.0.1.
+# TODO(track): if the choosers ever move off member ownership (e.g. shared
+# static instances), these entries become REAL bugs — re-review then.
+Source/PluginEditor.cpp:4091: openLoadDialog FileChooser completion; `fileChooser_` is a ParvatiEditor member unique_ptr, destroyed in ~ParvatiEditor (JUCE cancels pending async ops). TODO: switch to SafePointer only if ownership changes.
+Source/PluginEditor.cpp:4136: openSaveDialog FileChooser completion; same member-ownership contract as :4091. TODO: as above.
+Source/PluginEditor.cpp:4173: openSaveParvatiDialog FileChooser completion; same member-ownership contract as :4091. TODO: as above.
+Source/PluginEditor.cpp:4212: openSaveMultiDialog FileChooser completion; same member-ownership contract as :4091 (the inner MulExportDialog strategy callback IS SafePointer-guarded separately). TODO: as above.
+Source/ui/TuningEditor.cpp:181: Scala-import chooser_ completion; `chooser_` is a TuningEditor (self-owned dialog content) member unique_ptr — destroyed when the dialog closes, cancelling the pending op. TODO: as above.
+Source/ui/TuningEditor.cpp:192: nested badSelection lambda inside the same :181 statement (runs only synchronously within that completion's lifetime); same envelope as :181. TODO: as above.
