@@ -533,6 +533,23 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
         engine_.applyPartByte (d.byteOffset, byte);
     else
         engine_.applyPatchByte (d.byteOffset, byte);
+
+    // D4 inverse: a part_raga APVTS write of 0 (12-EDO) is an EXPLICIT
+    // selection — clear the current part's custom-table flag so
+    // resolvedTuningMode reports 0, not 33. Before this, the param-grid
+    // combo / host automation / NRPN 116 could write byte 4 = 0 while the
+    // engine kept playing the old custom table, and the Patch page's Tune
+    // combo (which reads the engine) then disagreed with the grid combo.
+    // Matches the Patch page's Tune-combo path (PatchPage::onTuningChanged)
+    // and the file loaders' rules (.PRO/.MUL/.parvati). A non-zero preset
+    // byte already wins the resolution order, so no clear is needed there.
+    // Deliberately ONLY here — NOT in applyParameterToEngine: the bulk sync
+    // re-pushes a part's OWN stored bytes on every part switch, where byte 4
+    // == 0 together with an armed custom table is VALID state (D4: custom
+    // active implies raga byte 0); clearing there would wipe custom tunings
+    // on every part switch.
+    if (d.isPart && d.paramID == "part_raga" && byte == 0)
+        engine_.clearPartTuningCustom (engine_.getCurrentPart());
 }
 
 void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& d)
@@ -720,6 +737,59 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
     engine_.setCurrentPart (newPart);
     loadPartIntoApvts (newPart);
     syncAllParamsToEngine();   // ensure the new Part's voices match (idempotent)
+
+    // DATA-INTEGRITY GUARD (undo cannot cross a part switch). Two hazards:
+    //   (1) DUMP POLLUTION — the display dump above rewrites ~250 params;
+    //       recorded as undo actions they would make the switch one giant
+    //       undo step. Fixed at the source: loadPartIntoApvts writes the tree
+    //       WITHOUT the UndoManager (display dumps are not user edits — the
+    //       same doctrine as JUCE's replaceState clearing on state swap).
+    //   (2) REPLAY MISROUTING — any PRE-switch edit (Part A's knob) replayed
+    //       by undo()/redo() while Part B is current would push A's values
+    //       through parameterChanged into B's engine storage — silent
+    //       cross-part sound corruption. The clear below removes the stack,
+    //       and undoSafe()/redoSafe() (the editor's undo entry points) sweep
+    //       the stragglers this clear cannot reach: JUCE appends the caller's
+    //       part_select action AFTER its change listeners return, and the 10
+    //       Hz APVTS tree-flush timer records host-automation writes late.
+    // The isPerformingUndoRedo guard matters: an undo() REPLAY that includes
+    // a part_select write re-enters here mid-iteration, and mutating the
+    // transaction list underneath the iterating undo() crashes.
+    undoInvalidatedByPartSwitch_ = true;
+    if (! undoManager_.isPerformingUndoRedo())
+    {
+        undoManager_.beginNewTransaction();
+        undoManager_.clearUndoHistory();
+    }
+}
+
+//==========================================================================
+// The editor's ONLY undo/redo entry points (header buttons + Cmd+Z). A part
+// switch invalidates every recorded action's part context, and the JUCE
+// append-after-listeners ordering + the 10 Hz tree-flush timer can leave
+// stragglers after onPartSelect's synchronous clear — sweep once more, then
+// replay. Host automation never drives this UndoManager (it is a plugin-side
+// UI concept), so these two entry points cover every real replay.
+void ParvatiAudioProcessor::undoSafe()
+{
+    if (undoInvalidatedByPartSwitch_)
+    {
+        undoInvalidatedByPartSwitch_ = false;
+        undoManager_.beginNewTransaction();
+        undoManager_.clearUndoHistory();
+    }
+    undoManager_.undo();
+}
+
+void ParvatiAudioProcessor::redoSafe()
+{
+    if (undoInvalidatedByPartSwitch_)
+    {
+        undoInvalidatedByPartSwitch_ = false;
+        undoManager_.beginNewTransaction();
+        undoManager_.clearUndoHistory();
+    }
+    undoManager_.redo();
 }
 
 void ParvatiAudioProcessor::loadPartIntoApvts (int part)
@@ -803,7 +873,19 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
             value = parvatiPatchByteToValue (d, byte);
         }
 
-        apvts.getParameterAsValue (d.paramID) = value;
+        // NON-UNDOABLE display write: this is an engine->APVTS reflection
+        // (part switch / multi load), not a user edit — recording it would make
+        // every part switch a ~250-action undo step that, replayed, writes the
+        // previous part's values into the CURRENT part (cross-part
+        // corruption; see onPartSelect). getParameterAsValue records via the
+        // APVTS UndoManager; writing the SAME child-tree "value" property with
+        // a null UndoManager fires the identical sync (tree -> parameter ->
+        // attachments) minus the recording.
+        if (auto child = apvts.state.getChildWithName (juce::Identifier (d.paramID));
+            child.isValid())
+            child.setProperty (juce::Identifier ("value"), value, nullptr);
+        else
+            apvts.getParameterAsValue (d.paramID) = value;   // defensive fallback
     }
 }
 
@@ -931,6 +1013,17 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     AmbikaMulti multi;
     if (! parseAmbikaMultiFile (file, multi) || ! multi.ok)
         return false;
+
+    // Validate-first (routing/sound-hybrid guard): the firmware writer always
+    // emits ALL six Parts' Patch + PartData objects, so a .MUL whose MBKS
+    // stream stops before the last part (a hand-trimmed or byte-truncated
+    // file — the walker stops cleanly at the cut, so parse alone reports ok)
+    // is corrupt. Accepting it would apply the NEW MultiData routing over the
+    // PREVIOUS multi's patch/part bytes for the missing parts — a hybrid —
+    // so reject the whole file instead.
+    for (const auto& mp : multi.parts)
+        if (! (mp.hasPatch && mp.hasPart))
+            return false;
 
     // Clean slate: kill every sounding voice before the new multi configures
     // all 6 Parts (avoids stuck notes from the previous multi's routing)...
@@ -1126,7 +1219,9 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     // (the voice-slot extension), the chosen strategy rewrites the bitmasks
     // (and optionally the polyphony modes) to map the requested voices onto
     // the 6 hardware cards. ChainSplit additionally writes sibling "-2.MUL"
-    // unit files for physically chained Ambikas.
+    // unit files for physically chained Ambikas — AFTER the primary file, so
+    // a mid-set failure can roll the whole generation back (see below).
+    std::vector<AmbikaMulti> unitMultis;   // ChainSplit units 1..N (unit 0 rides the primary)
     {
         using namespace parvati::mul_export;
         const Setup setup = getMulExportSetup();
@@ -1148,14 +1243,16 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
         {
             const auto units = solveChain (setup);
             applySolution (multi, units.front());
+            // Units 1..N are staged here and written AFTER the primary file
+            // below: writing them first (the old order) left freshly-written
+            // "-2.MUL" siblings on disk when the PRIMARY write failed, and a
+            // mid-set unit failure left units from the NEW generation next to
+            // the STALE primary — a chained-Ambika set that matches neither.
             for (size_t u = 1; u < units.size(); ++u)
             {
                 AmbikaMulti unitMulti = multi;   // same patches + routing
                 applySolution (unitMulti, units[u]);
-                const juce::File unitFile = file.getParentDirectory().getChildFile (
-                    file.getFileNameWithoutExtension() + "-" + juce::String (u + 1) + ".MUL");
-                if (! writeAmbikaMultiFile (unitFile, unitMulti))
-                    return false;
+                unitMultis.push_back (unitMulti);
             }
         }
         else if (strat != Strategy::AsIs)
@@ -1166,7 +1263,33 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     multi.hasMultiData = true;
     multi.ok = true;
 
-    return writeAmbikaMultiFile (file, multi);
+    // PRIMARY first: its write is atomic (TemporaryFile), so a failure here
+    // leaves the disk exactly as it was (nothing to roll back).
+    if (! writeAmbikaMultiFile (file, multi))
+        return false;
+
+    // Then the ChainSplit unit siblings. On any failure, delete EVERY file
+    // this save already wrote (units + the primary), so a failed save leaves
+    // the disk as it was — the whole chained set loads as one consistent
+    // generation or not at all.
+    if (! unitMultis.empty())
+    {
+        juce::Array<juce::File> written;
+        written.add (file);
+        for (size_t u = 0; u < unitMultis.size(); ++u)
+        {
+            const juce::File unitFile = file.getParentDirectory().getChildFile (
+                file.getFileNameWithoutExtension() + "-" + juce::String (u + 2) + ".MUL");
+            if (! writeAmbikaMultiFile (unitFile, unitMultis[u]))
+            {
+                for (const auto& f : written)
+                    f.deleteFile();
+                return false;
+            }
+            written.add (unitFile);
+        }
+    }
+    return true;
 }
 
 parvati::mul_export::Setup ParvatiAudioProcessor::getMulExportSetup() const
@@ -1215,10 +1338,33 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
     }
+    // VALIDATE FIRST, MUTATE LATER (the .MUL / .parvati-multi doctrine): a
+    // corrupt document must not reach resetAllVoices below — a failed load
+    // previously cut every sounding voice and THEN failed, leaving silence
+    // under a stale UI. applyParvatiMulti re-parses internally; this hoisted
+    // check is the same cheap guard (an object with a `params:` object).
+    {
+        const juce::var tree = parvati::preset::parseParvatiYaml (text);
+        if (! tree.isObject() || ! tree["params"].isObject())
+            return false;
+    }
     // Clean slate before applying the new Parvati-native patch.
     engine_.resetAllVoices();
     if (! parvati::preset::applyParvatiPatch (*this, text))
         return false;
+    // Tuning-faithful load (the .PRO rule, loadProgramFromBytes): a .parvati
+    // PATCH carries the raga preset byte (part_raga) but NO custom table, so a
+    // leftover customTuningActive flag from an earlier edit would keep
+    // resolvedTuningMode at 33 while the loaded patch says 12-EDO. The APVTS
+    // write path usually covers this already (applyParvatiPatch's
+    // setValueNotifyingHost fires parameterChanged, whose part_raga=0 branch
+    // clears); this explicit check is the backstop for a params map WITHOUT a
+    // part_raga key — the file's implicit default is 12-EDO, and the current
+    // part's byte 4 may already sit at 0 under an armed custom table. A
+    // non-zero byte wins the resolution order, so no clear there (mirrors
+    // loadProgramFromBytes exactly).
+    if (engine_.getPart (engine_.getCurrentPart()).partBytes[4] == 0)
+        engine_.clearPartTuningCustom (engine_.getCurrentPart());
     // Derive a display name from the file (the in-document name is applied via
     // the loaded-program title separately by the editor).
     loadedProgramName_ = file.getFileNameWithoutExtension();
@@ -1246,19 +1392,45 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
     }
-    // VALIDATE FIRST, MUTATE LATER: parse the document and confirm the
-    // `parts:` array exists BEFORE any engine mutation runs. A malformed file
-    // (or a non-multi document) previously left the engine already reset to
-    // the init allocation — a failed load mutated the synth under a stale UI
+    // VALIDATE FIRST, MUTATE LATER: parse the document and confirm it is a
+    // real multi BEFORE any engine mutation runs. A malformed file (or a
+    // non-multi document) previously left the engine already reset to the
+    // init allocation — a failed load mutated the synth under a stale UI
     // (resetAllVoices + resetVoiceSlotsToInit had run, then applyParvatiMulti
     // returned false after them). applyParvatiMulti re-parses internally; this
     // pre-parse is the same cheap check hoisted ahead of the resets so a
-    // failed load leaves the engine + UI exactly as they were.
-    {
-        const juce::var tree = parvati::preset::parseParvatiYaml (text);
-        if (! tree.isObject() || tree["parts"].getArray() == nullptr)
-            return false;
-    }
+    // failed load leaves the engine + UI exactly as they were. The parts
+    // array must be NON-EMPTY and every entry an object: a degenerate
+    // `parts: []` (or a list of scalars) would otherwise "load successfully"
+    // over the PREVIOUS multi's leftover state (the reset only touches
+    // slots/names, and applyParvatiMulti skips non-object entries entirely).
+        // (b) A corrupt .parvati multi (the multi path got validate-first; the
+        // patch path used to resetAllVoices first and only then fail).
+        // A parts entry must carry at least one RECOGNIZED part key — the
+        // line-based parser wraps a BARE list item (`- 7`) as an object with
+        // the key "0", so a plain isObject() check would pass garbage through.
+        {
+            const juce::var tree = parvati::preset::parseParvatiYaml (text);
+            if (! tree.isObject())
+                return false;
+            auto* partsArr = tree["parts"].getArray();
+            if (partsArr == nullptr || partsArr->isEmpty())
+                return false;
+            static const char* kPartKeys[] = { "channel", "keyzone_low", "keyzone_high",
+                                              "voice_allocation", "voice_slots", "name",
+                                              "params", "tuning_mode", "tuning_offsets" };
+            for (const auto& entry : *partsArr)
+            {
+                auto* entryObj = entry.getDynamicObject();
+                if (entryObj == nullptr)
+                    return false;
+                bool hasRecognizedKey = false;
+                for (const char* k : kPartKeys)
+                    if (entryObj->hasProperty (juce::Identifier (k))) { hasRecognizedKey = true; break; }
+                if (! hasRecognizedKey)
+                    return false;   // bare/scalar item or an all-unknown-keys entry
+            }
+        }
     // Clean slate before applying the new Parvati-native multi: kill sounding
     // voices AND reset the per-part voice slots to the engine init allocation
     // (Part 0 = 6 voices, Parts 1..5 disabled) — the format is human-editable,
@@ -1287,6 +1459,22 @@ void ParvatiAudioProcessor::resetVoiceSlotsToInit()
     engine_.setPartVoiceSlots (0, 6);
     for (int p = 1; p < SynthEngine::getNumParts(); ++p)
         engine_.setPartVoiceAllocation (p, 0);
+
+    // Whole-setup loads also reset the user part ALIASES ("Kick", "Lead",
+    // ...): a stale name is a stale UI label for content the loaded file just
+    // replaced, so resetVoiceSlotsToInit (the clean-slate both multi loaders
+    // run before applying file data) clears them too. The .parvati multi path
+    // is safe against this reset by construction: its serializer ALWAYS emits
+    // the per-part `name:` key (even empty), so applyParvatiMulti re-applies
+    // the file's names right after. The .MUL format carries NO part names
+    // (Ambika MultiData has no such field — names are a Parvati extension),
+    // so aliases correctly vanish on a .MUL load. Single-patch loads
+    // (.PRO / .parvati patch) deliberately do NOT pass through here: a part
+    // alias is user metadata about the TRACK, not the patch — swapping the
+    // sound keeps the label (same doctrine as a DAW track name surviving a
+    // clip swap).
+    for (int p = 0; p < SynthEngine::getNumParts(); ++p)
+        engine_.setPartName (p, {});
 }
 
 //==============================================================================
@@ -1375,7 +1563,33 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 // accidental re-entrant part_select callback, which
                 // restoringState_ now suppresses).
                 currentPart_ = engine_.getCurrentPart();
+                // Re-echo part_select to the restored current part (mirrors
+                // loadMultiFile): loadPartIntoApvts SKIPS isOption descriptors
+                // (incl. part_select), so if the tree's param and the blob's
+                // savedCurrent ever diverge (a host-modified state, or a save
+                // racing a deferred part_select drain), the header combo would
+                // show the wrong part while edits land on the blob's part.
+                // restoringState_ is still set, so parameterChanged skips the
+                // engine re-apply — this is a parameter/combo update only.
+                if (auto* ps = apvts.getParameter ("part_select"))
+                    ps->setValueNotifyingHost (
+                        ps->convertTo0to1 (static_cast<float> (engine_.getCurrentPart() + 1)));
                 loadPartIntoApvts (engine_.getCurrentPart());
+                // The three global OPTION params (vca_curve / filter_card /
+                // filter_drive) are NOT in the engine blob (captureState carries
+                // no option bytes) and loadPartIntoApvts SKIPS isOption
+                // descriptors — so without this re-apply the restored session
+                // renders with the ENGINE defaults while the UI combos show the
+                // saved values (typical hosts call prepareToPlay BEFORE
+                // setStateInformation, so the ctor/prepare sync never re-applies
+                // them afterwards). Mirrors the legacy branch's
+                // syncAllParamsToEngine option coverage with the exact option
+                // apply tail. part_select is excluded: it is a selection, not an
+                // engine option — onPartSelect would thrash the just-restored
+                // part state (currentPart_ is already synced above).
+                for (const auto& d : getPatchParamDescriptors())
+                    if (d.isOption && d.paramID != "part_select")
+                        applyOptionParameter (d, apvts.getRawParameterValue (d.paramID)->load());
                 return true;
             }();
             if (! restored)

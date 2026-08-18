@@ -391,11 +391,12 @@ void FxRoutingBar::resized()
     if (area.getHeight() > kGap) area.removeFromTop (kGap);
 
     // Reserve the three rows + their gaps, then centre the block vertically.
-    // NOTE (pre-existing, unchanged by the 44pt dial fix): at the DEFAULT
-    // editor size (1280x634) the bar's column is shorter than all three rows
-    // together, so the jlimits below starve the ctrl (Dry/Wet) row to ~0 —
-    // it only lays out at taller editor sizes. The flow + EQ rows keep
-    // priority; rebalancing the column budget would be a separate change.
+    // FIXED (verified W6/W7 review): FxWorkspace floors the top row at
+    // kTopRowNaturalH = 264, so the routing column is >= ~236pt — flow (50) +
+    // EQ (60) + ctrl (58) + gaps (12) = 180 fits and the Dry/Wet dial ALWAYS
+    // lays out (it draws at ~42px). The old "starves to ~0 at 1280x634" note
+    // described the pre-floor layout and is superseded — see
+    // FxWorkspace.cpp kTopRowNaturalH.
     const int flowH = juce::jlimit (0, area.getHeight(), kFlowRowH);
     const int eqH   = juce::jlimit (0, juce::jmax (0, area.getHeight() - flowH - 2 * kGap), kEqRowH);
     const int ctrlH = juce::jlimit (0, juce::jmax (0, area.getHeight() - flowH - eqH - 3 * kGap), kCtrlRowH);

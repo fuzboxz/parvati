@@ -4,6 +4,7 @@
 
 #include "TuningEditor.h"
 
+#include "ParvatiLookAndFeel.h"
 #include "ScalaImport.h"
 #include "TuningTables.h"
 
@@ -241,6 +242,12 @@ TuningEditor::TuningEditor (SynthEngine& engine, int partIndex, ChangeCallback o
 
 TuningEditor::~TuningEditor()
 {
+    // Drop the OWNED LookAndFeel reference BEFORE the unique_ptr member is
+    // destroyed (members die after this body but before the juce::Component
+    // base finishes its own teardown — a lingering raw L&F pointer would
+    // dangle into freed memory during that window).
+    if (ownedLnf_ != nullptr)
+        setLookAndFeel (nullptr);
     rowsViewport_.setViewedComponent (nullptr, false);
 }
 
@@ -281,6 +288,17 @@ void TuningEditor::resized()
 
 void TuningEditor::applyTable()
 {
+    // Launch-parent lifetime gate (see the header block): if the editor that
+    // opened this popover has been torn down, the SynthEngine reference and
+    // the change callback dangle — close the hosting dialog instead of
+    // touching either. (Headless test instances never set watchParent_, so
+    // they are unaffected.)
+    if (parentGone())
+    {
+        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
+            dw->exitModalState (0);
+        return;
+    }
     int16_t table[12] = {};
     for (int c = 0; c < 12; ++c)
     {
@@ -354,16 +372,37 @@ void TuningEditor::launch (juce::Component* parent, SynthEngine& engine, int par
 {
     auto* content = new TuningEditor (engine, partIndex, std::move (onChanged));
 
-    // Inherit the launching editor's LookAndFeel so the popover matches the
-    // active Parvati theme (the DialogWindow is its own desktop window).
+    // Match the active Parvati theme WITHOUT borrowing the parent editor's
+    // LookAndFeel OBJECT: this dialog is its own desktop window and can
+    // OUTLIVE the editor (host closes the plugin window while the popover is
+    // open), which would leave the dialog painting through a freed L&F. The
+    // content therefore OWNS a ParvatiLookAndFeel copy pointed at the same
+    // theme (the builtin theme structs are immortal function-local statics —
+    // ParvatiTheme.cpp — so the copy stays valid after the editor dies), and
+    // tracks the launch parent so engine-touching interactions close the
+    // dialog once the parent is gone (see applyTable). Null parent (tests)
+    // keeps the default look and no watching.
     if (parent != nullptr)
-        content->setLookAndFeel (&parent->getLookAndFeel());
+    {
+        content->watchParent_ = true;
+        content->launchParent_ = parent;
+        if (auto* plnf = dynamic_cast<ParvatiLookAndFeel*> (&parent->getLookAndFeel()))
+        {
+            content->ownedLnf_ = std::make_unique<ParvatiLookAndFeel>();
+            content->ownedLnf_->setTheme (*plnf->getTheme());
+            content->setLookAndFeel (content->ownedLnf_.get());
+        }
+    }
 
     // Height caps to the usable screen area (an AUv3 pane can be shorter than
-    // the natural height; the row viewport absorbs the shortfall).
+    // the natural height; the row viewport absorbs the shortfall). The display
+    // can be null in headless/automation contexts (no attached display) — fall
+    // back to the un-capped height rather than dereference null (W7).
+    const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
     const int maxH = juce::jlimit (360, 720,
-        static_cast<int> (juce::Desktop::getInstance().getDisplays()
-                              .getPrimaryDisplay()->userArea.getHeight() * 0.85));
+        display != nullptr
+            ? static_cast<int> (display->userBounds.getHeight() * 0.85)
+            : 720);
     content->setSize (560, juce::jmin (700, maxH));
 
     juce::DialogWindow::LaunchOptions o;

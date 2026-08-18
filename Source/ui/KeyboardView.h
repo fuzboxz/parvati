@@ -65,6 +65,14 @@ public:
     // User click -> engine injection (set by the editor in Phase 4).
     void setNoteCallback (NoteCallback cb);
 
+    /** Release EVERY currently-held note (mouse/touch sources + QWERTY keys)
+        by firing note-offs through the note callback. Called by the editor's
+        destructor BEFORE the callback is nulled: a key physically held at
+        editor teardown gets no focusLost/mouseUp, so without this its note
+        sustains forever in the host (W7, lane-B finding 6). Safe when idle
+        (a no-op on empty tracking maps). */
+    void releaseAllNotes();
+
     /** Fired whenever the Ableton-style computer-keyboard settings change
         (Z/X octave, C/V velocity). Carries the new values so the editor can
         surface feedback in the status/tooltip bar. Also fires once from

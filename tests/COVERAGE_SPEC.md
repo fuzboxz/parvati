@@ -126,23 +126,32 @@ NOTE: `filter_card` (option) + `filter_drive` (option) are in Options below.
 Voice slots are ENGINE state (`SynthEngine::voiceSlots`, 1..16 per Part from
 the 96-voice pool), so they are covered functionally, not via the byte bridge:
 
-- **Counts are the user model.** `setPartVoiceSlots` clamps 1..16; a Part is
-  enabled iff its count >= 1 (disabled Parts are 0 — reachable only via an
-  arrangement preset or a loaded multi). No `Auto`, no card budget.
+- **Counts are the user model.** `setPartVoiceSlots` clamps 1..16 (the
+  public setter can never disable); a Part is enabled iff its count >= 1.
+  The Patch page's Voices combo offers a real "0" item (0 disables the Part,
+  riding the legacy zero-mask path); 0-voice rows stay dimmed + interactive.
 - **Cards are derived.** The 6-voicecard bitmask comes from
   `mul_export::deriveMasks` (contiguous proportional share, min 1 per active
   Part) — one source of truth shared with `.MUL` export. Assert the derived
   masks for representative count vectors (e.g. 10/8/6 -> 3/2/1 cards).
-- **Six arrangement presets** — Mono (1 voice + MONO poly = true mono),
-  Single (16), Dual Layer (8+8 Omni), Dual Split (8+8 @48), Quad Split
-  (4x8 @36/60/84), Multi 6 (6x16, channels 1..6). Coverage: apply each,
-  assert per-Part counts + zones + channels + polyphony, and that inference
+- **Five arrangement presets** — Mono (1 part, 1 voice, MONO poly = true
+  mono), Poly (1 part, 16 voices, POLY), Unison (1 part, 16 voices, MONO +
+  spread), Multitimbral (6 parts × 16 voices, MONO, channels 1..6), Drum Kit
+  (6 parts × 1 voice, MONO, GM drum key zones). 0-voice parts are first-class
+  (every preset disables its unused parts). Coverage: apply each, assert
+  per-Part counts + zones + channels + polyphony, and that inference
   round-trips the preset (non-matching edits read Custom).
 - **MONO/unison = the count** (MONO + N voices = N-voice unison);
   CHAIN doubles a Part's voice set (up to 32).
 - **Round-trips:** `.parvati` carries `voice_slots` verbatim; `.MUL`/legacy
   host-state blobs materialize counts from the stored mask's popcount
   (0 -> disabled).
+- **Editor-level load wiring** (`tests/editor_test.cpp` [7b]/[7c]/[7d]):
+  the real user entry points — `filesDropped` → `applyPatchFile` → load →
+  Patch-page refresh with NO manual refresh calls — for `.parvati` multis,
+  `.PRO` programs (incl. the stale-custom-tuning clear) and corrupt files
+  (validate-before-mutate), plus the stock `presets/TEMPLATES/*.parvati`
+  through the real load path and the hidden-page reveal refresh.
 
 ## Sequencer (67 params; controller PartData)
 

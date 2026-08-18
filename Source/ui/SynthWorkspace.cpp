@@ -265,7 +265,6 @@ void SynthWorkspace::resized()
     // makes the host scroll. When the host does scroll it is re-laid one
     // scrollbar-thickness narrower so the scrollbar never covers the FILTER
     // column's right edge.
-#include <cstdio>
     topRowViewport_->setBounds (mainRow);
     // NOTE: mainRow (NOT Viewport::getViewWidth()) is the width source — the
     // viewport caches its visible area and can be stale mid-cascade, which

@@ -567,6 +567,14 @@ public:
     // tools must drive the page switch without simulating clicks).
     void setCurrentTopPage (int pageIndex);
 
+    // One iteration of the poll timer's VISIBLE-Patch-page mirror check: when
+    // the Patch page is on screen and the engine's display version moved
+    // (an out-of-band write — host automation of part_polyphony / part_raga,
+    // MIDI NRPN, host undo — see SynthEngine::getDisplayVersion), re-read the
+    // engine into the rows. Public for test/automation only: headless tests
+    // drive the exact timer code path without waiting for the 30 Hz tick.
+    void pollPatchPageMirror();
+
     // juce::FileDragAndDropTarget — accept dropped Ambika .PRO/.MUL/.parvati
     // files. DECLARED PUBLIC (the base is inherited privately): the drop entry
     // filesDropped -> applyPatchFile is the REAL user load path (drag-drop onto
@@ -728,6 +736,12 @@ private:
     // Top bar: Part selector (bound to the `part_select` APVTS param).
     juce::Label    partCaption_;
     juce::ComboBox partCombo_;
+    // Display-string cache for refreshPartComboNames: the 30 Hz poll used to
+    // call ComboBox::changeItemText 6x every tick unconditionally (it is NOT a
+    // no-op internally). Only the items whose label actually changed are
+    // rewritten now; a language switch changes the placeholder text, so it
+    // still updates through the same compare (W7, lane-A finding 6).
+    std::array<juce::String, 6> partComboLabelCache_;
     // Synth<->FX mode toggle (a view-mode selector, like the Patch overlay —
     // NOT an APVTS param). Inserted between partCombo_ and the Patch button in
     // the header cluster: Part [Part 1] [Synth] [FX] [Patch].
@@ -735,6 +749,7 @@ private:
     juce::TextButton fxModeButton_    { "FX" };
     bool             fxModeActive_    = false;   // which workspace (Synth/FX) hosts the generator
     int              currentTopPage_  = 0;       // active top-level page: 0=Synth 1=FX 2=Patch
+    uint32_t         lastPatchPageDisplayVersion_ = 0;   // engine display version the Patch page rows were last read at (see pollPatchPageMirror)
     juce::TextButton globalButton_ { "Patch" }; // header button -> Patch page overlay (hosts the Section::Global ParamPage; not a patch param)
     juce::TextButton kbdToggleButton_ { "KBD" };  // header toggle: show/hide the bottom virtual keyboard
     juce::TextButton modBarToggleButton_ { "MOD" };  // header toggle: show/hide the central mod-pill bar seam

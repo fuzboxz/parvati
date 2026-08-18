@@ -65,8 +65,12 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
 
     heading_.setFont (juce::FontOptions (15.0f, juce::Font::bold));
     heading_.setJustificationType (juce::Justification::centredLeft);
-    heading_.setText (TRANS ("This setup uses more voices than one Ambika has (6 voicecards).\n"
-                             "Choose how to fit it onto the hardware:"),
+    // Two single-line TRANS fragments (not one \n literal): the tables are
+    // LocalisedStrings line-parsed, so a raw newline inside a key can never
+    // hit a table row — the same suffix-key idiom the FX cards use.
+    heading_.setText (TRANS ("This setup uses more voices than one Ambika has (6 voicecards).")
+                           + "\n"
+                           + TRANS ("Choose how to fit it onto the hardware:"),
                       juce::dontSendNotification);
     addAndMakeVisible (heading_);
 
@@ -189,8 +193,11 @@ void MulExportDialog::refreshPreview()
             text << TRANS ("Voicecards per unit") << ":\n";
             for (size_t u = 0; u < units.size(); ++u)
             {
+                // Unit 1's file IS the file being saved (no "-1" suffix is
+                // written — the siblings are -2, -3, ...); label it "(this
+                // file)" instead of the old literal "-.MUL" placeholder.
                 text << "\n" << TRANS ("Ambika") << " " << (u + 1) << " (\""
-                     << (u == 0 ? "-.MUL" : "-" + juce::String (u + 1) + ".MUL") << "\"):\n";
+                     << (u == 0 ? TRANS ("(this file)") : "-" + juce::String (u + 1) + ".MUL") << "\"):\n";
                 for (const auto& line : previewLines (setup_, units[u], (int) u, &ctx_))
                     text << "  " << toJuceString (line) << "\n";
             }
@@ -224,8 +231,7 @@ void MulExportDialog::refreshPreview()
             }
         }
         text << "\n" << TRANS ("Custom tunings cannot be represented in .MUL — exported parts "
-                                "fall back to their Scale preset byte (or 12-EDO): ") << parts;
-        break;   // one line for all affected parts
+                                "fall back to their Scale preset byte (or 12-EDO): ") << parts;        break;   // one line for all affected parts
     }
     previewLabel_.setText (text, juce::dontSendNotification);
     previewLineCount_ = text.length() - text.replace ("\n", "").length() + 1;
@@ -249,9 +255,13 @@ void MulExportDialog::launch (juce::Component* parent,
 
     // Height caps to the usable screen area (an AUv3 pane can be shorter than
     // the natural dialog height; the preview viewport absorbs the shortfall).
+    // The display can be null in headless/automation contexts — fall back to
+    // the un-capped height rather than dereference null (W7).
+    const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
     const int maxH = juce::jlimit (360, 600,
-        static_cast<int> (juce::Desktop::getInstance().getDisplays()
-                              .getPrimaryDisplay()->userArea.getHeight() * 0.85));
+        display != nullptr
+            ? static_cast<int> (display->userBounds.getHeight() * 0.85)
+            : 600);
     content->setSize (540, juce::jmin (500, maxH));
 
     juce::DialogWindow::LaunchOptions o;

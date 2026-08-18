@@ -95,6 +95,16 @@ public:
     // mode 33 opens the Custom… popover exactly like the UI — do not use in
     // headless tests (instantiate TuningEditor directly instead).
     void chooseTuningMode (int part, int mode);
+    // The post-edit notification openTuningEditor's popover invokes after
+    // every live custom-tuning edit (row drag / Clear / Scala import): re-syncs
+    // the row's Tune combo, refreshes the page chrome and re-syncs the
+    // CURRENT part's APVTS (the popover writes the part's PartData
+    // ENGINE-DIRECT, so without the re-sync the hosted part_raga combo and an
+    // APVTS-based save kept the STALE preset byte while the engine played the
+    // custom table). Public so headless tests can wire a directly-instantiated
+    // TuningEditor's change callback to this — the exact body the launched
+    // popover's callback runs — without opening the modal dialog.
+    void tuningEditorApplied (int part);
     // Currently-displayed voice count for @p part from its Voices combo
     // (0..16; 0 = the Part is DISABLED — a real "0" item, selected at full
     // strength; -1 for an out-of-range part).

@@ -362,7 +362,10 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // juce::ComboBox, so the ComboBoxAttachment + addItemList below are unchanged.
     // The prev/next chevrons are not placed (see resized()).
     typeCombo_ = std::make_unique<FxTypeCombo> ();
-    typeCombo_->setTooltip ("FX " + juce::String (slot_ + 1) + " algorithm");
+    // The FX number stays OUTSIDE the TRANS'd fragments (suffix-key pattern,
+    // same idiom as FxRoutingBar's "FX master EQ " + band name) so FR/DE can
+    // translate the tail ("FX 2 algorithme" / "FX 2 Algorithmus").
+    typeCombo_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" algorithm"));
     // Populate from the param's OWN choice list BEFORE the attachment:
     // AudioProcessorValueTreeState::ComboBoxAttachment does NOT add items itself,
     // so without this the dropdown is empty and nothing is selectable.
@@ -378,8 +381,8 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // syncs the combo selection; the APVTS::Listener refreshes the knob set).
     typePrev_ = std::make_unique<TypeStepButton> (false);   // points left (prev)
     typeNext_ = std::make_unique<TypeStepButton> (true);    // points right (next)
-    typePrev_->setTooltip ("FX " + juce::String (slot_ + 1) + " previous algorithm");
-    typeNext_->setTooltip ("FX " + juce::String (slot_ + 1) + " next algorithm");
+    typePrev_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" previous algorithm"));
+    typeNext_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" next algorithm"));
     addAndMakeVisible (*typePrev_);
     addAndMakeVisible (*typeNext_);
     typePrev_->onClick = [this] { stepType (-1); };
@@ -390,7 +393,7 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // disabled wholesale for a None slot (refreshEnabled) — None IS the
     // disabled state.
     powerToggle_ = std::make_unique<PowerToggle> ();
-    powerToggle_->setTooltip ("FX " + juce::String (slot_ + 1) + " enable / bypass");
+    powerToggle_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" enable / bypass"));
     addAndMakeVisible (*powerToggle_);
     powerToggle_->onClick = [this]
     {
@@ -543,7 +546,17 @@ void FxSlotCard::parameterChanged (const juce::String& id, float /*newValue*/)
     if (id == prefix_ + "type")
     {
         auto* mm = juce::MessageManager::getInstanceWithoutCreating();
-        if (mm != nullptr && mm->isThisTheMessageThread())
+        if (mm != nullptr && mm->isThisTheMessageThread()
+            // UNDO/REDO REPLAY MUST NOT SEED (W7, lane-A finding 1): JUCE
+            // restores a transaction's actions in reverse order, so the type
+            // write is restored LAST — this listener then fires with the
+            // restored type and would OVERWRITE the params that were restored
+            // moments earlier with the new type's engagement defaults (undoing
+            // Chorus->Flanger destroyed the user's Chorus values). Same guard
+            // idiom as ParvatiAudioProcessor::onPartSelect. A genuine UI pick
+            // (combo / chevron / preset-load write) is never inside an undo
+            // replay, so normal seeding is unchanged.
+            && ! processor_.getUndoManager().isPerformingUndoRedo())
         {
             const auto t = static_cast<FxType> (currentTypeIndex());
             if (t != FxType::None)

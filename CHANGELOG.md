@@ -4,7 +4,320 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **Sustain pedal (CC64) — firmware parity (Wave 7, round-3 lane-B finding
+  1).** The engine's `noteOff` override had fully replaced juce's
+  `Synthesiser::noteOff`, which was the only place the base class gated
+  release on the sustain pedal — so CC64 was a functional no-op (key release
+  killed the note regardless; pedal-up did nothing). Implemented the firmware
+  `Part::NoteOff`/`ControlChange` semantics (`part.cc:335-390`) with per-part
+  audio-thread-only state: pedal-down swallows note-offs (the note keeps
+  sounding and is remembered, arp-held keys keep arpeggiating), pedal-up
+  drains the remembered releases through the normal release path. Routed per
+  channel like every other CC (Omni parts match everything).
+- **All-Notes-Off (CC123) / All-Sound-Off (CC120) now clear per-part
+  bookkeeping (Wave 7, lane-B finding 2).** juce dispatches these directly to
+  `Synthesiser::allNotesOff`, which only stops channel-matched VOICES — the
+  arp held-key stacks, sequencer notes and mono stacks survived, so an arp
+  kept re-triggering from "held" keys after CC123. `allNotesOff` is now
+  overridden per firmware `Multi::AllNotesOff`/`Part::AllNotesOff` (incl. the
+  ignore-note-off gate: a held sustain pedal makes CC123 a no-op, exactly like
+  the hardware).
+- **CC1/CC2/CC4 (mod wheel / breath / foot) route per channel (Wave 7,
+  lane-B finding 3).** `applyGlobalModSource` wrote the mod source to EVERY
+  voice in the pool, so a mod wheel on channel 3 modulated all six parts of a
+  multitimbral setup. Firmware routes the CC to the channel-matching parts'
+  voicecards first — mirrored: only parts whose receive channel matches (Omni
+  or exact) write the source. Single-channel setups are unchanged.
+- **`tests/cc_routing_test.cpp` (W7):** sustain swallow/drain, sustain + arp
+  held-key semantics, CC123 stack clearing (+ the held-pedal no-op gate) and
+  CC1 channel scoping — all against a real processor/processBlock.
+
 ### Fixed
+- **FX type undo no longer seeds engagement defaults over the restored values
+  (Wave 7, lane-A finding 1).** JUCE replays an undo transaction's actions in
+  reverse order, so the `fx{N}_type` write was restored LAST — firing
+  `FxSlotCard`'s seeding listener DURING the replay and clobbering the
+  just-restored parameters with the new type's defaults (undoing a
+  Chorus→Flanger switch destroyed the user's Chorus settings). The seeding
+  block now bails while `UndoManager::isPerformingUndoRedo()` (the
+  `onPartSelect` idiom). Regression-tested in `tests/editor_test.cpp` [12].
+- **Tap-to-assign ([MAP]) mode no longer leaks across editors (W7, lane-A
+  finding 2).** Its state is process-global (statics + a registry spanning
+  every live `ParamControl`): an editor closed with [MAP] ON left other
+  plugin instances — or the next open of this one — in assign mode while
+  their [MAP] button showed OFF. `~ParvatiEditor` now resets it (mirrors the
+  zoom-reset teardown). The KeyboardView settings-report "primed" flag is
+  per-instance too (a process-wide static was consumed by the first editor
+  ever opened, so later instances flashed a spurious status transient at
+  open).
+- **Notes held on the on-screen/QWERTY keyboard at editor close no longer
+  sustain forever (W7, lane-B finding 6).** `~ParvatiEditor` now calls the new
+  `KeyboardView::releaseAllNotes()` (note-offs for every held mouse/touch/
+  computer-key note) BEFORE nulling the callback.
+- **`getPrimaryDisplay()` null-guarded in both dialog launchers (W7, lane-A
+  finding 4).** TuningEditor / MulExportDialog dereferenced the primary
+  display unconditionally — a null in headless/automation contexts crashed at
+  dialog open. Both fall back to the un-capped height now.
+- **Header Part-combo relabel no longer churns 6 `changeItemText` calls every
+  30 Hz tick (W7, lane-A finding 6).** `refreshPartComboNames` caches the six
+  display strings and only rewrites the items whose label actually changed
+  (language switches still update — the placeholder text is part of the
+  compared string). The selected-item re-apply from the earlier fix is kept.
+
+### Changed
+- **`deploy` re-signs the CLAP bundle after copying it (W7, lane-C finding
+  4)** — the same `codesign --force --sign -` the VPT3 (moduleinfo seal) and
+  Standalone copies already apply; the plain `cp` invalidated the built
+  bundle's signature there too.
+- **Stale docs/comments (W7):** the FxRoutingBar "Dry/Wet starves to 0×0 at
+  1280×634" note (superseded by `kTopRowNaturalH` flooring — audit T9's
+  matching discovery note marked resolved) and tools/editor_test.cpp's
+  "single [SYNTH] tab" header (the selector has been [SYNTH][FX] for a
+  while) corrected.
+
+- **Last pre-existing red test root-caused and honestly recalibrated (Wave 6):
+  `parvati_part_fx_routing_test` [3].** The check asserted the dry FX output
+  equals the RAW mono sum of the six voicecard buffers sample-exact, but the
+  engine's `renderPartFx` has (since the FX crackle audit) passed that sum
+  through a documented chain-input safety knee — `8 * SoftLimit(s/8)` plus a
+  ±16 hard ceiling, "transparent by design" (-0.04 dB at |s|=1) — so the
+  check has been red since that commit landed without updating the test
+  (verified pre-existing at HEAD under release and ASan builds; measured
+  deviation exactly matches the knee: constant-gain fit 0.9996, corr 1.0).
+  The test now replicates the knee from the vendored stmlib header (single
+  source of truth) and asserts `fx == knee(sum)` near-sample-exact (1e-6;
+  the residual is float-vs-double accumulation), plus a guard that the knee
+  is actually exercised — so neither routing drift nor a future knee removal
+  can pass silently.
+- **Compiler-warning cleanup in the wave-touched files.** Fixed the known
+  `-Wunused-parameter` on `ParvatiEditor::afterMultiSaved` (juce::ignoreUnused;
+  the parameter is iOS-only), a `-Wsign-conversion` in `SynthEngine`
+  state capture (`out.write` already takes size_t — dropped the redundant
+  int cast), the two deprecated JUCE `Displays::userArea` reads
+  (MulExportDialog, TuningEditor → `userBounds`), and the deprecated
+  `startDragging` Image overload in WheelsComponent (`ScaledImage` swap,
+  behavior-identical). Also silenced two cert-err33 snprintf-return warnings
+  in the recalibrated test. Left alone (untouched files / house style):
+  the vendored-style sign-conversions in FxProcessors, the intentional
+  float-equality idempotence guards in analog_filter, the JUCE-side switch-
+  enum/int-float notes in FxSlotLabels/FxSlotVisualizer, and the four
+  remaining `startDragging` call sites in files these waves did not touch.
+- **FR/DE translation coverage completed (Wave 4 polish).** 86 new keys per
+  language block: the MulExportDialog strategy picker (heading, all 6
+  strategies + descriptions, preview labels, the custom-tuning warning), the
+  TuningEditor popover chrome, the two missing `.MUL` file-chooser titles, the
+  `Ultra (8×)` oversampling item, the header zoom/page-toggle/status-strip
+  strings (including the tap-to-assign transient hints and the CPU tooltip),
+  the parameter context menu, the mod/FX matrix views, the FX routing bar +
+  slot-card tooltips (restructured to suffix-fragment keys so the FX number
+  stays outside the translated literal), the keyboard octave / sequencer
+  stepper buttons, and the preset browser. Hardcoded-English tooltips on
+  user-facing controls (status load, wheels, FX slot cards) are now TRANS'd.
+  Verified with a standalone probe that every key resolves in both tables
+  (embedded-`\n` and `\"` keys included; LocalisedStrings unescapes them).
+  Docs refreshed: README/COVERAGE_SPEC now list the five current arrangement
+  presets (Mono/Poly/Unison/Multitimbral/Drum Kit, 0-voice parts first-class),
+  the UI plan's `MultiPage` reference became `PatchPage`, and stale 36px/1100px
+  layout comments were corrected; a stray mid-function `#include <cstdio>` in
+  SynthWorkspace was removed. Patch-page Zone Low/High caption columns widened
+  48→56px so the FR/DE captions ("Zone (bas)"/"Zone (tief)") no longer squash.
+
+### Fixed
+- **Arp/sequencer note-routing + loaded-byte hardening, NRPN signed values,
+  and a legato click (second same-class bug hunt, Wave 5).** Six findings,
+  all fixed with regression coverage:
+  (1) **Enabling the arp/sequencer while a note sounds no longer strands that
+  note.** The note-off path handed EVERY release to `arp.noteOff` while the
+  mode was active, but a note that was sounding BEFORE the enable never
+  entered the arp's held-key stack — its release was swallowed and the direct
+  voice sustained forever (firmware `Part::NoteOff` releases all allocated
+  voices when the stack empties). `NoteStack::contains` + `Arpeggiator::
+  holdsNote` now let a non-held release fall through to the direct MIDI path
+  (arp_test: enable-arp-while-held regression).
+  (2) **Raw PartData arp/seq bytes are clamped at the staging site**
+  (`stageArpSeqFromPartBytes`): a hand-edited `.MUL` (or corrupt host-state
+  blob) carrying `arpMode=5` made the part silently swallow every note
+  (`isActive()` true, `isEnabled()` false), and `arpOctave=0` with direction
+  Random never terminated the Random branch's octave-wrap loop — on the
+  audio thread (host hang). Mode/direction/octave/pattern/resolution/seq
+  lengths now clamp to the firmware parameter ranges, and the wrap loop
+  itself gained the `octaveRange_ > 0` guard (the sibling `numNotes` guard's
+  shape) (arp_test: clamp + no-hang).
+  (3) **NRPN now honours two's-complement negatives on INT8 parameters.**
+  `applyValue` clamped the raw byte against the signed APVTS range
+  unsigned, so any byte >= 128 saturated to +max — an Ambika
+  editor/librarian could not set a single negative detune or mod amount
+  (osc range/detune, all 14 mod amounts). The byte is reinterpreted as int8
+  before clamping, matching firmware `parameter.Clamp` (midi_param_test:
+  NRPN(3, 0xC0) -> -64, positive control +64).
+  (4) **Legato retriggers no longer click.** `startNote` cleared the
+  resampler FIFO + reset the interpolator UNCONDITIONALLY — on the legato
+  path that discards ~0.4-1.3 ms of unconsumed internal samples and restarts
+  the Lagrange interpolator cold: a time-skip discontinuity at every MONO/
+  legato step (the de-click ramp was already skipped there for exactly this
+  reason). The FIFO clear is now gated on `!legato`; the hard-stop path
+  still clears (legato_test: max sample slew at the retrigger < 0.25).
+  (5) **Tuning-table class index confirmed firmware-faithful** (a hunt
+  finding re-verified against the reference): firmware `Part::TuneNote`
+  (part.cc:640) indexes the raga by the RAW `midi_note % 12` — exactly what
+  Parvati does; the comment now cites the line so it is not "fixed" away
+  from parity by a future pass. No behaviour change.
+- **Coverage-metric correction: `mix_fuzz` check was provably unable to see
+  the fuzz.** The waveshaper table (`wav_res_distortion`) is monotonic with
+  f(128)==128, so every sample keeps its sign under the wet/dry mix —
+  zero-crossing rate is invariant under a monotonic map (a saw and its
+  near-squared version have the same 2 crossings/period). The check now
+  compares RMS (fuzz 63 = ~98.8% wet squares the saw up; expected >1.3x) and
+  prints both metrics; the DSP itself was traced byte-exact to firmware
+  `voice.cc` and is untouched.
+- **MulExportDialog is now fully translated (FR/DE).** All 24 of its TRANS
+  literals (heading — split into two single-line fragments because the
+  LocalisedStrings tables are line-parsed — strategy labels + descriptions,
+  preview labels, the custom-tuning warning, Cancel/Export titles) exist in
+  both blocks, verified symmetric by a parser-faithful script (105 rows
+  each).
+- **Visible-page staleness, atomic state restore, and file-integrity sweep
+  (same-class bug hunt, Wave 3).** Five more findings, all fixed with
+  regression coverage:
+  (1) **The Patch page now tracks out-of-band engine writes while it is on
+  screen.** Host automation of `part_polyphony`/`part_raga`, MIDI NRPN, host
+  undo and state restores mutate the engine with no editor hook, so a
+  VISIBLE Patch page could keep showing stale Poly/Tune/Voices/Ch/Zone rows
+  until the next reveal or load. The engine now carries a monotonic display
+  version bumped by its message-thread mutators of Patch-page-mirrored state
+  (`SynthEngine::getDisplayVersion`); the editor's poll timer re-reads the
+  page when the version moved while page 2 is shown (change-only, O(1)
+  check; `ParvatiEditor::pollPatchPageMirror`).
+  (2) **A truncated host-state blob no longer half-applies.**
+  `SynthEngine::restoreState` mutated `parts_[p]` as it parsed and returned
+  false mid-way on a corrupt/truncated blob, leaving a half-restored engine
+  (early parts from the blob, the rest the previous session) that the
+  caller's legacy APVTS fallback then layered on top of. Restore is now
+  two-phase — parse the whole blob into local snapshots, commit only on full
+  success — so a rejected blob leaves the engine exactly as it was (verified
+  at 25/50/75%/last-10-bytes cut points).
+  (3) **A failed ChainSplit multi save no longer leaves an inconsistent unit
+  set.** `saveMultiFile` wrote the sibling `-2.MUL`/`-3.MUL` unit files
+  BEFORE the primary file, so a mid-set disk failure left new-generation
+  units beside a stale primary (a chained-Ambika set that matches neither).
+  The primary is now written first (atomic TemporaryFile write) and any unit
+  failure deletes every file the save already wrote — the whole set lands or
+  none of it does.
+  (4) **A `.MUL` truncated before the last part's objects is now rejected
+  instead of loading as a hybrid.** The MBKS walker stops cleanly at a
+  trailing cut, so such a file parsed `ok` and applied its NEW routing over
+  the PREVIOUS multi's patch/part bytes for the missing parts. The loader now
+  rejects any multi whose 6 parts do not all carry Patch + PartData (the
+  firmware writer always emits all six).
+  (5) **Integrity quick wins.** Hand-edited `.parvati` routing values are
+  clamped to the engine's accepted ranges (channel 0..16, keyzone 0..127 with
+  an inverted zone normalized by swap, legacy bitmask 0..0x3F) — out-of-range
+  values previously uint8-wrapped into silently dead parts; the factory
+  preset installer's bank gates are gone (the `.PRO` gate looked in the
+  non-recursive parent — dead code — while the `.MUL` gate could permanently
+  skip the rest of the bank after a partial first extraction; both banks now
+  run the cheap per-file write-if-missing unconditionally and an interrupted
+  first run self-heals); the ChainSplit preview no longer labels unit 1
+  `"-.MUL"` (now a translated "this file"); preset browser menus sort
+  naturally ("Patch 2" before "Patch 10"); and a host-state restore
+  re-echoes `part_select` to the blob's saved current part so the header
+  combo cannot disagree with the engine after a restore.
+- **Shadow-state, async-lifetime, undo-integrity and failure-feedback sweep
+  (same-class bug hunt, Wave 2).** Nine more findings from the parallel
+  review, all fixed with regression coverage:
+  (1) **Part aliases no longer survive whole-setup loads they no longer
+  describe** — a `.MUL` load after the Drum Kit template kept labelling the
+  new multi's parts "Kick"/"Snare". Multi loads now clear all six names
+  (the `.parvati` multi format always re-applies its own); single-patch loads
+  (`.PRO`/`.parvati` patch) deliberately KEEP the current part's alias — an
+  alias is track metadata, not patch content.
+  (2) **Degenerate `.parvati` multi documents are rejected instead of
+  half-loading** — `parts: []` (or bare scalar entries) previously
+  "loaded successfully" over the previous multi's leftover routing; the
+  pre-parse now requires a non-empty parts array whose entries carry at
+  least one recognized part key. A PRESENT entry missing `channel`/
+  `keyzone_*` keys now falls back to the engine init defaults (channel =
+  partIndex + 1, zone 0..127) instead of silently inheriting the previous
+  multi's routing.
+  (3) **`SettingsPanel` Filter-Quality combo rebuild uses
+  `dontSendNotification`** — the last live instance of the async-`clear()`
+  class (an uncommanded `setOversamplingFactor` on every language switch).
+  (4) **SafePointer guards on every async popup/dialog callback** — the
+  zoom-overflow menu, the Save-format menu, PresetBrowser leaf actions and
+  the MulExport DoneCallback no longer capture raw `this` (the host can
+  tear the editor down while a menu is open). The TuningEditor popover now
+  owns a theme-copy LookAndFeel instead of borrowing the parent editor's
+  (a freed-L&F paint after editor teardown) and closes itself once its
+  launch parent is gone; the live-edit callback is SafePointer-guarded too.
+  (5) **Undo can no longer corrupt a part switch.** `loadPartIntoApvts`
+  display dumps are written non-undoably (a ~250-action dump no longer
+  becomes one giant undo step), `onPartSelect` clears the history
+  (JUCE's `replaceState` idiom), and the editor's undo/redo entry points
+  (`undoSafe`/`redoSafe`) sweep stragglers JUCE's append-after-listeners
+  ordering and the 10 Hz APVTS tree-flush can leave — previously one undo
+  after a part switch silently overwrote the NEW part with the OLD part's
+  sound. Undo history is now cleared at every part switch (undo never
+  crosses a switch — the replay-misrouting risk makes that the only safe
+  semantics).
+  (6) **Save/load failures are no longer silent** — an unwritable save
+  location or a corrupt load now raises a native warning alert (skipped
+  headlessly), instead of pretending success (data loss) or doing nothing.
+  (7) **`.parvati` top-level `name:` is escaped** — a `"` in a patch name
+  truncated it on reload and an embedded newline SPLIT the line-based
+  document (the `params:` block never parsed → a silent load failure).
+  (8) **A corrupt `.parvati` PATCH no longer kills sounding voices** — the
+  patch load path got the same validate-before-mutate guard the multi path
+  has.
+  (9) **Renaming the selected part relabels the header Part combo
+  immediately** — `changeItemText` only updates the menu entry; the inline
+  label kept the old text until the next part switch.
+- **Stale `customTuningActive` lifecycle closed across every remaining load
+  and edit path (parallel same-class bug hunt, Wave 1).** The earlier fix
+  covered `.PRO`/`.MUL`; a fresh-context review found the same bug class in
+  three more paths, all now fixed: (1) a `.parvati` **patch** load never
+  cleared the flag, so loading a 12-EDO patch over a custom-tuned part kept
+  playing the old microtonal table; (2) a `.parvati` **multi** load had the
+  same hole for a subtler reason — the serializer only emits `tuning_mode`
+  for non-zero modes, so every 12-EDO part loads with the key ABSENT and the
+  loader's hasProperty-guarded clear never ran (the loader now applies the
+  same file-is-truth rule when the key is missing and byte 4 is 0); (3) a
+  LIVE `part_raga` = 0 write through the APVTS (hosted param-grid combo, host
+  automation, NRPN 116) only wrote byte 4 while leaving the custom flag
+  armed — the parameter path now clears it, matching the Patch page's Tune
+  combo (D4-inverse: an explicit 12-EDO selection). The dormant-custom
+  "resurface" behaviour on a live preset-clear is retired accordingly (the
+  combo read "12-EDO" while the part played a microtonal table); the way back
+  to a custom table is the TuningEditor / re-import. The bulk sync path
+  deliberately still does NOT clear (byte 4 = 0 under an armed custom is valid
+  state on a part switch), pinned by a new regression check.
+- **TuningEditor "Custom…" live edits now re-sync the APVTS.** The popover
+  wrote the part's PartData engine-direct (`setPartTuningCustom`: byte 4 = 0
+  + flag armed) but its change notification only refreshed the row combo, so
+  the hosted `part_raga` combo kept the stale preset label and — worse — an
+  APVTS-based save exported the STALE preset byte while the engine played the
+  custom table. The post-edit notification (`PatchPage::tuningEditorApplied`,
+  now also a public headless test seam) re-syncs the current part.
+- **`.parvati` multi loads now STAGE FX slot types into the DSP chains.** The
+  loader wrote only the per-part `fxState.slotType` atomics; slot types reach
+  the DSP exclusively via message-thread chain staging (`FxChain::setSlotType`,
+  audit F1 — the audio thread's `fxDirty_` service deliberately never installs
+  types), so a loaded multi's FX were silently absent on a fresh engine or
+  kept playing the PREVIOUS effect on a painted one. New engine API
+  `stagePartFxSlotType(part, slot, type)` (the explicit-part twin of
+  `setFxSlotType`) stages every restored type for all 6 parts; a new
+  installed-chain-type test hook (`fxChainSlotTypeForTest`) proves the DSP
+  actually holds the loaded type, not just the atomic.
+- **Host state restore re-applies the global option params to the engine.**
+  `vca_curve` / `filter_card` / `filter_drive` live in the APVTS but not in
+  the engine blob, and the blob-restore branch only ran `loadPartIntoApvts`
+  (which skips `isOption` descriptors) — so a restored session rendered with
+  the ENGINE defaults while the UI combos showed the saved values (typical
+  hosts call `prepareToPlay` before `setStateInformation`, so the ctor/prepare
+  sync never re-applied them afterwards). The restore now re-applies every
+  non-`part_select` option from the restored APVTS, mirroring the legacy
+  branch's coverage.
+
 - **Patch-loading UI wiring (end-to-end review pass): every load path now
   refreshes the Patch page, and failed loads never mutate the engine.**
   Single-patch loads (.PRO / .parvati patch) previously skipped the Patch
@@ -1198,3 +1511,12 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   unused `bendRangeSemitones`/`setMpeBendRangeSemitones` accessors,
   `setSequencerMode`, and the superseded `forceInit`/`copyPatchBytes` pair; a
   dead `fourPole` local and unused lambda captures.
+
+### Known limitations (documented, deferred — see audit/IPAD_TOUCH_TODO.md)
+- AUv3 panes narrower than the 1024pt floor collapse header chrome (needs an
+  adaptive header design decision; lane-C finding 1).
+- Note routing is first-match, not all-matching-parts, where firmware triggers
+  EVERY accepting part — a deliberate product decision is needed (lane-B
+  finding 4).
+- Polyphonic aftertouch is silently ignored (channel pressure works; lane-B
+  finding 5).

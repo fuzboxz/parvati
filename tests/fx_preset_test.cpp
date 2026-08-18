@@ -277,6 +277,46 @@ int main()
                "Part 0 fxState stays at defaults for a pre-FX .parvati multi");
     }
 
+    // ---------------------------------------------------------------------
+    std::printf ("\n[1b] .parvati MULTI load STAGES slot types into the DSP chains\n");
+    {
+        // The fxState atomics round-tripping (section [1]) is not the whole
+        // story: slot TYPES reach the DSP only via message-thread chain
+        // staging (FxChain::setSlotType; the audio thread's fxDirty_ service
+        // deliberately never installs types). The loader used to store only
+        // the atomics, so a loaded multi's FX were silently absent (fresh
+        // engine: all-None chains) — assert against the INSTALLED chain type
+        // after one block (the swap is consumed by servicePendingTypeSwaps).
+        ParvatiAudioProcessor a, b;
+        a.prepareToPlay (48000.0, 512);
+        b.prepareToPlay (48000.0, 512);
+
+        selectPart (a, 3);                     // paint ONLY part 3
+        setParam (a, "fx1_type",    3);        // Reverb
+        setParam (a, "fx1_enabled", 1);
+
+        juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("parvati_fx_stage_multi.parvati");
+        check (a.saveParvatiMultiFile (f), "multi with part-3 FX saved");
+        check (b.loadParvatiMultiFile (f), "multi loads into a fresh engine");
+        f.deleteFile();
+
+        // One block: the audio thread consumes the staged swap (pointer moves)
+        // and services fxDirty_. The fxState atomics alone (the old loader
+        // behaviour) would leave the installed type at None forever.
+        juce::AudioBuffer<float> buf (2, 512);
+        buf.clear();
+        juce::MidiBuffer midi;
+        b.processBlock (buf, midi);
+
+        check (b.getEngine().fxChainSlotTypeForTest (3, 0) == 3,
+               "part 3 chain INSTALLS the loaded fx1_type (Reverb) — not just the atomic");
+        check (b.getEngine().fxChainSlotTypeForTest (0, 0) == 0,
+               "untouched part 0 chain stays None");
+        check (b.getEngine().fxChainSlotTypeForTest (3, 1) == 0,
+               "part 3 slot 2 stays None (file carried no fx2_type)");
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "FX PRESET TEST: FAILURES" : "FX PRESET TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

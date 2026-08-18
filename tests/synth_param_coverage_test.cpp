@@ -470,16 +470,28 @@ static void testMixer (ParvatiAudioProcessor& proc)
     std::printf ("     mix_noise 0 zcr=%.5f, 63 zcr=%.5f\n", n0, n63);
     check (n63 > n0, "mix_noise adds broadband (higher ZCR)");
 
-    // fuzz: 0 vs 63 -> harmonics (ZCR/centroid up).
+    // fuzz: 0 vs 63. The waveshaper table (wav_res_distortion) is MONOTONIC
+    // with f(128)==128, so every sample keeps its sign under the wet/dry mix —
+    // zero-crossing rate is PROVABLY invariant under a monotonic map (a saw
+    // and its near-squared version have the same 2 crossings/period). ZCR
+    // can never observe this effect; measure RMS instead: at 63 the mix is
+    // ~98.8% wet (wet_gain = U14ShiftRight6(63<<8) = 252) and the expander-
+    // around-center curve squares the saw up (RMS roughly doubles vs the
+    // ~0.35*peak saw). The DSP itself was traced byte-exact to firmware
+    // voice.cc (same staging as mix_crush, whose ZCR check passes only
+    // because bit-masking is NOT monotonic).
     setInt (proc, "mix_noise", 0);
     setInt (proc, "mix_fuzz", 0);
     proc.syncAllParamsToEngine();
-    const double fz0 = zcrOf (renderNote (proc, 60, 60));
+    const double fz0  = rmsOf (renderNote (proc, 60, 60));
+    const double fz0z = zcrOf (renderNote (proc, 60, 60));
     setInt (proc, "mix_fuzz", 63);
     proc.syncAllParamsToEngine();
-    const double fz63 = zcrOf (renderNote (proc, 60, 60));
-    std::printf ("     mix_fuzz 0 zcr=%.5f, 63 zcr=%.5f\n", fz0, fz63);
-    check (fz63 > fz0, "mix_fuzz adds harmonics (higher ZCR)");
+    const double fz63  = rmsOf (renderNote (proc, 60, 60));
+    const double fz63z = zcrOf (renderNote (proc, 60, 60));
+    std::printf ("     mix_fuzz 0 rms/zcr=%.4f/%.5f, 63 rms/zcr=%.4f/%.5f\n",
+                 fz0, fz0z, fz63, fz63z);
+    check (fz63 > fz0 * 1.3, "mix_fuzz squares the signal up (higher RMS)");
 
     // crush: 0 vs 31 -> aliasing/distortion (output changes).
     setInt (proc, "mix_fuzz", 0);

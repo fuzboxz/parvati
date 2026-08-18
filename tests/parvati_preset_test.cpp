@@ -221,6 +221,329 @@ int main()
         check (apvtsMism == 0, "current-part APVTS matches after multi round-trip");
     }
 
+    // ---------------------------------------------------------------------
+    std::printf ("\n[6] stale custom tuning cleared by a .parvati PATCH load\n");
+    {
+        // A .parvati PATCH carries part_raga but NO custom table. Arm a custom
+        // table on the current part first (resolved mode 33), then load a
+        // minimal patch file whose params say part_raga: 0 — the load must
+        // clear the custom flag so the part resolves 12-EDO, not keep playing
+        // the old custom table (the .PRO rule; the patch loader used to miss
+        // it entirely).
+        ParvatiAudioProcessor p;
+        p.prepareToPlay (48000.0, 512);
+        int16_t custom[12] = {};
+        custom[1] = 42;
+        p.getEngine().setPartTuningCustom (0, custom);
+        check (p.getEngine().resolvedTuningMode (0) == 33,
+               "precondition: custom table armed (mode 33)");
+
+        juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("parvati_t1_patch.parvati");
+        check (f.replaceWithText (
+                   "format: parvati-patch\nversion: 1\nname: \"T\"\nparams:\n"
+                   "  part_raga: 0\n"),
+               "T1 patch file written");
+        check (p.loadParvatiPatchFile (f), "T1: .parvati patch loads");
+        check (p.getEngine().resolvedTuningMode (0) == 0,
+               "T1: part_raga 0 patch load clears the stale custom (12-EDO)");
+        f.deleteFile();
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[7] stale custom tuning cleared by a .parvati MULTI load (12-EDO parts omit tuning_mode)\n");
+    {
+        // The serializer only EMITS tuning_mode for non-zero modes, so a multi
+        // saved from an all-12-EDO state carries NO tuning_mode keys. Loading
+        // it over an engine with armed custom tables must clear them (the
+        // loader's absent-key branch mirrors the .MUL/.PRO rule) instead of
+        // silently keeping the previous session's microtonal tables.
+        ParvatiAudioProcessor a, b;
+        a.prepareToPlay (48000.0, 512);
+        b.prepareToPlay (48000.0, 512);
+
+        juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("parvati_t2_multi.parvati");
+        check (a.saveParvatiMultiFile (f), "T2: all-12-EDO multi saved");
+        {
+            juce::String text;
+            if (juce::FileInputStream in (f); in.openedOk())
+                text = in.readEntireStreamAsString();
+            check (text.isNotEmpty() && ! text.contains ("tuning_mode"),
+                   "T2: premise — 12-EDO parts serialize WITHOUT tuning_mode");
+        }
+
+        int16_t custom[12] = {};
+        custom[3] = -31;
+        b.getEngine().setPartTuningCustom (0, custom);
+        b.getEngine().setPartTuningCustom (3, custom);
+        check (b.getEngine().resolvedTuningMode (0) == 33
+                   && b.getEngine().resolvedTuningMode (3) == 33,
+               "precondition: customs armed on parts 0 and 3");
+
+        check (b.loadParvatiMultiFile (f), "T2: .parvati multi loads");
+        bool allEdo = true;
+        for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+            allEdo = allEdo && b.getEngine().resolvedTuningMode (i) == 0;
+        check (allEdo,
+               "T2: every part resolves 12-EDO after the load (armed customs cleared)");
+        f.deleteFile();
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T3] Wave 2: degenerate multi docs rejected; missing routing keys default\n");
+    {
+        ParvatiAudioProcessor a, b;
+        a.prepareToPlay (48000.0, 512);
+        b.prepareToPlay (48000.0, 512);
+
+        // (a) `parts: []` (and non-object entries) must be REJECTED before any
+        // engine mutation: a degenerate list previously "loaded" over the
+        // previous multi's leftover state and even reported success.
+        juce::File empty = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                               .getChildFile ("parvati_t3_empty.parvati");
+        empty.replaceWithText ("format: parvati-multi\nversion: 1\nname: \"Empty\"\nparts: []\n");
+        b.getEngine().setPartVoiceSlots (0, 11);   // distinctive pre-state
+        b.getEngine().setPartName (0, " sentinel");
+        check (! b.loadParvatiMultiFile (empty), "T3: empty parts array rejected");
+        check (b.getEngine().getPartVoiceSlots (0) == 11,
+               "T3: failed load leaves slots untouched (no init reset)");
+        check (b.getEngine().getPartName (0) == " sentinel",
+               "T3: failed load leaves part names untouched");
+
+        juce::File scalars = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                 .getChildFile ("parvati_t3_scalars.parvati");
+        scalars.replaceWithText ("format: parvati-multi\nparts:\n  - 7\n  - 9\n");
+        check (! b.loadParvatiMultiFile (scalars), "T3: non-object parts entries rejected");
+
+        // (b) A PRESENT part entry without routing keys must not inherit the
+        // PREVIOUS multi's channel/zone: absent keys fall back to the engine
+        // init defaults (channel = partIndex + 1, zone 0..127). Entry 1 below
+        // is PRESENT (so the loader reaches it) but carries only a name.
+        juce::File sparse = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                .getChildFile ("parvati_t3_sparse.parvati");
+        sparse.replaceWithText (
+            "format: parvati-multi\nversion: 1\nname: \"Sparse\"\nparts:\n"
+            "  - name: \"A\"\n    voice_slots: 4\n"
+            "  - name: \"X\"\n    voice_slots: 4\n");
+        // Pollute part 1's routing so an inherit would be visible (part 1
+        // would keep channel 5 / zone 36..60 instead of the init 2 / 0..127).
+        b.getEngine().setPartChannel (1, 5);
+        b.getEngine().setPartKeyrange (1, 36, 60);
+        check (b.loadParvatiMultiFile (sparse), "T3: sparse multi loads");
+        check (b.getEngine().getPartChannel (1) == 2,
+               "T3: part 1 gets INIT channel (2) — not the previous multi's 5");
+        check (b.getEngine().getPartKeyrangeLow (1) == 0
+                   && b.getEngine().getPartKeyrangeHigh (1) == 127,
+               "T3: part 1 gets INIT zone 0..127 — not the previous 36..60");
+        empty.deleteFile();
+        scalars.deleteFile();
+        sparse.deleteFile();
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T4] Wave 2: quoted top-level names round-trip\n");
+    {
+        ParvatiAudioProcessor a, b;
+        a.prepareToPlay (48000.0, 512);
+        b.prepareToPlay (48000.0, 512);
+        // A name with a double quote AND a newline: the old emitter wrote both
+        // raw between quotes — the quote truncated the name on reload and the
+        // newline SPLIT the line-based document (params: never parsed -> the
+        // load failed silently). Control chars are stripped on save; quotes
+        // and backslashes escape exactly like per-part names.
+        a.setLoadedProgramName ("My \"Cool\"\\Patch\nName");
+        juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("parvati_t4_name.parvati");
+        check (a.saveParvatiMultiFile (f), "T4: multi with hostile name saved");
+        check (b.loadParvatiMultiFile (f), "T4: multi with hostile name LOADS (was a silent parse failure)");
+        // NOTE: the loaded program name comes from the FILENAME on this path
+        // (loadParvatiMultiFile's tail), not the document — the escaping
+        // observable is the PARSED DOCUMENT's name: the raw `\"` in the file
+        // must survive emit->parse round-trip as the quote, and the newline
+        // must never have entered the line-based document at all.
+        {
+            juce::String saved;
+            if (juce::FileInputStream in (f); in.openedOk())
+                saved = in.readEntireStreamAsString();
+            const juce::var re = parseParvatiYaml (saved);
+            check (re.isObject(), "T4: saved document still parses after the hostile name");
+            if (re.isObject())
+            {
+                const juce::String got = re["name"].toString();
+                check (got == "My \"Cool\"\\PatchName",
+                       "T4: name round-trips (quote + backslash unescaped, newline stripped)");
+            }
+            else
+                check (false, "T4: name round-trips (quote + backslash unescaped, newline stripped)");
+        }
+        f.deleteFile();
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T5] Wave 2: part NAMES lifecycle across loads\n");
+    {
+        ParvatiAudioProcessor p;
+        p.prepareToPlay (48000.0, 512);
+        auto& eng = p.getEngine();
+
+        // Drum Kit template: every part carries a name (Kick/Snare/...).
+        const juce::File tplDir = juce::File::getCurrentWorkingDirectory()
+                                      .getChildFile ("presets/TEMPLATES");
+        const juce::File drum = tplDir.getChildFile ("Drum Kit (GM).parvati");
+        if (drum.existsAsFile())
+        {
+            check (p.loadParvatiMultiFile (drum), "T5: Drum Kit loads");
+            check (eng.getPartName (0) == "Kick", "T5: Drum Kit part 0 named 'Kick'");
+
+            // A .MUL multi carries NO part names (the format has no such
+            // field) — the whole-setup load must CLEAR the aliases instead of
+            // labelling an unrelated multi's parts with drum names.
+            const juce::File mul = juce::File::getCurrentWorkingDirectory()
+                                       .getChildFile ("presets/FACTORY_MULTI/000.MUL");
+            if (mul.existsAsFile())
+            {
+                check (p.loadMultiFile (mul), "T5: factory .MUL loads");
+                bool allEmpty = true;
+                for (int i = 0; i < SynthEngine::getNumParts(); ++i)
+                    allEmpty = allEmpty && eng.getPartName (i).isEmpty();
+                check (allEmpty, "T5: .MUL load clears every part name (no stale 'Kick')");
+            }
+            else
+                std::printf ("     (factory .MUL not found — name-clear check skipped)\n");
+
+            // Re-loading the kit restores the names (the multi serializer
+            // always emits them).
+            check (p.loadParvatiMultiFile (drum), "T5: Drum Kit re-loads");
+            check (eng.getPartName (0) == "Kick", "T5: names restored from the .parvati multi");
+
+            // A SINGLE-patch load (.PRO into the current part) KEEPS the part
+            // alias: the name is user metadata about the track, not the patch.
+            const juce::File pro = juce::File::getCurrentWorkingDirectory()
+                                       .getChildFile ("presets/FACTORY/A/000.PRO");
+            if (pro.existsAsFile())
+            {
+                check (p.loadProgramFile (pro), "T5: .PRO loads into part 0");
+                check (eng.getPartName (0) == "Kick",
+                       "T5: .PRO patch load KEEPS the part name ('Kick' survives)");
+            }
+            else
+                std::printf ("     (factory .PRO not found — name-keep check skipped)\n");
+        }
+        else
+            std::printf ("     (Drum Kit template not found — run parvati_gen_templates)\n");
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T6] Wave 2: undo cannot cross a part switch\n");
+    {
+        ParvatiAudioProcessor p;
+        p.prepareToPlay (48000.0, 512);
+        auto& eng = p.getEngine();
+
+        // Part 1 (0-based 0): tweak a param so the undo stack is non-empty.
+        // (Pick a value DIFFERENT from the current one — ValueTree only
+        // records an undo action on an actual change.)
+        p.getApvts().getParameterAsValue ("part_select") = 1.0f;
+        juce::Value cutoffParam = p.getApvts().getParameterAsValue ("filter1_cutoff");
+        const float cur = (float) cutoffParam.getValue();
+        cutoffParam.setValue (cur == 100.0f ? 55.0f : 100.0f);
+        check (p.getUndoManager().canUndo(), "T6: precondition — an edit is undoable");
+        const uint8_t part0Before = eng.getPart (0).patchBytes[16];   // filter cutoff byte
+
+        // Switch to Part 2: the switch must invalidate the history (both the
+        // dump pollution and the replay-misrouting hazards). The synchronous
+        // clear can leave stragglers (JUCE appends the caller's part_select
+        // action AFTER its listeners return), so the REAL user entry point
+        // (undoSafe — what the header button drives) must end with an empty
+        // stack.
+        p.getApvts().getParameterAsValue ("part_select") = 2.0f;
+        check (p.getEngine().getCurrentPart() == 1,
+               "T6: precondition — switched to part 2");
+        const uint8_t part1Before = eng.getPart (1).patchBytes[16];
+        p.undoSafe();
+        check (! p.getUndoManager().canUndo(),
+               "T6: undoSafe leaves no undoable action after a part switch");
+        check (eng.getPart (1).patchBytes[16] == part1Before,
+               "T6: undo after a part switch is a no-op (part 2 bytes untouched)");
+        check (eng.getPart (0).patchBytes[16] == part0Before,
+               "T6: part 1's edited byte stays edited (no phantom revert)");
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T7] Wave 2: corrupt .parvati PATCH leaves voices alone\n");
+    {
+        ParvatiAudioProcessor p;
+        p.prepareToPlay (48000.0, 256);
+        auto& eng = p.getEngine();
+
+        // Hold a note so a resetAllVoices would be observable.
+        int activeBefore = 0;
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 110), 0);
+            p.processBlock (buf, midi);
+            for (int i = 0; i < eng.getNumVoices(); ++i)
+                if (auto* av = eng.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
+                    ++activeBefore;
+        }
+        check (activeBefore > 0, "T7: precondition — a voice is sounding");
+
+        // A corrupt .parvati PATCH (the multi path got validate-first; the
+        // patch path used to resetAllVoices first and only then fail).
+        juce::File bad = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                             .getChildFile ("parvati_t7_bad.parvati");
+        bad.replaceWithText ("this is not: yaml: at all: [");
+        check (! p.loadParvatiPatchFile (bad), "T7: corrupt patch rejected");
+        bad.deleteFile();
+
+        int activeAfter = 0;
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer midi;
+            p.processBlock (buf, midi);
+            for (int i = 0; i < eng.getNumVoices(); ++i)
+                if (auto* av = eng.getAmbikaVoice (i); av != nullptr && av->isDisplayedActive())
+                    ++activeAfter;
+        }
+        check (activeAfter == activeBefore,
+               "T7: failed patch load does NOT kill the sounding voice");
+    }
+
+    // ---------------------------------------------------------------------
+    std::printf ("\n[T8] Wave 3: hand-edited .parvati routing values are clamped\n");
+    {
+        // Out-of-range hand-edited values previously stored verbatim (uint8
+        // wrap): channel 17 wrapped to a channel no MIDI stream matches (the
+        // part went silent), an inverted zone matched no note, and a bitmask
+        // with high bits set materialized a slot count the 6-card pool cannot
+        // honor. The loader now clamps to the engine's accepted ranges and
+        // normalizes an inverted zone by swap.
+        ParvatiAudioProcessor p;
+        p.prepareToPlay (48000.0, 512);
+
+        juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("parvati_t8_clamp.parvati");
+        f.replaceWithText (
+            "format: parvati-multi\nversion: 1\nname: \"Clamp\"\nparts:\n"
+            "  - channel: 17\n"
+            "    keyzone_low: 100\n"
+            "    keyzone_high: 20\n"
+            "    voice_slots: 4\n");
+        check (p.loadParvatiMultiFile (f), "T8: clamped multi loads");
+        check (p.getEngine().getPartChannel (0) == 16,
+               "T8: channel 17 clamps to 16 (was: uint8 wrap to a dead channel)");
+        check (p.getEngine().getPartKeyrangeLow (0) == 20
+                   && p.getEngine().getPartKeyrangeHigh (0) == 100,
+               "T8: inverted zone 100..20 normalizes to 20..100");
+        check (p.getEngine().getPartVoiceSlots (0) == 4,
+               "T8: voice_slots still applies alongside the clamped routing");
+        f.deleteFile();
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "PRESET TEST: FAILURES" : "PRESET TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

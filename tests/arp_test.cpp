@@ -31,6 +31,19 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
+// Render `blocks` with no MIDI (lets deferred config/mode engages service on
+// the audio thread + release tails decay).
+void renderIdleBlocks (ParvatiAudioProcessor& p, int blocks)
+{
+    for (int i = 0; i < blocks; ++i)
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        p.processBlock (buf, midi);
+    }
+}
+
 // A minimal AudioPlayHead that reports a fixed BPM + playing state.
 class FakePlayHead : public juce::AudioPlayHead
 {
@@ -150,6 +163,115 @@ int main()
     const int descCount = static_cast<int> (getPatchParamDescriptors().size());
     std::printf ("[arp_test] descriptor count: %d (expected 260 = 106 + 5 arp + 4 options + 67 sequencer + 78 fx)\n", descCount);
     check (descCount == 260, "descriptor table includes 5 arp params (+4 options + 67 sequencer + 78 fx)");
+
+    // ---- stuck-note regression: enabling the arp while a note sounds must not
+    // swallow that note's release. The note was triggered through the DIRECT
+    // path (arp off), so its key never entered the arp's held-key stack; the
+    // note-off must fall through to the direct path (pre-fix it was handed to
+    // arp.noteOff unconditionally and the direct voice sustained forever).
+    std::printf ("\n[arp_test] stuck-note regression: enable arp while a note sounds\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.setPlayHead (&playHead);
+        proc.prepareToPlay (48000.0, 256);
+        proc.syncAllParamsToEngine();
+
+        auto activePart0 = [&]() {
+            int n = 0;
+            for (int vi : proc.getEngine().getPart (0).voiceIndices)
+                if (auto* av = proc.getEngine().getAmbikaVoice (vi))
+                    if (av->isVoiceActive()) ++n;
+            return n;
+        };
+
+        // arp OFF (default): note 60 sounds through the direct path.
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer on;
+        on.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 100), 0);
+        proc.processBlock (buf, on);
+        renderIdleBlocks (proc, 2);
+        const int activeWhileHeld = activePart0();
+        std::printf ("     active Part-0 voices with arp off, held: %d\n", activeWhileHeld);
+        check (activeWhileHeld >= 1, "direct note sounds with arp off");
+
+        // Enable the arp (mode 1) while the note sounds, flush the mode engage.
+        proc.getApvts().getParameterAsValue ("arp_mode") = 1.0f;
+        renderIdleBlocks (proc, 2);
+
+        // Release the key: must reach the DIRECT voice (not the held-key stack).
+        juce::AudioBuffer<float> buf2 (2, 256);
+        buf2.clear();
+        juce::MidiBuffer off;
+        off.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+        proc.processBlock (buf2, off);
+        // Let the release envelope decay (~1.5 s at 48k/256 — the init release
+        // tail; a STUCK voice never goes inactive, so the window is generous).
+        renderIdleBlocks (proc, 300);
+        const int activeAfterRelease = activePart0();
+        std::printf ("     active Part-0 voices after release + decay: %d (expect 0)\n", activeAfterRelease);
+        check (activeAfterRelease == 0,
+               "pre-arp note releases after enabling the arp (no stuck sustain)");
+    }
+
+    // ---- unclamped loaded arp bytes: a raw PartData mode 5 must not silence
+    // the part, and a raw arpOctave 0 must stage >= 1 (the Random direction's
+    // octave-wrap loop never terminated with range 0 — an audio-thread hang).
+    std::printf ("\n[arp_test] raw PartData arp bytes are clamped at staging\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        proc.syncAllParamsToEngine();
+        auto& e = proc.getEngine();
+
+        // Stage a hand-forged PartData: arpMode 5 (out of Off/Arp/Sequencer),
+        // direction 4 (Random), octave 0 (hang input), pattern/resolution/seq
+        // lengths out of range too. stageArpSeqFromPartBytes is the loader
+        // entry point (.MUL loads / host-state restore).
+        auto& pb = e.getPart (0).partBytes;
+        for (int b = 7; b <= 14; ++b)
+            pb[(size_t) b] = 0xff;
+        pb[7] = 5;   // arpMode = 5
+        pb[8] = 4;   // direction = Random
+        pb[9] = 0;   // octave = 0 (hang input)
+        e.stageArpSeqFromPartBytes (0);
+
+        // Flush one block: services configDirty (the staged config engages on
+        // the audio thread). With the pre-fix raw mode 5, isActive() was true
+        // while isEnabled() was false — the part swallowed notes silently; the
+        // clamped mode (2 = Sequencer... or 0/1/2) must at least be ACTIVE-legal.
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer empty;
+        proc.processBlock (buf, empty);
+
+        const uint8_t mode = e.getPart (0).arp.getMode();
+        std::printf ("     staged arp mode after clamp: %d (expect <= 2)\n", (int) mode);
+        check (mode <= 2, "out-of-range arp mode clamps into Off/Arp/Sequencer");
+
+        // The hang case: Random + octave 0. After one more staging round-trip
+        // the ENGAGED octave must be >= 1 (setOctave receives the staged
+        // value); the loop guard in stepArpeggio is the belt-and-braces half.
+        // Read back through the pendingConfig consumer path: engage another
+        // flush with a held key + running transport so stepArpeggio RUNS.
+        proc.setPlayHead (&playHead);
+        juce::MidiBuffer on;
+        on.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 100), 0);
+        juce::AudioBuffer<float> buf2 (2, 256);
+        buf2.clear();
+        proc.processBlock (buf2, on);   // held key enters (mode is Sequencer/Arp — active)
+        // ~2 s of transport at 120 BPM: many prescaled steps; pre-fix this
+        // block loop would spin forever on the range-0 wrap (the test would
+        // hang, not fail) — with the clamp + guard it returns.
+        for (int i = 0; i < 400; ++i)
+        {
+            juce::AudioBuffer<float> b (2, 256);
+            b.clear();
+            juce::MidiBuffer m;
+            proc.processBlock (b, m);
+        }
+        check (true, "Random + octave 0 no longer hangs the audio thread (blocks return)");
+    }
 
     // ---- report ----
     std::printf ("\nARP TEST: %s\n", g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES");

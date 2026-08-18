@@ -28,6 +28,8 @@
 #include "ui/ParvatiTheme.h"
 #include "ui/PatchPage.h"
 #include "ui/PatchArrangement.h"
+#include "ui/SettingsPanel.h"           // language-switch no-op check
+#include "ui/ThemeManager.h"
 #include "ui/TuningEditor.h"           // custom-tuning popover (direct instantiation)
 
 namespace
@@ -568,6 +570,73 @@ int main()
                     check (false, "header fit @1024: [FX] button found");
                 editor->setSize (prevW, prevH);   // restore
             }
+
+            // (f) Part-combo label refresh: renaming the SELECTED part must
+            // relabel the header combo's INLINE text immediately —
+            // changeItemText only updates the menu entry, so the combo used to
+            // keep painting the old label until the next part switch.
+            {
+                const juce::String savedName = engine.getPartName (0);
+                engine.setPartName (0, "Snare");
+                parEd->refreshPartComboNames();
+                // Find the header part combo by its text ("1 · Snare").
+                std::function<juce::ComboBox* (juce::Component*)> findPartCombo =
+                    [&] (juce::Component* c) -> juce::ComboBox*
+                {
+                    if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+                        if (cb->getText().contains ("Snare"))
+                            return cb;
+                    for (auto* ch : c->getChildren())
+                        if (auto* r = findPartCombo (ch)) return r;
+                    return nullptr;
+                };
+                if (auto* pcb = findPartCombo (parEd))
+                    check (pcb->getText().contains ("Snare"),
+                           "partCombo label: renamed part shows immediately (no part switch)");
+                else
+                    check (false, "partCombo label: header combo found after rename");
+                engine.setPartName (0, savedName);
+                parEd->refreshPartComboNames();
+            }
+
+            // (g) VISIBLE-page mirror under out-of-band engine writes: with
+            // the Patch page on screen, an engine mutation that has no editor
+            // hook (host automation / MIDI NRPN / host undo — the message-
+            // thread engine mutators) must surface in the rows via the poll
+            // timer's display-version mirror (pollPatchPageMirror is the
+            // exact timer code path). Before the mirror, a VISIBLE page kept
+            // showing stale rows until the next reveal/load.
+            {
+                parEd->setCurrentTopPage (2);   // make the Patch page VISIBLE
+
+                // Out-of-band write 1: engine-direct voice slots (the
+                // load/state-restore class of writes — no editor notification).
+                engine.setPartVoiceSlots (0, 11);
+                parEd->pollPatchPageMirror();
+                check (patchPage->getDisplayedVoiceSlots (0) == 11,
+                       "visible mirror: out-of-band slots write surfaces with NO manual refresh");
+
+                // Idempotence: a second poll with no further change is a no-op
+                // (the version capture after the refresh dedupes it).
+                parEd->pollPatchPageMirror();
+                check (patchPage->getDisplayedVoiceSlots (0) == 11,
+                       "visible mirror: second poll with no change is a no-op");
+
+                // Out-of-band write 2: the APVTS host-automation path — a
+                // part_raga write drives applyPartByte(4) with no editor hook;
+                // the row's Tune combo must mirror the resolved preset after
+                // the poll.
+                proc.getApvts().getParameterAsValue ("part_raga") = 5.0f;   // a raga preset
+                parEd->pollPatchPageMirror();
+                check (patchPage->getDisplayedTuningMode (0) == 5,
+                       "visible mirror: host-automation raga write surfaces in the Tune combo");
+                proc.getApvts().getParameterAsValue ("part_raga") = 0.0f;   // restore 12-EDO
+                parEd->pollPatchPageMirror();
+                check (patchPage->getDisplayedTuningMode (0) == 0,
+                       "visible mirror: raga back to 12-EDO surfaces too");
+
+                parEd->setCurrentTopPage (0);   // restore the SYNTH page for later sections
+            }
         }
 
         // ---- [8] The pool has NO per-row cap: every part can be maxed ----
@@ -667,6 +736,26 @@ int main()
         check (engine.getPart (0).partBytes[4] == 0, "12-EDO writes raga byte 0");
         check (engine.resolvedTuningMode (0) == 0, "12-EDO clears the custom flag (D4)");
         check (patchPage->getDisplayedTuningMode (0) == 0, "Tune: combo back to 12-EDO");
+
+        // Custom… popover's POST-EDIT notification re-syncs the APVTS: the
+        // popover writes the part's PartData ENGINE-DIRECT (byte 4 = 0 + custom
+        // flag armed), so without the re-sync the hosted part_raga combo — and
+        // an APVTS-based save — kept the STALE preset byte while the engine
+        // played the custom table. Wire a directly-instantiated TuningEditor's
+        // change callback to PatchPage::tuningEditorApplied (the exact body
+        // openTuningEditor's launched popover runs) so the headless test drives
+        // the real post-edit path without opening the modal dialog.
+        patchPage->chooseTuningMode (0, 12);   // part 0 is CURRENT: preset 12 lands in the APVTS
+        check (proc.getApvts().getRawParameterValue ("part_raga")->load() == 12.0f,
+               "precondition: APVTS part_raga == 12 (stale-preset scenario armed)");
+        {
+            TuningEditor ed (engine, 0, [&patchPage] { patchPage->tuningEditorApplied (0); });
+            ed.setRowUnitsForTest (2, 19);   // a user-style row edit -> applyTable -> onChanged
+            check (engine.resolvedTuningMode (0) == 33,
+                   "popover edit arms the custom table (mode 33)");
+            check (proc.getApvts().getRawParameterValue ("part_raga")->load() == 0.0f,
+                   "popover edit re-syncs the APVTS part_raga to 0 (no stale preset byte)");
+        }
     }
 
     // ---- [MOD] header toggle: mod-pill bar show/hide ----
@@ -731,6 +820,82 @@ int main()
 #else
     std::printf ("\n[MOD] mod-pill bar toggle check skipped (non-Apple pump)\n");
 #endif
+
+    // ------------------------------------------------------------------
+    // [16] Settings language switch is a UI no-op: refreshLanguage() rebuilds
+    // the Filter Quality combo, and the rebuild must NEVER fire its own
+    // onChange (the ComboBox::clear() default queues an ASYNC change that
+    // lands after the selection restore — an uncommanded engine write). The
+    // Patch page got the same fix; this locks the Settings instance in.
+    // ------------------------------------------------------------------
+    std::printf ("\n[16] SettingsPanel: language switch fires no uncommanded writes\n");
+    {
+        ThemeManager themeMgr;
+        ParvatiAudioProcessor settingsProc;
+        settingsProc.prepareToPlay (48000.0, 256);
+        settingsProc.setOversamplingFactor (4);   // NON-default selection
+        int osWrites = 0, langWrites = 0;
+        SettingsPanel panel (settingsProc, themeMgr,
+                             [] (double) {}, [] (bool) {}, [] (bool) {},
+                             [&] (int) { ++osWrites; },
+                             [&] (const juce::String&) { ++langWrites; });
+        panel.setBounds (0, 0, 420, 320);
+        panel.refreshLanguage();
+#if defined (__APPLE__)
+        // Pump the run loop so any pending ASYNC ComboBox update (the
+        // pre-fix clear() hazard) would be delivered.
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.050, false);
+#endif
+        check (osWrites == 0,
+               "Settings: refreshLanguage fires NO oversampling write (async clear purged)");
+        check (langWrites == 0,
+               "Settings: refreshLanguage fires NO language write");
+        check (settingsProc.getUiOversampling() == 4,
+               "Settings: non-default Filter Quality selection preserved");
+    }
+
+    // ------------------------------------------------------------------
+    // [12] FX type UNDO does not seed engagement defaults over the restored
+    // params (W7): JUCE replays a transaction's actions in reverse order, so
+    // the fx{N}_type write is restored LAST — FxSlotCard's seeding listener
+    // then fired DURING the undo replay and clobbered the just-restored
+    // params with the new type's defaults. The isPerformingUndoRedo guard
+    // keeps undo a faithful restore. (FxSlotCard lives in the FX workspace,
+    // built at editor construction — its APVTS listener is live regardless
+    // of which page is visible.)
+    // ------------------------------------------------------------------
+    std::printf ("\n[12] FX type undo keeps the restored parameter values\n");
+    {
+        auto& apvts = proc.getApvts();
+        auto& um = proc.getUndoManager();
+        auto setP = [&apvts] (const char* id, float v) { apvts.getParameterAsValue (id) = v; };
+        const auto raw = [&apvts] (const char* id) { return apvts.getRawParameterValue (id)->load(); };
+
+        // Drain the part-switch undo invalidation armed during editor startup
+        // (undoSafe would otherwise CLEAR the history on its first call — the
+        // W2 cross-part-corruption guard doing its job).
+        proc.undoSafe();
+        um.clearUndoHistory();
+        setP ("fx1_type", 1.0f);      // a first non-None type (seeds once)
+        um.beginNewTransaction();
+        setP ("fx1_param1", 9.0f);    // the user's custom value on type 1
+        um.beginNewTransaction();
+        setP ("fx1_type", 5.0f);      // a different type (seeds ITS defaults)
+        check (raw ("fx1_type") == 5.0f, "precondition: type switched (5)");
+        check (raw ("fx1_param1") != 9.0f,
+               "precondition: the switch seeded its own param1 default");
+
+        proc.undoSafe();              // undo the type switch only (synchronous replay)
+        check (raw ("fx1_type") == 1.0f, "undo restores the original type (1)");
+        check (raw ("fx1_param1") == 9.0f,
+               "undo keeps the restored param1 (no seed-during-replay clobber)");
+
+        proc.undoSafe();              // undo the param edit too (synchronous replay)
+        // (The default param1 of type 1 is whatever fxTypeDefaults(1) says —
+        //  NOT asserted; only that undo history is exhausted cleanly.)
+        um.clearUndoHistory();
+        setP ("fx1_type", 0.0f);      // None: leave FX idle for later sections
+    }
 
     // ---- teardown ----
     delete editor;

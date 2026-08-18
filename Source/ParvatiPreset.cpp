@@ -236,6 +236,29 @@ ParseResult parseBlock (const std::vector<Line>& lines, int i, int baseIndent)
     }
     return { var (obj.release()), i };
 }
+
+// Escape a QUOTED top-level string value (patch / multi `name:`): the format
+// is LINE-based, so a raw newline inside a name would split the document and
+// break the parse (a dropped `params:` block = silent load failure), and an
+// unescaped `"` truncates the name at reload. Mirrors the per-part name
+// writer's escaping (\\ -> backslash, \" -> quote) plus a control-char
+// strip (anything < 0x20 is dropped — the parser's unescapeQuoted is the
+// exact inverse for the two escapes).
+juce::String escapeQuotedValue (const juce::String& s)
+{
+    juce::String out;
+    out.preallocateBytes ((size_t) s.getNumBytesAsUTF8());
+    for (int i = 0; i < s.length(); ++i)
+    {
+        const auto c = s[i];
+        if (c < 0x20)
+            continue;   // control chars (incl. newlines) never enter the value
+        if (c == '\\' || c == '"')
+            out += '\\';
+        out += c;
+    }
+    return out;
+}
 }  // namespace
 
 juce::var parseParvatiYaml (const juce::String& text)
@@ -524,7 +547,8 @@ juce::String serializeParvatiPatch (ParvatiAudioProcessor& proc)
     out << "format: " << kFormatPatch << "\n";
     out << "version: " << kFormatVersion << "\n";
     out << "parvati_version: " << kParvatiVersion << "\n";
-    out << "name: \"" << (proc.getLoadedProgramName().isNotEmpty() ? proc.getLoadedProgramName() : "Parvati") << "\"\n";
+    out << "name: \"" << escapeQuotedValue (proc.getLoadedProgramName().isNotEmpty() ? proc.getLoadedProgramName()
+                                                                                    : juce::String ("Parvati")) << "\"\n";
     out << "author: \"\"\n";
     out << "params:\n";
     out << emitParams (*currentParamsMap (proc));
@@ -574,7 +598,8 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
     out << "format: " << kFormatMulti << "\n";
     out << "version: " << kFormatVersion << "\n";
     out << "parvati_version: " << kParvatiVersion << "\n";
-    out << "name: \"" << (proc.getLoadedProgramName().isNotEmpty() ? proc.getLoadedProgramName() : "Parvati") << "\"\n";
+    out << "name: \"" << escapeQuotedValue (proc.getLoadedProgramName().isNotEmpty() ? proc.getLoadedProgramName()
+                                                                                    : juce::String ("Parvati")) << "\"\n";
     out << "author: \"\"\n";
     out << "parts:\n";
 
@@ -672,14 +697,40 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         if (partObj == nullptr) continue;
         auto& part = engine.getPart (i);
 
-        // Per-part routing.
-        if (partObj->hasProperty ("channel"))
-            engine.setPartChannel (i, (uint8_t) (int) partNode["channel"]);
+        // Per-part routing. Every key is OPTIONAL in the format (loaded
+        // behind hasProperty guards), so a hand-edited entry without
+        // `channel` / `keyzone_*` keys must NOT silently inherit the
+        // PREVIOUS multi's routing (the file was written as the whole truth):
+        // absent keys fall back to the engine's INIT defaults (channel =
+        // partIndex + 1, zone 0..127 — SynthEngine.cpp ctor) instead. A
+        // present key still wins, and the serializer always emits all three.
+        // Hand-edited values are CLAMPED to the engine's accepted ranges
+        // (channel 0=Omni..16, keyzone 0..127; the engine setters store
+        // uint8 verbatim, so an out-of-range value like `channel: 300` would
+        // wrap and silently deaden the part -- findPartForNote would never
+        // match). An inverted zone (lo > hi) is normalized by swap: a zone
+        // that matches no note is never useful, and the swap preserves the
+        // editor's intent (both ends kept).
+        engine.setPartChannel (i, partObj->hasProperty ("channel")
+                                    ? static_cast<uint8_t> (juce::jlimit (0, 16, (int) partNode["channel"]))
+                                    : static_cast<uint8_t> (i + 1));
         if (partObj->hasProperty ("keyzone_low") && partObj->hasProperty ("keyzone_high"))
-            engine.setPartKeyrange (i, (uint8_t) (int) partNode["keyzone_low"],
-                                        (uint8_t) (int) partNode["keyzone_high"]);
+        {
+            const int lo = juce::jlimit (0, 127, (int) partNode["keyzone_low"]);
+            const int hi = juce::jlimit (0, 127, (int) partNode["keyzone_high"]);
+            engine.setPartKeyrange (i, static_cast<uint8_t> (juce::jmin (lo, hi)),
+                                        static_cast<uint8_t> (juce::jmax (lo, hi)));
+        }
+        else
+        {
+            engine.setPartKeyrange (i, 0, 127);   // init default zone
+        }
+        // The legacy bitmask seed is clamped to the 6 hardware voicecards
+        // (bits 0..5): a hand-edited mask with the high bits set would
+        // materialize a slot count the pool cannot honor.
         if (partObj->hasProperty ("voice_allocation"))
-            engine.setPartVoiceAllocation (i, (uint8_t) (int) partNode["voice_allocation"]);
+            engine.setPartVoiceAllocation (i, static_cast<uint8_t> (
+                juce::jlimit (0, 0x3F, (int) partNode["voice_allocation"])));
         // Parvati extension: per-part voice slots + name. The slots are the
         // single source of truth (the allocation above is only a legacy seed:
         // an old file without slots materializes its card count from the
@@ -756,7 +807,19 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                     {
                         const int slot = id[2] - '1';
                         const juce::String sfx = id.substring (4);
-                        if (sfx == "type")              fx.slotType    [(size_t) slot].store ((uint8_t) v, std::memory_order_relaxed);
+                        if (sfx == "type")
+                        {
+                            // Slot TYPES need message-thread chain staging (the
+                            // AT's fxDirty_ service pushes params/enabled/etc.
+                            // but deliberately never installs types — they need
+                            // a pre-built processor, audit F1). Storing only the
+                            // fxState atomic left the chain on its previous
+                            // processors, so a loaded multi's FX were silently
+                            // absent (fresh engine) or played the previous
+                            // effect. stagePartFxSlotType = atomic + staging +
+                            // the same fxDirty_ publish the loop tail makes.
+                            engine.stagePartFxSlotType (i, slot, v);
+                        }
                         else if (sfx == "enabled")      fx.slotEnabled [(size_t) slot].store ((uint8_t) (v != 0 ? 1 : 0), std::memory_order_relaxed);
                         else if (sfx == "drywet")       fx.slotDryWet  [(size_t) slot].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed);
                         else if (sfx.startsWith ("param"))
@@ -840,6 +903,20 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                 part.partBytes[4] = 0;
                 engine.clearPartTuningCustom (i);
             }
+        }
+        else if (part.partBytes[4] == 0)
+        {
+            // Serializer asymmetry: tuning_mode is only EMITTED for non-zero
+            // modes (serializeParvatiMulti skips the key when the resolved mode
+            // is 0), so every 12-EDO part loads with the key ABSENT — and the
+            // params loop above already wrote byte 4 (part_raga: 0). A
+            // customTuningActive flag armed by an earlier session would keep
+            // resolvedTuningMode at 33 and the part would keep playing the OLD
+            // custom table while the loaded file says 12-EDO. Mirror the
+            // .MUL/.PRO loaders' rule (the file is the whole truth for tuning;
+            // no custom table in the file + byte 4 == 0 => 12-EDO). A non-zero
+            // byte already wins the resolution order, so no clear there.
+            engine.clearPartTuningCustom (i);
         }
 
     }

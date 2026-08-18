@@ -34,6 +34,8 @@
 
 #include "SynthEngine.h"
 
+class ParvatiLookAndFeel;
+
 class TuningEditor : public juce::Component
 {
 public:
@@ -77,6 +79,27 @@ private:
     // Defined in the .cpp.
     class Row;
     std::array<std::unique_ptr<Row>, 12> rows_;
+
+    // ---- launch-time lifetime guards (see launch) ----
+    // The dialog is its OWN desktop window (launchAsync), so it can outlive
+    // the editor that opened it (host closes the plugin window while the
+    // popover is up). TWO hazards that previously dangled in that window:
+    //   (1) the raw parent LookAndFeel pointer (freed with the editor) —
+    //       fixed by owning a ParvatiLookAndFeel COPIED from the parent's
+    //       active theme (the builtin theme structs are function-local
+    //       statics in ParvatiTheme.cpp, so the copy's theme_ pointer stays
+    //       valid even after the editor dies);
+    //   (2) the SynthEngine& / ChangeCallback (owned by the processor / the
+    //       Patch page) — every engine-touching interaction is gated on the
+    //       LAUNCH PARENT still existing; once it is gone the dialog closes
+    //       itself instead of touching freed state (a paint-only dialog is
+    //       harmless: nothing reads the engine without an interaction).
+    std::unique_ptr<ParvatiLookAndFeel> ownedLnf_;
+    bool watchParent_ = false;
+    juce::Component::SafePointer<juce::Component> launchParent_;
+    // True when launched from a parent that has since been deleted: the
+    // popover must close (see applyTable / launch).
+    bool parentGone() const noexcept { return watchParent_ && launchParent_ == nullptr; }
 
     // Collect the rows into the 12-entry table (muted rows -> sentinel) and
     // push it to the engine + fire the change callback.

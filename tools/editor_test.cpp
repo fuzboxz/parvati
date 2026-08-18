@@ -2,8 +2,9 @@
 // Headless GUI coverage check for the Parvati editor (integrated, Serum-style
 // layout).
 //
-// The editor is a single [SYNTH] page selector (the lone tab bar is hidden).
-// The SYNTH content is a 3-row SynthWorkspace:
+// The editor is a two-tab [SYNTH][FX] page selector (the tab bar itself is
+// hidden; the header [Synth]/[FX] buttons are the UI). The SYNTH content is
+// a 3-row SynthWorkspace:
 //   - TOP row: 3 direct ParamPages in signal-chain columns (OSC | MIX | FILTER),
 //     reparented (NOT regenerated) so every APVTS attachment + the byte-bridge
 //     survive.
@@ -22,7 +23,8 @@
 // the Patch page (hostParamPage) and shown by its header "Patch" button.
 // This test verifies:
 //   - createEditor() returns a non-null AudioProcessorEditor
-//   - the top-level page selector has exactly 1 tab ([SYNTH])
+//   - the top-level page selector has exactly 2 tabs ([SYNTH] + [FX]; the
+//     Patch page is a header-button overlay, not a tab)
 //   - every patch/part descriptor EXCEPT `part_select` and the mod-matrix slot
 //     params gets exactly one ParamControl cell (counted across ALL generated
 //     pages, parented or not)

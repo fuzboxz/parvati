@@ -60,17 +60,6 @@ bool overwriteIfChanged (const juce::File& target, const char* data, int size)
     }
     return temp.overwriteTargetFileWithTemporary();
 }
-
-// Does @p dir already hold at least one preset of @p wildcard? (cheap existence
-// gate so an installed tree is never re-scanned).
-bool dirHasPresets (const juce::File& dir, const char* wildcard)
-{
-    if (! dir.isDirectory())
-        return false;
-    juce::Array<juce::File> files;
-    dir.findChildFiles (files, juce::File::findFiles, false, wildcard);
-    return ! files.isEmpty();
-}
 }  // namespace
 
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
@@ -118,8 +107,15 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // AND skip the new "Poly" entirely (the dir already has *.parvati).
         // TEMPLATES/ is stock-only (user saves go to USER/), so removing a local
         // .parvati that is no longer in the embedded set is safe.
-        const bool proPresent = dirHasPresets (factoryDir,     "*.PRO");
-        const bool mulPresent = dirHasPresets (factoryMultiDir, "*.MUL");
+        //
+        // The banks run writeIfMissing UNCONDITIONALLY per resource (the old
+        // one-shot dirHasPresets existence gate is gone): the .PRO side looked
+        // in the non-recursive bank PARENT (always false — a dead gate), while
+        // the .MUL side could PERMANENTLY skip the remaining multis after a
+        // partial first extraction (disk full mid-run left the bank short
+        // forever, with no re-heal). writeIfMissing is already a cheap
+        // per-file existence check, so an installed tree costs one stat per
+        // resource and an interrupted first run self-heals on the next launch.
         std::set<juce::String> embeddedTemplates;
 
         for (int i = 0; i < FactoryPresets::namedResourceListSize; ++i)
@@ -143,7 +139,6 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
             if (sep <= 0 || sep >= name.length() - 2)
             {
                 // Fallback (un-prefixed name): route by extension (no templates).
-                if (! (proPresent && mulPresent))
                 {
                     const juce::File target = (name.endsWithIgnoreCase (".MUL") ? factoryMultiDir
                                                                                 : factoryDir)
@@ -164,12 +159,12 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
             }
             else if (token == "MULTI")
             {
-                if (! mulPresent && writeIfMissing (factoryMultiDir.getChildFile (fname), data, size))
+                if (writeIfMissing (factoryMultiDir.getChildFile (fname), data, size))
                     ++written;
             }
             else   // bank token (A/B/F/S)
             {
-                if (! proPresent && writeIfMissing (factoryDir.getChildFile (token).getChildFile (fname), data, size))
+                if (writeIfMissing (factoryDir.getChildFile (token).getChildFile (fname), data, size))
                     ++written;
             }
         }

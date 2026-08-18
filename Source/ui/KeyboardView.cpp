@@ -575,6 +575,20 @@ void KeyboardView::releaseHeldComputerNotes()
     heldNotes_.clear();
 }
 
+void KeyboardView::releaseAllNotes()
+{
+    // Touch/mouse sources: every held finger/click gets its note-off (the
+    // editor's destructor is the only caller today — teardown, so the latch
+    // mirror clearing is harmless even if the editor's timer is gone).
+    for (const auto& kv : mouseDownNotesBySource_)
+    {
+        fireNoteCallback (kv.second, false, 0.0f);
+        latchNoteOff (kv.second);
+    }
+    mouseDownNotesBySource_.clear();
+    releaseHeldComputerNotes();
+}
+
 bool KeyboardView::keyPressed (const juce::KeyPress& key)
 {
     if (! computerKeyboardEnabled_)

@@ -261,9 +261,19 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     // restart), so it must NOT get the de-click ramp (that would punch a gap).
     const bool legato = legatoNext_;
 
-    // Drop any tail from a previous note so it doesn't bleed into this attack.
-    fifo_.clear();
-    interp_.reset();
+    // Drop any tail from a previous note so it doesn't bleed into this attack
+    // — EXCEPT on a legato retrigger: the legato path deliberately continues
+    // the sustaining voice (no de-click ramp below; firmware legato = no
+    // envelope/oscillator restart), and clearing the resampler FIFO here would
+    // discard ~0.4-1.3 ms of unconsumed internal samples and restart the
+    // Lagrange interpolator cold — a time-skip discontinuity (click) at EVERY
+    // legato step. The fresh-note and hard-stop paths still clear (hard stop:
+    // stopNote below).
+    if (! legato)
+    {
+        fifo_.clear();
+        interp_.reset();
+    }
     isReleasing_ = false;
 
     // De-click: arm the one-shot startup gain ramp ONLY on a fresh trigger.
@@ -279,10 +289,13 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     // Apply the controller-side part octave/tuning + the per-class tuning
     // table (firmware Part::TuneNote, part.cc:634): n = clamp(midi + octave*12,
     // 0, 127); note14 = n*128 + tuneOffsets_[note&11] + tuning. The table is
-    // indexed by the RAW incoming note (firmware TuneNote indexes the raga by
-    // note % 12; identical result after the octave shift — %12 is
-    // shift-invariant). Muted classes never reach here (AcceptNote gate in
-    // SynthEngine::noteOn / triggerNoteInPart refuses them upstream).
+    // indexed by the RAW incoming note — firmware TuneNote does the SAME
+    // (part.cc:640: `Lookup(..., midi_note % 12)` on the unclamped parameter,
+    // while only the base pitch uses the clamped n); %12 is octave-shift-
+    // invariant, so the two only differ when the 0..127 clamp BITES, and even
+    // then Parvati stays byte-faithful to the firmware. Muted classes never
+    // reach here (AcceptNote gate in SynthEngine::noteOn / triggerNoteInPart
+    // refuses them upstream).
     const int baseNote = juce::jlimit (0, 127, midiNoteNumber + partOctave_ * 12);
     const int note14  = juce::jlimit (0, static_cast<int> (ambika::dsp::kHighestNote),
                                      baseNote * 128 + tuneOffsets_[midiNoteNumber % 12]

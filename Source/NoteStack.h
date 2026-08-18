@@ -137,6 +137,22 @@ public:
 
     uint8_t size() const { return size_; }
 
+    // Does the stack currently hold @p note? (const lookup — no removal; used
+    // by the engine's note-off routing to tell a note the arp/sequencer is
+    // HOLDING from one that was sounding before the mode was enabled and so
+    // never entered the stack.)
+    bool contains (uint8_t note) const
+    {
+        uint8_t current = root_ptr_;
+        while (current)
+        {
+            if (pool_[current].note == note)
+                return true;
+            current = pool_[current].next_ptr;
+        }
+        return false;
+    }
+
     const NoteEntry& most_recent_note() const { return pool_[root_ptr_]; }
 
     const NoteEntry& sorted_note (uint8_t index) const

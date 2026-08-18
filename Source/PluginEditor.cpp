@@ -1621,7 +1621,7 @@ void ParamPage::configureGroupLayouts()
         {
             g.sectioned    = true;
             g.internalCols = 3;   // widest sub-section (Mixer/Noise = 3 knobs)
-            g.cellW = 60;         // floor: 3-col natural = 196px <= 200px avail at min 1100
+            g.cellW = 60;         // floor: 3-col natural = 196px; the R3 clamp compresses knobs slightly at the 1024 floor
             g.cellH = 64;         // full-arc knobs (matches Filter)
         }
         // Filter column (40%): Filter (3 knobs) + Filter Mod (2 amounts) + a
@@ -1632,18 +1632,18 @@ void ParamPage::configureGroupLayouts()
         else if (g.name == "Filter" || g.name == "Filter Mod")
         {
             g.internalCols = generalCols (n);
-            g.cellW = 130;  // 3-col group = 406px <= 420px avail at min 1100
-            g.cellH = 64;   // 2 stacked single-row groups + curve fit <= 269px main-row half at min 1100
+            g.cellW = 130;  // 3-col group = 406px; the R3 clamp compresses knobs slightly at the 1024 floor
+            g.cellH = 64;   // 2 stacked single-row groups + curve fit the main-row half (R3 clamps at the 1024 floor)
         }
         // Oscillators (40% column): Shape combo + INLINE waveform preview + the
         // other 3 knobs (param/range/detune), all in ONE row so both "Osc 1" +
-        // "Osc 2" stack and fit the ~440px-wide (min 1100) / 512px (1280) OSC
-        // column with BOTH visible at once (no [OSC1][OSC2] pager). The row is
-        // modelled as 5 columns: col0=Shape, col1=reserved for the INLINE
-        // preview (set via setGroupInlinePreview), col2..4=param/range/detune.
+        // "Osc 2" stack and fit the OSC column (R3 clamps the dials slightly
+        // at the 1024 floor) with BOTH visible at once (no [OSC1][OSC2] pager).
+        // The row is modelled as 5 columns: col0=Shape, col1=reserved for the
+        // INLINE preview (set via setGroupInlinePreview), col2..4=param/range/detune.
         // cellW=80 is a floor sized so 5 columns (5*80+16=416px) fit the 420px
-        // content width at the 1100px minimum (no horizontal clipping); the row
-        // grows to fill at 1280.
+        // content width at the 1100px width (the R3 clamp compresses cells at the
+        // 1024 floor instead of clipping); the row grows to fill at 1280.
         else if (g.name == "Osc 1" || g.name == "Osc 2")
         {
             g.internalCols = 5;
@@ -2361,10 +2361,15 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         m.addItem (1, TRANS ("Ambika Patch (.PRO)"));
         m.addItem (2, TRANS ("Parvati Patch (.parvati)"));
         m.addItem (3, TRANS ("Ambika Multi (.MUL)"));
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this] (int result) {
-            if (result == 1)      openSaveDialog();
-            else if (result == 2) openSaveParvatiDialog();
-            else if (result == 3) openSaveMultiDialog();
+        // SafePointer guard: the completion runs after the async menu
+        // dismisses — the host may have torn the editor down while the popup
+        // was open (a raw `this` would dangle into freed memory).
+        juce::Component::SafePointer<ParvatiEditor> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int result) {
+            if (safe == nullptr) return;
+            if (result == 1)      safe->openSaveDialog();
+            else if (result == 2) safe->openSaveParvatiDialog();
+            else if (result == 3) safe->openSaveMultiDialog();
         });
     };
     addAndMakeVisible (saveButton_);
@@ -2374,10 +2379,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // UndoManager records every parameter change; enable/disable is mirrored on
     // the editor timer.
     undoButton_.setTooltip (TRANS ("Undo"));
-    undoButton_.onClick = [this] { processorRef_.getUndoManager().undo(); };
+    // undoSafe/redoSafe (not the raw UndoManager): they sweep the part-switch
+    // boundary first — a recorded action replayed after a part switch would
+    // write the OLD part's values into the CURRENT part (cross-part
+    // corruption; see ParvatiAudioProcessor::undoSafe).
+    undoButton_.onClick = [this] { processorRef_.undoSafe(); };
     addAndMakeVisible (undoButton_);
     redoButton_.setTooltip (TRANS ("Redo"));
-    redoButton_.onClick = [this] { processorRef_.getUndoManager().redo(); };
+    redoButton_.onClick = [this] { processorRef_.redoSafe(); };
     addAndMakeVisible (redoButton_);
 
     // On-screen zoom +/-/0 (visible on every platform; iPad has no keyboard).
@@ -2400,9 +2409,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     {
         juce::PopupMenu m;
         m.setLookAndFeel (&lnf_);   // app-themed popup (amber accent, dark fill)
-        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom In")).setAction  ([this] { applyZoom (zoom_ + 0.1); }));
-        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom Out")).setAction ([this] { applyZoom (zoom_ - 0.1); }));
-        m.addItem (juce::PopupMenu::Item (TRANS ("Reset Zoom")).setAction ([this] { applyZoom (1.0); }));
+        // SafePointer guards against the editor being deleted while the
+        // async menu is still open (host closes the plugin window mid-menu) —
+        // the menu outlives onClick's stack frame, so a raw `this` would
+        // dangle when the item action finally runs.
+        juce::Component::SafePointer<ParvatiEditor> safe (this);
+        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom In")).setAction  ([safe] { if (safe != nullptr) safe->applyZoom (safe->zoom_ + 0.1); }));
+        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom Out")).setAction ([safe] { if (safe != nullptr) safe->applyZoom (safe->zoom_ - 0.1); }));
+        m.addItem (juce::PopupMenu::Item (TRANS ("Reset Zoom")).setAction ([safe] { if (safe != nullptr) safe->applyZoom (1.0); }));
         m.showMenuAsync (juce::PopupMenu::Options()
                              .withTargetComponent (&zoomOverflowButton_)
                              .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
@@ -2907,11 +2921,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // change surfaces in the status/tooltip bar as a ~2.5 s transient (the
     // same channel tap-to-assign uses), e.g. "Keyboard: octave C4–C6  ·  velocity 100".
     // The initial prime from setSettingsChangedCallback is swallowed (a fresh
-    // instance shows nothing until the user actually changes something).
-    keyboardView_->setSettingsChangedCallback ([] (int base, int vel)
+    // instance shows nothing until the user actually changes something). The
+    // "seen" flag is PER-INSTANCE (a shared_ptr captured by value — no `this`
+    // is captured, so the callback is safe even if it ever fired late): a
+    // process-wide `static bool` was consumed by the FIRST editor ever opened,
+    // so every subsequent instance (or a close+reopen) flashed a spurious
+    // initial report in the status strip at open.
+    auto primed = std::make_shared<bool> (false);
+    keyboardView_->setSettingsChangedCallback ([primed] (int base, int vel)
     {
-        static bool primed = false;   // swallow the one initial-state report
-        if (! primed) { primed = true; return; }
+        if (! *primed) { *primed = true; return; }   // swallow the one initial-state report
         ParamControl::postTransientStatus (
             TRANS ("Keyboard: octave ") + midiNoteName (base) + "\u2013" + midiNoteName (base + 24)
                 + "  \u00b7  " + TRANS ("velocity") + " " + juce::String (vel),
@@ -2995,8 +3014,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     statusLoadLabel_.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     statusLoadLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
-    statusLoadLabel_.setTooltip ("Audio-thread realtime load (current block). "
-                                 "Near 100% = dropouts/crackle.");
+    statusLoadLabel_.setTooltip (TRANS ("Audio-thread realtime load (current block). "
+                                       "Near 100% = dropouts/crackle."));
     addAndMakeVisible (statusLoadLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
     statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
@@ -3100,12 +3119,24 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 ParvatiEditor::~ParvatiEditor()
 {
     stopTimer();
+    // Release EVERY note the on-screen/computer keyboard still holds BEFORE
+    // the callback is nulled: a key physically held at teardown gets no
+    // focusLost/mouseUp, so without these note-offs the notes sustain forever
+    // in the host (the processor outlives the editor and keeps rendering).
+    if (keyboardView_ != nullptr)
+        keyboardView_->releaseAllNotes();
     // Clear callbacks that capture `this` before the owning components are
     // destroyed during the reverse-order member teardown (defensive: the
     // components stop their own timers in their destructors, but nulling the
     // callbacks avoids any lingering reference).
     if (keyboardView_ != nullptr)
         keyboardView_->setNoteCallback (nullptr);
+    // Reset the PROCESS-GLOBAL tap-assign mode (its statics survive this
+    // editor): a [MAP] left ON at teardown would keep every OTHER live
+    // instance's knobs in assign affordance (the registry spans instances) —
+    // or, after a close+reopen, leave the new editor in assign mode while its
+    // [MAP] button shows OFF. Mirrors the zoom-reset teardown below.
+    ParamControl::setTapAssignActive (false);
     // Detach from the theme broadcaster and release the L&F BEFORE the member
     // objects (themeManager_, lnf_) and the base Component are destroyed, so the
     // ChangeBroadcaster never calls back into a half-dead editor and no child
@@ -3145,20 +3176,60 @@ void ParvatiEditor::dragOperationEnded (const juce::DragAndDropTarget::SourceDet
     ParamControl::setModDragActive (false);
 }
 
+void ParvatiEditor::pollPatchPageMirror()
+{
+    // Visible-Patch-page mirror under out-of-band engine writes (host
+    // automation of part_polyphony / part_raga, MIDI NRPN, host undo): those
+    // paths mutate the engine with no editor hook, so a VISIBLE Patch page
+    // could keep showing stale rows until the next reveal/load. The engine's
+    // display version (bumped by its message-thread mutators) makes the check
+    // O(1) and change-only; refresh() is guarded + idempotent (no onChange
+    // fires). Also called from timerCallback while the Patch page is shown —
+    // this body is the single shared implementation.
+    if (currentTopPage_ != 2 || patchPage_ == nullptr)
+        return;
+    const uint32_t v = processorRef_.getEngine().getDisplayVersion();
+    if (v == lastPatchPageDisplayVersion_)
+        return;   // nothing mirrored has changed since the last read
+    patchPage_->refresh();
+    lastPatchPageDisplayVersion_ = v;   // capture AFTER the refresh (dedupes the load/reveal paths below)
+}
+
 // Relabel the top-bar Part selector with the current part names/aliases
 // (Parvati extension): "3 · Snare" when named, "Part 3" otherwise. Cheap
 // (6 string compares); called on name edits + from the poll timer so loads
 // (multi/template/DAW state) also refresh the labels.
 void ParvatiEditor::refreshPartComboNames()
 {
+    bool anyChanged = false;
     for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
     {
         const auto n = processorRef_.getEngine().getPartName (i - 1);
-        partCombo_.changeItemText (i, n.isNotEmpty()
+        const juce::String label = n.isNotEmpty()
             ? juce::String (i) + " \u00b7 " + n     // e.g. "3 - Snare"
-            : TRANS ("Part") + " " + juce::String (i));
+            : TRANS ("Part") + " " + juce::String (i);
+        auto& cache = partComboLabelCache_[(size_t) (i - 1)];
+        if (cache != label)
+        {
+            cache = label;
+            partCombo_.changeItemText (i, label);
+            anyChanged = true;
+        }
     }
-    partCombo_.repaint();
+    // changeItemText updates only the MENU entry — the combo's inline label
+    // keeps painting the OLD text until the next selection change (JUCE's
+    // ComboBox does not refresh its label from item text). Re-applying the
+    // current selection re-renders the label, so renaming the SELECTED part
+    // (Patch-page name edit -> onPartNamesChanged -> here) shows immediately;
+    // dontSendNotification keeps this a pure display fix (no parameter or
+    // part-switch side effects). Skipped entirely when nothing changed (the
+    // 30 Hz poll path is now a pure 6-string compare).
+    if (anyChanged)
+    {
+        partCombo_.setSelectedId (processorRef_.getEngine().getCurrentPart() + 1,
+                                  juce::dontSendNotification);
+        partCombo_.repaint();
+    }
 }
 
 int ParvatiEditor::currentPartActiveVoiceCount() const
@@ -3198,6 +3269,12 @@ void ParvatiEditor::timerCallback()
     // Part-name labels follow engine state (edits made on the Patch page fire
     // onPartNamesChanged directly; this also catches file loads + DAW restores).
     refreshPartComboNames();
+
+    // Visible-Patch-page mirror: out-of-band engine writes (host automation /
+    // NRPN / undo) have no editor hook, so while the Patch page is shown the
+    // poll re-reads it whenever the engine's display version moved (change-
+    // only; see pollPatchPageMirror). Cheap no-op on every other page.
+    pollPatchPageMirror();
 
     // Mouse-activity tracking for the adaptive poll rate (see the END of this
     // callback): getMouseXYRelative() is the peer-cached position (cheap), so a
@@ -3498,6 +3575,9 @@ void ParvatiEditor::showTopPage (int idx)
         // applyPatchFile too. refresh() is idempotent + guarded (no onChange
         // fires), so this is cheap on the common no-change path.
         patchPage_->refresh();
+        // Capture the display version the rows now reflect so the poll mirror
+        // (timerCallback) does not immediately re-run this refresh.
+        lastPatchPageDisplayVersion_ = processorRef_.getEngine().getDisplayVersion();
         if (keyboardView_ != nullptr && keyboardView_->isVisible())
             keyboardView_->toFront (false);
         if (wheels_ != nullptr && wheels_->isVisible())
@@ -3631,14 +3711,14 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     if (code == 'z' || code == 'Z')
     {
         if (key.getModifiers().isShiftDown())
-            processorRef_.getUndoManager().redo();
+            processorRef_.redoSafe();
         else
-            processorRef_.getUndoManager().undo();
+            processorRef_.undoSafe();
         return true;
     }
     if (code == 'y' || code == 'Y')
     {
-        processorRef_.getUndoManager().redo();
+        processorRef_.redoSafe();
         return true;
     }
 
@@ -3794,10 +3874,10 @@ void ParvatiEditor::resized()
     // resized()), so the workspace + overlays keep the FULL content height and
     // toggling [KBD] never moves the controls.
 
-    // ---- Header (36px row): [logo+version] (left) | Patch/Part menu (centre) | icons+[KBD] (right) ----
+    // ---- Header (44px row): [logo+version] (left) | Patch/Part menu (centre) | icons+[KBD] (right) ----
     auto header = area.removeFromTop (kHeaderH);
     headerBand_ = header;   // geometry source for the headerRule_ separator
-    // A kBarHeight-tall strip vertically centred in the 36px header holds every
+    // A kBarHeight-tall strip vertically centred in the 44px header holds every
     // header control (the logo block uses the same strip height).
     auto bar = header.withTrimmedTop ((kHeaderH - kBarHeight) / 2)
                      .withTrimmedBottom ((kHeaderH - kBarHeight) / 2)
@@ -4015,6 +4095,28 @@ void ParvatiEditor::openLoadDialog()
     });
 }
 
+// Minimal, non-blocking failure feedback for the file save/load paths: a
+// save that cannot write (unwritable location / full disk) previously
+// returned false into silence — the user believed the file existed (data
+// loss), and a failed load did nothing at all. NativeMessageBox (async) so
+// the FileChooser callback never blocks the message thread; headless tests
+// never reach these branches (their save/load paths all succeed).
+namespace
+{
+void showFileOpFailure (const juce::String& title, const juce::String& path)
+{
+    // HEADLESS GUARD: a native alert needs a window-server session; the
+    // headless test/editor-coverage binaries (console, no desktop windows)
+    // would block forever inside the OS alert once the message loop is
+    // pumped — silently hanging the run. Skip when no desktop windows exist
+    // (tests never rely on the dialog; they assert the return codes).
+    if (juce::Desktop::getInstance().getNumComponents() == 0)
+        return;
+    juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                 title, path);
+}
+}  // namespace
+
 void ParvatiEditor::openSaveDialog()
 {
     // Save the CURRENT part as an Ambika .PRO (byte-faithful; shareable with
@@ -4042,6 +4144,10 @@ void ParvatiEditor::openSaveDialog()
 #endif
                 if (presetBrowser_ != nullptr)
                     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+            }
+            else
+            {
+                showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
             }
         }
         fileChooser_ = nullptr;
@@ -4075,6 +4181,10 @@ void ParvatiEditor::openSaveParvatiDialog()
 #endif
                 if (presetBrowser_ != nullptr)
                     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+            }
+            else
+            {
+                showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
             }
         }
         fileChooser_ = nullptr;
@@ -4111,6 +4221,8 @@ void ParvatiEditor::openSaveMultiDialog()
         {
             if (processorRef_.saveMultiFile (f))
                 afterMultiSaved (f);
+            else
+                showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
             fileChooser_ = nullptr;
             return;
         }
@@ -4124,10 +4236,18 @@ void ParvatiEditor::openSaveMultiDialog()
             customTuning[(size_t) i] =
                 processorRef_.getEngine().resolvedTuningMode (i) == 33;
         }
-        MulExportDialog::launch (this, setup, names, [this, f] (int strategy)
+        // SafePointer guard: MulExportDialog opens its OWN desktop window
+        // (launchAsync), so its DoneCallback can fire after the host has torn
+        // the editor down — a raw `this` would dangle (use-after-free on
+        // processorRef_/afterMultiSaved).
+        juce::Component::SafePointer<ParvatiEditor> safe (this);
+        MulExportDialog::launch (this, setup, names, [safe, f] (int strategy)
         {
-            if (strategy >= 0 && processorRef_.saveMultiFile (f, strategy))
-                afterMultiSaved (f);
+            if (safe == nullptr) return;
+            if (strategy >= 0 && safe->processorRef_.saveMultiFile (f, strategy))
+                safe->afterMultiSaved (f);
+            else if (strategy >= 0)
+                showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
         }, customTuning);
         fileChooser_ = nullptr;
     });
@@ -4135,6 +4255,7 @@ void ParvatiEditor::openSaveMultiDialog()
 
 void ParvatiEditor::afterMultiSaved (const juce::File& f)
 {
+    juce::ignoreUnused (f);   // iOS-only use below; silences -Wunused-parameter on desktop
 #if JUCE_IOS
     mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
 #endif
@@ -4178,7 +4299,20 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
         // fires), so calling it on the patch-only path too keeps the rows
         // honest without touching the engine.
         if (patchPage_ != nullptr)
+        {
             patchPage_->refresh();
+            // Same dedupe capture as the reveal path: the rows now reflect this
+            // display version (the poll mirror skips the redundant re-read).
+            lastPatchPageDisplayVersion_ = processorRef_.getEngine().getDisplayVersion();
+        }
+    }
+    else
+    {
+        // A failed load (corrupt file / wrong format / unreadable) previously
+        // vanished into silence — the drop or menu click did nothing, with no
+        // hint why. The engine was left untouched (validate-before-mutate),
+        // so a non-blocking notice is the whole remedy.
+        showFileOpFailure (TRANS ("Could not load file:"), f.getFullPathName());
     }
 }
 

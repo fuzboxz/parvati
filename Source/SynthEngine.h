@@ -77,6 +77,16 @@ struct PolyAllocator
         for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;  // NOLINT(modernize-loop-convert): faithful port of ambika::VoiceAllocator (controller/voice_allocator.cc)
         for (uint8_t i = 0; i < kMax; ++i) lru_[i] = (i < size_) ? static_cast<uint8_t> (size_ - 1 - i) : 0;
     }
+    // Forget every note->voice mapping WITHOUT changing the allocator size/
+    // mode (firmware VoiceAllocator::ClearNotes, called by Part::AllNotesOff).
+    // The voices themselves are stopped separately; a stale mapping would
+    // otherwise misroute a later note-off onto a re-stolen slot (harmless via
+    // releaseNoteInPart's defensive scan, but unclean) — W7.
+    void clearNotes()
+    {
+        for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;
+        for (uint8_t i = 0; i < kMax; ++i) lru_[i] = (i < size_) ? static_cast<uint8_t> (size_ - 1 - i) : 0;
+    }
     uint8_t find (uint8_t note) const
     {
         for (uint8_t i = 0; i < size_; ++i)
@@ -328,6 +338,40 @@ struct Part
     parvati::NoteStack<12> monoStack;   // MONO note-priority stack
     std::vector<int> voiceIndices;   // indices into the Synthesiser's voice list
 
+    // ---- Sustain pedal (CC64): firmware part.cc:335-390 semantics (W7) ----
+    // AUDIO-THREAD-ONLY state (like polyAlloc/monoStack): the pedal CC, every
+    // note-off routing decision and the pedal-up drain all run inside
+    // renderNextBlock/processTransport on the audio thread, so plain fields
+    // follow the established discipline (no atomics/locks needed; the message
+    // thread never touches these). sustainHold == firmware
+    // ignore_note_off_messages_: while set, note-offs for this Part are
+    // SWALLOWED (the notes keep sounding) and remembered in sustainedNotes_;
+    // pedal-up replays them through the normal release path. Capacity 16 ==
+    // kMaxVoicesPerPart (a part cannot sound more distinct notes than voices).
+    // Overflow (impossible today: >16 held keys with the pedal down) releases
+    // the OLDEST entry immediately so nothing strands.
+    bool sustainHold_ = false;
+    struct SustainedNote { uint8_t note; uint8_t channel; };   // channel 1..16
+    SustainedNote sustainedNotes_[kMaxVoicesPerPart] {};
+    int numSustainedNotes_ = 0;
+
+    void addSustainedNote (uint8_t note, uint8_t channel)
+    {
+        // Dedupe (a repeated note-off for an already-sustained note is a no-op).
+        for (int i = 0; i < numSustainedNotes_; ++i)
+            if (sustainedNotes_[i].note == note) return;
+        // Overflow (>16 distinct keys released under the pedal — impossible
+        // for a 16-voice part to have 17 SIMULTANEOUS sounding notes; a 17th
+        // release can only exist for a voice already stolen by a newer note,
+        // whose OWN release is stored separately): drop the oldest entry.
+        if (numSustainedNotes_ == kMaxVoicesPerPart)
+        {
+            for (int i = 1; i < numSustainedNotes_; ++i) sustainedNotes_[i - 1] = sustainedNotes_[i];
+            --numSustainedNotes_;
+        }
+        sustainedNotes_[numSustainedNotes_++] = { note, channel };
+    }
+
     // Per-part FX state (MT writes via the engine setters, AT reads in
     // renderPartFx; published by fxDirty_). See PartFxState above.
     PartFxState fxState;
@@ -449,9 +493,27 @@ public:
     // concurrent reader. (Message-thread callers must NOT rebuild directly.)
     void markAllocationDirty() { allocationDirty_.store (true, std::memory_order_release); }
 
+    // ---- UI-mirror invalidation (message-thread mutators) ----
+    // Monotonic version bumped by every message-thread mutator of state the
+    // Patch page mirrors (per-part polyphony/tuning bytes, voice slots,
+    // channel, key zone, names, custom tuning). The editor's poll timer
+    // compares it to decide whether a VISIBLE Patch page must re-read the
+    // engine: engine writes that arrive out-of-band (host automation of
+    // part_polyphony / part_raga, MIDI NRPN, host undo, state restores) have
+    // no editor hook of their own, so without this the page could keep
+    // showing stale rows until the next reveal/load. NOT bumped by
+    // audio-thread paths (the AT never mutates those sources); a missed bump
+    // would leave a stale row until the next reveal, a spurious bump only
+    // costs one cheap idempotent refresh(). Atomic: setStateInformation can
+    // arrive off the message thread on some hosts.
+    uint32_t getDisplayVersion() const noexcept
+    {
+        return displayVersion_.load (std::memory_order_relaxed);
+    }
+
     // Part routing (MIDI channel + key zone). channel: 0=Omni, else 1..16.
-    void setPartChannel  (int part, uint8_t channel) { if (ok (part)) parts_[(size_t) part].midiChannel.store (channel); }
-    void setPartKeyrange (int part, uint8_t lo, uint8_t hi) { if (ok (part)) { parts_[(size_t) part].keyrangeLow.store (lo); parts_[(size_t) part].keyrangeHigh.store (hi); } }
+    void setPartChannel  (int part, uint8_t channel) { if (ok (part)) { parts_[(size_t) part].midiChannel.store (channel); bumpDisplayVersion(); } }
+    void setPartKeyrange (int part, uint8_t lo, uint8_t hi) { if (ok (part)) { parts_[(size_t) part].keyrangeLow.store (lo); parts_[(size_t) part].keyrangeHigh.store (hi); bumpDisplayVersion(); } }
     uint8_t getPartChannel (int part) const { return ok (part) ? parts_[(size_t) part].midiChannel.load() : 0; }
 
     // GUI-contract aliases (the multitimbral editor calls these). channel: 0=Omni.
@@ -550,7 +612,7 @@ public:
         }
         return out;
     }
-    void setPartName (int part, const juce::String& n) { if (ok (part)) parts_[(size_t) part].name = sanitizePartName (n); }
+    void setPartName (int part, const juce::String& n) { if (ok (part)) { parts_[(size_t) part].name = sanitizePartName (n); bumpDisplayVersion(); } }
     juce::String getPartName (int part) const { return ok (part) ? parts_[(size_t) part].name : juce::String(); }
     // Display helper: the user name if set, else "Part N".
     juce::String getPartDisplayName (int part) const
@@ -598,6 +660,25 @@ public:
             return fxChains_[(size_t) part].debugGetDryWet (slot);
         return fxChains_[(size_t) part].debugGetParam (slot, field - 1);
     }
+    // Test-only: the INSTALLED slot type on @p part's chain (the AT-owned
+    // slotType_ cache — a staged swap is reflected only after the audio
+    // thread's servicePendingTypeSwaps consumed it, i.e. after a
+    // processBlock). Proves a .parvati multi load staged its FX slot TYPES
+    // into the DSP chains, not just the fxState atomics (the atomic-only load
+    // left the chains on their previous processors).
+    uint8_t fxChainSlotTypeForTest (int part, int slot) const
+    {
+        return (part >= 0 && part < kNumParts)
+            ? fxChains_[(size_t) part].getInstalledSlotTypeForTest (slot) : 0;
+    }
+    // Test-only: the engine-side state of the global OPTION params staged by
+    // setVcaExponential / setFilterDrive (the option atomics the audio thread
+    // services; they hold the last-written value). Used by the host-state test
+    // to prove a state restore re-APPLIED the options to the engine — the
+    // APVTS restore alone left the engine on its defaults while the UI combos
+    // showed the saved values.
+    bool  vcaExponentialForTest() const noexcept { return pendingVcaExp_.load (std::memory_order_relaxed); }
+    float filterDriveForTest() const noexcept { return pendingFilterDrive_.load (std::memory_order_relaxed); }
 
     // Test-only: begin tracking the effective param (slot 0 param 0) min/max
     // swing during renderPartFx. Call before rendering; read min/max after.
@@ -687,6 +768,19 @@ public:
     // that carries no FX information, so the FX section is a clean slate instead
     // of retaining the previously-loaded patch's FX. Publishes via fxDirty_.
     void resetPartFx (int part);
+
+    // Loader-side per-part FX slot-TYPE writer: the same contract as
+    // setFxSlotType but for an EXPLICIT part (the .parvati multi loader
+    // restores all 6 parts' FX, not just the current one). Stores the fxState
+    // atomic AND stages the replacement processor on the message thread
+    // (audit F1: the audio thread installs it with pointer moves only) and
+    // publishes the frame via fxDirty_. Writing ONLY the atomic (the old
+    // loader behaviour) left the chain on its previous processors — the AT's
+    // fxDirty_ service deliberately does NOT install slot types — so a loaded
+    // multi's FX were silently absent (fresh engine: all-None chains) or kept
+    // playing the PREVIOUS effect. A None type stages an empty slot (the
+    // install clears the processor), same as setSlotType.
+    void stagePartFxSlotType (int part, int slot, int type);
 
     // Message-thread reaper for the staged audio-object swaps: frees the FX
     // processors displaced by a type change (FxChain retirement parking) and
@@ -799,6 +893,12 @@ private:
     std::atomic<bool> allocationDirty_ { false };   // set by message thread; serviced on the audio thread
     std::atomic<bool> resetAllVoicesPending_ { false };   // message thread -> audio thread: kill every voice on a patch switch
 
+    // UI-mirror invalidation version (see getDisplayVersion). Bumped by the
+    // message-thread mutators of Patch-page-mirrored state; relaxed — it is a
+    // pure change hint, never a data fence.
+    std::atomic<uint32_t> displayVersion_ { 0 };
+    void bumpDisplayVersion() noexcept { displayVersion_.fetch_add (1, std::memory_order_relaxed); }
+
     // Global option staging (message thread writes, audio thread applies via
     // optionsDirty_ release/acquire). Replaces the message-thread voice iteration
     // in setVcaExponential/setParameterSmoothing/setFilterDrive that wrote plain
@@ -855,6 +955,23 @@ private:
     void noteOn  (int midiChannel, int midiNoteNumber, float velocity) override;
     void noteOff (int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) override;
 
+    // ---- All Notes Off (CC123) / All Sound Off (CC120) (W7, firmware midi.h
+    // 0x7b/0x78 -> Multi::AllNotesOff -> per-channel Part::AllNotesOff) ----
+public:
+    // juce::Synthesiser::handleMidiEvent intercepts both messages BEFORE the
+    // controller dispatch and calls allNotesOff() — so THIS override is the
+    // seam (the base only stops channel-matched VOICES; the per-part arp
+    // held-key stacks, sequencer notes and mono stacks would survive and the
+    // arp would keep re-triggering from "held" keys). Firmware treats CC120
+    // identically through the same path; Part::AllNotesOff is a no-op while
+    // the sustain pedal holds — mirrored. NOTE: the base ALSO clears its own
+    // sustain-pedal-down bookkeeping on this message; ours deliberately does
+    // NOT clear the per-part pedal hold (firmware keeps
+    // ignore_note_off_messages_ set — the pedal must keep swallowing releases).
+    void allNotesOff (int midiChannel, bool allowTailOff) override;
+
+private:
+
     // juce::Synthesiser expression routing (MPE / pitch-bend fix). Unified
     // per-channel routing: each handler targets the ACTIVE voices whose MIDI
     // channel matches (isVoiceActive() && isPlayingChannel()). Under MPE a
@@ -864,6 +981,7 @@ private:
     // no-ops in AmbikaVoice.
     void handlePitchWheel      (int midiChannel, int wheelValue) override;
     void handleChannelPressure (int midiChannel, int channelPressureValue) override;
+
     void handleController      (int midiChannel, int controllerNumber, int controllerValue) override;
 
     // Trigger a voice for a note-on, stamping it as the most-recently-triggered
@@ -877,10 +995,24 @@ private:
     uint64_t nextTriggerSeq() noexcept { return triggerSeqCounter_.fetch_add (1, std::memory_order_relaxed) + 1; }
 
     // GLOBAL continuous-controller (mod wheel CC1 / breath CC2 / foot CC4)
-    // mod-matrix write — sets the given mod source on EVERY voice (faithful to
-    // firmware Part::WriteToAllVoices over all allocated voicecards). See the
-    // .cpp for why this also gives new notes current-wheel pickup for free.
-    void applyGlobalModSource (int modSrcEnum, uint8_t value0to254);
+    // mod-matrix write — sets the given mod source on the voices of every Part
+    // whose channel matches @p channel (Omni or exact; firmware Part::
+    // WriteToAllVoices applies to the channel-routing PART's allocated voicecards
+    // — multi.cc ControlChange routes by part first). See the .cpp for why this
+    // also gives new notes current-wheel pickup for free.
+    void applyGlobalModSource (int modSrcEnum, uint8_t value0to254, int midiChannel);
+
+    // Sustain pedal (CC64) drain (W7): release every note the pedal swallowed
+    // for @p part through its normal release path (arp-held -> arp.noteOff,
+    // else releaseNoteInPart). Audio thread only (called from handleController
+    // on pedal-up and after CC123 clears the store).
+    void drainSustainedNotes (int part);
+
+    // CC123 (All Notes Off) / CC120 (All Sound Off) for @p part — firmware
+    // Part::AllNotesOff (part.cc:540): clears the allocators + held keys and
+    // releases every allocated voice. NO-OP while the sustain pedal is held
+    // (firmware checks ignore_note_off_messages_ first). Audio thread only.
+    void partAllNotesOff (int part, bool allowTailOff);
 
     // Apply the latched standing bend of @p channel to a just-triggered voice
     // (see lastWheel_): same fixed ±2-semitone conversion as handlePitchWheel,

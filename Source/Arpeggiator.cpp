@@ -124,7 +124,11 @@ void Arpeggiator::stepArpeggio()
         const uint8_t r = randomByte();
         arpOctave_ = r & 0x0f;
         arpStep_ = (r & 0xf0) >> 4;
-        while (arpOctave_ >= static_cast<int8_t> (octaveRange_))
+        // octaveRange_ > 0 guard: setOctave clamps to >= 1 on every APVTS path,
+        // but a raw PartData byte could stage 0 before the staging-site clamp
+        // existed — with range 0 this wrap loop never terminates (audio-thread
+        // hang). The sibling numNotes guard below has the same shape.
+        while (arpOctave_ >= static_cast<int8_t> (octaveRange_) && octaveRange_ > 0)
             arpOctave_ -= static_cast<int8_t> (octaveRange_);
         while (numNotes && arpStep_ >= static_cast<int8_t> (numNotes))
             arpStep_ -= static_cast<int8_t> (numNotes);

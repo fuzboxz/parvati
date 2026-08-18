@@ -155,7 +155,7 @@ void SettingsPanel::setZoomValue (double zoom)
 
 void SettingsPanel::populateOversamplingCombo()
 {
-    osCombo_.clear();
+    osCombo_.clear (juce::dontSendNotification);
     // CharPointer_UTF8 (not a bare const char*) so the U+00D7 MULTIPLICATION
     // SIGN is decoded as UTF-8 by juce::translate, not latin1 (which would
     // mojibake and assert). Keeps the English combo text byte-identical.

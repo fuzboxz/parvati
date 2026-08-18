@@ -222,6 +222,10 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
     // param, including part_polyphony, with its current value — re-servicing
     // that would needlessly rebuild+push every block and perturb render state).
     const uint8_t prevMode = (offset == 15) ? part.partBytes[15] : 0;
+    // Same pre-write capture for byte 4 (the raga preset — mirrored by the
+    // Patch page's Tune combo); captured BEFORE the generic write below so the
+    // change test compares against the OLD value.
+    const uint8_t prevRaga = (offset == 4) ? part.partBytes[4] : 0;
     if (offset >= 0 && offset < 84) part.partBytes[(size_t) offset] = value;
     // PartData byte 15 = polyphony_mode. Defer the mode engage (and, for CHAIN,
     // the voice-set rebuild) to the audio thread via markAllocationDirty() so
@@ -230,9 +234,22 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
     if (offset == 15)
     {
         if (value != prevMode)   // only on a real polyphony-mode change
+        {
             markAllocationDirty();
+            // The Patch page mirrors byte 15 in its Poly combo — invalidate
+            // the visible-page mirror (host automation / NRPN arrive here
+            // with no editor hook; see getDisplayVersion).
+            bumpDisplayVersion();
+        }
         return;
     }
+    // Byte 4 = the raga preset selection (the Patch page's Tune combo) —
+    // same visible-mirror invalidation as byte 15 above. Other part bytes
+    // are NOT mirrored by the Patch page, so they do not bump the version
+    // (applyPartByte fires for EVERY part-param automation write; keeping
+    // the bump to the two mirrored offsets keeps the poll check change-only).
+    if (offset == 4 && value != prevRaga)
+        bumpDisplayVersion();
     // DEFER the voice write to the audio thread (same fence as applyPatchByte):
     // setPartByte mutates voice_.part_ which the renderer reads; writing it on the
     // message thread was a torn read. Stage in Part storage + frameDirty_.
@@ -282,14 +299,24 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
     // Stage under the pendingConfig_ seqlock so the audio-thread reader
     // (servicePendingConfig) never sees a torn snapshot.
     p.writePendingConfig ([&] (Part::PendingConfig& pc) {
-        pc.arpMode       = p.partBytes[7];
-        pc.arpDirection  = p.partBytes[8];
-        pc.arpOctave     = p.partBytes[9];
-        pc.arpPattern    = p.partBytes[10];
-        pc.arpResolution = p.partBytes[11];
-        pc.seqLength[0]  = p.partBytes[12];
-        pc.seqLength[1]  = p.partBytes[13];
-        pc.seqLength[2]  = p.partBytes[14];
+        // CLAMP to the firmware parameter ranges (ParameterLayout): these
+        // bytes arrive RAW from .MUL loads / host-state blobs (never through
+        // the APVTS, which enforces its own ranges). An out-of-range mode
+        // byte makes isActive() true while isEnabled() stays false — the
+        // part swallows every note into the held-key stack and produces NO
+        // sound; an arpOctave of 0 with direction Random never terminates
+        // the Random branch's octave wrap loop (Arpeggiator.cpp) — ON THE
+        // AUDIO THREAD (host hang). The firmware's own bytes are always
+        // legal (its UI/parameter layer clamps); raw-file loaders must do
+        // the same here.
+        pc.arpMode       = static_cast<uint8_t> (juce::jlimit (0, 2,  (int) p.partBytes[7]));   // ArpMode: Off/Arp/Sequencer
+        pc.arpDirection  = static_cast<uint8_t> (juce::jlimit (0, 5,  (int) p.partBytes[8]));   // ArpDirection: Up..Chord
+        pc.arpOctave     = static_cast<uint8_t> (juce::jlimit (1, 4,  (int) p.partBytes[9]));   // >= 1 (0 hung the Random wrap loop)
+        pc.arpPattern    = static_cast<uint8_t> (juce::jlimit (0, 21, (int) p.partBytes[10]));  // kArpPatterns: 22 entries
+        pc.arpResolution = static_cast<uint8_t> (juce::jlimit (0, 14, (int) p.partBytes[11]));  // kMidiClockTickPerStep: 15 entries
+        pc.seqLength[0]  = static_cast<uint8_t> (juce::jlimit (1, 16, (int) p.partBytes[12]));
+        pc.seqLength[1]  = static_cast<uint8_t> (juce::jlimit (1, 16, (int) p.partBytes[13]));
+        pc.seqLength[2]  = static_cast<uint8_t> (juce::jlimit (1, 16, (int) p.partBytes[14]));
         for (size_t i = 0; i < 64; ++i)
             pc.seqData[i] = p.partBytes[16 + i];
     });
@@ -398,6 +425,21 @@ void SynthEngine::resetPartFx (int part)
     fx.fxDirty_.store (true, std::memory_order_release);
 }
 
+void SynthEngine::stagePartFxSlotType (int part, int slot, int type)
+{
+    // Loader twin of setFxSlotType for an explicit part (see header). The
+    // message-thread chain staging below is the essential half: the AT's
+    // fxDirty_ service pushes enabled/drywet/params/topology but deliberately
+    // does NOT install slot types (they need a pre-built processor; audit F1),
+    // so the fxState atomic alone never changed the sound.
+    if (part < 0 || part >= kNumParts || slot < 0 || slot >= kNumFxSlots)
+        return;
+    auto& fx = parts_[(size_t) part].fxState;
+    fx.slotType[(size_t) slot].store ((uint8_t) type, std::memory_order_relaxed);
+    fxChains_[(size_t) part].setSlotType (slot, static_cast<FxType> (type));
+    fx.fxDirty_.store (true, std::memory_order_release);
+}
+
 void SynthEngine::reapRetiredAudioObjects()
 {
     // Message thread (the processor's 60 Hz DeferredParamTimer): free every
@@ -497,7 +539,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         const size_t pnLen = pn.getNumBytesAsUTF8();
         out.writeByte ((char) pnLen);
         if (pnLen > 0)
-            out.write (pn.toRawUTF8(), (int) pnLen);
+            out.write (pn.toRawUTF8(), pnLen);
 
         // Per-part tuning block (version 7, Parvati + firmware raga restore):
         // length-prefixed {u8 resolvedMode; i16 LE offsets[12]}. The resolved
@@ -535,64 +577,141 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     if (version < 1 || version > 7)   // strict-reject unknown versions (caller falls back to legacy APVTS restore)
         return false;
     const int savedCurrent = in.readByte();
+
+    // ---- PHASE 1: parse the whole blob into local snapshots (NO mutation) ----
+    // A truncated/corrupt blob previously mutated parts_[p] as it parsed and
+    // returned false MID-WAY, leaving a half-restored engine (some Parts from
+    // the blob, the rest the previous session) that the caller's legacy
+    // fallback then layered the APVTS on top of. Every failure return below
+    // happens BEFORE any engine state is touched, so a rejected blob leaves
+    // the engine exactly as it was.
+    struct RestoredPart
+    {
+        std::array<uint8_t, 112> patch {};
+        std::array<uint8_t, 84>  pb    {};
+        uint8_t channel = 0, krLo = 0, krHi = 0, mask = 0;
+        bool hasFx = false;                       // version >= 2 FX block present
+        uint32_t fxLen = 0;
+        juce::HeapBlock<uint8_t> fxBlob;          // RAW fx bytes; decoded in phase 2
+        bool hasSlotsName = false;                // version >= 6 slots+name tail present
+        uint8_t slots = 0;
+        juce::String name;
+        bool hasTuning = false;                   // version >= 7 tuning block present
+        uint8_t tuneMode = 0;
+        int16_t tuneOffsets[12] = {};
+    };
+    std::array<RestoredPart, kNumParts> snap;
+
     for (int p = 0; p < kNumParts; ++p)
     {
-        auto& part = parts_[(size_t) p];
-        std::array<uint8_t, 112> patch {};
-        if (in.read (patch.data(), 112) != 112) return false;
-        part.patchBytes.loadFrom (patch.data());
-        std::array<uint8_t, 84> pb {};
-        if (in.read (pb.data(), 84) != 84) return false;
-        part.partBytes.loadFrom (pb.data());
-        stageArpSeqFromPartBytes (p);   // re-stage arp/seq from the restored PartData
-        part.midiChannel.store  ((uint8_t) in.readByte());
-        part.keyrangeLow.store  ((uint8_t) in.readByte());
-        part.keyrangeHigh.store ((uint8_t) in.readByte());
+        auto& s = snap[(size_t) p];
+        if (in.read (s.patch.data(), 112) != 112) return false;
+        if (in.read (s.pb.data(), 84) != 84) return false;
+        s.channel = (uint8_t) in.readByte();
+        s.krLo    = (uint8_t) in.readByte();
+        s.krHi    = (uint8_t) in.readByte();
         // The blob's bitmask is only a LEGACY seed under the slots model (the
         // live mask is re-derived from the slots on the next rebuild); it is
         // kept here (a) to consume the byte and (b) to materialize real slot
-        // counts for pre-v6 blobs / v6 AUTO saves below.
-        const uint8_t restoredMask = (uint8_t) in.readByte();
-        part.voiceAllocation.store (restoredMask);
+        // counts for pre-v6 blobs / v6 AUTO saves in phase 2.
+        s.mask = (uint8_t) in.readByte();
 
         if (version >= 2)
         {
-            // Parvati-exclusive per-part FX state. Length-prefixed (4 bytes LE)
-            // then the fixed-layout FX bytes (slotType/enabled/dryWet/param,
-            // topology, orderIdx, modSource/dest/amount). A larger length is
-            // forward-compat (trailing bytes skipped); a short/truncated read is
-            // rejected like the core payload above. Absent in v1 -> fxState stays
-            // at its default-initialized values. The master-section fields
-            // (mix/eqLow/mid/high) are v3..v5-only: a v1/v2 blob lacks them, so
-            // they are reset to their preserving-audio defaults below (not 0-
-            // filled by take()) and only overwritten for a v3+ save.
+            // Parvati-exclusive per-part FX state: length-prefixed (4 bytes LE)
+            // then the fixed-layout FX bytes. A larger length is forward-compat
+            // (trailing bytes skipped); a short/truncated read is rejected like
+            // the core payload above. Absent in v1 -> hasFx stays false.
             uint8_t lenBytes[4];
             if (in.read (lenBytes, 4) != 4) return false;
-            const uint32_t fxLen = (uint32_t) lenBytes[0]
-                                 | ((uint32_t) lenBytes[1] << 8)
-                                 | ((uint32_t) lenBytes[2] << 16)
-                                 | ((uint32_t) lenBytes[3] << 24);
-            if (in.getNumBytesRemaining() < (juce::int64) fxLen) return false;   // truncated
-            juce::HeapBlock<uint8_t> fxBlob (fxLen);
-            if (in.read (fxBlob, (int) fxLen) != (int) fxLen) return false;
+            s.fxLen = (uint32_t) lenBytes[0]
+                    | ((uint32_t) lenBytes[1] << 8)
+                    | ((uint32_t) lenBytes[2] << 16)
+                    | ((uint32_t) lenBytes[3] << 24);
+            if (in.getNumBytesRemaining() < (juce::int64) s.fxLen) return false;   // truncated
+            s.fxBlob.calloc (s.fxLen > 0 ? s.fxLen : 1);
+            if (in.read (s.fxBlob, (int) s.fxLen) != (int) s.fxLen) return false;
+            s.hasFx = true;
+        }
 
+        if (version >= 6)
+        {
+            s.slots = (uint8_t) in.readByte();
+            const int nameLen = (uint8_t) in.readByte();
+            if (nameLen > 0)
+            {
+                juce::HeapBlock<char> nb (nameLen + 1, true);
+                if (in.read (nb, nameLen) != nameLen) return false;
+                // Same sanitize as setPartName (16-char cap + control-char
+                // strip): a corrupt or hand-edited state blob could otherwise
+                // carry a newline into a name that a later .parvati save would
+                // corrupt. Done here (phase 1) so the commit stays a pure copy.
+                juce::String clean;
+                const juce::String raw = juce::String::fromUTF8 (nb, nameLen);
+                for (int i = 0; i < raw.length() && clean.length() < 16; ++i)
+                    if (raw[i] >= 0x20)
+                        clean += raw[i];
+                s.name = clean;
+            }
+            s.hasSlotsName = true;
+        }
+
+        if (version >= 7)
+        {
+            uint8_t tuneLenBytes[4];
+            if (in.read (tuneLenBytes, 4) != 4) return false;
+            const uint32_t tuneLen = (uint32_t) tuneLenBytes[0]
+                                   | ((uint32_t) tuneLenBytes[1] << 8)
+                                   | ((uint32_t) tuneLenBytes[2] << 16)
+                                   | ((uint32_t) tuneLenBytes[3] << 24);
+            if (tuneLen < 25 || in.getNumBytesRemaining() < (juce::int64) tuneLen)
+                return false;   // truncated / foreign layout
+            juce::HeapBlock<uint8_t> tuneBlob (tuneLen, true);
+            if (in.read (tuneBlob, (int) tuneLen) != (int) tuneLen) return false;
+            s.tuneMode = tuneBlob[0];
+            for (int c = 0; c < 12; ++c)
+                s.tuneOffsets[c] = (int16_t) ((uint16_t) tuneBlob[1 + 2 * c]
+                                | ((uint16_t) tuneBlob[2 + 2 * c] << 8));
+            s.hasTuning = true;
+        }
+    }
+
+    // ---- PHASE 2: commit — the blob parsed completely, apply the snapshots ----
+    // (The decode rules below are byte-for-byte the previous single-pass
+    // body, reading from the snapshot instead of the stream.)
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        auto& part = parts_[(size_t) p];
+        const auto& s = snap[(size_t) p];
+        part.patchBytes.loadFrom (s.patch.data());
+        part.partBytes.loadFrom (s.pb.data());
+        stageArpSeqFromPartBytes (p);   // re-stage arp/seq from the restored PartData
+        part.midiChannel.store (s.channel);
+        part.keyrangeLow.store  (s.krLo);
+        part.keyrangeHigh.store (s.krHi);
+        part.voiceAllocation.store (s.mask);
+
+        if (s.hasFx)
+        {
             auto& fx = part.fxState;
+            const uint8_t* fxBlob = s.fxBlob.get();
+            const uint32_t fxLen = s.fxLen;
             size_t o = 0;
             const auto take = [&] () -> uint8_t { return (o < fxLen) ? fxBlob[o++] : 0; };
-            for (int s = 0; s < kNumFxSlots; ++s) fx.slotType   [(size_t) s].store (take(), std::memory_order_relaxed);
-            for (int s = 0; s < kNumFxSlots; ++s) fx.slotEnabled[(size_t) s].store (take(), std::memory_order_relaxed);
-            for (int s = 0; s < kNumFxSlots; ++s) fx.slotDryWet [(size_t) s].store (take(), std::memory_order_relaxed);
+            for (int sl = 0; sl < kNumFxSlots; ++sl) fx.slotType   [(size_t) sl].store (take(), std::memory_order_relaxed);
+            for (int sl = 0; sl < kNumFxSlots; ++sl) fx.slotEnabled[(size_t) sl].store (take(), std::memory_order_relaxed);
+            for (int sl = 0; sl < kNumFxSlots; ++sl) fx.slotDryWet [(size_t) sl].store (take(), std::memory_order_relaxed);
             // Per-slot param count is version-dependent: v5+ carries 5 params
             // per slot (param1..5); v1..v4 carry only 4 (param1..4). Reading the
             // wrong count would shift every subsequent byte (topology/order/mods),
             // so gate on the version. param5 is zeroed first so a legacy blob
             // loads with its 5th param at the neutral default, not a stale value.
             const int nParams = (version >= 5) ? kNumFxSlotParams : 4;
-            for (int s = 0; s < kNumFxSlots; ++s)
+            for (int sl = 0; sl < kNumFxSlots; ++sl)
             {
-                fx.slotParam[(size_t) s][(size_t) (kNumFxSlotParams - 1)].store (0, std::memory_order_relaxed);
+                fx.slotParam[(size_t) sl][(size_t) (kNumFxSlotParams - 1)].store (0, std::memory_order_relaxed);
                 for (int k = 0; k < nParams; ++k)
-                    fx.slotParam[(size_t) s][(size_t) k].store (take(), std::memory_order_relaxed);
+                    fx.slotParam[(size_t) sl][(size_t) k].store (take(), std::memory_order_relaxed);
             }
             fx.topology.store (take(), std::memory_order_relaxed);
             fx.orderIdx.store  (take(), std::memory_order_relaxed);
@@ -624,80 +743,48 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             // only). Staged BEFORE the next prepare/render, so a restore that
             // lands before prepareToPlay is re-prepared at the real block size
             // by FxChain::prepare.
-            for (int s = 0; s < kNumFxSlots; ++s)
+            for (int sl = 0; sl < kNumFxSlots; ++sl)
                 fxChains_[(size_t) p].setSlotType (
-                    s, static_cast<FxType> (fx.slotType[(size_t) s].load (std::memory_order_relaxed)));
+                    sl, static_cast<FxType> (fx.slotType[(size_t) sl].load (std::memory_order_relaxed)));
         }
 
-        // Per-part voice slots + name (version 6). Slots are the single
-        // source of truth under the slots model: a v1..v5 blob (or a v6 save
-        // with a 0 = legacy AUTO byte) materializes its real count from the
-        // blob bitmask — popcount(mask), 0 -> disabled — so legacy sessions
-        // restore with their faithful card counts. Absent in v1..v5 -> empty
-        // name ("Part N").
-        int restoredSlots = 0;
-        for (uint8_t m = restoredMask; m; m >>= 1) restoredSlots += m & 1;
-        if (version >= 6)
+        // Per-part voice slots + name. Slots are the single source of truth
+        // under the slots model: a v1..v5 blob (or a v6 save with a 0 = legacy
+        // AUTO byte) materializes its real count from the blob bitmask —
+        // popcount(mask), 0 -> disabled — so legacy sessions restore with
+        // their faithful card counts. Absent in v1..v5 -> empty name ("Part N").
+        if (s.hasSlotsName)
         {
-            const uint8_t blobSlots = (uint8_t) in.readByte();
-            part.voiceSlots.store (blobSlots != 0 ? blobSlots : (uint8_t) restoredSlots,
+            int restoredSlots = 0;
+            for (uint8_t m = s.mask; m; m >>= 1) restoredSlots += m & 1;
+            part.voiceSlots.store (s.slots != 0 ? s.slots : (uint8_t) restoredSlots,
                                    std::memory_order_relaxed);
-            const int nameLen = (uint8_t) in.readByte();
-            if (nameLen > 0)
-            {
-                juce::HeapBlock<char> nb (nameLen + 1, true);
-                if (in.read (nb, nameLen) != nameLen) return false;
-                part.name = juce::String::fromUTF8 (nb, nameLen).substring (0, 16);
-                // Same sanitize as setPartName (control-char strip): a corrupt
-                // or hand-edited state blob could otherwise carry a newline
-                // into a name that a later .parvati save would corrupt.
-                juce::String clean;
-                for (int i = 0; i < part.name.length(); ++i)
-                    if (part.name[i] >= 0x20)
-                        clean += part.name[i];
-                part.name = clean;
-            }
-            else
-                part.name = juce::String();
+            part.name = s.name;
         }
         else
         {
+            int restoredSlots = 0;
+            for (uint8_t m = s.mask; m; m >>= 1) restoredSlots += m & 1;
             part.voiceSlots.store ((uint8_t) restoredSlots, std::memory_order_relaxed);
             part.name = juce::String();
         }
 
-        // Per-part tuning block (version 7). Length-prefixed (4 bytes LE) +
-        // {u8 resolvedMode; i16 LE offsets[12]} = 25 bytes; longer lengths are
-        // forward-compat (trailing bytes skipped), a short/truncated read is
-        // rejected like the core payload. Absent in v1..v6 -> the tuning falls
-        // back to the restored partBytes[4] raga byte (D12) with the custom
-        // table explicitly cleared (parts_ of a reused engine may carry one).
-        if (version >= 7)
+        // Per-part tuning: the resolved mode (0/1..32/33) is authoritative —
+        // the CUSTOM mode (33) and its table live only here. Absent in v1..v6
+        // -> the tuning falls back to the restored partBytes[4] raga byte (D12)
+        // with the custom table explicitly cleared (parts_ of a reused engine
+        // may carry one).
+        if (s.hasTuning)
         {
-            uint8_t tuneLenBytes[4];
-            if (in.read (tuneLenBytes, 4) != 4) return false;
-            const uint32_t tuneLen = (uint32_t) tuneLenBytes[0]
-                                   | ((uint32_t) tuneLenBytes[1] << 8)
-                                   | ((uint32_t) tuneLenBytes[2] << 16)
-                                   | ((uint32_t) tuneLenBytes[3] << 24);
-            if (tuneLen < 25 || in.getNumBytesRemaining() < (juce::int64) tuneLen)
-                return false;   // truncated / foreign layout
-            juce::HeapBlock<uint8_t> tuneBlob (tuneLen, true);
-            if (in.read (tuneBlob, (int) tuneLen) != (int) tuneLen) return false;
-            const uint8_t mode = tuneBlob[0];
-            int16_t offsets[12] = {};
-            for (int c = 0; c < 12; ++c)
-                offsets[c] = (int16_t) ((uint16_t) tuneBlob[1 + 2 * c]
-                            | ((uint16_t) tuneBlob[2 + 2 * c] << 8));
-            if (mode == 33)
+            if (s.tuneMode == 33)
             {
-                setPartTuningCustom (p, offsets);   // clamps + flags tuningDirty_
+                setPartTuningCustom (p, s.tuneOffsets);   // clamps + flags tuningDirty_
             }
             else
             {
                 clearPartTuningCustom (p);
-                if (mode >= 1 && mode <= parvati::kNumTuningPresets)
-                    part.partBytes[4] = static_cast<uint8_t> (mode);   // redundant with the overlay above, applied for robustness
+                if (s.tuneMode >= 1 && s.tuneMode <= parvati::kNumTuningPresets)
+                    part.partBytes[4] = static_cast<uint8_t> (s.tuneMode);   // redundant with the overlay above, applied for robustness
             }
         }
         else
@@ -710,6 +797,11 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     setCurrentPart (juce::jlimit (0, kNumParts - 1, savedCurrent));
     resetAllVoices();        // clean slate for the restored config (deferred to AT)
     markAllocationDirty();   // AT rebuilds voiceIndices + pushes every Part's frame
+    // The restore rewrote Patch-page-mirrored state directly (not through the
+    // public mutators), so a VISIBLE Patch page must re-read on the next poll
+    // (see getDisplayVersion). setStateInformation may arrive off the message
+    // thread on some hosts; the version store is atomic either way.
+    bumpDisplayVersion();
     return true;
 }
 
@@ -885,6 +977,7 @@ void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
 
     parts_[(size_t) part].voiceSlots.store (v, std::memory_order_relaxed);
     markAllocationDirty();   // defer the rebuild to the audio thread (next block)
+    bumpDisplayVersion();    // the Patch page mirrors the slot count (Voices combo)
 }
 
 void SynthEngine::setPartVoiceSlots (int part, int slots)
@@ -899,6 +992,7 @@ void SynthEngine::setPartVoiceSlots (int part, int slots)
     {
         parts_[(size_t) part].voiceSlots.store (v, std::memory_order_relaxed);
         markAllocationDirty();   // re-partition the pool on the audio thread
+        bumpDisplayVersion();    // the Patch page mirrors the slot count (Voices combo)
     }
 }
 
@@ -947,6 +1041,7 @@ void SynthEngine::setPartTuningCustom (int part, const int16_t offsets[12])
     // Publishes the customTuning frame to the audio-thread acquire-read below
     // (frameDirty_ pattern: the release orders the whole byte frame).
     p.tuningDirty_.store (true, std::memory_order_release);
+    bumpDisplayVersion();   // the Patch page's Tune combo mirrors the resolved mode
 }
 
 void SynthEngine::clearPartTuningCustom (int part)
@@ -955,6 +1050,7 @@ void SynthEngine::clearPartTuningCustom (int part)
         return;
     parts_[(size_t) part].customTuningActive.store (0, std::memory_order_relaxed);
     parts_[(size_t) part].tuningDirty_.store (true, std::memory_order_release);
+    bumpDisplayVersion();   // the Patch page's Tune combo mirrors the resolved mode
 }
 
 void SynthEngine::resolveTuningOffsets (int part, int16_t out[12]) const
@@ -1307,6 +1403,85 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
     }
 }
 
+//==========================================================================
+// Sustain pedal (CC64) + all-notes-off (CC123/CC120) — firmware part.cc
+// 335-390 / 540-565 semantics. AUDIO THREAD ONLY (handleController /
+// processTransport callers); the per-part state is plain (see Part).
+void SynthEngine::drainSustainedNotes (int part)
+{
+    if (! ok (part)) return;
+    auto& p = parts_[(size_t) part];
+    // Snapshot + clear FIRST: a note-off released below can re-enter
+    // bookkeeping paths that must not see the store mid-drain.
+    const int n = p.numSustainedNotes_;
+    Part::SustainedNote notes[kMaxVoicesPerPart];
+    for (int i = 0; i < n; ++i) notes[i] = p.sustainedNotes_[i];
+    p.numSustainedNotes_ = 0;
+
+    for (int i = 0; i < n; ++i)
+    {
+        const uint8_t note = notes[i].note;
+        const int channel = juce::jlimit (1, 16, (int) notes[i].channel);
+        if (p.arp.isActive() && p.arp.holdsNote (note))
+        {
+            p.arp.noteOff (note);
+            if (! p.arp.hasHeldKeys())
+                p.seq.allNotesOff();
+        }
+        else
+        {
+            releaseNoteInPart (part, note, channel);
+        }
+    }
+}
+
+void SynthEngine::partAllNotesOff (int part, bool allowTailOff)
+{
+    if (! ok (part)) return;
+    auto& p = parts_[(size_t) part];
+    // Firmware part.cc:540: a held sustain pedal makes AllNotesOff a no-op.
+    if (p.sustainHold_)
+        return;
+    // Clear the sustain store defensively (it is empty whenever the pedal is
+    // up — a straggler would release dead voices below, harmless but unclean).
+    p.numSustainedNotes_ = 0;
+    // Release the arp/sequencer's generated notes through their own path
+    // (arp.allNotesOff fires the engine-side note-off callback), then drop all
+    // held-key bookkeeping exactly like firmware Part::AllNotesOff.
+    p.arp.stop();   // == allNotesOff(): releases the generated note(s) via the callback
+    p.arp.clearHeldKeys();   // firmware pressed_keys_.Clear() (part.cc:549)
+    p.seq.allNotesOff();
+    p.monoStack.clear();
+    p.polyAlloc.clearNotes();
+    // Release every still-sounding allocated voice (firmware releases the
+    // part's whole allocated-voice list). Tail-off stop == a normal key
+    // release; voices already released are skipped (stopVoice on an inactive
+    // voice would clear its note twice). allowTailOff=false (CC120 / direct
+    // test calls) kills immediately.
+    for (int vi : p.voiceIndices)
+        if (auto* av = getAmbikaVoice (vi))
+            if (av->isVoiceActive())
+                stopVoice (av, 1.0f, allowTailOff);
+}
+
+void SynthEngine::allNotesOff (int midiChannel, bool allowTailOff)
+{
+    // CC123 / CC120 (W7; see the header note): per firmware Multi::AllNotesOff
+    // -> Part::AllNotesOff, for every channel-matching part — clear the
+    // bookkeeping AND release the voices (the base's voice-only stop is
+    // replaced, not augmented: our per-part loop already covers every voice
+    // the base would have matched, plus the parts' stacks). allowTailOff is
+    // honored per-voice (CC123 -> tail-off release; CC120 / direct calls ->
+    // immediate Kill, the base's contract for the parameter).
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
+        if (ch != 0 && ch != midiChannel)
+            continue;
+        partAllNotesOff (p, allowTailOff);
+    }
+}
+
 void SynthEngine::noteOn (int midiChannel, int midiNoteNumber, float velocity)
 {
     // processTransport has routed notes for Parts whose arp/sequencer is active
@@ -1327,7 +1502,26 @@ void SynthEngine::noteOff (int midiChannel, int midiNoteNumber, float /*velocity
 {
     const int part = findPartForNote (midiChannel, midiNoteNumber);
     if (part < 0) return;
-    if (parts_[(size_t) part].arp.isActive())
+    // SUSTAIN PEDAL (W7, firmware part.cc:347-362): while the part's pedal is
+    // down, a key release is SWALLOWED — the note keeps sounding and is
+    // remembered; the pedal-up drain (drainSustainedNotes) replays it through
+    // the normal release path below.
+    if (parts_[(size_t) part].sustainHold_)
+    {
+        parts_[(size_t) part].addSustainedNote (static_cast<uint8_t> (midiNoteNumber),
+                                                static_cast<uint8_t> (midiChannel));
+        return;
+    }
+    // NOTE: this override runs on the buffer processTransport already filtered
+    // (held-key note-offs were routed to arp.noteOff + STRIPPED there), so a
+    // note-off arriving here was deliberately NOT given to the arp — either the
+    // mode is off, or the note was sounding DIRECTLY before the mode was
+    // enabled and never entered the held-key stack. Handing it to arp.noteOff
+    // anyway (the old unconditional isActive() gate) swallowed the release and
+    // sustained the direct voice forever. The holdsNote() check keeps the
+    // defensive branch for a genuinely-held note while releasing everything
+    // else through the direct path.
+    if (parts_[(size_t) part].arp.isActive() && parts_[(size_t) part].arp.holdsNote (midiNoteNumber))
         parts_[(size_t) part].arp.noteOff (midiNoteNumber);
     else
         releaseNoteInPart (part, midiNoteNumber, midiChannel);
@@ -1382,12 +1576,25 @@ void SynthEngine::handleChannelPressure (int midiChannel, int channelPressureVal
 // Kill()/stopNote only touch the envelope — verified against the firmware
 // voicecard/voice.cc Trigger (which behaves identically). `value0to254` is
 // already the firmware-scaled value (controllerValue << 1).
-void SynthEngine::applyGlobalModSource (int modSrcEnum, uint8_t value0to254)
+void SynthEngine::applyGlobalModSource (int modSrcEnum, uint8_t value0to254, int midiChannel)
 {
     const uint8_t idx = static_cast<uint8_t> (modSrcEnum);
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            av->setModulationSource (idx, value0to254);
+    // Per-PART routing (firmware multi.cc ControlChange -> Part::ControlChange
+    // -> WriteToAllVoices): only the Parts whose receive channel matches the
+    // CC's channel (Omni or exact) write the source — the old whole-pool loop
+    // made a ch-3 mod wheel modulate ALL six parts of a multitimbral setup
+    // (W7, lane-B finding 3). Within a matching Part every voice (sounding
+    // AND idle) is written, which preserves the current-value pickup on the
+    // next note-on of that part.
+    for (int p = 0; p < kNumParts; ++p)
+    {
+        const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
+        if (ch != 0 && ch != midiChannel)
+            continue;
+        for (int vi : parts_[(size_t) p].voiceIndices)
+            if (auto* av = getAmbikaVoice (vi))
+                av->setModulationSource (idx, value0to254);
+    }
 }
 
 void SynthEngine::applyStandingBend (AmbikaVoice* av, int channel)
@@ -1416,19 +1623,51 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
     // this is the ONLY effect of these controllers.
     if (controllerNumber == 1)   // modulation wheel -> MOD_SRC_WHEEL
     {
-        applyGlobalModSource (ambika::dsp::MOD_SRC_WHEEL,      static_cast<uint8_t> (controllerValue << 1));
+        applyGlobalModSource (ambika::dsp::MOD_SRC_WHEEL,      static_cast<uint8_t> (controllerValue << 1), midiChannel);
         return;
     }
     if (controllerNumber == 2)   // breath controller -> MOD_SRC_WHEEL_2
     {
-        applyGlobalModSource (ambika::dsp::MOD_SRC_WHEEL_2,    static_cast<uint8_t> (controllerValue << 1));
+        applyGlobalModSource (ambika::dsp::MOD_SRC_WHEEL_2,    static_cast<uint8_t> (controllerValue << 1), midiChannel);
         return;
     }
     if (controllerNumber == 4)   // foot pedal -> MOD_SRC_EXPRESSION
     {
-        applyGlobalModSource (ambika::dsp::MOD_SRC_EXPRESSION, static_cast<uint8_t> (controllerValue << 1));
+        applyGlobalModSource (ambika::dsp::MOD_SRC_EXPRESSION, static_cast<uint8_t> (controllerValue << 1), midiChannel);
         return;
     }
+
+    // ---- Sustain pedal CC64 (W7, firmware part.cc:379-390) ----
+    // Per-PART hold state routed by channel (multi.cc ControlChange): value
+    // >= 64 sets the hold (note-offs for the part are swallowed + remembered);
+    // value < 64 clears it and drains the remembered note-offs through their
+    // normal release path. Handled HERE and returned — the base class's
+    // sustain handling only sets a per-voice flag that nothing in AmbikaVoice
+    // reads (the old noteOff override bypassed the base release gate that
+    // consumed it), so passing CC64 on would be a no-op.
+    if (controllerNumber == 64)
+    {
+        for (int p = 0; p < kNumParts; ++p)
+        {
+            const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
+            if (ch != 0 && ch != midiChannel)
+                continue;
+            auto& part = parts_[(size_t) p];
+            if (controllerValue >= 64)
+            {
+                part.sustainHold_ = true;
+            }
+            else
+            {
+                part.sustainHold_ = false;
+                drainSustainedNotes (p);
+            }
+        }
+        return;
+    }
+
+    // ---- All Notes Off / All Sound Off live in the allNotesOff() override
+    // (juce dispatches CC123/CC120 there directly, never through here). ----
 
     // CC74 (MPE "slide" / brightness) -> per-voice MOD_SRC_EXPRESSION. Other
     // controllers defer to the base (sustain/sostenuto/soft pedal + the no-op
@@ -1636,8 +1875,20 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
         {
             const int p = findPartForNote (channel, note);
-            if (p >= 0 && parts_[(size_t) p].arp.isActive())
+            if (p >= 0 && parts_[(size_t) p].arp.isActive()
+                && parts_[(size_t) p].arp.holdsNote (note))
             {
+                // SUSTAIN PEDAL (W7): with the part's pedal down the key stays
+                // "held" for arpeggiation (exactly what a sustain pedal does to
+                // an arp — firmware flags the pressed_keys_ entry; holding the
+                // stack entry achieves the same audible result) and the
+                // note-off is remembered for the pedal-up drain.
+                if (parts_[(size_t) p].sustainHold_)
+                {
+                    parts_[(size_t) p].addSustainedNote (static_cast<uint8_t> (note),
+                                                         static_cast<uint8_t> (channel));
+                    continue;   // stripped (never reaches the direct path)
+                }
                 parts_[(size_t) p].arp.noteOff (note);   // stripped
                 // If that emptied the held-key stack the arp already killed its
                 // own note; also release the note SEQUENCE's sounding note
@@ -1647,7 +1898,17 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
                     parts_[(size_t) p].seq.allNotesOff();
             }
             else
+            {
+                // Not held by the arp/sequencer: either the mode is off, or the
+                // note was sounding DIRECTLY before the mode was enabled (it
+                // never entered the held-key stack — enable-time transitions
+                // do not migrate sounding notes into it, and killGeneratedNotes_
+                // only fires on the active->inactive direction). Forward the
+                // note-off through the normal path so the direct voice
+                // releases; swallowing it here sustained that voice forever
+                // (firmware Part::NoteOff -> AllNotesOff on empty stack).
                 processedMidi_.addEvent (msg, meta.samplePosition);
+            }
         }
         else
         {

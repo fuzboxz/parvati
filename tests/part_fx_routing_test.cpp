@@ -20,12 +20,20 @@
 //       either Part produces FX output in that Part only.
 //   [3] Default single-part layout (Part 0 = all 6 cards, AUTO slots): with the
 //       FX chain fully dry, Part 0's FX output equals the mono sum of ALL six
-//       voicecard buffers (guards the common path against routing drift).
+//       voicecard buffers passed through the documented CHAIN-INPUT SAFETY
+//       KNEE (SynthEngine::renderPartFx step 2b: 8 * SoftLimit(s/8), then the
+//       ±16 hard ceiling — added in the FX crackle audit; "transparent by
+//       design", -0.04 dB at |s|=1). This test predates that knee and asserted
+//       the RAW sum sample-exact, which has been red ever since — the knee is
+//       level-dependent, so the correct contract is knee(sum), pinned here
+//       (the same honest-calibration approach as the mix_fuzz ZCR check).
 //
 // Built by default. Run with: ./build/parvati_part_fx_routing_test
 
 #include <cmath>
 #include <cstdio>
+
+#include "stmlib/dsp/dsp.h"   // stmlib::SoftLimit (the FX chain-input knee)
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -102,9 +110,9 @@ void checkDirection (const char* label, int channel, int playedPart, int otherPa
     const double other  = renderFxPeak (proc, channel, 60, 24, otherPart);
 
     char msg[160];
-    std::snprintf (msg, sizeof (msg), "%s: played part FX audible (peak %.4f)", label, played);
+    (void) std::snprintf (msg, sizeof (msg), "%s: played part FX audible (peak %.4f)", label, played);
     check (played > 1e-4, msg);
-    std::snprintf (msg, sizeof (msg), "%s: other part FX exactly silent (peak %.2e)", label, other);
+    (void) std::snprintf (msg, sizeof (msg), "%s: other part FX exactly silent (peak %.2e)", label, other);
     check (other == 0.0, msg);
 }
 }  // namespace
@@ -166,12 +174,21 @@ int main()
 
         // All FX disabled => the chain is a dry copy, so Part 0's FX-output
         // buffer must equal the mono sum of its OWNED cards -- with the default
-        // allocation (0x3f) that is ALL six voicecard buffers.
+        // allocation (0x3f) that is ALL six voicecard buffers -- passed through
+        // the documented chain-input safety knee (renderPartFx step 2b). The
+        // knee is the ENGINE's contract, not drift: replicate it here exactly
+        // (8 * SoftLimit(s/8), then the ±16 hard ceiling) and expect a
+        // near-sample-exact match. Tolerance 1e-6 (not 1e-9): the engine sums
+        // the six card buffers in FLOAT, the reference here in double, so the
+        // residual is float-accumulation rounding (~1e-8 at these levels),
+        // while any real routing drift (a missing/foreign card) misses by the
+        // full card level (>= 1e-2).
         juce::AudioBuffer<float> buf (2, kBlock);
         juce::MidiBuffer midi;
         midi.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 110), 0);
         juce::MidiBuffer empty;
         double maxErr = 0.0;
+        double maxKnee = 0.0;   // the knee's own deviation from the raw sum
         for (int b = 0; b < 20; ++b)
         {
             buf.clear();
@@ -186,11 +203,18 @@ int main()
                 double sum = 0.0;
                 for (int vc = 0; vc < SynthEngine::getNumParts(); ++vc)
                     sum += static_cast<double> (vcs[(size_t) vc].getSample (0, i));
+                const double kneed = juce::jlimit (-16.0, 16.0,
+                                                    8.0 * stmlib::SoftLimit (static_cast<float> (sum) * 0.125f));
                 const double got = static_cast<double> (fx.getSample (0, i));
-                maxErr = std::max (maxErr, std::fabs (got - sum));
+                maxErr  = std::max (maxErr, std::fabs (got - kneed));
+                maxKnee = std::max (maxKnee, std::fabs (kneed - sum));
             }
         }
-        check (maxErr < 1e-5, "dry FX output == owned-card (all 6) sum, sample-exact");
+        // Sanity: the knee must actually be exercised in this signal (else the
+        // reference degenerates to the raw sum and a future knee removal would
+        // go unnoticed). At these levels the knee deviates ~4e-4 from unity.
+        check (maxKnee > 1e-5, "safety knee is exercised (max deviation from raw sum > 1e-5)");
+        check (maxErr < 1e-6, "dry FX output == knee(owned-card (all 6) sum), sample-exact");
     }
 
     std::printf ("\n%s (%d failure%s)\n",

@@ -116,6 +116,44 @@ const juce::String& frenchChromeStrings()
         "\"Load Patch / Multi (.PRO / .MUL / .parvati)\" = \"Charger programme / multi (.PRO / .MUL / .parvati)\"\n"
         "\"Save Ambika Patch (.PRO)\" = \"Enregistrer le programme Ambika (.PRO)\"\n"
         "\"Save Parvati Patch (.parvati)\" = \"Enregistrer le programme Parvati (.parvati)\"\n"
+        "\"Could not save file:\" = \"Impossible d'enregistrer le fichier :\"\n"
+        "\"Could not load file:\" = \"Impossible de charger le fichier :\"\n"
+        // ---- FX slot cards / wheels / export preview (suffix-key fragments) ----
+        // The FX number / source label stays OUTSIDE the fragments ( untranslated
+        // proper nouns); the keys carry their leading/trailing spaces so the
+        // concatenation reads correctly in FR.
+        "\"FX \" = \"FX \"\n"
+        "\" algorithm\" = \" algorithme\"\n"
+        "\" previous algorithm\" = \" algorithme précédent\"\n"
+        "\" next algorithm\" = \" algorithme suivant\"\n"
+        "\" enable / bypass\" = \" activer / bypass\"\n"
+        "\"Drag onto a knob to assign \" = \"Glisser sur un potentiomètre pour assigner \"\n"
+        "\" as a modulation source\" = \" comme source de modulation\"\n"
+        "\"Octave down (Z)\" = \"Octave en dessous (Z)\"\n"
+        "\"Octave up (X)\" = \"Octave au-dessus (X)\"\n"
+        "\"(this file)\" = \"(ce fichier)\"\n"
+        // ---- MulExportDialog (Save Multi fallback dialog) ----
+        "\"This setup uses more voices than one Ambika has (6 voicecards).\" = \"Cette configuration utilise plus de voix qu'un Ambika n'en possède (6 cartes vocales).\"\n"
+        "\"Choose how to fit it onto the hardware:\" = \"Choisissez comment l'adapter au matériel :\"\n"
+        "\"How to fit it\" = \"Comment l'adapter\"\n"
+        "\"Cancel\" = \"Annuler\"\n"
+        "\"Export to Ambika\" = \"Exporter vers Ambika\"\n"
+        "\"Ambika\" = \"Ambika\"\n"
+        "\"Voicecards per unit\" = \"Cartes vocales par unité\"\n"
+        "\"Voicecards per part\" = \"Cartes vocales par partie\"\n"
+        "\"Custom tunings cannot be represented in .MUL — exported parts fall back to their Scale preset byte (or 12-EDO): \" = \"Les accordages personnalisés ne peuvent pas être représentés dans un .MUL — les parties exportées retombent sur leur octet de gamme (ou 12-EDO) : \"\n"
+        "\"Share the voicecards fairly (recommended)\" = \"Partager les cartes vocales équitablement (recommandé)\"\n"
+        "\"Each part gets voicecards in proportion to how many voices it uses now — the busiest parts keep the most polyphony.\" = \"Chaque partie reçoit des cartes vocales proportionnellement au nombre de voix qu'elle utilise — les parties les plus actives conservent le plus de polyphonie.\"\n"
+        "\"Give every part the same\" = \"Donner autant à chaque partie\"\n"
+        "\"Every active part gets an equal number of voicecards, no matter how many voices it requested.\" = \"Chaque partie active reçoit le même nombre de cartes vocales, quel que soit le nombre de voix demandé.\"\n"
+        "\"Let the first parts win\" = \"Priorité aux premières parties\"\n"
+        "\"Part 1 keeps as many voices as it can use, then Part 2, and so on — later parts get whatever is left over.\" = \"La partie 1 garde autant de voix qu'elle peut en utiliser, puis la partie 2, etc. — les parties suivantes reçoivent ce qui reste.\"\n"
+        "\"Keep them fat instead of polyphonic\" = \"Les garder épaisses plutôt que polyphoniques\"\n"
+        "\"Shares fairly like the first option, but every part that loses voices switches to Mono: all of its voicecards then play each note together (the classic unison character), so nothing sounds thin.\" = \"Répartition équitable comme la première option, mais chaque partie qui perd des voix passe en mono : toutes ses cartes vocales jouent alors chaque note ensemble (le caractère unisson classique), donc rien ne sonne fin.\"\n"
+        "\"Use two or more chained Ambikas\" = \"Utiliser deux Ambikas ou plus en chaîne\"\n"
+        "\"Writes one extra file per additional Ambika (\\\"-2.MUL\\\", \\\"-3.MUL\\\", ...). Connect the units by MIDI, load one file into each, and they play as one big synth — keeping every voice.\" = \"Écrit un fichier supplémentaire par Ambika additionnel (\\\"-2.MUL\\\", \\\"-3.MUL\\\", ...). Reliez les unités par MIDI, chargez un fichier dans chacune, et elles jouent comme un seul grand synthé — en conservant toutes les voix.\"\n"
+        "\"Keep the current card assignment\" = \"Conserver l'attribution actuelle des cartes\"\n"
+        "\"Exports the voicecards exactly as assigned on the Patch page and simply leaves the extra voice settings out — nothing is re-arranged.\" = \"Exporte les cartes vocales exactement telles qu'attribuées sur la page Patch et laisse simplement de côté les réglages de voix superflus — rien n'est réarrangé.\"\n"
     );
     return text;
 }
@@ -219,6 +257,44 @@ const juce::String& germanChromeStrings()
         "\"Load Patch / Multi (.PRO / .MUL / .parvati)\" = \"Programm / Multi laden (.PRO / .MUL / .parvati)\"\n"
         "\"Save Ambika Patch (.PRO)\" = \"Ambika-Programm speichern (.PRO)\"\n"
         "\"Save Parvati Patch (.parvati)\" = \"Parvati-Programm speichern (.parvati)\"\n"
+        "\"Could not save file:\" = \"Datei konnte nicht gespeichert werden:\"\n"
+        "\"Could not load file:\" = \"Datei konnte nicht geladen werden:\"\n"
+        // ---- FX slot cards / wheels / export preview (suffix-key fragments) ----
+        // The FX number / source label stays OUTSIDE the fragments ( untranslated
+        // proper nouns); the keys carry their leading/trailing spaces so the
+        // concatenation reads correctly in DE.
+        "\"FX \" = \"FX \"\n"
+        "\" algorithm\" = \" Algorithmus\"\n"
+        "\" previous algorithm\" = \" vorheriger Algorithmus\"\n"
+        "\" next algorithm\" = \" nächster Algorithmus\"\n"
+        "\" enable / bypass\" = \" aktivieren / Bypass\"\n"
+        "\"Drag onto a knob to assign \" = \"Auf einen Drehregler ziehen, um \"\n"
+        "\" as a modulation source\" = \" als Modulationsquelle zuzuweisen\"\n"
+        "\"Octave down (Z)\" = \"Oktave tiefer (Z)\"\n"
+        "\"Octave up (X)\" = \"Oktave höher (X)\"\n"
+        "\"(this file)\" = \"(diese Datei)\"\n"
+        // ---- MulExportDialog (Save Multi fallback dialog) ----
+        "\"This setup uses more voices than one Ambika has (6 voicecards).\" = \"Dieses Setup benötigt mehr Stimmen als ein Ambika hat (6 Voicecards).\"\n"
+        "\"Choose how to fit it onto the hardware:\" = \"Wählen Sie, wie es auf die Hardware passt:\"\n"
+        "\"How to fit it\" = \"Wie es passt\"\n"
+        "\"Cancel\" = \"Abbrechen\"\n"
+        "\"Export to Ambika\" = \"Zu Ambika exportieren\"\n"
+        "\"Ambika\" = \"Ambika\"\n"
+        "\"Voicecards per unit\" = \"Voicecards pro Gerät\"\n"
+        "\"Voicecards per part\" = \"Voicecards pro Part\"\n"
+        "\"Custom tunings cannot be represented in .MUL — exported parts fall back to their Scale preset byte (or 12-EDO): \" = \"Benutzerdefinierte Stimmungen können in .MUL nicht dargestellt werden — exportierte Parts fallen auf ihr Skal-Preset-Byte (oder 12-EDO) zurück: \"\n"
+        "\"Share the voicecards fairly (recommended)\" = \"Voicecards fair aufteilen (empfohlen)\"\n"
+        "\"Each part gets voicecards in proportion to how many voices it uses now — the busiest parts keep the most polyphony.\" = \"Jeder Part erhält Voicecards im Verhältnis zu seinen aktuell genutzten Stimmen — die aktivsten Parts behalten die meiste Polyphonie.\"\n"
+        "\"Give every part the same\" = \"Jedem Part dasselbe geben\"\n"
+        "\"Every active part gets an equal number of voicecards, no matter how many voices it requested.\" = \"Jeder aktive Part erhält gleich viele Voicecards, egal wie viele Stimmen er angefordert hat.\"\n"
+        "\"Let the first parts win\" = \"Die ersten Parts gewinnen lassen\"\n"
+        "\"Part 1 keeps as many voices as it can use, then Part 2, and so on — later parts get whatever is left over.\" = \"Part 1 behält so viele Stimmen wie möglich, dann Part 2 usw. — spätere Parts bekommen, was übrig bleibt.\"\n"
+        "\"Keep them fat instead of polyphonic\" = \"Fett statt polyphon halten\"\n"
+        "\"Shares fairly like the first option, but every part that loses voices switches to Mono: all of its voicecards then play each note together (the classic unison character), so nothing sounds thin.\" = \"Teilt fair wie die erste Option, aber jeder Part, der Stimmen verliert, wechselt auf Mono: alle seine Voicecards spielen dann jede Note zusammen (der klassische Unison-Charakter), sodass nichts dünn klingt.\"\n"
+        "\"Use two or more chained Ambikas\" = \"Zwei oder mehr verkettete Ambikas verwenden\"\n"
+        "\"Writes one extra file per additional Ambika (\\\"-2.MUL\\\", \\\"-3.MUL\\\", ...). Connect the units by MIDI, load one file into each, and they play as one big synth — keeping every voice.\" = \"Schreibt eine zusätzliche Datei pro zusätzlichem Ambika (\\\"-2.MUL\\\", \\\"-3.MUL\\\", ...). Verbinden Sie die Geräte per MIDI, laden Sie in jedes eine Datei — sie spielen dann als ein großer Synth und behalten jede Stimme.\"\n"
+        "\"Keep the current card assignment\" = \"Aktuelle Karten-Zuweisung behalten\"\n"
+        "\"Exports the voicecards exactly as assigned on the Patch page and simply leaves the extra voice settings out — nothing is re-arranged.\" = \"Exportiert die Voicecards genau wie auf der Patch-Seite zugewiesen und lässt die überzähligen Stimmen-Einstellungen einfach weg — nichts wird neu verteilt.\"\n"
     );
     return text;
 }

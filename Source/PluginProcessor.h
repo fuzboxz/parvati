@@ -132,6 +132,17 @@ public:
     // and replaceState() clears the undo history on restore.
     juce::UndoManager& getUndoManager() noexcept { return undoManager_; }
 
+    // The editor's ONLY undo/redo entry points (header buttons + keyboard
+    // shortcuts). A part switch invalidates every recorded action's part
+    // context (replaying an old action would write Part A's values into
+    // Part B's engine storage via parameterChanged), and JUCE's
+    // append-after-listeners ordering plus the 10 Hz APVTS tree-flush timer
+    // can leave stragglers after onPartSelect's synchronous clear — these
+    // sweep once more, then replay. Always call these instead of
+    // getUndoManager().undo()/redo() from UI code.
+    void undoSafe();
+    void redoSafe();
+
     // ---- Realtime overrun probe (diagnostic) ----
     // Measures each processBlock's wall-clock time against its real-time budget
     // (numSamples / sampleRate). audioLoadCurrent_ is the latest block's ratio
@@ -350,6 +361,7 @@ private:
 
     SynthEngine engine_;
     juce::UndoManager undoManager_;   // constructed before apvts (member order)
+    bool undoInvalidatedByPartSwitch_ = false;   // set by onPartSelect; swept by undoSafe/redoSafe
     juce::AudioProcessorValueTreeState apvts;
     juce::String loadedProgramName_ { "Init" };
     int currentPart_ = 0;   // 0-based part currently shown in the APVTS/editor

@@ -106,9 +106,10 @@ Check items off (`[x]`) as they are implemented and verified.
   cell, and even a modest cellH bump keeps stacked buttons at ~62×18. Options:
   redesign the grid (e.g. 6 columns × 96×70 cells — fits the generator host at
   ~640×285 — or popup-based length entry reusing the T7 44pt rows). ALSO
-  DISCOVERED (pre-existing, unchanged): at the default 1280×634 editor size the
-  FxRoutingBar column starves the Dry/Wet row to 0×0 (the mix knob is
-  INVISIBLE); needs its own layout-budget decision.
+  DISCOVERED (pre-existing, RESOLVED): the FxRoutingBar Dry/Wet row no longer
+  starves to 0×0 at the default editor size — FxWorkspace's kTopRowNaturalH
+  (264) floors the top row tall enough for flow + EQ + ctrl; no layout-budget
+  decision needed (W7 note).
 
 ## Minor
 
@@ -155,6 +156,27 @@ Check items off (`[x]`) as they are implemented and verified.
 - AUv3 FilePicker behavior per host (AUM vs GarageBand) — needs device testing.
 - Hover-driven dest/row highlight gating on `!isTouch()` (cosmetic).
 - Concurrent internal DnD drags share one affordance flag (rare, visual-only).
+- **AUv3 panes below the 1024pt floor collapse header chrome (W7-known,
+  round-3 lane-C finding 1).** The AUv3 wrapper force-resizes the editor to
+  the host's pane (setResizeLimits is desktop-only advice), and the header's
+  fixed budgets mean SYNTH/FX/Part/preset collapse to 0px width in narrow
+  panes (AUM with keyboard open ~570pt, GarageBand panes ~700pt). Content
+  pages degrade gracefully (44pt floors + scroll) — the header needs an
+  adaptive design (overflow "…" folding and/or a horizontal viewport) before
+  it degrades. Not fixed in W7: a product/design decision, not a contained
+  patch.
+- **Note routing is first-match, firmware triggers every accepting part
+  (W7-known, lane-B finding 4).** With an Omni part ahead of a channel part,
+  a note on that channel plays only the first on Parvati but BOTH on hardware
+  (also misroutes the on-screen keyboard when the current part's channel
+  collides). Changing it alters multitimbral semantics — needs an explicit
+  product decision (and the UI keyboard injection resolved to a uniquely
+  matching channel).
+- **Polyphonic aftertouch is silently ignored (W7-known, lane-B finding 5).**
+  Channel pressure works (MOD_SRC_AFTERTOUCH per channel); per-note poly AT
+  would need a `handleAftertouch` override writing the channel-tagged active
+  voices. Firmware `Part::Aftertouch` writes MOD_SRC_AFTERTOUCH to the part's
+  voices — a contained port once prioritized.
 
 ---
 

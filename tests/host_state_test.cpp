@@ -513,6 +513,157 @@ int main()
         check (d.getUiOversampling() == 1, "a persisted 1x state restores 1x (not the new 2x default)");
     }
 
+    // ---------------------------------------------------------------------
+    std::printf ("\n[4] A state restore re-APPLIES the global option params to the engine\n");
+    {
+        // vca_curve / filter_card / filter_drive are OPTION params: they live
+        // in the APVTS but NOT in the engine blob, and loadPartIntoApvts skips
+        // isOption descriptors — so the blob-restore branch used to leave the
+        // ENGINE on its defaults while the UI combos showed the saved values
+        // (typical hosts prepareToPlay BEFORE setStateInformation, so the
+        // ctor/prepare sync never re-applies them afterwards).
+        ParvatiAudioProcessor a;
+        a.prepareToPlay (48000.0, 256);
+        if (auto* p = a.getApvts().getParameter ("vca_curve"))
+            p->setValueNotifyingHost (p->convertTo0to1 (1.0f));   // Exponential
+        if (auto* p = a.getApvts().getParameter ("filter_card"))
+            p->setValueNotifyingHost (p->convertTo0to1 (1.0f));   // SSM2164 Cascade
+        if (auto* p = a.getApvts().getParameter ("filter_drive"))
+            p->setValueNotifyingHost (p->convertTo0to1 (5.0f));   // "5.0" (kDriveValues[5])
+        renderOnce (a);
+        check (a.getEngine().vcaExponentialForTest(),
+               "precondition: A's engine is exponential");
+
+        juce::MemoryBlock blob;
+        a.getStateInformation (blob);
+
+        // Host ordering: prepare FIRST, then restore (no re-prepare afterwards).
+        ParvatiAudioProcessor b;
+        b.prepareToPlay (48000.0, 256);
+        b.setStateInformation (blob.getData(), (int) blob.getSize());
+        renderOnce (b);
+
+        check (b.getEngine().vcaExponentialForTest(),
+               "restore re-applies vca_curve to the ENGINE (was: defaults + stale UI)");
+        check (b.getEngine().filterDriveForTest() == 5.0f,
+               "restore re-applies filter_drive to the ENGINE (kDriveValues[5] = 5.0)");
+        // filter_card stages per-voice (no engine-level atomic); the APVTS value
+        // plus the re-apply loop coverage is asserted via drive/curve above and
+        // the raw parameter below.
+        check (b.getApvts().getRawParameterValue ("filter_card")->load() == 1.0f,
+               "filter_card restored in the APVTS (re-applied by the same loop)");
+    }
+
+    // ---------------------------------------------------------------------
+    // [8] A TRUNCATED engine-state blob is rejected ATOMICALLY: restoreState
+    //     parses the whole blob into snapshots and commits only on full
+    //     success, so a mid-blob cut (a corrupt host project) must leave the
+    //     engine EXACTLY as it was. The old single-pass reader mutated
+    //     parts_[p] as it parsed and returned false MID-WAY — a half-restored
+    //     hybrid (early parts from the blob, the rest the previous session)
+    //     that the caller's legacy APVTS fallback then layered on top of.
+    // ---------------------------------------------------------------------
+    std::printf ("\n[8] truncated engine-state blob restores atomically (no partial apply)\n");
+    {
+        // Source A: a state with DISTINCT per-part values (patch byte, channel,
+        // zone, slots, name) so any leaked partial apply is detectable.
+        ParvatiAudioProcessor a;
+        a.prepareToPlay (48000.0, 256);
+        for (int p = 0; p < SynthEngine::getNumParts(); ++p)
+        {
+            a.getEngine().getPart (p).patchBytes[0] = static_cast<uint8_t> (20 + p);
+            a.getEngine().setPartChannel (p, static_cast<uint8_t> (p + 1));
+            a.getEngine().setPartKeyrange (p, static_cast<uint8_t> (10 * p),
+                                              static_cast<uint8_t> (10 * p + 5));
+            a.getEngine().setPartVoiceSlots (p, 1 + p);
+            a.getEngine().setPartName (p, "A" + juce::String (p));
+        }
+        renderOnce (a);
+        juce::MemoryBlock hostStateA;
+        a.getStateInformation (hostStateA);
+        // Extract the raw engine blob (the truncation target).
+        juce::MemoryBlock engineBlobA;
+        {
+            auto xml = juce::AudioProcessor::getXmlFromBinary (
+                hostStateA.getData(), (int) hostStateA.getSize());
+            check (xml != nullptr && xml->hasAttribute ("engine_state"),
+                   "[8] sanity: host state carries an engine blob");
+            if (xml != nullptr)
+                engineBlobA.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
+        }
+        const size_t blobSize = engineBlobA.getSize();
+        check (blobSize > 100, "[8] sanity: engine blob is non-trivial");
+
+        // Target B: a DIFFERENT state (so a probe mismatch cannot be a
+        // coincidence of equal values).
+        ParvatiAudioProcessor b;
+        b.prepareToPlay (48000.0, 256);
+        for (int p = 0; p < SynthEngine::getNumParts(); ++p)
+        {
+            b.getEngine().getPart (p).patchBytes[0] = static_cast<uint8_t> (60 + p);
+            b.getEngine().setPartChannel (p, 11);
+            b.getEngine().setPartKeyrange (p, 0, 127);
+            b.getEngine().setPartVoiceSlots (p, 3);
+            b.getEngine().setPartName (p, "B" + juce::String (p));
+        }
+        renderOnce (b);
+
+        // Truncate A's engine blob at several cut points (25% / 50% / 75% and
+        // a cut inside the very LAST part's tuning tail) and try to restore
+        // each into B. Every cut must be REJECTED with B untouched.
+        const size_t cuts[] = { blobSize / 4, blobSize / 2, (blobSize * 3) / 4, blobSize - 10 };
+        bool allRejected = true, allUntouched = true;
+        for (const size_t cut : cuts)
+        {
+            if (cut >= blobSize)
+                continue;   // degenerate guard for tiny blobs
+            juce::MemoryBlock truncated (engineBlobA.getData(), cut);
+            if (b.getEngine().restoreState (truncated.getData(), truncated.getSize()))
+                allRejected = false;
+            renderOnce (b);
+            // B must still be exactly its own state.
+            for (int p = 0; p < SynthEngine::getNumParts(); ++p)
+            {
+                if (b.getEngine().getPart (p).patchBytes[0] != static_cast<uint8_t> (60 + p)
+                    || b.getEngine().getPartChannel (p) != 11
+                    || b.getEngine().getPartKeyrangeLow (p) != 0
+                    || b.getEngine().getPartKeyrangeHigh (p) != 127
+                    || b.getEngine().getPartVoiceSlots (p) != 3
+                    || b.getEngine().getPartName (p) != ("B" + juce::String (p)))
+                    allUntouched = false;
+            }
+        }
+        check (allRejected, "[8] every truncated blob is rejected (no false success)");
+        check (allUntouched,
+               "[8] a rejected blob leaves the engine exactly as it was (no partial apply)");
+
+        // Control: the UNTRUNCATED blob still restores (the parse is not
+        // over-strict) and B becomes A.
+        check (b.getEngine().restoreState (engineBlobA.getData(), engineBlobA.getSize()),
+               "[8] control: the full blob restores");
+        renderOnce (b);
+        check (b.getEngine().getPart (3).patchBytes[0] == 23
+                   && b.getEngine().getPartName (3) == "A3",
+               "[8] control: the full blob actually applied A's state");
+
+        // [8b] part_select re-echo (blob branch): after a full processor-level
+        // restore the part_select parameter must follow the BLOB's saved
+        // current part (loadPartIntoApvts skips isOption params, so without the
+        // explicit re-echo the combo could disagree with the engine — e.g. a
+        // host-modified state or a save racing a deferred part_select drain).
+        {
+            ParvatiAudioProcessor b2;
+            b2.prepareToPlay (48000.0, 256);
+            // Park b2 on a DIFFERENT part first so the re-echo is observable.
+            selectPart (b2, 4);
+            b2.setStateInformation (hostStateA.getData(), (int) hostStateA.getSize());
+            renderOnce (b2);
+            const float want = static_cast<float> (b2.getEngine().getCurrentPart() + 1);
+            check (std::abs (b2.getApvts().getRawParameterValue ("part_select")->load() - want) < 0.5f,
+                   "[8b] part_select param re-echoed to the blob's current part after restore");
+        }
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "HOST-STATE TEST: FAILURES" : "HOST-STATE TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

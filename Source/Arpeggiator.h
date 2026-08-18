@@ -102,6 +102,11 @@ public:
     void start();
     void stop() { allNotesOff(); }
 
+    // Forget every held key WITHOUT releasing the generated note (firmware
+    // Part::AllNotesOff calls pressed_keys_.Clear() itself, alongside the
+    // generated-note release). Used by SynthEngine::partAllNotesOff (CC123).
+    void clearHeldKeys() { pressedKeys_.clear(); }
+
     // Feed one 24-PPQN clock tick. Internally prescaled by the divider. Returns
     // true when the prescaler rolled over and a step fired (clockArpeggiator ran)
     // — the engine gates the Sequencer on this so BOTH run at the same prescaled
@@ -120,6 +125,15 @@ public:
 
     // Held-key access for the note-sequence transpose (shared with Sequencer).
     bool    hasHeldKeys() const { return pressedKeys_.size() > 0; }
+    // Is @p note in the held-key stack? The engine's note-off routing uses
+    // this to distinguish a key the arp/sequencer is HOLDING (note-off goes to
+    // the stack) from one that was sounding DIRECTLY before the mode was
+    // enabled (never entered the stack; its note-off must release the direct
+    // voice through the normal MIDI path — otherwise it sustains forever).
+    bool    holdsNote (int note) const
+    {
+        return pressedKeys_.contains (static_cast<uint8_t> (note));
+    }
     uint8_t mostRecentNote() const
     {
         return pressedKeys_.size() ? pressedKeys_.most_recent_note().note : 60;

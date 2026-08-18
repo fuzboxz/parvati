@@ -754,15 +754,32 @@ void PatchPage::chooseVoiceSlots (int part, int slots)
 void PatchPage::openTuningEditor (int part)
 {
     if (part < 0 || part >= kNumParts) return;
-    // Live edits re-sync the row's combo + the page chrome (dim states,
-    // arrangement label) exactly like a combo-side preset pick.
-    auto onChanged = [this, part]
-    {
-        rows_[(size_t) part]->syncTuningDisplay();
-        postPartEdit();
-    };
+    // SafePointer guard: TuningEditor::launch opens its OWN desktop window,
+    // so the live-edit callback can fire after the Patch page (and its rows_)
+    // have been torn down — a raw `this` would dangle. (TuningEditor itself
+    // additionally closes once its launch parent is gone, but the callback
+    // may already be in flight.)
+    juce::Component::SafePointer<PatchPage> safe (this);
+    auto onChanged = [safe, part] { if (safe != nullptr) safe->tuningEditorApplied (part); };
     TuningEditor::launch (rows_[(size_t) part].get(), proc_.getEngine(), part,
                           std::move (onChanged));
+}
+
+// The TuningEditor popover's post-edit notification (public test seam — see
+// header). The engine write itself is TuningEditor::applyTable ->
+// setPartTuningCustom (zeroes byte 4 + arms the custom flag).
+void PatchPage::tuningEditorApplied (int part)
+{
+    if (part < 0 || part >= kNumParts) return;
+    rows_[(size_t) part]->syncTuningDisplay();
+    postPartEdit();
+    // Same APVTS staleness reason as onTuningChanged / onPolyChanged: the
+    // popover wrote the part's PartData ENGINE-DIRECT (byte 4 = 0 + custom
+    // flag armed), so the hosted param grid's part_raga combo — and any
+    // APVTS-based save (the .PRO/.parvati writers read the APVTS) — must be
+    // re-synced from the engine or they keep/export the STALE preset byte
+    // while the engine plays the custom table.
+    proc_.loadPartIntoApvts (proc_.getEngine().getCurrentPart());
 }
 
 void PatchPage::updateVoicesTotal()

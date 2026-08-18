@@ -40,7 +40,11 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
     {
         setInterceptsMouseClicks (true, false);
         setMouseCursor (juce::MouseCursor::DraggingHandCursor);
-        setTooltip ("Drag onto a knob to assign " + label_ + " as a modulation source");
+        // Same suffix-key pattern as the matrix-row grip's tooltip: the label
+        // ("PITCH"/"MOD", a proper noun) stays untranslated, the sentence
+        // fragments around it are TRANS'd (FR/DE keys in Translations.cpp).
+        setTooltip (TRANS ("Drag onto a knob to assign ") + label_
+                    + TRANS (" as a modulation source"));
     }
 
     void paint (juce::Graphics& g) override
@@ -70,7 +74,7 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         if (ddc == nullptr)
             return;   // no DragAndDropContainer ancestor (e.g. a headless test)
         dragStarted_ = true;
-        ddc->startDragging ("parvatiModSrc:" + juce::String (src_), this, buildDragImage(), true);
+        ddc->startDragging ("parvatiModSrc:" + juce::String (src_), this, juce::ScaledImage (buildDragImage()), true);
     }
 
     void mouseUp (const juce::MouseEvent& e) override
@@ -145,8 +149,8 @@ WheelsComponent::WheelsComponent()
     // touch target.
     octaveDown_ = std::make_unique<juce::TextButton> ("<");
     octaveUp_   = std::make_unique<juce::TextButton> (">");
-    octaveDown_->setTooltip ("Octave down (Z)");
-    octaveUp_->setTooltip ("Octave up (X)");
+    octaveDown_->setTooltip (TRANS ("Octave down (Z)"));
+    octaveUp_->setTooltip (TRANS ("Octave up (X)"));
     octaveDown_->onClick = [this] { if (onOctaveShift) onOctaveShift (-1); };
     octaveUp_->onClick   = [this] { if (onOctaveShift) onOctaveShift (+1); };
     addAndMakeVisible (*octaveDown_);

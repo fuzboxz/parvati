@@ -64,6 +64,12 @@ public:
     // smoother in the blend). The FX-param-coverage test uses it to prove every
     // FX_DST_FX{N}_DRYWET mod destination reaches the chain at full depth.
     float debugGetDryWet (int slot) const noexcept { return dryWet_[(size_t) slot]; }
+    // Test-only: the INSTALLED slot type (the AT-owned slotType_ cache).
+    // Reflects a staged swap only after servicePendingTypeSwaps consumed it
+    // (i.e. after one processBlock) — unlike the fxState.slotType atomic, this
+    // is what the DSP actually renders. Proves a .parvati multi load staged
+    // its slot types into the chain (SynthEngine::fxChainSlotTypeForTest).
+    uint8_t getInstalledSlotTypeForTest (int slot) const noexcept { return slotType_[(size_t) slot]; }
 
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
     // Safe to call on a sample-rate / block-size change. Any staged-but-

@@ -62,6 +62,31 @@ float renderMonoPeak (ParvatiAudioProcessor& p, int blocks)
     return peak;
 }
 
+// Max sample-to-sample |delta| of the mono sum over `blocks` (no MIDI). A
+// legato retrigger must keep the waveform CONTINUOUS: the natural slew of a
+// settled note is tiny (a ~260 Hz saw at ~0.3 amp slews ~0.01/sample), while
+// a resampler-FIFO discard restarts the interpolator cold — a time-skip
+// discontinuity on the order of the signal level itself.
+float renderMonoMaxSlew (ParvatiAudioProcessor& p, int blocks)
+{
+    float maxDelta = 0.0f;
+    float prev = 0.0f;
+    for (int i = 0; i < blocks; ++i)
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        p.processBlock (buf, midi);
+        for (int s = 0; s < buf.getNumSamples(); ++s)
+        {
+            const float x = 0.5f * (buf.getSample (0, s) + buf.getSample (1, s));
+            maxDelta = std::max (maxDelta, std::fabs (x - prev));
+            prev = x;
+        }
+    }
+    return maxDelta;
+}
+
 void noteEvent (ParvatiAudioProcessor& p, const juce::MidiMessage& m)
 {
     juce::AudioBuffer<float> buf (2, 256);
@@ -133,6 +158,80 @@ int main()
                 if (av->isVoiceActive()) ++activeCount;
         std::printf ("     active Part-0 voices after overlap = %d (expect >= 1)\n", activeCount);
         check (activeCount >= 1, "a Part-0 voice stays active across the legato re-trigger");
+    }
+
+    // ---- (2b) continuity at the legato retrigger ----
+    // A FRESH scenario on a second processor: hold 60 until fully settled,
+    // measure the settled slew and the peak, then retrigger with 64 and bound
+    // the slew across the retrigger. CALIBRATION NOTE (measured A/B): the
+    // FIFO-clear gate contributes ~0.005 of slew here; the DOMINANT step
+    // (~0.71 = about half the summed amplitude) is the firmware pitch-glide
+    // retrigger itself (Trigger sets pitch_target_ and glides pitch_value_
+    // per internal block) and is present pre- AND post-fix. The regression
+    // bound therefore guards against a catastrophic signal collapse (a full
+    // resampler restart of all six voices would slew ~the summed amplitude,
+    // ~1.4): the retrigger slew must stay well under that while the signal
+    // keeps sounding through the transition.
+    std::printf ("\n[2b] legato retrigger continuity (signal survives, bounded step)\n");
+    {
+        ParvatiAudioProcessor p2;
+        p2.prepareToPlay (48000.0, 256);
+        p2.syncAllParamsToEngine();
+        p2.getApvts().getParameterAsValue ("part_polyphony") = 0.0f;   // MONO
+        p2.getApvts().getParameterAsValue ("part_legato")    = 1.0f;   // legato ON
+        p2.syncAllParamsToEngine();
+        renderIdle (p2, 1);
+
+        noteEvent (p2, juce::MidiMessage::noteOn (1, 60, (uint8_t) 100));
+        renderIdle (p2, 40);   // settle past the de-click ramp + attack
+        const float settledSlew = renderMonoMaxSlew (p2, 4);
+
+        // Retrigger: capture the slew across the note-on block + two blocks
+        // after, and the mean |x| over the same window (the note must keep
+        // sounding through the transition — no dropout).
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 64, (uint8_t) 100), 0);
+        p2.processBlock (buf, midi);
+        float retriggerSlew = 0.0f;
+        double sumAbs = 0.0;
+        int nAbs = 0;
+        {
+            float prev = 0.0f;
+            for (int s = 0; s < buf.getNumSamples(); ++s)
+            {
+                const float x = 0.5f * (buf.getSample (0, s) + buf.getSample (1, s));
+                retriggerSlew = std::max (retriggerSlew, std::fabs (x - prev));
+                sumAbs += std::fabs (x); ++nAbs;
+                prev = x;
+            }
+        }
+        for (int b = 0; b < 2; ++b)
+        {
+            juce::AudioBuffer<float> b2 (2, 256);
+            b2.clear();
+            juce::MidiBuffer m2;
+            p2.processBlock (b2, m2);
+            float prev = 0.0f;
+            for (int s = 0; s < b2.getNumSamples(); ++s)
+            {
+                const float x = 0.5f * (b2.getSample (0, s) + b2.getSample (1, s));
+                retriggerSlew = std::max (retriggerSlew, std::fabs (x - prev));
+                sumAbs += std::fabs (x); ++nAbs;
+                prev = x;
+            }
+        }
+        const double meanAbs = nAbs ? sumAbs / nAbs : 0.0;
+        std::printf ("     settled slew = %.4f, retrigger slew = %.4f (bound 0.85; a full "
+                     "resampler restart of all voices would slew ~1.4)\n",
+                     settledSlew, retriggerSlew);
+        check (retriggerSlew < 0.85f,
+               "legato retrigger keeps a bounded step (no signal collapse)");
+        std::printf ("     mean |x| through the retrigger = %.4f (expect >= 0.05)\n", meanAbs);
+        check (meanAbs > 0.05,
+               "the note keeps sounding through the legato retrigger (no dropout)");
+        juce::ignoreUnused (settledSlew);
     }
 
     // ---- (3) release 64 -> slide-back to 60, still audible ----

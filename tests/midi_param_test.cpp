@@ -187,6 +187,39 @@ int main()
         check (after == before, "NRPN addr 127 (polyphony, unexposed) is ignored");
     }
 
+    // ---- NRPN signed (INT8) parameters: a two's-complement negative byte ----
+    // Firmware parameter.Clamp (parameter.cc UNIT_INT8) reads the data byte as
+    // int8_t, so byte 0xC0 == -64. Pre-fix, applyValue clamped the raw 192
+    // against the -64..64 APVTS range and saturated it to +64 — every negative
+    // detune/mod amount was unreachable over NRPN.
+    std::printf ("\n[NRPN signed] INT8 params honour two's complement\n");
+    {
+        juce::MidiBuffer m;
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 99, 0), 0);   // NRPN MSB = 0 (patch space)
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 98, 3), 1);   // NRPN LSB = addr 3 (osc1_detune, -64..64)
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 6, 1),  2);   // data-entry MSB = 1 -> flag 128
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 38, 64), 3);  // data-entry LSB = 64 -> byte 192 (0xC0)
+        processMidi (proc, m);
+        const int v = static_cast<int> (rawVal (proc, "osc1_detune"));
+        std::printf ("     NRPN(3, 0xC0) -> osc1_detune = %d (expect -64)\n", v);
+        check (v == -64, "NRPN negative INT8 byte -> -64 (not saturated to +64)");
+
+        proc.syncAllParamsToEngine();
+        const int b = patchByte (proc, 3);
+        std::printf ("     engine patchBytes[3] = %d (0x%02X; expect 192 = 0xC0)\n", b, b);
+        check (b == 192, "negative detune reaches the engine byte as 0xC0");
+
+        // Positive control: the same LSB WITHOUT the MSB flag stays +64.
+        juce::MidiBuffer m2;
+        m2.addEvent (juce::MidiMessage::controllerEvent (1, 99, 0), 0);
+        m2.addEvent (juce::MidiMessage::controllerEvent (1, 98, 3), 1);
+        m2.addEvent (juce::MidiMessage::controllerEvent (1, 38, 64), 2);   // no CC6 -> byte 64
+        processMidi (proc, m2);
+        const int v2 = static_cast<int> (rawVal (proc, "osc1_detune"));
+        std::printf ("     NRPN(3, 0x40) -> osc1_detune = %d (expect +64)\n", v2);
+        check (v2 == 64, "positive control: plain byte 64 -> +64");
+    }
+
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");

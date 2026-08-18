@@ -16,7 +16,7 @@ descriptor-driven view of the engine. We are not emulating the Ambika hardware U
 | Area | Status |
 |------|--------|
 | **Architecture** | `ParvatiAudioProcessor` owns `SynthEngine` (96-voice pool: 6 multitimbral Parts x 16 slots each) + APVTS exposing ~104 params via a `PatchParamDescriptor` table. |
-| **GUI generation** | `PluginEditor.cpp` auto-generates `ParamControl` cells (rotary `Slider`/`ComboBox`) into 9 `ParamPage`s + 1 custom `MultiPage`, wrapped in `Viewport`s in a `TabbedComponent`. Cannot drift from the engine (good — keep this). |
+| **GUI generation** | `PluginEditor.cpp` auto-generates `ParamControl` cells (rotary `Slider`/`ComboBox`) into 9 `ParamPage`s + 1 custom `PatchPage`, wrapped in `Viewport`s in a `TabbedComponent`. Cannot drift from the engine (good — keep this). |
 | **Colour** | One hard-coded `col::` palette (dark bg + gold accent). Every control gets ~8 manual `setColour()` calls. No theme system, no `LookAndFeel`. |
 | **Layout** | Fixed-pixel grid (e.g. 214×106 cells). Resizable window but the grid does **not** reflow/scale — controls get clipped or padded. |
 | **Scaling** | None beyond JUCE default DPI. No user zoom. Fixed `setSize(980,660)`, `setResizeLimits(720,480,1600,1100)`. |

@@ -116,7 +116,11 @@ private:
 
     void addLeaf (juce::PopupMenu& m, const juce::File& f, bool parseName)
     {
-        m.addItem (patchLabel (f, parseName), [this, f] { if (onSelect_) onSelect_ (f); });
+        // SafePointer guard: the leaf action runs after the async menu
+        // dismisses — the PresetBrowser (editor-owned) may already be deleted
+        // if the host closed the plugin window while the popup was open.
+        juce::Component::SafePointer<PresetBrowser> safe (this);
+        m.addItem (patchLabel (f, parseName), [safe, f] { if (safe != nullptr && safe->onSelect_) safe->onSelect_ (f); });
     }
 
     static juce::String patchLabel (const juce::File& f, bool parseName)

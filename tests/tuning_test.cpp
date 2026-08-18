@@ -239,7 +239,15 @@ void testHook()
     check (eng.resolvedTuningMode (0) == 2, "resolvedTuningMode reports the preset");
     setParam (proc, "part_raga", 0);
     renderBlocks (proc, 2);
-    check (eng.resolvedTuningMode (0) == 33, "custom flag resurfaces when the preset is cleared");
+    // D4-inverse doctrine (Wave-1 BUG-4): a LIVE part_raga write of 0 is an
+    // explicit 12-EDO selection — it now CLEARS the (dormant) custom flag
+    // instead of letting it resurface. The old resurface behaviour made the
+    // hosted part_raga combo / host automation / NRPN disagree with the Patch
+    // page's Tune combo (whose explicit 12-EDO pick clears by design, D4):
+    // the combo read "12-EDO" while the part kept playing the microtonal
+    // table. The way back to a custom table is the TuningEditor / re-import.
+    check (eng.resolvedTuningMode (0) == 0,
+           "live part_raga=0 clears the dormant custom (D4 inverse — explicit 12-EDO)");
     eng.clearPartTuningCustom (0);
     renderBlocks (proc, 2);
     check (eng.resolvedTuningMode (0) == 0, "clearPartTuningCustom returns to 12-EDO");
@@ -494,7 +502,54 @@ void testParvatiMulti()
 }
 
 // ---------------------------------------------------------------------------
-// 7. Standing-bend pickup.
+// 7. APVTS part_raga=0 clears an armed custom table (the live param path —
+// the same D4 rule the Patch page's Tune combo and the file loaders apply).
+// ---------------------------------------------------------------------------
+void testApvtsRagaClear()
+{
+    std::printf ("part_raga=0 via APVTS clears custom\n");
+
+    ParvatiAudioProcessor proc;
+    prepareProc (proc);
+    renderBlocks (proc, 2);
+    auto& eng = proc.getEngine();
+
+    // Arm a custom table on the current part (0).
+    int16_t custom[12] = {};
+    custom[5] = 24;
+    eng.setPartTuningCustom (0, custom);
+    check (eng.resolvedTuningMode (0) == 33, "precondition: custom armed (mode 33)");
+
+    // A live part_raga write of 0 (the hosted param-grid combo, host automation
+    // or NRPN 116) is an explicit 12-EDO selection — it must clear the flag, not
+    // just write byte 4 = 0 while the engine keeps playing the custom table.
+    // (JUCE's adapter early-returns on a same-value write, so drive the real
+    // transition a host/user produces: land a preset first, then 0.)
+    proc.getApvts().getParameterAsValue ("part_raga") = 7.0f;
+    check (eng.resolvedTuningMode (0) == 7, "precondition: preset 7 selected");
+    proc.getApvts().getParameterAsValue ("part_raga") = 0.0f;
+    check (eng.resolvedTuningMode (0) == 0,
+           "part_raga=0 param write clears the custom flag (D4 inverse)");
+
+    // A non-zero write selects the preset and stays a preset afterwards.
+    proc.getApvts().getParameterAsValue ("part_raga") = 7.0f;
+    check (eng.resolvedTuningMode (0) == 7, "part_raga=7 selects preset 7");
+
+    // Part-switch invariant (the regression guard for the clear's placement): a
+    // part with an ARMED custom table (byte 4 == 0 under D4) must KEEP it when
+    // the engine re-pushes its own stored bytes on a part switch (the bulk sync
+    // path deliberately does NOT clear).
+    eng.setPartTuningCustom (2, custom);
+    renderBlocks (proc, 2);
+    setParam (proc, "part_select", 3);   // 1-based: switch to part 2 and back
+    renderBlocks (proc, 2);
+    check (eng.resolvedTuningMode (2) == 33,
+           "custom on part 2 survives a part switch (bulk sync does not clear)");
+    setParam (proc, "part_select", 1);
+}
+
+// ---------------------------------------------------------------------------
+// 8. Standing-bend pickup.
 // ---------------------------------------------------------------------------
 void testStandingBend()
 {
@@ -595,6 +650,7 @@ int main()
     testStaging();
     testStateV7();
     testParvatiMulti();
+    testApvtsRagaClear();
     testStandingBend();
     testMulRagaRoundTrip();
 

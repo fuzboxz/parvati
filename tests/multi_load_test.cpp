@@ -346,6 +346,56 @@ int main()
         }
     }
 
+    // ---------------------------------------------------------------------
+    // [6] A .MUL truncated before the last part's objects is REJECTED: the
+    //     firmware writer always emits all 6 parts' Patch + PartData chunks,
+    //     and the MBKS walker stops cleanly at a trailing cut, so without this
+    //     guard a hand-trimmed/truncated file would load as a hybrid — the NEW
+    //     MultiData routing over the PREVIOUS multi's patch/part bytes for the
+    //     missing parts.
+    // ---------------------------------------------------------------------
+    std::printf ("\n[6] Truncated .MUL (missing last part) is rejected, not half-loaded\n");
+    {
+        juce::MemoryBlock whole;
+        check (f.loadFileAsData (whole), "[6] read the reference .MUL bytes");
+        const size_t fileSize = whole.getSize();
+
+        // Layout (writeAmbikaMultiFile): header 12 + name 24 + MultiData 68,
+        // then 6 x (Patch 124 + PartData 96) = 220 per part. Cuts inside the
+        // LAST part's chunks leave parts 1..5 complete and part 6 missing
+        // objects — exactly the corrupt shape the guard must reject.
+        const size_t lastPartStart = 104 + 5 * 220;
+        const size_t cuts[] = { lastPartStart + 10,            // inside part-6 Patch
+                                lastPartStart + 200,           // Patch done, PartData gone
+                                fileSize - 20 };               // inside part-6 PartData
+        bool allRejected = true;
+        for (const size_t cut : cuts)
+        {
+            if (cut >= fileSize)
+                continue;
+            const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                       .getChildFile ("parvati_trunc_mul_test.MUL");
+            tmp.deleteFile();
+            tmp.appendData (whole.getData(), cut);
+
+            ParvatiAudioProcessor proc;
+            proc.prepareToPlay (48000.0, 256);
+            if (proc.loadMultiFile (tmp))
+                allRejected = false;
+            tmp.deleteFile();
+        }
+        check (allRejected,
+               "[6] every truncated .MUL is rejected (no routing/sound hybrid load)");
+
+        // Control: the UNTRUNCATED file still loads (the guard is not
+        // over-strict against the reference shape).
+        {
+            ParvatiAudioProcessor proc;
+            proc.prepareToPlay (48000.0, 256);
+            check (proc.loadMultiFile (f), "[6] control: the full .MUL still loads");
+        }
+    }
+
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "MULTI LOAD TEST: FAILURES" : "MULTI LOAD TEST: ALL CHECKS PASSED",
                  g_failures);

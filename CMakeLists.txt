@@ -1174,6 +1174,9 @@ add_executable(parvati_part_fx_routing_test
     tests/part_fx_routing_test.cpp
 )
 target_include_directories(parvati_part_fx_routing_test PRIVATE Source)
+# Vendored stmlib (SYSTEM like the main target) — the [3] reference replicates
+# the engine's chain-input SoftLimit knee from the single source of truth.
+target_include_directories(parvati_part_fx_routing_test SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
 target_compile_features(parvati_part_fx_routing_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_part_fx_routing_test PRIVATE
     Parvati
@@ -1367,6 +1370,17 @@ add_executable(parvati_legato_test
 target_include_directories(parvati_legato_test PRIVATE Source)
 target_compile_features(parvati_legato_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_legato_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# CC routing verification (sustain CC64 / all-notes-off CC123 / CC1 channel scope).
+add_executable(parvati_cc_routing_test
+    tests/cc_routing_test.cpp
+)
+target_include_directories(parvati_cc_routing_test PRIVATE Source)
+target_compile_features(parvati_cc_routing_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_cc_routing_test PRIVATE
     Parvati
 )
 
@@ -1568,7 +1582,12 @@ if(PARVATI_BUILD_CLAP)
         # that never had a CLAP plugin installed.
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_parvati_plugins_dir}/CLAP"
         COMMAND rm -rf "${_parvati_plugins_dir}/CLAP/Parvati.clap"
-        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap" "${_parvati_plugins_dir}/CLAP/Parvati.clap")
+        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap" "${_parvati_plugins_dir}/CLAP/Parvati.clap"
+        # Re-sign after the plain cp: the built bundle's signature references
+        # its original path/resources, which the copy invalidates (the same
+        # hazard the VST3 moduleinfo seal and the Standalone re-sign below
+        # guard against — W7).
+        COMMAND codesign --force --sign - "${_parvati_plugins_dir}/CLAP/Parvati.clap")
 endif()
 add_custom_target(deploy
     COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
