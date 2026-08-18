@@ -5,6 +5,43 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Four firmware-parity convergences (Wave 8) — each locked as an equality
+  check in the differential harness** (tests/firmware_parity_test; the
+  known-divergences allowlist drops from 5 to 1, the remaining one being the
+  deliberate velocity-0 UX substitution):
+  - **Multicast note routing.** `Multi::NoteOn/NoteOff` deliver a note to
+    EVERY part whose channel+zone accepts it (firmware multi.h:120-138);
+    Parvati routed first-match only, so a layered Omni + per-channel setup
+    played one part where hardware plays both. `forEachAcceptingPart`
+    (header-inline template over the routing predicates) now drives note-on,
+    note-off AND the arp held-key routing; release pairing is symmetric by
+    construction (the same predicate that routed the on routes the off).
+  - **Wrap-around key zones.** `keyrange_low > keyrange_high` is the firmware
+    complement zone (accepts `<= hi OR >= lo` — the classic hardware split
+    trick); Parvati only had contiguous zones, silently rejecting the wrap
+    half of the keyboard. Ported in `partAcceptsNote`; the .parvati loader
+    now PRESERVES inverted zones (it previously jmin/jmax-swapped them into
+    the wrong contiguous range), still clamping both ends to 0..127, and
+    the load-invariants contract allows lo>hi.
+  - **Arp/seq phrase restart while the transport is stopped.** Firmware
+    `Multi::NoteOn` calls `Start()` when `!running_` — a new phrase (the
+    held-key stack was empty) restarts the arp/sequencer at pattern step 0;
+    Parvati resumed mid-pattern. Ported on the audio thread in
+    processTransport's arp routing (Start before the stack push, exactly
+    the firmware order), gated on `!isPlaying` (a stopped DAW transport) —
+    which also required a mock AudioPlayHead in the parity oracle (the
+    processor defaults isPlaying to true headlessly).
+  - **Polyphonic aftertouch.** Firmware `Part::Aftertouch(note, vel)` writes
+    MOD_SRC_AFTERTOUCH to the note's voice per polyphony mode (POLY/
+    CYCLIC/CHAIN: the voice playing the note; UNISON_2X: the pair; MONO:
+    channel-wide). Parvati dropped poly-AT entirely. Ported as a
+    `handleAftertouch` override routed through the multicast predicates.
+  Harness notes: the phrase-restart observable is a generated-notes recorder
+  (the arp's live previousNote_ resets on pattern-skipped steps while the
+  firmware oracle reads a persistent log), and `lastModWrite` now takes the
+  MAX over a part's voices (a last-writer-wins read clobbered the written
+  voice with an idle one — pre-existing harness bug masked by the
+  channel-wide CC family).
 - **Sustain pedal (CC64) — firmware parity (Wave 7, round-3 lane-B finding
   1).** The engine's `noteOff` override had fully replaced juce's
   `Synthesiser::noteOff`, which was the only place the base class gated

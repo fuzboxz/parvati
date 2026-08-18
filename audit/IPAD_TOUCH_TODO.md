@@ -165,14 +165,23 @@ Check items off (`[x]`) as they are implemented and verified.
   adaptive design (overflow "…" folding and/or a horizontal viewport) before
   it degrades. Not fixed in W7: a product/design decision, not a contained
   patch.
-- **Note routing is first-match, firmware triggers every accepting part
-  (W7-known, lane-B finding 4).** With an Omni part ahead of a channel part,
-  a note on that channel plays only the first on Parvati but BOTH on hardware
-  (also misroutes the on-screen keyboard when the current part's channel
-  collides). Changing it alters multitimbral semantics — needs an explicit
-  product decision (and the UI keyboard injection resolved to a uniquely
-  matching channel).
-- **Polyphonic aftertouch is silently ignored (W7-known, lane-B finding 5).**
+- **Note routing / wrap-around keyzones / arp phrase-restart / poly-AT —
+  CONVERGED (W8, 2026-08-18).** The four deferred firmware-parity items from
+  the W7 hunt are now ported firmware-faithfully and locked as equality
+  checks in tests/firmware_parity_test (the known-divergences allowlist is
+  down to velocity-zero-substitution, a deliberate UX deviation):
+  - note routing is now MULTICAST (firmware Multi::NoteOn/NoteOff deliver to
+    every accepting part; SynthEngine::forEachAcceptingPart drives both
+    note-on/off and the arp held-key routing);
+  - keyzone_low > keyrange_high is a legal WRAP zone (firmware accept_note's
+    complement set — the .parvati loader preserves it, only clamping ends to
+    0..127);
+  - a NEW phrase while the host transport is stopped restarts arp+seq at
+    step 0 (firmware Multi::NoteOn -> Start() when !running_);
+  - polyphonic aftertouch writes MOD_SRC_AFTERTOUCH per polyphony mode
+    (firmware Part::Aftertouch(note) routing).
+- **Polyphonic aftertouch is silently ignored (W7-known, lane-B finding 5)**
+  — superseded by the W8 convergence above (kept for history).
   Channel pressure works (MOD_SRC_AFTERTOUCH per channel); per-note poly AT
   would need a `handleAftertouch` override writing the channel-tagged active
   voices. Firmware `Part::Aftertouch` writes MOD_SRC_AFTERTOUCH to the part's

@@ -7,39 +7,14 @@
 # an equality check. An UNTAGGED failing check is a NEW divergence (hard
 # failure: triage it — port the firmware behaviour or document it here).
 #
-# All five entries below are DEFERRED (documented design decisions from the
-# 2026-08-18 deep bug-hunt round 3; see audit/IPAD_TOUCH_TODO.md and the
-# CHANGELOG), not accidents.
-
-# Multi::NoteOn/NoteOff deliver to EVERY part whose channel+zone accepts the
-# note; SynthEngine::findPartForNote routes first-match only. Layered Omni +
-# per-channel setups lose the layered voices in Parvati. Deferred: switching
-# to multicast changes note-on/off pairing semantics across the engine and
-# every test that assumes one part per note.
-unicast-vs-multicast
-
-# The firmware's accept_note treats keyrange_low > keyrange_high as a
-# wrap-around zone (accepts <= high OR >= low — the classic hardware split
-# trick). Parvati only implements contiguous zones, so a wrap zone accepts
-# nothing. Deferred: needs a routing-semantics decision (and a Patch-page UI
-# affordance) before porting.
-wrap-around-keyzones
-
-# Firmware Multi::NoteOn -> Start() restarts the arpeggiator/sequencer at
-# pattern step 0 when a NEW phrase begins after the transport stopped;
-# Parvati's arp keeps its step position across phrases (no phrase-restart
-# hook while the host transport is stopped). Deferred: the restart condition
-# ("no note played for a while") needs a time-based definition in the
-# plugin's processBlock world.
-arp-phrase-restart
+# W8 (2026-08-18) converged FOUR former divergences into firmware-faithful
+# behaviour, each now an equality check in the harness: wrap-around key
+# zones (item 1), arp/seq phrase restart while the transport is stopped
+# (item 2), polyphonic aftertouch (item 3), and multicast note routing
+# (item 4). One deliberate divergence remains:
 
 # The firmware's note-sequence decode returns the programmed velocity
 # verbatim (a gated step with velocity byte 0 plays at velocity 0 = silent);
 # Parvati's Sequencer::noteStep substitutes 100 for a 0 velocity so an
 # untouched default step is audible. Deliberate UX deviation.
 velocity-zero-substitution
-
-# The firmware writes MOD_SRC_AFTERTOUCH per note (Part::Aftertouch(note));
-# Parvati ignores polyphonic aftertouch entirely (channel pressure IS
-# handled). Deferred: no MPE poly-AT surface exists in the UI yet.
-poly-aftertouch-ignored

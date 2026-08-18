@@ -716,10 +716,17 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                                     : static_cast<uint8_t> (i + 1));
         if (partObj->hasProperty ("keyzone_low") && partObj->hasProperty ("keyzone_high"))
         {
+            // WRAP ZONES PRESERVED (W8 item 1): the firmware's accept_note
+            // treats low > high as the complement set (the classic hardware
+            // split trick, now ported in SynthEngine::partAcceptsNote), so the
+            // loader must NOT swap an inverted zone — only clamp both ends to
+            // 0..127. (The old jmin/jmax normalization silently turned a wrap
+            // zone into its contiguous complement, inverting the patch's
+            // audible keyboard coverage.)
             const int lo = juce::jlimit (0, 127, (int) partNode["keyzone_low"]);
             const int hi = juce::jlimit (0, 127, (int) partNode["keyzone_high"]);
-            engine.setPartKeyrange (i, static_cast<uint8_t> (juce::jmin (lo, hi)),
-                                        static_cast<uint8_t> (juce::jmax (lo, hi)));
+            engine.setPartKeyrange (i, static_cast<uint8_t> (lo),
+                                        static_cast<uint8_t> (hi));
         }
         else
         {

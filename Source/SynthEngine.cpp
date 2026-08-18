@@ -1167,20 +1167,37 @@ void SynthEngine::resetAllVoices()
 
 //==========================================================================
 // MIDI routing (channel + keyzone -> Part), faithful to multi.h PartMapping.
+// The predicates (partAcceptsNote / partAcceptsChannel /
+// partAcceptsChannelNote) are declared in the header; forEachAcceptingPart is
+// a header-inline template over parts_.
+bool SynthEngine::partAcceptsNote (const Part& pm, int note)
+{
+    const int lo = pm.keyrangeLow.load();
+    const int hi = pm.keyrangeHigh.load();
+    if (lo <= hi)
+        return note >= lo && note <= hi;
+    return note <= hi || note >= lo;   // wrap-around zone (firmware parity, W8)
+}
+
+bool SynthEngine::partAcceptsChannel (const Part& pm, int channel)
+{
+    const uint8_t ch = pm.midiChannel.load();
+    return ch == 0 || channel == ch;
+}
+
+bool SynthEngine::partAcceptsChannelNote (const Part& pm, int channel, int note)
+{
+    return partAcceptsChannel (pm, channel) && partAcceptsNote (pm, note);
+}
+
+// First accepting part, or -1. Kept for the (single-part) callers whose
+// downstream semantics are inherently per-one (it is now "first match in
+// multicast order", not an exclusive route).
 int SynthEngine::findPartForNote (int channel, int note) const
 {
     for (int p = 0; p < kNumParts; ++p)
-    {
-        const auto& pm = parts_[(size_t) p];
-        // receive_channel: Omni (0) or exact 1-based channel match. (midiChannel /
-        // keyrange are atomic: written on the message thread, read here on audio.)
-        const uint8_t ch = pm.midiChannel.load();
-        const bool chanOk = (ch == 0) || (channel == ch);
-        if (! chanOk) continue;
-        // accept_note.
-        if (note >= pm.keyrangeLow.load() && note <= pm.keyrangeHigh.load())
-            return p;   // first-match wins (firmware NoteOn routing)
-    }
+        if (partAcceptsChannelNote (parts_[(size_t) p], channel, note))
+            return p;
     return -1;
 }
 
@@ -1484,47 +1501,57 @@ void SynthEngine::allNotesOff (int midiChannel, bool allowTailOff)
 
 void SynthEngine::noteOn (int midiChannel, int midiNoteNumber, float velocity)
 {
-    // processTransport has routed notes for Parts whose arp/sequencer is active
-    // into their held-key stacks; only "play directly" notes reach here.
-    const int part = findPartForNote (midiChannel, midiNoteNumber);
-    if (part < 0) return;
-    // Firmware AcceptNote gate BEFORE the arp-hold stack: a muted note class
-    // must not be held for arpeggiation either (firmware refuses it at
-    // dispatch, part.cc:649-660, before any arp bookkeeping).
-    if (! isNoteAcceptedByPartTuning (part, midiNoteNumber)) return;
-    if (parts_[(size_t) part].arp.isActive())
-        parts_[(size_t) part].arp.noteOn (midiNoteNumber, static_cast<uint8_t> (juce::jlimit (0, 127, (int) (velocity * 127))));
-    else
-        triggerNoteInPart (part, midiNoteNumber, velocity, midiChannel);
+    // MULTICAST (W8 item 4, firmware multi.h:120-131): every part whose
+    // channel+zone accepts the note gets it — a layered Omni + per-channel
+    // setup plays BOTH parts, like the hardware. processTransport has already
+    // routed held-key notes for arp-active parts into their stacks; only
+    // "play directly" notes reach here.
+    forEachAcceptingPart (midiChannel, midiNoteNumber, [&] (int part)
+    {
+        // Firmware AcceptNote gate BEFORE the arp-hold stack: a muted note
+        // class must not be held for arpeggiation either (firmware refuses it
+        // at dispatch, part.cc:649-660, before any arp bookkeeping).
+        if (! isNoteAcceptedByPartTuning (part, midiNoteNumber)) return;
+        if (parts_[(size_t) part].arp.isActive())
+            parts_[(size_t) part].arp.noteOn (midiNoteNumber, static_cast<uint8_t> (juce::jlimit (0, 127, (int) (velocity * 127))));
+        else
+            triggerNoteInPart (part, midiNoteNumber, velocity, midiChannel);
+    });
 }
 
 void SynthEngine::noteOff (int midiChannel, int midiNoteNumber, float /*velocity*/, bool /*allowTailOff*/)
 {
-    const int part = findPartForNote (midiChannel, midiNoteNumber);
-    if (part < 0) return;
-    // SUSTAIN PEDAL (W7, firmware part.cc:347-362): while the part's pedal is
-    // down, a key release is SWALLOWED — the note keeps sounding and is
-    // remembered; the pedal-up drain (drainSustainedNotes) replays it through
-    // the normal release path below.
-    if (parts_[(size_t) part].sustainHold_)
+    // MULTICAST (W8 item 4): the same predicate that routed the note-on
+    // delivers the release — the pairing is symmetric by construction (a
+    // part that accepted the on also accepts the off; zones/channels cannot
+    // change between the two without an allocation-rebuild in between, which
+    // re-tags/releases voices anyway).
+    forEachAcceptingPart (midiChannel, midiNoteNumber, [&] (int part)
     {
-        parts_[(size_t) part].addSustainedNote (static_cast<uint8_t> (midiNoteNumber),
-                                                static_cast<uint8_t> (midiChannel));
-        return;
-    }
-    // NOTE: this override runs on the buffer processTransport already filtered
-    // (held-key note-offs were routed to arp.noteOff + STRIPPED there), so a
-    // note-off arriving here was deliberately NOT given to the arp — either the
-    // mode is off, or the note was sounding DIRECTLY before the mode was
-    // enabled and never entered the held-key stack. Handing it to arp.noteOff
-    // anyway (the old unconditional isActive() gate) swallowed the release and
-    // sustained the direct voice forever. The holdsNote() check keeps the
-    // defensive branch for a genuinely-held note while releasing everything
-    // else through the direct path.
-    if (parts_[(size_t) part].arp.isActive() && parts_[(size_t) part].arp.holdsNote (midiNoteNumber))
-        parts_[(size_t) part].arp.noteOff (midiNoteNumber);
-    else
-        releaseNoteInPart (part, midiNoteNumber, midiChannel);
+        // SUSTAIN PEDAL (W7, firmware part.cc:347-362): while the part's pedal
+        // is down, a key release is SWALLOWED — the note keeps sounding and is
+        // remembered; the pedal-up drain (drainSustainedNotes) replays it
+        // through the normal release path below.
+        if (parts_[(size_t) part].sustainHold_)
+        {
+            parts_[(size_t) part].addSustainedNote (static_cast<uint8_t> (midiNoteNumber),
+                                                    static_cast<uint8_t> (midiChannel));
+            return;
+        }
+        // NOTE: this override runs on the buffer processTransport already
+        // filtered (held-key note-offs were routed to arp.noteOff + STRIPPED
+        // there), so a note-off arriving here was deliberately NOT given to
+        // the arp — either the mode is off, or the note was sounding DIRECTLY
+        // before the mode was enabled and never entered the held-key stack.
+        // Handing it to arp.noteOff anyway (the old unconditional isActive()
+        // gate) swallowed the release and sustained the direct voice forever.
+        // The holdsNote() check keeps the defensive branch for a genuinely-
+        // held note while releasing everything else through the direct path.
+        if (parts_[(size_t) part].arp.isActive() && parts_[(size_t) part].arp.holdsNote (midiNoteNumber))
+            parts_[(size_t) part].arp.noteOff (midiNoteNumber);
+        else
+            releaseNoteInPart (part, midiNoteNumber, midiChannel);
+    });
 }
 
 //==========================================================================
@@ -1563,6 +1590,61 @@ void SynthEngine::handleChannelPressure (int midiChannel, int channelPressureVal
         if (av->isVoiceActive() && av->isPlayingChannel (midiChannel))
             av->setMpePressure (pressure);
     }
+}
+
+void SynthEngine::handleAftertouch (int midiChannel, int midiNoteNumber, int aftertouchValue)
+{
+    // POLYPHONIC AFTERTOUCH (W8 item 3): firmware multi.h:156-162 routes the
+    // (channel, note, value) through accept_channel_note to EVERY accepting
+    // part, then part.cc:485-526 writes MOD_SRC_AFTERTOUCH per polyphony
+    // mode. The value arrives 0..127; the firmware writes it VERBATIM to the
+    // mod source (no <<1 shift — unlike CC1/2/4 whose controllers arrive
+    // 0..127 and shift to 0..254; poly-AT bytes already span the full source
+    // range in the firmware).
+    const uint8_t idx = static_cast<uint8_t> (ambika::dsp::MOD_SRC_AFTERTOUCH);
+    const uint8_t val = static_cast<uint8_t> (juce::jlimit (0, 127, aftertouchValue));
+    forEachAcceptingPart (midiChannel, midiNoteNumber, [&] (int p)
+    {
+        auto& part = parts_[(size_t) p];
+        const uint8_t mode = part.polyphonyMode;
+        if (mode == 1 /*POLY*/ || mode == 3 /*CYCLIC*/ || mode == 4 /*CHAIN*/)
+        {
+            // Firmware: write the voice ALLOCATED to that note
+            // (poly_allocator_.Find). The engine's per-voice currentlyPlaying
+            // note is the equivalent live mapping (a re-stolen slot carries
+            // the NEW note), so write the part's ACTIVE voice playing this
+            // note. Idle voices do not get the write (a future note-on picks
+            // up 0, same as firmware).
+            bool written = false;
+            for (int vi : part.voiceIndices)
+                if (auto* av = getAmbikaVoice (vi);
+                    av != nullptr && av->isVoiceActive()
+                    && av->getCurrentlyPlayingNote() == midiNoteNumber)
+                {
+                    av->setModulationSource (idx, val);
+                    written = true;   // keep scanning: CHAIN can duplicate a
+                                      // note across its (doubled) set
+                }
+            (void) written;
+        }
+        else if (mode == 2 /*UNISON_2X*/)
+        {
+            // Firmware: the note's PAIR (voice_index << 1 and its sibling).
+            // Both pair members carry the same note, so the same
+            // currently-playing scan naturally writes both.
+            for (int vi : part.voiceIndices)
+                if (auto* av = getAmbikaVoice (vi);
+                    av != nullptr && av->isVoiceActive()
+                    && av->getCurrentlyPlayingNote() == midiNoteNumber)
+                    av->setModulationSource (idx, val);
+        }
+        else   // MONO (0): firmware falls back to the channel-wide write.
+        {
+            for (int vi : part.voiceIndices)
+                if (auto* av = getAmbikaVoice (vi))
+                    av->setModulationSource (idx, val);
+        }
+    });
 }
 
 // GLOBAL mod-matrix write for the continuous controllers (mod wheel / breath /
@@ -1866,49 +1948,86 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
 
         if (msg.isNoteOn() && msg.getVelocity() > 0)
         {
-            const int p = findPartForNote (channel, note);
-            if (p >= 0 && parts_[(size_t) p].arp.isActive())
-                parts_[(size_t) p].arp.noteOn (note, msg.getVelocity());   // held key (stripped)
-            else
+            // MULTICAST (W8 item 4): every accepting part gets the note. An
+            // arp-active part takes it into its held-key stack (stripped from
+            // the direct pass); a direct part keeps the raw event so
+            // renderNextBlock -> noteOn triggers it. A note can do BOTH (an
+            // Omni direct part + a ch-2 arp part).
+            bool anyDirect = false;
+            forEachAcceptingPart (channel, note, [&] (int p)
+            {
+                if (parts_[(size_t) p].arp.isActive())
+                {
+                    // PHRASE RESTART (W8 item 2, firmware multi.h:120-125 /
+                    // multi.cc:184-192): a NEW phrase — the stack was empty
+                    // before this note — while the transport is STOPPED
+                    // restarts that part's arp + sequencer at step 0
+                    // (Multi::Start -> Part::Start: pattern mask 0x1, step 0,
+                    // forced first clock). Firmware ordering: Start() runs
+                    // BEFORE the part receives the note. Only when the stack
+                    // was empty: adding a note mid-phrase keeps the pattern
+                    // position (firmware's "running_" gate).
+                    if (! isPlaying && ! parts_[(size_t) p].arp.hasHeldKeys())
+                    {
+                        parts_[(size_t) p].arp.start();
+                        parts_[(size_t) p].seq.start();
+                    }
+                    parts_[(size_t) p].arp.noteOn (note, msg.getVelocity());   // held key (stripped)
+                }
+                else
+                    anyDirect = true;   // this part plays it directly below
+            });
+            if (anyDirect)
                 processedMidi_.addEvent (msg, meta.samplePosition);
         }
         else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
         {
-            const int p = findPartForNote (channel, note);
-            if (p >= 0 && parts_[(size_t) p].arp.isActive()
-                && parts_[(size_t) p].arp.holdsNote (note))
+            // MULTICAST release, symmetric with the on above: every accepting
+            // part handles the off through ITS mode (arp-held -> stack pop;
+            // direct -> forwarded to renderNextBlock -> noteOff).
+            bool anyDirect = false;
+            forEachAcceptingPart (channel, note, [&] (int p)
             {
-                // SUSTAIN PEDAL (W7): with the part's pedal down the key stays
-                // "held" for arpeggiation (exactly what a sustain pedal does to
-                // an arp — firmware flags the pressed_keys_ entry; holding the
-                // stack entry achieves the same audible result) and the
-                // note-off is remembered for the pedal-up drain.
-                if (parts_[(size_t) p].sustainHold_)
+                if (parts_[(size_t) p].arp.isActive()
+                    && parts_[(size_t) p].arp.holdsNote (note))
                 {
-                    parts_[(size_t) p].addSustainedNote (static_cast<uint8_t> (note),
-                                                         static_cast<uint8_t> (channel));
-                    continue;   // stripped (never reaches the direct path)
+                    // SUSTAIN PEDAL (W7): with the part's pedal down the key
+                    // stays "held" for arpeggiation (exactly what a sustain
+                    // pedal does to an arp — firmware flags the pressed_keys_
+                    // entry; holding the stack entry achieves the same audible
+                    // result) and the note-off is remembered for the pedal-up
+                    // drain.
+                    if (parts_[(size_t) p].sustainHold_)
+                    {
+                        parts_[(size_t) p].addSustainedNote (static_cast<uint8_t> (note),
+                                                             static_cast<uint8_t> (channel));
+                        return;   // stripped (never reaches the direct path)
+                    }
+                    parts_[(size_t) p].arp.noteOff (note);   // stripped
+                    // If that emptied the held-key stack the arp already killed
+                    // its own note; also release the note SEQUENCE's sounding
+                    // note (firmware Part::NoteOff -> AllNotesOff on empty
+                    // stack; the arp's allNotesOff does not touch the seq's
+                    // previousNote_).
+                    if (! parts_[(size_t) p].arp.hasHeldKeys())
+                        parts_[(size_t) p].seq.allNotesOff();
                 }
-                parts_[(size_t) p].arp.noteOff (note);   // stripped
-                // If that emptied the held-key stack the arp already killed its
-                // own note; also release the note SEQUENCE's sounding note
-                // (firmware Part::NoteOff -> AllNotesOff on empty stack; the
-                // arp's allNotesOff does not touch the seq's previousNote_).
-                if (! parts_[(size_t) p].arp.hasHeldKeys())
-                    parts_[(size_t) p].seq.allNotesOff();
-            }
-            else
-            {
-                // Not held by the arp/sequencer: either the mode is off, or the
-                // note was sounding DIRECTLY before the mode was enabled (it
-                // never entered the held-key stack — enable-time transitions
-                // do not migrate sounding notes into it, and killGeneratedNotes_
-                // only fires on the active->inactive direction). Forward the
-                // note-off through the normal path so the direct voice
-                // releases; swallowing it here sustained that voice forever
-                // (firmware Part::NoteOff -> AllNotesOff on empty stack).
+                else
+                {
+                    // Not held by the arp/sequencer: either the mode is off, or
+                    // the note was sounding DIRECTLY before the mode was
+                    // enabled (it never entered the held-key stack — enable-
+                    // time transitions do not migrate sounding notes into it,
+                    // and killGeneratedNotes_ only fires on the
+                    // active->inactive direction). Forward the note-off through
+                    // the normal path so the direct voice releases; swallowing
+                    // it here sustained that voice forever (firmware
+                    // Part::NoteOff -> AllNotesOff on empty stack).
+                    anyDirect = true;
+                }
+            });
+            if (anyDirect)
                 processedMidi_.addEvent (msg, meta.samplePosition);
-            }
         }
         else
         {

@@ -5,7 +5,8 @@
 //   ranges on every mirrored surface — the staged arp/sequencer config
 //   (pendingConfig + the live objects after the audio thread services it),
 //   the PartData bytes the descriptors define (spread / polyphony / raga),
-//   the per-part routing (channel 0..16, keyzone 0..127 with lo<=hi), the
+//   the per-part routing (channel 0..16, keyzone 0..127 — inverted zones
+//   allowed: the firmware wrap-around-zone semantics, W8), the
 //   voice-slot count (0..16), the resolved tuning mode (0..33), the installed
 //   FX slot types (0..FxType::Count-1) and the sanitized part name (<=16
 //   chars) — AND must render 32 blocks inside a 10 s watchdog with finite
@@ -190,7 +191,8 @@ int countInvariantViolations (ParvatiAudioProcessor& proc, const char* label)
         const int hi = (int) e.getPartKeyrangeHigh (p);
         if (lo < 0 || lo > 127) flag ("keyzone-low", p, lo, 0, 127);
         if (hi < 0 || hi > 127) flag ("keyzone-high", p, hi, 0, 127);
-        if (lo > hi)            flag ("keyzone-inverted", p, lo, 0, hi);
+        // NOTE: lo > hi is a LEGAL wrap-around zone (firmware multi.h
+        // accept_note; W8 item 1) — only out-of-range ends are violations.
 
         // ---- voice slots ----
         const int slots = e.getPartVoiceSlots (p);
@@ -330,10 +332,11 @@ int main()
         { "channel:16 (valid)",           emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.channel = 16;  return p; }()), "CaseCh16") },
         { "channel:17 (clamps to 16)",    emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.channel = 17;  return p; }()), "CaseCh17") },
         { "channel:255 (clamps to 16)",   emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.channel = 255; return p; }()), "CaseCh255") },
-        // ---- keyzones: clamp + the inverted-zone swap normalization ----
+        // ---- keyzones: clamp to 0..127; inverted zones now stay inverted
+        // (wrap-around zone contract, W8 item 1) ----
         { "keyzone_low:200 (clamps to 127)", emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.keyLo = 200; return p; }()), "CaseLo200") },
         { "keyzone_high:300 (clamps to 127)",emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.keyHi = 300; return p; }()), "CaseHi300") },
-        { "keyzone 90/40 inverted (swap to 40/90)", emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.keyLo = 90; p.keyHi = 40; return p; }()), "CaseZoneInv") },
+        { "keyzone 90/40 inverted (wrap zone PRESERVED)", emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.keyLo = 90; p.keyHi = 40; return p; }()), "CaseZoneInv") },
         // ---- voice slots: 0 disables, 16 maxes, 17/99 clamp ----
         { "voice_slots:0 (disables part)", emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.voiceSlots = 0;  return p; }()), "CaseSlots0") },
         { "voice_slots:1 (valid)",         emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.voiceSlots = 1;  return p; }()), "CaseSlots1") },
@@ -398,9 +401,11 @@ int main()
         auto& e = proc.getEngine();
         // Break through the SAME message-thread seams the loaders use:
         // raw staged arp bytes (the silent-part byte + the AT-hang octave +
-        // a zero seq length), an out-of-range channel (the setters store
+        // a zero seq length) and an out-of-range channel (the setters store
         // uint8 verbatim — the loaders clamp BEFORE them, exactly the seam a
-        // loader regression would miss) and an inverted raw keyzone.
+        // loader regression would miss). An inverted keyzone is NO LONGER a
+        // violation (wrap-around zones are legal, W8 item 1) — the fifth
+        // break is an out-of-range zone END instead.
         e.getPart (0).writePendingConfig ([] (auto& c)
         {
             c.arpMode = 5;
@@ -408,7 +413,7 @@ int main()
             c.seqLength[0] = 0;
         });
         e.setPartChannel (0, 200);
-        e.setPartKeyrange (0, 120, 40);
+        e.setPartKeyrange (0, 130, 40);   // low > 127 (wrap zones stay legal)
         const int v = countInvariantViolations (proc, "CANARY");
         check (v >= 5, juce::String ("canary: hand-broken state trips >= 5 categories [got ")
                            + juce::String (v) + "]");

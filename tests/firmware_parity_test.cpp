@@ -205,6 +205,7 @@ public:
         while (fwClocks_ < targetTicks) { ambika::Multi::Clock(); ++fwClocks_; }
     }
     void transportStop()                    { ambika::Multi::Stop(); }
+    void transportStart()                   { ambika::Multi::Start(); }
 
     // ---- observables ----
     int pressedKeys (int p) const { return ambika::Multi::part ((uint8_t) p).num_pressed_keys(); }
@@ -310,6 +311,24 @@ private:
 };
 
 //===========================================================================
+// Host-playhead mock: the processor reads transport state (isPlaying) from
+// AudioPlayHead, defaulting to TRUE headlessly (the standalone default) — so
+// a "transport stopped" scenario needs a playhead that reports it. This is
+// what a DAW looks like to the plugin with playback stopped (W8 item 2: the
+// phrase restart only engages while the host transport is stopped).
+struct MockPlayHead : public juce::AudioPlayHead
+{
+    std::atomic<bool> playing { true };
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setIsPlaying (playing.load());
+        info.setBpm (120.0);
+        return info;
+    }
+};
+
+//===========================================================================
 // Parvati oracle — the REAL audio path: processBlock drives routing, the
 // arpeggiator and the sustain bookkeeping exactly as in the plugin.
 class PvOracle
@@ -317,8 +336,10 @@ class PvOracle
 public:
     PvOracle() : proc_ (std::make_unique<ParvatiAudioProcessor>())
     {
+        proc_->setPlayHead (&playhead_);
         proc_->prepareToPlay (kRate, kBlock);
     }
+    ~PvOracle() { if (proc_ != nullptr) proc_->setPlayHead (nullptr); }
 
     SynthEngine& engine() { return proc_->getEngine(); }
     // (observers are non-const: they read through the processor's engine ref)
@@ -354,6 +375,11 @@ public:
     }
 
     // ---- events (through the real MIDI seam) ----
+    // Render ONE block carrying the given events verbatim (phrase-restart
+    // scenario: a whole chord in one block so the transport cannot tick
+    // between its note-ons).
+    void injectMidi (const juce::MidiBuffer& m) { render (m, kBlock); }
+
     void noteOn (int ch, int note, int vel)
     {
         juce::MidiBuffer m;
@@ -385,7 +411,8 @@ public:
         render (m, kBlock);
     }
     void clockTo (int targetTicks) { renderSamples (targetTicks * kTicksFromSamples - samplesRendered_); }
-    void transportStop()           { /* no host-transport-stop hook for the arp: divergence 3 */ }
+    void transportStop()           { playhead_.playing.store (false); }
+    void transportStart()          { playhead_.playing.store (true); }
 
     // ---- observables ----
     // Parts with at least one KEYED (held) sounding voice — the parts that
@@ -453,12 +480,17 @@ public:
     // Last modulation value on part p's voices for modSrc (-1 none).
     int lastModWrite (int p, int modSrc)
     {
+        // MAX over the part's voices, not last-writer-wins: the firmware's
+        // per-note writes (poly-AT) hit ONE voice of the part while the idle
+        // trailing voices keep 0 — a plain "last =" loop clobbered the written
+        // voice with the idle one (W8; the channel-wide CC family masked it by
+        // writing every voice).
         SynthEngine& e = engine();
-        int last = -1;
+        int best = 0;
         for (int vi : e.getPart (p).voiceIndices)
             if (auto* av = e.getAmbikaVoice (vi); av != nullptr)
-                last = (int) av->getModulationSource ((uint8_t) modSrc);
-        return last;
+                best = std::max (best, (int) av->getModulationSource ((uint8_t) modSrc));
+        return best;
     }
 
 private:
@@ -479,6 +511,7 @@ private:
             done += chunk;
         }
     }
+    MockPlayHead playhead_;   // declared BEFORE proc_ (destructs after it): the playhead pointer handed to the processor must never dangle
     std::unique_ptr<ParvatiAudioProcessor> proc_;
     int samplesRendered_ = 0;
 };
@@ -545,11 +578,11 @@ void scenarioChannelAccept()
                  "part 1 tuned 14-bit note (64 -> 8192)");
 }
 
-// [2] Overlapping routing: an Omni part PLUS a specific-channel part — the
-// firmware triggers EVERY accepting part; Parvati routes first-match only.
-void scenarioMulticastDivergence()
+// [2] Overlapping routing: an Omni part PLUS a specific-channel part —
+// firmware parity (W8 item 4): EVERY accepting part plays the note.
+void scenarioMulticastRouting()
 {
-    std::printf ("\n[2] overlapping routing: Omni part + ch-2 part\n");
+    std::printf ("\n[2] overlapping routing: Omni part + ch-2 part (multicast)\n");
     auto cfg = twoPartSplit();
     cfg[0].channel = 0;    // part 0 Omni (accepts everything)
 
@@ -557,14 +590,19 @@ void scenarioMulticastDivergence()
     PvOracle pv; pv.configure (cfg);
 
     fw.noteOn (2, 60, 100); pv.noteOn (2, 60, 100); syncClock (fw, pv);
-    checkDiverges ("unicast-vs-multicast",
-                   setStr (fw.partsThatPlayed()), setStr (pv.partsThatPlayed()),
-                   "ch2 note while part 0 is Omni: firmware triggers both accepting parts, Parvati first-match only");
+    checkEquals (setStr (fw.partsThatPlayed()), setStr (pv.partsThatPlayed()),
+                 "ch2 note while part 0 is Omni: EVERY accepting part plays (multicast)");
+
+    // Symmetric release: both parts' notes release on the note-off (the
+    // multicast predicate is the same for on and off).
+    fw.noteOff (2, 60); pv.noteOff (2, 60); syncClock (fw, pv);
+    checkEquals (setStr (fw.partsThatPlayed()), setStr (pv.partsThatPlayed()),
+                 "multicast note-off releases every accepting part");
 }
 
 // [3] Wrap-around key zones (lo > hi): the firmware accepts the complement
-// set (the classic hardware split trick); Parvati only has contiguous zones.
-void scenarioWrapZoneDivergence()
+// set (the classic hardware split trick); Parvati ports it (W8 item 1).
+void scenarioWrapZone()
 {
     std::printf ("\n[3] wrap-around key zone (lo=100 hi=20)\n");
     auto cfg = twoPartSplit();
@@ -574,9 +612,13 @@ void scenarioWrapZoneDivergence()
     PvOracle pv; pv.configure (cfg);
 
     fw.noteOn (2, 5, 100); pv.noteOn (2, 5, 100); syncClock (fw, pv);
-    checkDiverges ("wrap-around-keyzones",
-                   setStr (fw.partsThatPlayed()), setStr (pv.partsThatPlayed()),
-                   "note 5 inside wrap zone [100..20]: firmware accepts, Parvati rejects");
+    checkEquals (setStr (fw.partsThatPlayed()), setStr (pv.partsThatPlayed()),
+                 "note 5 inside wrap zone [100..20]: accepted by both");
+
+    // A note in the (excluded) middle must NOT reach the wrap part.
+    fw.noteOn (2, 60, 100); pv.noteOn (2, 60, 100); syncClock (fw, pv);
+    checkEquals (setStr (fw.partsThatPlayed()), setStr (pv.partsThatPlayed()),
+                 "note 60 outside wrap zone: rejected by both");
 }
 
 // [4] Sustain pedal (CC64): swallow the key release, drain on pedal-up.
@@ -667,9 +709,9 @@ void scenarioModWheelRouting()
                  "part 1 (ch2) received CC1 (40 << 1 = 80)");
 }
 
-// [7] Polyphonic aftertouch: the firmware writes MOD_SRC_AFTERTOUCH to the
-// accepting part's voices; Parvati ignores poly-AT.
-void scenarioPolyAtDivergence()
+// [7] Polyphonic aftertouch: firmware parity (W8 item 3) — the value is
+// written to the accepting part's voices through accept_channel_note.
+void scenarioPolyAftertouch()
 {
     std::printf ("\n[7] polyphonic aftertouch\n");
     FwOracle fw; fw.reset(); fw.configure (twoPartSplit());
@@ -678,16 +720,20 @@ void scenarioPolyAtDivergence()
     fw.noteOn (1, 60, 100); pv.noteOn (1, 60, 100);
     fw.polyAftertouch (1, 60, 90); pv.polyAftertouch (1, 60, 90); syncClock (fw, pv);
 
-    checkDiverges ("poly-aftertouch-ignored",
-                   std::to_string (fw.lastModWrite (0, ambika::MOD_SRC_AFTERTOUCH)),
-                   std::to_string (pv.lastModWrite (0, ambika::dsp::MOD_SRC_AFTERTOUCH)),
-                   "poly-AT writes MOD_SRC_AFTERTOUCH (90<<1=180) on firmware; Parvati ignores it");
+    checkEquals (std::to_string (fw.lastModWrite (0, ambika::MOD_SRC_AFTERTOUCH)),
+                 std::to_string (pv.lastModWrite (0, ambika::dsp::MOD_SRC_AFTERTOUCH)),
+                 "poly-AT writes MOD_SRC_AFTERTOUCH to the accepting part's voices");
+
+    // A note on the OTHER channel's part must not receive part 0's AT.
+    fw.polyAftertouch (2, 64, 30); pv.polyAftertouch (2, 64, 30); syncClock (fw, pv);
+    checkEquals (std::to_string (fw.lastModWrite (0, ambika::MOD_SRC_AFTERTOUCH)),
+                 std::to_string (pv.lastModWrite (0, ambika::dsp::MOD_SRC_AFTERTOUCH)),
+                 "poly-AT on ch2 leaves part 0 (ch1) untouched");
 }
 
-// [8] Arp phrase restart: when the last key of a phrase is released and the
-// transport stops, a NEW phrase restarts the firmware arp at pattern step 0;
-// Parvati resumes mid-pattern (no phrase-restart hook).
-void scenarioArpRestartDivergence()
+// [8] Arp phrase restart: firmware parity (W8 item 2) — a NEW phrase while
+// the transport is stopped restarts the arp at pattern step 0.
+void scenarioArpPhraseRestart()
 {
     std::printf ("\n[8] arp phrase restart (transport stopped)\n");
     auto cfg = twoPartSplit();
@@ -697,30 +743,80 @@ void scenarioArpRestartDivergence()
     FwOracle fw; fw.reset(); fw.configure (cfg);
     PvOracle pv; pv.configure (cfg);
 
+    // OBSERVABLE ASYMMETRY (why a recorder, not arp.lastNote()): the firmware
+    // oracle reads the DISPATCHER LOG's last generated note, which persists
+    // across later skipped steps; the arp's live previousNote_ resets to 0xff
+    // whenever the pattern bit is clear (pattern 0 = 0x5555 has only odd
+    // bits, so alternate steps skip). Record the generated notes through the
+    // note-on seam (the scenario-9 idiom) so the two observables match.
+    std::vector<int> pvGenerated;
+    pv.engine().getPart (0).arp.setNoteOnCallback (
+        [&pvGenerated] (int, int note, uint8_t) { pvGenerated.push_back (note); });
+
     // Phrase 1: 3 held notes; clock past >= 2 arp steps.
     fw.noteOn (1, 60, 100); pv.noteOn (1, 60, 100);
     fw.noteOn (1, 64, 100); pv.noteOn (1, 64, 100);
     fw.noteOn (1, 67, 100); pv.noteOn (1, 67, 100);
     pv.clockTo (13); syncClock (fw, pv);
-
     // Phrase ends: release everything; the firmware transport stops.
     fw.noteOff (1, 60); pv.noteOff (1, 60);
     fw.noteOff (1, 64); pv.noteOff (1, 64);
     fw.noteOff (1, 67); pv.noteOff (1, 67);
     fw.transportStop(); pv.transportStop();
+    pvGenerated.clear();   // phrase 2's first note is the FIRST after the restart
 
-    // Phrase 2 (same notes) + exactly one arp step.
-    fw.noteOn (1, 60, 100); pv.noteOn (1, 60, 100);
-    fw.noteOn (1, 64, 100); pv.noteOn (1, 64, 100);
-    fw.noteOn (1, 67, 100); pv.noteOn (1, 67, 100);
-    pv.clockTo (pv.ticks() + 6); syncClock (fw, pv);
+    // Phrase 2 (same notes) + two arp steps. All three note-ons in ONE
+    // block: the pv transport ticks continuously per rendered block, so
+    // separate note-on blocks let the forced first arp step fire mid-phrase
+    // with only one key held (a block-boundary asymmetry vs the explicit-
+    // clock firmware oracle, whose first Clock sees all three keys — not a
+    // semantic difference).
+    {
+        juce::MidiBuffer m;
+        m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) 60, (uint8_t) 100), 0);
+        m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) 64, (uint8_t) 100), 0);
+        m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) 67, (uint8_t) 100), 0);
+        pv.injectMidi (m);
+    }
+    fw.noteOn (1, 60, 100);
+    fw.noteOn (1, 64, 100);
+    fw.noteOn (1, 67, 100);
+    pv.clockTo (pv.ticks() + 12); syncClock (fw, pv);   // 2 steps: restart step + one more
 
     const int fwNote = fw.lastPlayedNote (0);
-    const int pvNote = pv.arpLastNote (0);
+    const int pvNote = pvGenerated.empty() ? -1 : pvGenerated.back();
     std::printf ("     first generated note of phrase 2: fw=%d pv=%d\n", fwNote, pvNote);
-    checkDiverges ("arp-phrase-restart",
-                   std::to_string (fwNote), std::to_string (pvNote),
-                   "new phrase restarts the arp at pattern step 0 on firmware; Parvati resumes mid-pattern");
+    checkEquals (std::to_string (fwNote), std::to_string (pvNote),
+                 "new phrase restarts the arp at pattern step 0 (both sides)");
+    check (pvGenerated.size() >= 2,
+           "phrase 2 generated at least two arp steps (restart step + one more)");
+
+    // ---- Phase B: while the transport PLAYS, a new phrase does NOT restart
+    // (firmware's running_ gate: NoteOn only calls Start() when !running_;
+    // the engine's !isPlaying condition is the port). Both sides keep their
+    // pattern position, so the first note of the next phrase is wherever the
+    // pattern left off — assert PARITY of that note (not a fixed value).
+    pvGenerated.clear();
+    pv.transportStart();   // playhead playing=true (the next render starts arps)
+    fw.transportStart();
+    pv.clockTo (pv.ticks() + 2); syncClock (fw, pv);   // settle the start step
+    pvGenerated.clear();
+    {
+        juce::MidiBuffer m;   // phrase 3 in one block, transport running
+        m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) 60, (uint8_t) 100), 0);
+        m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) 62, (uint8_t) 100), 0);
+        m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) 65, (uint8_t) 100), 0);
+        pv.injectMidi (m);
+    }
+    fw.noteOn (1, 60, 100);
+    fw.noteOn (1, 62, 100);
+    fw.noteOn (1, 65, 100);
+    pv.clockTo (pv.ticks() + 12); syncClock (fw, pv);
+    const int fwNote3 = fw.lastPlayedNote (0);
+    const int pvNote3 = pvGenerated.empty() ? -1 : pvGenerated.front();
+    std::printf ("     first generated note of phrase 3 (transport running): fw=%d pv=%d\n", fwNote3, pvNote3);
+    checkEquals (std::to_string (fwNote3), std::to_string (pvNote3),
+                 "while the transport plays, a new phrase does NOT restart (parity of position)");
 }
 
 // [9] Note-sequence velocity-0 decode: the firmware returns velocity 0 for
@@ -832,19 +928,18 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     scenarioChannelAccept();          // [1]
-    scenarioMulticastDivergence();    // [2]
-    scenarioWrapZoneDivergence();     // [3]
+    scenarioMulticastRouting();       // [2]
+    scenarioWrapZone();               // [3]
     scenarioSustain();                // [4]
     scenarioAllNotesOff();            // [5]
     scenarioModWheelRouting();        // [6]
-    scenarioPolyAtDivergence();       // [7]
-    scenarioArpRestartDivergence();   // [8]
+    scenarioPolyAftertouch();         // [7]
+    scenarioArpPhraseRestart();       // [8]
     scenarioVelocityZeroDivergence(); // [9]
 
     // Allowlist <-> harness completeness (both directions).
     const std::set<std::string> exercised = {
-        "unicast-vs-multicast", "wrap-around-keyzones", "arp-phrase-restart",
-        "velocity-zero-substitution", "poly-aftertouch-ignored",
+        "velocity-zero-substitution",
     };
     for (const auto& id : g_divergences)
         if (exercised.count (id) == 0)

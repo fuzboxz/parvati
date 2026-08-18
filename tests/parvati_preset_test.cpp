@@ -536,9 +536,9 @@ int main()
         check (p.loadParvatiMultiFile (f), "T8: clamped multi loads");
         check (p.getEngine().getPartChannel (0) == 16,
                "T8: channel 17 clamps to 16 (was: uint8 wrap to a dead channel)");
-        check (p.getEngine().getPartKeyrangeLow (0) == 20
-                   && p.getEngine().getPartKeyrangeHigh (0) == 100,
-               "T8: inverted zone 100..20 normalizes to 20..100");
+        check (p.getEngine().getPartKeyrangeLow (0) == 100
+                   && p.getEngine().getPartKeyrangeHigh (0) == 20,
+               "T8: wrap zone 100..20 PRESERVED (firmware low>high wrap; was: normalized 20..100)");
         check (p.getEngine().getPartVoiceSlots (0) == 4,
                "T8: voice_slots still applies alongside the clamped routing");
         f.deleteFile();

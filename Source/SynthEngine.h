@@ -920,7 +920,40 @@ private:
 
     static bool ok (int part) { return part >= 0 && part < kNumParts; }
 
+    // ---- firmware routing predicates (multi.h PartMapping) ----
+    // accept_note (multi.h:47-53): contiguous zone (low<=high) accepts
+    // low..high; a WRAP zone (low>high) accepts the complement (note<=high OR
+    // note>=low) — the classic hardware split trick. Static: pure function of
+    // the atomic keyrange snapshot.
+    static bool partAcceptsNote (const Part& pm, int note);
+    // receive_channel (multi.h:41-43): Omni (0) or exact 1-based match.
+    static bool partAcceptsChannel (const Part& pm, int channel);
+    // accept_channel_note (multi.h:55-57) == receive_channel && accept_note.
+    static bool partAcceptsChannelNote (const Part& pm, int channel, int note);
+
+    // MULTICAST note routing (firmware Multi::NoteOn/NoteOff deliver to EVERY
+    // accepting part — W8 item 4). Calls @p fn for each accepting part index
+    // in part order; returns the count. Template on the functor so there is
+    // no std::function / heap indirection on the audio thread. NOTE: unlike
+    // the three predicates above this reads parts_, so it is a CONST member
+    // (the predicates are static because other translation units reuse them).
+    template <typename Fn>
+    int forEachAcceptingPart (int channel, int note, Fn&& fn) const
+    {
+        int n = 0;
+        for (int p = 0; p < kNumParts; ++p)
+            if (partAcceptsChannelNote (parts_[(size_t) p], channel, note))
+            {
+                fn (p);
+                ++n;
+            }
+        return n;
+    }
+
     // First Part whose channel+keyzone accepts (channel,note); -1 if none.
+    // Retained for callers whose downstream semantics are inherently
+    // per-one; under multicast routing this is "first accepting part in part
+    // order", not an exclusive route.
     int findPartForNote (int channel, int note) const;
 
     // Recompute every Part's voiceIndices from its voiceAllocation bitmask
@@ -981,6 +1014,16 @@ private:
     // no-ops in AmbikaVoice.
     void handlePitchWheel      (int midiChannel, int wheelValue) override;
     void handleChannelPressure (int midiChannel, int channelPressureValue) override;
+
+    // POLYPHONIC AFTERTOUCH (W8 item 3, firmware multi.h:156-162 ->
+    // part.cc:485-526): unlike the three per-channel handlers above, the
+    // firmware routes poly-AT PER NOTE through the full accept_channel_note
+    // predicate (channel AND zone), then — inside the part — per polyphony
+    // mode: POLY/CYCLIC/CHAIN write the voice playing THAT note, UNISON_2X
+    // writes the pair, MONO falls back to a channel-wide write (all the
+    // part's voices, like channel pressure). Implemented in the multicast
+    // routing family: every accepting part handles the note.
+    void handleAftertouch (int midiChannel, int midiNoteNumber, int aftertouchValue) override;
 
     void handleController      (int midiChannel, int controllerNumber, int controllerValue) override;
 
