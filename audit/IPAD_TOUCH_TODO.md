@@ -156,15 +156,22 @@ Check items off (`[x]`) as they are implemented and verified.
 - AUv3 FilePicker behavior per host (AUM vs GarageBand) — needs device testing.
 - Hover-driven dest/row highlight gating on `!isTouch()` (cosmetic).
 - Concurrent internal DnD drags share one affordance flag (rare, visual-only).
-- **AUv3 panes below the 1024pt floor collapse header chrome (W7-known,
-  round-3 lane-C finding 1).** The AUv3 wrapper force-resizes the editor to
-  the host's pane (setResizeLimits is desktop-only advice), and the header's
-  fixed budgets mean SYNTH/FX/Part/preset collapse to 0px width in narrow
-  panes (AUM with keyboard open ~570pt, GarageBand panes ~700pt). Content
-  pages degrade gracefully (44pt floors + scroll) — the header needs an
-  adaptive design (overflow "…" folding and/or a horizontal viewport) before
-  it degrades. Not fixed in W7: a product/design decision, not a contained
-  patch.
+- ~~**AUv3 panes below the 1024pt floor collapse header chrome (W7-known,
+  round-3 lane-C finding 1).**~~ **DONE (W9, 2026-08-18).** The header now
+  folds secondary controls into the existing "..." overflow popup at MEASURED
+  budget breakpoints (< 1024: Part combo + [Synth]/[FX]; < 810:
+  [MOD]/[MAP]/gear; < 650: Redo + the [Patch] page button — with both placed,
+  560pt runs ~46pt over budget, and the Patch page stays reachable via the
+  popup's page items). The preset browser's width is elastic below the floor
+  (60pt floor). Primary controls (preset, Load, Save, Undo, [KBD], "...")
+  never fold, so nothing interactive goes zero-width down to 560pt —
+  tests/layout_minwidth_test sweeps 560..1800 asserting visible-positive
+  extent + no overlap + the primary set. The iOS safe-area trim now only
+  applies to display edges the editor actually SPANS (a centred AUv3 pane
+  keeps its full width; full-screen Standalone behaviour unchanged). >= 1024pt
+  the layout is byte-identical to the pre-W9 sequence (desktop gates
+  untouched). Real AUv3 pane verification (AUM/GarageBand) still needs a
+  device — out of scope for the headless sweep.
 - **Note routing / wrap-around keyzones / arp phrase-restart / poly-AT —
   CONVERGED (W8, 2026-08-18).** The four deferred firmware-parity items from
   the W7 hunt are now ported firmware-faithfully and locked as equality

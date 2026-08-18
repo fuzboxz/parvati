@@ -2384,9 +2384,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // write the OLD part's values into the CURRENT part (cross-part
     // corruption; see ParvatiAudioProcessor::undoSafe).
     undoButton_.onClick = [this] { processorRef_.undoSafe(); };
+    // Test seam: the Path-drawn IconButtons carry no text — name them so the
+    // layout sweep can locate the primary-set members by name.
+    undoButton_.setName ("headerUndo");
     addAndMakeVisible (undoButton_);
     redoButton_.setTooltip (TRANS ("Redo"));
     redoButton_.onClick = [this] { processorRef_.redoSafe(); };
+    redoButton_.setName ("headerRedo");
     addAndMakeVisible (redoButton_);
 
     // On-screen zoom +/-/0 (visible on every platform; iPad has no keyboard).
@@ -2417,6 +2421,42 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         m.addItem (juce::PopupMenu::Item (TRANS ("Zoom In")).setAction  ([safe] { if (safe != nullptr) safe->applyZoom (safe->zoom_ + 0.1); }));
         m.addItem (juce::PopupMenu::Item (TRANS ("Zoom Out")).setAction ([safe] { if (safe != nullptr) safe->applyZoom (safe->zoom_ - 0.1); }));
         m.addItem (juce::PopupMenu::Item (TRANS ("Reset Zoom")).setAction ([safe] { if (safe != nullptr) safe->applyZoom (1.0); }));
+        // ---- W9 folded header actions (AUv3 compact panes): the popup grows
+        // the sections whose header controls are currently folded away (the
+        // SAME breakpoints resized() uses, re-evaluated at click time so a
+        // resize between layout and click can never desync the menu). Every
+        // item drives the SAME seam as the hidden control: page items call
+        // showTopPage (the buttons' onClick entry point), the toggles
+        // triggerClick their hidden buttons (toggle state + onClick wiring),
+        // the Part items setSelectedId the real combo (attachment -> APVTS).
+        // Labels reuse existing keys — no new translation strings.
+        if (safe != nullptr)
+        {
+            if (safe->getWidth() < 1024)   // Part combo + [Synth]/[FX] folded
+            {
+                m.addSeparator();
+                juce::PopupMenu partMenu;
+                for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
+                    partMenu.addItem (juce::PopupMenu::Item (TRANS ("Part") + " " + juce::String (i))
+                                          .setAction ([safe, i] { if (safe != nullptr) safe->partCombo_.setSelectedId (i, juce::sendNotificationSync); }));
+                m.addSubMenu (TRANS ("Part"), partMenu);
+                m.addItem (juce::PopupMenu::Item (TRANS ("Synth page")).setAction ([safe] { if (safe != nullptr) safe->showTopPage (0); }));
+                m.addItem (juce::PopupMenu::Item (TRANS ("FX page")).setAction    ([safe] { if (safe != nullptr) safe->showTopPage (1); }));
+            }
+            if (safe->getWidth() < 810)    // [MOD]/[MAP]/gear folded
+            {
+                m.addSeparator();
+                m.addItem (juce::PopupMenu::Item (TRANS ("Toggle the modulation pill bar")).setAction ([safe] { if (safe != nullptr) safe->modBarToggleButton_.triggerClick(); }));
+                m.addItem (juce::PopupMenu::Item (TRANS ("Tap-to-assign modulation")).setAction      ([safe] { if (safe != nullptr) safe->modAssignButton_.triggerClick(); }));
+                m.addItem (juce::PopupMenu::Item (TRANS ("Settings")).setAction                   ([safe] { if (safe != nullptr) safe->settingsButton_.triggerClick(); }));
+            }
+            if (safe->getWidth() < 650)    // [Patch] page button + Redo folded
+            {
+                m.addSeparator();
+                m.addItem (juce::PopupMenu::Item (TRANS ("Patch / arrangement page")).setAction ([safe] { if (safe != nullptr) safe->showTopPage (2); }));
+                m.addItem (juce::PopupMenu::Item (TRANS ("Redo")).setAction                       ([safe] { if (safe != nullptr) safe->redoButton_.triggerClick(); }));
+            }
+        }
         m.showMenuAsync (juce::PopupMenu::Options()
                              .withTargetComponent (&zoomOverflowButton_)
                              .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
@@ -3838,14 +3878,36 @@ void ParvatiEditor::resized()
     // real safe-area edge (without this, zooming out shrank the inset and the UI
     // slid back under the status bar).
 #if JUCE_IOS
-    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+    // W9: trim ONLY the display edges the editor actually SPANS. The old
+    // unconditional full-inset trim wasted up to ~47-59pt/side on a centred
+    // AUv3 pane that touches no safe-area edge (the round-3 lane-C
+    // aggravator). A full-screen Standalone (editor == display) still trims
+    // every side, so the T-fix notch/home-indicator behaviour is unchanged.
+    // Guards: headless (no peer) and offscreen (no display found) skip the
+    // trim entirely. Comparison in DISPLAY points with a small tolerance so
+    // a pixel-level border still counts as spanning the edge.
+    if (auto* peer = getPeer())
     {
-        const double z = juce::jmax (0.1, (double) juce::Desktop::getInstance().getGlobalScaleFactor());
-        const auto& s = d->safeAreaInsets;
-        area = area.withTrimmedTop    (juce::roundToInt (s.getTop()    / z))
-                   .withTrimmedBottom (juce::roundToInt (s.getBottom() / z))
-                   .withTrimmedLeft   (juce::roundToInt (s.getLeft()   / z))
-                   .withTrimmedRight  (juce::roundToInt (s.getRight()  / z));
+        const auto screen = peer->localToGlobal (getLocalBounds());
+        if (auto* d = juce::Desktop::getInstance().getDisplays()
+                          .getDisplayForPoint (screen.getCentre(), false))
+        {
+            const auto total = d->totalArea;
+            if (total.getWidth() > 0 && total.getHeight() > 0)
+            {
+                constexpr int kEdgeTolerance = 4;
+                const double z = juce::jmax (0.1, (double) juce::Desktop::getInstance().getGlobalScaleFactor());
+                const auto& s = d->safeAreaInsets;
+                if (screen.getY() <= total.getY() + kEdgeTolerance)
+                    area = area.withTrimmedTop (juce::roundToInt (s.getTop() / z));
+                if (screen.getBottom() >= total.getBottom() - kEdgeTolerance)
+                    area = area.withTrimmedBottom (juce::roundToInt (s.getBottom() / z));
+                if (screen.getX() <= total.getX() + kEdgeTolerance)
+                    area = area.withTrimmedLeft (juce::roundToInt (s.getLeft() / z));
+                if (screen.getRight() >= total.getRight() - kEdgeTolerance)
+                    area = area.withTrimmedRight (juce::roundToInt (s.getRight() / z));
+            }
+        }
     }
 #endif
 
@@ -3894,18 +3956,64 @@ void ParvatiEditor::resized()
     // >=8pt gaps, and the three zoom buttons (+/-/0) are folded into one "..."
     // overflow popup so the grown cluster still fits the 1280pt editor width.
     // [KBD] is already 44pt wide.
+    // ---- W9 adaptive header folding (AUv3 compact panes) ----
+    // The AUv3 wrapper force-resizes the editor to the host pane
+    // (setResizeLimits is desktop-only advice), and juce::Rectangle
+    // removeFromLeft/Right CLIP to the remaining width — an unfolded fixed
+    // budget drives controls to 0px (invisible AND untouchable; the round-3
+    // lane-C finding: AUM keyboard-open ~570pt, GarageBand panes ~700pt).
+    // Secondary controls fold into the existing "..." overflow popup at
+    // MEASURED budget breakpoints (derived from the fixed budgets below:
+    // right cluster 486pt full / 330 without the view trio / 278 without
+    // Redo; fixed left overhead 106pt (insets 12 + edge 8 + logo ~86);
+    // preset 156 + Patch 64 + the Part/Synth/FX cluster 212):
+    //   < 1024: Part combo + [Synth]/[FX] fold (the cluster's designed budget
+    //           is exactly 1024 — below it SYNTH/FX historically collapsed);
+    //   < 810:  [MOD]/[MAP]/gear additionally fold (the preset+Patch cluster
+    //           + full right cluster needs 830);
+    //   < 650:  Redo AND the [Patch] page button additionally fold (with both
+    //           placed, 560pt runs ~46pt over; the Patch page stays reachable
+    //           via the popup's page items).
+    // Primary controls (preset browser, Load, Save, Undo, [KBD], "...") NEVER
+    // fold. At >= 1024 every flag is false and the sequence below is
+    // byte-identical to the pre-W9 layout (the desktop designed-width gates
+    // are unchanged). Pure resized() math + visibility — no timers.
+    const int editorW = getWidth();
+    const bool foldPartCluster = editorW < 1024;
+    const bool foldViewCluster = editorW < 810;
+    const bool foldHistoryBand = editorW < 650;
+
+    kbdToggleButton_.setVisible (true);   // primary: never folds
     kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] keyboard-overlay toggle (far right)
     bar.removeFromRight (8);
-    modBarToggleButton_.setBounds (bar.removeFromRight (44)); // [MOD] mod-pill bar seam toggle (left of [KBD])
-    bar.removeFromRight (8);
-    modAssignButton_.setBounds (bar.removeFromRight (44));     // [MOD] tap-to-assign toggle
-    bar.removeFromRight (8);
-    settingsButton_.setBounds (bar.removeFromRight (44));      // gear
-    bar.removeFromRight (8);
+    modBarToggleButton_.setVisible (! foldViewCluster);
+    if (! foldViewCluster)
+    {
+        modBarToggleButton_.setBounds (bar.removeFromRight (44)); // [MOD] mod-pill bar seam toggle (left of [KBD])
+        bar.removeFromRight (8);
+    }
+    modAssignButton_.setVisible (! foldViewCluster);
+    if (! foldViewCluster)
+    {
+        modAssignButton_.setBounds (bar.removeFromRight (44));     // [MOD] tap-to-assign toggle
+        bar.removeFromRight (8);
+    }
+    settingsButton_.setVisible (! foldViewCluster);
+    if (! foldViewCluster)
+    {
+        settingsButton_.setBounds (bar.removeFromRight (44));      // gear
+        bar.removeFromRight (8);
+    }
+    zoomOverflowButton_.setVisible (true);   // the overflow host: never folds (it carries the folded actions)
     zoomOverflowButton_.setBounds (bar.removeFromRight (44));  // "..." zoom overflow (popup)
     bar.removeFromRight (8);
-    redoButton_.setBounds (bar.removeFromRight (44));          // redo
-    bar.removeFromRight (8);
+    redoButton_.setVisible (! foldHistoryBand);
+    if (! foldHistoryBand)
+    {
+        redoButton_.setBounds (bar.removeFromRight (44));          // redo
+        bar.removeFromRight (8);
+    }
+    undoButton_.setVisible (true);   // primary: never folds
     undoButton_.setBounds (bar.removeFromRight (44));          // undo
     bar.removeFromRight (6);   // separates the history/view icons from the file group
     saveButton_.setBounds (bar.removeFromRight (64));          // Save (carries the format popup menu)
@@ -3938,10 +4046,14 @@ void ParvatiEditor::resized()
     // breathing-room slack) so it sits close to the wordmark; the preset browser
     // is narrowed. The toolbar hugs the right edge, so the menus pack from the
     // left of the remaining bar. Layout: [preset][gap][Patch][Part n][Synth][FX]
+    // W9: the secondary tail controls fold at the measured breakpoints (see
+    // the fold block above) and are hidden; the preset browser is PRIMARY —
+    // it never folds, but below the floor its width is ELASTIC (whatever the
+    // leftover affords, clamped to a 60pt floor so it stays functional)
+    // instead of the fixed 156pt natural width.
     {
         patchCaption_.setVisible (false);   // "Patch:" label removed
         partCaption_.setVisible (false);    // "Part:" label removed (dropdown only)
-        const int presetW   = (presetBrowser_ != nullptr) ? 156 : 0;   // min-width fit (see below)
         const int partComboW = 88;
         const int gapW = 6;
         const int globalW = 64;
@@ -3954,23 +4066,38 @@ void ParvatiEditor::resized()
         // truncating [FX] to ~38px; 156 lands exactly on the budget so every
         // control keeps its designed width at the minimum frame.
 
+        globalButton_.setVisible (! foldHistoryBand);
+        partCombo_.setVisible (! foldPartCluster);
+        synthModeButton_.setVisible (! foldPartCluster);
+        fxModeButton_.setVisible (! foldPartCluster);
+
         auto cluster = bar;   // left-aligned: follows the logo block directly
-        // Whitespace between EVERY left-cluster element (preset | Patch | Part |
-        // Synth | FX) so each control breathes a couple of pixels on its right
-        // instead of butting directly against the next one.
         if (presetBrowser_ != nullptr)
         {
+            // Elastic preset width: at/above the floor this clamps to the
+            // natural 156 (identical to the old layout); below it the preset
+            // absorbs the squeeze FIRST (a 60pt floor) so the placed primary
+            // neighbours keep their designed widths as long as possible.
+            const int availForPreset = cluster.getWidth()
+                                           - (foldHistoryBand ? 0 : (globalW + gapW));
+            const int presetW = juce::jlimit (60, 156, availForPreset);
             presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
             cluster.removeFromLeft (gapW);
         }
-        globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Patch page overlay toggle (between Patch dropdown and Part)
-        cluster.removeFromLeft (gapW);
-        partCombo_.setBounds (cluster.removeFromLeft (partComboW));
-        cluster.removeFromLeft (gapW);
-        // Synth/FX mode toggle (radio group) after Part.
-        synthModeButton_.setBounds (cluster.removeFromLeft (modeW));
-        cluster.removeFromLeft (gapW);
-        fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
+        if (! foldHistoryBand)
+        {
+            globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Patch page overlay toggle (between Patch dropdown and Part)
+            cluster.removeFromLeft (gapW);
+        }
+        if (! foldPartCluster)
+        {
+            partCombo_.setBounds (cluster.removeFromLeft (partComboW));
+            cluster.removeFromLeft (gapW);
+            // Synth/FX mode toggle (radio group) after Part.
+            synthModeButton_.setBounds (cluster.removeFromLeft (modeW));
+            cluster.removeFromLeft (gapW);
+            fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
+        }
     }
 
     // ---- Chrome-rule clearance: the separator rules (topmost ChromeRule

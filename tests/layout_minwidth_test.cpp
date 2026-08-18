@@ -230,6 +230,17 @@ juce::Component* findTextButton (ParvatiEditor& e, const char* text)
 }
 
 //==============================================================================
+// Locate a direct-child Button by NAME (the W9 seam: the Path-drawn
+// IconButtons carry no text, so the header ctor names the primary-set ones).
+juce::Component* findNamedButton (ParvatiEditor& e, const char* name)
+{
+    for (auto* c : e.getChildren())
+        if (dynamic_cast<juce::Button*> (c) != nullptr && c->getName() == name)
+            return c;
+    return nullptr;
+}
+
+//==============================================================================
 void sweepWidth (ParvatiEditor& editor, int w)
 {
     std::printf ("\n=== %dx600 ===\n", w);
@@ -237,8 +248,13 @@ void sweepWidth (ParvatiEditor& editor, int w)
 
     auto header = collectHeaderChildren (editor);
     std::printf ("  audited %zu placed interactive header children\n", header.size());
-    check (header.size() >= 12,
-           "header set is non-degenerate (>= 12 placed interactive children found)");
+    // The placed-set size floor is BAND-scoped (W9 folding hides secondary
+    // controls below the measured breakpoints 1024 / 810 / 650):
+    //   >= 1024: full desktop set; 810..1023: Part/Synth/FX folded;
+    //   650..809: + MOD/MAP/gear folded; < 650: + Patch/Redo folded.
+    const int floorCount = (w >= 1024) ? 12 : (w >= 810) ? 11 : (w >= 650) ? 8 : 6;
+    check ((int) header.size() >= floorCount,
+           "header set is non-degenerate (placed interactive children >= floor)");
 
     // [1] positive extent for every PLACED control.
     for (const auto& h : header)
@@ -253,14 +269,23 @@ void sweepWidth (ParvatiEditor& editor, int w)
                         { return h.parkedFolded || rectHasPositiveExtent (h.bounds); }),
            "every placed interactive header child keeps positive width AND height");
 
-    // [2] the historical truncation class: >= 80% of documented natural width.
+    // [2] the historical truncation class: >= 80% of documented natural
+    // width, over the PLACED reference controls only (W9: sub-1024 the Part
+    // combo / [Synth]/[FX] fold away — findPartCombo returns nullptr — and
+    // below 650 the [Patch] button folds too; folded controls are exempt by
+    // design, their actions live in the "..." popup).
+    const bool partClusterPlaced = w >= 1024;
+    const bool patchPlaced       = w >= 650;
     struct Ref { const char* label; juce::Component* c; int natural; };
-    const Ref refs[] = {
-        { "preset browser", findPresetBrowser (editor), kNaturalPresetW },
-        { "Patch page button", findTextButton (editor, "Patch"), kNaturalPatchW },
-        { "part combo", findPartCombo (editor), kNaturalPartW },
-        { "[FX] mode button", findTextButton (editor, "FX"), kNaturalModeW },
-    };
+    std::vector<Ref> refs;
+    refs.push_back ({ "preset browser", findPresetBrowser (editor), kNaturalPresetW });
+    if (patchPlaced)
+        refs.push_back ({ "Patch page button", findTextButton (editor, "Patch"), kNaturalPatchW });
+    if (partClusterPlaced)
+    {
+        refs.push_back ({ "part combo", findPartCombo (editor), kNaturalPartW });
+        refs.push_back ({ "[FX] mode button", findTextButton (editor, "FX"), kNaturalModeW });
+    }
     for (const auto& r : refs)
     {
         if (r.c == nullptr)
@@ -305,6 +330,37 @@ void sweepWidth (ParvatiEditor& editor, int w)
             }
         }
     check (overlaps == 0, "no pairwise sibling overlap in the header row");
+
+    // [4] W9 primary-set guarantee (every width incl. sub-1024): the
+    // never-fold controls — preset browser, Load, Save, Undo, [KBD], and
+    // the "..." overflow host that carries the folded actions — stay
+    // VISIBLE with positive extent down to the narrowest swept pane. This
+    // is the AUv3 compact-pane contract in pure layout math: real device /
+    // AUv3-pane verification (AUM keyboard-open ~570pt, GarageBand ~700pt)
+    // needs a host and is out of scope for the headless sweep.
+    struct Primary { const char* label; juce::Component* c; };
+    const Primary primaries[] = {
+        { "preset browser",   findPresetBrowser (editor) },
+        { "Load button",      findTextButton (editor, "Load") },
+        { "Save button",      findTextButton (editor, "Save") },
+        { "Undo button",      findNamedButton (editor, "headerUndo") },
+        { "[KBD] toggle",     findTextButton (editor, "KBD") },
+        { "... overflow",     findTextButton (editor, "...") },
+    };
+    for (const auto& p : primaries)
+    {
+        if (p.c == nullptr)
+        {
+            check (false, (juce::String ("PRIMARY control not found: ") + p.label).toRawUTF8());
+            continue;
+        }
+        const bool visiblePositive = isEffectivelyVisible (p.c)
+                                     && rectHasPositiveExtent (p.c->getBoundsInParent());
+        char msg[128];
+        std::snprintf (msg, sizeof (msg), "primary %s visible + positive at %d [%s]",
+                       p.label, w, p.c->getBoundsInParent().toString().toRawUTF8());
+        check (visiblePositive, msg);
+    }
 }
 } // namespace
 
@@ -350,9 +406,11 @@ int main()
 
     // ------------------------------------------------------------------
     // The sweep: the whole legal desktop resize range (1024 floor .. 1800
-    // ceiling from setResizeLimits), height 600. Sub-1024 is deliberately
-    // NOT swept (see the file header: the AUv3 collapse is the known deferred
-    // item; the sweep floor IS the desktop minimum).
+    // ceiling from setResizeLimits) at height 600, PLUS the W9 sub-1024
+    // compact band (560 .. 980) exercised by the adaptive header fold — the
+    // AUv3 wrapper bypasses the constrainer, so the layout math must hold
+    // at ANY pane size. iOS-vs-desktop is not distinguishable headlessly;
+    // these widths assert the PURE layout contract (see [4]).
     // ------------------------------------------------------------------
     ParvatiAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
@@ -370,7 +428,8 @@ int main()
     }
     editor->setVisible (true);
 
-    for (int w : { 1024, 1050, 1099, 1100, 1152, 1200, 1280, 1440, 1600, 1800 })
+    for (int w : { 560, 600, 650, 700, 780, 810, 900, 980,
+                   1024, 1050, 1099, 1100, 1152, 1200, 1280, 1440, 1600, 1800 })
         sweepWidth (*editor, w);
 
     delete editor;

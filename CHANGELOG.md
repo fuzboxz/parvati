@@ -5,6 +5,26 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Adaptive header for AUv3 compact panes (Wave 9).** AUv3 hosts
+  force-resize the editor to the pane (the 1024pt `setResizeLimits` floor is
+  desktop-only advice), and the header's fixed budgets drove controls to
+  0px width in narrow panes (invisible AND untouchable — AUM keyboard-open
+  ~570pt, GarageBand smart-controls ~700pt). Secondary header controls now
+  fold into the existing "..." overflow popup at MEASURED breakpoints
+  (< 1024pt: Part combo + [Synth]/[FX]; < 810pt: [MOD]/[MAP]/gear;
+  < 650pt: Redo + the [Patch] page button), each popup item driving the SAME
+  seam as the hidden control (showTopPage / triggerClick / the real combo's
+  attachment). The preset browser's width is elastic below the floor. Primary
+  controls (preset, Load, Save, Undo, [KBD], "...") never fold.
+  tests/layout_minwidth_test sweeps 560..1800pt: every VISIBLE interactive
+  header child keeps positive extent, the primary set stays visible down to
+  560pt, no sibling overlaps; the >= 1024pt designed-width gates are
+  unchanged (the layout above the floor is byte-identical).
+- **iOS safe-area trim now edge-aware.** The editor trims only the display
+  edges it actually SPANS (screen bounds vs the display, 4pt tolerance); a
+  centred AUv3 pane keeps its full width instead of losing ~47-59pt/side to
+  insets it never touches. Full-screen Standalone behaviour is unchanged;
+  headless (no peer / no display) skips the trim.
 - **Four firmware-parity convergences (Wave 8) — each locked as an equality
   check in the differential harness** (tests/firmware_parity_test; the
   known-divergences allowlist drops from 5 to 1, the remaining one being the
