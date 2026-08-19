@@ -191,6 +191,34 @@ see the perf fix report) and re-run.
 
 ---
 
+## D8. GarageBand musical-context feed + the manual arp clock (AUv3 follow-up, 2026-08-19)
+
+**Why:** community reports say GarageBand for iOS sends NO tempo/transport to AUv3
+plugins (no `AUHostMusicalContextBlock`), which would leave tempo-synced arp/seq
+free-running. Parvati now resolves the arp clock as HOST bpm when the playhead
+carries one, else a persisted MANUAL bpm (Settings ▸ Arp Clock; default 120), with a
+live source status line and a one-time "No host tempo" transient hint. Whether GB
+feeds context at all — and what AUM/Logic/Cubasis do — only a device settles.
+
+**Steps:**
+1. In GarageBand, load Parvati on an instrument track, enable the arpeggiator
+   (resolution 1/8), set a distinctive project tempo (e.g. 90 BPM).
+2. Open Settings ▸ Arp Clock: note the status line ("Host tempo: …" vs "No host
+   tempo - manual tempo active") and whether the one-time hint fired.
+3. If GB feeds no tempo: set the manual slider to 90 and confirm the arp locks to
+   the project tempo by ear/metronome.
+4. Repeat steps 1–2 in AUM (tempo enabled), Logic Pro for iPad, Cubasis — expect
+   "Host tempo: 90.0 BPM (manual ignored)" there.
+5. Save the GB project, kill the host, reopen: the arp clock source + manual bpm
+   must round-trip with the session state.
+
+**Expected:** no host feeds a WRONG bpm; every no-tempo host reports Manual and the
+slider governs the arp rate; every tempo host reports Host and the slider is inert
+("manual ignored"). GB specifically: expect Manual (community-consistent) — if it
+reports Host instead, update this section and the CHANGELOG note.
+
+---
+
 ## Post-run ledger
 
 Record results back into `audit/ios_hunt_20260819/` (e.g. append a `device_results.md`)

@@ -1177,6 +1177,24 @@ target_link_libraries(parvati_lifecycle_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# Fixed-size undo history + manual arp-clock regressions (2026-08-19 AUv3
+# follow-up wave): the APVTS UndoManager is constructed with an explicit unit
+# cap + transaction floor so a long editing session cannot grow the history
+# without bound (an AUv3 extension hosts several instances in one process),
+# while undo/redo keep working; and the arp clock resolves HOST tempo when the
+# playhead carries one, else the persisted MANUAL bpm (GarageBand-class hosts
+# / Standalone), with state round-trip + clamping. Built by default.
+# Run: ./build/parvati_undo_clock_test
+add_executable(parvati_undo_clock_test
+    tests/undo_clock_test.cpp
+)
+target_include_directories(parvati_undo_clock_test PRIVATE Source)
+target_compile_features(parvati_undo_clock_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_undo_clock_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Layout overlap regression gate (R3). Sweeps compact editor sizes across all
 # three top-level pages and asserts no interactive siblings overlap and nothing
 # escapes its parent outside scrollable viewports — the systematic gate for

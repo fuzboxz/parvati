@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PluginProcessor.h.
 
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 
 #include "PluginProcessor.h"
 
@@ -386,6 +388,7 @@ bool ParvatiAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) 
 
 void ParvatiAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
 {
+
     // Cache the host's offline-render state. The host wrapper calls this on the
     // message thread when entering/leaving a bounce (freeze/export). A future
     // "max quality" mode can read isNonRealtimeRender() to auto-engage
@@ -394,6 +397,19 @@ void ParvatiAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
     nonRealtime_.store (isNonRealtime, std::memory_order_relaxed);
     // Defer to the base so its own bookkeeping (isNonRealtime()) stays in sync.
     juce::AudioProcessor::setNonRealtime (isNonRealtime);
+}
+
+//==========================================================================
+void ParvatiAudioProcessor::setManualTempoBpm (int bpm)
+{
+    // Clamp to the Settings slider's range (40..300): the value also arrives
+    // from restored host state, which must never be trusted raw (the same
+    // discipline as every other restored pref). The atomic carries the value
+    // to the audio thread; uiPrefsLock_ keeps the setter vs getStateInformation
+    // snapshot consistent (the state path reads/writes it under the same lock).
+    const int clamped = juce::jlimit (40, 300, bpm);
+    const std::lock_guard<std::mutex> l (uiPrefsLock_);
+    manualTempoBpm_.store (clamped, std::memory_order_relaxed);
 }
 
 void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -436,17 +452,36 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     buffer.clear();
 
     // Read the host transport tempo + playing state from AudioPlayHead.
-    double bpm = 120.0;
+    // No-host-tempo fallback (2026-08-19 AUv3 wave): hosts that expose no
+    // musical context to the plugin (the GarageBand-class AUv3 hosts; also
+    // the Standalone app, which has no transport) used to run the
+    // arpeggiator clock at a hard-coded 120. Resolve the clock tempo as
+    // HOST bpm when the playhead carries one, else the user's MANUAL bpm
+    // (Settings > Arp Clock; persisted; default 120 = the old behaviour),
+    // and publish the resolved source + value for the UI (status line +
+    // the editor's transient hint). Relaxed stores — advisory display only.
+    double bpm = manualTempoBpm_.load (std::memory_order_relaxed);
     bool isPlaying = true;  // default: run in standalone without transport
+    bool hostBpm = false;
     if (auto* playHead = getPlayHead())
     {
         if (const auto pos = playHead->getPosition())
         {
-            if (const auto b = pos->getBpm())
+            // Degenerate host values (0.0, negative, NaN) do NOT count as a
+            // usable tempo: bpm<=0 leaves TransportClock at its previous tick
+            // rate and NaN would reach static_cast<uint16_t> in the tempo-
+            // synced voice-LFO path (dsp/voice.cpp) — formally UB. Treat such
+            // hosts exactly like no-musical-context hosts: manual fallback.
+            if (const auto b = pos->getBpm(); b && *b > 0.0 && std::isfinite (*b))
+            {
                 bpm = *b;
+                hostBpm = true;
+            }
             isPlaying = pos->getIsPlaying();
         }
     }
+    hostTempoPresent_.store (hostBpm, std::memory_order_relaxed);
+    lastClockBpm_.store (static_cast<float> (bpm), std::memory_order_relaxed);
 
     // Merge UI-injected MIDI (on-screen keyboard / wheels click-play) into the
     // buffer BEFORE processTransport so a clicked key is routed through the
@@ -1616,7 +1651,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // autosaves are NOT message-thread), while the setters run on the message
     // thread. juce::String is refcounted — a torn copy is a UAF class.
     juce::String theme, language;
-    double zoom; bool tooltips, smoothing; int oversampling, fontMode;
+    double zoom; bool tooltips, smoothing; int oversampling, fontMode, manualBpm;
     {
         const std::lock_guard<std::mutex> l (uiPrefsLock_);
         theme        = uiThemeName_;
@@ -1626,6 +1661,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         oversampling = uiOversampling_;
         fontMode     = uiFontMode_;
         language     = uiLanguage_;
+        manualBpm    = manualTempoBpm_.load (std::memory_order_relaxed);
     }
     tree.setProperty ("ui_theme", theme, nullptr);
     tree.setProperty ("ui_zoom", zoom, nullptr);
@@ -1634,6 +1670,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_oversampling", oversampling, nullptr);
     tree.setProperty ("ui_font_mode", fontMode, nullptr);
     tree.setProperty ("ui_language", language, nullptr);
+    tree.setProperty ("manual_bpm", manualBpm, nullptr);   // arp-clock manual tempo (setManualTempoBpm clamps)
     // Full 6-Part multitimbral engine state (all parts' patch/part bytes, arp/seq
     // config, routing, voice allocation/mode). Base64 so it rides inside the XML
     // state tree; absent on pre-persistence states (backward compatible).
@@ -1682,6 +1719,9 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
 #endif
             const int rFontMode     = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
             juce::String rLanguage  = tree.getProperty ("ui_language", "auto").toString();
+            // Arp-clock manual tempo: absent in pre-2026-08 states -> the 120
+            // default (= the old hard-coded no-host-tempo behaviour).
+            const int rManualBpm     = static_cast<int> (tree.getProperty ("manual_bpm", 120));
             {
                 const std::lock_guard<std::mutex> l (uiPrefsLock_);
                 uiThemeName_   = std::move (rTheme);
@@ -1691,6 +1731,9 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 uiOversampling_ = rOversampling;
                 uiFontMode_    = rFontMode;
                 uiLanguage_    = std::move (rLanguage);
+                // setManualTempoBpm's clamp range, applied inline (same lock):
+                // restored state is never trusted raw.
+                manualTempoBpm_.store (juce::jlimit (40, 300, rManualBpm), std::memory_order_relaxed);
             }
 
             // JUCE 9 dispatch reality (verified against the vendored checkout):

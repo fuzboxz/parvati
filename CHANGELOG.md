@@ -5,6 +5,43 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
+- **AUv3 follow-up wave: no-host-tempo arp clock + fixed-size undo history
+  (2026-08-19).** Two robustness items from the AUv3 compatibility analysis.
+  (1) Hosts that expose no musical context to the plugin (GarageBand-class
+  AUv3 hosts; the Standalone app has no transport at all) used to run the
+  arpeggiator clock at a hard-coded 120 BPM. `processBlock` now resolves the
+  clock tempo as HOST bpm when the playhead carries one, else a persisted
+  MANUAL bpm (new `manual_bpm` state property, default 120 = the old
+  behaviour; setter + restore clamp 40..300). New Settings ▸ Arp Clock row:
+  a manual-BPM slider + a live status line showing which source is driving
+  the clock ("Host tempo: N BPM (manual ignored)" / "No host tempo - manual
+  tempo active"), and the editor posts a one-time transient hint on the
+  Host→Manual transition. FR/DE translations included. Device item: whether
+  GarageBand feeds AUv3 musical context is D8 in `audit/ios_device_checklist.md`.
+  Review-wave hardening (fresh-context subagent review, all findings applied):
+  degenerate host tempi (0/negative/NaN) are rejected at the resolution gate
+  (treated as no-musical-context → manual fallback; NaN previously reached a
+  `static_cast<uint16_t>` in the tempo-synced voice-LFO path — formally UB);
+  the Arp Clock block sits ABOVE Filter Quality/Language in the Settings
+  drawer so the R3 bottom-first degradation keeps it reachable in exactly the
+  short AUv3 panes it targets (460pt drawer keeps it visible; the zoom slider
+  row moved to 44pt for thumb/touch parity with the BPM row); the
+  legacy-default and restore-clamp state paths are now pinned by REAL state
+  surgery (strip `manual_bpm` from a saved state / doctor 9999 and 0), plus a
+  Settings-panel height sweep asserting the Arp Clock row's visibility
+  thresholds and no visible-child overlap/escape at any height (41 checks).
+  iOS-simulator toolchain build of Standalone + AUv3 + the new test target:
+  BUILD SUCCEEDED (appex `com.805labs.parvati.AUv3`, aumu/805L confirmed).
+  (2) The APVTS UndoManager is constructed with an explicit FIXED-SIZE bound
+  (`kUndoMaxUnits` 16000 ≈ ~130 undo steps, `kUndoMinTransactions` floor 16;
+  a ValueTree property transaction ≈ sizeof(itself) ≈ ~120 units and APVTS
+  routes every parameter write through the manager), so a long editing
+  session cannot grow undo memory without bound — chosen deliberately over
+  runtime memory-pressure machinery (an AUv3 extension hosts several
+  instances in one process sharing one memory budget; a bounded history is
+  the whole policy with zero moving parts). New regression suite
+  `tests/undo_clock_test.cpp` (fixed-bound behaviour + clock fallback,
+  state round-trip, clamping; `parvati_undo_clock_test`).
 - **iOS quality wave (2026-08-19).** A five-lane iOS/iPadOS hunt (build +
   plists, AUv3 lifecycle, touch/HIG, Files integration, perf/thermal — full
   lane reports in `audit/ios_hunt_20260819/`, per-fix reports alongside)

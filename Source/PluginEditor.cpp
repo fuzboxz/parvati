@@ -3475,6 +3475,30 @@ void ParvatiEditor::timerCallback()
     }
 #endif
 
+    // ---- No-host-tempo hint (2026-08-19 AUv3 wave) ----
+    // The processor publishes whether the last block resolved the arp clock
+    // from a HOST tempo or the MANUAL fallback (Settings > Arp Clock — hosts
+    // that expose no musical context, e.g. GarageBand-class AUv3 hosts and
+    // the Standalone app, would otherwise silently run the arp at a fixed
+    // tempo). Fires ONCE per Host->Manual transition; process-static for the
+    // same reason as sLastThermalHint (an AUv3 process hosts several
+    // editors/instances — per-editor state would multiply identical posts).
+    // NOT iOS-gated: the desktop Standalone benefits identically. The
+    // optimistic `true` default means a DAW session (tempo present in every
+    // block) never sees it — the flip only fires once a block has ACTUALLY
+    // rendered without a host tempo.
+    {
+        static bool sLastHostTempoPresent = true;
+        const bool hostNow = processorRef_.isHostTempoPresent();
+        if (hostNow != sLastHostTempoPresent)
+        {
+            if (! hostNow)
+                ParamControl::postTransientStatus (
+                    TRANS ("No host tempo - arp clock: manual BPM (Settings)"), 150);   // ~5 s @ 30 Hz
+            sLastHostTempoPresent = hostNow;
+        }
+    }
+
     // Single drain of the tap-to-assign transient status this tick (it has a
     // frame budget — calling it twice would double-drain). The result feeds
     // BOTH the tooltip priority below and the adaptive-rate activity signal.

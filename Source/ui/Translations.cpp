@@ -80,6 +80,13 @@ const juce::String& frenchChromeStrings()
         "\"Parameter Smoothing\" = \"Lissage des paramètres\"\n"
         "\"Filter Quality\" = \"Qualité du filtre\"\n"
         "\"Language\" = \"Langue\"\n"
+        // ---- Arp Clock (manual tempo) row ----
+        "\"Arp Clock\" = \"Horloge arpège\"\n"
+        "\"Host tempo: \" = \"Tempo hôte : \"\n"
+        "\" BPM\" = \" BPM\"\n"
+        "\" BPM (manual ignored)\" = \" BPM (manuel ignoré)\"\n"
+        "\"No host tempo - manual tempo active\" = \"Pas de tempo hôte - tempo manuel actif\"\n"
+        "\"No host tempo - arp clock: manual BPM (Settings)\" = \"Pas de tempo hôte - horloge arpège : BPM manuel (Réglages)\"\n"
         // ---- Filter Quality (oversampling) combo items ----
         "\"Standard (1×)\" = \"Standard (1×)\"\n"
         "\"High (2×)\" = \"Élevée (2×)\"\n"
@@ -222,6 +229,13 @@ const juce::String& germanChromeStrings()
         "\"Parameter Smoothing\" = \"Parameterglättung\"\n"
         "\"Filter Quality\" = \"Filterqualität\"\n"
         "\"Language\" = \"Sprache\"\n"
+        // ---- Arp Clock (manual tempo) row ----
+        "\"Arp Clock\" = \"Arp-Takt\"\n"
+        "\"Host tempo: \" = \"Host-Tempo: \"\n"
+        "\" BPM\" = \" BPM\"\n"
+        "\" BPM (manual ignored)\" = \" BPM (manuell ignoriert)\"\n"
+        "\"No host tempo - manual tempo active\" = \"Kein Host-Tempo - manuelles Tempo aktiv\"\n"
+        "\"No host tempo - arp clock: manual BPM (Settings)\" = \"Kein Host-Tempo - Arp-Takt: manuelle BPM (Einstellungen)\"\n"
         // ---- Filter Quality (oversampling) combo items ----
         "\"Standard (1×)\" = \"Standard (1×)\"\n"
         "\"High (2×)\" = \"Hoch (2×)\"\n"

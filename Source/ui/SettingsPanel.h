@@ -18,7 +18,8 @@ class ParvatiAudioProcessor;
 class ThemeManager;
 
 //==============================================================================
-class SettingsPanel : public juce::Component
+class SettingsPanel : public juce::Component,
+                      private juce::Timer   // 2 Hz clock-status refresh (Arp Clock row)
 {
 public:
     /** @param onZoomChanged        fired when the zoom slider moves (editor applies
@@ -56,7 +57,21 @@ public:
     // switch so the panel updates immediately).
     void refreshLanguage();
 
+    // Rebuild the Arp Clock status line from the processor's published clock
+    // source (host tempo present -> value + "manual ignored" note; absent ->
+    // "manual tempo active"). Also called by the 2 Hz timer while shown.
+    void refreshClockStatus();
+
+    // ---- layout test seam (headless height-sweep; see tests/undo_clock_test.cpp) ----
+    /** True when the manual-BPM slider row survived the R3 bottom-first
+        degradation at the current panel height (isVisible: the row hides via
+        setVisible(false) when the compacted drawer runs out of height). */
+    bool debugBpmSliderVisible() const { return bpmSlider_.isVisible(); }
+
 private:
+    // 2 Hz: refresh the Arp Clock status line while the panel is on screen
+    // (isShowing() gate — a hidden side-panel timer costs nothing).
+    void timerCallback() override;
     // (Re)build the Filter Quality combo from TRANS() labels. The item IDs
     // (1/2/4/8) are stable across languages, so the selection survives a rebuild.
     void populateOversamplingCombo();
@@ -74,8 +89,10 @@ private:
     std::function<void (const juce::String&)> onLanguageChanged_;
 
     juce::Label     themeLabel_, zoomLabel_, osLabel_, langLabel_;
+    juce::Label     clockLabel_, clockStatusLabel_;   // Arp Clock caption + live source line
     juce::ComboBox  themeCombo_, osCombo_, langCombo_;
     juce::Slider    zoomSlider_;
+    juce::Slider    bpmSlider_;                       // manual arp-clock tempo (40..300 BPM)
     juce::ToggleButton tooltipsToggle_ { "Tooltips" };
     juce::ToggleButton smoothingToggle_ { "Parameter Smoothing" };
 

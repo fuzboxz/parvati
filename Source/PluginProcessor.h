@@ -113,6 +113,26 @@ public:
     juce::String getUiLanguage() const             { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiLanguage_; }
     void setUiTheme (juce::String name)           { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiThemeName_ = std::move (name); }
     void setUiZoom (double z)                     { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiZoom_ = z; }
+
+    // ---- Arpeggiator clock: manual tempo fallback (2026-08-19 AUv3 wave) ----
+    // Hosts that provide no musical context to the plugin (the GarageBand-
+    // class AUv3 hosts; also the Standalone app, which has no transport)
+    // used to run the arpeggiator clock at a hard-coded 120 BPM. processBlock
+    // now resolves the clock tempo as: HOST bpm when the playhead carries
+    // one, else this MANUAL value (persisted in the plugin state alongside
+    // the UI preferences; default 120 = the old hard-coded behaviour). The
+    // atomic is written by the message thread (Settings slider) and by host
+    // threads during state restore, read by the audio thread every block.
+    int  getManualTempoBpm() const                { const std::lock_guard<std::mutex> l (uiPrefsLock_); return manualTempoBpm_.load (std::memory_order_relaxed); }
+    void setManualTempoBpm (int bpm);
+    // True when the LAST processBlock resolved the clock from a HOST tempo
+    // (false = the manual fallback is driving). Optimistic `true` default so
+    // nothing fires before the first audio block (see the editor's
+    // no-host-tempo transient hint). Relaxed — advisory display only.
+    bool   isHostTempoPresent() const noexcept    { return hostTempoPresent_.load (std::memory_order_relaxed); }
+    // The bpm value the last block actually fed the arpeggiator clock (host
+    // or manual), for the Settings status line + tests. Relaxed advisory.
+    double getLastClockBpm() const noexcept        { return static_cast<double> (lastClockBpm_.load (std::memory_order_relaxed)); }
     void setUiTooltips (bool b)                   { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiTooltips_ = b; }
     void setUiSmoothing (bool b)                  { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiSmoothing_ = b; }
     void setUiOversampling (int n)                { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiOversampling_ = n; }
@@ -170,6 +190,17 @@ public:
     // and the ParamControl reset/randomize context-menu actions). It is NOT
     // serialized: only the APVTS ValueTree state is (get/setStateInformation),
     // and replaceState() clears the undo history on restore.
+    // FIXED-SIZE undo history (public constants; see the undoManager_ member
+    // for the full rationale): an explicit unit cap + transaction floor so the
+    // stack never grows without bound — JUCE drops the OLDEST transactions
+    // once their cumulative getSizeInUnits() accounting passes the cap (a
+    // ValueTree property transaction ≈ sizeof(itself) ≈ ~120 units, so 16000
+    // units ≈ a ~130-step history; APVTS routes every parameter write through
+    // the manager). Chosen over runtime memory-pressure machinery: a bounded
+    // per-instance history keeps an AUv3 extension process (several hosted
+    // instances, one memory budget) predictable with zero moving parts.
+    static constexpr int kUndoMaxUnits        = 16000;   // ≈ ~130 undo steps
+    static constexpr int kUndoMinTransactions = 16;      // always-undoable floor
     juce::UndoManager& getUndoManager() noexcept { return undoManager_; }
 
     // The editor's ONLY undo/redo entry points (header buttons + keyboard
@@ -403,7 +434,14 @@ private:
     void applySequencerParameter (const PatchParamDescriptor& descriptor, float rawValue);
 
     SynthEngine engine_;
-    juce::UndoManager undoManager_;   // constructed before apvts (member order)
+    // The APVTS-owned UndoManager. Declared before `apvts` so it is constructed
+    // first and can be passed to the APVTS ctor — every parameter write then
+    // becomes undoable (knob drags, combo changes, getParameterAsValue writes,
+    // and the ParamControl reset/randomize context-menu actions). NOT
+    // serialized: only the APVTS ValueTree state is (get/setStateInformation),
+    // and replaceState() clears the undo history on restore. Constructed with
+    // the FIXED-SIZE bounds (see kUndoMaxUnits above).
+    juce::UndoManager undoManager_ { kUndoMaxUnits, kUndoMinTransactions };   // constructed before apvts (member order)
     bool undoInvalidatedByPartSwitch_ = false;   // set by onPartSelect; swept by undoSafe/redoSafe
     juce::AudioProcessorValueTreeState apvts;
     juce::String loadedProgramName_ { "Init" };
@@ -447,6 +485,14 @@ private:
     int          uiOversampling_ { 2 };    // 1 / 2 / 4 / 8; default 2x (1 = bit-identical path)
     int          uiFontMode_ { 0 };        // LEGACY: persisted for old states only (font selector removed; UI is sans-serif)
     juce::String uiLanguage_ { "auto" };   // editor chrome language (auto/en/fr)
+    // Arp-clock manual tempo (see the public block): the atomic is the
+    // audio-thread view; uiPrefsLock_ keeps setter/state-restore vs
+    // getStateInformation consistent (serialized in the same snapshot).
+    std::atomic<int> manualTempoBpm_ { 120 };
+    // Clock-source observables, written by processBlock (audio thread), read
+    // by the editor/Settings for display (relaxed — advisory only).
+    std::atomic<bool>  hostTempoPresent_ { true };   // optimistic: no hint before the first block
+    std::atomic<float> lastClockBpm_ { 120.0f };     // resolved value fed to the clock
 
     // Offline-render flag (host bounce). Updated by setNonRealtime() and kept
     // warm each block from isNonRealtime() as a host-compat fallback.

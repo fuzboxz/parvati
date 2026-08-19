@@ -142,6 +142,38 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // the "parvatiComboVisualH" property (drawComboBox / positionComboBoxText).
     for (auto* c : { &themeCombo_, &osCombo_, &langCombo_ })
         c->getProperties().set ("parvatiComboVisualH", 28);
+
+    // ---- Arp Clock (manual tempo fallback) ----
+    // Hosts that expose no musical context to the plugin (GarageBand-class
+    // AUv3 hosts; the Standalone app) used to run the arpeggiator clock at a
+    // hard-coded 120 BPM. processBlock now resolves HOST bpm when the
+    // playhead carries one, else THIS slider's value (persisted in the plugin
+    // state). The status line shows which source is driving the clock right
+    // now (2 Hz refresh — the source can only change when audio runs).
+    clockLabel_.setText (TRANS ("Arp Clock"), juce::dontSendNotification);
+    clockLabel_.setFont (juce::FontOptions (14.0f));
+    clockLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (clockLabel_);
+
+    clockStatusLabel_.setFont (juce::FontOptions (12.0f));
+    clockStatusLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (clockStatusLabel_);
+
+    bpmSlider_.setSliderStyle (juce::Slider::LinearHorizontal);
+    bpmSlider_.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20);
+    bpmSlider_.setRange (40.0, 300.0, 1.0);
+    bpmSlider_.setNumDecimalPlacesToDisplay (0);
+    bpmSlider_.textFromValueFunction = [] (double v)
+        { return juce::String (juce::roundToInt (v)) + TRANS (" BPM"); };
+    bpmSlider_.valueFromTextFunction = [] (const juce::String& t)
+        { return t.upToFirstOccurrenceOf (TRANS (" BPM"), false, false).getDoubleValue(); };
+    bpmSlider_.setValue ((double) proc_.getManualTempoBpm(), juce::dontSendNotification);
+    bpmSlider_.onValueChange = [this]
+        { proc_.setManualTempoBpm (juce::roundToInt (bpmSlider_.getValue())); };
+    addAndMakeVisible (bpmSlider_);
+
+    refreshClockStatus();
+    startTimerHz (2);   // clock-status line only (gated by isShowing())
 }
 
 void SettingsPanel::setZoomValue (double zoom)
@@ -151,6 +183,27 @@ void SettingsPanel::setZoomValue (double zoom)
     // ScopedValueSetter flips suppressCallback_ for the duration of the set.
     juce::ScopedValueSetter<bool> svs (suppressCallback_, true);
     zoomSlider_.setValue (zoom, juce::sendNotificationSync);
+}
+
+void SettingsPanel::timerCallback()
+{
+    // 2 Hz, message thread. The source flag only changes when audio runs; a
+    // hidden panel (side panel closed) does no work at all.
+    if (isShowing())
+        refreshClockStatus();
+}
+
+void SettingsPanel::refreshClockStatus()
+{
+    // Which source is driving the arpeggiator clock RIGHT NOW. Host present:
+    // show the live value so the user sees why the slider is inert; absent:
+    // say so explicitly (the slider is the active tempo).
+    clockStatusLabel_.setText (
+        proc_.isHostTempoPresent()
+            ? TRANS ("Host tempo: ") + juce::String (proc_.getLastClockBpm(), 1)
+              + TRANS (" BPM (manual ignored)")
+            : TRANS ("No host tempo - manual tempo active"),
+        juce::dontSendNotification);
 }
 
 void SettingsPanel::populateOversamplingCombo()
@@ -204,6 +257,10 @@ void SettingsPanel::refreshLanguage()
     smoothingToggle_.setButtonText (TRANS ("Parameter Smoothing"));
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
+    clockLabel_.setText (TRANS ("Arp Clock"), juce::dontSendNotification);
+    // (The BPM text lambdas evaluate TRANS() at invocation time, so a live
+    // language switch re-resolves them with no re-assignment needed.)
+    refreshClockStatus();
 
     const int osId = osCombo_.getSelectedId();
     populateOversamplingCombo();
@@ -240,7 +297,6 @@ void SettingsPanel::resized()
         c->setBounds (r);
     };
 
-    const int rowH = 28;
     // R3: combo/toggle rows are 44pt tall outright (the HIG tap minimum) —
     // NOT a 28pt row grown by a centred transparent band. The band trick
     // spilled 8pt into the caption/gap bands above and below, overlapping the
@@ -256,10 +312,12 @@ void SettingsPanel::resized()
     rowOrHide (&themeCombo_, takeRow (comboRowH));
     takeRow (gap + 8);
 
-    // Zoom row.
+    // Zoom row (44pt like every other slider/combo row — the L&F scales the
+    // drawn thumb with row height, so a 28pt zoom row next to the 44pt BPM
+    // row would draw visibly mismatched thumbs AND miss the HIG tap minimum).
     rowOrHide (&zoomLabel_, takeRow (18));
     takeRow (2);
-    rowOrHide (&zoomSlider_, takeRow (rowH));
+    rowOrHide (&zoomSlider_, takeRow (comboRowH));
     takeRow (gap + 8);
 
     // Tooltips row.
@@ -268,6 +326,21 @@ void SettingsPanel::resized()
 
     // Parameter Smoothing row.
     rowOrHide (&smoothingToggle_, takeRow (comboRowH));
+    takeRow (gap + 8);
+
+    // Arp Clock rows: caption, live source/status line, manual BPM slider
+    // (44pt row: the slider thumb is a touch target — same HIG reasoning as
+    // the combo rows). PLACED ABOVE Filter Quality / Language deliberately:
+    // the R3 drawer degrades bottom-first (rows hide when they no longer
+    // fit), and this block is the ONE control whose target hosts are exactly
+    // the short-pane ones — a GarageBand-class AUv3 pane or a 1024×500
+    // desktop window must still reach the manual tempo. At the desktop
+    // default size every row (incl. Filter Quality + Language) is visible.
+    rowOrHide (&clockLabel_, takeRow (18));
+    takeRow (2);
+    rowOrHide (&clockStatusLabel_, takeRow (18));
+    takeRow (gap);
+    rowOrHide (&bpmSlider_, takeRow (comboRowH));
     takeRow (gap + 8);
 
     // Filter Quality (oversampling) row.
