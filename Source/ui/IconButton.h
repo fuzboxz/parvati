@@ -20,9 +20,31 @@ class IconButton : public juce::Button
 public:
     enum class Icon { Undo, Redo, Gear };
 
-    explicit IconButton (Icon icon) : juce::Button ({}), icon_ (icon) {}
+    // Accessible name for each glyph (screen readers see only this — the icon
+    // itself is pure Path drawing). "Undo"/"Redo"/"Settings" are existing
+    // chrome translation keys (Translations.cpp), so the fallback chain is
+    // localized for free; English elsewhere.
+    static juce::String iconTitle (Icon icon)
+    {
+        switch (icon)
+        {
+            case Icon::Undo: return TRANS ("Undo");
+            case Icon::Redo: return TRANS ("Redo");
+            case Icon::Gear: return TRANS ("Settings");
+        }
+        return {};
+    }
 
-    void setIcon (Icon icon) { icon_ = icon; repaint(); }
+    explicit IconButton (Icon icon) : juce::Button ({}), icon_ (icon)
+    {
+        // Accessibility-only: the default Button accessibility handler reads
+        // Component::getTitle() first (falling back to the empty button text),
+        // so an explicit title names the glyph-drawn button. Does not affect
+        // painting (only the Path glyph is drawn) or the component name.
+        setTitle (iconTitle (icon));
+    }
+
+    void setIcon (Icon icon) { icon_ = icon; setTitle (iconTitle (icon)); repaint(); }
 
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {

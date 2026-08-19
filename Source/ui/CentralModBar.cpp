@@ -146,8 +146,28 @@ struct CentralModBar::ModPill : public juce::Component,
           isGenerator_ (e.isGenerator)
     {
         setTooltip (fullName_);
+        // Accessibility-only: name the pill after its full source name (the
+        // short painted label is a compact abbreviation; fullName_ is the
+        // tooltip text). ModSourceCatalog names are Ambika hardware terms and
+        // intentionally NOT translated (Translations.h policy).
+        setTitle (fullName_);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         setInterceptsMouseClicks (true, false);
+    }
+
+    // Accessibility: role `button` + a `press` action wired to the SAME
+    // callback a real click fires (owner_.invokeClicked), so switch-control /
+    // VoiceOver activation selects this modulation source exactly like a tap.
+    // No painting/layout/mouse-path change. Title comes from the component
+    // title set in the ctor; drag-assign remains pointer-only (the internal
+    // DnD drag is not expressible as an a11y action).
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<juce::AccessibilityHandler> (*this,
+                juce::AccessibilityRole::button,
+                juce::AccessibilityActions().addAction (
+                    juce::AccessibilityActionType::press,
+                    [this] { owner_.invokeClicked (enumValue_); }));
     }
 
     /** Preferred width for this pill given the pill font. */

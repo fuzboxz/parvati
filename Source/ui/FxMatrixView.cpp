@@ -335,6 +335,10 @@ struct FxMatrixRow : public juce::Component,
         valueLabel_.addMouseListener (this, false);
         muteButton_.addMouseListener (this, false);
         clearButton_.addMouseListener (this, false);
+
+        // Accessibility-only: name the row after its slot ("FX Mod N", suffix-
+        // key i18n idiom — "FX" is a proper noun, "Mod " is translatable).
+        setTitle (TRANS ("FX Mod ") + juce::String (slot_ + 1));
     }
 
     ~FxMatrixRow() override
@@ -353,6 +357,15 @@ struct FxMatrixRow : public juce::Component,
         // Drop the custom L&F before the slider is destroyed (the L&F is owned by
         // the view and outlives this row, but unsetting keeps the contract clean).
         depthSlider_.setLookAndFeel (nullptr);
+    }
+
+    // Accessibility-only: a labelled `group` container for this row's widgets
+    // ("FX Mod N, group") so the FX mod matrix reads as structured rows to
+    // screen readers. Follows the ModMatrixView::ModMatrixRow pattern.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<juce::AccessibilityHandler> (*this,
+                juce::AccessibilityRole::group);
     }
 
     void sliderValueChanged (juce::Slider*) override { refreshValueDisplay(); }

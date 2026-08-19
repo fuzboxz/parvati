@@ -5,7 +5,7 @@
 //
 // Document types + exported UTIs were grafted into the Standalone plist
 // (ios/parvati_filetypes.plist), so iOS offers "Open in Parvati" /
-// "Copy to Parvati" for .parvati/.PRO/.MUL/.scl/.kbm — but JUCE 9's iOS glue
+// "Copy to Parvati" for .parvati/.PRO/.MUL — but JUCE 9's iOS glue
 // has NO application:openURL:options: implementation (verified: no openURL in
 // juce_Windowing_ios.mm / juce_MessageManager_ios.mm /
 // juce_audio_plugin_client; the only openURL in ~/JUCE SENDS one). Without
@@ -38,12 +38,11 @@ namespace parvati
 //==========================================================================
 // What kind of open-in payload a file is. The extension table is the single
 // source of truth for both routing and (post-route) load decisions.
+// (.scl/.kbm were removed with the custom-tuning subsystem, 2026-08-19.)
 enum class OpenInKind
 {
     None,     // not a Parvati document — ignore silently
-    Preset,   // .parvati / .PRO / .MUL → import into the USER tree + load
-    Tuning    // .scl / .kbm → import into the Parvati/Tuning dir (loaded via
-              // the TuningEditor's interactive importer; no headless apply)
+    Preset    // .parvati / .PRO / .MUL → import into the USER tree + load
 };
 
 /** Pure predicate: extension → OpenInKind (case-insensitive, JUCE's
@@ -52,8 +51,6 @@ inline OpenInKind openInKindForFile (const juce::File& f) noexcept
 {
     if (f.hasFileExtension (".parvati") || f.hasFileExtension (".pro") || f.hasFileExtension (".mul"))
         return OpenInKind::Preset;
-    if (f.hasFileExtension (".scl") || f.hasFileExtension (".kbm"))
-        return OpenInKind::Tuning;
     return OpenInKind::None;
 }
 
@@ -67,13 +64,7 @@ inline OpenInKind openInKindForFile (const juce::File& f) noexcept
                duplicate), or an invalid File for non-documents / failures
                (non-fatal; the caller simply does nothing).
     Presets  → USER/<name>   (atomic import, PresetBrowser::importIntoUserTree —
-                              TemporaryFile + rename, overwrite on collision)
-    Tuning   → <group>/Parvati/Tuning/<name> (sibling of USER; created on
-              demand — the TuningEditor has no fixed directory convention,
-              its importer is a FileChooser + in-memory apply, so the open-in
-              copy merely parks the file next to the user's presets for the
-              next import; the PresetBrowser scan only lists .pro/.mul/
-              .parvati, so .scl/.kbm never pollute the preset menu). */
+                              TemporaryFile + rename, overwrite on collision) */
 inline juce::File routeOpenedFile (const juce::File& source, const juce::File& userPatchDir)
 {
     switch (openInKindForFile (source))
@@ -86,28 +77,6 @@ inline juce::File routeOpenedFile (const juce::File& source, const juce::File& u
             if (source.isAChildOf (userPatchDir))
                 return source;
             return PresetBrowser::importIntoUserTree (source, userPatchDir);
-        }
-        case OpenInKind::Tuning:
-        {
-            const juce::File tuningDir = userPatchDir.getParentDirectory()
-                                             .getChildFile ("Tuning");
-            if (userPatchDir.getFullPathName().isEmpty())
-                return {};
-            if (source.isAChildOf (tuningDir) || source == tuningDir.getChildFile (source.getFileName()))
-                return source;   // already parked there — deliver as-is
-            if (! source.existsAsFile())
-                return {};
-            if (! tuningDir.createDirectory())
-                return {};
-            const juce::File dest = tuningDir.getChildFile (source.getFileName());
-            // Atomic (the house TemporaryFile + rename idiom): an interrupted
-            // copy never leaves a torn file at the visible destination.
-            juce::TemporaryFile temp (dest);
-            if (! source.copyFileTo (temp.getFile()))
-                return {};
-            if (! temp.overwriteTargetFileWithTemporary())
-                return {};
-            return dest;
         }
         case OpenInKind::None:
         default:

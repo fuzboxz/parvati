@@ -41,10 +41,32 @@ void renderOnce (ParvatiAudioProcessor& p)
     p.processBlock (buf, midi);
 }
 
-// Per-part byte stride of a v7 engine-state blob with EMPTY part names:
+// Per-part byte stride of an engine-state capture with EMPTY part names:
 // core (patch112 + part84 + routing4) + FX block (4 + 78) + slots/name tail
-// (2) + tuning block (4 + 25). Shared by the hand-crafted v1/v2 derivations.
-constexpr size_t kV7PartStride = 112 + 84 + 4 + 4 + 78 + 2 + 29;   // 313
+// (2). Version-aware: v7 carried an extra 29-byte tuning block (4-byte length
+// prefix + {mode; offsets[12]}) that v8 REMOVED (custom-tuning removal,
+// 2026-08-19). The version is DISCOVERED from the blob header (byte 4), so
+// the offset math cannot silently mis-parse on a format bump — a new version
+// trips the version sanity check instead of reading out of bounds. Shared by
+// the hand-crafted v1/v2 derivations below.
+constexpr int kCurrentEngineBlobVersion = 8;   // keep in sync with captureState
+constexpr size_t kV8PartStride = 112 + 84 + 4 + 4 + 78 + 2;   // 284
+
+// Version-discovered per-part stride for a capture with EMPTY part names.
+// Only slots-era layouts (v6+) carry the 2-byte tail; older test fixtures are
+// hand-crafted, so anything < 6 is rejected (returns the v8 stride, which the
+// caller's size check then fails loudly).
+size_t capturePartStride (const juce::MemoryBlock& engineBlob) noexcept
+{
+    const int version = (engineBlob.getSize() >= 6)
+                            ? ((const uint8_t*) engineBlob.getData())[4] : 0;
+    if (version < 6)
+        return kV8PartStride + 1;   // impossible size -> the caller's check fails
+    size_t stride = kV8PartStride;
+    if (version == 7)
+        stride += 4 + 25;           // v7-only tuning block
+    return stride;
+}
 
 // Set an APVTS param by raw value via the host notification path.
 void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
@@ -325,13 +347,14 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX (sanity)");
 
-        // Capture the v7 host state and derive a v1 engine blob from its
-        // engine_state. A v7 blob interleaves an 82-byte FX block per Part
-        // (4-byte length prefix + 78 FX bytes) after the routing bytes, plus a
-        // 2-byte slots/name tail and a 29-byte tuning block (4-byte length
-        // prefix + {mode; offsets[12]}), so a naive truncation is NOT a valid
+        // Capture the host state and derive a v1 engine blob from its
+        // engine_state. A current (v8) blob interleaves an 82-byte FX block per
+        // Part (4-byte length prefix + 78 FX bytes) after the routing bytes,
+        // plus a 2-byte slots/name tail (v7 additionally carried a 29-byte
+        // tuning block that v8 removed), so a naive truncation is NOT a valid
         // v1 blob -- we must extract each Part's core (patch112 + part84 +
-        // routing4 = 200 bytes) and skip everything after it.
+        // routing4 = 200 bytes) and skip everything after it. The stride is
+        // DISCOVERED from the capture's version header (capturePartStride).
         constexpr size_t kV1Core = 6 + 6 * (112 + 84 + 4);          // 1206
         juce::MemoryBlock v1Engine;
         {
@@ -340,16 +363,18 @@ int main()
             auto xml = juce::AudioProcessor::getXmlFromBinary (v5Host.getData(), (int) v5Host.getSize());
             juce::MemoryBlock v5Engine;
             v5Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v5Engine.getSize() >= 6 + 6 * kV7PartStride && ((const uint8_t*) v5Engine.getData())[4] == 7,
-                   "captured engine_state is a v7 blob large enough to derive v1");
+            const size_t stride = capturePartStride (v5Engine);
+            check (((const uint8_t*) v5Engine.getData())[4] == kCurrentEngineBlobVersion
+                       && v5Engine.getSize() >= 6 + 6 * stride,
+                   "captured engine_state is the current blob version, large enough to derive v1");
             v1Engine.ensureSize (kV1Core);
             const auto* v5 = (const uint8_t*) v5Engine.getData();
             auto* v1 = (uint8_t*) v1Engine.getData();
             std::memcpy (v1, v5, 6);                 // magic + version + currentpart
-            v1[4] = 1;                               // rewrite version 5 -> 1
+            v1[4] = 1;                               // rewrite version -> 1
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v5off = 6 + (size_t) p * kV7PartStride;   // Part's core in v7
+                const size_t v5off = 6 + (size_t) p * stride;         // Part's core in the capture
                 const size_t v1off = 6 + (size_t) p * 200;             // Part's core in v1
                 std::memcpy (v1 + v1off, v5 + v5off, 200);             // patch + part + routing (no FX)
             }
@@ -395,13 +420,13 @@ int main()
         check (! allFxAtDefaults (a.getEngine().getPart (1).fxState),
                "source Part 1 has non-default FX incl. master (sanity)");
 
-        // Derive a v2 blob from the v5 capture. The v5 FX block has 5 params/slot
-        // (param5 interleaved BEFORE topo/order), while v2 has 4 params/slot and
-        // NO master section, so a naive memcpy of the first 71 FX bytes would
-        // mis-map fields. Reassemble field-by-field instead: core + fxlen prefix
-        // (rewritten 78 -> 71), then each FX field at its v2 offset. Version 5 -> 2.
+        // Derive a v2 blob from the capture. The current FX block has 5
+        // params/slot (param5 interleaved BEFORE topo/order), while v2 has 4
+        // params/slot and NO master section, so a naive memcpy of the first 71
+        // FX bytes would mis-map fields. Reassemble field-by-field instead:
+        // core + fxlen prefix (rewritten 78 -> 71), then each FX field at its
+        // v2 offset. Version -> 2. (The SOURCE stride is version-discovered.)
         constexpr size_t kV2PartStride = 112 + 84 + 4 + 4 + 71;   // 275
-        // (the SOURCE stride is the v7 layout, kV7PartStride above)
         // FX-field offsets WITHIN the per-Part FX block (after the 4-byte fxlen).
         // v5: type0 enabled3 drywet6 param9(15) topo24 order25 modSrc26 modDst42 modAmt58 master74.
         // v2: type0 enabled3 drywet6 param9(12) topo21 order22 modSrc23 modDst39 modAmt55.
@@ -412,16 +437,18 @@ int main()
             auto xml = juce::AudioProcessor::getXmlFromBinary (v5Host.getData(), (int) v5Host.getSize());
             juce::MemoryBlock v5Engine;
             v5Engine.fromBase64Encoding (xml->getStringAttribute ("engine_state"));
-            check (v5Engine.getSize() >= 6 + 6 * kV7PartStride && ((const uint8_t*) v5Engine.getData())[4] == 7,
-                   "captured engine_state is a v7 blob large enough to derive v2");
+            const size_t stride = capturePartStride (v5Engine);
+            check (((const uint8_t*) v5Engine.getData())[4] == kCurrentEngineBlobVersion
+                       && v5Engine.getSize() >= 6 + 6 * stride,
+                   "captured engine_state is the current blob version, large enough to derive v2");
             v2Engine.ensureSize (6 + 6 * kV2PartStride);
             const auto* v5 = (const uint8_t*) v5Engine.getData();
             auto* v2 = (uint8_t*) v2Engine.getData();
             std::memcpy (v2, v5, 6);                       // magic + version + currentpart
-            v2[4] = 2;                                     // rewrite version 5 -> 2
+            v2[4] = 2;                                     // rewrite version -> 2
             for (int p = 0; p < SynthEngine::getNumParts(); ++p)
             {
-                const size_t v5off = 6 + (size_t) p * kV7PartStride;
+                const size_t v5off = 6 + (size_t) p * stride;
                 const size_t v2off = 6 + (size_t) p * kV2PartStride;
                 std::memcpy (v2 + v2off, v5 + v5off, 200 + 4);   // core + 4-byte fxlen prefix
                 v2[v2off + 200] = 71;                            // rewrite fxlen 78 -> 71 (LE)

@@ -41,6 +41,13 @@ public:
     void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    // Bypassed render: a bypassed synth must output silence. Overridden (rather
+    // than inheriting juce::AudioProcessor::processBlockBypassed, which
+    // jasserts in debug when getLatencySamples() > 0 — ours is nonzero whenever
+    // filter oversampling is active) to clear every output bus. No state
+    // flushes: the voices/FX keep running internally so an un-bypass resumes
+    // where it left off (the wrapper's dry signal passes the host's bypass).
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     //==========================================================================
     juce::AudioProcessorEditor* createEditor() override;
@@ -51,7 +58,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return engine_.getTailLengthSeconds(); }
 
     // MPE (MIDI Polyphonic Expression). The engine routes pitch bend / channel
     // pressure / CC74 per-voice by MIDI channel (unified per-channel routing,
@@ -65,10 +72,15 @@ public:
     // ---- Offline-render detection (host bounce / freeze). setNonRealtime() is
     // called by the host wrapper on the message thread when it switches to
     // offline rendering; isNonRealtime() is a cheap fallback polled in
-    // processBlock. Exposed so a future "max quality" mode (e.g. oversampling)
-    // can auto-engage during offline bounce, where CPU is unconstrained.
+    // processBlock. OFFLINE AUTO-MAX QUALITY (desktop only): entering offline
+    // bumps the per-voice filter oversampling to 8x (CPU is unconstrained in a
+    // bounce); leaving offline restores the user's saved factor. The 8x is
+    // applied WITHOUT persisting (applyOversamplingFactor) so host state and
+    // the Settings combo keep the user's choice; isOfflineOversamplingActive()
+    // exposes the state (tests).
     void setNonRealtime (bool isNonRealtime) noexcept override;
     bool isNonRealtimeRender() const noexcept { return nonRealtime_.load (std::memory_order_relaxed); }
+    bool isOfflineOversamplingActive() const noexcept { return offlineSavedOs_ >= 0; }
 
     //==========================================================================
     int getNumPrograms() override { return 1; }
@@ -404,12 +416,20 @@ private:
     // Route an arpeggiator parameter to the SynthEngine's arpeggiator.
     void applyArpParameter (const PatchParamDescriptor& descriptor, float rawValue);
 
-    // (Re)builds the oversampling LATENCY probe for the current uiOversampling_.
-    // The probe mirrors the per-voice Oversampling config exactly so its
-    // getLatencyInSamples() matches what every voice adds; it is never fed audio,
-    // so rebuilding it on the message thread (UI factor change) is race-free and
+    // (Re)builds the oversampling LATENCY probe for @p osFactor (NOT the
+    // persisted uiOversampling_ — the offline auto-max path probes 8x without
+    // persisting it). The probe mirrors the per-voice Oversampling config
+    // exactly (1 channel, min-phase IIR half-band, max quality, integer latency)
+    // so its getLatencyInSamples() matches what every voice adds; it is never
+    // fed audio, so rebuilding it on the message thread is race-free and
     // decouples latency reporting from the audio-thread voice rebuild.
-    void rebuildOsLatencyProbe();
+    void rebuildOsLatencyProbe (int osFactor);
+
+    // Apply a filter-oversampling factor WITHOUT persisting it: latency-probe
+    // rebuild + engine staging + latency re-report. The shared engine half of
+    // setOversamplingFactor (which persists first, then calls this). Message
+    // thread (it pre-builds per-voice Oversampling objects + the probe).
+    void applyOversamplingFactor (int factor);
 
     // Total reportable plugin latency (host samples) = Lagrange resampler
     // latency + active filter-OS latency (both converted from INPUT/internal
@@ -497,6 +517,18 @@ private:
     // Offline-render flag (host bounce). Updated by setNonRealtime() and kept
     // warm each block from isNonRealtime() as a host-compat fallback.
     std::atomic<bool> nonRealtime_ { false };
+
+    // Offline auto-max-quality bookkeeping (message thread only — written by
+    // setNonRealtime / prepareToPlay, never from processBlock):
+    // -1 = offline boost inactive; >= 1 = the user factor to restore on exit.
+    // See setNonRealtime for the full policy.
+    int offlineSavedOs_ = -1;
+
+    // Chunked-render scratch: when a host block exceeds the prepared size,
+    // each >first slice receives its window's MIDI events rebased to [0, n)
+    // in this buffer (clear() keeps capacity — no steady-state allocation;
+    // only oversized blocks ever touch it). Audio-thread-only.
+    juce::MidiBuffer sliceMidiScratch_;
 
     // Thermal hint (F-ios-perf-2): ThermalAction as int, written ~1 Hz by the
     // iOS-only sampler in DeferredParamTimer::timerCallback, read by the

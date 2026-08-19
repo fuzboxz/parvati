@@ -2,12 +2,11 @@
 
 #include "FxRoutingBar.h"
 
-#include <cmath>
-
 #include "PluginProcessor.h"   // ParvatiAudioProcessor complete type (getApvts)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // dynamic_cast + appFont() in FxFlowDiagram
+#include "FxSlotLabels.h"     // fxEqLowToString / fxEqDbToString (hoisted EQ readouts)
 
 //==============================================================================
 namespace
@@ -31,28 +30,15 @@ namespace
     constexpr int kEqRowH     = 60;   // [LowCut][Mid][High] EQ knob row height
 
 // FX master-EQ / mix readout strings (compact, <=5 chars, no space -> fit the
-// 44px EQ dial above the painter's 9px floor). Self-contained here so the FX
-// routing bar stays independent of the synth formatter (ui/SynthParamLabels).
+// 44px EQ dial above the painter's 9px floor). HOISTED into the gui-free
+// ui/FxSlotLabels (fxEqLowToString / fxEqDbToString) so the HOST-VISIBLE
+// parameter text (ParameterLayout.cpp) shares one implementation with these
+// knobs; the lambdas below forward to them.
 //   fx_eq_low  0..127 (0=off, else HP 20..1500 Hz) — FxChain.cpp:308-312.
 //   fx_eq_mid/high 0..127 (64=unity, +-12 dB)      — FxChain.cpp:319/330.
 // The Hz readout uses the synth's electronic-component k-notation ("1k5" for
 // 1500 Hz) so the longest string is "999Hz" (5 chars).
-juce::String eqLowToString (double v)
-{
-    const int iv = juce::roundToInt (v);
-    if (iv <= 0) return "Off";
-    const double t = static_cast<double> (iv - 1) / 126.0;
-    const double hz = 20.0 * std::pow (1500.0 / 20.0, t);
-    if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";   // "20Hz".."999Hz"
-    const int hundreds = juce::roundToInt (hz / 100.0);                   // 1500 -> 15
-    return juce::String (hundreds / 10) + "k" + juce::String (hundreds % 10);   // "1k0".."1k5"
-}
-juce::String eqDbToString (double v)
-{
-    const int db = juce::roundToInt ((v - 64.0) / 64.0 * 12.0);
-    return (db > 0 ? "+" : juce::String()) + juce::String (db) + "dB";     // "+6dB","0dB","-12dB"
-}
-}
+}  // namespace
 
 //==============================================================================
 // FxFlowDiagram — a compact in->out signal-flow block chart for the 3 FX-chain
@@ -329,8 +315,8 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
         // with raw param.getText() -> 0..127); otherwise the EQ readouts show a
         // bare 0..127 instead of Hz / dB.
         eqKnobs_[i].textFromValueFunction = (i == 0)
-            ? [] (double v) { return eqLowToString (v); }
-            : [] (double v) { return eqDbToString (v); };
+            ? [] (double v) { return fxEqLowToString (v); }
+            : [] (double v) { return fxEqDbToString (v); };
     }
 }
 

@@ -220,9 +220,7 @@ void reseed (ParvatiAudioProcessor& proc)
     e.setPartName (4, "seed4");
     e.setPartChannel (1, 5);
     e.setPartKeyrange (2, 10, 90);
-    int16_t custom[12] = {};
-    custom[5] = 17;
-    e.setPartTuningCustom (3, custom);
+    e.getPart (3).partBytes[4] = 11;   // raga preset pollution (byte-4 shadow)
     // One distinctive APVTS param so APVTS-tree-only mutations are visible in
     // the snapshot too (osc1_shape choice index 4 = Noise).
     proc.getApvts().getParameterAsValue ("osc1_shape") = 4.0f;
@@ -341,10 +339,8 @@ Corpus buildParvatiMulti()
     e.setPartName (2, "Clap");
     e.setPartChannel (2, 0);                       // one Omni part
     e.setPartKeyrange (0, 36, 36);                 // one drum-zone part
-    int16_t custom[12] = {};
-    custom[1] = 42; custom[2] = -31;
-    e.setPartTuningCustom (0, custom);             // tuning_mode 33 serialized
-    e.setPartTuningCustom (3, custom);
+    e.getPart (0).partBytes[4] = 5;                // raga byte (rides params: part_raga)
+    e.getPart (3).partBytes[4] = 5;
     // FX: part 0 slot 0 Resonator, part 3 slot 1 Ensemble (slot TYPES are the
     // Wave-1 bug class — the corpus must carry them).
     e.setCurrentPart (0);
@@ -540,7 +536,11 @@ std::vector<TextEdit> multiEdits()
         { "bogusYamlTail",     [] (const juce::String& t) { return t + "  ::: ][ nonsense\n\t- x:\n"; } },
         { "version99",         [] (const juce::String& t) { return replaceFirst (t, "version: 1", "version: 99"); } },
         { "dropFormatLine",    [] (const juce::String& t) { return removeLinesContaining (t, "format:"); } },
-        { "tuningMode999",     [] (const juce::String& t) { return replaceFirst (t, "tuning_mode: 33", "tuning_mode: 999"); } },
+        { "legacyTune999",     [] (const juce::String& t)
+                               {   // Inject a legacy (pre-removal) tuning_mode
+                                   // key with a hostile value; must parse+clamp,
+                                   // never crash (accepted-and-ignored contract).
+                                   return replaceFirst (t, "    params:", "    tuning_mode: 999\n    params:"); } },
         { "raga300",           [] (const juce::String& t) { return replaceFirst (t, "part_raga:", "part_raga: 300 #"); } },
         { "brokenTopName",     [] (const juce::String& t) { return replaceFirst (t, "name: \"", "name: \"bad \"quoted\" "); } },
         { "dupPartsKey",       [] (const juce::String& t) { return t + "\nparts:\n  - channel: 9\n"; } },

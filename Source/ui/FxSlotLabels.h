@@ -28,3 +28,13 @@ const char* paramLabel (FxType t, int idx) noexcept;
 // or "50%"). DISPLAY-ONLY — the stored value is unchanged; this just formats
 // the knob's popup readout. Dimensionless params fall back to 0..100%.
 juce::String paramValueText (FxType t, int idx, double value0to127);
+
+// Master-section FX readouts (hoisted from FxRoutingBar.cpp so the HOST-VISIBLE
+// parameter text — wired in ParameterLayout.cpp via
+// AudioParameterIntAttributes::withStringFromValueFunction — shares ONE
+// implementation with the UI knobs). Both are pure math on the raw 0..127 byte
+// (juce_core only; callable from arbitrary host threads):
+//   fxEqLowToString : fx_eq_low   0..127 (0 = off, else HP 20..1500 Hz, log)
+//   fxEqDbToString  : fx_eq_mid/high 0..127 (64 = unity, ±12 dB)
+juce::String fxEqLowToString (double v);
+juce::String fxEqDbToString  (double v);

@@ -54,6 +54,32 @@ public:
         the mtime check, so they do not depend on this call. */
     void invalidate() { cacheValid_ = false; }
 
+    // ---- prev/next stepping (header [ ] / Cmd+[/] shortcuts) ----
+    /** The file currently marked as loaded in this browser (set by a menu
+        pick, setCurrentFile(), or a step). Invalid until something sets it.
+        The editor mirrors every successful load (menu pick, Load... picker,
+        drag-drop, template) through setCurrentFile(). */
+    const juce::File& getCurrentFile() const noexcept { return currentFile_; }
+
+    /** Inform the browser of a load that happened OUTSIDE the menu (Load...
+        dialog, drag-drop, host state restore) so stepping continues from the
+        ACTUAL current preset. No-op-safe for a file not in the tree (stepping
+        then starts from the list ends — see selectNext). */
+    void setCurrentFile (const juce::File& f) { currentFile_ = f; }
+
+    /** Step to the next preset in the flattened menu order (Factory A/B/F/S,
+        Multi, User recursive, Templates), selecting it via the SAME onSelect_
+        callback a menu pick fires. WRAPS at the end (back to the first leaf);
+        when the current file is not in the list, the FIRST leaf is selected.
+        @returns the newly selected file, or an invalid File when the tree has
+        no leaves at all. */
+    juce::File selectNext() { return stepSelection (+1); }
+
+    /** Step to the previous preset — selectNext's mirror (wraps to the LAST
+        leaf; a current file not in the list selects the last leaf).
+        @returns the newly selected file, or an invalid File when empty. */
+    juce::File selectPrev() { return stepSelection (-1); }
+
     void resized() override { nameBtn_.setBounds (getLocalBounds()); }
 
     // ---- cache observables (headless test seams; not used by the UI) ----
@@ -380,7 +406,49 @@ private:
         // dismisses — the PresetBrowser (editor-owned) may already be deleted
         // if the host closed the plugin window while the popup was open.
         juce::Component::SafePointer<PresetBrowser> safe (this);
-        m.addItem (label, [safe, f] { if (safe != nullptr && safe->onSelect_) safe->onSelect_ (f); });
+        m.addItem (label, [safe, f] { if (safe != nullptr) safe->selectLeaf (f); });
+    }
+
+    // A leaf became the loaded preset — either from a menu pick or a step.
+    // Records it (so stepping continues from here) and fires the editor's
+    // onSelect_ seam (the exact path a menu pick takes).
+    void selectLeaf (const juce::File& f)
+    {
+        currentFile_ = f;
+        if (onSelect_)
+            onSelect_ (f);
+    }
+
+    // ---- flattened stepping ----
+    // The step order mirrors the MENU order exactly: for each node, submenus
+    // first (recursively), then leaves — the same traversal menuFromNode
+    // uses, over subs[0..6] (Factory banks A/B/F/S, Multi, User, Templates).
+    static void flattenLeaves (const MenuNode& node, std::vector<Leaf>& out)
+    {
+        for (const auto& s : node.subs)
+            flattenLeaves (s, out);
+        out.insert (out.end(), node.leaves.begin(), node.leaves.end());
+    }
+
+    juce::File stepSelection (int dir)
+    {
+        if (! cacheValid_ || watchedDirsChanged())
+            scanInto (cachedTree_);
+        std::vector<Leaf> flat;
+        flattenLeaves (cachedTree_, flat);
+        if (flat.empty())
+            return {};
+        const juce::String cur = currentFile_.getFullPathName();
+        int idx = -1;
+        for (int i = 0; i < (int) flat.size(); ++i)
+            if (flat[(size_t) i].file.getFullPathName() == cur) { idx = i; break; }
+        // Not-in-list + next => first; not-in-list + prev => last (the ends
+        // the step is heading toward); otherwise move by dir and WRAP.
+        int next = (idx < 0) ? (dir > 0 ? 0 : (int) flat.size() - 1)
+                             : (idx + dir + (int) flat.size()) % (int) flat.size();
+        const auto& leaf = flat[(size_t) next];
+        selectLeaf (leaf.file);
+        return leaf.file;
     }
 
     juce::String patchLabel (const juce::File& f, bool parseName)
@@ -398,6 +466,10 @@ private:
     juce::TextButton nameBtn_;
     juce::File templatesDir_, userDir_, factoryDir_, factoryMultiDir_;
     OnSelect onSelect_;
+    // The file the editor last loaded (stepping's anchor). Only ever set via
+    // selectLeaf (a menu pick / a step) or setCurrentFile (an out-of-menu
+    // load the editor reports) — never guessed from the button label.
+    juce::File currentFile_;
 
     // ---- the cache (W10) ----
     MenuNode cachedTree_;

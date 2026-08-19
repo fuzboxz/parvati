@@ -199,8 +199,11 @@ int countInvariantViolations (ParvatiAudioProcessor& proc, const char* label)
         if (slots < 0 || slots > 16) flag ("voice-slots", p, slots, 0, 16);
 
         // ---- tuning ----
+        // 0..32 only: the custom-table mode 33 was removed with the
+        // custom-tuning subsystem (2026-08-19); a legacy file carrying it
+        // loads as 12-EDO (0).
         const int tm = e.resolvedTuningMode (p);
-        if (tm < 0 || tm > 33) flag ("tuning-mode", p, tm, 0, 33);
+        if (tm < 0 || tm > 32) flag ("tuning-mode", p, tm, 0, 32);
 
         // ---- sanitized name ----
         if (e.getPartName (p).length() > 16)
@@ -347,10 +350,10 @@ int main()
         { "part_spread:255 (clamps to 40)",     emitMultiYaml (withPart0 (param (defaultPart(), "part_spread", "255")),     "CaseSpread255") },
         { "part_polyphony:6 (clamps to 4)",     emitMultiYaml (withPart0 (param (defaultPart(), "part_polyphony", "6")),   "CasePoly6") },
         { "part_raga:33 (clamps to 32)",        emitMultiYaml (withPart0 (param (defaultPart(), "part_raga", "33")),       "CaseRaga33") },
-        // ---- tuning block ----
-        { "tuning_mode:33 + offsets (valid custom)",
+        // ---- legacy tuning keys (custom subsystem removed 2026-08-19) ----
+        { "tuning_mode:33 + offsets (legacy custom -> 12-EDO)",
           emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.tuningMode = 33; p.tuningOffsets = "10, -20, 30, -40, 50, -60, 70, -80, 90, -100, 110, -120"; return p; }()), "CaseTuneCustom") },
-        { "tuning_mode:34 (clamps to 33; no offsets -> untouched)",
+        { "tuning_mode:34 (out of range -> 12-EDO)",
           emitMultiYaml (withPart0 ([] { auto p = defaultPart(); p.tuningMode = 34; return p; }()), "CaseTune34") },
         // ---- names: the sanitizer + the raw-nested-quote document ----
         { "name 40 chars (sanitizes to <=16)",

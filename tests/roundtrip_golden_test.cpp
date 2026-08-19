@@ -183,11 +183,8 @@ void seedRichState (ParvatiAudioProcessor& proc)
     SynthEngine& e = proc.getEngine();
     const int nParts = SynthEngine::getNumParts();
 
-    int16_t custom[12] = {};
-    for (int c = 0; c < 12; ++c)
-        custom[(size_t) c] = static_cast<int16_t> ((c + 1) * 10 - 30);
-    e.setPartTuningCustom (0, custom);
-    e.setPartTuningCustom (3, custom);
+    e.getPart (0).partBytes[4] = 5;    // raga presets (the tuning surface)
+    e.getPart (3).partBytes[4] = 12;
 
     for (int p = 0; p < nParts; ++p)
         e.setPartName (p, juce::String ("Alias") + juce::String (p + 1));

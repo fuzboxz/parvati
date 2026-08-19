@@ -39,6 +39,9 @@ const juce::String& frenchChromeStrings()
         "\"Save\" = \"Enregistrer\"\n"
         "\"Undo\" = \"Annuler\"\n"
         "\"Redo\" = \"Rétablir\"\n"
+        // ---- top-bar button tooltips (shortcut hints) ----
+        "\"Load a patch (Cmd/Ctrl+O)\" = \"Charger un programme (Cmd/Ctrl+O)\"\n"
+        "\"Save the current patch (Cmd/Ctrl+S)\" = \"Enregistrer le programme (Cmd/Ctrl+S)\"\n"
         // ---- top-bar captions ----
         "\"Patch:\" = \"Programme :\"\n"
         "\"Part:\" = \"Partie :\"\n"
@@ -71,8 +74,6 @@ const juce::String& frenchChromeStrings()
         "\"Cyclic\" = \"Cyclique\"\n"
         "\"Chain\" = \"Chaîne\"\n"
         "\"Tune\" = \"Accordage\"\n"
-        // \xE2\x80\xA6 = U+2026: must byte-match TRANS("Custom\xE2\x80\xA6")
-        "\"Custom…\" = \"Personnalisé…\"\n"
         // ---- Settings panel labels / toggles ----
         "\"Theme\" = \"Thème\"\n"
         "\"Zoom\" = \"Zoom\"\n"
@@ -139,6 +140,12 @@ const juce::String& frenchChromeStrings()
         "\" as a modulation source\" = \" comme source de modulation\"\n"
         "\"Octave down (Z)\" = \"Octave en dessous (Z)\"\n"
         "\"Octave up (X)\" = \"Octave au-dessus (X)\"\n"
+        // ---- Accessibility names (row containers / wheels; suffix-key idiom so
+        // the trailing slot number concatenates after the translated fragment) ----
+        "\"Pitch Wheel\" = \"Molette de pitch\"\n"
+        "\"Mod Wheel\" = \"Molette de modulation\"\n"
+        "\"Mod \" = \"Mod \"\n"
+        "\"FX Mod \" = \"Mod FX \"\n"
         "\"(this file)\" = \"(ce fichier)\"\n"
         // ---- MulExportDialog (Save Multi fallback dialog) ----
         "\"This setup uses more voices than one Ambika has (6 voicecards).\" = \"Cette configuration utilise plus de voix qu'un Ambika n'en possède (6 cartes vocales).\"\n"
@@ -149,7 +156,6 @@ const juce::String& frenchChromeStrings()
         "\"Ambika\" = \"Ambika\"\n"
         "\"Voicecards per unit\" = \"Cartes vocales par unité\"\n"
         "\"Voicecards per part\" = \"Cartes vocales par partie\"\n"
-        "\"Custom tunings cannot be represented in .MUL — exported parts fall back to their Scale preset byte (or 12-EDO): \" = \"Les accordages personnalisés ne peuvent pas être représentés dans un .MUL — les parties exportées retombent sur leur octet de gamme (ou 12-EDO) : \"\n"
         "\"Share the voicecards fairly (recommended)\" = \"Partager les cartes vocales équitablement (recommandé)\"\n"
         "\"Each part gets voicecards in proportion to how many voices it uses now — the busiest parts keep the most polyphony.\" = \"Chaque partie reçoit des cartes vocales proportionnellement au nombre de voix qu'elle utilise — les parties les plus actives conservent le plus de polyphonie.\"\n"
         "\"Give every part the same\" = \"Donner autant à chaque partie\"\n"
@@ -188,6 +194,9 @@ const juce::String& germanChromeStrings()
         "\"Save\" = \"Speichern\"\n"
         "\"Undo\" = \"Rückgängig\"\n"
         "\"Redo\" = \"Wiederholen\"\n"
+        // ---- top-bar button tooltips (shortcut hints) ----
+        "\"Load a patch (Cmd/Ctrl+O)\" = \"Programm laden (Cmd/Ctrl+O)\"\n"
+        "\"Save the current patch (Cmd/Ctrl+S)\" = \"Programm speichern (Cmd/Ctrl+S)\"\n"
         // ---- top-bar captions ----
         "\"Patch:\" = \"Programm:\"\n"
         "\"Part:\" = \"Part:\"\n"
@@ -220,8 +229,6 @@ const juce::String& germanChromeStrings()
         "\"Cyclic\" = \"Zyklisch\"\n"
         "\"Chain\" = \"Kette\"\n"
         "\"Tune\" = \"Stimmung\"\n"
-        // \xE2\x80\xA6 = U+2026: must byte-match TRANS("Custom\xE2\x80\xA6")
-        "\"Custom…\" = \"Benutzerdefiniert…\"\n"
         // ---- Settings panel labels / toggles ----
         "\"Theme\" = \"Design\"\n"
         "\"Zoom\" = \"Zoom\"\n"
@@ -288,6 +295,12 @@ const juce::String& germanChromeStrings()
         "\" as a modulation source\" = \" als Modulationsquelle zuzuweisen\"\n"
         "\"Octave down (Z)\" = \"Oktave tiefer (Z)\"\n"
         "\"Octave up (X)\" = \"Oktave höher (X)\"\n"
+        // ---- Accessibility names (row containers / wheels; suffix-key idiom so
+        // the trailing slot number concatenates after the translated fragment) ----
+        "\"Pitch Wheel\" = \"Pitchrad\"\n"
+        "\"Mod Wheel\" = \"Modulationsrad\"\n"
+        "\"Mod \" = \"Mod \"\n"
+        "\"FX Mod \" = \"FX-Mod. \"\n"
         "\"(this file)\" = \"(diese Datei)\"\n"
         // ---- MulExportDialog (Save Multi fallback dialog) ----
         "\"This setup uses more voices than one Ambika has (6 voicecards).\" = \"Dieses Setup benötigt mehr Stimmen als ein Ambika hat (6 Voicecards).\"\n"
@@ -298,7 +311,6 @@ const juce::String& germanChromeStrings()
         "\"Ambika\" = \"Ambika\"\n"
         "\"Voicecards per unit\" = \"Voicecards pro Gerät\"\n"
         "\"Voicecards per part\" = \"Voicecards pro Part\"\n"
-        "\"Custom tunings cannot be represented in .MUL — exported parts fall back to their Scale preset byte (or 12-EDO): \" = \"Benutzerdefinierte Stimmungen können in .MUL nicht dargestellt werden — exportierte Parts fallen auf ihr Skal-Preset-Byte (oder 12-EDO) zurück: \"\n"
         "\"Share the voicecards fairly (recommended)\" = \"Voicecards fair aufteilen (empfohlen)\"\n"
         "\"Each part gets voicecards in proportion to how many voices it uses now — the busiest parts keep the most polyphony.\" = \"Jeder Part erhält Voicecards im Verhältnis zu seinen aktuell genutzten Stimmen — die aktivsten Parts behalten die meiste Polyphonie.\"\n"
         "\"Give every part the same\" = \"Jedem Part dasselbe geben\"\n"

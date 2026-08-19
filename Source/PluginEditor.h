@@ -655,6 +655,19 @@ private:
     void openLoadDialog();
     void openSaveDialog();
     void openSaveParvatiDialog();
+
+    // ---- Keyboard-shortcut seams (keyPressed dispatches to these) ----
+    // Small, headless-testable handlers: each returns true when the shortcut
+    // was consumed. The FileChooser launch inside the Load/Save handlers is
+    // DESKTOP-GATED (a headless console has no window server for a native
+    // picker — the showFileOpFailure guard idiom), so a headless call is
+    // consumed without opening anything (the tests assert the seam fired via
+    // the return value). Step: PresetBrowser::selectNext/selectPrev. Part:
+    // the same partCombo_ setSelectedId seam the part context menu uses.
+    bool handleLoadPresetShortcut();
+    bool handleSavePresetShortcut();      // parvati-format save (full fidelity) — see .cpp
+    bool handleStepPresetShortcut (int direction);   // +1 next / -1 prev
+    bool handlePartSelectShortcut (int part0Based);  // 0..5
     // Save the whole multitimbral setup as an Ambika .MUL. When the setup uses
     // voice slots beyond the hardware (mul_export::needsFallback), the export
     // fallback dialog (MulExportDialog) picks a voice->card mapping strategy.

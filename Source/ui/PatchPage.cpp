@@ -12,7 +12,6 @@
 #include "PluginEditor.h"      // ParamPage complete type (reflowToWidth/getContentHeight)
 #include "TuningTables.h"      // tuningPresetName (Tune combo items)
 #include "ui/NoteName.h"       // midiNoteName (key-zone knob readouts)
-#include "ui/TuningEditor.h"   // Custom… tuning popover (Tune column)
 
 #include <cstdint>
 
@@ -153,13 +152,13 @@ public:
         polyCombo_.onChange = [this] { onPolyChanged(); };
         addAndMakeVisible (polyCombo_);
 
-        // ---- Tune: per-part microtonal tuning (firmware raga presets +
-        // custom tables). "12-EDO" (id 1) + the 32 firmware presets
-        // (ids 2..33 = raga byte 1..32) + "Custom…" (id 34) opening the
-        // TuningEditor popover. Preset writes go through the SAME byte-4
-        // path as the part_raga APVTS param (so saves/exports carry them);
-        // the resolved-mode mapping mirrors SynthEngine::resolvedTuningMode
-        // (0 = 12-EDO, 1..32 = preset, 33 = custom). ----
+        // ---- Tune: per-part microtonal tuning (firmware raga presets).
+        // "12-EDO" (id 1) + the 32 firmware presets (ids 2..33 = raga byte
+        // 1..32). Preset writes go through the SAME byte-4 path as the
+        // part_raga APVTS param (so saves/exports carry them); the resolved
+        // mode IS the raga byte (0 = 12-EDO, 1..32 = preset). The former
+        // "Custom…" entry (id 34, TuningEditor popover) was removed with the
+        // custom-tuning subsystem (2026-08-19). ----
         buildTuneItems();
         tuneCombo_.onChange = [this] { onTuningChanged(); };
         addAndMakeVisible (tuneCombo_);
@@ -353,18 +352,15 @@ public:
         onVoicesChanged();
     }
 
-    // The Tune combo's currently-displayed mode (0..32 / 33 = Custom).
+    // The Tune combo's currently-displayed mode (0..32).
     int displayedTuningMode() const
     {
-        const int id = tuneCombo_.getSelectedId();
-        return id == 34 ? 33 : id - 1;
+        return tuneCombo_.getSelectedId() - 1;
     }
 
     // Test/automation hook: set the Tune combo as if the user chose it, then
-    // run the normal byte-4 write / editor-open path (JUCE does not fire a
-    // combo's onChange for a programmatic setSelectedId). mode 33 opens the
-    // Custom… popover exactly like the UI — headless tests should drive
-    // TuningEditor directly instead.
+    // run the normal byte-4 write path (JUCE does not fire a combo's onChange
+    // for a programmatic setSelectedId).
     void chooseTuningMode (int mode)
     {
         refreshing_ = true;
@@ -374,8 +370,7 @@ public:
     }
 
     // Re-select the Tune combo from the engine's resolved mode (called by
-    // PatchPage::openTuningEditor's change callback after live popover edits
-    // and by refresh()). No onChange fired.
+    // refresh()). No onChange fired.
     void syncTuningDisplay()
     {
         refreshing_ = true;
@@ -402,22 +397,18 @@ private:
     juce::Slider loSlider_, hiSlider_;
 
     // (Re)build the Tune combo items: "12-EDO" (id 1) + the 32 firmware
-    // presets (ids 2..33, untranslated proper nouns) + a separator +
-    // "Custom…" (id 34, opens the TuningEditor popover). Id mapping:
-    // combo id = resolved tuning mode + 1, except Custom (mode 33 -> id 34).
+    // presets (ids 2..33, untranslated proper nouns). Id mapping:
+    // combo id = raga byte + 1 (mode 0..32 -> id 1..33).
     void buildTuneItems()
     {
         tuneCombo_.clear (juce::dontSendNotification);
         tuneCombo_.addItem (TRANS ("12-EDO"), 1);
         for (int id = 1; id <= parvati::kNumTuningPresets; ++id)
             tuneCombo_.addItem (juce::String (parvati::tuningPresetName (id)), id + 1);
-        tuneCombo_.addSeparator();
-        tuneCombo_.addItem (TRANS ("Custom\xE2\x80\xA6"), 34);
     }
 
     static int tuningModeToComboId (int mode)
     {
-        if (mode == 33) return 34;
         return juce::jlimit (1, 33, mode + 1);   // mode 0..32 -> id 1..33
     }
 
@@ -473,14 +464,6 @@ private:
     {
         if (refreshing_) return;
         const int id = tuneCombo_.getSelectedId();
-        if (id == 34)
-        {
-            // Engine stays untouched until the popover's live edits land
-            // (TuningEditor::applyTable -> setPartTuningCustom); the combo
-            // re-syncs from the engine when the editor reports changes.
-            owner_.openTuningEditor (partIndex_);
-            return;
-        }
         if (id < 1 || id > 33)
             return;
         const int mode = id - 1;   // 0 = 12-EDO, 1..32 = raga preset byte
@@ -491,12 +474,6 @@ private:
         engine_.setCurrentPart (partIndex_);
         engine_.applyPartByte (4, static_cast<uint8_t> (mode));
         engine_.setCurrentPart (saved);
-        if (mode == 0)
-        {
-            // D4: "12-EDO" clears the custom flag EXPLICITLY (a preset
-            // selection only shadows it implicitly — byte 4 wins while set).
-            engine_.clearPartTuningCustom (partIndex_);
-        }
         owner_.postPartEdit();
         // Same APVTS staleness reason as onPolyChanged: the hosted param
         // grid's part_raga combo reads the CURRENT part's value.
@@ -749,37 +726,6 @@ void PatchPage::chooseVoiceSlots (int part, int slots)
 {
     if (part < 0 || part >= kNumParts) return;   // slots clamped inside the row (0 disables the part)
     rows_[(size_t) part]->chooseVoiceSlots (slots);
-}
-
-void PatchPage::openTuningEditor (int part)
-{
-    if (part < 0 || part >= kNumParts) return;
-    // SafePointer guard: TuningEditor::launch opens its OWN desktop window,
-    // so the live-edit callback can fire after the Patch page (and its rows_)
-    // have been torn down — a raw `this` would dangle. (TuningEditor itself
-    // additionally closes once its launch parent is gone, but the callback
-    // may already be in flight.)
-    juce::Component::SafePointer<PatchPage> safe (this);
-    auto onChanged = [safe, part] { if (safe != nullptr) safe->tuningEditorApplied (part); };
-    TuningEditor::launch (rows_[(size_t) part].get(), proc_.getEngine(), part,
-                          std::move (onChanged));
-}
-
-// The TuningEditor popover's post-edit notification (public test seam — see
-// header). The engine write itself is TuningEditor::applyTable ->
-// setPartTuningCustom (zeroes byte 4 + arms the custom flag).
-void PatchPage::tuningEditorApplied (int part)
-{
-    if (part < 0 || part >= kNumParts) return;
-    rows_[(size_t) part]->syncTuningDisplay();
-    postPartEdit();
-    // Same APVTS staleness reason as onTuningChanged / onPolyChanged: the
-    // popover wrote the part's PartData ENGINE-DIRECT (byte 4 = 0 + custom
-    // flag armed), so the hosted param grid's part_raga combo — and any
-    // APVTS-based save (the .PRO/.parvati writers read the APVTS) — must be
-    // re-synced from the engine or they keep/export the STALE preset byte
-    // while the engine plays the custom table.
-    proc_.loadPartIntoApvts (proc_.getEngine().getCurrentPart());
 }
 
 void PatchPage::updateVoicesTotal()

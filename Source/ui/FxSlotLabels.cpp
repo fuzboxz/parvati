@@ -465,3 +465,26 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
     // Default: dimensionless param -> 0..100%
     return juce::String (juce::roundToInt (p * 100.0)) + "%";
 }
+
+//==============================================================================
+// Master-section readouts (hoisted from FxRoutingBar.cpp — see the header
+// declaration comment). Compact, <=5 chars, no space, so they fit the 44px EQ
+// dial above the painter's 9px floor; the Hz readout uses the synth's
+// electronic-component k-notation ("1k5" for 1500 Hz). Bounds mirror
+// FxChain.cpp:308-312 (low) and :319/:330 (mid/high).
+juce::String fxEqLowToString (double v)
+{
+    const int iv = juce::roundToInt (v);
+    if (iv <= 0) return "Off";
+    const double t = static_cast<double> (iv - 1) / 126.0;
+    const double hz = 20.0 * std::pow (1500.0 / 20.0, t);
+    if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";   // "20Hz".."999Hz"
+    const int hundreds = juce::roundToInt (hz / 100.0);                   // 1500 -> 15
+    return juce::String (hundreds / 10) + "k" + juce::String (hundreds % 10);   // "1k0".."1k5"
+}
+
+juce::String fxEqDbToString (double v)
+{
+    const int db = juce::roundToInt ((v - 64.0) / 64.0 * 12.0);
+    return (db > 0 ? "+" : juce::String()) + juce::String (db) + "dB";     // "+6dB","0dB","-12dB"
+}

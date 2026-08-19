@@ -7,6 +7,18 @@
 #include "dsp/fx/FxTypes.h"   // FxType / FxModDestination + counts (FX descriptors)
 #include "dsp/patch.h"  // enum value counts + the init patch field semantics
 
+// Host-visible parameter TEXT (wired below via AudioParameterIntAttributes).
+// Both formatter shards are juce_core-only (no juce_gui): pure LUT/math on the
+// raw integer value, safe to call from arbitrary host threads. The master-EQ
+// readouts (fxEqLowToString/fxEqDbToString) were hoisted here from
+// FxRoutingBar.cpp so the host text and the UI knob text are ONE implementation.
+#include "ui/FxSlotLabels.h"
+#include "ui/SynthParamLabels.h"
+
+#include <array>
+#include <utility>
+#include <vector>
+
 namespace
 {
 // ---- Choice string lists (sizes match the patch.h enum LAST values) ---------
@@ -364,9 +376,9 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         add ("part_tuning",     "Tuning",     2, true, true,  nullptr, -127, 127); // PartData.tuning (int8)
         add ("part_spread",     "Spread",     3, true, false, nullptr,    0, 40);   // PartData.spread (uint8): per-voice detune
         // PartData.raga (uint8): per-part scale preset, applied at trigger like
-        // firmware Part::TuneNote. Choice index == raga byte (0..32); the 33rd
-        // mode "custom table" is engine-side only (SynthEngine TuningState) and
-        // never appears here. The firmware exposes raga UI-only (NRPN 0xff,
+        // firmware Part::TuneNote. Choice index == raga byte (0..32). (A 33rd
+        // "custom table" mode existed in the custom-tuning subsystem — removed
+        // 2026-08-19.) The firmware exposes raga UI-only (NRPN 0xff,
         // MidiParameterMap firmware_parameters row 46), so this param carries NO
         // CC/NRPN mapping — values travel via the editor, presets and files.
         add ("part_raga",       "Scale",      4, true, false, &kTuningPresets, 0, 32);
@@ -572,30 +584,293 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
     return table;
 }
 
+//==============================================================================
+namespace
+{
+// ---- Host parameter GROUPING (VST3 Units / AU grouped parameter lists) ------
+// Mirrors the editor's Section rules (sectionForId, PluginEditor.cpp) adapted
+// to the descriptor table's emission order. Groups are created lazily in
+// FIRST-APPEARANCE order, so the flattened host parameter list stays as close
+// to the historical descriptor order as the grouping permits (see the note in
+// createParvatiParameterLayout for the exact deltas).
+enum class HostGroup { Osc, Mix, Filter, Env, Lfo, Mod, Modif, Part, Seq, Arp, Global, Fx, FxMod };
+
+const char* hostGroupId (HostGroup g)
+{
+    switch (g)
+    {
+        case HostGroup::Osc:    return "osc";
+        case HostGroup::Mix:    return "mix";
+        case HostGroup::Filter: return "filter";
+        case HostGroup::Env:    return "env";
+        case HostGroup::Lfo:    return "lfo";
+        case HostGroup::Mod:    return "mod";
+        case HostGroup::Modif:  return "modif";
+        case HostGroup::Part:   return "part";
+        case HostGroup::Seq:    return "seq";
+        case HostGroup::Arp:    return "arp";
+        case HostGroup::Global: return "global";
+        case HostGroup::Fx:     return "fx";
+        case HostGroup::FxMod:  return "fxmod";
+    }
+    return "global";   // unreachable; keeps -Wreturn-type calm
+}
+
+const char* hostGroupName (HostGroup g)
+{
+    switch (g)
+    {
+        case HostGroup::Osc:    return "Oscillators";
+        case HostGroup::Mix:    return "Mixer";
+        case HostGroup::Filter: return "Filter";
+        case HostGroup::Env:    return "Envelopes";
+        case HostGroup::Lfo:    return "LFOs";
+        case HostGroup::Mod:    return "Mod Matrix";
+        case HostGroup::Modif:  return "Modifiers";
+        case HostGroup::Part:   return "Part";
+        case HostGroup::Seq:    return "Sequencer";
+        case HostGroup::Arp:    return "Arpeggiator";
+        case HostGroup::Global: return "Global";
+        case HostGroup::Fx:     return "FX";
+        case HostGroup::FxMod:  return "FX Mod";
+    }
+    return "Global";
+}
+
+// Prefix rules. ORDER MATTERS, mirroring sectionForId:
+//   - the global synth options are exact-id matches BEFORE the "filter" prefix
+//     (filter_card / filter_drive are global voice-card options, not Filter);
+//   - "fxmod" before "fx" and "modif" before "mod" (those ids share prefixes);
+//   - env{i}_lfo_* splits into LFOs, the env ADSR quadruple stays Envelopes.
+HostGroup hostGroupForId (const juce::String& id)
+{
+    if (id == "filter_card" || id == "filter_drive" || id == "vca_curve")
+        return HostGroup::Global;
+    if (id.startsWith ("fxmod")) return HostGroup::FxMod;
+    if (id.startsWith ("fx"))    return HostGroup::Fx;
+    if (id.startsWith ("modif")) return HostGroup::Modif;
+    if (id.startsWith ("mod"))   return HostGroup::Mod;
+    if (id.startsWith ("voice_lfo")) return HostGroup::Lfo;
+    if (id.startsWith ("env"))
+        return id.contains ("_lfo_") ? HostGroup::Lfo : HostGroup::Env;
+    if (id.startsWith ("arp"))    return HostGroup::Arp;
+    if (id.startsWith ("seq"))    return HostGroup::Seq;
+    if (id.startsWith ("osc"))    return HostGroup::Osc;
+    if (id.startsWith ("mix"))    return HostGroup::Mix;
+    if (id.startsWith ("filter")) return HostGroup::Filter;
+    if (id.startsWith ("part"))   return HostGroup::Part;
+    return HostGroup::Global;
+}
+
+// ---- Shared percent readouts (mirror the UI knob readouts) ------------------
+juce::String unsignedPctOf (double v, double max)
+{
+    return juce::String (juce::roundToInt (juce::jlimit (0.0, 100.0, v / max * 100.0))) + "%";
+}
+
+// Signed mod amount -63..+63 -> "+100%" / "0%" / "-50%" (mirrors the UI's
+// mod-matrix / FX-mod amount readouts).
+juce::String signedAmountPct (double v)
+{
+    const int pct = juce::roundToInt (v * 100.0 / 63.0);
+    return (pct > 0 ? "+" : juce::String()) + juce::String (pct) + "%";
+}
+
+// "fx{1..3}_param{1..5}" -> true + slot/paramIdx (1-based). @p paramIdx is the
+// UI's generic param index (paramLabel/paramValueText idx 0..4 = paramIdx-1).
+bool parseFxSlotParam (const juce::String& id, int& slot, int& paramIdx)
+{
+    if (! (id.startsWith ("fx") && id.contains ("_param")))
+        return false;
+    const int s = id.substring (2).upToFirstOccurrenceOf ("_", false, false).getIntValue();
+    const int k = id.fromFirstOccurrenceOf ("_param", false, false).getIntValue();
+    if (s < 1 || s > 3 || k < 1 || k > 5)
+        return false;
+    slot = s;
+    paramIdx = k;
+    return true;
+}
+}  // namespace
+
 juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout()
 {
+    // ---- Host-facing text + grouping ------------------------------------------
+    // (1) Every AudioParameterInt carries a value->text formatter so host
+    //     automation lanes / generic editors show the same meaningful-unit
+    //     readout as the Parvati UI (Hz / ms / semitones / cents / % / note
+    //     names) instead of a raw 0..127 integer, plus a text->value parser so
+    //     hosts with typed parameter entry (Cubase / Bitwig) map typed values
+    //     through the DISPLAYED unit (typing "100" into Dry/Wet = 100% = 127).
+    //     Choice parameters already carry their text via the choice list and
+    //     are untouched. ParameterID { d.paramID, 1 } versioning is unchanged.
+    // (2) Parameters are wrapped in AudioProcessorParameterGroups (VST3 Units
+    //     / AU grouped lists). Within each group the order is EXACTLY the
+    //     descriptor-table order. vs the historical FLAT list, only two spans
+    //     change: (a) the 23 env+lfo params (the 9 env{i}_lfo_* / 2 voice_lfo
+    //     params now follow the 12 env ADSR params) and (b) the 84-param
+    //     part..global span (part_select joins the Part params up front;
+    //     vca_curve / filter_card / filter_drive close the span in Global).
+    //     Both spans permute the SAME members, so absolute indices are
+    //     IDENTICAL outside them: everything through modif4_op (index 97) and
+    //     everything from fx1_type onward keep their exact historical
+    //     positions. Hosts reference parameters by string/hash ID in ALL
+    //     shipped formats (VST3 string ids; AU/AUv3 hashCode of the id —
+    //     verified in juce_audio_plugin_client), so saved automation and
+    //     APVTS state are unaffected either way.
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
-    for (const auto& d : getPatchParamDescriptors())
+
+    // fx{s}_type choice params, stashed as created so the SAME slot's
+    // param1..5 formatters can resolve the current effect type. Lifetime: both
+    // parameters are owned by the same APVTS (created from this layout), so the
+    // captured pointer is valid for exactly as long as the formatter that
+    // holds it. AudioParameterChoice::getIndex() is an atomic load — reading it
+    // from a host thread is safe (the read may trail the audio thread by a
+    // tick; a display-only staleness).
+    std::array<juce::AudioParameterChoice*, 3> fxTypeParams {};
+
+    auto intAttributesFor = [&fxTypeParams] (const PatchParamDescriptor& d)
     {
-        if (d.choices != nullptr)
+        auto attrs = juce::AudioParameterIntAttributes {};
+        const juce::String id { d.paramID };   // copy: the descriptor table outlives us, but stay self-contained
+        // Default typed-entry parse: plain integer (identical to
+        // AudioParameterInt's built-in default). Range clamping is applied by
+        // the parameter's normalisable range (getValueForText -> convertTo0to1).
+        juce::AudioParameterIntAttributes::ValueFromString parse =
+            [] (const juce::String& t) { return t.getIntValue(); };
+
+        if (d.isFx)
         {
-            layout.add (std::make_unique<juce::AudioParameterChoice> (
-                juce::ParameterID { d.paramID, 1 }, d.label, *d.choices, d.defaultValue));
-        }
-        else if (d.nonAutomatable)
-        {
-            // UI-action parameters (part_select): excluded from host
-            // automation. Everything else about the parameter is unchanged.
-            layout.add (std::make_unique<juce::AudioParameterInt> (
-                juce::ParameterID { d.paramID, 1 }, d.label, d.minValue, d.maxValue, d.defaultValue,
-                juce::AudioParameterIntAttributes().withAutomatable (false)));
+            int slot = 0, paramIdx = 0;
+            if (parseFxSlotParam (id, slot, paramIdx))
+            {
+                // Semantic per-FxType text (e.g. "+12.0 st", "1/16", "6x");
+                // falls back to "NN%" for dimensionless params (FxSlotLabels).
+                juce::AudioParameterChoice* typeParam = fxTypeParams[(size_t) (slot - 1)];
+                attrs = attrs.withStringFromValueFunction (
+                    [typeParam, paramIdx] (int v, int)
+                    {
+                        const int typeIdx = (typeParam != nullptr) ? typeParam->getIndex() : 0;
+                        return paramValueText (static_cast<FxType> (typeIdx), paramIdx - 1,
+                                               static_cast<double> (v));
+                    });
+                // Semantic strings ("C4", "1/16") are not generally invertible:
+                // typed entry stays raw-integer.
+            }
+            else if (id.endsWith ("_drywet") || id == "fx_mix")
+            {
+                attrs = attrs.withStringFromValueFunction (
+                    [] (int v, int) { return unsignedPctOf (v, 127.0); });
+                parse = [] (const juce::String& t) { return juce::roundToInt (t.getIntValue() * 1.27); };
+            }
+            else if (id == "fx_eq_low")
+            {
+                attrs = attrs.withStringFromValueFunction (
+                    [] (int v, int) { return fxEqLowToString (static_cast<double> (v)); });
+                // "off" / "On"-style entry; Hz strings are not invertible.
+                parse = [] (const juce::String& t)
+                {
+                    if (t.equalsIgnoreCase ("off")) return 0;
+                    return t.getIntValue();
+                };
+            }
+            else if (id == "fx_eq_mid" || id == "fx_eq_high")
+            {
+                attrs = attrs.withStringFromValueFunction (
+                    [] (int v, int) { return fxEqDbToString (static_cast<double> (v)); });
+                // Typed dB entry ("+6" / "-12") maps through the ±12 dB scale
+                // around the unity byte 64.
+                parse = [] (const juce::String& t)
+                {
+                    return 64 + juce::roundToInt (t.getIntValue() * 64.0 / 12.0);
+                };
+            }
+            else if (id.endsWith ("_enabled"))
+            {
+                attrs = attrs.withStringFromValueFunction (
+                    [] (int v, int) { return v == 0 ? juce::String ("Off") : juce::String ("On"); });
+                parse = [] (const juce::String& t)
+                {
+                    if (t.equalsIgnoreCase ("on"))  return 1;
+                    if (t.equalsIgnoreCase ("off")) return 0;
+                    return t.getIntValue();
+                };
+            }
+            else if (id.startsWith ("fxmod") && id.endsWith ("_amount"))
+            {
+                attrs = attrs.withStringFromValueFunction (
+                    [] (int v, int) { return signedAmountPct (static_cast<double> (v)); });
+                parse = [] (const juce::String& t) { return juce::roundToInt (t.getIntValue() * 0.63); };
+            }
+            // fx_order: an internal chain-permutation index with no meaningful
+            // unit — stays raw (no formatter). Noted in audit/work_host_params.md.
         }
         else
         {
-            layout.add (std::make_unique<juce::AudioParameterInt> (
-                juce::ParameterID { d.paramID, 1 }, d.label, d.minValue, d.maxValue, d.defaultValue));
+            // Synth descriptors: the existing pure formatter. Unmatched ids
+            // fall back to the raw integer inside it, so this is always safe.
+            attrs = attrs.withStringFromValueFunction (
+                [id] (int v, int) { return paramValueTextSynth (id, static_cast<double> (v)); });
         }
+
+        return attrs.withValueFromStringFunction (parse);
+    };
+
+    // Lazily-created groups, emitted in FIRST-APPEARANCE order (see the order
+    // note above). Children are added while the group is still local (never
+    // after the APVTS owns it — the AudioProcessorParameterGroup contract).
+    std::array<std::unique_ptr<juce::AudioProcessorParameterGroup>, 13> groups {};
+    std::vector<HostGroup> groupOrder;
+    groupOrder.reserve (13);
+
+    auto groupFor = [&groups, &groupOrder] (HostGroup g) -> juce::AudioProcessorParameterGroup*
+    {
+        auto& slot = groups[static_cast<size_t> (g)];
+        if (slot == nullptr)
+        {
+            slot = std::make_unique<juce::AudioProcessorParameterGroup> (
+                hostGroupId (g), hostGroupName (g), " - ");
+            groupOrder.push_back (g);
+        }
+        return slot.get();
+    };
+
+    for (const auto& d : getPatchParamDescriptors())
+    {
+        const juce::String id { d.paramID };
+        std::unique_ptr<juce::RangedAudioParameter> param;
+
+        if (d.choices != nullptr)
+        {
+            auto choice = std::make_unique<juce::AudioParameterChoice> (
+                juce::ParameterID { d.paramID, 1 }, d.label, *d.choices, d.defaultValue);
+            // Stash fx{N}_type for the slot's param1..5 sibling lookup above.
+            if (d.isFx && id.endsWith ("_type"))
+            {
+                const int slot = id.substring (2).upToFirstOccurrenceOf ("_", false, false).getIntValue();
+                if (slot >= 1 && slot <= 3)
+                    fxTypeParams[static_cast<size_t> (slot - 1)] = choice.get();
+            }
+            param = std::move (choice);
+        }
+        else
+        {
+            auto attrs = intAttributesFor (d);
+            if (d.nonAutomatable)
+            {
+                // UI-action parameters (part_select): excluded from host
+                // automation. Everything else about the parameter is unchanged.
+                attrs = attrs.withAutomatable (false);
+            }
+            param = std::make_unique<juce::AudioParameterInt> (
+                juce::ParameterID { d.paramID, 1 }, d.label, d.minValue, d.maxValue, d.defaultValue, attrs);
+        }
+
+        groupFor (hostGroupForId (id))->addChild (std::move (param));
     }
+
+    for (const auto g : groupOrder)
+        layout.add (std::move (groups[static_cast<size_t> (g)]));
+
     return layout;
 }
 

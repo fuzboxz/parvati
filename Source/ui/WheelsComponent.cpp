@@ -124,11 +124,20 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
 WheelsComponent::WheelsComponent()
 {
     pitch_ = std::make_unique<SpringSlider>();
+    // Accessibility-only: both wheels are juce::Sliders, so JUCE's built-in
+    // Slider accessibility handler (ranged numeric value, -1..1 pitch /
+    // 0..1 mod, adjustable) is already attached — only the NAME was missing
+    // (a NoTextBox slider exposes no visible text). setTitle() is read by the
+    // default handler; TRANS keys added to Translations.cpp (FR/DE).
+    pitch_->setTitle (TRANS ("Pitch Wheel"));
+    pitch_->setDescription (TRANS ("Pitch Wheel"));
     pitch_->onValueChange = [this] { if (onPitch) onPitch (static_cast<float> (pitch_->getValue())); };
     addAndMakeVisible (*pitch_);
 
     mod_ = std::make_unique<juce::Slider> (juce::Slider::LinearVertical, juce::Slider::NoTextBox);
     mod_->setRange (0.0, 1.0, 0.001);
+    mod_->setTitle (TRANS ("Mod Wheel"));
+    mod_->setDescription (TRANS ("Mod Wheel"));
     mod_->setValue (0.0, juce::dontSendNotification);
     mod_->onValueChange = [this] { if (onMod) onMod (static_cast<float> (mod_->getValue())); };
     addAndMakeVisible (*mod_);

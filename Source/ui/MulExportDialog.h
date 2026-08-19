@@ -14,10 +14,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <array>
 #include <functional>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "MulExport.h"
@@ -32,14 +30,9 @@ public:
 
     // @p partNames: display names per part ("Kick", "Lead", ...) used in the
     // preview lines; entries may be empty ("Part N" fallback).
-    // @p customTuningParts: parts whose tuning is a Parvati CUSTOM table
-    // (engine resolvedTuningMode == 33). The .MUL format cannot carry custom
-    // tables (only the raga preset byte), so the preview shows a lossy-export
-    // warning naming those parts. All-false = no warning line.
     MulExportDialog (const parvati::mul_export::Setup& setup,
                      const std::vector<juce::String>& partNames,
-                     DoneCallback onDone,
-                     const std::array<bool, parvati::mul_export::kParts>& customTuningParts = {});
+                     DoneCallback onDone);
 
     void resized() override;
     void paint (juce::Graphics&) override;
@@ -50,8 +43,7 @@ public:
     static void launch (juce::Component* parent,
                         const parvati::mul_export::Setup& setup,
                         const std::vector<juce::String>& partNames,
-                        DoneCallback onDone,
-                        const std::array<bool, parvati::mul_export::kParts>& customTuningParts = {});
+                        DoneCallback onDone);
 
 private:
     void refreshPreview();
@@ -68,14 +60,13 @@ private:
 
     parvati::mul_export::Setup setup_;
     parvati::mul_export::PreviewContext ctx_;
-    std::array<bool, parvati::mul_export::kParts> customTuningParts_ {};
     DoneCallback onDone_;
 
     // F-ui-2 (bug hunt 2026-08-18): the DialogWindow is its OWN desktop window
     // and can OUTLIVE the launching editor (host closes the plugin window
     // while the export dialog is open) — borrowing the editor's LookAndFeel
     // painted through freed memory. The dialog therefore OWNS a
-    // ParvatiLookAndFeel copied from the parent's active theme (the TuningEditor
+    // ParvatiLookAndFeel copied from the parent's active theme (the owned-L&F
     // pattern; the builtin theme structs are function-local statics in
     // ParvatiTheme.cpp, so the copy stays valid after the editor dies).
     std::unique_ptr<ParvatiLookAndFeel> ownedLnf_;   // null => default look (tests/null parent)

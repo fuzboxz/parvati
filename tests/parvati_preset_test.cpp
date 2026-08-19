@@ -222,21 +222,17 @@ int main()
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[6] stale custom tuning cleared by a .parvati PATCH load\n");
+    std::printf ("\n[6] .parvati PATCH load: part_raga is the whole tuning state\n");
     {
-        // A .parvati PATCH carries part_raga but NO custom table. Arm a custom
-        // table on the current part first (resolved mode 33), then load a
-        // minimal patch file whose params say part_raga: 0 — the load must
-        // clear the custom flag so the part resolves 12-EDO, not keep playing
-        // the old custom table (the .PRO rule; the patch loader used to miss
-        // it entirely).
+        // The custom-tuning subsystem was removed (2026-08-19): part_raga /
+        // PartData byte 4 is the whole tuning state. A patch file whose params
+        // say part_raga: 0 must land the part at 12-EDO, and one carrying a
+        // preset must land at that preset.
         ParvatiAudioProcessor p;
         p.prepareToPlay (48000.0, 512);
-        int16_t custom[12] = {};
-        custom[1] = 42;
-        p.getEngine().setPartTuningCustom (0, custom);
-        check (p.getEngine().resolvedTuningMode (0) == 33,
-               "precondition: custom table armed (mode 33)");
+        p.getApvts().getParameterAsValue ("part_raga") = 7.0f;
+        check (p.getEngine().resolvedTuningMode (0) == 7,
+               "precondition: preset 7 selected");
 
         juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
                            .getChildFile ("parvati_t1_patch.parvati");
@@ -246,47 +242,43 @@ int main()
                "T1 patch file written");
         check (p.loadParvatiPatchFile (f), "T1: .parvati patch loads");
         check (p.getEngine().resolvedTuningMode (0) == 0,
-               "T1: part_raga 0 patch load clears the stale custom (12-EDO)");
+               "T1: part_raga 0 patch load lands at 12-EDO");
         f.deleteFile();
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[7] stale custom tuning cleared by a .parvati MULTI load (12-EDO parts omit tuning_mode)\n");
+    std::printf ("\n[7] .parvati MULTI load: no tuning keys emitted; legacy keys accepted\n");
     {
-        // The serializer only EMITS tuning_mode for non-zero modes, so a multi
-        // saved from an all-12-EDO state carries NO tuning_mode keys. Loading
-        // it over an engine with armed custom tables must clear them (the
-        // loader's absent-key branch mirrors the .MUL/.PRO rule) instead of
-        // silently keeping the previous session's microtonal tables.
+        // The serializer emits NO tuning_mode/tuning_offsets keys (the raga
+        // rides params: part_raga); a saved multi must round-trip the raga,
+        // and every part must resolve its stored mode. Legacy files carrying
+        // tuning_mode still load (custom 33 -> 12-EDO) — see parvati_tuning_test
+        // [6] for the legacy-key acceptance coverage.
         ParvatiAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
+        a.getApvts().getParameterAsValue ("part_raga") = 3.0f;
+
         juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
                            .getChildFile ("parvati_t2_multi.parvati");
-        check (a.saveParvatiMultiFile (f), "T2: all-12-EDO multi saved");
+        check (a.saveParvatiMultiFile (f), "T2: multi saved with raga 3 on part 0");
         {
             juce::String text;
             if (juce::FileInputStream in (f); in.openedOk())
                 text = in.readEntireStreamAsString();
-            check (text.isNotEmpty() && ! text.contains ("tuning_mode"),
-                   "T2: premise — 12-EDO parts serialize WITHOUT tuning_mode");
+            check (text.isNotEmpty() && ! text.contains ("tuning_mode")
+                       && ! text.contains ("tuning_offsets"),
+                   "T2: premise — the serializer emits NO tuning keys");
         }
 
-        int16_t custom[12] = {};
-        custom[3] = -31;
-        b.getEngine().setPartTuningCustom (0, custom);
-        b.getEngine().setPartTuningCustom (3, custom);
-        check (b.getEngine().resolvedTuningMode (0) == 33
-                   && b.getEngine().resolvedTuningMode (3) == 33,
-               "precondition: customs armed on parts 0 and 3");
-
         check (b.loadParvatiMultiFile (f), "T2: .parvati multi loads");
-        bool allEdo = true;
-        for (int i = 0; i < SynthEngine::getNumParts(); ++i)
-            allEdo = allEdo && b.getEngine().resolvedTuningMode (i) == 0;
-        check (allEdo,
-               "T2: every part resolves 12-EDO after the load (armed customs cleared)");
+        check (b.getEngine().resolvedTuningMode (0) == 3,
+               "T2: part 0 resolves preset 3 (raga rides params)");
+        bool restEdo = true;
+        for (int i = 1; i < SynthEngine::getNumParts(); ++i)
+            restEdo = restEdo && b.getEngine().resolvedTuningMode (i) == 0;
+        check (restEdo, "T2: every other part resolves 12-EDO");
         f.deleteFile();
     }
 

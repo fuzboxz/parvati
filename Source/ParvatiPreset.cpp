@@ -7,7 +7,6 @@
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
-#include "TuningTables.h"     // kTuningSilence (sentinel-preserving clamp below)
 
 namespace parvati::preset
 {
@@ -635,30 +634,10 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
         const juce::String pn = engine.getPartName (i).replace ("\\", "\\\\").replace ("\"", "\\\"");
         out << "    name: \"" << pn << "\"\n";
 
-        // Parvati extension: per-part microtonal tuning. tuning_mode is the
-        // RESOLVED mode (0 = 12-EDO [omitted], 1..32 = raga preset [also rides
-        // params: part_raga], 33 = custom table). Only mode 33 needs the table
-        // itself (12 comma-separated ints, 1/128-semitone units) — the presets
-        // resolve from TuningTables. Written only when the mode is non-zero so
-        // old files stay byte-identical; loaded behind hasProperty guards.
-        const int tuningMode = engine.resolvedTuningMode (i);
-        if (tuningMode != 0)
-        {
-            out << "    tuning_mode: " << tuningMode;
-            if (tuningMode == 33)
-            {
-                int16_t t[12] = {};
-                engine.resolveTuningOffsets (i, t);
-                out << "   # custom table";
-                out << "\n    tuning_offsets: ";
-                for (int c = 0; c < 12; ++c)
-                {
-                    if (c > 0) out << ", ";
-                    out << (int) t[c];
-                }
-            }
-            out << "\n";
-        }
+        // Tuning: the raga preset rides params: part_raga (byte 4) — the
+        // dedicated tuning_mode/tuning_offsets keys are LEGACY (the custom-table
+        // subsystem was removed 2026-08-19) and are no longer emitted. Old
+        // files that carry them still load (see applyParvatiMulti).
 
         auto params = partParamsMap (engine, i);
         out << "    params:\n";
@@ -906,59 +885,18 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         if (stagedFx)
             part.fxState.fxDirty_.store (true, std::memory_order_release);
 
-        // Parvati extension: per-part tuning fields, applied AFTER params: so
-        // the resolved mode stays authoritative over any part_raga value the
-        // params map carried (a writer never emits both non-neutral; the
-        // custom mode clears byte 4 to keep the D4 invariant — custom active
-        // implies raga byte 0). Absent in older files -> tuning untouched.
+        // LEGACY tuning fields (applied AFTER params: so a file's tuning_mode
+        // stays authoritative over any part_raga the params map carried):
+        // tuning_mode 1..32 -> the raga preset byte; tuning_mode 0 or 33 (the
+        // former custom mode), or a missing key, -> 12-EDO (byte 0). The
+        // custom-table subsystem was removed 2026-08-19, so tuning_offsets is
+        // parsed-and-ignored (never fails). A writer never emits these keys.
         if (partObj->hasProperty ("tuning_mode"))
         {
             const int mode = juce::jlimit (0, 33, (int) partNode["tuning_mode"]);
-            if (mode == 33 && partObj->hasProperty ("tuning_offsets"))
-            {
-                int16_t t[12] = {};   // missing/short entries stay 0 (12-EDO class)
-                const juce::StringArray toks = juce::StringArray::fromTokens (
-                    partNode["tuning_offsets"].toString(), ",", "");
-                for (int c = 0; c < 12; ++c)
-                {
-                    // Clamp exactly like SynthEngine::setPartTuningCustom —
-                    // including its one exception: 32767 is the firmware mute
-                    // marker, not an offset. Pre-clamping it to +127 would turn
-                    // a muted class (e.g. a kbm-unmapped class written by a
-                    // Scala import) into a ~+99-cent detune on reload, while
-                    // engine-state v7 and the TuningEditor both keep it verbatim.
-                    const int v = toks[c].getIntValue();
-                    t[c] = (v == (int) parvati::kTuningSilence)
-                               ? parvati::kTuningSilence
-                               : static_cast<int16_t> (juce::jlimit (-127, 127, v));
-                }
-                part.partBytes[4] = 0;   // D4: custom active implies raga byte 0
-                engine.setPartTuningCustom (i, t);   // clamps again + flags tuningDirty_
-            }
-            else if (mode >= 1 && mode <= 32)
-            {
-                part.partBytes[4] = static_cast<uint8_t> (mode);   // rides the markAllocationDirty push below
-                engine.clearPartTuningCustom (i);
-            }
-            else   // explicit 12-EDO: clear both selection paths
-            {
-                part.partBytes[4] = 0;
-                engine.clearPartTuningCustom (i);
-            }
-        }
-        else if (part.partBytes[4] == 0)
-        {
-            // Serializer asymmetry: tuning_mode is only EMITTED for non-zero
-            // modes (serializeParvatiMulti skips the key when the resolved mode
-            // is 0), so every 12-EDO part loads with the key ABSENT — and the
-            // params loop above already wrote byte 4 (part_raga: 0). A
-            // customTuningActive flag armed by an earlier session would keep
-            // resolvedTuningMode at 33 and the part would keep playing the OLD
-            // custom table while the loaded file says 12-EDO. Mirror the
-            // .MUL/.PRO loaders' rule (the file is the whole truth for tuning;
-            // no custom table in the file + byte 4 == 0 => 12-EDO). A non-zero
-            // byte already wins the resolution order, so no clear there.
-            engine.clearPartTuningCustom (i);
+            part.partBytes[4] = (mode >= 1 && mode <= 32)
+                                    ? static_cast<uint8_t> (mode)   // rides the markAllocationDirty push below
+                                    : 0;                            // 12-EDO (incl. legacy custom 33)
         }
 
     }

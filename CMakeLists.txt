@@ -419,7 +419,7 @@ if(PARVATI_IOS)
     # PlistBuddy + FATAL_ERROR-verify pattern. Without these keys:
     #   * LSSupportsOpeningDocumentsInPlace is INERT (it only modifies
     #     behaviour of DECLARED document types), and
-    #   * .parvati/.PRO/.MUL/.scl/.kbm received via Files/AirDrop/Mail offer
+    #   * .parvati/.PRO/.MUL received via Files/AirDrop/Mail offer
     #     no "Open in Parvati" — the advertised file workflow was dead from
     #     outside the app.
     # The fragments are plain plists written at configure time; PlistBuddy
@@ -443,15 +443,15 @@ if(PARVATI_IOS)
         OUTPUT_VARIABLE _parvati_doctypes_val OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET)
     execute_process(
-        COMMAND /usr/libexec/PlistBuddy -c "Print :UTExportedTypeDeclarations:4:UTTypeIdentifier" "${_parvati_standalone_plist}"
+        COMMAND /usr/libexec/PlistBuddy -c "Print :UTExportedTypeDeclarations:2:UTTypeIdentifier" "${_parvati_standalone_plist}"
         OUTPUT_VARIABLE _parvati_utis_val OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET)
     if(NOT _parvati_doctypes_val STREQUAL "com.805labs.parvati-patch"
-       OR NOT _parvati_utis_val STREQUAL "com.805labs.parvati-kbm")
+       OR NOT _parvati_utis_val STREQUAL "com.805labs.parvati-multi")
         message(FATAL_ERROR
             "Failed to graft CFBundleDocumentTypes/UTExportedTypeDeclarations into "
             "'${_parvati_standalone_plist}' (rc=${_parvati_doctypes_rc}, "
-            "docType0='${_parvati_doctypes_val}', uti4='${_parvati_utis_val}').")
+            "docType0='${_parvati_doctypes_val}', uti2='${_parvati_utis_val}').")
     endif()
 
     # SharedContainer.mm is the Obj-C++ resolver for the App-Group container
@@ -772,6 +772,20 @@ add_executable(parvati_fx_routing_test
 target_include_directories(parvati_fx_routing_test PRIVATE Source)
 target_compile_features(parvati_fx_routing_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_fx_routing_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Render-quality regression: offline auto-max oversampling (setNonRealtime),
+# oversized-block CHUNKED render (no dropped tail), and the dynamic
+# getTailLengthSeconds cache (reverbs + delay feedback-decay law).
+# Built by default. Run with: ./build/parvati_render_quality_test
+add_executable(parvati_render_quality_test
+    tests/render_quality_test.cpp
+)
+target_include_directories(parvati_render_quality_test PRIVATE Source)
+target_compile_features(parvati_render_quality_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_render_quality_test PRIVATE
     Parvati
 )
 
@@ -1147,9 +1161,9 @@ target_link_libraries(parvati_ios_file_flow_test PRIVATE
 # ------------------------------------------------------------------------------
 # iOS open-in routing regressions (bug hunt 2026-08-19, open-in loop): the
 # pure core of the "Open in Parvati" path — extension-kind table, preset
-# import into USER, tuning parking into Parvati/Tuning, idempotence, atomic
-# (no torn *_temp leftovers). The Obj-C++ delegate shim itself is proven by
-# the iOS-simulator Parvati_Standalone build. Built by default.
+# import into USER, idempotence, atomic (no torn *_temp leftovers). The
+# Obj-C++ delegate shim itself is proven by the iOS-simulator Parvati_Standalone
+# build. Built by default.
 # Run: ./build/parvati_ios_openin_test
 add_executable(parvati_ios_openin_test
     tests/ios_openin_test.cpp
@@ -1360,10 +1374,11 @@ target_link_libraries(parvati_partstate_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
-# Per-part microtonal tuning verification (firmware raga presets + custom
-# tables): table contents, the AmbikaVoice::startNote hook mapping, sentinel
-# (AcceptNote) gates, MT->AT staging, engine-state v7 round-trip, .parvati +
-# .MUL persistence, standing-bend pickup. Built by default.
+# Per-part microtonal tuning verification (firmware raga presets): table
+# contents, the AmbikaVoice::startNote hook mapping, sentinel (AcceptNote)
+# gates, MT->AT staging, engine-state blob round-trip (incl. v7 backcompat —
+# custom tunings dropped), .parvati + .MUL persistence, standing-bend pickup.
+# Built by default.
 # Run with: ./build/parvati_tuning_test
 add_executable(parvati_tuning_test
     tests/tuning_test.cpp
@@ -1372,19 +1387,6 @@ target_include_directories(parvati_tuning_test PRIVATE Source)
 target_compile_features(parvati_tuning_test PRIVATE cxx_std_17)
 target_compile_definitions(parvati_tuning_test PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(parvati_tuning_test PRIVATE
-    Parvati
-)
-
-# ------------------------------------------------------------------------------
-# Scala (.scl + .kbm) import verification: grammar edges + the full expected-
-# table fixture corpus (byte-exact, hand-derived — see the test header).
-# Built by default. Run with: ./build/parvati_scala_import_test
-add_executable(parvati_scala_import_test
-    tests/scala_import_test.cpp
-)
-target_include_directories(parvati_scala_import_test PRIVATE Source)
-target_compile_features(parvati_scala_import_test PRIVATE cxx_std_17)
-target_link_libraries(parvati_scala_import_test PRIVATE
     Parvati
 )
 
@@ -1423,6 +1425,23 @@ add_executable(parvati_apvts_test
 target_include_directories(parvati_apvts_test PRIVATE Source)
 target_compile_features(parvati_apvts_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_apvts_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Host-visible parameter TEXT + GROUPING verification: the 13 host parameter
+# groups (VST3 units / AU grouped lists) exist in first-appearance order with
+# descriptor-table order inside each group, the flattened index order is
+# unchanged from mod1_source onward, and every AudioParameterInt carries the
+# pure value->text formatters (Hz/ms/∞/%/dB/On-Off, incl. the fx{N}_paramK
+# sibling-type lookup and the text->value typed-entry inverses). Built by
+# default. Run with: ./build/parvati_host_param_text_test
+add_executable(parvati_host_param_text_test
+    tests/host_param_text_test.cpp
+)
+target_include_directories(parvati_host_param_text_test PRIVATE Source)
+target_compile_features(parvati_host_param_text_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_host_param_text_test PRIVATE
     Parvati
 )
 
@@ -1669,8 +1688,8 @@ target_link_libraries(parvati_undo_property_test PRIVATE
 # ------------------------------------------------------------------------------
 # Deterministic tooling T2: shadow-state defaults property. Loading a
 # DEFAULTS-ONLY .parvati multi (saved through the real path from a fresh
-# processor) into an engine polluted on every mirrored surface (custom tuning
-# tables, part names, staged FX slot types, arp config, voice slots, routing,
+# processor) into an engine polluted on every mirrored surface (part names,
+# staged FX slot types, arp config, voice slots, routing,
 # PartData bytes 3/4/15) must leave it BIT-IDENTICAL to a fresh engine — the
 # stale-shadow-state-survives-a-load class. Canary self-check proves the diff
 # comparator reports every pollution category. Built by default.

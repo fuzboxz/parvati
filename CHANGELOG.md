@@ -5,6 +5,91 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
+- **QoL wave: custom-scale removal, host parameter integration, offline
+  max-quality render (2026-08-19).** A coordinated multi-lane quality pass
+  from the JUCE-framework QoL audit (`audit/out_{tuning,render,host,ui}.md`).
+  **(1) Custom Scala tuning removed.** The custom 12-entry tuning-table
+  subsystem proved hard to get right against the hardware-parity contract
+  (±1-semitone clamp, 1/128-semitone quantization, octave-repeating only);
+  Parvati now ships the Ambika factory raga presets exclusively (Tune combo
+  ids 1..33). Deleted: `ScalaImport.{h,cpp}`, the TuningEditor popover, the
+  per-part custom-tuning engine state, the .MUL-export D14 custom-tuning
+  warning, and the .scl/.kbm iOS document types + open-in parking (3 doc
+  types / 3 UTIs remain; CMake PlistBuddy verify updated). Backcompat: engine
+  blob bumped v7→v8 (v7 tuning blocks are parsed-and-ignored, size-checked;
+  a v7 custom mode-33 restores as 12-EDO — its raga byte was 0 by the
+  custom-active invariant); legacy `.parvati` `tuning_mode: 33` loads 12-EDO,
+  `tuning_mode: 1..32` maps to the raga byte; `.PRO`/`.MUL`/host state are
+  byte-identical (raga rides part byte 4). **(2) Host parameter
+  value-to-text + groups.** Every `AudioParameterInt` now carries
+  string↔value functions backed by the existing pure formatters
+  (`SynthParamLabels::paramValueTextSynth`, `FxSlotLabels`), so host
+  automation lanes show "+50ct"/"2.1s"/"440Hz"/"1/16" instead of raw
+  0..127 bytes, and typed entry (Cubase/Bitwig) parses back; the EQ/drywet/
+  amount label helpers were hoisted gui-free so UI knobs and host text share
+  one implementation. Parameters are grouped into 13
+  `AudioProcessorParameterGroup`s (Osc/Mix/Filter/Env/LFO/Mod/Modif/Part/Seq/
+  Arp/Global/FX/FXMod) → VST3 Units / grouped AU lists; within-group order
+  preserved exactly (flat automation indices permute only inside two spans,
+  and every shipped wrapper addresses params by string/hash id). **(3) Host
+  parameter context menus.** `ParamControl`'s right-click / touch long-press
+  menu now resolves the editor's `getHostContext()` and takes the host's
+  parameter menu (automation lane shortcuts, Cubase/Reaper VST3) as the BASE,
+  appending Reset/Randomize below a separator; null-context hosts (AU/AUv3/
+  standalone) fall through to the unchanged local menu. **(4) Preset stepping
+  + shortcuts.** `PresetBrowser::selectNext/Prev` step the cached tree in
+  exact menu order with wrap; `[`/`]` (plain or Cmd/Ctrl) step presets,
+  Cmd/Ctrl+O opens Load, Cmd/Ctrl+S saves .parvati, Cmd/Ctrl+1..6 switch
+  Parts (plain `[`/`]` verified unclaimed by the keyboard view/combos;
+  picker shortcuts desktop-gated; tooltips advertise them, FR/DE included).
+  **(5) Offline auto-max filter oversampling (desktop).** Entering
+  non-realtime render (bounce/freeze/export) bumps the per-voice filter OS
+  to 8x via the staged-install path (message-thread pre-build, audio-thread
+  pointer swap — no AT allocation, click-free); leaving offline restores the
+  user's factor, a re-prepare leak guard covers hosts that never call
+  `setNonRealtime(false)`, and a mid-bounce user change re-targets the
+  restore point. The boost NEVER persists (applied via `applyOversamplingFactor`,
+  which skips `setUiOversampling`) — host state and the Settings combo keep
+  the user's choice; latency re-reports through the existing dirty-flag seam.
+  iOS excluded by measurement (8x = 2.3–3.7x realtime on A12-class cores).
+  **(6) Chunked oversized-block rendering.** A host block larger than the
+  prepared size (buffer transitions, offline/freeze, some AU/AUv3 hosts) was
+  previously clamped, silently zeroing the tail of every oversized block.
+  `processBlock` now tiles prepared-size slices, each running the full
+  render pipeline (engine buffers always addressed from 0) and mixing into
+  the host buffer at [done, done+n); MIDI is handed to each slice as its
+  window's events rebased to [0, n) (slice 0 byte-identical to the old
+  path; transport clock still advances on the full count). **(7)
+  `processBlockBypassed` overridden** to clear all output buses (silence is
+  correct for a bypassed synth) — the inherited default jasserts in debug
+  builds when `getLatencySamples() > 0`, which filter-OS always reports.
+  Voices/FX keep running internally so an un-bypass resumes where it left
+  off. **(8) Dynamic `getTailLengthSeconds`.** Was hard-coded 0.0 — hosts
+  (Logic/Cubase) truncate offline bounces at the reported tail, cutting
+  reverb and delay ends off exports. The engine now maintains a tail cache:
+  max over every enabled FX slot of a pure per-effect t60 estimate —
+  reverbs by their decay/predelay mappings, DELAYS by the feedback-decay law
+  `t60 = T · ln(10⁻³)/ln(g)` (FV-1 Echo, tempo-synced ClockedDelay at the
+  current BPM, the CVerb tank), granular freeze at the 12 s cap — clamped to
+  [0.2 s, 12 s] and recomputed on FX-param or tempo changes. **(9)
+  Accessibility names for custom controls:** IconButton titles (Undo/Redo/
+  Settings, localized), ModPill press-action handlers, wheel slider titles
+  (Pitch/Mod, localized), ModMatrix/FXMatrix row group roles, FX slot card +
+  power-toggle + type-combo titles; GroupPager verified already accessible
+  via TabBarButton's built-in handler. New tests: `parvati_host_param_text_test`
+  (group structure/order + ~25 text/parse round-trips) and
+  `parvati_render_quality_test` (offline-boost no-persist/idempotency/leak-
+  guard, chunked-render quarters non-silent, tail table + processor cache);
+  `host_state_test`/`voice_slots_test` blob fixtures are now version-discovered
+  (v8-aware stride math — the old v7 hard-code was a heap OOB read on fresh
+  captures); tuning/preset/ios-openin/loader/shadow/golden/editor suites
+  updated for the raga-only world. Full suite: 112/112 green
+  (`parvati_fx_crackle_diag_test` SIGBUS pre-existing on HEAD, documented);
+  the stale-`gen_templates`-binary template mutation seen mid-wave was
+  chased to a mid-lane build artifact — the rebuilt generator reproduces the
+  committed templates byte-identically (self-verify 5/5).
+
+### Changed
 - **AUv3 follow-up wave: no-host-tempo arp clock + fixed-size undo history
   (2026-08-19).** Two robustness items from the AUv3 compatibility analysis.
   (1) Hosts that expose no musical context to the plugin (GarageBand-class

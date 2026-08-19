@@ -343,23 +343,8 @@ int main()
         // Default selection = item 1 = Proportional.
         dlg.refreshPreviewPublic();
         check (true, "default preview renders (no crash)");
-        check (! dlg.previewTextForTest().contains ("Custom tunings"),
-               "no custom-tuning warning without custom parts");
-
-        // D14: parts tuned with a Parvati custom table cannot be represented
-        // in .MUL (only the raga preset byte) — the preview must say so and
-        // NAME the affected parts (display name or "Part N" fallback).
-        std::array<bool, parvati::mul_export::kParts> custom {};
-        custom[0] = true;   // "Lead"
-        custom[3] = true;   // no name -> "Part 4"
-        MulExportDialog tuned (makeOverSetup(), { "Lead", "Pad", "Bass", "", "", "" },
-                               [] (int) {}, custom);
-        tuned.refreshPreviewPublic();
-        const auto text = tuned.previewTextForTest();
-        check (text.contains ("Custom tunings cannot be represented in .MUL"),
-               "custom-tuning warning line shown");
-        check (text.contains ("Lead") && text.contains ("Part 4"),
-               "warning names the custom-tuned parts (name + Part N fallback)");
+        // (The D14 custom-tuning warning was removed with the custom-tuning
+        // subsystem — .MUL carries raga bytes only.)
     }
 
     tempDir().deleteRecursively();

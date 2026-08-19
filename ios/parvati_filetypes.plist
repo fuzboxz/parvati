@@ -40,30 +40,6 @@
 				<string>com.805labs.parvati-multi</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Scala Scale</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.805labs.parvati-scala</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Scala Keyboard Mapping</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.805labs.parvati-kbm</string>
-			</array>
-		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
@@ -118,44 +94,6 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>mul</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-				<string>public.plain-text</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>Scala Scale</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.805labs.parvati-scala</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>scl</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-				<string>public.plain-text</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>Scala Keyboard Mapping</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.805labs.parvati-kbm</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>kbm</string>
 				</array>
 			</dict>
 		</dict>

@@ -192,23 +192,13 @@ struct Part
 {
     AtomicByteArray<112> patchBytes {};   // sizeof(Patch) — MT writes, AT reads
     AtomicByteArray<84>  partBytes  {};   // sizeof(PartData) — MT writes, AT reads
-    // Per-part microtonal tuning (firmware PartData.raga restored + Parvati
-    // custom tables). Resolved mode (SynthEngine::resolvedTuningMode):
-    //   0 = 12-EDO; 1..32 = firmware raga preset == partBytes[4];
-    //   33 = custom table (customTuning). While custom is ACTIVE partBytes[4]
-    //   is kept 0, so .MUL/.PRO export and the raga byte stay hardware-clean
-    //   (a preset selection implicitly wins over custom in the resolution
-    //   rule, exactly like firmware files carrying a non-zero raga byte).
-    // Storage: 12 x int16 LE in 1/128-semitone units. Per-byte atomics + the
-    // tuningDirty_ release/acquire publish whole frames (the frameDirty_ /
-    // patchBytes pattern), so no per-int16 atomicity is needed beyond that.
-    AtomicByteArray<24> customTuning {};
-    std::atomic<uint8_t> customTuningActive { 0 };   // 1 = custom table selected
-    // MT writers (setPartTuningCustom / clearPartTuningCustom / preset byte
-    // edits via applyPartByte -> frameDirty_) publish here; the AT services it
-    // in processTransport and pushes the resolved table to the Part's voices
-    // (pushTuningToVoices). Mirrors frameDirty_ / fxDirty_ / optionsDirty_.
-    std::atomic<bool> tuningDirty_ { false };
+    // Per-part microtonal tuning: the firmware raga preset (PartData.raga,
+    // byte 4). 0 = 12-EDO; 1..32 = firmware raga preset == partBytes[4]. The
+    // Parvati custom-table extension (Scala import / TuningEditor) was REMOVED
+    // 2026-08-19 — factory raga presets only. Raga byte edits ride the
+    // frameDirty_ publish (the patchBytes pattern); the AT services it in
+    // processTransport and pushes the resolved table to the Part's voices
+    // (pushTuningToVoices).
     parvati::Arpeggiator arp;
     parvati::Sequencer   seq;
     // These three are written on the message thread (Multi page / .MUL load) and
@@ -496,7 +486,7 @@ public:
     // ---- UI-mirror invalidation (message-thread mutators) ----
     // Monotonic version bumped by every message-thread mutator of state the
     // Patch page mirrors (per-part polyphony/tuning bytes, voice slots,
-    // channel, key zone, names, custom tuning). The editor's poll timer
+    // channel, key zone, names). The editor's poll timer
     // compares it to decide whether a VISIBLE Patch page must re-read the
     // engine: engine writes that arrive out-of-band (host automation of
     // part_polyphony / part_raga, MIDI NRPN, host undo, state restores) have
@@ -571,29 +561,21 @@ public:
     void setPartVoiceSlots (int part, int slots);
     int  getPartVoiceSlots (int part) const { return ok (part) ? static_cast<int> (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed)) : 0; }
 
-    // ---- Per-part microtonal tuning (firmware raga + custom tables) ----
+    // ---- Per-part microtonal tuning (firmware raga presets) ----
     // Preset selection is NOT a setter here: it is PartData byte 4, edited via
-    // applyPartByte / the part_raga APVTS param (rides frameDirty_). These are
-    // the custom-table and read paths. Mode encoding (see Part::customTuning):
-    //   0 = 12-EDO, 1..32 = raga preset (== byte 4), 33 = custom table.
-    // setPartTuningCustom selects the custom table (offsets clamped to the
-    // ±127 storage range, 1/128-semitone units — except the 32767 mute
-    // sentinel, which passes through verbatim so a custom table CAN mute
-    // classes exactly like a raga preset; Scala import uses this for
-    // kbm-unmapped classes).
-    // clearPartTuningCustom returns the Part to 12-EDO (or its byte-4 preset
-    // if one is selected). Both publish via tuningDirty_ (MT -> AT push).
-    void setPartTuningCustom (int part, const int16_t offsets[12]);
-    void clearPartTuningCustom (int part);
-    // The D4 resolution rule: (byte4 != 0) ? byte4 : (customFlag ? 33 : 0).
-    int  resolvedTuningMode (int part) const;
-    // Resolve the ACTIVE table (12 offsets, 1/128-semitone units; 32767 =
-    // muted class in raga presets) into @p out. Mode 0 -> zeros (12-EDO).
-    // Reads atomics only; callable from either thread without a dirty flag.
-    void resolveTuningOffsets (int part, int16_t out[12]) const;
+    // applyPartByte / the part_raga APVTS param (rides frameDirty_).
+    // Mode encoding: 0 = 12-EDO, 1..32 = raga preset (== byte 4). (The former
+    // custom-table mode 33 is gone — custom scales were removed 2026-08-19.)
+    // The D4 resolution rule collapses to the byte itself.
+    // The resolved table (12 offsets, 1/128-semitone units; 32767 =
+    // muted class in raga presets) is resolved into @p out. Mode 0 -> zeros
+    // (12-EDO). Reads atomics only; callable from either thread without a
+    // dirty flag.
     // Firmware AcceptNote (part.cc:649-660): false when the resolved table
     // mutes the note's class (sentinel). Used to refuse such notes in noteOn /
     // triggerNoteInPart instead of voicing them as garbage pitch.
+    int  resolvedTuningMode (int part) const;
+    void resolveTuningOffsets (int part, int16_t out[12]) const;
     bool isNoteAcceptedByPartTuning (int part, int rawNote) const;
 
     // ---- Part names / aliases (Parvati extension; message-thread only) ----
@@ -769,6 +751,20 @@ public:
     // of retaining the previously-loaded patch's FX. Publishes via fxDirty_.
     void resetPartFx (int part);
 
+    // ---- Tail-length cache (AudioProcessor::getTailLengthSeconds) ----
+    // Max tail estimate over every part's ENABLED FX slots (tailSecondsForFx),
+    // clamped to [kTailFloorSeconds, kTailCapSeconds]. Maintained by
+    // recomputeTailCache() — pure math over the fxState atomics (no audio, no
+    // allocation) — called from the audio thread whenever FX state is serviced
+    // (fxDirty_) or the transport tempo moves materially (tempo-synced delay
+    // tails). Atomic so the host can query it from any thread.
+    double getTailLengthSeconds() const noexcept
+    {
+        return tailSecondsCache_.load (std::memory_order_relaxed);
+    }
+    // Recompute tailSecondsCache_ from the CURRENT fxState atomics + the cached
+    // transport BPM. Safe on the audio thread (relaxed loads + one store).
+    void recomputeTailCache() noexcept;
     // Loader-side per-part FX slot-TYPE writer: the same contract as
     // setFxSlotType but for an EXPLICIT part (the .parvati multi loader
     // restores all 6 parts' FX, not just the current one). Stores the fxState
@@ -881,6 +877,13 @@ private:
         int8_t  modAmt    [kNumFxMatrixSlots] {};
     };
     std::array<FxPartCache, kNumParts> fxCached_ {};
+    // ---- Tail-length cache (see getTailLengthSeconds) ----
+    // Written by recomputeTailCache() (relaxed; advisory read by the host via
+    // the processor's getTailLengthSeconds) on the audio thread. The BPM used
+    // by the last recompute: tempo-synced delay tails change with the tempo, so
+    // processTransport refreshes the cache when the tempo moves materially.
+    std::atomic<float> tailSecondsCache_ { (float) kTailFloorSeconds };
+    std::atomic<double> tailBpmCache_ { 120.0 };
     // Mono scratch buffer for the per-part voicecard sum (sized in prepare; AT-only).
     juce::AudioBuffer<float> fxMonoScratch_;
     parvati::TransportClock transport_;
@@ -961,9 +964,10 @@ private:
     void rebuildVoiceAllocation();
 
     // Push the resolved tuning table of @p part into every voice it owns
-    // (audio-thread service of tuningDirty_ and of frameDirty_ — byte-4 preset
-    // edits ride the frame push, custom-offset edits ride tuningDirty_; both
-    // are idempotent so double application is harmless).
+    // (audio-thread service of frameDirty_ — byte-4 preset
+    // edits ride the frame push; the table follows the frame in the same
+    // pass so a raga change never needs a separate dirty flag). The per-voice
+    // setTuningOffsets writes are idempotent so double application is harmless.
     void pushTuningToVoices (int part);
 
     // (Re)initialise a Part's voice allocator for its current polyphony mode

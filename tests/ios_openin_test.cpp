@@ -2,7 +2,7 @@
 //
 // Completes the open-in loop's DETERMINISTIC half. Document types/UTIs are
 // declared (ios/parvati_filetypes.plist) so iOS offers "Open in Parvati" for
-// .parvati/.PRO/.MUL/.scl/.kbm, and Source/ui/IosOpenIn.{h,mm} route the
+// .parvati/.PRO/.MUL, and Source/ui/IosOpenIn.{h,mm} route the
 // handed file into Parvati's shared storage. The Obj-C++ delegate shim
 // (application:openURL:options: added to JUCE's JuceAppStartupDelegate) is
 // proven by the iOS-simulator Parvati_Standalone build; THIS test drives the
@@ -11,8 +11,9 @@
 //       (exists, bytes identical, no *_temp leftovers, collision overwrite);
 //       an already-inside file returns ITSELF without duplicating; a .txt
 //       returns invalid and imports nothing.
-//   [2] routeOpenedFile tuning: .scl/.kbm → the Parvati/Tuning sibling of
-//       USER (created on demand; bytes identical; re-route is a no-op).
+//   [2] former tuning kinds: .scl/.kbm (removed with the custom-tuning
+//       subsystem, 2026-08-19) route NOWHERE — the kind predicate returns
+//       None and nothing is parked or created.
 //   [3] openInKindForFile table: the extension → kind predicate.
 //   [4] Idempotence/route failures: a nonexistent preset file routes nowhere
 //       (invalid File), a hostile extension never touches the trees.
@@ -120,7 +121,7 @@ int main()
     }
 
     // ------------------------------------------------------------------
-    std::printf ("[2] routeOpenedFile tuning -> Parvati/Tuning sibling\n");
+    std::printf ("[2] former tuning kinds route nowhere (custom tuning removed)\n");
     {
         const auto srcScl = inbox.getChildFile ("19edo.scl");
         check (srcScl.replaceWithText ("! 19edo.scl\n!\n 19\n 63.15789473684\n"),
@@ -131,28 +132,21 @@ int main()
 
         const auto tuningDir = groupRoot.getChildFile ("Parvati").getChildFile ("Tuning");
         const auto rs = parvati::routeOpenedFile (srcScl, userDir);
-        check (rs == tuningDir.getChildFile ("19edo.scl") && rs.existsAsFile(),
-               "[2] .scl parked in Parvati/Tuning (dir created on demand)");
-        check (filesByteEqual (rs, srcScl), "[2] parked .scl bytes identical");
+        check (rs == juce::File() && ! rs.existsAsFile(),
+               "[2] .scl routes to an INVALID File (no parking)");
         const auto rk = parvati::routeOpenedFile (srcKbm, userDir);
-        check (rk == tuningDir.getChildFile ("map19.kbm") && rk.existsAsFile()
-                   && filesByteEqual (rk, srcKbm),
-               "[2] .kbm parked + identical");
-        check (countTempFragments (tuningDir) == 0, "[2] no *_temp fragments in Tuning");
+        check (rk == juce::File() && ! rk.existsAsFile(),
+               "[2] .kbm routes to an INVALID File (no parking)");
+        check (! tuningDir.exists(), "[2] no Parvati/Tuning directory is created");
 
-        // Re-route of the parked file: returns itself, no duplicate.
-        check (parvati::routeOpenedFile (rs, userDir) == rs,
-               "[2] already-parked tuning file returns ITSELF");
-        check (countTempFragments (tuningDir) == 0, "[2] re-route duplicated nothing");
-
-        // Tuning files never pollute the preset menu's scan set.
+        // Nothing landed inside USER either (menu stays clean).
         juce::Array<juce::File> leaves;
         userDir.findChildFiles (leaves, juce::File::findFiles, true);
         bool sclInUser = false;
         for (const auto& l : leaves)
             if (l.hasFileExtension (".scl") || l.hasFileExtension (".kbm"))
                 sclInUser = true;
-        check (! sclInUser, "[2] no .scl/.kbm landed inside USER (menu stays clean)");
+        check (! sclInUser, "[2] no .scl/.kbm landed inside USER");
     }
 
     // ------------------------------------------------------------------
@@ -164,8 +158,8 @@ int main()
             { "x.parvati", K::Preset }, { "x.PRO", K::Preset },
             { "x.Pro", K::Preset },     { "x.pro", K::Preset },
             { "x.MUL", K::Preset },     { "x.mul", K::Preset },
-            { "x.scl", K::Tuning },     { "x.SCL", K::Tuning },
-            { "x.kbm", K::Tuning },     { "x.KBM", K::Tuning },
+            { "x.scl", K::None },       { "x.SCL", K::None },
+            { "x.kbm", K::None },       { "x.KBM", K::None },
             { "x.txt", K::None },       { "x.mid", K::None },
             { "x", K::None },           { "x.wav", K::None },
         };

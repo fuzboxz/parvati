@@ -1,11 +1,14 @@
-// Per-part microtonal tuning verification (firmware raga presets + custom
-// tables + Scala import glue):
+// Per-part microtonal tuning verification (firmware raga presets):
 //   1. vendored table contents (verbatim firmware values, aliases, ranges)
-//   2. the AmbikaVoice::startNote hook mapping (preset/custom/composition)
+//   2. the AmbikaVoice::startNote hook mapping (preset/composition)
 //   3. sentinel (AcceptNote) gates for muted note classes
-//   4. MT -> AT staging (frameDirty_ preset path + tuningDirty_ custom path)
-//   5. engine-state v7 round-trip + v6 legacy fallback
-//   6. .parvati multi tuning fields round-trip + old-format load
+//   4. MT -> AT staging (frameDirty_ preset path)
+//   5. engine-state blob round-trip (v8) + v7/v6 legacy fallback
+//      (the custom-tuning subsystem was removed 2026-08-19; v7 blobs that
+//      carry a custom mode 33 must load with the custom DROPPED and the
+//      raga byte intact)
+//   6. .parvati preset round-trip (params: part_raga) + legacy tuning_mode
+//      key acceptance (33 -> 12-EDO, 1..32 -> raga byte)
 //   7. standing-bend pickup on newly triggered voices
 //   8. .MUL round-trip of the raga byte (PartData byte 4)
 //
@@ -97,9 +100,6 @@ void setParam (ParvatiAudioProcessor& p, const char* id, int value)
         param->setValueNotifyingHost (param->convertTo0to1 (static_cast<float> (value)));
 }
 
-// (A countActiveVoices helper is intentionally omitted: every case asserts
-// on the specific voice the note landed on via playNote.)
-
 // ---------------------------------------------------------------------------
 // 1. Vendored tables.
 // ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ void testTables()
 }
 
 // ---------------------------------------------------------------------------
-// 2. The startNote hook (preset / custom / composition).
+// 2. The startNote hook (preset / composition).
 // ---------------------------------------------------------------------------
 void testHook()
 {
@@ -156,7 +156,6 @@ void testHook()
     ParvatiAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
-    auto& eng = proc.getEngine();
 
     // Baseline: 12-EDO -> plain baseNote*128.
     {
@@ -216,59 +215,8 @@ void testHook()
     }
     setParam (proc, "part_spread", 0);
     setParam (proc, "part_polyphony", 1 /*POLY*/);
-
-    // Custom table: setPartTuningCustom + the tuningDirty_ AT service.
-    int16_t custom[12] = {};
-    for (int c = 0; c < 12; ++c) custom[c] = static_cast<int16_t> ((c + 1) * 10 - 30);   // -30..80
-    setParam (proc, "part_raga", 0);   // 12-EDO base; custom still inactive
-    eng.setPartTuningCustom (0, custom);
-    renderBlocks (proc, 2);   // tuningDirty_ service
-    {
-        AmbikaVoice* av = playNote (proc, 65);   // class 5 -> custom[5] = (5+1)*10-30 = 30
-        check (av != nullptr && av->getLastNote14() == 65 * 128 + 30, "custom table applied at the hook");
-        allNotesOff (proc, 65);
-    }
-    // D4 resolution rule: a preset selection overrides the custom flag.
-    setParam (proc, "part_raga", 2);   // pythagorean
-    renderBlocks (proc, 2);
-    {
-        AmbikaVoice* av = playNote (proc, 65);   // table[5] = -2
-        check (av != nullptr && av->getLastNote14() == 65 * 128 - 2, "preset overrides the custom flag (D4)");
-        allNotesOff (proc, 65);
-    }
-    check (eng.resolvedTuningMode (0) == 2, "resolvedTuningMode reports the preset");
     setParam (proc, "part_raga", 0);
     renderBlocks (proc, 2);
-    // D4-inverse doctrine (Wave-1 BUG-4): a LIVE part_raga write of 0 is an
-    // explicit 12-EDO selection — it now CLEARS the (dormant) custom flag
-    // instead of letting it resurface. The old resurface behaviour made the
-    // hosted part_raga combo / host automation / NRPN disagree with the Patch
-    // page's Tune combo (whose explicit 12-EDO pick clears by design, D4):
-    // the combo read "12-EDO" while the part kept playing the microtonal
-    // table. The way back to a custom table is the TuningEditor / re-import.
-    check (eng.resolvedTuningMode (0) == 0,
-           "live part_raga=0 clears the dormant custom (D4 inverse — explicit 12-EDO)");
-    eng.clearPartTuningCustom (0);
-    renderBlocks (proc, 2);
-    check (eng.resolvedTuningMode (0) == 0, "clearPartTuningCustom returns to 12-EDO");
-
-    // A custom table may carry the mute sentinel itself (Scala import writes
-    // one per kbm-unmapped class): it must survive setPartTuningCustom's ±127
-    // clamp verbatim and refuse that note class like a raga preset would.
-    {
-        int16_t muted[12] = {};
-        muted[1] = parvati::kTuningSilence;   // C# class muted
-        muted[4] = 20;
-        eng.setPartTuningCustom (0, muted);
-        renderBlocks (proc, 2);
-        int16_t back[12] = {};
-        eng.resolveTuningOffsets (0, back);
-        check (back[1] == parvati::kTuningSilence && back[4] == 20,
-               "custom-table sentinel survives storage (not clamped to +127)");
-        check (! eng.isNoteAcceptedByPartTuning (0, 61), "custom-table muted class refuses notes");
-        check (eng.isNoteAcceptedByPartTuning (0, 64), "custom-table unmuted class accepts notes");
-        eng.clearPartTuningCustom (0);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -310,29 +258,9 @@ void testStaging()
     ParvatiAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
-    auto& eng = proc.getEngine();
 
-    // Custom-offset-only edit: NO render between the edit and the note — the
-    // note lands one block AFTER the tuningDirty_ service, so the offsets must
-    // already be live (staging proven by the block-after-block sequencing).
-    int16_t custom[12] = {};
-    custom[3] = -42;   // only class 3
-    eng.setPartTuningCustom (0, custom);
-    {
-        juce::AudioBuffer<float> buf (2, 256);
-        buf.clear();
-        juce::MidiBuffer midi;
-        midi.addEvent (juce::MidiMessage::noteOn (1, 63, (uint8_t) 100), 0);
-        proc.processBlock (buf, midi);   // first block: services tuningDirty_, THEN renders the note
-        AmbikaVoice* av = playNote (proc, 75);   // class 3 again (fresh voice)
-        check (av != nullptr && av->getLastNote14() == 75 * 128 - 42,
-               "tuningDirty_ serviced before the next block's notes");
-        allNotesOff (proc, 75);
-        allNotesOff (proc, 63);
-    }
-
-    // Byte-4 preset change rides frameDirty_ (applyPartByte path).
-    eng.clearPartTuningCustom (0);
+    // Byte-4 preset change rides frameDirty_ (applyPartByte path): the offsets
+    // must be live for the note in the block AFTER the edit block.
     proc.getApvts().getParameter ("part_raga")->setValueNotifyingHost (
         proc.getApvts().getParameter ("part_raga")->convertTo0to1 (7.0f));
     {
@@ -353,44 +281,39 @@ void testStaging()
 }
 
 // ---------------------------------------------------------------------------
-// 5. Engine-state v7 round-trip + v6 fallback.
+// 5. Engine-state blob round-trip (v8) + v7/v6 legacy fallback.
 // ---------------------------------------------------------------------------
-void testStateV7()
+void testStateBlob()
 {
-    std::printf ("[engine state v7]\n");
+    std::printf ("[engine state blob]\n");
 
     ParvatiAudioProcessor a;
     prepareProc (a);
     renderBlocks (a, 2);
     auto& ea = a.getEngine();
 
-    int16_t custom2[12] = {};
-    custom2[1] = 21;  custom2[6] = -6;
-    int16_t custom5[12] = {};
-    custom5[11] = 99; custom5[0] = -99;
-    ea.setPartTuningCustom (2, custom2);
-    ea.setPartTuningCustom (5, custom5);
     ea.getPart (0).partBytes[4] = 5;   // preset on part 0
+    ea.getPart (2).partBytes[4] = 12;  // yaman on part 2
     renderBlocks (a, 2);
 
     juce::MemoryBlock blob;
     ea.captureState (blob);
     check (blob.getSize() > 0, "captureState produces a blob");
+    check (static_cast<const uint8_t*> (blob.getData())[4] == 8, "blob carries version 8");
 
-    {   // Fresh engine restore: modes + tables preserved.
+    {   // Fresh engine restore: presets preserved from partBytes[4].
         ParvatiAudioProcessor b;
         prepareProc (b);
         renderBlocks (b, 2);
         auto& eb = b.getEngine();
-        check (eb.restoreState (blob.getData(), blob.getSize()), "v7 blob restores");
-        bool okc = eb.resolvedTuningMode (0) == 5 && eb.resolvedTuningMode (2) == 33
-                && eb.resolvedTuningMode (5) == 33 && eb.resolvedTuningMode (1) == 0;
-        int16_t t2[12] = {}, t5[12] = {};
+        check (eb.restoreState (blob.getData(), blob.getSize()), "v8 blob restores");
+        bool okc = eb.resolvedTuningMode (0) == 5 && eb.resolvedTuningMode (2) == 12
+                && eb.resolvedTuningMode (1) == 0;
+        int16_t t2[12] = {}, tWant[12] = {};
         eb.resolveTuningOffsets (2, t2);
-        eb.resolveTuningOffsets (5, t5);
-        okc = okc && std::memcmp (t2, custom2, sizeof (custom2)) == 0
-                  && std::memcmp (t5, custom5, sizeof (custom5)) == 0;
-        check (okc, "restored modes + custom tables match (preset 5, customs 33 on parts 2/5)");
+        std::memcpy (tWant, parvati::tuningPresetTable (12), sizeof (tWant));
+        okc = okc && std::memcmp (t2, tWant, sizeof (tWant)) == 0;
+        check (okc, "restored presets match (5 on part 0, 12 on part 2)");
 
         // The restored state is LIVE: a new note on part 0 uses the preset table.
         renderBlocks (b, 2);
@@ -401,52 +324,85 @@ void testStateV7()
         allNotesOff (b, 60);
     }
 
-    {   // Hand-crafted v6 view: a REAL v6 blob ends after each Part's name
-        // block, so strip the v7 tuning tails (29 bytes per part) in addition
-        // to rewriting the version byte — a mere version flip would feed the
-        // v7 tails to the v6 reader as the next Part's bytes and rightly fail.
+    {   // Hand-crafted v7 view: a REAL v7 blob ended each Part's tail with a
+        // length-prefixed tuning block (4-byte LE length + 25 bytes
+        // {u8 mode; i16 LE offsets[12]}). Rebuild that layout from the v8
+        // capture: append a tuning block per Part, one of them carrying the
+        // former CUSTOM mode 33 + offsets. Restore must load it cleanly and
+        // DROP the custom (12-EDO; its raga byte was 0 by the custom-active
+        // invariant), keeping every real preset intact.
         const uint8_t* src = static_cast<const uint8_t*> (blob.getData());
         const size_t total = blob.getSize();
-        juce::MemoryBlock v6;
-        v6.append (src, 6);   // magic + version + current part
-        v6[4] = 6;            // version 7 -> 6
+        juce::MemoryBlock v7;
+        v7.append (src, 6);   // magic + version + current part
+        v7[4] = 7;            // version 8 -> 7
         size_t o = 6;
         for (int p = 0; p < 6; ++p)
         {
             if (o + 112 + 84 + 4 > total) break;
-            v6.append (src + o, 112 + 84 + 4);          // patch + part + 4 routing bytes
+            v7.append (src + o, 112 + 84 + 4);          // patch + part + 4 routing bytes
             o += 112 + 84 + 4;
             const uint32_t fxLen = (uint32_t) src[o] | ((uint32_t) src[o + 1] << 8)
                                  | ((uint32_t) src[o + 2] << 16) | ((uint32_t) src[o + 3] << 24);
-            v6.append (src + o, 4 + (size_t) fxLen);    // FX block (len + data)
+            v7.append (src + o, 4 + (size_t) fxLen);    // FX block (len + data)
             o += 4 + fxLen;
             const size_t nameLen = src[o + 1];
-            v6.append (src + o, 1 + 1 + nameLen);       // slots + namelen + name
+            v7.append (src + o, 1 + 1 + nameLen);       // slots + namelen + name
             o += 2 + nameLen;
-            o += 4 + 25;   // DROP the v7 tuning block
+            // Synthesize the v7 tuning block: mode 33 + offsets on part 1 (the
+            // "custom was active" case), mirrored preset ids elsewhere.
+            uint8_t tune[25] = {};
+            tune[0] = (p == 1) ? 33 : static_cast<uint8_t> ((int) ea.getPart (p).partBytes[4]);
+            if (p == 1)
+            {
+                // offsets bytes 1..24: class 1 -> +21 (1/128-st LE)
+                tune[1] = 21; tune[2] = 0;
+            }
+            const uint32_t tuneLen = 25;
+            v7.append (&tuneLen, 4);
+            v7.append (tune, 25);
         }
         ParvatiAudioProcessor c;
         prepareProc (c);
         renderBlocks (c, 2);
         auto& ec = c.getEngine();
-        check (ec.restoreState (v6.getData(), v6.getSize()), "v6-view blob restores");
-        bool okc = ec.resolvedTuningMode (2) == 0 && ec.resolvedTuningMode (5) == 0
-                && ec.resolvedTuningMode (0) == 5;   // preset rides partBytes[4]
-        check (okc, "v6 blob restores presets from byte 4, customs cleared (12-EDO)");
+        check (ec.restoreState (v7.getData(), v7.getSize()), "v7-view blob (with tuning tails) restores");
+        bool okc = ec.resolvedTuningMode (0) == 5 && ec.resolvedTuningMode (2) == 12
+                && ec.resolvedTuningMode (1) == 0 && ec.resolvedTuningMode (3) == 0;
+        check (okc, "v7 blob: presets intact, custom mode 33 dropped to 12-EDO (backcompat)");
+        int16_t t1[12] = {};
+        ec.resolveTuningOffsets (1, t1);
+        bool zero = true;
+        for (int i = 0; i < 12; ++i) if (t1[i] != 0) zero = false;
+        check (zero, "v7 blob: the dropped custom's offsets resolve as 12-EDO zeros");
     }
 
-    {   // v8 is rejected (strict version gate -> legacy APVTS fallback upstream).
-        juce::MemoryBlock v8 (blob);
-        static_cast<uint8_t*> (v8.getData())[4] = 8;
+    {   // Hand-crafted v6 view: a REAL v6 blob ends after each Part's name
+        // block, so strip the v7 tuning tails' absence is already the v8 shape —
+        // merely flip the version byte (v6 has no tuning blocks, like v8).
+        juce::MemoryBlock v6 (blob);
+        static_cast<uint8_t*> (v6.getData())[4] = 6;
+        ParvatiAudioProcessor c;
+        prepareProc (c);
+        renderBlocks (c, 2);
+        auto& ec = c.getEngine();
+        check (ec.restoreState (v6.getData(), v6.getSize()), "v6-view blob restores");
+        bool okc = ec.resolvedTuningMode (0) == 5 && ec.resolvedTuningMode (2) == 12;
+        check (okc, "v6 blob restores presets from byte 4");
+    }
+
+    {   // v9 is rejected (strict version gate -> legacy APVTS fallback upstream).
+        juce::MemoryBlock v9 (blob);
+        static_cast<uint8_t*> (v9.getData())[4] = 9;
         ParvatiAudioProcessor d;
         prepareProc (d);
         auto& ed = d.getEngine();
-        check (! ed.restoreState (v8.getData(), v8.getSize()), "future version strictly rejected");
+        check (! ed.restoreState (v9.getData(), v9.getSize()), "future version strictly rejected");
     }
 }
 
 // ---------------------------------------------------------------------------
-// 6. .parvati multi round-trip + old-format load.
+// 6. .parvati preset round-trip + legacy tuning_mode acceptance.
 // ---------------------------------------------------------------------------
 void testParvatiMulti()
 {
@@ -457,94 +413,111 @@ void testParvatiMulti()
     renderBlocks (a, 2);
     auto& ea = a.getEngine();
 
-    // Sentinel rider: a muted class in the custom table must survive the
-    // .parvati write/read trip (the loader pre-clamps offsets to ±127; the
-    // clamp has to exempt 32767 or the class comes back as a +127 detune).
-    int16_t custom4[12] = {};
-    custom4[9] = -77; custom4[2] = 33;
-    custom4[6] = parvati::kTuningSilence;
-    ea.setPartTuningCustom (4, custom4);
     ea.getPart (1).partBytes[4] = 12;   // yaman
     renderBlocks (a, 2);
 
     const juce::String yaml = serializeParvatiMulti (a);
-    check (yaml.contains ("tuning_mode: 33"), "custom mode serialized as 33");
-    check (yaml.contains ("tuning_offsets: "), "custom offsets serialized");
-    check (yaml.contains ("tuning_mode: 12"), "preset mode serialized by id");
+    check (! yaml.contains ("tuning_mode"), "serializer emits NO tuning_mode keys (raga rides params: part_raga)");
+    check (! yaml.contains ("tuning_offsets"), "serializer emits NO tuning_offsets keys");
 
     {
         ParvatiAudioProcessor b;
         prepareProc (b);
         renderBlocks (b, 2);
-        check (applyParvatiMulti (b, yaml), "applyParvatiMulti parses the tuning fields");
+        check (applyParvatiMulti (b, yaml), "applyParvatiMulti parses the round-trip");
         auto& eb = b.getEngine();
-        bool okc = eb.resolvedTuningMode (1) == 12 && eb.resolvedTuningMode (4) == 33;
-        int16_t t4[12] = {};
-        eb.resolveTuningOffsets (4, t4);
-        okc = okc && std::memcmp (t4, custom4, sizeof (custom4)) == 0;
-        check (okc, "round-tripped modes + custom table match");
+        check (eb.resolvedTuningMode (1) == 12, "round-tripped preset matches (12 on part 1)");
     }
 
-    {   // Old format: strip the tuning_* lines entirely -> customs clear,
-        // presets survive via params: part_raga.
-        juce::String old;
-        for (const auto& l : juce::StringArray::fromLines (yaml))
-            if (! l.trim().startsWith ("tuning_mode:") && ! l.trim().startsWith ("tuning_offsets:"))
-                old << l << "\n";
+    {   // Legacy file: carry tuning_mode keys from the pre-removal writer.
+        // mode 33 + offsets (the custom case) must load as 12-EDO; mode 5 must
+        // load as raga 5; the parse must NEVER fail.
+        juce::String legacy = yaml;
+        // Inject a legacy tuning_mode/tuning_offsets pair into part 2's entry
+        // (after its params block close is fiddly; simpler: rewrite a minimal
+        // two-key legacy part entry appended as a NEW part entry is invalid —
+        // instead mutate the EXISTING part-2 entry text).
+        // The serializer writes one "  - name: ..." block per part; find the
+        // second part's "params:" section and inject before it.
+        // (Deterministic injection: the multi format is line-based.)
+        juce::String out;
+        int partIdx = -1;
+        for (const auto& l : juce::StringArray::fromLines (legacy))
+        {
+            if (l.trim().startsWith ("- name:") || l.trim().startsWith ("- channel:"))
+                ++partIdx;
+            if (partIdx == 2 && l.trim().startsWith ("params:"))
+            {
+                out << "    tuning_mode: " << ((partIdx == 2) ? juce::String (33) : juce::String()) << "\n";
+                out << "    tuning_offsets: 0, 21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0\n";
+            }
+            out << l << "\n";
+        }
+        legacy = out;
+        // Also give part 3's entry a legacy preset mode (rewrite after the fact
+        // via a second pass is overkill — part 2's 33 is the critical case; a
+        // preset-mode acceptance is covered by the params part_raga path).
         ParvatiAudioProcessor c;
         prepareProc (c);
         renderBlocks (c, 2);
-        check (applyParvatiMulti (c, old), "old-format multi (no tuning keys) still parses");
+        check (applyParvatiMulti (c, legacy), "legacy multi WITH tuning_mode:33 + offsets still parses");
         auto& ec = c.getEngine();
-        bool okc = ec.resolvedTuningMode (4) == 0 && ec.resolvedTuningMode (1) == 12;
-        check (okc, "old format loads as 12-EDO for customs, preset via params (forward-compat)");
+        check (ec.resolvedTuningMode (2) == 0,
+               "legacy custom mode 33 loads as 12-EDO (custom subsystem removed)");
+        int16_t t2[12] = {};
+        ec.resolveTuningOffsets (2, t2);
+        bool zero = true;
+        for (int i = 0; i < 12; ++i) if (t2[i] != 0) zero = false;
+        check (zero, "legacy custom offsets are ignored (12-EDO zeros)");
+    }
+
+    {   // Legacy preset mode: tuning_mode: 5 must map to raga byte 5.
+        juce::String out;
+        int partIdx = -1;
+        for (const auto& l : juce::StringArray::fromLines (yaml))
+        {
+            if (l.trim().startsWith ("- name:") || l.trim().startsWith ("- channel:"))
+                ++partIdx;
+            if (partIdx == 3 && l.trim().startsWith ("params:"))
+                out << "    tuning_mode: 5\n";
+            out << l << "\n";
+        }
+        ParvatiAudioProcessor c;
+        prepareProc (c);
+        renderBlocks (c, 2);
+        check (applyParvatiMulti (c, out), "legacy multi WITH tuning_mode:5 still parses");
+        check (c.getEngine().resolvedTuningMode (3) == 5,
+               "legacy preset mode 5 maps to the raga byte");
     }
 }
 
 // ---------------------------------------------------------------------------
-// 7. APVTS part_raga=0 clears an armed custom table (the live param path —
-// the same D4 rule the Patch page's Tune combo and the file loaders apply).
+// 7. APVTS part_raga writes + part-switch survival (byte 4 is the whole
+//    tuning state now — the custom-flag interplay was removed with the
+//    custom-tuning subsystem).
 // ---------------------------------------------------------------------------
-void testApvtsRagaClear()
+void testApvtsRaga()
 {
-    std::printf ("part_raga=0 via APVTS clears custom\n");
+    std::printf ("part_raga via APVTS\n");
 
     ParvatiAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
     auto& eng = proc.getEngine();
 
-    // Arm a custom table on the current part (0).
-    int16_t custom[12] = {};
-    custom[5] = 24;
-    eng.setPartTuningCustom (0, custom);
-    check (eng.resolvedTuningMode (0) == 33, "precondition: custom armed (mode 33)");
-
-    // A live part_raga write of 0 (the hosted param-grid combo, host automation
-    // or NRPN 116) is an explicit 12-EDO selection — it must clear the flag, not
-    // just write byte 4 = 0 while the engine keeps playing the custom table.
-    // (JUCE's adapter early-returns on a same-value write, so drive the real
-    // transition a host/user produces: land a preset first, then 0.)
-    proc.getApvts().getParameterAsValue ("part_raga") = 7.0f;
-    check (eng.resolvedTuningMode (0) == 7, "precondition: preset 7 selected");
-    proc.getApvts().getParameterAsValue ("part_raga") = 0.0f;
-    check (eng.resolvedTuningMode (0) == 0,
-           "part_raga=0 param write clears the custom flag (D4 inverse)");
-
-    // A non-zero write selects the preset and stays a preset afterwards.
     proc.getApvts().getParameterAsValue ("part_raga") = 7.0f;
     check (eng.resolvedTuningMode (0) == 7, "part_raga=7 selects preset 7");
+    proc.getApvts().getParameterAsValue ("part_raga") = 0.0f;
+    check (eng.resolvedTuningMode (0) == 0, "part_raga=0 returns to 12-EDO");
 
-    // Part-switch invariant (the regression guard for the clear's placement): a
-    // part with an ARMED custom table (byte 4 == 0 under D4) must KEEP it when
-    // the engine re-pushes its own stored bytes on a part switch (the bulk sync
-    // path deliberately does NOT clear).
-    eng.setPartTuningCustom (2, custom);
+    // Part-switch invariant: a part's stored raga byte survives the bulk sync
+    // re-push a part switch performs (byte 4 is plain PartData).
+    eng.getPart (2).partBytes[4] = 9;
     renderBlocks (proc, 2);
     setParam (proc, "part_select", 3);   // 1-based: switch to part 2 and back
     renderBlocks (proc, 2);
-    check (eng.resolvedTuningMode (2) == 33,
-           "custom on part 2 survives a part switch (bulk sync does not clear)");
+    check (eng.resolvedTuningMode (2) == 9,
+           "raga byte on part 2 survives a part switch (bulk sync re-push)");
     setParam (proc, "part_select", 1);
 }
 
@@ -600,7 +573,7 @@ void testStandingBend()
 }
 
 // ---------------------------------------------------------------------------
-// 8. .MUL round-trip of the raga byte.
+// 9. .MUL round-trip of the raga byte.
 // ---------------------------------------------------------------------------
 void testMulRagaRoundTrip()
 {
@@ -648,9 +621,9 @@ int main()
     testHook();
     testSentinel();
     testStaging();
-    testStateV7();
+    testStateBlob();
     testParvatiMulti();
-    testApvtsRagaClear();
+    testApvtsRaga();
     testStandingBend();
     testMulRagaRoundTrip();
 

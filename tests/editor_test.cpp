@@ -32,7 +32,6 @@
 #include "ui/FxSlotCard.h"             // [12b] the seeding seam (W10)
 #include "ui/PresetBrowser.h"          // [17] the scan-cache seams (W10)
 #include "ui/ThemeManager.h"
-#include "ui/TuningEditor.h"           // custom-tuning popover (direct instantiation)
 
 namespace
 {
@@ -459,11 +458,9 @@ int main()
 
             // (b) Single-patch (.PRO) drop: the CURRENT part's Poly + Tune
             // combos must mirror the loaded PartData (a .PRO load rewrites
-            // byte 15 + byte 4 of the current part). A custom tuning is armed
-            // FIRST so the 12-EDO case also pins the stale-custom clear: the
-            // factory .PRO carries raga byte 0 (verified below from the parsed
-            // file), which must leave resolvedTuningMode at 0 — not the armed
-            // 33 — and the row must show it.
+            // byte 15 + byte 4 of the current part). The factory .PRO carries
+            // raga byte 0 (verified below from the parsed file), which must
+            // leave resolvedTuningMode at 0 and the row must show it.
             {
                 const juce::File factDir = juce::File::getCurrentWorkingDirectory()
                                                .getChildFile ("presets/FACTORY/A");
@@ -475,11 +472,6 @@ int main()
                     AmbikaProgram expect;
                     check (parseAmbikaProgramFile (pros[0], expect) && expect.hasPart,
                            "factory .PRO parses (PartData present)");
-                    // Arm a custom tuning so a stale flag would show as 33.
-                    int16_t offs[12] = { 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-                    engine.setPartTuningCustom (0, offs);
-                    check (engine.resolvedTuningMode (0) == 33,
-                           "precondition: custom tuning armed (resolved mode 33)");
 
                     parEd->filesDropped (juce::StringArray (pros[0].getFullPathName()), 0, 0);
                     const int cur = engine.getCurrentPart();
@@ -497,7 +489,7 @@ int main()
                                == engine.resolvedTuningMode (0), msg);
                     if (expect.part[4] == 0)
                         check (engine.resolvedTuningMode (0) == 0,
-                               "drop(.PRO): stale custom tuning cleared (12-EDO file resolves 0, not 33)");
+                               "drop(.PRO): 12-EDO file resolves mode 0 (raga byte is the whole state)");
                 }
             }
 
@@ -671,9 +663,9 @@ int main()
                "Derived cards: exactly 6, disjoint, shared across the 6 parts");
 
         // ---- [9] Per-part tuning via the Patch page (Tune column) ----
-        // Drives the REAL combo path (byte-4 write + APVTS re-sync), the
-        // engine->GUI reflection, and the Custom… popover (instantiated
-        // directly — launch() needs a desktop window).
+        // Drives the REAL combo path (byte-4 write + APVTS re-sync) and the
+        // engine->GUI reflection. (The Custom… popover was removed with the
+        // custom-tuning subsystem, 2026-08-19.)
         std::printf ("\n[9] Per-part tuning via PatchPage\n");
         check (patchPage->getDisplayedTuningMode (0) == 0, "Tune: part 0 starts at 12-EDO");
 
@@ -692,72 +684,12 @@ int main()
         patchPage->refresh();
         check (patchPage->getDisplayedTuningMode (3) == 12, "Tune: refresh mirrors engine mode");
 
-        // Custom… popover (direct instantiation = the same rows/apply paths):
-        // prefill from the resolved preset, a row edit activates custom mode,
-        // [Clear] zeroes but stays custom, and an explicit 12-EDO pick clears
-        // the custom flag (D4).
-        {
-            int applyCount = 0;
-            TuningEditor ed (engine, 0, [&applyCount] { ++applyCount; });
-            const auto* just = parvati::tuningPresetTable (5);
-            check (ed.rowUnits (0) == just[0], "TuningEditor prefills from the resolved preset");
-            ed.setRowUnitsForTest (1, 17);
-            check (applyCount >= 1, "TuningEditor applies live (callback fired)");
-            check (engine.resolvedTuningMode (0) == 33, "row edit activates custom mode");
-            int16_t t[12] = {};
-            engine.resolveTuningOffsets (0, t);
-            check (t[1] == 17 && t[0] == just[0], "custom table = preset prefill + the edited row");
-            check (ed.rowReadout (1) == "+13.28ct", "readout shows quantized cents (17 units)");
-            ed.clearForTest();
-            engine.resolveTuningOffsets (0, t);
-            bool zeros = true;
-            for (int c = 0; c < 12; ++c) zeros = zeros && t[c] == 0;
-            check (zeros && engine.resolvedTuningMode (0) == 33, "[Clear] zeros the table, stays Custom");
-        }
-
-        // Scala import through the popover's conversion path (12tet + a kbm
-        // that mutes class 2): table untouched on error, sentinel on success.
-        {
-            TuningEditor ed (engine, 0, nullptr);
-            const auto scl = juce::String ("! 12tet\n12\n")
-                + "100.0\n200.0\n300.0\n400.0\n500.0\n600.0\n700.0\n800.0\n900.0\n1000.0\n1100.0\n1200.0\n";
-            const auto kbm = juce::String (
-                "! map\n12\n0\n11\n60\n60\n261.6255653\n12\n")
-                + "0\nx\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n";
-            check (ed.importScalaForTest (scl, kbm), "Scala import accepted (muted class)");
-            check (ed.rowUnits (1) == (int) parvati::kTuningSilence, "kbm 'x' class carries the mute sentinel");
-            check (ed.rowReadout (1).contains ("\xE2\x80\x94"), "muted row reads as an em dash");
-            const auto before = ed.rowUnits (0);
-            check (! ed.importScalaForTest (juce::String ("! bad\nnotanumber\n"), {}),
-                   "malformed .scl rejected");
-            check (ed.rowUnits (0) == before, "rejected import leaves the table untouched");
-        }
-
-        // Explicit 12-EDO clears the custom flag; byte 4 returns to 0.
+        // Explicit 12-EDO: byte 4 returns to 0.
         patchPage->chooseTuningMode (0, 0);
         check (engine.getPart (0).partBytes[4] == 0, "12-EDO writes raga byte 0");
-        check (engine.resolvedTuningMode (0) == 0, "12-EDO clears the custom flag (D4)");
+        check (engine.resolvedTuningMode (0) == 0, "12-EDO resolves mode 0");
         check (patchPage->getDisplayedTuningMode (0) == 0, "Tune: combo back to 12-EDO");
 
-        // Custom… popover's POST-EDIT notification re-syncs the APVTS: the
-        // popover writes the part's PartData ENGINE-DIRECT (byte 4 = 0 + custom
-        // flag armed), so without the re-sync the hosted part_raga combo — and
-        // an APVTS-based save — kept the STALE preset byte while the engine
-        // played the custom table. Wire a directly-instantiated TuningEditor's
-        // change callback to PatchPage::tuningEditorApplied (the exact body
-        // openTuningEditor's launched popover runs) so the headless test drives
-        // the real post-edit path without opening the modal dialog.
-        patchPage->chooseTuningMode (0, 12);   // part 0 is CURRENT: preset 12 lands in the APVTS
-        check (proc.getApvts().getRawParameterValue ("part_raga")->load() == 12.0f,
-               "precondition: APVTS part_raga == 12 (stale-preset scenario armed)");
-        {
-            TuningEditor ed (engine, 0, [&patchPage] { patchPage->tuningEditorApplied (0); });
-            ed.setRowUnitsForTest (2, 19);   // a user-style row edit -> applyTable -> onChanged
-            check (engine.resolvedTuningMode (0) == 33,
-                   "popover edit arms the custom table (mode 33)");
-            check (proc.getApvts().getRawParameterValue ("part_raga")->load() == 0.0f,
-                   "popover edit re-syncs the APVTS part_raga to 0 (no stale preset byte)");
-        }
     }
 
     // ---- [MOD] header toggle: mod-pill bar show/hide ----
@@ -1097,6 +1029,138 @@ int main()
         }
 
         tmp.deleteRecursively();
+    }
+
+    // ------------------------------------------------------------------
+    // [18] Header keyboard shortcuts + preset stepping + host-context menu
+    // degradation. The shortcut handlers are small testable seams
+    // (handleStepPresetShortcut / handlePartSelectShortcut / ...) reached
+    // exactly as the keyboard reaches them: editor->keyPressed(...).
+    // ------------------------------------------------------------------
+    std::printf ("\n[18] keyboard shortcuts + preset stepping\n");
+    {
+        // ---- (a) PresetBrowser step semantics on a fully deterministic tree.
+        // Flattened order mirrors the menu: Factory bank A first, then Multi,
+        // User, Templates; wrap at the ends; setCurrentFile anchors an
+        // out-of-menu load.
+        const auto tmp18 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                               .getChildFile ("parvati_preset_step_test");
+        tmp18.deleteRecursively();
+        auto mkDir18 = [] (const juce::File& d) { d.createDirectory(); return d; };
+        const auto factoryA18  = mkDir18 (tmp18.getChildFile ("FACTORY/A"));
+        const auto multiDir18  = mkDir18 (tmp18.getChildFile ("FACTORY_MULTI"));
+        const auto userDir18   = mkDir18 (tmp18.getChildFile ("USER"));
+        const auto tplDir18    = mkDir18 (tmp18.getChildFile ("TEMPLATES"));
+        check (factoryA18.getChildFile ("a1.PRO").replaceWithText ("x", false), "setup: A/a1");
+        check (factoryA18.getChildFile ("a2.PRO").replaceWithText ("x", false), "setup: A/a2");
+        check (multiDir18.getChildFile ("m1.MUL").replaceWithText ("x"), "setup: multi");
+        check (userDir18.getChildFile ("u1.parvati").replaceWithText ("x"), "setup: user");
+        check (tplDir18.getChildFile ("t1.parvati").replaceWithText ("x"), "setup: template");
+
+        juce::Array<juce::File> steppedFiles;   // every file onSelect delivers
+        PresetBrowser stepper (tplDir18, userDir18, tmp18.getChildFile ("FACTORY"),
+                               multiDir18, [&steppedFiles] (const juce::File& f) { steppedFiles.add (f); });
+        const juce::File first = stepper.selectNext();   // not-anchored -> FIRST leaf
+        check (first.getFileName() == "a1.PRO", "step(next) unanchored starts at Factory A leaf 0");
+        const juce::File second = stepper.selectNext();
+        check (second.getFileName() == "a2.PRO", "step(next) advances within the bank");
+        const juce::File third = stepper.selectNext();
+        check (third.getFileName() == "m1.MUL", "step order: Multi follows the factory banks");
+        const juce::File fourth = stepper.selectNext();
+        check (fourth.getFileName() == "u1.parvati", "step order: User follows Multi");
+        const juce::File fifth = stepper.selectNext();
+        check (fifth.getFileName() == "t1.parvati", "step order: Templates last");
+        const juce::File wrapped = stepper.selectNext();
+        check (wrapped == first, "step(next) WRAPS back to the first leaf");
+        const juce::File prev = stepper.selectPrev();
+        check (prev == fifth, "step(prev) returns to the last leaf");
+        const juce::File prevUser = stepper.selectPrev();
+        check (prevUser.getFileName() == "u1.parvati", "step(prev) walks backwards (User)");
+        check (steppedFiles.size() == 8, "every step fires the onSelect (load) seam");
+        // Anchor an out-of-menu load (drag-drop / Load... path): stepping
+        // continues from THAT file, not from wherever stepping left off.
+        stepper.setCurrentFile (userDir18.getChildFile ("u1.parvati"));
+        const juce::File fromAnchor = stepper.selectPrev();
+        check (fromAnchor.getFileName() == "m1.MUL", "setCurrentFile anchors stepping");
+        // An empty tree degrades to an invalid File (the editor then passes
+        // the key on instead of consuming it).
+        PresetBrowser empty (mkDir18 (tmp18.getChildFile ("E_TPL")),
+                             mkDir18 (tmp18.getChildFile ("E_USER")),
+                             mkDir18 (tmp18.getChildFile ("E_FACTORY")),
+                             mkDir18 (tmp18.getChildFile ("E_MULTI")), [] (const juce::File&) {});
+        check (! empty.selectNext().existsAsFile(), "empty tree: step returns an invalid File");
+        tmp18.deleteRecursively();
+
+        // ---- (b) Editor-level shortcuts through the REAL keyPressed path.
+        auto* parEd18 = dynamic_cast<ParvatiEditor*> (editor);
+        if (parEd18 != nullptr)
+        {
+            // Host-context degradation: headless/standalone has NO host
+            // context — getHostContext() is null and showContextMenu takes
+            // the local-only path (ParamControl reads it via the same call;
+            // the null check IS the degradation).
+            check (parEd18->getHostContext() == nullptr,
+                   "headless: getHostContext() is null (local menu path)");
+
+            // Preset stepping via the editor's REAL browser (its factory tree
+            // was installed to app-data by the processor ctor — deterministic,
+            // non-empty). Anchor first via a real drop, then step.
+            const juce::File repoFactA = juce::File::getCurrentWorkingDirectory()
+                                            .getChildFile ("presets/FACTORY/A");
+            juce::Array<juce::File> repoPros = repoFactA.findChildFiles (
+                juce::File::findFiles, false, "*.pro");
+            if (! repoPros.isEmpty())
+            {
+                parEd18->filesDropped (juce::StringArray (repoPros[0].getFullPathName()), 0, 0);
+                const bool stepped = parEd18->keyPressed (juce::KeyPress (']', 0, ']'));
+                check (stepped, "keyPressed(']') consumes the key (step fired)");
+                const bool steppedPlain = parEd18->keyPressed (juce::KeyPress ('[', 0, '['));
+                check (steppedPlain, "keyPressed('[') (plain) consumes the key");
+                // Cmd/Ctrl variants must behave identically.
+                const bool steppedCmd = parEd18->keyPressed (
+                    juce::KeyPress (']', juce::ModifierKeys::commandModifier, ']'));
+                check (steppedCmd, "keyPressed(Cmd+']') consumes the key");
+            }
+            else
+            {
+                check (false, "presets/FACTORY/A present (editor step assertions)");
+            }
+
+            // Part select: Cmd/Ctrl+1..6 through the partCombo_ seam. Part 3
+            // (Cmd+3) must land the engine on 0-based part 2.
+            const int before18 = proc.getEngine().getCurrentPart();
+            check (parEd18->keyPressed (
+                      juce::KeyPress ('3', juce::ModifierKeys::commandModifier, '3')),
+                  "keyPressed(Cmd+3) consumes the key");
+            check (proc.getEngine().getCurrentPart() == 2,
+                   "Cmd+3 selects Part 3 (engine current part 0-based 2)");
+            (void) before18;
+            // Out-of-range digit (Cmd+7): not consumed (no part 7).
+            check (! parEd18->keyPressed (
+                      juce::KeyPress ('7', juce::ModifierKeys::commandModifier, '7')),
+                  "keyPressed(Cmd+7) passes through (no Part 7)");
+            // Restore Part 1.
+            (void) parEd18->keyPressed (
+                juce::KeyPress ('1', juce::ModifierKeys::commandModifier, '1'));
+
+            // File shortcuts: headless, the picker launch is desktop-gated —
+            // the SEAM fires (true) with no dialog (a hang here would mean
+            // the gate regressed; a native picker needs a window server).
+            check (parEd18->keyPressed (
+                      juce::KeyPress ('o', juce::ModifierKeys::commandModifier, 'o')),
+                  "keyPressed(Cmd+O) consumed headless (desktop-gated picker)");
+            check (parEd18->keyPressed (
+                      juce::KeyPress ('s', juce::ModifierKeys::commandModifier, 's')),
+                  "keyPressed(Cmd+S) consumed headless (desktop-gated picker)");
+            // Zoom keys still work alongside the new bindings.
+            check (parEd18->keyPressed (
+                      juce::KeyPress ('0', juce::ModifierKeys::commandModifier, '0')),
+                  "keyPressed(Cmd+0) still consumed (zoom reset)");
+        }
+        else
+        {
+            check (false, "editor casts to ParvatiEditor (shortcut assertions)");
+        }
     }
 
     // ---- teardown ----

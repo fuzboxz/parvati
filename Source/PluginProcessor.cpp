@@ -233,12 +233,11 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
 
 #if JUCE_IOS
     // Open-in loop (see ui/IosOpenIn.h): iOS offers "Open in Parvati" for
-    // .parvati/.PRO/.MUL/.scl/.kbm (document types grafted 2026-08-19), but
+    // .parvati/.PRO/.MUL (document types grafted 2026-08-19), but
     // JUCE 9 drops application:openURL:options:. Install our handler and
     // route: presets import into the shared USER tree then LOAD through the
     // same main-thread paths the editor's FileChooser completions use (the
-    // UIKit delegate delivers on the main thread); tuning files park in
-    // Parvati/Tuning for the TuningEditor's interactive import. Standalone
+    // UIKit delegate delivers on the main thread). Standalone
     // ONLY — the AUv3 extension never receives openURL events, and the
     // Standalone processor is owned by StandalonePluginHolder for the app's
     // whole lifetime (the `this` capture below is safe by construction).
@@ -248,7 +247,6 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
             if (routed.hasFileExtension (".parvati")) loadParvatiMultiFile (routed);
             else if (routed.hasFileExtension (".pro")) loadProgramFile (routed);
             else if (routed.hasFileExtension (".mul")) loadMultiFile (routed);
-            // .scl/.kbm: routed only — no headless tuning apply by design.
         });
 
     // F-ios-lc-4 (bug hunt 2026-08-19): publish the shared USER tree into the
@@ -286,6 +284,20 @@ ParvatiAudioProcessor::~ParvatiAudioProcessor()
 void ParvatiAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     hostSampleRate_ = sampleRate;   // cache for the audio-thread latency re-report
+#if ! JUCE_IOS
+    // Offline auto-max leak guard: a host that entered offline (8x boost) but
+    // never called setNonRealtime(false) before re-preparing back in realtime
+    // would carry the 8x into the new session. If we are back in realtime with
+    // a boost still armed, restore the user's saved factor now (idempotent —
+    // setNonRealtime(false)'s own restore then finds nothing left to do). A
+    // re-prepare DURING the bounce (still non-realtime) correctly keeps 8x.
+    if (offlineSavedOs_ >= 0 && ! isNonRealtime())
+    {
+        const int saved = offlineSavedOs_;
+        offlineSavedOs_ = -1;
+        applyOversamplingFactor (saved);
+    }
+#endif
     // Cache the prepared block size for processBlock's overflow clamp (FX
     // audit F3/F6): every engine-side scratch buffer is sized from this value,
     // so a host block larger than prepared must never reach the renderers
@@ -390,11 +402,40 @@ void ParvatiAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
 {
 
     // Cache the host's offline-render state. The host wrapper calls this on the
-    // message thread when entering/leaving a bounce (freeze/export). A future
-    // "max quality" mode can read isNonRealtimeRender() to auto-engage
-    // oversampling during offline render, where CPU is unconstrained. (Wiring
-    // the quality mode itself is a later phase; this is detection only.)
+    // message thread when entering/leaving a bounce (freeze/export).
     nonRealtime_.store (isNonRealtime, std::memory_order_relaxed);
+
+#if ! JUCE_IOS
+    // ---- Offline auto-max quality (desktop only) ----
+    // Offline render (bounce/freeze/export) has no real-time budget: bump the
+    // per-voice filter oversampling to 8x for the bounce, then restore the
+    // user's factor on exit. iOS is EXCLUDED by measurement (PluginProcessor.cpp
+    // state-restore rationale: 8x = 2.3-3.7x realtime on A12-class cores — even
+    // offline that is a multi-minute bounce).
+    //  - applyOversamplingFactor does NOT persist (host state + the Settings
+    //    combo keep the user's choice);
+    //  - the staged-install path pre-builds on THIS (message) thread and the
+    //    audio thread swaps pointers only — no AT allocation, click-free;
+    //  - double-entry guarded by offlineSavedOs_ (>= 0 = boost active);
+    //  - a user factor change DURING a bounce updates the saved value and
+    //    re-applies it (the user's explicit choice wins mid-bounce too).
+    if (isNonRealtime)
+    {
+        if (offlineSavedOs_ < 0)
+        {
+            offlineSavedOs_ = getUiOversampling();
+            if (offlineSavedOs_ != 8)
+                applyOversamplingFactor (8);
+        }
+    }
+    else if (offlineSavedOs_ >= 0)
+    {
+        const int saved = offlineSavedOs_;
+        offlineSavedOs_ = -1;
+        applyOversamplingFactor (saved);
+    }
+#endif
+
     // Defer to the base so its own bookkeeping (isNonRealtime()) stays in sync.
     juce::AudioProcessor::setNonRealtime (isNonRealtime);
 }
@@ -507,85 +548,127 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // of this master buffer, so renderNextBlock leaves `buffer` cleared here.
     // No post-processing stage: hardware Ambika has no master limiter — the
     // voicecard output feeds the analog VCA only, so the engine's per-voice
-    // VCA is the final gain stage.
+    // VCA is the final gain stage. The slices below (one per prepared-size
+    // chunk) each run the FULL render pipeline for their range.
 
-    // ---- Host block-size clamp (FX audit F3/F6) ----
+    // ---- Host block-size CHUNKED render (replaces the old silent-tail clamp) ----
     // Every engine-side buffer (voicecard buffers, FX-output buffers, each
     // FxChain's dry/wet scratch and every FX processor's internal scratch --
     // worst case FxWavefolder's 6x-oversampled osL_/osR_, sized maxBlock*6+8
-    // at prepare) is sized from prepareToPlay's samplesPerBlock. A host that
-    // renders a LARGER block than it prepared (buffer-size transitions,
-    // offline/freeze renders, some AU/AUv3 hosts -- JUCE does not universally
-    // guarantee numSamples <= samplesPerBlock) would overrun all of them (a
-    // 6x-amplified heap OOB WRITE with the Wavefolder). Clamp once here and
-    // use the clamped count for every engine render + the bus mixing below, so
-    // an oversized block degrades to a truncated render with a silent tail
-    // instead of smashing the heap. MIDI collection and the transport clock
-    // keep the FULL count (no memory exposure; the clock stays in real time).
-    // preparedMaxBlock_ == 0 (not yet prepared) bypasses the clamp, keeping
+    // at prepare) is sized from prepareToPlay's samplesPerBlock and is indexed
+    // from 0. A host that renders a LARGER block than it prepared (buffer-size
+    // transitions, offline/freeze renders, some AU/AUv3 hosts -- JUCE does not
+    // universally guarantee numSamples <= samplesPerBlock) would overrun all
+    // of them (a 6x-amplified heap OOB WRITE). The old remedy CLAMPED the
+    // render count, silently dropping the tail of every oversized block (and
+    // still firing out-of-window MIDI events with no audio for them).
+    // Instead, TILE the host block with preparedMaxBlock_-sized slices: each
+    // slice renders EXACTLY like one normal in-budget host block (engine
+    // buffers always addressed from 0), then mixes into the host buffer at
+    // [done, done+n). The FULL block renders -- no dropped tail.
+    //
+    // MIDI: slice 0 consumes the (post-transport) buffer directly with
+    // startSample == 0 -- byte-identical to the old path for an in-budget
+    // block. Later slices get ONLY the events falling inside their window,
+    // rebased to [0, n) in a scratch MidiBuffer (juce::Synthesiser's
+    // processNextBlock fires EVERY event at/after startSample -- its closing
+    // for_each drains the rest of the given buffer -- so a slice must be handed
+    // a buffer holding nothing beyond its own window). The scratch is cleared
+    // per slice (clear() keeps capacity: no steady-state allocation).
+    // processTransport + the MIDI collector already ran on the FULL count
+    // above (unchanged).
+    //
+    // preparedMaxBlock_ == 0 (not yet prepared) bypasses the tiling, keeping
     // the old behaviour for degenerate pre-prepare blocks.
+    const int totalSamples = buffer.getNumSamples();
     const int prepared = preparedMaxBlock_.load (std::memory_order_relaxed);
-    const int numSamples = (prepared > 0) ? juce::jmin (buffer.getNumSamples(), prepared)
-                                          : buffer.getNumSamples();
-
-    engine_.renderNextBlock (buffer, midiMessages, 0, numSamples);
-
-    // Render the per-part FX chains into their stereo FX-output buffers (host
-    // rate). This runs AFTER renderNextBlock (so the voicecard buffers hold the
-    // full block) and BEFORE the main-bus sum (which now sources the main bus
-    // from the FX-output buffers). With all fx*_enabled=0 the chains are dry
-    // copies, so the main bus is audible-identical to the pre-FX mix. The aux
-    // buses remain raw voicecard taps (dry). Clamped to the prepared block
-    // size (see the clamp above): the chains' scratch is prepare-sized.
-    engine_.renderPartFx (numSamples);
-
-    // ---- Multi-output bus mixing (Ambika hardware: 6 individual voicecard
-    // outputs + a global mix) ----
-    // Main bus: sum ALL six PER-PART FX-OUTPUT buffers into L and R. This is the
-    // post-FX mix (each Part's stereo FX output); with FX disabled it equals the
-    // pre-multi-out single-buffer mix (each voice's mono signal, duplicated to
-    // L+R by the dry-copy chain). When the main bus is mono, only L is written.
-    // Aux buses (VC1..VC6): each ENABLED aux bus copies its DRY voicecard output.
-    // The mixing below reads the prepare-sized FX/voicecard buffers, so it uses
-    // the CLAMPED numSamples defined above the renderers; the tail of an
-    // oversized host block stays silent (the buffer was cleared full-size).
     const auto& vcBuffers = engine_.getVoiceCardBuffers();
     const auto& fxBuffers = engine_.getFxOutputBuffers();
+    const int mainChans = getChannelCountOfBus (false, 0);
 
-    if (const int mainChans = getChannelCountOfBus (false, 0); mainChans > 0)
+    int done = 0;
+    while (done < totalSamples)
     {
-        auto mainBus = getBusBuffer (buffer, false, 0);
-        for (int p = 0; p < SynthEngine::getNumParts(); ++p)
+        const int n = (prepared > 0) ? juce::jmin (prepared, totalSamples - done)
+                                     : (totalSamples - done);
+
+        // Slice MIDI: slice 0 = the block's buffer as-is (startSample 0 fires
+        // every event, exactly the old semantics); later slices = the events in
+        // [done, done+n), positions rebased by -done.
+        const juce::MidiBuffer* sliceMidi = &midiMessages;
+        if (done > 0)
         {
-            mainBus.addFrom (0, 0, fxBuffers[(size_t) p].getReadPointer (0), numSamples, kMainMixHeadroomGain); // main L (-6 dB headroom)
-            if (mainChans > 1)
-                mainBus.addFrom (1, 0, fxBuffers[(size_t) p].getReadPointer (1), numSamples, kMainMixHeadroomGain); // main R
+            sliceMidiScratch_.clear();
+            for (const auto m : midiMessages)
+            {
+                const int pos = m.samplePosition;
+                if (pos >= done && pos < done + n)
+                    sliceMidiScratch_.addEvent (m.getMessage(), pos - done);
+            }
+            sliceMidi = &sliceMidiScratch_;
         }
 
-        // Master DC blocker (main bus only): the engine's filter+VCA are
-        // DC-coupled, so any sub-audio/DC offset would leak as a low-frequency
-        // rumble. The 15 Hz high-pass removes it without affecting audible
-        // content. Raw aux voicecard buses are left unfiltered.
-        for (int ch = 0; ch < mainChans; ++ch)
-        {
-            auto* data = mainBus.getWritePointer (ch);
-            auto& f = dcBlocker_[(size_t) ch];
-            for (int i = 0; i < numSamples; ++i)
-                data[i] = f.processSample (data[i]);
-        }
-    }
+        // The Synthesiser consumes the slice's MIDI + renders the voices into
+        // the per-voicecard buffers at [0..n) (an in-budget-sized render;
+        // renderVoices clears exactly [0, n)).
+        engine_.renderNextBlock (buffer, *sliceMidi, 0, n);
 
-    // Optional aux buses: bus index 1..6 == VC1..VC6 == voicecard 0..5. A
-    // disabled aux contributes 0 channels and is skipped (default layout =
-    // main-only, so these are no-ops for existing hosts).
-    for (int vc = 0; vc < SynthEngine::getNumParts(); ++vc)
-    {
-        const int busIdx = vc + 1;
-        if (getChannelCountOfBus (false, busIdx) <= 0)
-            continue;   // host disabled this aux bus
-        auto auxBus = getBusBuffer (buffer, false, busIdx);
-        if (auxBus.getNumChannels() > 0)
-            auxBus.copyFrom (0, 0, vcBuffers[(size_t) vc].getReadPointer (0), numSamples);
+        // Render the per-part FX chains into their stereo FX-output buffers
+        // (host rate, [0..n) of each chain buffer). Runs AFTER renderNextBlock
+        // (so the voicecard buffers hold this slice) and BEFORE the main-bus
+        // sum (which sources the main bus from the FX-output buffers). With all
+        // fx*_enabled=0 the chains are dry copies, so the main bus is
+        // audible-identical to the pre-FX mix. The aux buses remain raw
+        // voicecard taps (dry).
+        engine_.renderPartFx (n);
+
+        // ---- Multi-output bus mixing (Ambika hardware: 6 individual voicecard
+        // outputs + a global mix), PER SLICE at host-buffer [done, done+n) ----
+        // Main bus: sum ALL six PER-PART FX-OUTPUT buffers into L and R. This
+        // is the post-FX mix (each Part's stereo FX output); with FX disabled
+        // it equals the pre-multi-out single-buffer mix (each voice's mono
+        // signal, duplicated to L+R by the dry-copy chain). When the main bus
+        // is mono, only L is written. Aux buses (VC1..VC6): each ENABLED aux
+        // bus copies its DRY voicecard output.
+        if (mainChans > 0)
+        {
+            auto mainBus = getBusBuffer (buffer, false, 0);
+            for (int p = 0; p < SynthEngine::getNumParts(); ++p)
+            {
+                mainBus.addFrom (0, done, fxBuffers[(size_t) p].getReadPointer (0), n, kMainMixHeadroomGain); // main L (-6 dB headroom)
+                if (mainChans > 1)
+                    mainBus.addFrom (1, done, fxBuffers[(size_t) p].getReadPointer (1), n, kMainMixHeadroomGain); // main R
+            }
+
+            // Master DC blocker (main bus only): the engine's filter+VCA are
+            // DC-coupled, so any sub-audio/DC offset would otherwise leak as a
+            // low-frequency rumble. The 15 Hz high-pass removes it without
+            // affecting audible content. Raw aux voicecard buses are left
+            // unfiltered. Applied in slice order, so the filter state stays
+            // time-contiguous across the block.
+            for (int ch = 0; ch < mainChans; ++ch)
+            {
+                auto* data = mainBus.getWritePointer (ch) + done;
+                auto& f = dcBlocker_[(size_t) ch];
+                for (int i = 0; i < n; ++i)
+                    data[i] = f.processSample (data[i]);
+            }
+        }
+
+        // Optional aux buses: bus index 1..6 == VC1..VC6 == voicecard 0..5. A
+        // disabled aux contributes 0 channels and is skipped (default layout =
+        // main-only, so these are no-ops for existing hosts).
+        for (int vc = 0; vc < SynthEngine::getNumParts(); ++vc)
+        {
+            const int busIdx = vc + 1;
+            if (getChannelCountOfBus (false, busIdx) <= 0)
+                continue;   // host disabled this aux bus
+            auto auxBus = getBusBuffer (buffer, false, busIdx);
+            if (auxBus.getNumChannels() > 0)
+                auxBus.copyFrom (0, done, vcBuffers[(size_t) vc].getReadPointer (0), n);
+        }
+
+        done += n;
     }
 
     // ---- Realtime overrun probe: record this block's render/budget ratio. ----
@@ -618,6 +701,22 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             }
         }
     }
+}
+
+//==============================================================================
+void ParvatiAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer,
+                                                   juce::MidiBuffer&)
+{
+    // A bypassed SYNTH outputs silence. Overridden because the inherited
+    // juce::AudioProcessor::processBlockBypassed jasserts in debug builds when
+    // getLatencySamples() > 0 (ours is nonzero whenever filter oversampling is
+    // active, and during the offline auto-max 8x boost). Deliberately NO state
+    // flushes: voices/FX keep running internally, so an un-bypass resumes where
+    // it left off; the host plays its own dry signal for the bypassed period.
+    // (Hosts that implement bypass by simply not calling processBlock never
+    // reach this path; VST3 routes its auto-added Bypass parameter here.)
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        juce::FloatVectorOperations::clear (buffer.getWritePointer (ch), buffer.getNumSamples());
 }
 
 //==============================================================================
@@ -689,22 +788,10 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
     else
         engine_.applyPatchByte (d.byteOffset, byte);
 
-    // D4 inverse: a part_raga APVTS write of 0 (12-EDO) is an EXPLICIT
-    // selection — clear the current part's custom-table flag so
-    // resolvedTuningMode reports 0, not 33. Before this, the param-grid
-    // combo / host automation / NRPN 116 could write byte 4 = 0 while the
-    // engine kept playing the old custom table, and the Patch page's Tune
-    // combo (which reads the engine) then disagreed with the grid combo.
-    // Matches the Patch page's Tune-combo path (PatchPage::onTuningChanged)
-    // and the file loaders' rules (.PRO/.MUL/.parvati). A non-zero preset
-    // byte already wins the resolution order, so no clear is needed there.
-    // Deliberately ONLY here — NOT in applyParameterToEngine: the bulk sync
-    // re-pushes a part's OWN stored bytes on every part switch, where byte 4
-    // == 0 together with an armed custom table is VALID state (D4: custom
-    // active implies raga byte 0); clearing there would wipe custom tunings
-    // on every part switch.
-    if (d.isPart && d.paramID == "part_raga" && byte == 0)
-        engine_.clearPartTuningCustom (engine_.getCurrentPart());
+    // D4 legacy note: this used to ALSO clear the current part's custom-
+    // tuning flag on a part_raga=0 write (custom tables shadowed byte 4 while
+    // active). The custom-tuning subsystem was removed 2026-08-19 — the raga
+    // byte is the whole tuning state now, so nothing to clear.
 }
 
 void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& d)
@@ -1070,15 +1157,6 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     // ValueTree/timer-deferred, so an explicit sync guarantees correctness).
     syncAllParamsToEngine();
 
-    // Tuning-faithful load (mirrors the .parvati/.MUL paths): a .PRO carries
-    // the raga preset byte (PartData 4) but NO custom table, so a leftover
-    // customTuningActive flag from an earlier edit would keep
-    // resolvedTuningMode at 33 (custom) even when the loaded program says
-    // 12-EDO (byte 4 == 0). A program loads into the CURRENT part only; a
-    // non-zero byte already wins the resolution order, so no clearing there.
-    if (part84[4] == 0)
-        engine_.clearPartTuningCustom (engine_.getCurrentPart());
-
     // An Ambika program carries NO FX information, so the previously-loaded
     // patch's FX would otherwise remain active. The reset runs AFTER
     // syncAllParamsToEngine() below (which re-applies EVERY param incl. fx from
@@ -1200,16 +1278,6 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
         auto& part = engine_.getPart (i);
         if (multi.parts[(size_t) i].hasPatch) part.patchBytes = multi.parts[(size_t) i].patch;
         if (multi.parts[(size_t) i].hasPart)  part.partBytes  = multi.parts[(size_t) i].part;
-
-        // Tuning-faithful load (mirrors the .parvati path): an .MUL carries
-        // the raga preset byte (PartData 4) but NO custom table, so a leftover
-        // customTuningActive flag from an earlier edit would keep
-        // resolvedTuningMode at 33 (custom) even when the loaded file says
-        // 12-EDO (byte 4 == 0). The file IS the whole truth for tuning here:
-        // clear the flag whenever the incoming byte is 0 (a non-zero byte
-        // already wins the resolution order, so no clearing is needed there).
-        if (multi.parts[(size_t) i].hasPart && multi.parts[(size_t) i].part[4] == 0)
-            engine_.clearPartTuningCustom (i);
 
         // An Ambika multi carries NO FX information -> reset every Part's FX to
         // a clean slate so the previously-loaded multi's FX does not survive the
@@ -1507,19 +1575,6 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
     engine_.resetAllVoices();
     if (! parvati::preset::applyParvatiPatch (*this, text))
         return false;
-    // Tuning-faithful load (the .PRO rule, loadProgramFromBytes): a .parvati
-    // PATCH carries the raga preset byte (part_raga) but NO custom table, so a
-    // leftover customTuningActive flag from an earlier edit would keep
-    // resolvedTuningMode at 33 while the loaded patch says 12-EDO. The APVTS
-    // write path usually covers this already (applyParvatiPatch's
-    // setValueNotifyingHost fires parameterChanged, whose part_raga=0 branch
-    // clears); this explicit check is the backstop for a params map WITHOUT a
-    // part_raga key — the file's implicit default is 12-EDO, and the current
-    // part's byte 4 may already sit at 0 under an armed custom table. A
-    // non-zero byte wins the resolution order, so no clear there (mirrors
-    // loadProgramFromBytes exactly).
-    if (engine_.getPart (engine_.getCurrentPart()).partBytes[4] == 0)
-        engine_.clearPartTuningCustom (engine_.getCurrentPart());
     // Derive a display name from the file (the in-document name is applied via
     // the loaded-program title separately by the editor).
     loadedProgramName_ = file.getFileNameWithoutExtension();
@@ -1574,6 +1629,11 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
             static const char* kPartKeys[] = { "channel", "keyzone_low", "keyzone_high",
                                               "voice_allocation", "voice_slots", "name",
                                               "params", "tuning_mode", "tuning_offsets" };
+            // NOTE: tuning_mode/tuning_offsets are LEGACY keys (the custom-
+            // tuning subsystem was removed 2026-08-19). They stay in the
+            // recognition list so old .parvati files that carry them still
+            // parse as valid parts (their values are ignored on apply — see
+            // ParvatiPreset.cpp); a bare/scalar parts entry must still fail.
             for (const auto& entry : *partsArr)
             {
                 auto* entryObj = entry.getDynamicObject();
@@ -1828,15 +1888,14 @@ void ParvatiAudioProcessor::setParameterSmoothing (bool smoothing)
 }
 
 //==========================================================================
-void ParvatiAudioProcessor::rebuildOsLatencyProbe()
+void ParvatiAudioProcessor::rebuildOsLatencyProbe (int osFactor)
 {
     // The probe mirrors the per-voice Oversampling config (1 channel, min-phase
     // IIR half-band, max quality, integer latency) so its getLatencyInSamples()
     // exactly matches what every voice adds. Never fed audio, so rebuilding on
-    // the message thread is race-free. Reads the persisted factor through the
-    // locked accessor (F-ios-lc-1); the call site passes the same value it
-    // just persisted, so the read is consistent.
-    const int osFactor = getUiOversampling();
+    // the message thread is race-free. The caller passes the factor it is
+    // applying — the persisted uiOversampling_ for user edits, 8x for the
+    // offline auto-max boost (which must NOT touch the persisted pref).
     if (osFactor > 1)
     {
         // juce::dsp::Oversampling takes a power-of-2 EXPONENT: 2^factorExp.
@@ -1882,20 +1941,34 @@ int ParvatiAudioProcessor::computePluginLatency (double hostSampleRate) const
     return juce::jlimit (0, 4096, latencySamples);
 }
 
-void ParvatiAudioProcessor::setOversamplingFactor (int factor)
+void ParvatiAudioProcessor::applyOversamplingFactor (int factor)
 {
     // Supported factors: 1 / 2 / 4 / 8 (powers of two up to the 8x UI maximum).
     // Anything else snaps to the nearest supported factor.
     if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
         factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
 
-    setUiOversampling (factor);             // persist (locked accessor — F-ios-lc-1)
-    rebuildOsLatencyProbe();                  // message-thread safe (no audio)
+    rebuildOsLatencyProbe (factor);                // message-thread safe (no audio)
     // Per-voice: PRE-BUILD + stage each voice's replacement Oversampling here
     // (message thread; audit F3) — the audio thread installs with pointer
     // moves only. Idle voices install on their next rendered note.
     engine_.setOversamplingFactor (factor);
     latencyDirty_.store (true, std::memory_order_release);   // report next block
+}
+
+void ParvatiAudioProcessor::setOversamplingFactor (int factor)
+{
+    // The PUBLIC setter: persist the user's choice, then apply it. A factor
+    // change made DURING an offline auto-max boost (editor open over a bounce)
+    // re-targets the restore point and applies immediately — the user's
+    // explicit choice wins mid-bounce too.
+    if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
+        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
+
+    setUiOversampling (factor);             // persist (locked accessor — F-ios-lc-1)
+    if (offlineSavedOs_ >= 0)
+        offlineSavedOs_ = factor;
+    applyOversamplingFactor (factor);
 }
 
 //==============================================================================

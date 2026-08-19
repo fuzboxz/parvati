@@ -53,9 +53,8 @@ juce::String toJuceString (const std::string& s) { return juce::String (s); }
 
 MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
                                   const std::vector<juce::String>& partNames,
-                                  DoneCallback onDone,
-                                  const std::array<bool, parvati::mul_export::kParts>& customTuningParts)
-    : setup_ (setup), customTuningParts_ (customTuningParts), onDone_ (std::move (onDone))
+                                  DoneCallback onDone)
+    : setup_ (setup), onDone_ (std::move (onDone))
 {
     // Preview context: part display names (or the empty fallback -> "Part N").
     for (int p = 0; p < parvati::mul_export::kParts; ++p)
@@ -139,7 +138,7 @@ MulExportDialog::~MulExportDialog()
 {
     // F-ui-2: drop the OWNED LookAndFeel reference BEFORE the unique_ptr
     // member is destroyed (a lingering raw L&F pointer would dangle into the
-    // member-destruction window — the TuningEditor dtor pattern).
+    // member-destruction window).
     if (ownedLnf_ != nullptr)
         setLookAndFeel (nullptr);
     previewViewport_.setViewedComponent (nullptr, false);
@@ -215,29 +214,6 @@ void MulExportDialog::refreshPreview()
         for (const auto& line : previewLines (setup_, sol, 0, &ctx_))
             text << "  " << toJuceString (line) << "\n";
     }
-    // Custom-tuning lossy-export warning (D14): the .MUL carries only the
-    // raga PRESET byte, so parts tuned with a Parvati custom table fall back
-    // to their preset (or 12-EDO) on hardware — name the affected parts so
-    // the cost is visible before the save, not discovered on the unit.
-    for (int p = 0; p < parvati::mul_export::kParts; ++p)
-    {
-        if (! customTuningParts_[(size_t) p])
-            continue;
-        juce::String parts;
-        for (int q = 0; q < parvati::mul_export::kParts; ++q)
-        {
-            if (customTuningParts_[(size_t) q])
-            {
-                if (parts.isNotEmpty())
-                    parts << ", ";
-                parts << ((size_t) q < ctx_.names.size() && ! ctx_.names[(size_t) q].empty()
-                              ? toJuceString (ctx_.names[(size_t) q])
-                              : TRANS ("Part") + " " + juce::String (q + 1));
-            }
-        }
-        text << "\n" << TRANS ("Custom tunings cannot be represented in .MUL — exported parts "
-                                "fall back to their Scale preset byte (or 12-EDO): ") << parts;        break;   // one line for all affected parts
-    }
     previewLabel_.setText (text, juce::dontSendNotification);
     previewLineCount_ = text.length() - text.replace ("\n", "").length() + 1;
     resized();   // re-fit the scrolled label to the new content
@@ -246,18 +222,17 @@ void MulExportDialog::refreshPreview()
 void MulExportDialog::launch (juce::Component* parent,
                               const parvati::mul_export::Setup& setup,
                               const std::vector<juce::String>& partNames,
-                              DoneCallback onDone,
-                              const std::array<bool, parvati::mul_export::kParts>& customTuningParts)
+                              DoneCallback onDone)
 {
-    auto* content = new MulExportDialog (setup, partNames, std::move (onDone), customTuningParts);
+    auto* content = new MulExportDialog (setup, partNames, std::move (onDone));
 
     // Theme: the dialog OWNS a ParvatiLookAndFeel copied from the launching
     // editor's active theme (F-ui-2, bug hunt 2026-08-18). The DialogWindow is
     // its own desktop window and CAN OUTLIVE the editor (host closes the
     // plugin window mid-dialog) — borrowing &parent->getLookAndFeel() painted
     // through freed memory in that window. The owned copy keeps the themed
-    // look while staying editor-independent (TuningEditor's pattern; the
-    // builtin theme structs are immortal function-local statics). Null parent
+    // look while staying editor-independent (the builtin theme structs are
+    // immortal function-local statics). Null parent
     // (tests) keeps the default look.
     if (parent != nullptr)
         if (auto* plnf = dynamic_cast<ParvatiLookAndFeel*> (&parent->getLookAndFeel()))

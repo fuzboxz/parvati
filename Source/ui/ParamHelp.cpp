@@ -132,8 +132,8 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     // ---- Part params (8) ----
     m["part_volume"]     = "Part output volume (0..127).";
     m["part_octave"]     = "Part global octave shift (-2..+2).";
-    m["part_tuning"]     = "Part master tuning (-127..+127, in 1/128-semitone units). Adds to any scale (raga/custom) offset; the combined resolution is the hardware's 1/128 semitone.";
-    m["part_raga"]       = "Per-part scale / microtonal preset (the firmware 'raga'). Off = 12-EDO; the Tune column on the Patch page additionally offers a custom table and Scala import. Scale-muted note classes (some ragas) are refused, exactly like the hardware. Scale offsets are applied to the triggered pitch, so filter key tracking and the NOTE mod source follow them.";
+    m["part_tuning"]     = "Part master tuning (-127..+127, in 1/128-semitone units). Adds to any scale (raga) offset; the combined resolution is the hardware's 1/128 semitone.";
+    m["part_raga"]       = "Per-part scale / microtonal preset (the firmware 'raga'). Off = 12-EDO; the Tune column on the Patch page offers the same presets. Scale-muted note classes (some ragas) are refused, exactly like the hardware. Scale offsets are applied to the triggered pitch, so filter key tracking and the NOTE mod source follow them.";
     m["part_spread"]     = "Per-voice detune spread (0..40) for ensemble thickness.";
     m["part_legato"]     = "Legato mode: re-trigger off between legato notes.";
     m["part_portamento"] = "Portamento glide time (0..63).";

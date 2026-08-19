@@ -270,22 +270,29 @@ int main()
         proc.getEngine().captureState (blob);
 
         // Build a legacy v5 blob: strip each part's 2-byte v6 tail (slots byte
-        // + empty-name length byte) AND the 29-byte v7 tuning block (4-byte
-        // length prefix + {mode; offsets[12]}), then patch the version byte
-        // back to 5.
+        // + empty-name length byte) and the v7-ONLY tuning block (4-byte length
+        // prefix + {mode; offsets[12]}) if present, then patch the version byte
+        // back to 5. The per-part layout is DISCOVERED from the capture's
+        // version header (v8 REMOVED the tuning block, 2026-08-19) — the old
+        // hard-coded v7 math overran the capture buffer on a v8 blob (heap OOB
+        // read, ASLR-dependent segv). A size sanity check guards the cursor
+        // arithmetic before any memcpy.
         const size_t full = blob.getSize();
-        constexpr size_t kPartV6 = 112 + 84 + 4 + 4 + 78 + 2;   // patch+part+routing+fxprefix+fx+v6 tail
-        constexpr size_t kPartV7Extra = 4 + 25;                 // tuning block length prefix + payload
-        juce::MemoryBlock v5 (full - (size_t) (kNumParts * (2 + kPartV7Extra)), true);
+        constexpr size_t kPartCore = 112 + 84 + 4 + 4 + 78;   // patch+part+routing+fxprefix+fx
+        const int capVersion = ((const uint8_t*) blob.getData())[4];
+        const size_t v7Tuning = (capVersion == 7) ? (size_t) (4 + 25) : 0;
+        check (capVersion >= 6 && capVersion <= 8 && full >= 6 + kNumParts * (kPartCore + 2 + v7Tuning),
+               "capture is a known slots-era blob sized for the v5 strip (v8)");
+        juce::MemoryBlock v5 (full - (size_t) (kNumParts * (2 + v7Tuning)), true);
         const uint8_t* src = (const uint8_t*) blob.getData();
         uint8_t* dst = (uint8_t*) v5.getData();
         size_t r = 6, w = 6;   // read/write cursors (past the 6-byte header)
         std::memcpy (dst, src, 6);   // header (magic + version + currentPart)
         for (int p = 0; p < kNumParts; ++p)
         {
-            std::memcpy (dst + w, src + r, kPartV6 - 2);
-            r += kPartV6 + kPartV7Extra;   // skip the v6 tail AND the v7 tuning block
-            w += kPartV6 - 2;
+            std::memcpy (dst + w, src + r, kPartCore);
+            r += kPartCore + 2 + v7Tuning;   // skip the v6 tail (+ the v7 tuning block if present)
+            w += kPartCore;
         }
         dst[4] = 5;
         ParvatiAudioProcessor other;

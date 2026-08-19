@@ -100,6 +100,12 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Accessibility-only: a labelled `group` container ("FX1") so the card —
+    // its power lamp, type picker, step chevrons and six knobs — reads as one
+    // structured unit to screen readers. Title set in the ctor; the child
+    // controls carry their own names/handlers. EnvelopeDisplay pattern.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+
     /** Re-resolve theme colours onto the visualizer + repaint (theme switch).
         The owned ParamControl knobs are re-themed by the editor's global
         ParamControl::reapplyCategoryColours() pass. */

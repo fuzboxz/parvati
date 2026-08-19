@@ -14,6 +14,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 
 constexpr int kNumFxSlots       = 3;    // FX1/FX2/FX3
@@ -198,4 +199,127 @@ inline std::array<FxType, static_cast<size_t> (FxType::Count)> fxTypeDisplayOrde
         // Reverb (CVerb is the DISPLAY label of FxType::Reverb — see makeFxTypes)
         FxType::Reverb, FxType::Diffuser, FxType::PlateReverb, FxType::Room, FxType::Spring
     } };
+}
+
+// ----------------------------------------------------------------------------
+// Tail-length estimation — feeds AudioProcessor::getTailLengthSeconds() so
+// hosts size their offline bounces / freeze tails correctly (a 0 tail makes
+// Logic/Cubase truncate reverb+delay ends on export). PURE math, no audio, no
+// state: unit-testable standalone. The estimate is the per-effect time to
+// decay to -60 dB (t60) after the input stops, in SECONDS, from the raw
+// normalized 0..1 slot params + the current transport BPM (tempo-synced
+// delays only). Mappings mirror the DSP setParams() implementations exactly
+// (FxProcessors.cpp / fv1/*) — when a param mapping changes there, change it
+// here too.
+//
+// Feedback-decay law: a loop of period T seconds and per-pass gain g (0<g<1)
+// reaches -60 dB after n = ln(1e-3)/ln(g) passes, so t60 = T * ln(1e-3)/ln(g).
+// For g at/above unity (frozen/held loops) the tail is formally infinite; the
+// caller-side cap applies.
+inline constexpr double kTailFloorSeconds = 0.2;   // floor: release/release-ish minimum for pure-synth patches
+inline constexpr double kTailCapSeconds   = 12.0;  // cap: frozen loops / near-unity feedback are formally infinite
+
+namespace tail_detail
+{
+    // t60 of a feedback loop (see the law above). g <= 0 => single pass (no
+    // feedback): the loop time itself. g >= 0.995 => effectively infinite.
+    inline double feedbackTail (double loopSeconds, double g) noexcept
+    {
+        if (g <= 0.0)   return loopSeconds;
+        if (g >= 0.995) return kTailCapSeconds;
+        return loopSeconds * (std::log (1.0e-3) / std::log (g));
+    }
+}
+
+inline double tailSecondsForFx (FxType type, const float param[5], double bpm) noexcept
+{
+    const double b = (bpm > 0.0 && std::isfinite (bpm)) ? bpm : 120.0;
+    const float p0 = param[0], p1 = param[1], p2 = param[2], p3 = param[3];
+
+    switch (type)
+    {
+        // ---- FV-1 reverbs: the Decay knob IS the t60 (g = 10^(-3/(decay*fs))
+        // is defined as -60 dB per `decay` seconds) + predelay where present.
+        case FxType::PlateReverb:
+            return (0.1 + (double) p1 * (4.0 - 0.1)) + (double) p0 * 0.1;  // decay 0.1..4 s + predelay 0..100 ms
+        case FxType::Spring:
+            return 0.2 + (double) p0 * 3.8;                               // decay 0.2..4 s
+        case FxType::Room:
+            return 0.1 + (double) p0 * 2.9;                               // decay 0.1..3 s
+
+        // ---- CVerb (Clouds Griesinger/Dattorro): tank feedback =
+        // jmap(time, 0.30, 0.95); the recirculating loop is del2(4782) +
+        // dap2a(1663) + dap2b(2038) = 8483 samples @ 32000 Hz (the engine's
+        // fixed internal rate, HostRateBridge.h) = 0.2651 s/pass; plus the
+        // 0..200 ms predelay.
+        case FxType::Reverb: {
+            const double fb = 0.30 + (double) p2 * (0.95 - 0.30);
+            return tail_detail::feedbackTail (8483.0 / 32000.0, fb) + (double) p0 * 0.20;
+        }
+
+        // ---- Delays (the user-facing requirement: delays count too).
+        // FV-1 Echo: time 10*47^p0 ms (10..470 ms), feedback p1*0.995.
+        case FxType::Echo: {
+            const double T = 0.010 * std::pow (47.0, (double) p0);
+            return tail_detail::feedbackTail (T, (double) p1 * 0.995);
+        }
+        // FV-1 Clocked Delay: tempo-synced T = (4/div)*(60/bpm) with div from
+        // round(pSync*7) over {1,2,3,4,6,8,12,16}, clamped to the 32768-sample
+        // (1.0 s @ 32768 Hz) line; feedback pFb*0.95.
+        case FxType::ClockedDelay: {
+            constexpr double kDiv[8] = { 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0 };
+            int i = (int) std::lround ((double) p0 * 7.0);
+            if (i < 0) i = 0; if (i > 7) i = 7;
+            double T = (4.0 / kDiv[(size_t) i]) * (60.0 / b);
+            if (T > 1.0) T = 1.0;                       // kMaxDelaySamples @ 32768 Hz
+            return tail_detail::feedbackTail (T, (double) p1 * 0.95);
+        }
+
+        // ---- Clouds granular/looping family: 4 s capture buffer
+        // (128000 @ 32000 Hz). A held loop (freeze) never decays -> the cap.
+        case FxType::LoopingDelay:
+            return (p3 > 0.5f) ? kTailCapSeconds : 4.0;
+        case FxType::WSOLAStretch:
+            return (p3 > 0.5f) ? kTailCapSeconds : 4.0;
+        case FxType::Spectral:
+            return (param[4] > 0.5f) ? kTailCapSeconds : 4.0;
+
+        // ---- Diffuser: a 2048-sample allpass smear @ 32000 Hz (no feedback
+        // loop — the energy is all first-pass).
+        case FxType::Diffuser:
+            return 2048.0 / 32000.0;
+
+        // ---- Everything else is memoryless/short (modulators, distortions,
+        // dynamics, pitch): the engine tail is dominated by the voice release,
+        // which the floor covers.
+        case FxType::PitchShifter:
+        case FxType::Wavefolder:
+        case FxType::FrequencyShifter:
+        case FxType::RingModulator:
+        case FxType::Resonator:
+        case FxType::Ensemble:
+        case FxType::Phaser:
+        case FxType::VinylCompressor:
+        case FxType::Overdrive:
+        case FxType::LutDistortion:
+        case FxType::Compressor:
+        case FxType::Gate:
+        case FxType::Chorus:
+        case FxType::Flanger:
+        case FxType::None:
+        case FxType::Count:
+            break;
+    }
+    return 0.0;
+}
+
+// Clamp an aggregate tail estimate into [floor, cap]. The FLOOR keeps a
+// pure-synth patch reporting a small nonzero release tail (hosts render a
+// sensible decay even with no FX); the CAP bounds formally-infinite cases
+// (frozen loops, near-unity feedback) so bounces don't grow by minutes.
+inline double clampTailSeconds (double s) noexcept
+{
+    if (! (s > 0.0))  return kTailFloorSeconds;   // also maps NaN -> floor
+    return s < kTailFloorSeconds ? kTailFloorSeconds
+         : (s > kTailCapSeconds   ? kTailCapSeconds   : s);
 }

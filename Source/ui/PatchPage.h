@@ -87,24 +87,12 @@ public:
     // Currently-displayed arrangement (the combo selection; Custom if none).
     Arrangement getDisplayedArrangement() const;
     // Currently-displayed tuning mode for @p part from its Tune combo
-    // (0 = 12-EDO, 1..32 = preset, 33 = Custom; -1 for an out-of-range part).
+    // (0 = 12-EDO, 1..32 = preset; -1 for an out-of-range part).
     int getDisplayedTuningMode (int part) const;
     // Set @p part's tuning as if the user chose it in the Tune combo: sets the
-    // selection then runs the normal byte-4 write / editor-open path
+    // selection then runs the normal byte-4 write path
     // (JUCE does not fire onChange for a programmatic setSelectedId).
-    // mode 33 opens the Custom… popover exactly like the UI — do not use in
-    // headless tests (instantiate TuningEditor directly instead).
     void chooseTuningMode (int part, int mode);
-    // The post-edit notification openTuningEditor's popover invokes after
-    // every live custom-tuning edit (row drag / Clear / Scala import): re-syncs
-    // the row's Tune combo, refreshes the page chrome and re-syncs the
-    // CURRENT part's APVTS (the popover writes the part's PartData
-    // ENGINE-DIRECT, so without the re-sync the hosted part_raga combo and an
-    // APVTS-based save kept the STALE preset byte while the engine played the
-    // custom table). Public so headless tests can wire a directly-instantiated
-    // TuningEditor's change callback to this — the exact body the launched
-    // popover's callback runs — without opening the modal dialog.
-    void tuningEditorApplied (int part);
     // Currently-displayed voice count for @p part from its Voices combo
     // (0..16; 0 = the Part is DISABLED — a real "0" item, selected at full
     // strength; -1 for an out-of-range part).
@@ -170,10 +158,6 @@ private:
     // After any per-part engine mutation: refresh dim states + the arrangement
     // label (the inferred arrangement may have become Custom).
     void postPartEdit();
-    // Open the per-part custom tuning popover (Tune column, "Custom…"). The
-    // editor's live edits re-sync this row's combo through the change
-    // callback (the engine's resolved mode becomes 33 after the first edit).
-    void openTuningEditor (int part);
     // Forward a part-name edit to onPartNamesChanged (editor Part-selector
     // relabel). Called by the nested PartRow after a rename commits.
     void partNamesChanged();

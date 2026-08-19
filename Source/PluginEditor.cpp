@@ -24,7 +24,6 @@
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
-#include <array>       // custom-tuning flags for the .MUL export dialog
 
 // Version string from CMake (Parvati target compile def). Fallback for any
 // translation unit that does not get the define.
@@ -1306,11 +1305,16 @@ void ParamControl::timerCallback()
 
 void ParamControl::showContextMenu()
 {
+    // Walk the FULL parent chain (ParamControls are parented to ParamPages,
+    // then into workspaces — the immediate parent is never the editor; the
+    // old getParentComponent() dynamic_cast here was a silent no-op).
+    auto* ed = findParentComponentOfClass<ParvatiEditor>();
+
     // Suppress the editor's (parented) TooltipWindow the instant the menu is
     // about to open: it would otherwise FREEZE this control's tip on screen
     // (the bleed-through). The editor's 30 Hz timer also hides it while a modal
     // popup stays open; this call covers the very first frame.
-    if (auto* ed = dynamic_cast<ParvatiEditor*> (getParentComponent()))
+    if (ed != nullptr)
         if (auto* tw = ed->getTooltipWindow())
             tw->hideTip();
 
@@ -1318,6 +1322,28 @@ void ParamControl::showContextMenu()
     // SafePointer guards against the control being deleted while the async
     // menu is still open (e.g. editor closed mid-menu).
     juce::Component::SafePointer<ParamControl> safe (this);
+
+    // ---- Host-provided entries (VST3 hosts: Cubase/Reaper-class automation
+    // actions, e.g. "show automation lane"). getHostContext() is set by the
+    // VST3 wrapper (AudioProcessorEditor::setHostContext) and is null in AU /
+    // AUv3 / standalone — the null paths fall through to the local-only menu.
+    // Pattern: take the host's PopupMenu as the BASE (so host entries stay on
+    // top, where the user expects them) and APPEND our Reset/Randomize below;
+    // an empty host menu (host offers nothing for this parameter) is ignored.
+    // The HostProvidedContextMenu unique_ptr is dropped after copying its
+    // PopupMenu — the JUCE header documents the returned menu is safe to
+    // modify and display.
+    bool usedHostMenu = false;
+    if (ed != nullptr)
+        if (auto* hostCtx = ed->getHostContext())
+            if (auto* param = processor_.getApvts().getParameter (desc_.paramID))
+                if (auto hostMenu = hostCtx->getContextMenuForParameter (param))
+                    if (auto hostPopup = hostMenu->getEquivalentPopupMenu();
+                        hostPopup.getNumItems() > 0)
+                    {
+                        menu = std::move (hostPopup);
+                        usedHostMenu = true;
+                    }
 
     // Each item is a TooltipMenuItemComponent: a menu entry rendered exactly
     // like a default item (via the L&F drawPopupMenuItem) that ALSO implements
@@ -1338,12 +1364,22 @@ void ParamControl::showContextMenu()
         menu.addItem (std::move (item));
     };
 
+    // A visual separator between host entries and ours (host menus already
+    // carry their own internal structure; skipped for the local-only case,
+    // which stays exactly as it was).
+    if (usedHostMenu)
+        menu.addSeparator();
+
+    // itemIDs are deliberately far from the small integers a host menu may
+    // already use (VST3 hosts number their own entries); nothing consumes the
+    // ID (the async callback ignores it; each item carries its action), but a
+    // collision-proof namespace costs nothing.
     addItemWithTooltip (TRANS ("Reset to default"),
                         TRANS ("Reset this parameter to its default value"),
-                        1, [safe] { if (safe != nullptr) safe->resetToDefault(); });
+                        1001, [safe] { if (safe != nullptr) safe->resetToDefault(); });
     addItemWithTooltip (TRANS ("Randomize"),
                         TRANS ("Set this parameter to a random value"),
-                        2, [safe] { if (safe != nullptr) safe->randomize(); });
+                        1002, [safe] { if (safe != nullptr) safe->randomize(); });
 
     // The editor's TooltipWindow is parented to the editor (so it CANNOT render
     // above the popup window) and is suppressed while a popup is open. So the
@@ -3891,27 +3927,66 @@ std::vector<ParamPage*> ParvatiEditor::allGeneratedPages() const
 
 bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
 {
-    // Only Cmd/Ctrl + +/-/0 are zoom shortcuts; everything else passes through
-    // so typing in combos / text boxes is never swallowed.
-    if (! (key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()))
+    const int code = key.getKeyCode();
+    const bool cmdOrCtrl = key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown();
+
+    // ---- Preset stepping: [ / ] — plain OR Cmd/Ctrl. Plain [ ] were
+    // previously unclaimed everywhere in the focus chain (KeyboardView's
+    // musical typing uses letters only; ComboBox consumes navigation keys
+    // only; a focused TextEditor consumes them itself and this handler never
+    // runs), so they are safe to claim at the editor level. The Cmd/Ctrl
+    // variants exist for hosts/layouts where a child grabs plain brackets.
+    // Guard: never step while a text field has the focus (belt-and-braces —
+    // a focused TextEditor consumes the key first; this covers text-entry
+    // children that forward keypresses, e.g. the preset menu's find field
+    // if one is ever added).
+    if (code == '[' || code == ']')
+    {
+        const bool typing = dynamic_cast<juce::TextEditor*> (
+            juce::Component::getCurrentlyFocusedComponent()) != nullptr;
+        if (! typing)
+            return handleStepPresetShortcut (code == ']' ? +1 : -1);
+        return false;
+    }
+
+    // Everything below carries Cmd/Ctrl; plain keys pass through so typing
+    // in combos / text boxes is never swallowed.
+    if (! cmdOrCtrl)
         return false;
 
     // Accept both '=' (un-shifted) and '+' for zoom-in across keyboard layouts.
-    if (key.getKeyCode() == '+' || key.getKeyCode() == '=')
+    if (code == '+' || code == '=')
     {
         applyZoom (zoom_ + 0.1);
         return true;
     }
-    if (key.getKeyCode() == '-')
+    if (code == '-')
     {
         applyZoom (zoom_ - 0.1);
         return true;
     }
-    if (key.getKeyCode() == '0')
+    if (code == '0')
     {
         applyZoom (1.0);
         return true;
     }
+
+    // ---- File shortcuts: Cmd/Ctrl+O = Load picker; Cmd/Ctrl+S = Save
+    // PARVATI format. Choice for S: the .parvati save is the FULL-FIDELITY
+    // format (vca_curve / filter_card / arp/seq all round-trip; .PRO drops
+    // them) — the lossless default. The Ambika .PRO / .MUL saves stay
+    // reachable from the Save button's own menu.
+    if (code == 'o' || code == 'O')
+        return handleLoadPresetShortcut();
+    if (code == 's' || code == 'S')
+        return handleSavePresetShortcut();
+
+    // ---- Part select: Cmd/Ctrl+1..6 switches the edited Part through the
+    // same partCombo_ seam the part context menu uses (sendNotificationSync
+    // fires the ComboBox listener -> part_select APVTS param -> engine). The
+    // bare digit keys stay unclaimed (free for future recall slots).
+    if (code >= '1' && code <= '6')
+        return handlePartSelectShortcut (code - '1');
 
     // Phase 4c: Undo / Redo. Cmd/Ctrl+Z = undo; Cmd/Ctrl+Shift+Z or
     // Cmd/Ctrl+Y = redo. These carry the Cmd/Ctrl modifier (already required to
@@ -3920,7 +3995,6 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     // keypresses bubble up to the editor. The keyCode is the bare letter on
     // both shifted and un-shifted presses (JUCE tracks shift in the modifiers),
     // so check 'z'/'Z' both and decide undo-vs-redo from isShiftDown().
-    const int code = key.getKeyCode();
     if (code == 'z' || code == 'Z')
     {
         if (key.getModifiers().isShiftDown())
@@ -3938,6 +4012,49 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
+bool ParvatiEditor::handleStepPresetShortcut (int direction)
+{
+    // No browser (should not happen — it is editor-owned) => not consumed.
+    if (presetBrowser_ == nullptr)
+        return false;
+    const juce::File next = direction >= 0 ? presetBrowser_->selectNext()
+                                            : presetBrowser_->selectPrev();
+    if (! next.existsAsFile())
+        return false;   // empty tree: nothing to step to — let the key pass on
+    // The selection fired the editor's onSelect (load) seam; applyPatchFile
+    // updates the browser label with the PARSED program name (a factory .PRO
+    // leaf's menu label is the patch name inside the file, not the filename).
+    return true;
+}
+
+bool ParvatiEditor::handleLoadPresetShortcut()
+{
+    // Desktop-gated: a native file picker needs a window-server session. The
+    // headless tests assert the SEAM fired via this true — no picker opens.
+    if (juce::Desktop::getInstance().getNumComponents() > 0)
+        openLoadDialog();
+    return true;
+}
+
+bool ParvatiEditor::handleSavePresetShortcut()
+{
+    // Parvati format (see keyPressed's choice note). Desktop-gated as above.
+    if (juce::Desktop::getInstance().getNumComponents() > 0)
+        openSaveParvatiDialog();
+    return true;
+}
+
+bool ParvatiEditor::handlePartSelectShortcut (int part0Based)
+{
+    if (part0Based < 0 || part0Based >= 6)
+        return false;
+    // The exact seam the part context menu uses (sendNotificationSync fires
+    // the ComboBox listener synchronously -> part_select -> engine + APVTS
+    // reload of the new part's parameters).
+    partCombo_.setSelectedId (part0Based + 1, juce::sendNotificationSync);
+    return true;
+}
+
 void ParvatiEditor::applyChromeTranslations()
 {
     // Re-translate every editor-chrome string through the active LocalisedStrings
@@ -3950,6 +4067,8 @@ void ParvatiEditor::applyChromeTranslations()
     partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load"));
     saveButton_.setButtonText (TRANS ("Save"));
+    loadButton_.setTooltip (TRANS ("Load a patch (Cmd/Ctrl+O)"));
+    saveButton_.setTooltip (TRANS ("Save the current patch (Cmd/Ctrl+S)"));
     undoButton_.setTooltip (TRANS ("Undo"));
     redoButton_.setTooltip (TRANS ("Redo"));
     zoomInButton_.setTooltip (TRANS ("Zoom in"));
@@ -4545,13 +4664,8 @@ void ParvatiEditor::openSaveMultiDialog()
         // Needs a strategy: show the fallback dialog (with the part names for
         // the preview), then save with the choice.
         std::vector<juce::String> names;
-        std::array<bool, parvati::mul_export::kParts> customTuning {};
         for (int i = 0; i < SynthEngine::getNumParts(); ++i)
-        {
             names.push_back (processorRef_.getEngine().getPartName (i));
-            customTuning[(size_t) i] =
-                processorRef_.getEngine().resolvedTuningMode (i) == 33;
-        }
         // SafePointer guard: MulExportDialog opens its OWN desktop window
         // (launchAsync), so its DoneCallback can fire after the host has torn
         // the editor down — a raw `this` would dangle (use-after-free on
@@ -4564,7 +4678,7 @@ void ParvatiEditor::openSaveMultiDialog()
                 safe->afterMultiSaved (f);
             else if (strategy >= 0)
                 showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
-        }, customTuning);
+        });
         fileChooser_ = nullptr;
     });
 }
@@ -4631,7 +4745,13 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
         }
 #endif
         if (presetBrowser_ != nullptr)
+        {
             presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
+            // Anchor prev/next stepping at this load (a load can arrive from
+            // the menu — which already set it — or from Load... / drag-drop /
+            // open-in, which did not; idempotent either way).
+            presetBrowser_->setCurrentFile (f);
+        }
         // EVERY successful load refreshes the Patch page, not just multis. A
         // multi rewrites every part's channel / key zone / voice allocation /
         // polyphony, and a SINGLE-patch load (.PRO / .parvati patch) rewrites

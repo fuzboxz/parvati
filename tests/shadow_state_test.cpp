@@ -2,13 +2,11 @@
 //
 // Property under test (the "stale shadow state survives a load" class this
 // exists to pin): loading a DEFAULTS-ONLY .parvati multi must reset EVERY
-// piece of per-part shadow state — the previous session's custom tuning
-// tables, part names/aliases, staged FX slot types, voice slots, routing and
+// piece of per-part shadow state — the previous session's raga presets,
+// part names/aliases, staged FX slot types, voice slots, routing and
 // the mirrored PartData bytes must all return to the fresh-engine values.
 // The file is the whole truth; nothing the user did before the load may leak
 // through. Historical instances of the class:
-//   - a stale customTuningActive flag kept playing the OLD microtonal table
-//     after loading a 12-EDO multi (fixed by the byte-4==0 clear on load);
 //   - part names ("Kick") survived .MUL/.PRO loads that replaced the content;
 //   - .parvati multi loads wrote FX slot TYPES into fxState but never staged
 //     them into the DSP chains (loaded FX silently absent / previous effect);
@@ -17,7 +15,7 @@
 //
 // Harness: proc A (fresh, prepareToPlay) saves a defaults multi through the
 // REAL path (saveParvatiMultiFile). Proc D is POLLUTED on every mirrored
-// surface (custom tunings on parts 0+3, names on all parts, a staged
+// surface (raga presets on parts 0+3, names on all parts, a staged
 // non-None FX type on part 2 slot 0, arp config, slots/channel/zone on part
 // 1, bytes 3/4/15 on parts 1+4). CANARY: the diff collector must REPORT the
 // pollution (>=1 diff in EVERY category) — proving the comparator detects
@@ -153,12 +151,9 @@ void pollute (ParvatiAudioProcessor& proc)
     SynthEngine& e = proc.getEngine();
     const int nParts = SynthEngine::getNumParts();
 
-    // Custom tuning tables (the customTuningActive shadow) on parts 0 and 3.
-    int16_t custom[12] = {};
-    for (int c = 0; c < 12; ++c)
-        custom[(size_t) c] = static_cast<int16_t> ((c + 1) * 10 - 30);   // -30..80 (tuning_test idiom)
-    e.setPartTuningCustom (0, custom);
-    e.setPartTuningCustom (3, custom);
+    // Raga presets (the PartData byte-4 shadow) on parts 0 and 3.
+    e.getPart (0).partBytes[4] = 5;
+    e.getPart (3).partBytes[4] = 12;
 
     // Names/aliases on all parts.
     for (int p = 0; p < nParts; ++p)
@@ -241,9 +236,9 @@ int main()
         check (d.getEngine().fxChainSlotTypeForTest (2, 0)
                    == static_cast<uint8_t> (FxType::Resonator),
                "canary precondition: polluted FX type installed on part 2 slot 0");
-        check (d.getEngine().resolvedTuningMode (0) == 33
-                   && d.getEngine().resolvedTuningMode (3) == 33,
-               "canary precondition: custom tuning active on parts 0 and 3 (mode 33)");
+        check (d.getEngine().resolvedTuningMode (0) == 5
+                   && d.getEngine().resolvedTuningMode (3) == 12,
+               "canary precondition: raga presets active on parts 0 and 3");
 
         const auto diffs = collectDiffs (d, c);
         std::printf ("     comparator reported %d diffs\n", (int) diffs.size());

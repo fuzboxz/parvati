@@ -384,6 +384,10 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
       slot_ (juce::jlimit (0, 2, slot)),
       prefix_ ("fx" + juce::String (slot_ + 1) + "_")
 {
+    // Accessibility-only: name the card after its painted "FX N" header
+    // ("FX" is a proper noun — matches FxRoutingBar's untranslated slot ids).
+    setTitle ("FX" + juce::String (slot_ + 1));
+
     // ---- Six full ParamControl knobs (modulation-destination parity) ----
     if (p1Desc     != nullptr) p1_     = std::make_unique<ParamControl> (processor_, *p1Desc);
     if (p2Desc     != nullptr) p2_     = std::make_unique<ParamControl> (processor_, *p2Desc);
@@ -421,6 +425,10 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // same idiom as FxRoutingBar's "FX master EQ " + band name) so FR/DE can
     // translate the tail ("FX 2 algorithme" / "FX 2 Algorithmus").
     typeCombo_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" algorithm"));
+    // Accessibility-only: ComboBox's built-in handler reads Component::getTitle()
+    // (the collapsed box paints its own text, so the name is the only label a
+    // screen reader gets). Same suffix-key chain as the tooltip.
+    typeCombo_->setTitle (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" algorithm"));
     // Populate from the param's OWN choice list BEFORE the attachment:
     // AudioProcessorValueTreeState::ComboBoxAttachment does NOT add items itself,
     // so without this the dropdown is empty and nothing is selectable.
@@ -438,6 +446,11 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     typeNext_ = std::make_unique<TypeStepButton> (true);    // points right (next)
     typePrev_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" previous algorithm"));
     typeNext_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" next algorithm"));
+    // Accessibility-only: the chevrons are Path-drawn Buttons with no text;
+    // name them so the default Button handler announces a purpose (title,
+    // then the tooltip as help).
+    typePrev_->setTitle (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" previous algorithm"));
+    typeNext_->setTitle (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" next algorithm"));
     addAndMakeVisible (*typePrev_);
     addAndMakeVisible (*typeNext_);
     typePrev_->onClick = [this] { stepType (-1); };
@@ -449,6 +462,11 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     // disabled state.
     powerToggle_ = std::make_unique<PowerToggle> ();
     powerToggle_->setTooltip (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" enable / bypass"));
+    // Accessibility-only: the power lamp is a glyph-drawn Button with no text.
+    // The default Button handler reads Component::getTitle() first; its
+    // toggle-state + On/Off value interface come free from the base handler
+    // (the card drives the toggle state from the fx{N}_enabled Value).
+    powerToggle_->setTitle (TRANS ("FX ") + juce::String (slot_ + 1) + TRANS (" enable / bypass"));
     addAndMakeVisible (*powerToggle_);
     powerToggle_->onClick = [this]
     {
@@ -495,6 +513,13 @@ FxSlotCard::~FxSlotCard()
     // in-flight parameterChanged can reach a half-destroyed card.
     processor_.getApvts ().removeParameterListener (prefix_ + "type", this);
     processor_.getApvts ().removeParameterListener (prefix_ + "enabled", this);
+}
+
+std::unique_ptr<juce::AccessibilityHandler> FxSlotCard::createAccessibilityHandler()
+{
+    // Role `group` + the ctor's "FX N" title (see the header declaration).
+    return std::make_unique<juce::AccessibilityHandler> (*this,
+            juce::AccessibilityRole::group);
 }
 
 //==============================================================================

@@ -51,8 +51,6 @@ FX page
 Factory
 Global FX wet/dry
 How many voices this part plays at once, drawn from the shared 
-Import .scl/.kbm…
-Import Scala tuning
 Increase sequence length
 Keyboard: octave 
 MOD assign armed: 
@@ -65,7 +63,6 @@ Previous FX topology
 Reset Zoom
 Reset this parameter to its default value
 Reset zoom
-Select exactly one .scl file (plus optionally one .kbm).
 Set this parameter to a random value
 Synth page
 Tap a mod source first

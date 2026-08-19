@@ -328,6 +328,10 @@ struct ModMatrixRow : public juce::Component,
         valueLabel_.addMouseListener (this, false);
         muteButton_.addMouseListener (this, false);
         clearButton_.addMouseListener (this, false);
+
+        // Accessibility-only: name the row after its slot (matches the visible
+        // index label; "Mod " + N follows the suffix-key i18n idiom).
+        setTitle (TRANS ("Mod ") + juce::String (slot_ + 1));
     }
 
     ~ModMatrixRow() override
@@ -345,6 +349,17 @@ struct ModMatrixRow : public juce::Component,
         // Drop the custom L&F before the slider is destroyed (the L&F is owned by
         // the view and outlives this row, but unsetting keeps the contract clean).
         depthSlider_.setLookAndFeel (nullptr);
+    }
+
+    // Accessibility-only: a labelled `group` container for this row's widgets
+    // (source/dest combos, depth slider, M/Clear), so screen readers announce
+    // the row as a structured unit ("Mod 1, group") instead of an unnamed
+    // stream of controls. Title is set in the ctor; children keep their own
+    // built-in handlers. Follows the EnvelopeDisplay/FxRoutingBar pattern.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return std::make_unique<juce::AccessibilityHandler> (*this,
+                juce::AccessibilityRole::group);
     }
 
     void sliderValueChanged (juce::Slider*) override { refreshValueDisplay(); }
