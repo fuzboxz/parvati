@@ -118,6 +118,65 @@ public:
         return dest;
     }
 
+    /** F-ios-lc-4 (bug hunt 2026-08-19): one-way ADDITIVE mirror of a source
+        tree into @p destDir — the containing app's Documents/Parvati/USER in
+        production use. Presets saved from inside an AUv3 host (AUM/GB) land
+        in the shared App-Group USER tree, but the per-save Documents mirror
+        writes into the EXTENSION's private container (invisible to Files);
+        this sync, run at STANDALONE launch, publishes them.
+
+        Semantics (deliberately conservative):
+          - a file is copied when absent in dest OR source mtime > dest mtime
+            (newest wins; a re-run with no changes copies NOTHING — idempotent);
+          - the dest copy's mtime is SET TO the source's, so comparisons stay
+            exact across syncs instead of racing copy-time;
+          - `*_temp*` files are skipped (another process's in-flight atomic
+            write — the F-ios-files-4 lesson); symlinks are not followed;
+          - NOTHING in dest is ever deleted: Files-app users may organize/
+            delete mirrored copies deliberately, and a launch hook must never
+            be destructive.
+        Returns the number of files copied (test observable). */
+    static int syncTreeNewestWins (const juce::File& sourceDir, const juce::File& destDir)
+    {
+        if (sourceDir.getFullPathName().isEmpty() || ! sourceDir.isDirectory())
+            return 0;
+        int copied = 0;
+        juce::Array<juce::File> entries;
+        sourceDir.findChildFiles (entries,
+                                  juce::File::findFiles | juce::File::findDirectories,
+                                  false);
+        for (const auto& e : entries)
+        {
+            if (e.isSymbolicLink())
+                continue;   // never follow links out of the managed tree
+            if (e.isDirectory())
+            {
+                copied += syncTreeNewestWins (e, destDir.getChildFile (e.getFileName()));
+                continue;
+            }
+            const auto name = e.getFileName();
+            if (name.contains ("_temp"))
+                continue;   // another process's in-flight atomic write
+            const juce::File dest = destDir.getChildFile (name);
+            const juce::Time srcTime = e.getLastModificationTime();
+            if (dest.existsAsFile() && ! (srcTime > dest.getLastModificationTime()))
+                continue;   // absent, or dest already current — newest wins
+            if (! dest.getParentDirectory().createDirectory())
+                continue;
+            juce::TemporaryFile temp (dest);
+            if (e.copyFileTo (temp.getFile()) && temp.overwriteTargetFileWithTemporary())
+            {
+                // Propagate the source mtime so the NEXT comparison is exact
+                // (a copy-time mtime would make every later save ambiguous).
+                dest.setLastModificationTime (srcTime);
+                ++copied;
+            }
+            // A failed copy is non-fatal: the shared tree stays the source of
+            // truth and the next launch retries (additive, never destructive).
+        }
+        return copied;
+    }
+
 private:
     // ---- the cached menu tree (pure data; PopupMenu is built from it) ----
     struct Leaf { juce::File file; juce::String label; };

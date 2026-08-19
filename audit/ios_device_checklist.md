@@ -81,6 +81,17 @@ tree the preset browser scans — the user's save never appeared in the preset m
 **Expected:** every save path produces a complete file AND a USER-menu entry in both
 apps. A save that only exists in Files with no browser entry = the import path failed.
 
+**D3b. Launch-sync of host saves into Files (F-ios-lc-4, the option-(a) mirror):**
+1. In AUM/GB, save TWO different presets (they land in the shared App-Group USER tree;
+   the per-save Documents mirror inside the extension is invisible by design).
+2. Do NOT open the Standalone app yet. Check Files: those two presets are legitimately
+   NOT yet under On My iPad/Parvati/USER (the sync runs at Standalone launch).
+3. Open the Standalone app once, wait a few seconds, re-check Files: BOTH presets must
+   now appear under On My iPad/Parvati/USER, complete (not 0 bytes).
+4. Delete one copy in Files, re-open the Standalone: it must NOT resurrect while the
+   source is older (newest-wins, additive-only). Saving that preset again in the host
+   must bring it back on the next Standalone launch.
+
 ---
 
 ## D4. Open-in from Files / AirDrop / Mail (F-ios-build-1, now declared; REMAINING integration)

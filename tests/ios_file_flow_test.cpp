@@ -347,6 +347,82 @@ int main()
         }
     }
 
+    // ------------------------------------------------------------------
+    // [5] F-ios-lc-4: launch-sync publishes the shared USER tree into the
+    //     containing app's Documents (Files-app visibility for AUv3-host
+    //     saves). The sync is one-way ADDITIVE, newest-wins, atomic, and
+    //     idempotent — pinned here against two temp dirs with controlled
+    //     mtimes (deterministic: setLastModificationTime, no sleeps).
+    // ------------------------------------------------------------------
+    std::printf ("\n[5] syncTreeNewestWins: additive newest-wins launch mirror\n");
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                             .getChildFile ("parvati_usersync_test");
+        tmp.deleteRecursively();
+        const auto shared = tmp.getChildFile ("SHARED_USER");   // the App-Group tree
+        const auto docs  = tmp.getChildFile ("Documents/Parvati/USER");
+        shared.createDirectory();
+
+        const auto t0 = juce::Time (1780000000000LL);   // arbitrary fixed epoch ms
+        // a.parvati: source OLDER than the dest copy -> must be SKIPPED.
+        shared.getChildFile ("a.parvati").replaceWithText ("old");
+        shared.getChildFile ("a.parvati").setLastModificationTime (t0);
+        // b.PRO: absent in dest -> copied.
+        shared.getChildFile ("b.PRO").replaceWithText ("B");
+        shared.getChildFile ("b.PRO").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (1000));
+        // Nested: sub/c.MUL -> dest subdir created + copied.
+        shared.getChildFile ("sub").createDirectory();
+        shared.getChildFile ("sub/c.MUL").replaceWithText ("C");
+        shared.getChildFile ("sub/c.MUL").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (1000));
+        // In-flight atomic write of another process -> skipped.
+        shared.getChildFile ("z_tempdead.parvati").replaceWithText ("x");
+
+        // Pre-existing dest a.parvati NEWER than source: newest wins -> kept.
+        // (Create the FULL dest chain: replaceWithText does NOT create parent
+        // directories — a missing USER/ dir would fail the write silently and
+        // the sync would then legitimately copy the file.)
+        docs.getParentDirectory().createDirectory();
+        docs.createDirectory();
+        docs.getChildFile ("a.parvati").replaceWithText ("dest-copy");
+        docs.getChildFile ("a.parvati").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (5000));
+
+        const int copied = PresetBrowser::syncTreeNewestWins (shared, docs);
+        char msg[96];
+        std::snprintf (msg, sizeof (msg), "[5] first sync copies exactly 2 (got %d)", copied);
+        check (copied == 2, msg);
+        check (docs.getChildFile ("b.PRO").loadFileAsString() == "B",
+               "[5] absent file copied with identical bytes");
+        check (docs.getChildFile ("sub/c.MUL").loadFileAsString() == "C",
+               "[5] nested file copied into the created subdir");
+        check (docs.getChildFile ("a.parvati").loadFileAsString() == "dest-copy",
+               "[5] dest-newer file NOT overwritten (newest wins)");
+        check (! docs.getChildFile ("z_tempdead.parvati").existsAsFile(),
+               "[5] in-flight *_temp file skipped");
+        check (docs.getChildFile ("b.PRO").getLastModificationTime()
+                   == shared.getChildFile ("b.PRO").getLastModificationTime(),
+               "[5] copied file carries the SOURCE mtime (exact next-sync compare)");
+
+        // Idempotence: nothing changed -> a re-run copies NOTHING.
+        const int copied2 = PresetBrowser::syncTreeNewestWins (shared, docs);
+        check (copied2 == 0, "[5] re-sync with no changes copies 0 (idempotent)");
+
+        // A later host save (source mtime moves) -> exactly that file re-syncs.
+        shared.getChildFile ("b.PRO").replaceWithText ("B2");
+        shared.getChildFile ("b.PRO").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (9000));
+        const int copied3 = PresetBrowser::syncTreeNewestWins (shared, docs);
+        check (copied3 == 1 && docs.getChildFile ("b.PRO").loadFileAsString() == "B2",
+               "[5] an updated preset re-syncs (newest wins, exactly one file)");
+
+        // Destructive check: removing a SOURCE file never deletes the dest copy
+        // (Files-app users may keep organized mirrors; the hook is additive).
+        shared.getChildFile ("b.PRO").deleteFile();
+        const int copied4 = PresetBrowser::syncTreeNewestWins (shared, docs);
+        check (copied4 == 0 && docs.getChildFile ("b.PRO").existsAsFile(),
+               "[5] source removal NEVER deletes the Documents copy (additive-only)");
+
+        tmp.deleteRecursively();
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "IOS FILE FLOW TEST: FAILURES" : "IOS FILE FLOW TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

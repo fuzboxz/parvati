@@ -29,15 +29,26 @@
   ok  : [3] corrupt marker -> full pass re-extracts a deleted bank file
 
 [4] PresetBrowser scan bounds (F-ios-perf-4)
-  ok  : [4] deep tree scan completes fast (1 ms)
+  ok  : [4] deep tree scan completes fast (2 ms)
   ok  : [4] deep tree: exactly one scan
   ok  : [4] a preset within the depth cap IS found
   ok  : [4] a preset past the depth cap is NOT scanned
-  ok  : [4] wide tree scan completes fast (170 ms)
+  ok  : [4] wide tree scan completes fast (169 ms)
   ok  : [4] wide tree: exactly one scan
   ok  : [4] within the entry cap: the first sorted file IS found
   ok  : [4] past the entry cap: a later file is NOT scanned
   ok  : [4] the real directory's preset IS found
   ok  : [4] a directory symlink is not followed (leaf count stays 1)
+
+[5] syncTreeNewestWins: additive newest-wins launch mirror
+  ok  : [5] first sync copies exactly 2 (got 2)
+  ok  : [5] absent file copied with identical bytes
+  ok  : [5] nested file copied into the created subdir
+  ok  : [5] dest-newer file NOT overwritten (newest wins)
+  ok  : [5] in-flight *_temp file skipped
+  ok  : [5] copied file carries the SOURCE mtime (exact next-sync compare)
+  ok  : [5] re-sync with no changes copies 0 (idempotent)
+  ok  : [5] an updated preset re-syncs (newest wins, exactly one file)
+  ok  : [5] source removal NEVER deletes the Documents copy (additive-only)
 
 IOS FILE FLOW TEST: ALL CHECKS PASSED (0 failures)

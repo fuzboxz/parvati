@@ -20,6 +20,7 @@
 #include "PatchFile.h"
 #include "ui/FactoryPresetInstaller.h"
 #include "ui/IosOpenIn.h"        // open-in routing (desktop: inline no-op)
+#include "ui/PresetBrowser.h"     // syncTreeNewestWins (the iOS launch mirror)
 #include "ui/SharedContainer.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
 
@@ -247,6 +248,24 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
             else if (routed.hasFileExtension (".mul")) loadMultiFile (routed);
             // .scl/.kbm: routed only — no headless tuning apply by design.
         });
+
+    // F-ios-lc-4 (bug hunt 2026-08-19): publish the shared USER tree into the
+    // CONTAINING APP's Documents at Standalone launch. Presets saved from
+    // inside an AUv3 host (AUM/GarageBand) land in the App-Group USER tree,
+    // but the per-save Documents mirror writes into the EXTENSION's private
+    // container there — invisible to the Files app (it only browses the
+    // containing app's Documents). This ADDITIVE, newest-wins sync (never
+    // deletes; see PresetBrowser::syncTreeNewestWins) makes every accumulated
+    // host save Files-visible the next time the Standalone app opens.
+    // Standalone ONLY: in the AUv3 process userDocumentsDirectory is the
+    // extension's private container (the invisible destination above).
+    if (wrapperType == wrapperType_Standalone)
+    {
+        const auto docsUser = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                                  .getChildFile ("Parvati")
+                                  .getChildFile ("USER");
+        (void) PresetBrowser::syncTreeNewestWins (getUserPatchDir(), docsUser);
+    }
 #endif
 }
 

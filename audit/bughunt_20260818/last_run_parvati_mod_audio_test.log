@@ -4,7 +4,7 @@ mod12_amount (Velocity->VCA)           = 16
 peak WITHOUT editor = 0.25504  (AUDIBLE)
 
 Creating editor (exercises ModMatrixView + ring listeners + drag affordance)...
-editor = 0x83714c000
+editor = 0xbc7178000
 mod11_amount AFTER editor + msg pump   = 63
 peak WITH editor    = 0.23176  (AUDIBLE)
 

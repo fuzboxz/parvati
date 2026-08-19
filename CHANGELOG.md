@@ -25,6 +25,35 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   must still LOAD the opened file at launch via the JUCE Standalone delegate
   seam —, hardware-keyboard host-return, save-picker overwrite prompts,
   thermal at 2x OS).
+- **iOS open-in loop + launch-sync follow-ups (2026-08-19, second wave).**
+  (1) The open-in loop is COMPLETE: document types were declared earlier, but
+  JUCE 9's iOS glue has NO `application:openURL:options:` anywhere — "Open in
+  Parvati" launched the app and silently dropped the file. New
+  `Source/ui/IosOpenIn.{h,mm}`: a pure headless-tested routing core (presets
+  atomically import into the shared USER tree, .scl/.kbm park in
+  Parvati/Tuning for interactive import) + an Obj-C++ shim that resolves
+  JUCE's file-private `JuceAppStartupDelegate` by runtime name and adds the
+  absent selector via `class_addMethod` (clean category-style addition, no
+  swizzle; a swizzle branch future-proofs), bracketing security-scoped URL
+  access for open-in-place. Routed presets load through the same main-thread
+  seams the FileChooser completions use (`tests/ios_openin_test`). The first
+  real iOS-toolchain build of the processor caught three compile bugs that
+  desktop-only validation had masked (a `#if JUCE_IOS` block placed before
+  the first JUCE header — undefined macro, silently compiled out on iOS too;
+  JUCE 9's `wrapperType` is a public member, not a getter; app-level Obj-C++
+  needs explicit `#import <UIKit/UIKit.h>` — JUCE's iOS headers are
+  module-internal). Full Standalone + AUv3 .appex simulator build green.
+  (2) F-ios-lc-4 remediated with the option-(a) mirror: presets saved inside
+  AUv3 hosts land in the shared USER tree but the per-save Documents mirror
+  writes into the extension's PRIVATE container (invisible to Files).
+  `PresetBrowser::syncTreeNewestWins` — an additive, newest-wins, atomic,
+  idempotent launch sync that never deletes (Files-app user edits/ deletions
+  are respected; `*_temp` in-flight writes skipped; source mtimes propagated
+  for exact compares) — publishes the whole tree into the containing app's
+  Documents at every Standalone launch (`ios_file_flow_test` [5]). Device
+  verification steps in the checklist's D3b. (3) The thermal hint (F-ios-perf-2
+  rider) is surfaced in the editor's status line via a pure escalation-matrix
+  seam, mutation-verified in `lifecycle_test` [5].
 - **PresetBrowser menu cache (Wave 10).** The preset menu's directory scan
   and the per-factory-`.PRO` name parse ran synchronously on the message
   thread on EVERY open (all 4 banks x 128 programs parsed each time) —
