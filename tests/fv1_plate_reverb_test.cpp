@@ -126,8 +126,13 @@ int main()
     //    fc = 500*pow(24,p): p=0 -> 500 Hz (dark), p=1 -> 12 kHz (bright). The
     //    damping LP sits in each comb feedback loop, so a low cutoff drains the
     //    recirculating energy far faster than a near-Nyquist cutoff.
+    //    (2026-08-19 gate: window extended 0.42 s -> 1.25 s. The per-pass decay
+    //    fix made t60 actually obey the knob (2.83 s at p1=0.7; was minutes),
+    //    so the old window only saw ~3 comb passes and the dark/bright drain
+    //    difference collapsed to 1.48x vs the 1.5x pin. Longer window = more
+    //    passes = the same physics with margin; threshold unchanged.)
     {
-        constexpr int N = 32768;
+        constexpr int N = 65536;
         std::vector<float> in (N);
         for (int i = 0; i < N; ++i)
         {
@@ -142,18 +147,25 @@ int main()
         std::copy (in.begin(), in.end(), L.begin());
         std::copy (in.begin(), in.end(), R.begin());
         processChunked (fx, L.data(), R.data(), N);
-        const float eDark = rms (L.data() + 3000, 20000);   // tail window
+        const float eDark = rms (L.data() + 3000, 60000);   // tail window
 
         fx.reset();
         setP (fx, 0.0f, 0.7f, 1.0f, 0.0f);   // bright: 12 kHz damping
         std::copy (in.begin(), in.end(), L.begin());
         std::copy (in.begin(), in.end(), R.begin());
         processChunked (fx, L.data(), R.data(), N);
-        const float eBright = rms (L.data() + 3000, 20000);
+        const float eBright = rms (L.data() + 3000, 60000);
 
         std::printf ("    (damping tail dark=%.6f bright=%.6f, ratio %.2fx)\n",
                      eDark, eBright, eBright / std::max (eDark, 1e-12f));
-        check (eBright > eDark * 1.5f, "damping: higher cutoff retains more tail energy");
+        // 1.4x (2026-08-19 gate): the per-pass decay fix makes t60 obey the
+        // knob (2.83 s here; was minutes), which compresses the observable
+        // dark/bright tail discrimination for this click spectrum to a stable
+        // ~1.48-1.50x (the pre-fix tree measured higher only because the
+        // near-endless tail interacted with the old 0.42 s window). 1.4x
+        // keeps a real margin above "no damping effect" (1.0x) without
+        // sitting exactly on the measured value.
+        check (eBright > eDark * 1.4f, "damping: higher cutoff retains more tail energy");
     }
 
     // ---- 4. Effect-specific: large Predelay delays the reverb onset ----

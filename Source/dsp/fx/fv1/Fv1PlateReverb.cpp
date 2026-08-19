@@ -39,12 +39,22 @@ void Fv1PlateReverb::setParams (const float param[5])
     if (pd > kPredelayCap - 1) pd = kPredelayCap - 1;
     predelayLen_ = pd;
 
-    // Decay 0.1..4.0 s -> comb feedback g = pow(10, -3/(decay*fs)), clamped.
+    // Decay 0.1..4.0 s -> PER-COMB feedback g_i = pow(10, -3*D_i/(decay*fs)).
+    // This is the per-pass RT60 law: g_i is applied once per comb pass (once
+    // every D_i samples), so t60 = ln(1e-3)/ln(g_i) * D_i/fs = decay exactly.
+    // (The old per-SAMPLE law 10^(-3/(decay*fs)) exceeded 0.999 for every
+    // decay > 0.21 s, so the knob was inert above p1 ~= 0.028 and the real LF
+    // t60 ran 5-17 MINUTES — audit/fx_review_20260819/rev_reverbs.md.)
+    // The [0, 0.999] clamp is now a never-engaging stability guard (max g is
+    // ~0.049 at decay=0.1 even for the SHORTEST comb).
     const float decay = 0.1f + p1 * (4.0f - 0.1f);
-    float g = std::pow (10.0f, -3.0f / (decay * 32768.0f));
-    if (g < 0.0f) g = 0.0f;
-    if (g > 0.999f) g = 0.999f;
-    g14_ = q14 (g);
+    for (int i = 0; i < 4; ++i)
+    {
+        float g = std::pow (10.0f,
+                            -3.0f * static_cast<float> (kCombD[i]) / (decay * 32768.0f));
+        g = std::clamp (g, 0.0f, 0.999f);
+        g14_[i] = q14 (g);
+    }
 
     // Damping 500..12000 Hz -> 1-pole LP cutoff in each comb loop.
     const float fc = 500.0f * std::pow (24.0f, p2);
@@ -91,10 +101,10 @@ void Fv1PlateReverb::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lou
     const int32_t d2 = lp2_.process (o2);
     const int32_t d3 = lp3_.process (o3);
 
-    comb0_.write (f24_addSat (pd, f24_mulk (d0, g14_)));
-    comb1_.write (f24_addSat (pd, f24_mulk (d1, g14_)));
-    comb2_.write (f24_addSat (pd, f24_mulk (d2, g14_)));
-    comb3_.write (f24_addSat (pd, f24_mulk (d3, g14_)));
+    comb0_.write (f24_addSat (pd, f24_mulk (d0, g14_[0])));
+    comb1_.write (f24_addSat (pd, f24_mulk (d1, g14_[1])));
+    comb2_.write (f24_addSat (pd, f24_mulk (d2, g14_[2])));
+    comb3_.write (f24_addSat (pd, f24_mulk (d3, g14_[3])));
 
     // Sum the raw comb outputs (pre-damping) and average by 0.25. Sum the four
     // Q.23 values in a plain int32 FIRST (4x <= 2^25 fits comfortably, no wrap)
@@ -104,12 +114,16 @@ void Fv1PlateReverb::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lou
     int32_t in = f24_mulk (sum, quarter14_);
 
     // ---- Two series Schroeder allpasses with slow delay-length modulation ----
-    //   r   = ap.readFrac(D)          ; D = baseD + round(lfo*depth)
+    //   r   = ap.readFrac(D)          ; D = baseD + lfo*depth (FRACTIONAL)
     //   y   = -g*in + r               ; g ~ 0.7
     //   ap.write(in + g*y)            ; Schroeder allpass form
+    // No std::round: the LFO sweeps the read pointer CONTINUOUSLY through
+    // readFrac's linear interpolator instead of stepping it in whole-sample
+    // jumps (the old rounding quantized the sweep into 1-sample steps —
+    // zipper clicks in sparse tails at high Mod; audit rev_reverbs.md).
     {
         float dl = static_cast<float> (kApBaseD[0])
-                   + std::round (lutSine32 (apPhase0_) * modDepth_);
+                   + lutSine32 (apPhase0_) * modDepth_;
         if (dl < 1.0f) dl = 1.0f;
         if (dl > static_cast<float> (kApCap0 - 1)) dl = static_cast<float> (kApCap0 - 1);
         const int32_t r = ap0_.readFrac (dl);
@@ -121,7 +135,7 @@ void Fv1PlateReverb::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lou
     }
     {
         float dl = static_cast<float> (kApBaseD[1])
-                   + std::round (lutSine32 (apPhase1_) * modDepth_);
+                   + lutSine32 (apPhase1_) * modDepth_;
         if (dl < 1.0f) dl = 1.0f;
         if (dl > static_cast<float> (kApCap1 - 1)) dl = static_cast<float> (kApCap1 - 1);
         const int32_t r = ap1_.readFrac (dl);

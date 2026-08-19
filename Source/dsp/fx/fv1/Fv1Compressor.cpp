@@ -23,7 +23,16 @@ void Fv1Compressor::setParams (const float param[5])
     th_       = 1.0f - 0.95f * p0;                 // 1.0 -> 0.05
     ratioExp_ = 0.5f + 0.4f * p0;                  // 2:1 -> 10:1  (1 - 1/ratio)
     makeup_   = 1.0f + 2.0f * p0;                  // 1 -> 3
-    level14_  = q14 (p3 * 2.0f);
+    // Level 0..2 via the same ki/kf split used for g below: q14() clamps
+    // c >= 1.0 to 8191, so q14(p3*2) pinned every p3 > ~0.5 to ~unity (the
+    // upper half of the knob was dead — audit rev_dyn.md).
+    {
+        float lvl = p3 * 2.0f;
+        if (lvl < 0.0f) lvl = 0.0f;
+        if (lvl > 2.0f) lvl = 2.0f;
+        levelShift_ = (lvl >= 1.0f) ? 1 : 0;
+        level14_    = q14 (lvl - static_cast<float> (levelShift_));
+    }
 
     const float atkMs = 0.5f * std::pow (100.0f, p1);      // 0.5..50 ms
     const float relMs = 20.0f * std::pow (25.0f, p2);      // 20..500 ms
@@ -60,7 +69,10 @@ void Fv1Compressor::processSampleFx (int32_t lin, int32_t /*rin*/,
         comp = f24_addSat (comp, lin);
     comp = f24_sat (comp);
 
-    const int32_t out = f24_mulk (comp, level14_);
+    // Output trim 0..2: fractional part + the integer x2 stage.
+    int32_t out = f24_mulk (comp, level14_);
+    if (levelShift_ != 0)
+        out = f24_addSat (out, comp);
     lout = out;
     rout = out;
 }

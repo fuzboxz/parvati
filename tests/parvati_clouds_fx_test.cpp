@@ -310,6 +310,36 @@ int main()
         check (r.finite, "RingModulator: finite output");
         check (r.nonSilent, "RingModulator: non-silent output");
         check (r.differs, "RingModulator: output differs from dry (ring mod engaged)");
+
+        // ---- Hot-input bound regression (2026-08-19 audit) ----
+        // warpsDiode grows QUADRATICALLY past its dead zone and stmlib::
+        // SoftLimit is NOT bounded (x/9 for large x), so an unclamped chain
+        // input at |in|=4 + max amount measured ~16x peak. Upstream Warps fed
+        // this stage ADC-bounded +/-1 audio; the fix restores that contract
+        // with an input-domain clamp in the oversampled loop (Wavefolder
+        // precedent). Sustained +/-4 at MAX amount over several blocks must
+        // stay finite and peak <= 3.0 — the same corner in-range (+/-1) audio
+        // already reaches (~2.95), so the clamp is provably the only thing
+        // standing between 4x-hot input and the 16x explosion.
+        {
+            const float hotP[5] = { 0.5f, 1.0f, 1.0f, 0.f, 0.f };   // mid carrier, buzzy, MAX amount
+            fx->setParams (hotP);
+            float peak = 0.0f;
+            bool finite = true;
+            for (int b = 0; b < 8; ++b)
+            {
+                for (int i = 0; i < kBlock; ++i) { outL[i] = 4.0f; outR[i] = -4.0f; }
+                fx->process (outL, outR, kBlock);
+                if (! allFinite (outL, kBlock) || ! allFinite (outR, kBlock)) { finite = false; break; }
+                const float pL = maxAbs (outL, kBlock), pR = maxAbs (outR, kBlock);
+                if (pL > peak) peak = pL;
+                if (pR > peak) peak = pR;
+            }
+            check (finite, "RingMod hot-input: +/-4 sustained @ max amount stays finite");
+            std::printf ("  [info] RingMod hot-input peak = %.3f\n", (double) peak);
+            check (peak <= 3.0f,
+                   "RingMod hot-input: peak <= 3.0 (ADC-domain clamp bounds the diode explosion)");
+        }
     }
 
     // ---- FxResonator (Rings modal resonator) — NATIVE host rate ----

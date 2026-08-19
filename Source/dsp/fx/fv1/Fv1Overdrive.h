@@ -50,6 +50,13 @@ public:
     // block 6x, run the Q.23 shaper per oversampled sample, downsample, then
     // apply Tone + Level at 1x.
     void process (float* L, float* R, int numSamples) override;
+    // The 6x OS pair's group delay (SRC_UP 4 + SRC_DOWN 4 = 8 INTERNAL
+    // samples), converted to HOST samples in prepareInternal so the chain's
+    // dry/wet + parallel blends can align wet against dry (same contract as
+    // FxWavefolder/FxRingModulator). 0 before the first prepare (the
+    // stage-time latency snapshot then sees a passthrough, refreshed live by
+    // the chain's re-prepare).
+    int latency() const noexcept override { return latencyHost_; }
     FxType type() const noexcept override { return FxType::Overdrive; }
 
 protected:
@@ -71,8 +78,20 @@ private:
     OnePoleLpFx toneLp_;      // post-LP (1x)
     int16_t drive14_ = 4096;  // q14 fractional pre-gain
     int driveShift_  = 0;     // integer 2x stages of the pre-gain (1..16x)
-    int biasIdx_     = 0;     // Bias index offset (±~77)
-    int16_t level14_ = 8192;  // q14(0.5) default trim
+    int biasIdx_     = 0;     // Bias index offset (±38 idx = ±0.3 table domain)
+    // Level (p3, documented 0..2) split exactly like the compressor's gain:
+    // q14 tops out at ~1.0, so the integer 2x stage lives here and only the
+    // fractional remainder is quantized. (The old q14(p3*2) clamped every
+    // p3 > ~0.5 to unity — the upper half of the knob was dead.)
+    int16_t level14_ = 8192;  // q14 fractional trim (0..1); 8192 = unity
+    int levelShift_  = 0;     // 0/1 extra x2 stage when Level > 1
+
+    // One-pole ~10 Hz high-pass DC blocker on the wet output (kills the
+    // bias-DC and the curve-asymmetry DC; the Tone LP passes both).
+    float dcX1_ = 0.0f, dcY1_ = 0.0f;
+
+    // 6x OS group delay in HOST samples (captured in prepareInternal).
+    int latencyHost_ = 0;
 };
 
 } // namespace parvati::fv1

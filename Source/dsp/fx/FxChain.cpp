@@ -461,8 +461,15 @@ void FxChain::updateEqCoeffs() noexcept
     // RBJ audio-EQ cookbook coefficients (a0 normalised out), computed for both
     // channels. Flat bands are NOT processed (see applyMasterEq) so the EQ is a
     // bit-identical no-op at the defaults (low=0, mid=64, high=64).
+    // BAND-CENTER CLAMP: RBJ coefficients leave the unit circle once w0 > pi
+    // (sin(w0) < 0 -> negative alpha), i.e. a center above rate/2 — reachable
+    // at exotic low host rates (the 5 kHz shelf goes unstable below 10 kHz,
+    // the 1 kHz mid below ~2 kHz). Clamp every center to 0.45*rate (below
+    // Nyquist with margin), mirroring the FV-1 RateBridge BW clamp
+    // (Fv1Engine.h: min(15k, 0.49*hostRate)). No-op at any sane rate.
     const double r = rate_ > 0.0 ? rate_ : 44100.0;
     constexpr double kTwoPi = 6.28318530717958647692;
+    const double maxEqFreq = 0.45 * r;
 
     auto assign = [] (EqBiquad& b, double b0, double b1, double b2,
                       double a0, double a1, double a2)
@@ -476,7 +483,7 @@ void FxChain::updateEqCoeffs() noexcept
     if (eqLowV_ != 0)
     {
         const double t = (double) (eqLowV_ - 1) / 126.0;
-        const double freq = 20.0 * std::pow (1500.0 / 20.0, t);
+        const double freq = juce::jmin (20.0 * std::pow (1500.0 / 20.0, t), maxEqFreq);
         const double w0 = kTwoPi * freq / r, cw = std::cos (w0), sw = std::sin (w0);
         const double alpha = sw / (2.0 * 0.70710678);
         for (auto& b : eqLow_)
@@ -486,7 +493,7 @@ void FxChain::updateEqCoeffs() noexcept
 
     // Mid: peaking at 1 kHz, Q=1, gain (eqMid-64)/64 * +/-12 dB.
     {
-        const double w0 = kTwoPi * 1000.0 / r, cw = std::cos (w0), sw = std::sin (w0);
+        const double w0 = kTwoPi * juce::jmin (1000.0, maxEqFreq) / r, cw = std::cos (w0), sw = std::sin (w0);
         const double gainDB = ((double) eqMidV_ - 64.0) / 64.0 * 12.0;
         const double A = std::pow (10.0, gainDB / 40.0);
         const double alpha = sw / 2.0;   // Q=1
@@ -497,7 +504,7 @@ void FxChain::updateEqCoeffs() noexcept
 
     // High: shelf at 5 kHz, gain (eqHigh-64)/64 * +/-12 dB (slope S=1).
     {
-        const double w0 = kTwoPi * 5000.0 / r, cw = std::cos (w0), sw = std::sin (w0);
+        const double w0 = kTwoPi * juce::jmin (5000.0, maxEqFreq) / r, cw = std::cos (w0), sw = std::sin (w0);
         const double gainDB = ((double) eqHighV_ - 64.0) / 64.0 * 12.0;
         const double A = std::pow (10.0, gainDB / 40.0);
         const double sqA = std::sqrt (A);

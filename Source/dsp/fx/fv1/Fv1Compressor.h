@@ -40,7 +40,10 @@ private:
     float makeup_   = 1.0f;
     float attackA_  = 0.0f;
     float releaseA_ = 0.0f;
-    int16_t level14_ = 8192;  // q14(0.5); setParams scales to 0..2
+    int16_t level14_ = 8192;  // q14 fractional trim (0..1); 8192 = unity
+    int levelShift_ = 0;      // 0/1 extra x2 stage when Level > 1 (q14 alone
+                              // tops out at ~1.0 — the old q14(p3*2) clamped
+                              // every p3 > ~0.5 to unity: dead upper half)
 };
 
 } // namespace parvati::fv1

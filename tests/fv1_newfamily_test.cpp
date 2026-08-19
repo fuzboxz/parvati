@@ -149,18 +149,20 @@ int main()
         // Metric: the max per-sample |delta| (slope) of a switched render
         // MINUS the max slope of the two no-switch reference renders
         // (all-shape-0 / all-shape-8) in the same window. The natural slope of
-        // the clipped waveform itself (~0.39/sample at Drive mid — it is a
-        // square-ish wave) cancels; only switch-caused discontinuity remains.
-        // 8 switches alternate 0<->8 every ~640 samples (>= fade + settle),
+        // the clipped waveform itself cancels; only switch-caused discontinuity
+        // remains. 8 switches alternate 0<->8 every ~640 samples (>= fade + settle),
         // stepping the switch phase around the 440 Hz cycle so at least one
-        // lands on a large curve difference. A perfect crossfade's excess is
-        // bounded by the morph rate; the measured residual (~0.042) comes from
-        // the pre-existing saturating-add clip knee (f24_addSat before the /2
-        // average locks any LUT output >0.5 to 0.5, so the blend crosses the
-        // knee where the refs do not — a smooth morph artifact, not a jump).
+        // lands on a large curve difference.
         //   pre-fix (instant pointer swap): worst excess = 0.1916 -> FAIL
-        //   post-fix (Q.14 crossfade):      worst excess = 0.0423 -> PASS
-        // Bound 0.06: ~1.4x margin post-fix, 3.2x below the pre-fix click.
+        //   crossfade + the OLD saturating-add mono average: 0.0423 — the
+        //     residual was NOT the morph: adding the two Q.23 curve outputs
+        //     before the /2 saturated any curve >0.5 to the rail, so the
+        //     blend crossed a clip knee the refs never hit (the 2026-08-19
+        //     audit called this "smooth morph artifact" — it was the mono-cap
+        //     gain-path defect).
+        //   crossfade + pre-saturation average (halve each side first):
+        //     worst excess = 0.0040 -> PASS with ~15x margin.
+        // Bound 0.06 kept as the historical bar (the knee is gone).
         {
             const int n1 = 4096, nSw = 8, swStep = 640, nTot = n1 + nSw * swStep + 1024;
             std::vector<float> src (static_cast<size_t> (nTot));

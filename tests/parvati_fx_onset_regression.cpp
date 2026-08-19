@@ -137,9 +137,16 @@ std::vector<int> paramsFor (int fx)
 //     in the changelog.
 //   - Compressor: the fast-attack gain grab on a note edge is a designed
 //     transient (onset ~0.10); bound 0.16 like the lo-fi family floor.
+//   - LUT Dist (0.16, 2026-08-19): the drive-calibration fix (>>13 -> >>16,
+//     table now read at the true domain xT = D*x) makes a full-velocity note
+//     edge genuinely DRIVEN at default params — the same designed driven-edge
+//     slope class as Overdrive above (measured 0.129-0.143; was < 0.10 only
+//     because the old 8x-hot calibration crushed the input deeper into the
+//     table's flat region). The pinned stale-build defect class (0.6+) still
+//     clears 0.16 by ~4x.
 double boundFor (int fx)
 {
-    if (fx == 7 || fx == 14 || fx == 15 || fx == 16 || fx == 18) return 0.16;   // Wavefolder / VinylComp / Phaser / Overdrive / Compressor
+    if (fx == 7 || fx == 14 || fx == 15 || fx == 16 || fx == 17 || fx == 18) return 0.16;   // Wavefolder / VinylComp / Phaser / Overdrive / LUT Dist / Compressor
     return 0.10;
 }
 

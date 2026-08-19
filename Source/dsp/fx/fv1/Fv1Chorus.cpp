@@ -25,6 +25,13 @@ void Fv1Chorus::setParams (const float param[5])
     inc_ = rate / static_cast<float> (kInternalRate);
     depthSamp_  = p1 * 6.0e-3f * static_cast<float> (kInternalRate);
     centerSamp_ = (5.0f + p2 * 20.0f) * 1.0e-3f * static_cast<float> (kInternalRate);
+    // Depth clamp: never let the sweep pin at the 1-sample read floor.
+    // Center min (5 ms = 163.8) < Depth max (6 ms = 196.6), so the corner
+    // Center=0/Depth=1 used to clamp inside readFrac for ~19% of every LFO
+    // cycle (a flat-topped sweep). Capping depth at center-1 keeps the
+    // deepest read at exactly 1 sample — the sweep always moves.
+    if (depthSamp_ > centerSamp_ - 1.0f)
+        depthSamp_ = centerSamp_ - 1.0f;
     fb14_ = q14 (p3 * 0.5f);
 }
 

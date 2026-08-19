@@ -52,6 +52,10 @@ public:
     // then upsample 6x, run the Q.23 table shaper per oversampled sample,
     // downsample, then Tone at 1x.
     void process (float* L, float* R, int numSamples) override;
+    // 6x OS pair group delay (8 internal samples) scaled to HOST samples in
+    // prepareInternal — same dry/wet comb-free contract as FxWavefolder /
+    // FxRingModulator (and Fv1Overdrive). 0 before the first prepare.
+    int latency() const noexcept override { return latencyHost_; }
     FxType type() const noexcept override { return FxType::LutDistortion; }
 
 protected:
@@ -78,6 +82,15 @@ private:
     int16_t drive14_ = 4096;    // q14 fractional pre-gain
     int driveShift_  = 0;       // integer 2x stages (1..8x)
     const int16_t* shape_ = tables_[0];   // active (target) wavetable
+
+    // One-pole ~10 Hz high-pass DC blocker on the wet output: several shapes
+    // (Cheby2/OctUp/Asym) are NOT re-referenced to 0 at x=0 and emit large
+    // sustained DC at silence (Cheby2: -0.71, OctUp: -0.34 post the 0.75
+    // table scaling); the Tone LP passes it, so it must be removed here.
+    float dcX1_ = 0.0f, dcY1_ = 0.0f;
+
+    // 6x OS group delay in HOST samples (captured in prepareInternal).
+    int latencyHost_ = 0;
 
     // 6x oversampling of the nonlinear table stage (see the file header).
     warps::SampleRateConverter<warps::SRC_UP, 6, 48>   srcUpL_, srcUpR_;

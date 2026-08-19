@@ -877,6 +877,8 @@ set(_parvati_fv1_tests
     fv1_vinyl_compressor_test
     fv1_phaser_test
     fv1_newfamily_test
+    reverb_decay_test
+    drive_calib_test
 )
 foreach(_t ${_parvati_fv1_tests})
     add_executable(parvati_${_t} tests/${_t}.cpp)
@@ -910,6 +912,30 @@ foreach(_t ${_parvati_fv1_tests})
             Source/dsp/fx/fv1/Fv1Echo.cpp
             Source/dsp/fx/fv1/Fv1Room.cpp
             Source/dsp/fx/fv1/Fv1Spring.cpp)
+    elseif(_t STREQUAL "reverb_decay_test")
+        # EDC t60 verification for the reverb trio (per-pass RT60 law fix,
+        # 2026-08-19): impulse -> Schroeder energy-decay curve -> regression
+        # t60 vs the Decay knob, Spring Width=0 mono pin, Plate Mod pin.
+        target_sources(parvati_${_t} PRIVATE
+            Source/dsp/fx/fv1/Fv1PlateReverb.cpp
+            Source/dsp/fx/fv1/Fv1Room.cpp
+            Source/dsp/fx/fv1/Fv1Spring.cpp)
+    elseif(_t STREQUAL "drive_calib_test")
+        # Distortion/dynamics/mod-delay family fixes (2026-08-19): the >>16
+        # table calibration (Drive truly 1..16x / 1..8x), the LUT mono-average
+        # pre-saturation, Level ki/kf split (0..2), output DC blockers,
+        # latency() from the 6x OS group delay, the Fv1Echo Q.16 tap glide,
+        # and the mod-delay depth clamps. JUCE-free direct compile.
+        target_include_directories(parvati_${_t} SYSTEM PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+        target_sources(parvati_${_t} PRIVATE
+            Source/dsp/fx/fv1/Fv1Overdrive.cpp
+            Source/dsp/fx/fv1/Fv1LutDistortion.cpp
+            Source/dsp/fx/fv1/Fv1Compressor.cpp
+            Source/dsp/fx/fv1/Fv1Echo.cpp
+            Source/dsp/fx/fv1/Fv1Chorus.cpp
+            Source/dsp/fx/fv1/Fv1Flanger.cpp
+            Source/dsp/fx/fv1/Fv1Ensemble.cpp)
     endif()
 endforeach()
 

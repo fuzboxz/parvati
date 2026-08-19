@@ -362,16 +362,18 @@ int main()
             checkNear (tailSecondsForFx (FxType::Room, pmax, 120.0), 3.0, 1e-6, "Room max (3 s)");
         }
         {
-            // CVerb: tank fb 0.95, loop 8483/32000 s -> t60 = T*ln(1e-3)/ln(0.95)
+            // CVerb: tank fb 0.95, cross-coupled loop 15353/32000 s
+            // (4680+1652+2037+3410+1912+1662 samples, BOTH tank loops) ->
+            // t60 = T*ln(1e-3)/ln(0.95)
             const float tmax[5] = { 0.f, 0.f, 1.f, 0.f, 0.f };
-            const double want = (8483.0 / 32000.0) * (std::log (1.0e-3) / std::log (0.95));
+            const double want = (15353.0 / 32000.0) * (std::log (1.0e-3) / std::log (0.95));
             checkNear (tailSecondsForFx (FxType::Reverb, tmax, 120.0), want, 1e-3,
                        "CVerb max-time t60 (feedback-decay law)");
             check (tailSecondsForFx (FxType::Reverb, tmax, 120.0) > 10.0,
                    "CVerb max-time tail exceeds 10 s (matches measured behaviour)");
             const float pd[5] = { 1.f, 0.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Reverb, pd, 120.0),
-                       (8483.0 / 32000.0) * (std::log (1.0e-3) / std::log (0.30)) + 0.20,
+                       (15353.0 / 32000.0) * (std::log (1.0e-3) / std::log (0.30)) + 0.20,
                        1e-3, "CVerb min-time = short decay + 200 ms predelay");
         }
         checkNear (tailSecondsForFx (FxType::Diffuser, zero, 120.0), 2048.0 / 32000.0, 1e-9,
@@ -381,13 +383,14 @@ int main()
         // distortions, dynamics, pitch — the engine tail is dominated by the
         // voice release, which the floor covers. All must report exactly 0.0
         // so the cache's max() is driven by real reverb/delay slots only.
+        // (Resonator/Ensemble/Chorus/Flanger LEFT this family 2026-08-19: each
+        // is a feedback loop / ringing filter bank with a real multi-pass
+        // tail — pinned below.)
         for (FxType t : { FxType::PitchShifter, FxType::Wavefolder,
                           FxType::FrequencyShifter, FxType::RingModulator,
-                          FxType::Resonator, FxType::Ensemble,
                           FxType::Phaser, FxType::VinylCompressor,
                           FxType::Overdrive, FxType::LutDistortion,
-                          FxType::Compressor, FxType::Gate,
-                          FxType::Chorus, FxType::Flanger })
+                          FxType::Compressor, FxType::Gate })
         {
             const bool zero2 = tailSecondsForFx (t, zero, 120.0) == 0.0;
             char msg[96];
@@ -396,23 +399,81 @@ int main()
             check (zero2, msg);
         }
 
+        // ---- Modulated-delay feedback loops + Resonator modal ring (audit
+        // 2026-08-19): each rings well past the floor at high feedback —
+        // previously the whole family reported 0.0 and hosts truncated the
+        // ring-outs (Ensemble worst: ~8x under-reported).
+        {
+            // Ensemble: Center max (25 ms loop) + |fb| max (0.9).
+            const float ens[5] = { 0.f, 0.f, 1.f, 1.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Ensemble, ens, 120.0),
+                       0.025 * (std::log (1.0e-3) / std::log (0.9)), 1e-3,
+                       "Ensemble max center + max fb follows the law (~1.64 s)");
+            // Negative feedback rings identically (decay depends on |fb|).
+            const float ensNeg[5] = { 0.f, 0.f, 1.f, 0.f, 0.f };   // p3=0 -> fb=-0.9
+            checkNear (tailSecondsForFx (FxType::Ensemble, ensNeg, 120.0),
+                       tailSecondsForFx (FxType::Ensemble, ens, 120.0), 1e-9,
+                       "Ensemble negative fb == positive |fb|");
+            // fb=0 (p3=0.5) -> single pass = the loop time itself.
+            const float ensOff[5] = { 0.f, 0.f, 1.f, 0.5f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Ensemble, ensOff, 120.0), 0.025, 1e-9,
+                       "Ensemble fb=0 -> single pass (25 ms loop)");
+        }
+        {
+            // Chorus: Center max (25 ms loop) + fb 0.5 -> ~0.25 s.
+            const float ch[5] = { 0.f, 0.f, 1.f, 1.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Chorus, ch, 120.0),
+                       0.025 * (std::log (1.0e-3) / std::log (0.5)), 1e-3,
+                       "Chorus max center + max fb follows the law (~0.25 s)");
+        }
+        {
+            // Flanger: Manual max (6 ms base loop) + fb 0.92 -> ~0.50 s.
+            const float fl[5] = { 0.f, 0.f, 1.f, 1.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Flanger, fl, 120.0),
+                       0.006 * (std::log (1.0e-3) / std::log (0.92)), 1e-3,
+                       "Flanger max base + max fb follows the law (~0.50 s)");
+        }
+        {
+            // Resonator: t60 = 1099*10^(4*damping)/48000 (rate-normalized at
+            // 48 kHz), capped at kTailCapSeconds for the formally-minutes top.
+            const float res03[5] = { 0.f, 0.3f, 0.f, 0.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Resonator, res03, 120.0),
+                       1099.0 * std::pow (10.0, 1.2) / 48000.0, 1e-3,
+                       "Resonator damping 0.3 -> ~0.36 s modal ring");
+            const float res06[5] = { 0.f, 0.6f, 0.f, 0.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Resonator, res06, 120.0),
+                       1099.0 * std::pow (10.0, 2.4) / 48000.0, 1e-3,
+                       "Resonator damping 0.6 -> ~5.75 s modal ring");
+            const float res1[5] = { 0.f, 1.f, 0.f, 0.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Resonator, res1, 120.0), kTailCapSeconds, 1e-9,
+                       "Resonator damping 1.0 -> capped at 12 s (formally minutes)");
+        }
+
         std::printf ("\n[3b] Pure tail table (delays: time x feedback decay)\n");
         {
-            // Echo: single repeat at fb=0 (t60 = the loop time itself).
+            // Echo: fb=0 -> single pass, but the PING-PONG loop is
+            // timeL+timeR = 2T even at Spread 0 (tapR->damp->fb->lineL->
+            // tapL->lineR->tapR).
             const float emin[5] = { 0.f, 0.f, 0.f, 0.f, 0.f };
-            checkNear (tailSecondsForFx (FxType::Echo, emin, 120.0), 0.010, 1e-6,
-                       "Echo min (10 ms, no feedback)");
+            checkNear (tailSecondsForFx (FxType::Echo, emin, 120.0), 0.020, 1e-6,
+                       "Echo min (2x 10 ms ping-pong loop, no feedback)");
             // fb=1.0 -> g=0.995 -> the >=0.995 infinite sentinel (cap).
             const float emax[5] = { 1.f, 1.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Echo, emax, 120.0), kTailCapSeconds, 1e-9,
                        "Echo max feedback (g=0.995) = infinite sentinel");
-            // Mid feedback: exact law.
+            // Mid feedback, Spread 0: exact law over the 2T ping-pong loop.
             const float emid[5] = { 1.f, 0.5f, 0.f, 0.f, 0.f };
             const double T = 0.010 * std::pow (47.0, 1.0);
             const double g = 0.5 * 0.995;
             checkNear (tailSecondsForFx (FxType::Echo, emid, 120.0),
-                       T * (std::log (1.0e-3) / std::log (g)), 1e-3,
-                       "Echo 50% feedback follows t60 = T*ln(1e-3)/ln(g)");
+                       (2.0 * T) * (std::log (1.0e-3) / std::log (g)), 1e-3,
+                       "Echo 50% fb, spread 0 -> t60 = 2T*ln(1e-3)/ln(g)");
+            // Max time + max spread: timeR clamps to the 16383-sample ring
+            // guard, so the loop is T + 16383/32768 (NOT 3T).
+            const float espread[5] = { 1.f, 0.5f, 0.f, 1.f, 0.f };
+            checkNear (tailSecondsForFx (FxType::Echo, espread, 120.0),
+                       (T + 16383.0 / 32768.0) * (std::log (1.0e-3) / std::log (g)), 1e-3,
+                       "Echo spread max honours the 16383-sample ring guard");
         }
         {
             // ClockedDelay @120 BPM, sync=0 -> div 1 -> T = (4/1)*(60/120) = 2 s

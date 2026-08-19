@@ -72,8 +72,10 @@ unit tests compile standalone in seconds without the JUCE build):
   does host→internal (BW-limited downsample) → per-internal-sample fixed-point
   `processSampleFx(lin,rin,lout,rout)` → internal→host (BW-limited upsample).
   Subclasses implement only `processSampleFx` (the fixed-point core) plus
-  `prepare/reset/setParams/type`. `latency()` stays 0 (no uncompensated
-  processing latency; musical delays are not reported).
+  `prepare/reset/setParams/type`. `latency()` stays 0 (musical delays are not
+  reported) — the ONE exception: the 6x-oversampled distortion pair (Overdrive,
+  LUT Distortion) reports its SRC group delay (`8 internal samples, converted
+  to host samples in prepareInternal`) so the chain can time-align dry/wet.
 
 ## Per-effect parameter mappings (single source of truth)
 
@@ -97,14 +99,22 @@ Dry/Wet). DSP workers MUST use these exact 0..1 -> physical mappings so the
 * **Rate (p0):** `0.1..8.0` Hz (`rate = 0.1*pow(80,p)`). Phase-accumulator
   increment `= rate/32768` per internal sample; read the 32-value sine LUT (no
   per-sample trig). Two delay lines read the LUT at 90 deg offset.
-* **Depth (p1):** `0..15.0` ms -> samples at 32768 (`depthSamp = p*15e-3*32768`).
+* **Depth (p1):** `0..15.0` ms -> samples at 32768 (`depthSamp = p*15e-3*32768`,
+  capped at `center-1` — the old Depth=1/Center=0 corner pinned ~46% of every
+  sweep at the 1-sample read floor; 2026-08-19).
 * **Center (p2):** `2.0..25.0` ms -> samples (`centerSamp = (2 + p*23)e-3*32768`).
 * **Feedback (p3):** `-0.9..0.9` (`-0.9 + p*1.8`).
 
 ### 3. PlateReverb — labels {"Predelay","Decay","Damping","Mod"}
 * **Predelay (p0):** `0..100` ms linear -> predelay samples (separate buffer).
-* **Decay (p1):** `0.1..4.0` s -> comb feedback `g = pow(10, -3/(decay*32768))`
-  (60 dB over the decay time). Clamp g to [0, 0.999].
+* **Decay (p1):** `0.1..4.0` s. Per-comb feedback `g_i = pow(10, -3*D_i/(decay*32768))`
+  where `D_i` is the comb's own delay — the per-PASS RT60 law, so the knob
+  delivers t60 == Decay by construction. (The pre-2026-08-19 code used the
+  per-sample law `10^(-3/(decay*fs))` applied per pass, which made the knob
+  inert above ~3% travel — real t60 5-17 min.) Clamp [0, 0.999] is now a
+  never-engaging guard. Measured: decay 4.0 -> 3.58 s, 2.05 -> 1.84 s (~10%
+  undershoot from the in-loop damping LP). At the 0.1 s end the Schroeder
+  allpass bank sets a ~0.2 s diffusion floor independent of the feedback law.
 * **Damping (p2):** `500..12000` Hz (`fc = 500*pow(24,p)`); 1-pole LP inside each
   comb feedback loop.
 * **Mod (p3):** `0..1` -> allpass delay-length LFO amplitude `0..15` samples.
@@ -143,13 +153,29 @@ squash + glue + warpy wow + subtle noise floor).
 * **Drive (p0):** `1..16x` pre-gain (log) into a 1024-entry asymmetric
   12AX7-ish soft-clip LUT (the "EEPROM table" idiom). Integer 2x stages + a
   14-bit fractional remainder realize >2x gains in the fixed-point path.
-* **Bias (p1):** `-0.3..+0.3` table-index offset (even harmonics / asymmetry).
+  (2026-08-19: table index now reads the true domain `xT = D*x` — the old
+  `>>13` shift read it at 8x, so the knob was effectively 8..128x; small-
+  signal gain at Drive 1 is now ~1.04, was 7.78.) Curve truth: positive half
+  peaks 0.77 then droops to ~0.41 at the rail; negative half clamps -1 beyond
+  ~-0.76 — asymmetric by design, NOT "saturates ~1.6".
+* **Bias (p1):** `-0.3..+0.3` table-domain offset (even harmonics / asymmetry)
+  — the ±38-index realization now matches the domain value exactly (was ±0.60).
+  Bias-induced DC is removed by a ~10 Hz one-pole HP on the wet output.
 * **Tone (p2):** `700..15000` Hz post-LP.
-* **Level (p3):** `0..2` output trim.
+* **Level (p3):** `0..2` output trim (integer/fractional shift+gain split —
+  the upper half of the knob is real; pre-2026-08-19 it clamped flat at 1.0).
+* `latency()` reports the 6x-OS SRC group delay (8 internal samples -> 12 host
+  samples @48k) so chain dry/wet blending stays comb-free.
 
 ### 6. LUT Distortion — labels {"Drive","Shape","Jitter","Tone"} (2026-08-17)
 The "super digital" wavetable distortion: 16 stepped weird shapes.
-* **Drive (p0):** `1..8x` pre-gain into the table index.
+* **Drive (p0):** `1..8x` pre-gain into the table index — now the true domain
+  `xT = D*x` (2026-08-19: the old `>>13` shift read 8x hot; Drive 1 small-
+  signal gain ~1.03, was 9.0). Stereo math: each channel's curve output is
+  HALVED before the saturating add, so mono L==R reaches the true ~0.78
+  ceiling instead of the old 0.5 sum-cap. Shape DC (Cheby2/OctUp/Asym) is
+  removed by a ~10 Hz one-pole HP on the wet output. `latency()` reports the
+  6x-OS group delay like Overdrive.
 * **Shape (p1):** 16 wavetables — Clip / Soft / Tube / Wrap / OctUp / Fuzz /
   Square / Steps / SinFold / Cheby2 / Cheby3 / AsymCub / Mirror / HalfGate /
   Crush4 / Sparse (all 1024-entry, Q.14, built once at construction).
@@ -162,7 +188,8 @@ The "super digital" wavetable distortion: 16 stepped weird shapes.
 ### 7. Compressor — labels {"Amount","Attack","Release","Level"} (2026-08-17)
 * **Amount (p0):** threshold `1.0 -> 0.05`, ratio `2:1 -> 10:1`, makeup `1 -> 3`.
 * **Attack (p1):** `0.5..50 ms` (log). **Release (p2):** `20..500 ms` (log).
-* **Level (p3):** `0..2` trim.
+* **Level (p3):** `0..2` trim (integer/fractional split — upper half real,
+  2026-08-19; was clamped flat at 1.0).
 
 ### 8. Gate — labels {"Thresh","Attack","Hold","Release"} (2026-08-17)
 * **Thresh (p0):** `0 = DISABLED` (always open, transparent — the knob turns
@@ -171,32 +198,48 @@ The "super digital" wavetable distortion: 16 stepped weird shapes.
   **Release (p3):** `5..500 ms`. ~2.7 ms peak detector; clickless one-pole gain.
 
 ### 9. Chorus — labels {"Rate","Depth","Center","Feedback"} (2026-08-17)
-* **Rate (p0):** `0.1..8 Hz` (log, both LFOs together). **Depth (p1):** `0..6 ms`.
-* **Center (p2):** `5..25 ms`. **Feedback (p3):** `0..0.5`.
-* Two detuned SIN-LFO voices (R trails 108 deg), panned hard L/R (AN-0001 style).
+* **Rate (p0):** `0.1..8 Hz` (log, both LFOs together). **Depth (p1):** `0..6 ms`
+  (capped at `center-1` samples — the Depth=1/Center=0 corner can no longer
+  pin the sweep at the 1-sample read floor, 2026-08-19). **Center (p2):**
+  `5..25 ms`. **Feedback (p3):** `0..0.5`.
+* Two equal-rate SIN-LFO voices (R trails a fixed 108 deg; NOT detuned —
+  2026-08-19 doc fix), panned hard L/R (AN-0001 style).
 
 ### 10. Flanger — labels {"Rate","Depth","Manual","Feedback"} (2026-08-17)
-* **Rate (p0):** `0.05..3 Hz`. **Depth (p1):** `0..4.5 ms`.
+* **Rate (p0):** `0.05..3 Hz`. **Depth (p1):** `0..4.5 ms` (capped at
+  `base-1` samples — the old Manual=0/Depth=1 corner pinned ~49% of every
+  sweep at the 1-sample floor, collapsing the jet; 2026-08-19).
 * **Manual (p2):** `0.15..6 ms` base delay. **Feedback (p3):** `0..0.92`
   (8 kHz loop damper). L/R sweeps 180 deg apart.
 
 ### 11. Echo — labels {"Time","Feedback","Tone","Spread"} (2026-08-17)
 * **Time (p0):** `10..470 ms` per side (log). **Feedback (p1):** `0..0.95`.
 * **Tone (p2):** `700..12000` Hz loop damper. **Spread (p3):** R time `1..2x`.
+* Both read taps (Time AND Spread) GLIDE on retarget — Q.16 slew at ≤0.25
+  sample/internal-sample with a ≤1/16-sample snap, mirroring the Clocked
+  Delay (2026-08-19; stepped taps used to jump the read pointer and click).
+  A circulating echo attenuates while its tap slews — authentic tape retarget.
 * Ping-pong: L tap -> R line; damped R tap + input -> L line. The two 16384
   rings consume EXACTLY the 32768-word FV-1 RAM budget.
 
 ### 12. Room — labels {"Decay","Damp","Width","Tone"} (2026-08-17)
 * Schroeder: 4 parallel lowpass combs {1687,1601,2053,2251} -> two
   decorrelated series-allpass chains (L {191,281}, R {179,271}).
-* **Decay (p0):** `0.1..3 s`. **Damp (p1):** `500..12000` Hz.
+* **Decay (p0):** `0.1..3 s`, per-comb `g_i = pow(10, -3*D_i/(decay*32768))`
+  (the same per-pass law as Plate — measured 3.0 -> 2.69 s, 1.55 -> 1.39 s;
+  ~0.2 s allpass diffusion floor at the 0.1 s end). **Damp (p1):** `500..12000` Hz.
   **Width (p2):** mono <-> stereo. **Tone (p3):** `700..15000` Hz output LP.
 
 ### 13. Spring — labels {"Decay","Damp","Chirp","Width"} (2026-08-17)
 * Two springs: driver soft-clip -> loop [~35 ms delay -> SIX short allpasses
-  (the dispersion: transients chirp/boing) -> damping LP] -> feedback ~0.97 max.
-* **Decay (p0):** `0.2..4 s`. **Damp (p1):** `500..8000` Hz.
-  **Chirp (p2):** AP coefficient `0.35..0.95`. **Width (p3):** mono <-> stereo.
+  (the dispersion: transients chirp/boing) -> damping LP] -> per-spring feedback
+  `g_s = pow(10, -3*D_s/(decay*32768)) * (1-0.25*chirp)` with `D_s` the loop
+  length (A: 1350, B: 1333) — t60 == Decay at Chirp 0; chirp back-off SHORTENS
+  the tail (by design: dispersion trades ring for boing). Cap 0.97 never engages.
+* **Decay (p0):** `0.2..4 s` (knob real across its range — pre-2026-08-19 the
+  cap clamped it inert at every setting). **Damp (p1):** `500..8000` Hz.
+  **Chirp (p2):** AP coefficient `0.35..0.95`. **Width (p3):** TRUE mono at 0
+  (R is a bit-exact copy of spring A; 1 = the two decorrelated springs).
 
 ### 14. Phaser — labels {"Rate","Depth","Feedback","Center"}
 * **Rate (p0):** `0.1..8.0` Hz (`rate = 0.1*pow(80,p)`). Triangle LUT LFO.

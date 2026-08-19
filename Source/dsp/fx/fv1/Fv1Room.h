@@ -6,7 +6,10 @@
 // room" character). Delays are mutually prime; feedback via 14-bit coeffs.
 //
 // Params (param[4] is UNUSED; Mix is the chain Dry/Wet):
-//   * Decay (p0): 0.1..3 s -> comb feedback g = 10^(-3/(decay*fs)).
+//   * Decay (p0): 0.1..3 s -> PER-COMB feedback
+//     g_i = 10^(-3*D_i/(decay*fs)) (per-pass RT60 law: t60 == Decay by
+//     construction; D_i = the comb delay. The [0,0.999] clamp is a
+//     never-engaging stability guard).
 //   * Damp  (p1): 500..12000 Hz loop LP.
 //   * Width (p2): 0 = mono (both outs = the L chain), 1 = full stereo.
 //   * Tone  (p3): 700..15000 Hz output LP.
@@ -45,7 +48,7 @@ private:
     OnePoleLpFx lp_[4];
     OnePoleLpFx toneLpL_, toneLpR_;   // one per channel (a shared one would run 2x rate)
 
-    int16_t g14_ = 0;
+    int16_t g14_[4] = {};   // q14(per-comb feedback g_i — see setParams)
     int16_t quarter14_ = 0;
     int16_t apGain14_ = 0;
     int16_t width14_ = 0;      // q14(Width): crossfades R between the L chain and its own

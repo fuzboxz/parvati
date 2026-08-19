@@ -16,6 +16,13 @@
 //                  the "100%" readout.)
 //   * Tone     (p2): 700..12000 Hz loop damper.
 //   * Spread   (p3): R time factor 1..2x.
+//
+// TIME GLIDE: Time/Spread changes do NOT step the read taps instantly (a
+// stepped tap is a hard read-pointer discontinuity = the click; the
+// ~980 Hz param cadence would repeat it every knob notch). The taps glide
+// as Q.16 fixed point toward their targets, exactly the Fv1ClockedDelay
+// glide (one-pole k = 1/256, capped at ~0.25 sample/internal-sample so the
+// pitch bend stays tape-like; sub-1/16-sample tails snap; never stalls).
 
 #ifndef PARVATI_DSP_FX_FV1_FV1ECHO_H
 #define PARVATI_DSP_FX_FV1_FV1ECHO_H
@@ -42,8 +49,19 @@ private:
     // max-length FV-1 echo program (the .cpp static_asserts the exact fit).
     DelayLine<16384> lineL_, lineR_;
     OnePoleLpFx damp_;
-    float timeL_ = 328.0f;    // 10 ms default
-    float timeR_ = 328.0f;
+
+    // Read-tap targets, set instantly by setParams (Time / Spread knobs).
+    float timeTargetL_ = 328.0f;   // 10 ms default (internal samples)
+    float timeTargetR_ = 328.0f;
+
+    // The GLIDING read taps as Q.16 fixed point (samples << 16), slewed per
+    // internal sample toward the targets — see the TIME GLIDE note in the
+    // file header. 0 is the "unset" sentinel: legal glide values are always
+    // >= 10 ms * 32768 * 65536, so the first block after (re)construction
+    // snaps exactly instead of gliding in from zero.
+    int32_t timeQL_ = 0;
+    int32_t timeQR_ = 0;
+
     int16_t fb14_ = 0;
 };
 

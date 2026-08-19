@@ -5,6 +5,90 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **FX review waves 1-3 (2026-08-19): reverb decay / drive calibration /
+  tail-table corrections + hardening.** A per-algorithm DSP review (specs in
+  `audit/fx_review_20260819/`, lane reports in `audit/fx_fix_20260819/`)
+  found three FV-1 reverb decay knobs that did nothing, distortion drive
+  ranges 8x hotter than documented, and a tail table that mis-reported six
+  FX families. All fixed with before/after measurements:
+  - **Plate/Room/Spring decay (per-pass RT60 law).** The comb feedback used
+    the per-SAMPLE law `10^(-3/(decay*fs))` applied once per PASS, so the
+    gain exceeded the 0.999 clamp for essentially every setting — the Decay
+    knob was INERT above ~3% travel (Plate/Room) or at every setting (Spring,
+    capped) and real LF t60 ran 5-17 minutes (Plate: measured >=20 s in a 20 s
+    render; review computed 308-1027 s; Spring: 18.94 s identical at decay
+    0.0/0.5/1.0 — knob provably dead). Now per-comb/per-spring
+    `g = 10^(-3*D/(decay*fs))`: t60 == Decay by construction. Measured:
+    Plate 4.0 -> 3.58 s, 2.05 -> 1.84 s; Room 3.0 -> 2.69 s, 1.55 -> 1.39 s;
+    Spring 4.0/chirp0 -> 3.61 s, 0.2 -> 0.201 s (knob live; chirp still
+    shortens the tail by design). ~10% systematic undershoot = in-loop
+    damping-LP residual loss. New `parvati_reverb_decay_test` (21 checks:
+    EDC t60 vs knob x3 effects, chirp trade-off, mono pin).
+  - **Spring Width=0 is now TRUE mono.** Old `outL=a+w*b/2` left two
+    decorrelated springs at w=0; R is now a bit-exact copy of spring A at
+    width 0 (mirrors Room). Pinned in the new decay test (fails pre-fix).
+  - **Distortion drive calibration (`>>13` -> `>>16`).** Both wavetable
+    distortions read the table at 8x the intended input: "Drive 1..16x" was
+    effectively 8..128x and Drive=1 small-signal gain measured 7.78 (should
+    be unity). Now the true domain `xT = D*x`: Drive 1 gain 1.04 (Overdrive,
+    was 7.78), 1.03 (LUT Soft, was 9.0); ranges are genuinely 1..16x/1..8x.
+    Bias now the real +-0.3 domain value (was +-0.60). Excursion-split
+    invariant pinned (drive/amplitude trade to identical output). New
+    `parvati_drive_calib_test` (20 checks).
+  - **LUT Distortion mono ceiling.** The stereo sum saturated BEFORE halving,
+    capping mono L==R input at 0.5 (-3.5 dB headroom + an unintended clip
+    knee that `fv1_newfamily_test` had rationalized as a "morph artifact").
+    Halving pre-add: mono ceiling now the true 0.78; the shape-switch
+    discontinuity metric dropped 0.0423 -> 0.0040 (10x).
+  - **Level knobs 0..2 are real.** Overdrive + Compressor `q14(p*2)` clamped
+    at 1.0, dead-upper-half; integer/fractional split now spans the range
+    (OD rms 0.107/0.215/0.322/0.429 at Level 0.5/1/1.5/2 — upper half was
+    flat).
+  - **DC blockers on distortion outputs.** Cheby2 (-0.71), OctUp (-0.34),
+    Asym and full Bias emitted SUSTAINED DC on the wet bus; a ~10 Hz one-pole
+    HP on both distortion outputs zeroes all measured silence DC (<1e-4).
+  - **Distortion latency reported.** The 6x-OS pair returned latency()==0
+    despite 8 internal samples of SRC group delay -> comb filtering at dry/wet
+    blend (first notch ~2 kHz @50%). Now reports 12 host samples @48k; series
+    chain budget 12+12+8=32 = kChainDelayCap exactly.
+  - **Echo tap glide.** Stepped Time/Spread jumped the read pointer (clicks).
+    Both taps now Q.16-glide exactly like the Clocked Delay (cap 0.25
+    sample/internal-sample); a circulating echo attenuates during the slew —
+    authentic tape retarget. Pinned via single-probe impulse tap profiles
+    (30 ms -> 57.6 mid-glide -> 90 ms settled).
+  - **Mod-delay depth clamps.** Chorus/Flanger/Ensemble Depth could exceed the
+    minimum delay, pinning 19%/49%/46% of every LFO sweep at the 1-sample
+    read floor (the flanger jet collapsed at Manual 0/Depth 1). Depth now
+    caps at center-1 (base-1): floor dwell 0.2-3.7%, documented ranges intact.
+  - **CVerb Tone=0 no longer mutes the reverb.** `klp=0` froze the one-pole
+    state -> wet == 0 at the knob minimum; Tone now maps to [0.05..1] (0 is a
+    genuinely dark 5% leak).
+  - **RingModulator output clamp.** The diode sum grows ~x/9 unbounded — hot
+    input at full amount measured ~16x overshoot (the Wavefinder-crash
+    class). Input-domain clamp `jlimit(+-1)` pre-diode restores the upstream
+    ADC-bounded contract: <=full-scale is bit-identical, the hot path peaks
+    2.975. Regression-pinned in `parvati_clouds_fx_test`.
+  - **Chain master-EQ stability clamp.** The 5 kHz shelf's RBJ coefficients
+    leave the unit circle below a 10 kHz host rate (mid below ~2 kHz) —
+    runaway risk at exotic rates. All three band centers clamp to
+    `<= 0.45*rate` (mirrors the RateBridge guard); no-op at sane rates.
+  - **Tail-table corrections (`tailSecondsForFx`)**: CVerb loop length
+    8483 -> 15353 (cross-coupled tank; max-time 35.7 -> 64.6 s); Echo ping-pong
+    loop `T*(2+p3)` (mid-fb 4.65 -> 9.30 s, min 10 -> 20 ms); Ensemble 0 ->
+    1.64 s, Chorus 0 -> 0.25 s, Flanger 0 -> 0.50 s (feedback-decay law from
+    each effect's own loop); Resonator 0 -> decay-law (0.36 s @d.3, 5.75 s
+    @d.6, 12 s cap @d1). Zero-tail family pruned; `render_quality_test`
+    re-pinned for every changed case.
+  Deliberately NOT done: sub-32 kHz HostRateBridge AA (rejected as
+  shit-tier-audio territory), Spectral's 64 ms unreported STFT latency (needs
+  a product decision — the chain delay cap cannot hold it), ClockedDelay
+  retarget slew duration (1-3.75 s capped glide; crossfade rework deferred),
+  PitchShifter block-size-dependent glide + spread-1-folds-to-mono, WSOLA
+  correlator CPU (~0.1 core). All documented in the review reports.
+  Gate note: `parvati_fx_crackle_diag_test` (SIGBUS, previously ~2/5) was a
+  STALE Aug-10 binary whose CMake target no longer exists — deleted, not
+  fixed; the real suite is 118/118.
+
 - **Oversized-block slice-0 MIDI drain (2026-08-19, test wave).** The chunked
   oversized-block render handed slice 0 the FULL host MidiBuffer, and
   `juce::Synthesiser::processNextBlock`'s closing `std::for_each` drains every

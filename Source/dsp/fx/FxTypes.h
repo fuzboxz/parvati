@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -248,20 +249,30 @@ inline double tailSecondsForFx (FxType type, const float param[5], double bpm) n
             return 0.1 + (double) p0 * 2.9;                               // decay 0.1..3 s
 
         // ---- CVerb (Clouds Griesinger/Dattorro): tank feedback =
-        // jmap(time, 0.30, 0.95); the recirculating loop is del2(4782) +
-        // dap2a(1663) + dap2b(2038) = 8483 samples @ 32000 Hz (the engine's
-        // fixed internal rate, HostRateBridge.h) = 0.2651 s/pass; plus the
-        // 0..200 ms predelay.
+        // jmap(time, 0.30, 0.95). The tank is CROSS-COUPLED (loop A reads
+        // del2@4680 -> dap1a(1653) -> dap1b(2038) -> writes del1@3410; loop B
+        // reads del1@3410 -> dap2a(1913) -> dap2b(1663) -> writes del2@4680),
+        // so a full recirculation walks BOTH loops:
+        // 4680+1652+2037+3410+1912+1662 = 15353 samples @ 32000 Hz (the
+        // engine's fixed internal rate, HostRateBridge.h) = 0.4798 s/pass;
+        // plus the 0..200 ms predelay. (The old 8483-sample figure counted
+        // one loop only -> tails under-reported ~1.8x.)
         case FxType::Reverb: {
             const double fb = 0.30 + (double) p2 * (0.95 - 0.30);
-            return tail_detail::feedbackTail (8483.0 / 32000.0, fb) + (double) p0 * 0.20;
+            return tail_detail::feedbackTail (15353.0 / 32000.0, fb) + (double) p0 * 0.20;
         }
 
         // ---- Delays (the user-facing requirement: delays count too).
-        // FV-1 Echo: time 10*47^p0 ms (10..470 ms), feedback p1*0.995.
+        // FV-1 Echo: time 10*47^p0 ms (10..470 ms), feedback p1*0.995. The
+        // recirculation is PING-PONG: tapR -> damp -> fb -> lineL(timeL) ->
+        // tapL -> lineR(timeR) -> tapR, so the full loop period is
+        // timeL + timeR = T*(2+p3), NOT T (timeR = T*(1+p3) via the Spread
+        // knob). timeR is guarded to the 16383-sample half of the 2x16K
+        // delay RAM — mirrored here exactly (matters at Time max + Spread).
         case FxType::Echo: {
             const double T = 0.010 * std::pow (47.0, (double) p0);
-            return tail_detail::feedbackTail (T, (double) p1 * 0.995);
+            const double timeR = std::min (T * (1.0 + (double) p3), 16383.0 / 32768.0);
+            return tail_detail::feedbackTail (T + timeR, (double) p1 * 0.995);
         }
         // FV-1 Clocked Delay: tempo-synced T = (4/div)*(60/bpm) with div from
         // round(pSync*7) over {1,2,3,4,6,8,12,16}, clamped to the 32768-sample
@@ -289,6 +300,44 @@ inline double tailSecondsForFx (FxType type, const float param[5], double bpm) n
         case FxType::Diffuser:
             return 2048.0 / 32000.0;
 
+        // ---- FV-1 modulated-delay family: each is a genuine FEEDBACK loop
+        // (write = lin + fb*read), so a high-feedback setting rings long
+        // after the input stops — exactly the class the table exists for.
+        // Ensemble: per-line loop at Center (2..25 ms), fb spans -0.9..0.9
+        // (negative fb rings identically — decay depends on |fb|): max
+        // Center + max |fb| -> ~1.64 s t60 (was the 0.2 s floor).
+        case FxType::Ensemble: {
+            const double T  = (2.0 + (double) p2 * 23.0) * 1.0e-3;
+            const double fb = std::fabs (-0.9 + (double) p3 * 1.8);
+            return tail_detail::feedbackTail (T, fb);
+        }
+        // Chorus: same loop topology, Center 5..25 ms, fb 0..0.5 -> max
+        // 0.25 s t60 (marginal over the floor, but correct).
+        case FxType::Chorus: {
+            const double T = (5.0 + (double) p2 * 20.0) * 1.0e-3;
+            return tail_detail::feedbackTail (T, (double) p3 * 0.5);
+        }
+        // Flanger: one line, one feedback loop through the 8 kHz damper
+        // (DC gain 1, so g is the raw fb); the loop period is the
+        // Manual-mapped base delay 0.15..6.0 ms (the LFO sweep averages to
+        // zero around it) -> max ~0.50 s t60 at fb 0.92.
+        case FxType::Flanger: {
+            const double T = (0.15 + (double) p2 * 5.85) * 1.0e-3;
+            return tail_detail::feedbackTail (T, (double) p3 * 0.92);
+        }
+
+        // ---- Resonator (Rings modal, NATIVE host rate): every mode decays
+        // ~pi/q per sample with q = 500*10^(4*damping) (resonator.cc:63;
+        // mode 0 keeps full q, q_loss only trims higher modes), so
+        // t60 = ln(1e-3)*q/pi = 1099*10^(4*d) samples. The table is
+        // rate-free, so normalize at 48 kHz (44.1 kHz runs ~8% longer —
+        // immaterial next to the cap). Damping is param[1] (the Decay
+        // knob): 0.3 -> 0.36 s, 0.6 -> 5.8 s, 1.0 -> formally minutes -> cap.
+        case FxType::Resonator: {
+            const double t60 = 1099.0 * std::pow (10.0, 4.0 * (double) p1) / 48000.0;
+            return t60 > kTailCapSeconds ? kTailCapSeconds : t60;
+        }
+
         // ---- Everything else is memoryless/short (modulators, distortions,
         // dynamics, pitch): the engine tail is dominated by the voice release,
         // which the floor covers.
@@ -296,16 +345,12 @@ inline double tailSecondsForFx (FxType type, const float param[5], double bpm) n
         case FxType::Wavefolder:
         case FxType::FrequencyShifter:
         case FxType::RingModulator:
-        case FxType::Resonator:
-        case FxType::Ensemble:
         case FxType::Phaser:
         case FxType::VinylCompressor:
         case FxType::Overdrive:
         case FxType::LutDistortion:
         case FxType::Compressor:
         case FxType::Gate:
-        case FxType::Chorus:
-        case FxType::Flanger:
         case FxType::None:
         case FxType::Count:
             break;

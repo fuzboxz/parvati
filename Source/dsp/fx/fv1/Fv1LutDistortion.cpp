@@ -18,6 +18,15 @@ static_assert (2 * DelayLine<64>::capacity <= kMaxMemorySamples,
 
 namespace
 {
+// One-pole DC blocker pole (~10 Hz high-pass at the 32.768 kHz internal
+// rate), y = x - x1 + a*y1 — see the dcX1_/dcY1_ member comment in the
+// header (the shape DC this removes).
+constexpr float kDcPole = 1.0f - 6.28318530718f * 10.0f
+                              / static_cast<float> (kInternalRate);
+}
+
+namespace
+{
 // The 16 weird shapes, defined on x in [-4,4) and output-clamped to [-1,1].
 float shapeFn (int s, float x)
 {
@@ -134,6 +143,12 @@ void Fv1LutDistortion::prepareInternal (double sampleRate, int maxBlock)
     osR_.assign (n, 0.0f);
     srcUpL_.Init();   srcUpR_.Init();
     srcDownL_.Init(); srcDownR_.Init();
+    // 6x OS pair group delay (8 internal samples) in HOST samples: the SRC
+    // lives inside the 32.768 kHz domain, so scale like Fv1Overdrive.
+    // @48 kHz: lround(8 * 48000/32768) = 12.
+    latencyHost_ = static_cast<int> (std::lround (
+        static_cast<double> (srcUpL_.delay() + srcDownL_.delay() / 6)
+        * rate / kInternalRate));
 }
 
 void Fv1LutDistortion::resetInternal()
@@ -142,6 +157,8 @@ void Fv1LutDistortion::resetInternal()
     jitR_.clear();
     toneLp_.clear();
     jitLp_ = 0.0f;
+    dcX1_  = 0.0f;
+    dcY1_  = 0.0f;
     fadeFrom_ = nullptr;      // a cleared engine has no tail to crossfade
     fade14_   = 8191;
     srcUpL_.Init();   srcUpR_.Init();
@@ -207,12 +224,18 @@ void Fv1LutDistortion::process (float* L, float* R, int numSamples)
         srcDownR_.Process (osR_.data(), ir, static_cast<size_t> (m * 6));
     }
 
-    // ---- Tone at 1x (linear stage does not alias). Mono effect: L -> L/R.
+    // ---- Tone at 1x (linear stage does not alias), then the DC blocker on
+    // the wet output (Cheby2/OctUp/Asym shapes emit DC — see the header).
+    // Mono effect: L -> L/R.
     for (int i = 0; i < m; ++i)
     {
-        const int32_t y = toneLp_.process (f24_fromFloat (il[static_cast<size_t> (i)]));
-        il[static_cast<size_t> (i)] = f24_toFloat (y);
-        ir[static_cast<size_t> (i)] = f24_toFloat (y);
+        const int32_t yq = toneLp_.process (f24_fromFloat (il[static_cast<size_t> (i)]));
+        const float x = f24_toFloat (yq);
+        const float y = x - dcX1_ + kDcPole * dcY1_;   // ~10 Hz HP
+        dcX1_ = x;
+        dcY1_ = y;
+        il[static_cast<size_t> (i)] = y;
+        ir[static_cast<size_t> (i)] = y;
     }
     bridge().internalToHost (L, R, numSamples);
 }
@@ -221,10 +244,14 @@ int32_t Fv1LutDistortion::lutShape (int32_t x)
 {
     // Drive (2^shift stages + fractional) -> wavetable, blended with the
     // previous table across a shape change (equal-gain Q.14 crossfade).
+    // The Q.23 sample maps 1:1 onto the table domain — v >> 16 = 128*x (the
+    // 1024-entry table spans [-4,4) at 128 entries per unit), so the curve
+    // is read at xT = D*x: the documented 1..8x Drive. (The old >>13 read
+    // 8*D*x — every gain 8x hot; see audit rev_dyn.md.)
     int32_t v = f24_mulk (x, drive14_);
     for (int s = 0; s < driveShift_; ++s)
         v = f24_addSat (v, v);
-    int idx = (v >> 13) + 512;
+    int idx = (v >> 16) + 512;
     if (idx < 0)    idx = 0;
     if (idx > 1023) idx = 1023;
     const int32_t yn = static_cast<int32_t> (shape_[static_cast<size_t> (idx)])
@@ -242,7 +269,13 @@ void Fv1LutDistortion::processSampleFx (int32_t lin, int32_t rin,
 {
     // PURE table shaper (6x rate): average of the two (jittered, at 1x)
     // channels through the curve — the mono-ization of the original path.
-    const int32_t y = f24_sat (f24_addSat (lutShape (lin), lutShape (rin)) / 2);
+    // Halve EACH curve output before the saturating add (4096 = q14(0.5)):
+    // adding the two Q.23 values FIRST would saturate any curve > 0.5 to the
+    // rail before the halving, hard-capping a mono (L==R) input at 0.5 with
+    // a clip knee riding the output (audit rev_dyn.md; tables reach 0.75).
+    // f24_addSat saturates, so no trailing f24_sat is needed.
+    const int32_t y = f24_addSat (f24_mulk (lutShape (lin), 4096),
+                                  f24_mulk (lutShape (rin), 4096));
     lout = y;
     rout = y;
 }

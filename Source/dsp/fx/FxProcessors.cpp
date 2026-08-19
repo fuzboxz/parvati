@@ -129,7 +129,12 @@ void FxReverb::process (float* L, float* R, int numSamples)
     reverb_.set_amount (amount_);
     reverb_.set_input_gain (0.5f);                            // fixed: prevents the L+R sum clipping
     reverb_.set_time (juce::jmap (timeParam_, 0.30f, 0.95f));
-    reverb_.set_lp (lpParam_);
+    // Tone -> one-pole LP coefficient. A raw 0 is a FULL MUTE, not "darkest":
+    // c.Lp is `state += c*(acc-state); acc = state` with the state init 0, so
+    // klp=0 freezes the state and forces the accumulator to 0 — discarding
+    // the tank output entirely (audit rev_clouds_spec, CVerb Tone=0). Map the
+    // knob onto [0.05, 1] so 0 is a genuinely dark (5% leak per pass) filter.
+    reverb_.set_lp (juce::jmap (lpParam_, 0.0f, 1.0f, 0.05f, 1.0f));
     reverb_.set_diffusion (diffParam_);                      // reverb's internal allpass diffusion
 
     // PRE-DELAY: delay the input feeding the tank by preDelaySamples_ (host
@@ -682,8 +687,18 @@ void FxRingModulator::process (float* L, float* R, int numSamples)
     for (int i = 0; i < os; ++i)
     {
         const float c = carrierOs_[i] * 2.0f;
-        osL_[i] = stmlib::SoftLimit (gain * (warpsDiode (osL_[i] + c) + warpsDiode (osL_[i] - c)));
-        osR_[i] = stmlib::SoftLimit (gain * (warpsDiode (osR_[i] + c) + warpsDiode (osR_[i] - c)));
+        // Input-domain clamp (Wavefolder precedent, :477-482): warpsDiode
+        // grows QUADRATICALLY past its dead zone and SoftLimit is NOT
+        // bounded (x/9 for large x), so an unclamped hot chain input makes
+        // gain*diode-sum explode (|in|=4 @ amount=1 measured ~16x). Upstream
+        // Warps fed this stage ADC-bounded +/-1 audio — restore that
+        // contract in the oversampled domain. Everything at or below nominal
+        // full scale is bit-identical; the clamped path peaks ~2.95 at max
+        // amount (the same corner in-range audio already reaches).
+        const float xl = juce::jlimit (-1.0f, 1.0f, osL_[i]);
+        const float xr = juce::jlimit (-1.0f, 1.0f, osR_[i]);
+        osL_[i] = stmlib::SoftLimit (gain * (warpsDiode (xl + c) + warpsDiode (xl - c)));
+        osR_[i] = stmlib::SoftLimit (gain * (warpsDiode (xr + c) + warpsDiode (xr - c)));
     }
     srcDown_[0].Process (osL_.data(), L, static_cast<size_t> (os));   // n*6 % 6 == 0
     srcDown_[1].Process (osR_.data(), R, static_cast<size_t> (os));

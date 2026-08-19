@@ -8,10 +8,14 @@
 // natural stereo; Width blends the second spring in.
 //
 // Params (param[4] is UNUSED; Mix is the chain Dry/Wet):
-//   * Decay (p0): 0.2..4 s -> loop feedback.
+//   * Decay (p0): 0.2..4 s -> PER-SPRING loop feedback
+//     g_s = 10^(-3*D_s/(decay*fs))*(1-0.25*Chirp) (per-pass RT60 law:
+//     t60 == Decay at Chirp 0; D_s = the per-spring loop length. Chirp
+//     trades tail length for dispersion).
 //   * Damp  (p1): 500..8000 Hz loop LP.
 //   * Chirp (p2): AP coefficient 0.35..0.95 (dispersion strength = boing).
-//   * Width (p3): 0 = one spring (mono), 1 = both springs (stereo).
+//   * Width (p3): 0 = one spring (TRUE mono: L and R are bit-identical),
+//     1 = both springs (decorrelated stereo).
 
 #ifndef PARVATI_DSP_FX_FV1_FV1SPRING_H
 #define PARVATI_DSP_FX_FV1_FV1SPRING_H
@@ -41,9 +45,10 @@ private:
     DelayLine<64> aps_[2][6];
     OnePoleLpFx damp_[2];
 
-    int16_t fb14_     = 0;
+    int16_t fb14_[2]    = {};   // q14(per-spring loop gain — see setParams)
     int16_t chirp14_  = 0;
-    int16_t width14_  = 0;
+    int16_t width14_  = 0;      // q14(Width): crossfades R from spring A (mono) to spring B
+    int16_t invWidth14_ = 8191; // q14(1-Width)  (precomputed — no per-sample q14)
 };
 
 } // namespace parvati::fv1

@@ -51,6 +51,15 @@ void Fv1Ensemble::setParams (const float param[5])
     // Center: 2..25 ms -> samples at the internal rate.
     centerSamp_ = (2.0f + p2 * 23.0f) * 1.0e-3f * static_cast<float> (kInternalRate);
 
+    // Depth clamp: never let the sweep pin at the 1-sample read floor.
+    // Center min (2 ms = 65.5) < Depth max (15 ms = 491.5), so the corner
+    // Center=0/Depth=1 used to clamp inside readFrac for ~46% of the cycle
+    // (a real BBD cannot go through zero delay, but THIS was an undocumented
+    // dead half-sweep). Capping depth at center-1 keeps the deepest read at
+    // exactly 1 sample — the sweep always moves.
+    if (depthSamp_ > centerSamp_ - 1.0f)
+        depthSamp_ = centerSamp_ - 1.0f;
+
     // Feedback: -0.9..0.9, quantized to a 14-bit coefficient.
     const float fb = -0.9f + p3 * 1.8f;
     fb14_ = q14 (fb);

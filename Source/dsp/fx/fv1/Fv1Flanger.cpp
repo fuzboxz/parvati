@@ -26,6 +26,15 @@ void Fv1Flanger::setParams (const float param[5])
     inc_ = rate / static_cast<float> (kInternalRate);
     depthSamp_ = p1 * 4.5e-3f * static_cast<float> (kInternalRate);
     baseSamp_  = (0.15f + p2 * 5.85f) * 1.0e-3f * static_cast<float> (kInternalRate);
+    // Depth clamp: never let the sweep pin at the 1-sample read floor.
+    // Base min (0.15 ms = 4.9) << Depth max (4.5 ms = 147.5), so the corner
+    // Manual=0/Depth=1 used to clamp inside readFrac for ~49% of EVERY LFO
+    // cycle — half the sweep dead at ~zero delay, the jet collapsing toward
+    // a near-through path. Capping depth at base-1 keeps the deepest read at
+    // exactly 1 sample; the documented ranges are untouched (only the
+    // out-of-range combination is affected).
+    if (depthSamp_ > baseSamp_ - 1.0f)
+        depthSamp_ = baseSamp_ - 1.0f;
     fb14_ = q14 (p3 * 0.92f);
     damp_.setCutoff (8000.0f);
 }

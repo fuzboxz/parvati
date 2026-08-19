@@ -28,10 +28,20 @@ void Fv1Room::setParams (const float param[5])
     const float p3 = std::clamp (param[3], 0.0f, 1.0f);
     // param[4] is UNUSED (Mix is the chain Dry/Wet — never read here).
 
+    // Decay 0.1..3 s -> PER-COMB feedback g_i = 10^(-3*D_i/(decay*fs)): the
+    // per-pass RT60 law (g_i is applied once every D_i samples, so t60 ==
+    // Decay by construction). The old per-SAMPLE law 10^(-3/(decay*fs)) hit the
+    // 0.999 clamp for every decay > 0.21 s — knob inert above p0 ~= 0.038,
+    // real LF t60 6-8 MINUTES (audit/fx_review_20260819/rev_reverbs.md).
+    // The [0, 0.999] clamp is now a never-engaging stability guard.
     const float decay = 0.1f + p0 * 2.9f;
-    float g = std::pow (10.0f, -3.0f / (decay * 32768.0f));
-    g = std::clamp (g, 0.0f, 0.999f);
-    g14_ = q14 (g);
+    for (int i = 0; i < 4; ++i)
+    {
+        float g = std::pow (10.0f,
+                            -3.0f * static_cast<float> (kCombD[i]) / (decay * 32768.0f));
+        g = std::clamp (g, 0.0f, 0.999f);
+        g14_[i] = q14 (g);
+    }
 
     const float fc = 500.0f * std::pow (24.0f, p1);
     for (auto& lp : lp_)
@@ -70,10 +80,10 @@ void Fv1Room::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t o2 = comb2_.read (kCombD[2]);
     const int32_t o3 = comb3_.read (kCombD[3]);
 
-    comb0_.write (f24_addSat (lin, f24_mulk (lp_[0].process (o0), g14_)));
-    comb1_.write (f24_addSat (lin, f24_mulk (lp_[1].process (o1), g14_)));
-    comb2_.write (f24_addSat (lin, f24_mulk (lp_[2].process (o2), g14_)));
-    comb3_.write (f24_addSat (lin, f24_mulk (lp_[3].process (o3), g14_)));
+    comb0_.write (f24_addSat (lin, f24_mulk (lp_[0].process (o0), g14_[0])));
+    comb1_.write (f24_addSat (lin, f24_mulk (lp_[1].process (o1), g14_[1])));
+    comb2_.write (f24_addSat (lin, f24_mulk (lp_[2].process (o2), g14_[2])));
+    comb3_.write (f24_addSat (lin, f24_mulk (lp_[3].process (o3), g14_[3])));
 
     const int32_t sum = o0 + o1 + o2 + o3;              // plain int32: 4x Q.23 fits
     const int32_t in  = f24_mulk (sum, quarter14_);
