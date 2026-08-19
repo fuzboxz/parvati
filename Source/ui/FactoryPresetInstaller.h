@@ -29,4 +29,17 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                                    const juce::File& factoryMultiDir,
                                    const juce::File& templatesDir,
                                    const juce::File& userDir);
+
+// Bump when the EMBEDDED factory content changes (new/renamed .PRO/.MUL, edited
+// templates). A bump invalidates the on-disk install marker so every already-
+// installed tree re-runs the full (self-healing) extraction pass on next launch;
+// an unchanged version takes the marker fast path (F-ios-perf-5: one marker stat
+// instead of ~365 per-resource stats at every process start, which was
+// measurable inside iOS AUv3 instantiate).
+constexpr int kFactoryInstallVersion = 1;
+
+// Test-only: forget the process-once install guard so a single test binary can
+// exercise BOTH the first-run (full pass) and the subsequent-run (marker fast
+// path) behaviours. Single-threaded use only (tests). Resets nothing on disk.
+void resetInstallOnceForTest();
 }  // namespace parvati

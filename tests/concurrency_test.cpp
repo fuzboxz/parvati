@@ -25,6 +25,7 @@
 //   AddressSanitizer + UBSan (mem): -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
@@ -564,6 +565,99 @@ int main (int argc, char** argv)
             check (proc.getEngine().getPart (2).partBytes[1] == 2,
                 "post-switch byte edit routes to the deferred-selected Part 2");
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // [7] UI-preference state save/restore vs message-thread setters
+    //     (iOS hunt 2026-08-19, F-ios-lc-1 — HIGH, crash class).
+    //
+    // AUv3 hosts call getStateInformation / setStateInformation on
+    // NON-message threads (AUM / GarageBand session saves + background
+    // autosaves), while the UI writes the same members from the message
+    // thread (SettingsPanel theme combo -> setUiTheme, editor language ->
+    // setUiLanguage, zoom -> setUiZoom). juce::String is REFCOUNTED — a
+    // String copied while another thread reassigns it is a use-after-free
+    // class; the scalars (zoom/oversampling) tear silently into the saved
+    // state. Pre-fix every access was unsynchronized; post-fix the whole
+    // family is guarded by uiPrefsLock_ (get/set accessors + one-lock
+    // snapshots in get/setStateInformation).
+    //
+    // This section is a TSan detector (the release-mode run must also pass
+    // and pin the semantics): thread A loops getStateInformation — the host
+    // autosave stand-in — while the MAIN thread alternates the setters at
+    // full speed. Then semantic pins: setter/getter round-trip + a full
+    // get->set state round-trip preserving theme/language/zoom.
+    // ---------------------------------------------------------------------
+    std::printf ("\n[7] UI-pref state save/restore vs message-thread setters (F-ios-lc-1)\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        proc.syncAllParamsToEngine();
+
+        std::atomic<bool> running { true };
+        std::atomic<long> savesDone { 0 };
+        std::thread hostThread ([&]
+        {
+            // Host autosave stand-in: serialize full state off-thread.
+            juce::MemoryBlock blob;
+            while (running.load (std::memory_order_relaxed))
+            {
+                proc.getStateInformation (blob);
+                savesDone.fetch_add (1, std::memory_order_relaxed);
+            }
+        });
+
+        // Message thread: the SettingsPanel/editor setter surface, alternated.
+        // Time-bounded (>= 250 ms AND >= 4000 iterations) so the host-thread
+        // saves are guaranteed OVERLAP regardless of machine speed — the
+        // assertions below stay deterministic (they never depend on counts).
+        const auto stormStart = std::chrono::steady_clock::now();
+        for (int i = 0; i < 4000 || std::chrono::duration_cast<std::chrono::milliseconds>
+                                      (std::chrono::steady_clock::now() - stormStart).count() < 250; ++i)
+        {
+            proc.setUiTheme (i % 2 ? "Slate" : "Carbon");
+            proc.setUiLanguage (i % 2 ? "fr" : "auto");
+            proc.setUiZoom (i % 2 ? 1.25 : 1.0);
+            proc.setUiTooltips (i % 2 == 0);
+            proc.setUiOversampling (i % 2 ? 2 : 4);
+        }
+        running.store (false, std::memory_order_relaxed);
+        hostThread.join();
+        char m[128];
+        std::snprintf (m, sizeof (m), "host-thread state saves completed during the setter storm (%ld)",
+                       savesDone.load());
+        check (savesDone.load() > 0, m);
+
+        // Semantic pins post-storm: setters + locked getters agree.
+        proc.setUiTheme ("Slate");
+        proc.setUiLanguage ("fr");
+        proc.setUiZoom (1.5);
+        check (proc.getUiTheme() == "Slate", "setter/getter round-trip: theme");
+        check (proc.getUiLanguage() == "fr", "setter/getter round-trip: language");
+        check (std::fabs (proc.getUiZoom() - 1.5) < 1e-9, "setter/getter round-trip: zoom");
+
+        // Full host-state round-trip preserves the UI preferences.
+        juce::MemoryBlock blob;
+        proc.getStateInformation (blob);
+        ParvatiAudioProcessor restored;
+        restored.prepareToPlay (48000.0, 256);
+        restored.setStateInformation (blob.getData(), (int) blob.getSize());
+        check (restored.getUiTheme() == "Slate", "state round-trip preserves theme");
+        check (restored.getUiLanguage() == "fr", "state round-trip preserves language");
+        check (std::fabs (restored.getUiZoom() - 1.5) < 1e-9, "state round-trip preserves zoom");
+
+        // Processor still functional after the storm.
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 100), 0);
+        proc.processBlock (buf, midi);
+        bool finite = true;
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 256; ++i)
+                if (! std::isfinite (buf.getSample (ch, i)))
+                    finite = false;
+        check (finite, "processor renders finite audio after the setter storm");
     }
 
     std::printf ("\n%s (%d failure%s)\n",

@@ -1054,3 +1054,17 @@ void FxMatrixView::applyThemeColors()
     rebuildLayout();
     repaint();
 }
+
+void FxMatrixView::visibilityChanged()
+{
+    // F-ios-perf-3 (iOS hunt 2026-08-19): run the 30 Hz poll only while this
+    // display is actually showing (its page is current / the editor is on a
+    // desktop). visibilityChanged fires on tab-page unparent (the
+    // TabbedComponent removes non-current content) and on the initial
+    // add-to-parent; the constructor's startTimerHz stays for the
+    // first-show case (stopTimer on an already-stopped timer is a no-op).
+    if (isShowing())
+        startTimerHz (30);
+    else
+        stopTimer();
+}

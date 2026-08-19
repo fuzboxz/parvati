@@ -5,6 +5,26 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
+- **iOS quality wave (2026-08-19).** A five-lane iOS/iPadOS hunt (build +
+  plists, AUv3 lifecycle, touch/HIG, Files integration, perf/thermal — full
+  lane reports in `audit/ios_hunt_20260819/`, per-fix reports alongside)
+  triaged ~25 findings; the high-severity set is being fixed in coordinated
+  waves this session. Headline fixes landing in this wave (details + tests in
+  each fix report): declared `CFBundleDocumentTypes` + five exported UTIs so
+  .parvati/.PRO/.MUL/.scl/.kbm can be opened from Files/AirDrop/Mail and
+  `LSSupportsOpeningDocumentsInPlace` stops being inert (CMakeLists graft via
+  `ios/parvati_filetypes.plist`, configure-time FATAL_ERROR verify); the
+  `std::system` probe in `tests/parvati_tests.cpp` is now iOS-guarded so the
+  deterministic suite compiles under the iOS toolchain; dead
+  `ENABLE_BITCODE` attrs removed and the correct Xcode `--config Release`
+  invocation documented (the `CONFIGURATION=` form silently builds Debug and
+  poisons the artefacts tree). A new on-device checklist
+  (`audit/ios_device_checklist.md`) collects every UNKNOWN-NEEDS-DEVICE item
+  (AUv3 instantiation in AUM/GB, interruption/route changes, save-from-host
+  visibility, open-in handling — including the known follow-up that the app
+  must still LOAD the opened file at launch via the JUCE Standalone delegate
+  seam —, hardware-keyboard host-return, save-picker overwrite prompts,
+  thermal at 2x OS).
 - **PresetBrowser menu cache (Wave 10).** The preset menu's directory scan
   and the per-factory-`.PRO` name parse ran synchronously on the message
   thread on EVERY open (all 4 banks x 128 programs parsed each time) —

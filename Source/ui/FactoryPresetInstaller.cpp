@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <set>
 
@@ -14,8 +15,10 @@ namespace parvati
 namespace
 {
 // Process-once guard: extraction (and its directory scan) runs at most once per
-// process, even though tests / hosts create many AudioProcessors.
-std::once_flag g_installOnceFlag;
+// process, even though tests / hosts create many AudioProcessors. Held by
+// unique_ptr so the TEST-ONLY reset can swap in a fresh flag (std::once_flag
+// itself is neither copyable nor movable — see resetInstallOnceForTest).
+std::unique_ptr<std::once_flag> g_installOnceFlag = std::make_unique<std::once_flag>();
 std::atomic<bool> g_installDone { false };
 // Write one embedded resource to disk if it is not already present.
 // Returns true if the file was written.
@@ -60,6 +63,26 @@ bool overwriteIfChanged (const juce::File& target, const char* data, int size)
     }
     return temp.overwriteTargetFileWithTemporary();
 }
+
+// The install-completion marker lives at the FACTORY root and reads
+// "installed=<kFactoryInstallVersion>". Present + version-matching => the
+// per-resource bank walk is skipped at startup (F-ios-perf-5); missing,
+// corrupt or version-mismatched => the full self-healing pass runs as before.
+// WRITTEN ATOMICALLY only AFTER a completed pass (an interrupted first run
+// leaves no marker and self-heals next launch).
+juce::File installMarkerFile (const juce::File& factoryDir)
+{
+    return factoryDir.getChildFile (".factory-install");
+}
+
+bool installMarkerMatches (const juce::File& factoryDir)
+{
+    juce::MemoryBlock mb;
+    if (! installMarkerFile (factoryDir).loadFileAsData (mb))
+        return false;
+    return mb.toString().trim()
+        == "installed=" + juce::String (kFactoryInstallVersion);
+}
 }  // namespace
 
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
@@ -74,11 +97,26 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         return 0;
 
     int written = 0;
-    std::call_once (g_installOnceFlag, [&]
+    std::call_once (*g_installOnceFlag, [&]
     {
         // Always provide a USER area for the user's own saved presets.
         userDir.createDirectory();
         templatesDir.createDirectory();
+
+        // F-ios-perf-5 (iOS hunt 2026-08-19): install-marker FAST PATH. A tree
+        // whose marker matches kFactoryInstallVersion has already seen a
+        // COMPLETED extraction pass of this exact embedded content, so the
+        // ~365 per-resource existence stats are skipped (one marker read
+        // instead — the walk was measurable inside iOS AUv3 instantiate).
+        // The TEMPLATES content-sync + stale-template sweep still run (cheap,
+        // and correctness-relevant: renames/edits/removals must propagate).
+        // A missing/corrupt/version-mismatched marker takes the FULL
+        // self-healing pass below, exactly as before this fast path existed.
+        // RESIDUAL (by design, traded for the startup cost): with a VALID
+        // marker, a user-DELETED factory .PRO/.MUL is not re-extracted until
+        // kFactoryInstallVersion is bumped (bump on any embedded-content
+        // change; the banks are write-if-missing otherwise).
+        const bool markerFastPath = installMarkerMatches (factoryDir);
 
         // Legacy cleanup (pre-release): the previous flat layout extracted to
         // Parvati/Factory and Parvati/FactoryMulti. Those are superseded by
@@ -86,18 +124,24 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // Only the two known legacy names are touched. On a CASE-INSENSITIVE FS
         // (default macOS APFS) "Factory" and "FACTORY" are the same directory,
         // so compare the paths case-insensitively and never delete a dir that is
-        // (case-insensitively) the live factory/multi dir.
-        const auto sameDirCI = [] (const juce::File& a, const juce::File& b)
+        // (case-insensitively) the live factory/multi dir. Skipped on the marker
+        // fast path: a tree with a matching marker was installed by a version
+        // that already ran this cleanup (the marker is written only at the END
+        // of a full pass, cleanup included).
+        if (! markerFastPath)
         {
-            return a.getFullPathName().toLowerCase() == b.getFullPathName().toLowerCase();
-        };
-        const juce::File base = factoryDir.getParentDirectory();
-        const juce::File legacyFactory = base.getChildFile ("Factory");
-        const juce::File legacyMulti   = base.getChildFile ("FactoryMulti");
-        if (! sameDirCI (legacyFactory, factoryDir))
-            legacyFactory.deleteRecursively (false);
-        if (! sameDirCI (legacyMulti, factoryMultiDir))
-            legacyMulti.deleteRecursively (false);
+            const auto sameDirCI = [] (const juce::File& a, const juce::File& b)
+            {
+                return a.getFullPathName().toLowerCase() == b.getFullPathName().toLowerCase();
+            };
+            const juce::File base = factoryDir.getParentDirectory();
+            const juce::File legacyFactory = base.getChildFile ("Factory");
+            const juce::File legacyMulti   = base.getChildFile ("FactoryMulti");
+            if (! sameDirCI (legacyFactory, factoryDir))
+                legacyFactory.deleteRecursively (false);
+            if (! sameDirCI (legacyMulti, factoryMultiDir))
+                legacyMulti.deleteRecursively (false);
+        }
 
         // Factory .PRO/.MUL banks are stable -> write-if-missing only. The stock
         // TEMPLATES set, however, is SYNCED to the embedded set every run so that
@@ -139,6 +183,8 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
             if (sep <= 0 || sep >= name.length() - 2)
             {
                 // Fallback (un-prefixed name): route by extension (no templates).
+                // Bank/multi content: skipped on the marker fast path (see above).
+                if (! markerFastPath)
                 {
                     const juce::File target = (name.endsWithIgnoreCase (".MUL") ? factoryMultiDir
                                                                                 : factoryDir)
@@ -159,12 +205,16 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
             }
             else if (token == "MULTI")
             {
-                if (writeIfMissing (factoryMultiDir.getChildFile (fname), data, size))
+                // Bank content: skipped on the marker fast path (see above).
+                if (! markerFastPath
+                    && writeIfMissing (factoryMultiDir.getChildFile (fname), data, size))
                     ++written;
             }
             else   // bank token (A/B/F/S)
             {
-                if (writeIfMissing (factoryDir.getChildFile (token).getChildFile (fname), data, size))
+                // Bank content: skipped on the marker fast path (see above).
+                if (! markerFastPath
+                    && writeIfMissing (factoryDir.getChildFile (token).getChildFile (fname), data, size))
                     ++written;
             }
         }
@@ -172,14 +222,47 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // Remove stock templates no longer in the embedded set (e.g. the removed
         // "Poly 6" / "Poly 16"). TEMPLATES/ is stock-only, so any local .parvati
         // absent from the embedded set is a stale stock template.
+        // F-ios-files-4 (iOS hunt 2026-08-19): SKIP files matching the JUCE
+        // TemporaryFile shape ("<name>_temp<hex>", created IN the target
+        // directory). Standalone and AUv3 run this sweep against the SAME
+        // group tree; a sweep in one process could delete another process's
+        // in-flight atomic template write mid-rename (its retry would then
+        // fail for that run). Temps never match an embedded name, so skipping
+        // them changes nothing for a settled tree.
         juce::Array<juce::File> localTemplates;
         templatesDir.findChildFiles (localTemplates, juce::File::findFiles, false, "*.parvati");
         for (const auto& f : localTemplates)
+        {
+            if (f.getFileName().contains ("_temp"))
+                continue;   // another process's in-flight atomic write
             if (embeddedTemplates.find (f.getFileName()) == embeddedTemplates.end())
                 f.deleteFile();
+        }
+
+        // F-ios-perf-5: write the install marker ATOMICALLY after a COMPLETED
+        // full pass (template sync included), so the next launch in this
+        // process tree takes the fast path. An interrupted pass leaves no
+        // marker -> full self-heal next launch.
+        if (! markerFastPath)
+        {
+            const juce::File marker = installMarkerFile (factoryDir);
+            juce::TemporaryFile temp (marker);
+            if (temp.getFile().replaceWithText (
+                    "installed=" + juce::String (kFactoryInstallVersion)))
+                temp.overwriteTargetFileWithTemporary();
+        }
     });
 
     g_installDone.store (true, std::memory_order_relaxed);
     return written;
+}
+
+void resetInstallOnceForTest()
+{
+    // Test-only (see header): forget the process-once guard so the next
+    // ensureFactoryPresetsInstalled call re-runs its pass-decision logic
+    // against the CURRENT marker state on disk. Single-threaded by contract.
+    g_installDone.store (false, std::memory_order_relaxed);
+    g_installOnceFlag = std::make_unique<std::once_flag>();
 }
 }  // namespace parvati

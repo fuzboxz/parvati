@@ -115,6 +115,13 @@ private:
     std::array<int, 16>  stashedAmount_ {};
 
     void timerCallback() override { refresh(); flashTick(); }
+    // F-ios-perf-3 (iOS hunt 2026-08-19): gate the 30 Hz poll on visibility.
+    // The TabbedComponent UNPARENTS non-current pages (fires this), and an
+    // AUv3 host can keep the extension process alive with the editor closed
+    // — ~10 components x 30 Hz of atomic/APVTS fetches burn battery for
+    // nothing then. The callbacks are change-only (cheap idle tick), so the
+    // gating is about the wakeup cadence, not the tick cost.
+    void visibilityChanged() override;
     void setAmountForSlot (int slot, int amount);    // writes the APVTS (denormalized -> 0..1)
     void rebuildLayout();
     juce::String buildSignature() const;             // compact "active set" fingerprint

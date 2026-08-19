@@ -1,0 +1,32 @@
+[1] editor teardown side-effects are reference-counted
+  ok  : two editors created
+  ok  : live-editor count == 2 while both are open
+  ok  : tap-assign armed
+  ok  : count drops to 1 after destroying one editor
+  ok  : tap-assign still ACTIVE after a sibling editor closes (pre-fix: cleared)
+  ok  : screensaver policy unchanged while a sibling editor is live
+  ok  : count drops to 0 after the last editor
+  ok  : tap-assign cleared when the LAST editor closes (leak guard intact)
+  ok  : screensaver policy restored to the pre-test value on desktop
+[2] focus traversal excludes invisible zero-extent controls
+  ok  : editor created
+  ok  : no focusable component has zero extent [0 of 48]
+  ok  : focus traversal is non-empty (the gate is real)
+[3] releaseResources interruption semantics
+     active voices while held: 1
+  ok  : note sounds before the interruption
+  ok  : first block after resume is silent (energy 0)
+     active voices after resume block: 0
+  ok  : held note is dead after release/prepare (pre-fix: stuck forever)
+  ok  : patch bytes survive the interruption cycle
+     active voices for a new note: 1
+  ok  : a new note still sounds after the cycle
+[4] SeqLengthStepper: full-cell picker replaces the sub-44 +/- pair
+  ok  : [4] editor created
+  ok  : [4] a SeqLengthStepper is present in the tree
+  ok  : [4] precondition: seq_length_1 starts at its 16 default
+  ok  : [4] picker pick writes the param (5)
+  ok  : [4] keyboard down nudge decrements (4)
+  ok  : [4] lower clamp holds at 1
+
+LIFECYCLE TEST: ALL CHECKS PASSED (0 failures)

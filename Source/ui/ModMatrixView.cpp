@@ -486,25 +486,41 @@ struct ModMatrixRow : public juce::Component,
     {
         auto b = getLocalBounds().reduced (4, 2);
 
+        // F-ios-touch (bug hunt 2026-08-19): the right-column ACTION targets
+        // (Mute / Clear) and the value readout are FIXED 44pt-floor buttons —
+        // reserve them FIRST so a narrow row squeezes the proportional COMBOS
+        // (their choice text scrolls), never the buttons. Pre-fix the combos'
+        // jmax floors consumed the strip and removeFromRight() silently clamped:
+        // a 12x44 'M' (mis-tap magnet) and a 0-width 'Clear' (unreachable).
+        muteButton_.setBounds (b.removeFromRight (44));   // mute touch target (unified)
+        b.removeFromRight (8);
+        clearButton_.setBounds (b.removeFromRight (44));
+        b.removeFromRight (8);
+        valueLabel_.setBounds (b.removeFromRight (46));
+        b.removeFromRight (8);
+
         indexLabel_.setBounds (b.removeFromLeft (18));
         b.removeFromLeft (4);
         dragGrip_->setBounds (b.removeFromLeft (44));   // drag-grip touch target (unified)
         b.removeFromLeft (8);
 
-        // Source + dest combos: proportional, floored so the choice text stays legible.
-        const int comboW = juce::jmax (70, b.getWidth() / 5);
-        sourceCombo_.setBounds (b.removeFromLeft (comboW));
+        // Source + dest combos share the REST with the depth slider, capped so
+        // the slider keeps >= 40pt (its row height is the real hit surface).
+        const int sliderFloor = 40;
+        const int comboBudget = juce::jmax (0, b.getWidth() - sliderFloor - 14 - 8);
+        int srcW = juce::jmax (70, comboBudget * 5 / 9);
+        int dstW = juce::jmax (84, comboBudget * 4 / 9);
+        // When even the floors cannot fit, shrink the SOURCE first (the
+        // narrower semantic: the fixed source list), then hard-floor both at
+        // 44 — the HIG minimum for a functional combo on touch.
+        if (srcW + 14 + dstW > comboBudget)
+            srcW = juce::jmax (44, comboBudget - 14 - dstW);
+        if (srcW + 14 + dstW > comboBudget)
+            dstW = juce::jmax (44, comboBudget - 14 - srcW);
+        sourceCombo_.setBounds (b.removeFromLeft (srcW));
         b.removeFromLeft (14);   // arrow gap
-        destCombo_.setBounds (b.removeFromLeft (juce::jmax (70, b.getWidth() / 4)));
+        destCombo_.setBounds (b.removeFromLeft (dstW));
         b.removeFromLeft (8);
-
-        // Right-aligned controls: Mute, Clear, value, then slider fills the rest.
-        muteButton_.setBounds (b.removeFromRight (44));   // mute touch target (unified)
-        b.removeFromRight (8);
-        clearButton_.setBounds (b.removeFromRight (juce::jmax (44, b.getWidth() / 8)));
-        b.removeFromRight (8);
-        valueLabel_.setBounds (b.removeFromRight (46));
-        b.removeFromRight (8);
 
         // iOS HIG: the depth slider fills the remaining row area, so on the 48pt
         // row it is ~44pt tall -> a large invisible hit zone while the visual
@@ -931,4 +947,18 @@ void ModMatrixView::applyThemeColors()
 
     rebuildLayout();
     repaint();
+}
+
+void ModMatrixView::visibilityChanged()
+{
+    // F-ios-perf-3 (iOS hunt 2026-08-19): run the 30 Hz poll only while this
+    // display is actually showing (its page is current / the editor is on a
+    // desktop). visibilityChanged fires on tab-page unparent (the
+    // TabbedComponent removes non-current content) and on the initial
+    // add-to-parent; the constructor's startTimerHz stays for the
+    // first-show case (stopTimer on an already-stopped timer is a no-op).
+    if (isShowing())
+        startTimerHz (30);
+    else
+        stopTimer();
 }

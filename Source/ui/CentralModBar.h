@@ -41,6 +41,7 @@ public:
     static constexpr int kBarHeight = 78;   // label tab (14) + gap (4) + 56pt pills + insets
     static constexpr int kPillH     = 56;   // compact pills (was 72 — still >= 44pt HIG touch target)
     static constexpr int kPillGap   = 8;    // minimum pill spacing
+    static constexpr int kNavHitW   = 44;   // < > nav hit-band width (F-ios-touch-1: the ONLY pill-band scrollers — HIG floor; the visible chevron glyph stays visually small inside it)
 
     explicit CentralModBar (ThemeManager& themeManager);
     ~CentralModBar() override;

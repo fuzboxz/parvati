@@ -23,6 +23,7 @@
 #include "PluginProcessor.h"
 #include "ui/KeyboardView.h"
 #include "ui/NoteName.h"       // midiNoteName (keyboard-settings tooltip)
+#include "ui/SynthWorkspace.h" // complete type (getSynthWorkspaceForTest)
 #include "ui/ModDestMap.h"
 #include "ui/ModMatrixView.h"
 #include "ui/WheelsComponent.h"
@@ -575,6 +576,17 @@ public:
     // access only (same rationale as setFxMode: headless layout + screenshot
     // tools must drive the page switch without simulating clicks).
     void setCurrentTopPage (int pageIndex);
+
+    // F-ios-lc-3 (bug hunt 2026-08-19): live ParvatiEditor instances in THIS
+    // process (an AUv3 extension process hosts several). Test hook for the
+    // reference-counted process-global teardown side-effects (screensaver /
+    // tap-assign clear) — the transitions 0->1 / N->0 are what gate them.
+    static int liveEditorCountForTest() noexcept;
+
+    // Test-only (lifecycle test [4]): the Synth workspace (generator-page
+    // host) so headless tests can drive setActiveGenerator — the same seam a
+    // mod-bar pill click drives.
+    SynthWorkspace* getSynthWorkspaceForTest() { return synthWorkspace_.get(); }
 
     // One iteration of the poll timer's VISIBLE-Patch-page mirror check: when
     // the Patch page is on screen and the engine's display version moved

@@ -19,6 +19,7 @@
 #include "ui/FxRoutingBar.h"       // kStepBtnW/kStepBtnH/kEqKnobSize (routing-bar targets)
 #include "ui/WheelsComponent.h"    // kOctBtnSize (wheels octave-switch targets)
 #include "ui/ParvatiLookAndFeel.h" // kPopupRowHeight (default popup rows)
+#include "ui/SeqLengthStepper.h" // kPopupRowHeight (the seq-length picker rows)
 
 namespace
 {
@@ -68,6 +69,8 @@ int main()
     check (ModMatrixView::kAddButtonH == 44, "mod-matrix Add button == 44");
     check (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button == 44");
     check (ParvatiLookAndFeel::kPopupRowHeight == 44, "default popup-menu row == 44");
+    check (CentralModBar::kNavHitW            == 44, "mod-bar nav scroller hit band == 44 (F-ios-touch-1)");
+    check (SeqLengthStepper::kPopupRowHeight  == 44, "seq-length picker row == 44 (F-ios-touch-2)");
     check (WheelsComponent::kOctBtnSize == 44, "wheels octave-switch button == 44");
 
     std::printf ("\n%s (%d failures)\n",

@@ -1,0 +1,292 @@
+// Editor/processor lifecycle regression tests (bug hunt 2026-08-19, iOS hunt).
+//
+//   [1] F-ios-lc-3 — process-global editor teardown side-effects are
+//       reference-counted. An AUv3 extension process hosts MULTIPLE Parvati
+//       instances (AUM: several editors in one process; JUCE's AUv3 wrapper
+//       creates/destroys one editor per instance). Pre-fix, destroying editor
+//       A re-enabled the screensaver (T14's protection voided) and cleared the
+//       process-global ParamControl tap-assign flag while editor B was still
+//       open. Pinned here on desktop via the tap-assign half + the live-count
+//       hook (the screensaver half shares the exact same count predicate and
+//       is iOS-compile-gated; its counterpart assertion is included and
+//       trivially holds on desktop because the desktop build never touches
+//       screensaver policy).
+//   [2] F-ios-touch-3 — no INVISIBLE component participates in keyboard focus
+//       traversal. The parked zoom trio (constructed, never placed => 0x0
+//       extent) used to stay "visible", so an iPad hardware keyboard's Tab
+//       could hand focus to an invisible button (Space then fires a zoom
+//       change; musical typing stops reaching the keyboard view).
+//   [3] F-ios-lc-2 — interruption semantics. releaseResources (the AUv3
+//       wrapper's deallocateRenderResources hook: phone call / route change)
+//       must make the next render cycle start from silence: held notes die
+//       (JUCE only clears notes on a sample-RATE change, so voices gated at
+//       the interruption would otherwise resume gated forever), queued MIDI is
+//       dropped, patch state survives, and a NEW note still sounds after the
+//       release/prepare cycle.
+//
+// Built by default. Run: ./build/parvati_lifecycle_test
+
+#include <cmath>
+#include <functional>
+#include <cstdio>
+#include <memory>
+#include <vector>
+
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include "PluginEditor.h"   // ParvatiEditor + ParamControl (tap-assign statics)
+#include "PluginProcessor.h"
+#include "ui/SeqLengthStepper.h"   // [4] the seq-length picker seam
+
+namespace
+{
+int g_failures = 0;
+void check (bool cond, const char* msg)
+{
+    std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
+    if (! cond) ++g_failures;
+}
+
+void pump (int ms)
+{
+    std::this_thread::sleep_for (std::chrono::milliseconds (ms));
+    juce::Timer::callPendingTimersSynchronously();
+}
+
+// Active (sounding) voices of Part 0 — the arp_test accounting.
+int activePart0 (ParvatiAudioProcessor& p)
+{
+    int n = 0;
+    for (int vi : p.getEngine().getPart (0).voiceIndices)
+        if (auto* av = p.getEngine().getAmbikaVoice (vi))
+            if (av->isVoiceActive())
+                ++n;
+    return n;
+}
+
+void renderEmpty (ParvatiAudioProcessor& p, int blocks = 1)
+{
+    for (int b = 0; b < blocks; ++b)
+    {
+        juce::AudioBuffer<float> buf (2, 256);
+        buf.clear();
+        juce::MidiBuffer midi;
+        p.processBlock (buf, midi);
+    }
+}
+
+double blockEnergy (juce::AudioBuffer<float>& buf)
+{
+    double e = 0.0;
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+        for (int i = 0; i < buf.getNumSamples(); ++i)
+        {
+            const double s = buf.getSample (ch, i);
+            e += s * s;
+        }
+    return e;
+}
+}  // namespace
+
+int main()
+{
+    juce::ScopedJuceInitialiser_GUI guiInit;
+
+    // ==================================================================
+    // [1] Two live editors: destroying ONE must not undo process-global
+    //     state the OTHER still depends on.
+    // ==================================================================
+    std::printf ("[1] editor teardown side-effects are reference-counted\n");
+    {
+        ParvatiAudioProcessor procA, procB;
+        procA.prepareToPlay (48000.0, 256);
+        procB.prepareToPlay (48000.0, 256);
+
+        std::unique_ptr<juce::AudioProcessorEditor> edA (procA.createEditor());
+        std::unique_ptr<juce::AudioProcessorEditor> edB (procB.createEditor());
+        check (edA != nullptr && edB != nullptr, "two editors created");
+        check (ParvatiEditor::liveEditorCountForTest() == 2,
+               "live-editor count == 2 while both are open");
+
+        const bool screensaverBefore = juce::Desktop::getInstance().isScreenSaverEnabled();
+
+        // Arm the process-global tap-assign mode the way editor B's [MOD]
+        // toggle does; it must survive editor A's teardown.
+        ParamControl::setTapAssignActive (true);
+        check (ParamControl::tapAssignActive(), "tap-assign armed");
+
+        edA.reset();   // destroy ONLY editor A (editor B still live)
+        check (ParvatiEditor::liveEditorCountForTest() == 1,
+               "count drops to 1 after destroying one editor");
+        check (ParamControl::tapAssignActive(),
+               "tap-assign still ACTIVE after a sibling editor closes (pre-fix: cleared)");
+        check (juce::Desktop::getInstance().isScreenSaverEnabled() == screensaverBefore,
+               "screensaver policy unchanged while a sibling editor is live");
+
+        // The LAST editor's teardown DOES clear the global (the W-era
+        // contract: [MAP] left ON at close must not leak to a reopen).
+        edB.reset();
+        check (ParvatiEditor::liveEditorCountForTest() == 0, "count drops to 0 after the last editor");
+        check (! ParamControl::tapAssignActive(),
+               "tap-assign cleared when the LAST editor closes (leak guard intact)");
+        check (juce::Desktop::getInstance().isScreenSaverEnabled() == screensaverBefore,
+               "screensaver policy restored to the pre-test value on desktop");
+    }
+
+    // ==================================================================
+    // [2] Focus traversal contains no zero-extent (invisible) component.
+    // ==================================================================
+    std::printf ("[2] focus traversal excludes invisible zero-extent controls\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+        check (ed != nullptr, "editor created");
+
+        // Give the tree one layout pass so real controls carry their bounds.
+        ed->setSize (1280, 800);
+        pump (20);
+
+        const auto all = juce::KeyboardFocusTraverser().getAllComponents (ed.get());
+        int zeroExtent = 0;
+        for (auto* c : all)
+            if (c != nullptr && (c->getWidth() <= 0 || c->getHeight() <= 0))
+            {
+                ++zeroExtent;
+                std::printf ("     zero-extent focusable: %s (%dx%d)\n",
+                             c->getName().toUTF8(), c->getWidth(), c->getHeight());
+            }
+        char msg[96];
+        std::snprintf (msg, sizeof (msg),
+                       "no focusable component has zero extent [%d of %zu]",
+                       zeroExtent, all.size());
+        check (zeroExtent == 0, msg);
+        check (! all.empty(), "focus traversal is non-empty (the gate is real)");
+    }
+
+    // ==================================================================
+    // [3] Interruption: releaseResources -> silence; state survives; new
+    //     notes still sound.
+    // ==================================================================
+    std::printf ("[3] releaseResources interruption semantics\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        proc.syncAllParamsToEngine();
+
+        // Hold a note (direct path).
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 60, (uint8_t) 100), 0);
+            proc.processBlock (buf, midi);
+        }
+        renderEmpty (proc, 2);
+        const int activeHeld = activePart0 (proc);
+        std::printf ("     active voices while held: %d\n", activeHeld);
+        check (activeHeld >= 1, "note sounds before the interruption");
+
+        const uint8_t shapeBefore = proc.getEngine().getPart (0).patchBytes[0];
+
+        // The interruption: resources torn down (flagged kill + MIDI queue
+        // drop) and re-allocated (resume). The kill is serviced at the top of
+        // the first processTransport — exactly the first block after resume.
+        proc.releaseResources();
+        proc.prepareToPlay (48000.0, 256);
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer midi;
+            proc.processBlock (buf, midi);   // services the deferred kill
+            const double e = blockEnergy (buf);
+            char m[96];
+            std::snprintf (m, sizeof (m), "first block after resume is silent (energy %.6g)", e);
+            check (e < 1.0e-9, m);
+        }
+        const int activeAfter = activePart0 (proc);
+        std::printf ("     active voices after resume block: %d\n", activeAfter);
+        check (activeAfter == 0,
+               "held note is dead after release/prepare (pre-fix: stuck forever)");
+
+        check (proc.getEngine().getPart (0).patchBytes[0] == shapeBefore,
+               "patch bytes survive the interruption cycle");
+
+        // A NEW note must still sound (state not corrupted).
+        {
+            juce::AudioBuffer<float> buf (2, 256);
+            buf.clear();
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, 67, (uint8_t) 100), 0);
+            proc.processBlock (buf, midi);
+        }
+        renderEmpty (proc, 2);
+        const int activeNew = activePart0 (proc);
+        std::printf ("     active voices for a new note: %d\n", activeNew);
+        check (activeNew >= 1, "a new note still sounds after the cycle");
+    }
+
+    // ------------------------------------------------------------------
+    // [4] SeqLengthStepper replacement interaction (F-ios-touch-2): the old
+    //     two ~32x20 -/+ buttons (sub-44, the audit's STOPPED T9a) are gone —
+    //     the NUMBER is a full-cell tap target opening a 1..16 picker of
+    //     44pt rows. Drive the seam headlessly: setValue (the picker item
+    //     action) must write the hidden slider -> the APVTS param.
+    // ------------------------------------------------------------------
+    std::printf ("[4] SeqLengthStepper: full-cell picker replaces the sub-44 +/- pair\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+        check (ed != nullptr, "[4] editor created");
+
+        // Hunt a SeqLengthStepper in the tree (the sequencer group's length
+        // cells; the page content is constructed at editor build).
+        // The Sequencer ParamPage is a GENERATOR page hosted by the Synth
+        // workspace's active-generator editor (default = ENV 1, so the seq
+        // page is NOT in the visible tree until its generator is selected).
+        // Make Sequencer 1 the active generator first — the same seam a pill
+        // click drives (modbar_pill_click_test's verified chain).
+        if (auto* parEd = dynamic_cast<ParvatiEditor*> (ed.get()))
+            parEd->getSynthWorkspaceForTest()->setActiveGenerator (ambika::dsp::MOD_SRC_SEQ_1);
+        SeqLengthStepper* stepper = nullptr;
+        std::function<void (juce::Component*)> hunt = [&] (juce::Component* c)
+        {
+            if (c == nullptr || stepper != nullptr) return;
+            if (auto* s = dynamic_cast<SeqLengthStepper*> (c)) { stepper = s; return; }
+            for (int i = 0; i < c->getNumChildComponents(); ++i)
+                hunt (c->getChildComponent (i));
+        };
+        hunt (ed.get());
+        check (stepper != nullptr, "[4] a SeqLengthStepper is present in the tree");
+
+        if (stepper != nullptr)
+        {
+            auto& apvts = proc.getApvts();
+            check (juce::roundToInt (apvts.getRawParameterValue ("seq_length_1")->load()) == 16,
+                   "[4] precondition: seq_length_1 starts at its 16 default");
+            // The picker item action (SafePointer-guarded, runs synchronously
+            // when invoked): pick 5.
+            stepper->setValueForTest (5);
+            check (juce::roundToInt (apvts.getRawParameterValue ("seq_length_1")->load()) == 5,
+                   "[4] picker pick writes the param (5)");
+            // The keyboard seam still nudges (desktop parity).
+            stepper->keyPressedForTest (juce::KeyPress (juce::KeyPress::downKey));
+            check (juce::roundToInt (apvts.getRawParameterValue ("seq_length_1")->load()) == 4,
+                   "[4] keyboard down nudge decrements (4)");
+            // Clamp both ends.
+            stepper->setValueForTest (1);
+            stepper->keyPressedForTest (juce::KeyPress (juce::KeyPress::downKey));
+            check (juce::roundToInt (apvts.getRawParameterValue ("seq_length_1")->load()) == 1,
+                   "[4] lower clamp holds at 1");
+        }
+    }
+
+    std::printf ("\n%s (%d failure%s)\n",
+                 g_failures ? "LIFECYCLE TEST: FAILURES" : "LIFECYCLE TEST: ALL CHECKS PASSED",
+                 g_failures, g_failures == 1 ? "" : "s");
+    return g_failures ? 1 : 0;
+}

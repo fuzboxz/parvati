@@ -26,6 +26,7 @@
   ok  : primary Undo button visible + positive at 560 [406 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 560 [510 5 44 44]
   ok  : primary ... overflow visible + positive at 560 [458 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 560 (13 audited, 0 undersized)
 
 === 600x600 ===
   audited 6 placed interactive header children
@@ -39,6 +40,7 @@
   ok  : primary Undo button visible + positive at 600 [446 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 600 [550 5 44 44]
   ok  : primary ... overflow visible + positive at 600 [498 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 600 (13 audited, 0 undersized)
 
 === 650x600 ===
   audited 8 placed interactive header children
@@ -53,6 +55,7 @@
   ok  : primary Undo button visible + positive at 650 [444 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 650 [600 5 44 44]
   ok  : primary ... overflow visible + positive at 650 [548 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 650 (13 audited, 0 undersized)
 
 === 700x600 ===
   audited 8 placed interactive header children
@@ -67,6 +70,7 @@
   ok  : primary Undo button visible + positive at 700 [494 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 700 [650 5 44 44]
   ok  : primary ... overflow visible + positive at 700 [598 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 700 (13 audited, 0 undersized)
 
 === 780x600 ===
   audited 8 placed interactive header children
@@ -81,6 +85,7 @@
   ok  : primary Undo button visible + positive at 780 [574 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 780 [730 5 44 44]
   ok  : primary ... overflow visible + positive at 780 [678 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 780 (13 audited, 0 undersized)
 
 === 810x600 ===
   audited 11 placed interactive header children
@@ -95,6 +100,7 @@
   ok  : primary Undo button visible + positive at 810 [448 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 810 [760 5 44 44]
   ok  : primary ... overflow visible + positive at 810 [552 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 810 (13 audited, 0 undersized)
 
 === 900x600 ===
   audited 11 placed interactive header children
@@ -109,6 +115,7 @@
   ok  : primary Undo button visible + positive at 900 [538 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 900 [850 5 44 44]
   ok  : primary ... overflow visible + positive at 900 [642 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 900 (13 audited, 0 undersized)
 
 === 980x600 ===
   audited 11 placed interactive header children
@@ -123,6 +130,7 @@
   ok  : primary Undo button visible + positive at 980 [618 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 980 [930 5 44 44]
   ok  : primary ... overflow visible + positive at 980 [722 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 980 (13 audited, 0 undersized)
 
 === 1024x600 ===
   audited 14 placed interactive header children
@@ -143,6 +151,7 @@
   ok  : primary Undo button visible + positive at 1024 [662 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1024 [974 5 44 44]
   ok  : primary ... overflow visible + positive at 1024 [766 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1024 (13 audited, 0 undersized)
 
 === 1050x600 ===
   audited 14 placed interactive header children
@@ -159,6 +168,7 @@
   ok  : primary Undo button visible + positive at 1050 [688 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1050 [1000 5 44 44]
   ok  : primary ... overflow visible + positive at 1050 [792 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1050 (13 audited, 0 undersized)
 
 === 1099x600 ===
   audited 14 placed interactive header children
@@ -175,6 +185,7 @@
   ok  : primary Undo button visible + positive at 1099 [737 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1099 [1049 5 44 44]
   ok  : primary ... overflow visible + positive at 1099 [841 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1099 (13 audited, 0 undersized)
 
 === 1100x600 ===
   audited 14 placed interactive header children
@@ -191,6 +202,7 @@
   ok  : primary Undo button visible + positive at 1100 [738 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1100 [1050 5 44 44]
   ok  : primary ... overflow visible + positive at 1100 [842 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1100 (13 audited, 0 undersized)
 
 === 1152x600 ===
   audited 14 placed interactive header children
@@ -207,6 +219,7 @@
   ok  : primary Undo button visible + positive at 1152 [790 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1152 [1102 5 44 44]
   ok  : primary ... overflow visible + positive at 1152 [894 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1152 (13 audited, 0 undersized)
 
 === 1200x600 ===
   audited 14 placed interactive header children
@@ -223,6 +236,7 @@
   ok  : primary Undo button visible + positive at 1200 [838 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1200 [1150 5 44 44]
   ok  : primary ... overflow visible + positive at 1200 [942 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1200 (13 audited, 0 undersized)
 
 === 1280x600 ===
   audited 14 placed interactive header children
@@ -239,6 +253,7 @@
   ok  : primary Undo button visible + positive at 1280 [918 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1280 [1230 5 44 44]
   ok  : primary ... overflow visible + positive at 1280 [1022 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1280 (13 audited, 0 undersized)
 
 === 1440x600 ===
   audited 14 placed interactive header children
@@ -255,6 +270,7 @@
   ok  : primary Undo button visible + positive at 1440 [1078 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1440 [1390 5 44 44]
   ok  : primary ... overflow visible + positive at 1440 [1182 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1440 (13 audited, 0 undersized)
 
 === 1600x600 ===
   audited 14 placed interactive header children
@@ -271,6 +287,7 @@
   ok  : primary Undo button visible + positive at 1600 [1238 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1600 [1550 5 44 44]
   ok  : primary ... overflow visible + positive at 1600 [1342 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1600 (13 audited, 0 undersized)
 
 === 1800x600 ===
   audited 14 placed interactive header children
@@ -287,5 +304,6 @@
   ok  : primary Undo button visible + positive at 1800 [1438 5 44 44]
   ok  : primary [KBD] toggle visible + positive at 1800 [1750 5 44 44]
   ok  : primary ... overflow visible + positive at 1800 [1542 5 44 44]
+  ok  : [5] content buttons >= 44x44 at 1800 (13 audited, 0 undersized)
 
 PASS (0 failures)

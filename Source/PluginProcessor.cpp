@@ -3,6 +3,11 @@
 #include <array>
 #include <chrono>
 
+#if JUCE_IOS
+ #include <objc/message.h>   // objc_msgSend (F-ios-perf-2 thermal sampler)
+ #include <objc/runtime.h>    // objc_getClass / sel_registerName
+#endif
+
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "MulExport.h"
@@ -82,6 +87,35 @@ juce::Array<ParvatiAudioProcessor::DeferredParamRing::Entry> ParvatiAudioProcess
     return out;
 }
 
+#if JUCE_IOS
+//==========================================================================
+// F-ios-perf-2 (iOS hunt 2026-08-19): read NSProcessInfo.thermalState from
+// plain C++ (this TU is .cpp, and the project's .mm sources are owned by
+// other lanes). Two objc_msgSend calls with an arm64-safe cast for an
+// NSInteger return (no FP returns involved, so the plain objc_msgSend
+// signature is the documented-safe one), class/SEL resolved once via
+// function-local statics (thread-safe init). Allocation-free after the first
+// call — safe inside the 60 Hz timer callback (sampled ~1 Hz anyway).
+// NSProcessInfoThermalState: 0=Nominal 1=Fair 2=Serious 3=Critical, exactly
+// ThermalLevel's raw values.
+static ParvatiAudioProcessor::ThermalLevel currentThermalLevel() noexcept
+{
+    using SendFn = long (*) (void*, void*);   // NSInteger (id, SEL)
+    static void* const processInfoClass = (void*) objc_getClass ("NSProcessInfo");
+    static void* const processInfoSel   = (void*) sel_registerName ("processInfo");
+    static void* const thermalStateSel  = (void*) sel_registerName ("thermalState");
+    static SendFn const  send           = (SendFn) objc_msgSend;
+    if (processInfoClass == nullptr)
+        return ParvatiAudioProcessor::ThermalLevel::Nominal;
+    void* const info = send (processInfoClass, processInfoSel);   // +processInfo
+    const long state = info != nullptr ? send (info, thermalStateSel) : 0;
+    return state >= 3 ? ParvatiAudioProcessor::ThermalLevel::Critical
+         : state == 2 ? ParvatiAudioProcessor::ThermalLevel::Serious
+         : state == 1 ? ParvatiAudioProcessor::ThermalLevel::Fair
+                      : ParvatiAudioProcessor::ThermalLevel::Nominal;
+}
+#endif
+
 void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
 {
     // Message thread. Drain the deferred ring and dispatch each entry through
@@ -96,6 +130,19 @@ void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
     // Oversampling on a filter-quality change). One walk over 6 chains + 96
     // voices, almost always a no-op (a dirty flag gates the frees).
     owner.engine_.reapRetiredAudioObjects();
+
+#if JUCE_IOS
+    // F-ios-perf-2 thermal sampler (~1 Hz, every 60th 60 Hz tick):
+    // allocation-free, advisory-only (thermalHint_ is read by the editor for a
+    // transient status hint; NOTHING auto-changes sound). currentThermalLevel()
+    // is two objc_msgSend calls after the once-only class/SEL resolution.
+    if (++tick % 60 == 0)
+    {
+        const auto level = currentThermalLevel();
+        const auto action = thermalActionForLevel (level);
+        owner.thermalHint_.store (static_cast<int> (action), std::memory_order_relaxed);
+    }
+#endif
 
     const auto entries = owner.deferredParams_.drain();
     for (const auto& e : entries)
@@ -173,7 +220,7 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // next prepare/audio block) and the latency probe reports the OS group
     // delay. A host-state restore re-applies the PERSISTED factor on top of
     // this (setStateData -> setOversamplingFactor), which is idempotent.
-    setOversamplingFactor (uiOversampling_);
+    setOversamplingFactor (getUiOversampling());
 }
 
 ParvatiAudioProcessor::~ParvatiAudioProcessor()
@@ -239,6 +286,33 @@ void ParvatiAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     // user's patch rather than the silent init patch. Idempotent and safe to
     // re-run on each prepareToPlay (e.g. sample-rate changes).
     syncAllParamsToEngine();
+}
+
+void ParvatiAudioProcessor::releaseResources()
+{
+    // F-ios-lc-2 (bug hunt 2026-08-19, iOS hunt lane "lifecycle"): hosts tear
+    // down render resources on an audio-session interruption (phone call /
+    // Siri / route change: the AUv3 wrapper's deallocateRenderResources calls
+    // here) and re-allocate on resume (-> prepareToPlay). JUCE's
+    // Synthesiser::prepareToPlay only clears all notes when the SAMPLE RATE
+    // changes (juce_Synthesiser.cpp: approximatelyEqual guard), so voices
+    // gated at the interruption resume gated and note-offs lost during the
+    // window are never re-delivered — STUCK NOTES after an interruption.
+    //
+    // Seam choice: engine_.resetAllVoices() DEFERS the kill to the audio
+    // thread (stopNote(0,false) = Kill + clearCurrentNote, serviced at the top
+    // of processTransport BEFORE any render) — the same seam patch/multi loads
+    // use, and it touches ONLY voice activity, never patch/part state (which
+    // lives in the Parts' AtomicByteArrays and is untouched here; the next
+    // prepare's syncAllParamsToEngine re-primes the voices from the APVTS
+    // regardless). JUCE calls releaseResources with the callback stopped
+    // (AudioProcessor contract), and even if a host ever raced it, the pending
+    // flag is the same atomic path the loaders already use.
+    engine_.resetAllVoices();
+    // Drop any queued UI-keyboard MIDI so a stale note-on queued before the
+    // interruption cannot fire after resume (prepareToPlay re-seeds the
+    // collector's sample rate; this clears its queue + event counter).
+    midiCollector_.reset (hostSampleRate_ > 0.0 ? hostSampleRate_ : 44100.0);
 }
 
 bool ParvatiAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -1491,13 +1565,29 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // backward compatible: old hosts that ignore unknown properties are
     // unaffected, and old saved states restore with UI defaults (Carbon/1.0/true).
     auto tree = apvts.copyState();
-    tree.setProperty ("ui_theme", uiThemeName_, nullptr);
-    tree.setProperty ("ui_zoom", uiZoom_, nullptr);
-    tree.setProperty ("ui_tooltips", uiTooltips_, nullptr);
-    tree.setProperty ("ui_smoothing", uiSmoothing_, nullptr);
-    tree.setProperty ("ui_oversampling", uiOversampling_, nullptr);
-    tree.setProperty ("ui_font_mode", uiFontMode_, nullptr);
-    tree.setProperty ("ui_language", uiLanguage_, nullptr);
+    // UI-preference snapshot under ONE lock acquisition (F-ios-lc-1): this
+    // runs on whatever thread the host calls getStateInformation (AUv3
+    // autosaves are NOT message-thread), while the setters run on the message
+    // thread. juce::String is refcounted — a torn copy is a UAF class.
+    juce::String theme, language;
+    double zoom; bool tooltips, smoothing; int oversampling, fontMode;
+    {
+        const std::lock_guard<std::mutex> l (uiPrefsLock_);
+        theme        = uiThemeName_;
+        zoom         = uiZoom_;
+        tooltips     = uiTooltips_;
+        smoothing    = uiSmoothing_;
+        oversampling = uiOversampling_;
+        fontMode     = uiFontMode_;
+        language     = uiLanguage_;
+    }
+    tree.setProperty ("ui_theme", theme, nullptr);
+    tree.setProperty ("ui_zoom", zoom, nullptr);
+    tree.setProperty ("ui_tooltips", tooltips, nullptr);
+    tree.setProperty ("ui_smoothing", smoothing, nullptr);
+    tree.setProperty ("ui_oversampling", oversampling, nullptr);
+    tree.setProperty ("ui_font_mode", fontMode, nullptr);
+    tree.setProperty ("ui_language", language, nullptr);
     // Full 6-Part multitimbral engine state (all parts' patch/part bytes, arp/seq
     // config, routing, voice allocation/mode). Base64 so it rides inside the XML
     // state tree; absent on pre-persistence states (backward compatible).
@@ -1520,18 +1610,42 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
         {
             // Read UI preferences (with defaults for backward compatibility with
             // states saved before Phase 4a) before replaceState — the parsed tree
-            // is untouched at this point.
-            uiThemeName_ = tree.getProperty ("ui_theme", "Carbon").toString();
-            uiZoom_ = static_cast<double> (tree.getProperty ("ui_zoom", 1.0));
-            uiTooltips_ = static_cast<bool> (tree.getProperty ("ui_tooltips", true));
-            uiSmoothing_ = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
+            // is untouched at this point. Parsed to locals first, then committed
+            // under ONE lock acquisition (F-ios-lc-1): this runs on the host's
+            // thread while the message-thread getters may be reading.
+            juce::String rTheme   = tree.getProperty ("ui_theme", "Carbon").toString();
+            const double rZoom    = static_cast<double> (tree.getProperty ("ui_zoom", 1.0));
+            const bool rTooltips  = static_cast<bool> (tree.getProperty ("ui_tooltips", true));
+            const bool rSmoothing = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
             // Fallback default 2: the 2026-08 default change (1x -> 2x). A
             // state that PERSISTED the property keeps its stored factor
             // (including 1x); only states from before the property existed
             // (or with it absent) get the new default.
-            uiOversampling_ = static_cast<int> (tree.getProperty ("ui_oversampling", 2));
-            uiFontMode_ = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
-            uiLanguage_ = tree.getProperty ("ui_language", "auto").toString();
+            int rOversampling = static_cast<int> (tree.getProperty ("ui_oversampling", 2));
+#if JUCE_IOS
+            // F-ios-perf-1 (iOS hunt 2026-08-19): filter oversampling is
+            // PER-VOICE (96 voices at max polyphony). Measured (repo harness,
+            // M-series core): 8x = 0.93x realtime => 2.3-3.7x realtime on
+            // A12-class iPad cores = guaranteed dropouts; 4x is 1.2-1.9x.
+            // The Settings combo only offers 1x/2x on iOS; a state SAVED on
+            // desktop (or an older iOS build) at 4x/8x silently clamps to 2x
+            // here. Silent by design: audio continuity beats a modal warning,
+            // and the combo already shows the effective value.
+            if (rOversampling > 2)
+                rOversampling = 2;
+#endif
+            const int rFontMode     = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
+            juce::String rLanguage  = tree.getProperty ("ui_language", "auto").toString();
+            {
+                const std::lock_guard<std::mutex> l (uiPrefsLock_);
+                uiThemeName_   = std::move (rTheme);
+                uiZoom_        = rZoom;
+                uiTooltips_    = rTooltips;
+                uiSmoothing_   = rSmoothing;
+                uiOversampling_ = rOversampling;
+                uiFontMode_    = rFontMode;
+                uiLanguage_    = std::move (rLanguage);
+            }
 
             // JUCE 9 dispatch reality (verified against the vendored checkout):
             // replaceState fires valueTreeRedirected -> setDenormalisedValue ->
@@ -1609,18 +1723,18 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 loadPartIntoApvts (savedPart);   // display refresh (no-op values)
             }
         }
-        engine_.setParameterSmoothing (uiSmoothing_);
+        engine_.setParameterSmoothing (getUiSmoothing());
         // Restore + propagate the filter-oversampling factor (rebuilds the
         // latency probe + voices; the next prepareToPlay / processBlock reports
         // the matching latency).
-        setOversamplingFactor (uiOversampling_);
+        setOversamplingFactor (getUiOversampling());
     }
 }
 
 //==========================================================================
 void ParvatiAudioProcessor::setParameterSmoothing (bool smoothing)
 {
-    uiSmoothing_ = smoothing;          // persist
+    setUiSmoothing (smoothing);         // persist (locked accessor — F-ios-lc-1)
     engine_.setParameterSmoothing (smoothing);
 }
 
@@ -1630,15 +1744,18 @@ void ParvatiAudioProcessor::rebuildOsLatencyProbe()
     // The probe mirrors the per-voice Oversampling config (1 channel, min-phase
     // IIR half-band, max quality, integer latency) so its getLatencyInSamples()
     // exactly matches what every voice adds. Never fed audio, so rebuilding on
-    // the message thread is race-free.
-    if (uiOversampling_ > 1)
+    // the message thread is race-free. Reads the persisted factor through the
+    // locked accessor (F-ios-lc-1); the call site passes the same value it
+    // just persisted, so the read is consistent.
+    const int osFactor = getUiOversampling();
+    if (osFactor > 1)
     {
         // juce::dsp::Oversampling takes a power-of-2 EXPONENT: 2^factorExp.
         // 2x -> 1, 4x -> 2, 8x -> 3. Min-phase IIR half-band = minimal latency;
         // max quality steepens the transition band. Integer latency is enabled
         // so getLatencyInSamples() is a whole number of INPUT samples (clean for
         // host PDC reporting).
-        const size_t factorExp = (uiOversampling_ >= 8) ? 3 : (uiOversampling_ >= 4) ? 2 : 1;
+        const size_t factorExp = (osFactor >= 8) ? 3 : (osFactor >= 4) ? 2 : 1;
         osLatencyProbe_ = std::make_unique<juce::dsp::Oversampling<float>> (
             1u,
             factorExp,
@@ -1683,7 +1800,7 @@ void ParvatiAudioProcessor::setOversamplingFactor (int factor)
     if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
         factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
 
-    uiOversampling_ = factor;                 // persist
+    setUiOversampling (factor);             // persist (locked accessor — F-ios-lc-1)
     rebuildOsLatencyProbe();                  // message-thread safe (no audio)
     // Per-voice: PRE-BUILD + stage each voice's replacement Oversampling here
     // (message thread; audit F3) — the audio thread installs with pointer

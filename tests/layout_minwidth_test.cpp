@@ -230,6 +230,76 @@ juce::Component* findTextButton (ParvatiEditor& e, const char* text)
 }
 
 //==============================================================================
+// [5] CONTENT-AREA TOUCH-TARGET SWEEP (iOS hunt 2026-08-19, F-ios-touch-1/-2).
+// Every effectively-visible juce::Button descendant fully below the header
+// strip must be >= 44 x 44 (the HIG touch floor). Buttons that FIRE ACTIONS
+// must reach the floor or be removed — this gate exists because the mod-bar
+// nav scrollers (30x30) and the SeqLengthStepper -/+ (~32x20) shipped below
+// it. Documented allowlist below; every entry needs a reason.
+
+struct ContentButton
+{
+    juce::Button*          comp;
+    juce::Rectangle<int>   bounds;   // editor-relative
+    juce::String           name;
+};
+
+// Recursive walk: record every Button descendant with its editor-relative
+// bounds (origin accumulated down the parent chain — no peer needed).
+void collectContentButtons (juce::Component* c, juce::Point<int> origin,
+                            std::vector<ContentButton>& out)
+{
+    for (auto* child : c->getChildren())
+    {
+        if (! isEffectivelyVisible (child))
+            continue;   // whole subtree hidden (keyboard overlay, closed drawers, unparented tabs)
+        const auto childOrigin = origin + child->getPosition();
+        if (auto* b = dynamic_cast<juce::Button*> (child))
+            out.push_back ({ b, juce::Rectangle<int> (childOrigin.x, childOrigin.y, child->getWidth(), child->getHeight()), describe (b) });
+        collectContentButtons (child, childOrigin, out);
+    }
+}
+
+// ALLOWLIST — accepted sub-44 buttons, each with a reason. A button may be
+// listed ONLY if a redesign (not a bounds fix) is required to reach 44 (the
+// "accepted T9-adjacent debt" class of the iOS touch audit).
+bool isAllowlistedContentButton (const juce::String& name, int /*w*/, int /*h*/)
+{
+    // (Populated from the first live sweep run; see fix_touch.md. Names are
+    // the describe() strings — TextButton('text') / name(Button).)
+    juce::ignoreUnused (name);
+    return false;
+}
+
+void sweepContentButtons (ParvatiEditor& editor, int w)
+{
+    std::vector<ContentButton> buttons;
+    collectContentButtons (&editor, juce::Point<int> (0, 0), buttons);
+
+    int audited = 0, undersized = 0;
+    for (const auto& cb : buttons)
+    {
+        // Content area only: fully below the header strip (y >= 50).
+        if (cb.bounds.getY() < kHeaderStripH)
+            continue;
+        if (isAllowlistedContentButton (cb.name, cb.bounds.getWidth(), cb.bounds.getHeight()))
+            continue;
+        ++audited;
+        if (cb.bounds.getWidth() < 44 || cb.bounds.getHeight() < 44)
+        {
+            ++undersized;
+            std::printf ("    SUB-44 at %d: %s %s\n", w, cb.name.toRawUTF8(),
+                         cb.bounds.toString().toRawUTF8());
+        }
+    }
+    char msg[96];
+    std::snprintf (msg, sizeof (msg),
+                   "[5] content buttons >= 44x44 at %d (%d audited, %d undersized)",
+                   w, audited, undersized);
+    check (undersized == 0, msg);
+}
+
+//==============================================================================
 // Locate a direct-child Button by NAME (the W9 seam: the Path-drawn
 // IconButtons carry no text, so the header ctor names the primary-set ones).
 juce::Component* findNamedButton (ParvatiEditor& e, const char* name)
@@ -430,7 +500,10 @@ int main()
 
     for (int w : { 560, 600, 650, 700, 780, 810, 900, 980,
                    1024, 1050, 1099, 1100, 1152, 1200, 1280, 1440, 1600, 1800 })
+    {
         sweepWidth (*editor, w);
+        sweepContentButtons (*editor, w);
+    }
 
     delete editor;
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",

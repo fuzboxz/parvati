@@ -1,7 +1,7 @@
 === Parvati Concurrency / Multithreaded Fuzz (mask=0xffff) ===
 
 [1] full parameter sweep (all parts, all params) vs audio
-  ok  : audio thread did not throw (23 blocks)
+  ok  : audio thread did not throw (18 blocks)
   ok  : output stayed finite (no NaN/Inf)
   ok  : no denormal floats (audio-thread stall risk)
 
@@ -36,10 +36,20 @@
 [7] deferred arp/seq/part_select: audio-thread writes drain to the MT
   ok  : no deferred arp/seq writes dropped (ring never overflowed)
   ok  : deferred ring fully drained
-  ok  : last CC104 arp_octave won (engine=3, last CC=64, expected=3)
+  ok  : last CC104 arp_octave won (engine=1, last CC=0, expected=1)
   ok  : deferred part_select not applied before the timer fires
   ok  : deferred part_select applied: engine current part == 2
   ok  : part_select parameter reflects the deferred selection
   ok  : post-switch byte edit routes to the deferred-selected Part 2
+
+[7] UI-pref state save/restore vs message-thread setters (F-ios-lc-1)
+  ok  : host-thread state saves completed during the setter storm (1270)
+  ok  : setter/getter round-trip: theme
+  ok  : setter/getter round-trip: language
+  ok  : setter/getter round-trip: zoom
+  ok  : state round-trip preserves theme
+  ok  : state round-trip preserves language
+  ok  : state round-trip preserves zoom
+  ok  : processor renders finite audio after the setter storm
 
 CONCURRENCY TEST: ALL CHECKS PASSED (0 failures)

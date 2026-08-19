@@ -61,6 +61,13 @@ public:
 private:
     // juce::Timer — re-read the getters and repaint when the shape changes.
     void timerCallback() override;
+    // F-ios-perf-3 (iOS hunt 2026-08-19): gate the 30 Hz poll on visibility.
+    // The TabbedComponent UNPARENTS non-current pages (fires this), and an
+    // AUv3 host can keep the extension process alive with the editor closed
+    // — ~10 components x 30 Hz of atomic/APVTS fetches burn battery for
+    // nothing then. The callbacks are change-only (cheap idle tick), so the
+    // gating is about the wakeup cadence, not the tick cost.
+    void visibilityChanged() override;
 
     // Safely read a getter (0 if it is empty); clamps to 0..1.
     float fetch (const std::function<float()>& f) const;

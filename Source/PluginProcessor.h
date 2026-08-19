@@ -16,6 +16,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -33,7 +34,11 @@ public:
 
     //==========================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    // F-ios-lc-2 (bug hunt 2026-08-19): hosts tear down render resources on
+    // interruption / route change (AUv3 deallocateRenderResources -> this
+    // hook). Clears held notes + queued MIDI so a resume starts from silence
+    // — see the .cpp definition for the seam choice.
+    void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -89,20 +94,55 @@ public:
     }
 
     // ---- UI settings (persisted in processor state, Phase 4a) ----
-    juce::String getUiTheme() const noexcept    { return uiThemeName_; }
-    double       getUiZoom() const noexcept     { return uiZoom_; }
-    bool         getUiTooltips() const noexcept { return uiTooltips_; }
-    bool         getUiSmoothing() const noexcept { return uiSmoothing_; }
-    int          getUiOversampling() const noexcept { return uiOversampling_; }
+    // F-ios-lc-1 (iOS hunt 2026-08-19): these members are read/written from
+    // BOTH the message thread (SettingsPanel combos, editor zoom/language) and
+    // host threads (getStateInformation/setStateInformation — AUv3 hosts call
+    // them on non-message threads for session saves / autosaves). juce::String
+    // is refcounted (NOT safe under concurrent read/write — a torn String is a
+    // UAF class); the scalars tear silently. Every access below now takes
+    // uiPrefsLock_; the state serialize/restore paths snapshot the whole family
+    // under ONE lock acquisition. (The engine state is separately atomic/
+    // seqlocked — this lock only covers the UI-preference mirror.)
+    juce::String getUiTheme() const               { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiThemeName_; }
+    double       getUiZoom() const                { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiZoom_; }
+    bool         getUiTooltips() const            { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiTooltips_; }
+    bool         getUiSmoothing() const           { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiSmoothing_; }
+    int          getUiOversampling() const        { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiOversampling_; }
     // Editor chrome language code ("auto" / "en" / "fr"). "auto" defers to the
     // OS locale. Persisted so the chosen language survives host save/restore.
-    juce::String getUiLanguage() const noexcept { return uiLanguage_; }
-    void setUiTheme (juce::String name) { uiThemeName_ = std::move (name); }
-    void setUiZoom (double z)           { uiZoom_ = z; }
-    void setUiTooltips (bool b)         { uiTooltips_ = b; }
-    void setUiSmoothing (bool b)        { uiSmoothing_ = b; }
-    void setUiOversampling (int n)      { uiOversampling_ = n; }
-    void setUiLanguage (juce::String code) { uiLanguage_ = std::move (code); }
+    juce::String getUiLanguage() const             { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiLanguage_; }
+    void setUiTheme (juce::String name)           { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiThemeName_ = std::move (name); }
+    void setUiZoom (double z)                     { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiZoom_ = z; }
+    void setUiTooltips (bool b)                   { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiTooltips_ = b; }
+    void setUiSmoothing (bool b)                  { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiSmoothing_ = b; }
+    void setUiOversampling (int n)                { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiOversampling_ = n; }
+    void setUiLanguage (juce::String code)        { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiLanguage_ = std::move (code); }
+
+    // ---- Thermal-state awareness (F-ios-perf-2, iOS hunt 2026-08-19) ----
+    // Sustained 6-part multitimbral play keeps an iPad core near its budget;
+    // iOS responds by throttling (intermittent crackle the user cannot
+    // attribute). The policy is DELIBERATELY advisory-only — NEVER auto-change
+    // sound-affecting state (filter quality) without the user. The pure
+    // mapping below is the entire policy; the iOS-only sampler (see
+    // DeferredParamTimer::timerCallback) feeds it from NSProcessInfo at ~1 Hz
+    // and stores the result in thermalHint_. The editor's 30 Hz timer may
+    // surface it (3-line follow-up in the parent lane: read getThermalHint()
+    // and drive the transient status label).
+    enum class ThermalLevel { Nominal = 0, Fair = 1, Serious = 2, Critical = 3 };
+    enum class ThermalAction { None = 0, Hint = 1, StrongHint = 2 };
+    static constexpr ThermalAction thermalActionForLevel (ThermalLevel level) noexcept
+    {
+        // NSProcessInfoThermalState semantics: Nominal/Fair are normal
+        // operation (Fair = fans/dissipation, invisible on passively cooled
+        // iPads); Serious = sustained thermal pressure (start hinting);
+        // Critical = the OS is about to intervene (insist).
+        return level == ThermalLevel::Serious   ? ThermalAction::Hint
+             : level == ThermalLevel::Critical  ? ThermalAction::StrongHint
+                                                : ThermalAction::None;
+    }
+    // Current thermal hint (ThermalAction as int; None on desktop / before
+    // the first sample). Relaxed load — advisory display only.
+    int getThermalHint() const noexcept { return thermalHint_.load (std::memory_order_relaxed); }
 
     // NOTE: the UI font mode selector was removed — the whole UI now uses the
     // system default sans-serif (see ParvatiLookAndFeel::appFont). The field
@@ -320,6 +360,9 @@ private:
         explicit DeferredParamTimer (ParvatiAudioProcessor& o) : owner (o) {}
         void timerCallback() override;
         ParvatiAudioProcessor& owner;
+        // F-ios-perf-2: tick counter so the thermal sampler runs every 60th
+        // callback (~1 Hz at the timer's 60 Hz) instead of every tick.
+        int tick = 0;
     };
     DeferredParamRing deferredParams_;
     std::unique_ptr<DeferredParamTimer> deferredTimer_;   // created in the ctor (message thread)
@@ -392,6 +435,11 @@ private:
     juce::MidiMessageCollector midiCollector_;
 
     // Persisted UI preferences (theme / zoom / tooltips / language).
+    // Guarded by uiPrefsLock_ (see the accessor block above — F-ios-lc-1):
+    // message-thread setters vs host-thread state save/restore. Reads/writes
+    // ONLY through the accessors or under an explicit uiPrefsLock_ scope
+    // (getStateInformation / setStateInformation / rebuildOsLatencyProbe).
+    mutable std::mutex uiPrefsLock_;   // getters are const and lock (F-ios-lc-1)
     juce::String uiThemeName_ { "Carbon" };
     double       uiZoom_ { 1.0 };
     bool         uiTooltips_ { true };
@@ -403,6 +451,11 @@ private:
     // Offline-render flag (host bounce). Updated by setNonRealtime() and kept
     // warm each block from isNonRealtime() as a host-compat fallback.
     std::atomic<bool> nonRealtime_ { false };
+
+    // Thermal hint (F-ios-perf-2): ThermalAction as int, written ~1 Hz by the
+    // iOS-only sampler in DeferredParamTimer::timerCallback, read by the
+    // editor (advisory display only). Desktop never writes it (stays None).
+    std::atomic<int> thermalHint_ { 0 };
 
     // Last latency reported to the host, so we only call setLatencySamples when
     // it actually changes (e.g. on a sample-rate switch), not every prepareToPlay.

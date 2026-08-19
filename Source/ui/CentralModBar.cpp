@@ -38,13 +38,15 @@ namespace
     constexpr int kLabelTabGap = 4;    // gap between the label tab and the pills
 
     // `<` / `>` nav scrollers that flank the viewport (replacing the scrollbar).
-    // COMPACT, QUIET chrome (2026-08): 30x30, vertically centred on the PILL
-    // BAND (not the full bar height), borderless at rest — a bare dim chevron
-    // that only lights on hover/press. They previously matched the pill tiles
-    // (56pt tall, filled tile + accent bands) and visually competed with the
-    // mod pills they flank.
-    constexpr int kNavW   = 30;   // < > nav glyph width
-    constexpr int kNavGap = 4;    // gap between a nav glyph and the viewport
+    // QUIET chrome (2026-08, F-ios-touch-1 2026-08-19): the VISUAL glyph is a
+    // bare dim 30pt chevron that only lights on hover/press — but the BUTTON
+    // itself now carries a full 44x44 HIG hit band (they are the ONLY way to
+    // scroll the overflowing mod-source band; a 30x30 target beside 56pt
+    // pills was a mis-tap magnet that landed on a PILL and switched generator
+    // pages). The TextButton centres its '<'/'>' label in the wider band, so
+    // the rendered chrome stays identical in weight.
+    constexpr int kNavW   = CentralModBar::kNavHitW;   // public for the HIG contract test
+    constexpr int kNavGap = 4;    // gap between a nav hit band and the viewport
 
     // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
@@ -487,9 +489,10 @@ void CentralModBar::resized()
     if (viewport_ != nullptr && pillContent_ != nullptr)
     {
         const auto b = getLocalBounds();
-        // Compact nav glyphs, vertically CENTRED ON THE PILL BAND (the pill
-        // strip: kSegVPad + kLabelTabH + kLabelTabGap .. + kPillH), not the
-        // full bar height — 30x30 quiet chrome beside 56pt pills.
+        // Nav hit bands (F-ios-touch-1): 44x44 HIG floor, vertically CENTRED ON
+        // THE PILL BAND (the pill strip: kSegVPad + kLabelTabH + kLabelTabGap ..
+        // + kPillH). The 44pt band sits beside 56pt pills; the centred chevron
+        // glyph keeps the old quiet visual weight.
         const int pillBandY = kSegVPad + kLabelTabH + kLabelTabGap;
         const int navH = juce::jmin (kNavW, kPillH);
         const int navY = pillBandY + (kPillH - navH) / 2;

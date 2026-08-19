@@ -299,6 +299,15 @@ endif()
 #         -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
 #         -DPARVATI_IOS_DEVELOPMENT_TEAM=XXXXXXXXXX
 # (team id / bundle ids are PLACEHOLDERS pending a product/signing decision.)
+#
+# BUILD INVOCATION WARNING (iOS hunt 2026-08-19, F-ios-build-2): with the Xcode
+# generator the CONFIGURATION must be selected with CMake's --config flag
+# BEFORE the `--` separator:
+#   cmake --build build_ios --config Release --target Parvati_Standalone Parvati_AUv3 -- -sdk iphonesimulator
+# The tempting `... -- -sdk iphonesimulator CONFIGURATION=Release` form passes
+# CONFIGURATION= to xcodebuild as a build-SETTING override, silently builds the
+# Debug artefacts, and leaves 8-byte `APPL????` stubs under Release/ that break
+# the NEXT correct build with "unable to create directory" until deleted.
 if(PARVATI_IOS)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.0)
     # PLACEHOLDER team id — empty by default (simulator-only). Set on the cmake
@@ -307,16 +316,16 @@ if(PARVATI_IOS)
         "Apple Developer team id for iOS device/.ipa builds (empty = simulator-only)")
 
     # Standalone app bundle: com.805labs.parvati
+    # (NOTE: ENABLE_BITCODE was removed — bitcode is dead since Xcode 14 and
+    # Xcode 26 ignores the flag entirely; iOS hunt 2026-08-19 F-ios-build-5.)
     set_target_properties(Parvati_Standalone PROPERTIES
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati"
-        XCODE_ATTRIBUTE_ENABLE_BITCODE NO
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati.entitlements")
     # AUv3 app-extension bundle: com.805labs.parvati.AUv3 (child of the app id,
     # as iOS App-Store validation requires).
     set_target_properties(Parvati_AUv3 PROPERTIES
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati.AUv3"
-        XCODE_ATTRIBUTE_ENABLE_BITCODE NO
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati-auv3.entitlements")
 
@@ -401,6 +410,48 @@ if(PARVATI_IOS)
         message(FATAL_ERROR
             "Failed to set the AUv3 CFBundleIdentifier to com.805labs.parvati.AUv3 "
             "(PlistBuddy rc=${_parvati_auv3_id_rc}, value='${_parvati_auv3_id_val}').")
+    endif()
+
+    # ----------------------------------------------------------------------------
+    # Document types + exported UTIs (iOS hunt 2026-08-19, F-ios-build-1 /
+    # F-ios-files-2). juce_add_plugin has NO seam for CFBundleDocumentTypes /
+    # UTExportedTypeDeclarations, so they are grafted here with the same
+    # PlistBuddy + FATAL_ERROR-verify pattern. Without these keys:
+    #   * LSSupportsOpeningDocumentsInPlace is INERT (it only modifies
+    #     behaviour of DECLARED document types), and
+    #   * .parvati/.PRO/.MUL/.scl/.kbm received via Files/AirDrop/Mail offer
+    #     no "Open in Parvati" — the advertised file workflow was dead from
+    #     outside the app.
+    # The fragments are plain plists written at configure time; PlistBuddy
+    # Import SETS the (previously absent) top-level keys wholesale, and the
+    # Print verify makes a silent drop a configure FAILURE, not a shipping
+    # gap. (Re-runs are idempotent: Delete before Import.)
+    set(_parvati_filetypes_fragment "${CMAKE_CURRENT_SOURCE_DIR}/ios/parvati_filetypes.plist")
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy
+            -c "Delete :CFBundleDocumentTypes"
+            -c "Delete :UTExportedTypeDeclarations"
+            "${_parvati_standalone_plist}"
+        ERROR_QUIET OUTPUT_QUIET)
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy
+            -c "Merge ${_parvati_filetypes_fragment}"
+            "${_parvati_standalone_plist}"
+        RESULT_VARIABLE _parvati_doctypes_rc ERROR_QUIET OUTPUT_QUIET)
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:LSItemContentTypes:0" "${_parvati_standalone_plist}"
+        OUTPUT_VARIABLE _parvati_doctypes_val OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy -c "Print :UTExportedTypeDeclarations:4:UTTypeIdentifier" "${_parvati_standalone_plist}"
+        OUTPUT_VARIABLE _parvati_utis_val OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(NOT _parvati_doctypes_val STREQUAL "com.805labs.parvati-patch"
+       OR NOT _parvati_utis_val STREQUAL "com.805labs.parvati-kbm")
+        message(FATAL_ERROR
+            "Failed to graft CFBundleDocumentTypes/UTExportedTypeDeclarations into "
+            "'${_parvati_standalone_plist}' (rc=${_parvati_doctypes_rc}, "
+            "docType0='${_parvati_doctypes_val}', uti4='${_parvati_utis_val}').")
     endif()
 
     # SharedContainer.mm is the Obj-C++ resolver for the App-Group container
@@ -1067,6 +1118,38 @@ add_executable(parvati_param_thread_test
 target_include_directories(parvati_param_thread_test PRIVATE Source)
 target_compile_features(parvati_param_thread_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_param_thread_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# iOS file-flow regressions (bug hunt 2026-08-19, F-ios-files-1/4/5 +
+# F-ios-perf-4/5): import-on-load into the USER tree (picker picks can only
+# reach provider locations, never the app-group tree the PresetBrowser scans),
+# the installer's temp-file sweep immunity + version-marker fast path, and the
+# PresetBrowser scan bounds (depth / per-directory entry count / symlinks).
+# Built by default. Run: ./build/parvati_ios_file_flow_test
+add_executable(parvati_ios_file_flow_test
+    tests/ios_file_flow_test.cpp
+)
+target_include_directories(parvati_ios_file_flow_test PRIVATE Source)
+target_compile_features(parvati_ios_file_flow_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_ios_file_flow_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Editor/processor lifecycle regressions (bug hunt 2026-08-19, iOS hunt):
+# reference-counted process-global editor side-effects (AUv3 multi-instance),
+# no invisible zero-extent control in keyboard focus traversal (hardware
+# keyboards), and releaseResources interruption semantics (stuck notes after
+# an audio-session interruption). Built by default.
+# Run: ./build/parvati_lifecycle_test
+add_executable(parvati_lifecycle_test
+    tests/lifecycle_test.cpp
+)
+target_include_directories(parvati_lifecycle_test PRIVATE Source)
+target_compile_features(parvati_lifecycle_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_lifecycle_test PRIVATE
     Parvati
 )
 

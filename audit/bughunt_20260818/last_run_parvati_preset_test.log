@@ -95,4 +95,11 @@
   ok  : T8: wrap zone 100..20 PRESERVED (firmware low>high wrap; was: normalized 20..100)
   ok  : T8: voice_slots still applies alongside the clamped routing
 
+[T9] W11: options: accepts ONLY option descriptors (F-state-5)
+  ok  : T9: reference multi saved
+  ok  : T9: multi with hostile options keys loads
+     part-3 osc1 shape byte: 1 -> 1 (hostile key wrote 5)
+  ok  : T9: hostile per-part key under options: is IGNORED (no pre-load part clobber)
+  ok  : T9: injected options part_select is inert (loader still shows Part 0)
+
 PRESET TEST: ALL CHECKS PASSED (0 failures)

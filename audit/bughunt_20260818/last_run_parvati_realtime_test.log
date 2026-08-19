@@ -1,28 +1,28 @@
 === Parvati real-time / buffer-robustness smoke test ===
 
 [1] 6-voice render: finite + audible + completes, every buffer size
-     [Hw 6   , buf=  32] peak=0.9117  cpu-ratio=0.02x (render 10.6ms / audio 500.0ms)
+     [Hw 6   , buf=  32] peak=0.9117  cpu-ratio=0.02x (render 10.2ms / audio 500.0ms)
   ok  : buf=32 renders finite audio
   ok  : buf=32 output is audible (peak>floor)
-     [Hw 6   , buf=  64] peak=0.9117  cpu-ratio=0.02x (render 9.4ms / audio 500.0ms)
+     [Hw 6   , buf=  64] peak=0.9117  cpu-ratio=0.02x (render 9.3ms / audio 500.0ms)
   ok  : buf=64 renders finite audio
   ok  : buf=64 output is audible (peak>floor)
-     [Hw 6   , buf= 128] peak=0.9117  cpu-ratio=0.02x (render 9.1ms / audio 501.3ms)
+     [Hw 6   , buf= 128] peak=0.9117  cpu-ratio=0.02x (render 9.0ms / audio 501.3ms)
   ok  : buf=128 renders finite audio
   ok  : buf=128 output is audible (peak>floor)
-     [Hw 6   , buf= 256] peak=0.9117  cpu-ratio=0.02x (render 8.9ms / audio 501.3ms)
+     [Hw 6   , buf= 256] peak=0.9117  cpu-ratio=0.02x (render 8.8ms / audio 501.3ms)
   ok  : buf=256 renders finite audio
   ok  : buf=256 output is audible (peak>floor)
      [Hw 6   , buf= 512] peak=0.9117  cpu-ratio=0.02x (render 8.7ms / audio 501.3ms)
   ok  : buf=512 renders finite audio
   ok  : buf=512 output is audible (peak>floor)
-     [Hw 6   , buf=1024] peak=0.9117  cpu-ratio=0.02x (render 8.9ms / audio 512.0ms)
+     [Hw 6   , buf=1024] peak=0.9117  cpu-ratio=0.02x (render 9.2ms / audio 512.0ms)
   ok  : buf=1024 renders finite audio
   ok  : buf=1024 output is audible (peak>floor)
 
 [2] Tiny buffers (32/64) must not crash or produce non-finite audio
-     [Hw 6   , buf=  32] peak=0.9117  cpu-ratio=0.02x (render 10.4ms / audio 500.0ms)
-     [Hw 6   , buf=  64] peak=0.9117  cpu-ratio=0.02x (render 9.8ms / audio 500.0ms)
+     [Hw 6   , buf=  32] peak=0.9117  cpu-ratio=0.02x (render 10.2ms / audio 500.0ms)
+     [Hw 6   , buf=  64] peak=0.9117  cpu-ratio=0.02x (render 9.3ms / audio 500.0ms)
   ok  : buffers 32/64 render finite, audible audio
 
 REALTIME TEST: ALL CHECKS PASSED (0 failures)

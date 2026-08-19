@@ -154,6 +154,17 @@ std::vector<ParamControl*>& paramControlRegistry()
     return r;
 }
 
+// F-ios-lc-3 (bug hunt 2026-08-19): count of LIVE ParvatiEditor instances in
+// THIS process. AUv3 extension processes host MULTIPLE plugin instances (AUM
+// can hold several Parvati AUs; JUCE's AUv3 wrapper creates/destroys one
+// editor per instance — juce_audio_plugin_client_AUv3.mm createEditorAndMakeActive
+// / removeEditor), so teardown side-effects that touch PROCESS-GLOBAL state
+// (screensaver policy, the ParamControl tap-assign statics) must be
+// reference-counted: closing editor A while editor B is live must NOT undo
+// B's global state. Plain int (message-thread-only: every editor ctor/dtor
+// runs on the message thread under JUCE).
+static int sLiveEditorCount = 0;
+
 // Strip the redundant section prefix from a control's display label, driven by
 // the parameter ID prefix (deterministic, easy to review). The full label is
 // preserved elsewhere (tooltip / accessibility), so the section name stays
@@ -2297,6 +2308,10 @@ void ParamPage::reflowToWidth (int targetWidth, int viewportHeight)
 ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     : juce::AudioProcessorEditor (&p), processorRef_ (p)
 {
+    // F-ios-lc-3: count this editor FIRST so every process-global side-effect
+    // below can consult the live count (see sLiveEditorCount).
+    ++sLiveEditorCount;
+
     // The UI is landscape-only (no portrait layout exists). Lock the device to
     // the two landscape orientations. The iOS/Android peer consults this live in
     // its supportedInterfaceOrientations (see juce_UIViewComponentPeer_ios.mm);
@@ -2419,17 +2434,26 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     redoButton_.setName ("headerRedo");
     addAndMakeVisible (redoButton_);
 
-    // On-screen zoom +/-/0 (visible on every platform; iPad has no keyboard).
-    // Mirror the Cmd/Ctrl +/-/0 shortcuts via the shared applyZoom() helper.
+    // Zoom actions: the buttons stay CONSTRUCTED (the '...' overflow popup
+    // and the keyboard shortcuts drive the same applyZoom() helper) but are
+    // NOT placed and NOT visible. F-ios-touch-3 (bug hunt 2026-08-19): they
+    // used to stay "visible" at 0x0 extent, so juce focus traversal included
+    // them — on an iPad hardware keyboard, Tab could hand focus to an
+    // INVISIBLE button and Space would then fire a zoom change; musical typing
+    // also stops reaching the keyboard view while an invisible control holds
+    // focus. setVisible(false) removes them from the traversal list
+    // (FocusTraverser filters isVisible). (The old comment claimed "visible on
+    // every platform" — stale: resized() never placed them and the overflow
+    // popup is the real UI since W9.)
     zoomInButton_.setTooltip (TRANS ("Zoom in"));
     zoomInButton_.onClick = [this] { applyZoom (zoom_ + 0.1); };
-    addAndMakeVisible (zoomInButton_);
+    zoomInButton_.setVisible (false);
     zoomOutButton_.setTooltip (TRANS ("Zoom out"));
     zoomOutButton_.onClick = [this] { applyZoom (zoom_ - 0.1); };
-    addAndMakeVisible (zoomOutButton_);
+    zoomOutButton_.setVisible (false);
     zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
     zoomResetButton_.onClick = [this] { applyZoom (1.0); };
-    addAndMakeVisible (zoomResetButton_);
+    zoomResetButton_.setVisible (false);
     // Zoom overflow: one "..." button opens a 44pt-row popup holding the three
     // zoom actions, so the grown (44pt) icon cluster still fits the 1280pt
     // editor width. The three zoom buttons above stay constructed (their logic
@@ -2852,6 +2876,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     pageSelector_.addTab (TRANS ("SYNTH"), theme.backgroundBase, synthWorkspace_.get(), false);
     pageSelector_.addTab (TRANS ("FX"),    theme.backgroundBase, fxWorkspace_.get(),     false);
     pageSelector_.setCurrentTabIndex (0, false);   // SYNTH shown first
+    // F-ios-touch-3 (bug hunt 2026-08-19): the hidden (0-depth) tab bar still
+    // CREATES its TabbedButtons, and they stay enabled+visible at 0x0 extent —
+    // juce focus traversal includes them (it filters only visible+enabled,
+    // not extent), so an iPad hardware keyboard could Tab onto an INVISIBLE
+    // page button. They are never the UI (the header radio buttons drive
+    // pageSelector_ via setCurrentTabIndex); disable them to drop them from
+    // the traversal list. (Same class as the parked zoom trio — see the ctor.)
+    // Hiding the BAR (not the buttons — the bar re-shows them on every
+    // layout pass) removes the whole subtree from visibility walks, focus
+    // traversal and hit-testing in one step; setCurrentTabIndex still works
+    // (it only toggles button state).
+    pageSelector_.getTabbedButtonBar().setVisible (false);
     addAndMakeVisible (pageSelector_);
 
     // ---- Patch page overlay (custom component, not descriptor-generated) ----
@@ -3166,7 +3202,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // destructor next to the zoom reset, mirroring that pattern. iOS-only seam
     // (same gate as the zoom default above): desktop screensaver policy is not
     // ours to change.
-    juce::Desktop::getInstance().setScreenSaverEnabled (false);
+    // F-ios-lc-3: REFERENCE-COUNTED — an AUv3 extension process hosts MULTIPLE
+    // Parvati instances (AUM), each with its own editor. Only the 0 -> 1
+    // transition disables the screensaver so closing editor A cannot re-enable
+    // sleep while editor B is still open (T14's protection voided per-close).
+    if (sLiveEditorCount == 1)
+        juce::Desktop::getInstance().setScreenSaverEnabled (false);
 #endif
 
     // Guarantee the full theme-derived colour re-apply runs on first build in
@@ -3209,7 +3250,11 @@ ParvatiEditor::~ParvatiEditor()
     // instance's knobs in assign affordance (the registry spans instances) —
     // or, after a close+reopen, leave the new editor in assign mode while its
     // [MAP] button shows OFF. Mirrors the zoom-reset teardown below.
-    ParamControl::setTapAssignActive (false);
+    // F-ios-lc-3: ONLY when this is the LAST live editor — the static is
+    // process-global and shared with any other open instance's UI; clearing
+    // it while editor B is live would silently exit B's assign mode.
+    if (sLiveEditorCount == 1)
+        ParamControl::setTapAssignActive (false);
     // Detach from the theme broadcaster and release the L&F BEFORE the member
     // objects (themeManager_, lnf_) and the base Component are destroyed, so the
     // ChangeBroadcaster never calls back into a half-dead editor and no child
@@ -3227,9 +3272,20 @@ ParvatiEditor::~ParvatiEditor()
 #if JUCE_IOS
     // T14: re-allow screen sleep (pairs with the constructor's disable — see
     // the matching seam there).
-    juce::Desktop::getInstance().setScreenSaverEnabled (true);
+    // F-ios-lc-3: reference-counted counterpart of the ctor's 0->1 gate —
+    // only the LAST live editor re-enables sleep (an AUv3 process with a
+    // still-open sibling editor keeps the display awake).
+    if (sLiveEditorCount == 1)
+        juce::Desktop::getInstance().setScreenSaverEnabled (true);
 #endif
+
+    // F-ios-lc-3: the teardown bookkeeping itself — everything above that
+    // consulted the live count (screensaver, tap-assign) must run while this
+    // editor still counts as live, so the decrement is the LAST statement.
+    --sLiveEditorCount;
 }
+
+int ParvatiEditor::liveEditorCountForTest() noexcept { return sLiveEditorCount; }
 
 void ParvatiEditor::dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details)
 {
@@ -4232,8 +4288,18 @@ static void mirrorUserSaveToDocumentsIOS (const juce::File& saved)
     const auto dest = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
                           .getChildFile ("Parvati/USER")
                           .getChildFile (saved.getRelativePathFrom (userDir));
+    // F-ios-files-5 (iOS hunt 2026-08-19): ATOMIC copy. copyFileTo streamed
+    // straight onto the Files-visible destination, so an iOS suspension
+    // mid-copy could leave a TORN .parvati/.PRO/.MUL in Documents that the
+    // user could open. The TemporaryFile + rename pattern (the house idiom,
+    // PatchFile.cpp / FactoryPresetInstaller.cpp) makes the visible file
+    // appear only complete: an interrupted copy leaves the PREVIOUS mirror
+    // intact and no fragment behind. A failed copy stays non-fatal (the save
+    // itself already succeeded) and the next successful save re-mirrors.
     dest.getParentDirectory().createDirectory();
-    saved.copyFileTo (dest);   // overwrite-in-place; a torn copy self-heals next save
+    juce::TemporaryFile temp (dest);
+    if (saved.copyFileTo (temp.getFile()))
+        temp.overwriteTargetFileWithTemporary();
 }
 #endif
 
@@ -4457,6 +4523,29 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
 
     if (ok)
     {
+#if JUCE_IOS
+        // F-ios-files-1 (iOS hunt 2026-08-19): import-on-load. The iOS save
+        // picker can only write into document-provider locations (On My iPad /
+        // iCloud / third-party) — the shared App-Group USER tree this editor's
+        // PresetBrowser scans is NOT part of any provider tree, so a preset
+        // saved through the picker NEVER appeared in the preset menu. Compensate
+        // on the LOAD side: after a successful load of a file that lives OUTSIDE
+        // the USER tree, atomically import a copy into USER and drop the browser
+        // cache, so the just-loaded preset is selectable from the menu from now
+        // on. Desktop is deliberately unchanged (its users organize files on
+        // disk; behavior stays byte-identical).
+        if (const juce::File imported = PresetBrowser::importIntoUserTree (
+                f, processorRef_.getUserPatchDir());
+            imported.existsAsFile())
+        {
+            // F-ios-files-1c: mirror the imported copy to Documents as well, so
+            // the Files app shows a picker-location save (same atomic helper as
+            // the USER import; Documents visibility is the T6 story).
+            mirrorUserSaveToDocumentsIOS (imported);
+            if (presetBrowser_ != nullptr)
+                presetBrowser_->invalidate();   // the next open shows the new leaf
+        }
+#endif
         if (presetBrowser_ != nullptr)
             presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
         // EVERY successful load refreshes the Patch page, not just multis. A

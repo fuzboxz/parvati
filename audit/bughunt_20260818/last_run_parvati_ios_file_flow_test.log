@@ -1,0 +1,43 @@
+[1] import-on-load into the USER tree (F-ios-files-1)
+  ok  : [1] destination is USER/<same filename>
+  ok  : [1] imported file exists
+  ok  : [1] contents byte-identical to the picked file
+  ok  : [1] atomic: no *_temp fragments left in USER
+  ok  : [1] name collision overwrites with the picked content
+  ok  : [1] a file already inside USER is not re-imported
+  ok  : [1] a non-preset extension is not imported
+  ok  : [1] the non-preset file was not copied into USER
+  ok  : [1] first open scans once
+  ok  : [1] the imported preset is in the browser's USER tree
+  ok  : [1] second import lands
+  ok  : [1] post-import open rescans (the invalidate seam's observable)
+  ok  : [1] the second imported preset appears at the next open
+
+[2] installer sweep never deletes an in-flight temp (F-ios-files-4)
+  ok  : [2] the *_temp decoy SURVIVES the stale-template sweep
+  ok  : [2] control: a stale non-temp template IS removed
+  ok  : [2] control: the temp decoy still survives
+
+[3] installer version-marker fast path (F-ios-perf-5)
+  ok  : [3] a completed pass writes the marker
+  ok  : [3] marker content carries the install version
+  ok  : [3] factory .PRO files installed by the full pass
+  ok  : [3] stock templates installed by the full pass
+  ok  : [3] fast path still content-syncs TEMPLATES (corruption restored)
+  ok  : [3] marker intact after the fast-path run
+  ok  : [3] fast path leaves the installed banks alone
+  ok  : [3] corrupt marker -> full pass re-extracts a deleted bank file
+
+[4] PresetBrowser scan bounds (F-ios-perf-4)
+  ok  : [4] deep tree scan completes fast (1 ms)
+  ok  : [4] deep tree: exactly one scan
+  ok  : [4] a preset within the depth cap IS found
+  ok  : [4] a preset past the depth cap is NOT scanned
+  ok  : [4] wide tree scan completes fast (159 ms)
+  ok  : [4] wide tree: exactly one scan
+  ok  : [4] within the entry cap: the first sorted file IS found
+  ok  : [4] past the entry cap: a later file is NOT scanned
+  ok  : [4] the real directory's preset IS found
+  ok  : [4] a directory symlink is not followed (leaf count stays 1)
+
+IOS FILE FLOW TEST: ALL CHECKS PASSED (0 failures)

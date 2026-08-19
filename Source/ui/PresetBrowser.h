@@ -69,6 +69,55 @@ public:
         return treeHasLeafLabel (cachedTree_, label);
     }
 
+    /** Total number of leaves in the cached tree, counted recursively (the
+        symlink-refusal test uses it: a followed directory link would double
+        every leaf under it). */
+    int debugTreeLeafCount() const { return treeLeafCount (cachedTree_); }
+
+    /** iOS picker compensation (F-ios-files-1, iOS hunt 2026-08-19).
+
+        On iOS the save/load FileChooser can only write into document-provider
+        locations (On My iPad / iCloud / third-party) — the shared App-Group
+        container this browser's USER tree lives in is NOT part of any provider
+        tree, so a preset saved through the picker NEVER appeared in the preset
+        menu. The editor's applyPatchFile compensates on the LOAD side: after a
+        successful load of a file OUTSIDE the USER tree it atomically imports a
+        copy here, then invalidate()s the cache so the next open shows it.
+
+        Static + parameterized by @p userDir (not this browser's dir) so the
+        headless tests drive the exact same code path with a temp tree; also
+        compiled on desktop (the editor's CALL is JUCE_IOS-gated — desktop users
+        organize files deliberately).
+
+        Copy semantics: same FILENAME at the USER root (provider folders are not
+        USER banks); an existing file of that name is OVERWRITTEN (the user just
+        deliberately picked this file); the write is ATOMIC (juce::TemporaryFile
+        + rename — the house pattern), so an interrupted copy can never leave a
+        torn preset at the visible destination.
+
+        @returns the imported destination file, or an invalid File when nothing
+        was imported (already inside the tree, not a preset extension, or the
+        copy failed — all non-fatal; the load itself already succeeded). */
+    static juce::File importIntoUserTree (const juce::File& file, const juce::File& userDir)
+    {
+        if (userDir.getFullPathName().isEmpty() || file.isAChildOf (userDir))
+            return {};
+        if (! (file.hasFileExtension (".pro") || file.hasFileExtension (".mul")
+               || file.hasFileExtension (".parvati")))
+            return {};
+        if (! file.existsAsFile())
+            return {};
+        juce::File dest = userDir.getChildFile (file.getFileName());
+        if (! dest.getParentDirectory().createDirectory())
+            return {};
+        juce::TemporaryFile temp (dest);
+        if (! file.copyFileTo (temp.getFile()))
+            return {};
+        if (! temp.overwriteTargetFileWithTemporary())
+            return {};
+        return dest;
+    }
+
 private:
     // ---- the cached menu tree (pure data; PopupMenu is built from it) ----
     struct Leaf { juce::File file; juce::String label; };
@@ -78,6 +127,14 @@ private:
         std::vector<MenuNode> subs;
         std::vector<Leaf> leaves;
     };
+
+    // F-ios-perf-4 (iOS hunt 2026-08-19): bounds for the recursive USER scan.
+    // An unbounded walk stalled the message thread for seconds when the USER
+    // tree was large or linked (measured 3.8-5.1 s against a big tree); the
+    // app-managed tree is small, but a user-copied folder structure (Files
+    // app into the mirrored Documents, a desktop library moved in) is not.
+    static constexpr int kScanMaxDepth          = 8;     // folders below this stay unscanned
+    static constexpr int kScanMaxEntriesPerDir  = 512;   // sorted entries beyond this stay unscanned
 
 public:
     /** Build the preset menu from the cache (rescanning first if the cache
@@ -185,21 +242,34 @@ private:
         return node;
     }
 
-    void scanRecursiveInto (MenuNode& node, const juce::File& dir)
+    void scanRecursiveInto (MenuNode& node, const juce::File& dir, int depth = 0)
     {
         if (! dir.isDirectory())
+            return;
+        // F-ios-perf-4: depth cap — silently stop descending past kScanMaxDepth
+        // (pathological nesting must not walk the whole tree).
+        if (depth >= kScanMaxDepth)
             return;
         recordDir (dir);
         juce::Array<juce::File> entries;
         dir.findChildFiles (entries, juce::File::findDirectories | juce::File::findFiles, false);
         entries.sort();
-        for (const auto& e : entries)
+        // F-ios-perf-4: per-directory entry cap — only the first
+        // kScanMaxEntriesPerDir SORTED entries are considered (deterministic
+        // which ones), so a 6000-file folder cannot stall the scan.
+        const int n = juce::jmin (entries.size(), kScanMaxEntriesPerDir);
+        for (int ei = 0; ei < n; ++ei)
         {
+            const auto& e = entries[ei];
+            // F-ios-perf-4: symlink refusal — never follow links (provider
+            // aliases / cycle-shaped user trees would loop or explode the walk).
+            if (e.isSymbolicLink())
+                continue;
             if (e.isDirectory())
             {
                 auto& sub = node.subs.emplace_back();
                 sub.title = e.getFileName();
-                scanRecursiveInto (sub, e);
+                scanRecursiveInto (sub, e, depth + 1);
             }
             else if (e.hasFileExtension (".pro") || e.hasFileExtension (".mul") || e.hasFileExtension (".parvati"))
             {
@@ -235,6 +305,14 @@ private:
         for (const auto& s : node.subs)
             if (treeHasLeafLabel (s, label)) return true;
         return false;
+    }
+
+    static int treeLeafCount (const MenuNode& node)
+    {
+        int n = (int) node.leaves.size();
+        for (const auto& s : node.subs)
+            n += treeLeafCount (s);
+        return n;
     }
 
     void addLeaf (juce::PopupMenu& m, const juce::File& f, const juce::String& label)

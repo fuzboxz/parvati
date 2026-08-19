@@ -161,8 +161,19 @@ void SettingsPanel::populateOversamplingCombo()
     // mojibake and assert). Keeps the English combo text byte-identical.
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Standard (1\xc3\x97)")), 1);   // 1x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("High (2\xc3\x97)")),     2);   // 2x
+#if ! JUCE_IOS
+    // F-ios-perf-1 (iOS hunt 2026-08-19): the filter-oversampling workload is
+    // PER-VOICE (96 voices at max polyphony). Measured on the repo's own
+    // harness (M-series core, 96 voices, 48 kHz, 256-sample blocks): 1x =
+    // 0.13x realtime, 2x = 0.26x, 4x = 0.48x, 8x = 0.93x. An A12-class iPad
+    // core is ~2.5-4x slower for this float/filter workload => 8x is a
+    // guaranteed 2.3-3.7x REALTIME (dropouts at max polyphony), 4x is
+    // 1.2-1.9x (also overrun). iOS therefore offers only 1x/2x; a restored
+    // state that requests 4x/8x is clamped in setStateInformation (see
+    // PluginProcessor.cpp). Desktop keeps the full range unchanged.
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Maximum (4\xc3\x97)")),  4);   // 4x
     osCombo_.addItem (TRANS (juce::CharPointer_UTF8 ("Ultra (8\xc3\x97)")),    8);   // 8x
+#endif
 }
 
 int SettingsPanel::languageIndexFromCode (const juce::String& code) const

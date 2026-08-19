@@ -52,10 +52,38 @@ int g_failures = 0;
 
 double midiFreq (int midi) { return 440.0 * std::pow (2.0, (midi - 69) / 12.0); }
 
+// ---------------------------------------------------------------------------
+// Platform guard for toolAvailable() (iOS hunt 2026-08-19, F-ios-build-3):
+// std::system is __IOS_PROHIBITED — this single call was the ONLY thing
+// blocking the whole deterministic suite from compiling under the iOS
+// toolchain (parvati_multi_load_test already builds clean for the iOS
+// simulator). NOTE: this harness is deliberately JUCE-free (pure ambika::dsp
+// + std), so the JUCE_IOS macro is NOT defined in this TU even on an iOS
+// build — detect the platform at the SDK level instead.
+// __IPHONE_OS_VERSION_MIN_REQUIRED is defined by the iOS SDK for BOTH device
+// and simulator targets and by no other platform; TargetConditionals is the
+// belt-and-braces Apple-canonical check.
+// ---------------------------------------------------------------------------
+#if defined (__APPLE__)
+    #include <TargetConditionals.h>
+#endif
+#if defined (__IPHONE_OS_VERSION_MIN_REQUIRED) \
+    || (defined (TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    #define PARVATI_TESTS_IOS 1
+#endif
+
 bool toolAvailable (const char* name)
 {
+#ifdef PARVATI_TESTS_IOS
+    // iOS (device + simulator): no shell, and the external AVR toolchain can
+    // never be present — report missing so the bit-exact diff reports SKIPPED
+    // exactly as on a desktop without the tools (identical reporting shape).
+    (void) name;
+    return false;
+#else
     const std::string cmd = std::string ("command -v ") + name + " >/dev/null 2>&1";
     return std::system (cmd.c_str()) == 0;
+#endif
 }
 
 // Set osc[0].shape (byte 0 of the Patch) so the voice produces a real tone.
@@ -197,7 +225,8 @@ int main()
     std::printf ("\n");
 
     // -------------------------------------------------------------------
-    // (1) Bit-exact AVR reference availability.
+    // (1) Bit-exact AVR reference availability. (On iOS toolAvailable() is a
+    //     compiled-out stub that always reports missing — see the guard above.)
     // -------------------------------------------------------------------
     const bool haveAvrGcc = toolAvailable ("avr-gcc");
     const bool haveSimavr = toolAvailable ("simavr");
