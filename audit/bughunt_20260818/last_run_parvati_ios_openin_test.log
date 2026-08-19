@@ -1,0 +1,50 @@
+  ok  : test setup: USER tree created
+  ok  : test setup: Inbox stand-in created
+[1] routeOpenedFile presets -> USER tree
+  ok  : setup: .parvati written
+  ok  : setup: .PRO written
+  ok  : setup: .MUL written
+  ok  : [1] .parvati routed into USER/<name>
+  ok  : [1] routed .parvati bytes identical
+  ok  : [1] .PRO routed + identical
+  ok  : [1] .MUL routed + identical
+  ok  : [1] no *_temp fragments in USER
+  ok  : setup: updated .parvati
+  ok  : [1] same-name re-route OVERWRITES with the new bytes
+  ok  : [1] already-inside preset returns ITSELF
+  ok  : [1] inside-route duplicated nothing
+  ok  : setup: .txt written
+  ok  : [1] .txt routes to an INVALID File
+  ok  : [1] .txt imported NOTHING into USER
+[2] routeOpenedFile tuning -> Parvati/Tuning sibling
+  ok  : setup: .scl written
+  ok  : setup: .kbm written
+  ok  : [2] .scl parked in Parvati/Tuning (dir created on demand)
+  ok  : [2] parked .scl bytes identical
+  ok  : [2] .kbm parked + identical
+  ok  : [2] no *_temp fragments in Tuning
+  ok  : [2] already-parked tuning file returns ITSELF
+  ok  : [2] re-route duplicated nothing
+  ok  : [2] no .scl/.kbm landed inside USER (menu stays clean)
+[3] openInKindForFile extension table
+  ok  : [3] x.parvati -> kind 1
+  ok  : [3] x.PRO -> kind 1
+  ok  : [3] x.Pro -> kind 1
+  ok  : [3] x.pro -> kind 1
+  ok  : [3] x.MUL -> kind 1
+  ok  : [3] x.mul -> kind 1
+  ok  : [3] x.scl -> kind 2
+  ok  : [3] x.SCL -> kind 2
+  ok  : [3] x.kbm -> kind 2
+  ok  : [3] x.KBM -> kind 2
+  ok  : [3] x.txt -> kind 0
+  ok  : [3] x.mid -> kind 0
+  ok  : [3] x -> kind 0
+  ok  : [3] x.wav -> kind 0
+[4] route failures are inert
+  ok  : setup: ghost really absent
+  ok  : [4] nonexistent preset routes INVALID
+  ok  : [4] nothing materialized in USER
+  ok  : [4] empty userPatchDir routes INVALID
+
+IOS OPEN-IN TEST: ALL CHECKS PASSED (0 failures)

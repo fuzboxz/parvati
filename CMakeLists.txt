@@ -459,6 +459,13 @@ if(PARVATI_IOS)
     # iOS-only; the desktop path lives in the globbed SharedContainer.cpp and is
     # byte-identical to the previous getSpecialLocation(userApplicationDataDirectory).
     target_sources(Parvati PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source/ui/SharedContainer.mm")
+
+    # IosOpenIn.mm — the Obj-C++ open-in shim (application:openURL:options:
+    # via class_addMethod on JUCE's JuceAppStartupDelegate; JUCE 9 has none).
+    # iOS-only like SharedContainer.mm (the Source/ glob covers .cpp/.cc/.h);
+    # the pure routing core lives in the header-inline functions, so desktop
+    # and the headless tests link without this file.
+    target_sources(Parvati PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source/ui/IosOpenIn.mm")
 endif()
 
 # ------------------------------------------------------------------------------
@@ -1134,6 +1141,22 @@ add_executable(parvati_ios_file_flow_test
 target_include_directories(parvati_ios_file_flow_test PRIVATE Source)
 target_compile_features(parvati_ios_file_flow_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_ios_file_flow_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# iOS open-in routing regressions (bug hunt 2026-08-19, open-in loop): the
+# pure core of the "Open in Parvati" path — extension-kind table, preset
+# import into USER, tuning parking into Parvati/Tuning, idempotence, atomic
+# (no torn *_temp leftovers). The Obj-C++ delegate shim itself is proven by
+# the iOS-simulator Parvati_Standalone build. Built by default.
+# Run: ./build/parvati_ios_openin_test
+add_executable(parvati_ios_openin_test
+    tests/ios_openin_test.cpp
+)
+target_include_directories(parvati_ios_openin_test PRIVATE Source)
+target_compile_features(parvati_ios_openin_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_ios_openin_test PRIVATE
     Parvati
 )
 

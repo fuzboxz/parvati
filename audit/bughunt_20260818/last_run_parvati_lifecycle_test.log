@@ -28,5 +28,18 @@
   ok  : [4] picker pick writes the param (5)
   ok  : [4] keyboard down nudge decrements (4)
   ok  : [4] lower clamp holds at 1
+[5] Thermal transition matrix (F-ios-perf-2 label surfacing)
+  ok  : 0->0 idle tick is NoOp
+  ok  : 0->1 escalation shows the Hint text
+  ok  : 0->2 escalation shows the STRONG text
+  ok  : 1->0 de-escalation returns Clear (expiry takes over)
+  ok  : 1->1 repeat is NoOp (already told)
+  ok  : 1->2 escalation shows the STRONG text
+  ok  : 2->0 de-escalation returns Clear
+  ok  : 2->1 partial cool-down returns Clear (no downgrade spam)
+  ok  : 2->2 repeat is NoOp
+  ok  : out-of-range old clamps to None (escalation still detected)
+  ok  : out-of-range new clamps to StrongHint (no invented action)
+  ok  : out-of-range same->same clamps to NoOp
 
 LIFECYCLE TEST: ALL CHECKS PASSED (0 failures)

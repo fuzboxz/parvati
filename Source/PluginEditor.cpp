@@ -3373,6 +3373,33 @@ int ParvatiEditor::currentPartActiveVoiceCount() const
     return active;
 }
 
+ParvatiEditor::ThermalStatusAction ParvatiEditor::thermalStatusForTransition (int oldHint,
+                                                                              int newHint) noexcept
+{
+    // F-ios-perf-2 label surfacing (2026-08-19 follow-up) — the PURE policy
+    // half; the 30 Hz timer's iOS-only block applies it. Hints are
+    // ThermalAction ints (0=None, 1=Hint, 2=StrongHint); clamp defensively so
+    // a corrupt atomic can never invent a stronger action than StrongHint.
+    const int o = juce::jlimit (0, 2, oldHint);
+    const int n = juce::jlimit (0, 2, newHint);
+    if (n > o)   // escalation: 0->1, 0->2, 1->2 (all three cells)
+        return n >= 2 ? ThermalStatusAction::ShowStrong : ThermalStatusAction::ShowHint;
+    if (n < o)   // de-escalation: 1->0, 2->0, 2->1 — hand back to the expiry
+        return ThermalStatusAction::Clear;
+    return ThermalStatusAction::NoOp;   // same->same (incl. the idle 0->0 tick)
+}
+
+#if JUCE_IOS
+// The last hint seen by the 30 Hz thermal check (F-ios-perf-2 follow-up).
+// File-scope STATIC, matching the seam it drives: the transient status is
+// process-global (ParamControl::postTransientStatus) and the hint itself is
+// processor-global — so per-EDITOR copies would only multiply identical
+// transitions (and double-post the status in multi-editor AUv3 processes).
+// Lives INSIDE the gate so desktop builds compile none of it (-Werror: an
+// iOS-only class member would be an unused private field on desktop).
+static int sLastThermalHint = 0;
+#endif
+
 void ParvatiEditor::timerCallback()
 {
     // ---- Tooltip bleed-through fix (~30 Hz) ----
@@ -3414,6 +3441,39 @@ void ParvatiEditor::timerCallback()
         lastMousePos_ = mousePos;
         lastMouseActivity_ = juce::Time::getCurrentTime();
     }
+
+#if JUCE_IOS
+    // ---- Thermal-hint surfacing (F-ios-perf-2, 2026-08-19 follow-up) ----
+    // One RELAXED atomic read per 30 Hz tick (the processor's iOS-only ~1 Hz
+    // sampler writes it); ONLY a level TRANSITION arms the transient status
+    // (pure matrix: ParvatiEditor::thermalStatusForTransition), never every
+    // tick — an idle thermal state costs the status strip nothing. Placed
+    // BEFORE the single drain below so an escalation is visible THIS tick.
+    {
+        const int thermalNow = processorRef_.getThermalHint();
+        switch (thermalStatusForTransition (sLastThermalHint, thermalNow))
+        {
+            case ThermalStatusAction::ShowHint:   // Serious: suggest
+                ParamControl::postTransientStatus (
+                    TRANS ("Thermal: reduce Filter Quality"), 90);   // ~3 s @ 30 Hz
+                break;
+            case ThermalStatusAction::ShowStrong:   // Critical: insist
+                ParamControl::postTransientStatus (
+                    TRANS ("Thermal: lower Filter Quality now"), 150);   // ~5 s
+                break;
+            case ThermalStatusAction::Clear:
+                // De-escalation: the seam is frame-budget based with no
+                // explicit clear API — expiry handles it (advisory-only
+                // policy: nothing else to undo, the load readout keeps the
+                // strip alive).
+                break;
+            case ThermalStatusAction::NoOp:
+            default:
+                break;
+        }
+        sLastThermalHint = thermalNow;
+    }
+#endif
 
     // Single drain of the tap-to-assign transient status this tick (it has a
     // frame budget — calling it twice would double-drain). The result feeds

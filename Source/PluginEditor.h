@@ -583,6 +583,18 @@ public:
     // tap-assign clear) — the transitions 0->1 / N->0 are what gate them.
     static int liveEditorCountForTest() noexcept;
 
+    // ---- Thermal-hint label surfacing (F-ios-perf-2, 2026-08-19 follow-up) ----
+    // Decision for a thermal-hint transition (ThermalAction ints: 0=None,
+    // 1=Hint, 2=StrongHint). PURE so the lifecycle test pins the full 3x3
+    // matrix: an ESCALATION arms the transient status exactly once; a
+    // de-escalation returns Clear (the caller lets the frame-budget expiry
+    // handle it — the seam has no explicit clear); same-level repeats are
+    // NoOp (the user was already told / nothing changed). The 30 Hz timer
+    // applies this ONLY on iOS (JUCE_IOS-gated read of
+    // ParvatiAudioProcessor::getThermalHint()).
+    enum class ThermalStatusAction { NoOp = 0, ShowHint = 1, ShowStrong = 2, Clear = 3 };
+    static ThermalStatusAction thermalStatusForTransition (int oldHint, int newHint) noexcept;
+
     // Test-only (lifecycle test [4]): the Synth workspace (generator-page
     // host) so headless tests can drive setActiveGenerator — the same seam a
     // mod-bar pill click drives.

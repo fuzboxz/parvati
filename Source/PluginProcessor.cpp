@@ -3,17 +3,23 @@
 #include <array>
 #include <chrono>
 
+#include "PluginProcessor.h"
+
+// AFTER the first JUCE-including header: JUCE_IOS is defined by the juce
+// module headers, so an #if JUCE_IOS BEFORE this point silently compiles the
+// block OUT even on iOS (the 2026-08-19 wave-B thermal sampler shipped that
+// way and only the first real iOS-toolchain build caught it).
 #if JUCE_IOS
  #include <objc/message.h>   // objc_msgSend (F-ios-perf-2 thermal sampler)
  #include <objc/runtime.h>    // objc_getClass / sel_registerName
 #endif
 
-#include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "MulExport.h"
 #include "ParvatiPreset.h"
 #include "PatchFile.h"
 #include "ui/FactoryPresetInstaller.h"
+#include "ui/IosOpenIn.h"        // open-in routing (desktop: inline no-op)
 #include "ui/SharedContainer.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
 
@@ -107,7 +113,7 @@ static ParvatiAudioProcessor::ThermalLevel currentThermalLevel() noexcept
     static SendFn const  send           = (SendFn) objc_msgSend;
     if (processInfoClass == nullptr)
         return ParvatiAudioProcessor::ThermalLevel::Nominal;
-    void* const info = send (processInfoClass, processInfoSel);   // +processInfo
+    void* const info = reinterpret_cast<void*> (send (processInfoClass, processInfoSel));   // +processInfo (long -> void*: same width on arm64)
     const long state = info != nullptr ? send (info, thermalStateSel) : 0;
     return state >= 3 ? ParvatiAudioProcessor::ThermalLevel::Critical
          : state == 2 ? ParvatiAudioProcessor::ThermalLevel::Serious
@@ -221,6 +227,27 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // delay. A host-state restore re-applies the PERSISTED factor on top of
     // this (setStateData -> setOversamplingFactor), which is idempotent.
     setOversamplingFactor (getUiOversampling());
+
+#if JUCE_IOS
+    // Open-in loop (see ui/IosOpenIn.h): iOS offers "Open in Parvati" for
+    // .parvati/.PRO/.MUL/.scl/.kbm (document types grafted 2026-08-19), but
+    // JUCE 9 drops application:openURL:options:. Install our handler and
+    // route: presets import into the shared USER tree then LOAD through the
+    // same main-thread paths the editor's FileChooser completions use (the
+    // UIKit delegate delivers on the main thread); tuning files park in
+    // Parvati/Tuning for the TuningEditor's interactive import. Standalone
+    // ONLY — the AUv3 extension never receives openURL events, and the
+    // Standalone processor is owned by StandalonePluginHolder for the app's
+    // whole lifetime (the `this` capture below is safe by construction).
+    if (wrapperType == wrapperType_Standalone)
+        parvati::installOpenInHandler (getUserPatchDir(), [this] (const juce::File& routed)
+        {
+            if (routed.hasFileExtension (".parvati")) loadParvatiMultiFile (routed);
+            else if (routed.hasFileExtension (".pro")) loadProgramFile (routed);
+            else if (routed.hasFileExtension (".mul")) loadMultiFile (routed);
+            // .scl/.kbm: routed only — no headless tuning apply by design.
+        });
+#endif
 }
 
 ParvatiAudioProcessor::~ParvatiAudioProcessor()

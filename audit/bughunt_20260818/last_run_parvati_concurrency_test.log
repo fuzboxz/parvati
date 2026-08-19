@@ -1,7 +1,7 @@
 === Parvati Concurrency / Multithreaded Fuzz (mask=0xffff) ===
 
 [1] full parameter sweep (all parts, all params) vs audio
-  ok  : audio thread did not throw (18 blocks)
+  ok  : audio thread did not throw (17 blocks)
   ok  : output stayed finite (no NaN/Inf)
   ok  : no denormal floats (audio-thread stall risk)
 
@@ -43,7 +43,7 @@
   ok  : post-switch byte edit routes to the deferred-selected Part 2
 
 [7] UI-pref state save/restore vs message-thread setters (F-ios-lc-1)
-  ok  : host-thread state saves completed during the setter storm (1270)
+  ok  : host-thread state saves completed during the setter storm (1280)
   ok  : setter/getter round-trip: theme
   ok  : setter/getter round-trip: language
   ok  : setter/getter round-trip: zoom

@@ -1,12 +1,12 @@
   ok  : editor constructs headlessly
-[perf smoke] 10.0 s pumped run loop: cpu 0.071 s (budget 0.8), probe gaps n=286 p99/max 37.7/37.7 ms (budgets 55/120)
+[perf smoke] 10.0 s pumped run loop: cpu 0.072 s (budget 0.8), probe gaps n=289 p99/max 37.5/37.7 ms (budgets 55/120)
   ok  : total CPU time within budget
   ok  : probe fired at a plausible rate (timers actually ran)
   ok  : 99th-percentile message-thread gap within budget
   ok  : worst message-thread gap within budget
 
 [F-ios-perf-1] 96-voice render-cost pins
-     96-voice cpu-per-audio-second: 1x 0.037, 2x 0.066 (ratio 1.79)
+     96-voice cpu-per-audio-second: 1x 0.043, 2x 0.067 (ratio 1.56)
   ok  : 1x at 96 voices renders below 0.5x realtime (sanity)
   ok  : 2x cost stays under 2.5x the 1x cost (per-voice OS scaling)
 

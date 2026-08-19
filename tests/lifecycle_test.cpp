@@ -285,6 +285,57 @@ int main()
         }
     }
 
+    // ------------------------------------------------------------------
+    // [5] Thermal-hint transition matrix (F-ios-perf-2, 2026-08-19 follow-up).
+    //     The 30 Hz timer surfaces the processor's atomic thermal hint ONLY
+    //     on a level TRANSITION — the policy is the PURE static
+    //     ParvatiEditor::thermalStatusForTransition. This pins the full 3x3
+    //     matrix (hints are ThermalAction ints: 0=None, 1=Hint,
+    //     2=StrongHint) plus the defensive clamp: escalations arm the
+    //     transient status exactly once (Hint vs StrongHint distinguished),
+    //     de-escalations hand back to the frame-budget expiry (Clear), and
+    //     same-level repeats — including the idle 0->0 desktop tick — are
+    //     NoOp (the user was already told / nothing changed). The atomic
+    //     read itself is trivial; THIS matrix is the regression value: a
+    //     future edit that re-posts on every tick (status-strip repaint
+    //     churn @30 Hz) or that invents a stronger action than the sampler
+    //     can produce fails here.
+    // ------------------------------------------------------------------
+    std::printf ("[5] Thermal transition matrix (F-ios-perf-2 label surfacing)\n");
+    {
+        using Action = ParvatiEditor::ThermalStatusAction;
+
+        struct Cell { int from, to; Action want; const char* label; };
+        const Cell cells[] = {
+            // escalations (the three that must arm the status, once each)
+            { 0, 0, Action::NoOp,       "0->0 idle tick is NoOp" },
+            { 0, 1, Action::ShowHint,   "0->1 escalation shows the Hint text" },
+            { 0, 2, Action::ShowStrong, "0->2 escalation shows the STRONG text" },
+            // from Hint
+            { 1, 0, Action::Clear,      "1->0 de-escalation returns Clear (expiry takes over)" },
+            { 1, 1, Action::NoOp,       "1->1 repeat is NoOp (already told)" },
+            { 1, 2, Action::ShowStrong, "1->2 escalation shows the STRONG text" },
+            // from StrongHint
+            { 2, 0, Action::Clear,      "2->0 de-escalation returns Clear" },
+            { 2, 1, Action::Clear,      "2->1 partial cool-down returns Clear (no downgrade spam)" },
+            { 2, 2, Action::NoOp,       "2->2 repeat is NoOp" },
+        };
+        for (const auto& c : cells)
+        {
+            const Action got = ParvatiEditor::thermalStatusForTransition (c.from, c.to);
+            check (got == c.want, c.label);
+        }
+        // Defensive clamp: a corrupt/out-of-range atomic (the raw int from
+        // thermalHint_) must never invent an action stronger than the
+        // sampler's domain — negatives and >2 clamp BEFORE the comparison.
+        check (ParvatiEditor::thermalStatusForTransition (-5, 2)
+                   == Action::ShowStrong, "out-of-range old clamps to None (escalation still detected)");
+        check (ParvatiEditor::thermalStatusForTransition (1, 99)
+                   == Action::ShowStrong, "out-of-range new clamps to StrongHint (no invented action)");
+        check (ParvatiEditor::thermalStatusForTransition (99, 99)
+                   == Action::NoOp,       "out-of-range same->same clamps to NoOp");
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "LIFECYCLE TEST: FAILURES" : "LIFECYCLE TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
