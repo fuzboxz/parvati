@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -49,6 +50,14 @@ bool differsFrom (const float* d, const float* ref, int n)
         if (d[i] != ref[i])
             return true;
     return false;
+}
+
+double blockRms (const float* d, int n)
+{
+    double s = 0.0;
+    for (int i = 0; i < n; ++i)
+        s += (double) d[i] * d[i];
+    return s > 0.0 ? std::sqrt (s / (double) n) : 0.0;
 }
 }  // namespace
 
@@ -311,6 +320,267 @@ int main()
             check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
                    "D2 parallel: Wavefolder(OS)||Diffuser output differs from dry");
         }
+    }
+
+    // ---- B8: FV-1 / buffer-based effects through the PARALLEL topologies ----
+    // The topology x order sweep above uses only Clouds ports; the FV-1 family
+    // (internal 32.768 kHz RateBridge + delay rings) must also survive the
+    // split-parallel graphs with real wet output.
+    {
+        for (int topo = 1; topo < (int) FxTopology::Count; ++topo)   // both parallel graphs
+        {
+            FxChain chain;
+            chain.prepare (48000.0, kBlock);
+            chain.setTopology ((FxTopology) topo);
+            chain.setSlotType (0, FxType::Echo);         // A: FV-1 digital echo
+            chain.setSlotType (1, FxType::PlateReverb);  // B: FV-1 plate
+            chain.setSlotType (2, FxType::Spring);       // C: FV-1 spring
+            for (int s = 0; s < kNumFxSlots; ++s)
+            {
+                chain.setSlotEnabled (s, true);
+                chain.setSlotDryWet (s, 0.5f);
+                for (int k = 0; k < kNumFxSlotParams; ++k)
+                    chain.setSlotParam (s, k, 0.5f);
+            }
+            float b8L[kBlock], b8R[kBlock];
+            for (int b = 0; b < 6; ++b)                  // let tanks/rings fill
+                chain.process (inL, inR, b8L, b8R, kBlock);
+
+            char b8msg[96];
+            (void) std::snprintf (b8msg, sizeof (b8msg),
+                                  "B8 topo %d: Echo/Plate/Spring parallel renders finite", topo);
+            check (allFinite (b8L, kBlock) && allFinite (b8R, kBlock), b8msg);
+            (void) std::snprintf (b8msg, sizeof (b8msg),
+                                  "B8 topo %d: Echo/Plate/Spring parallel output is wet", topo);
+            check (differsFrom (b8L, inL, kBlock) || differsFrom (b8R, inR, kBlock), b8msg);
+        }
+    }
+
+    // ---- B9: mid-stream bypass of ONE parallel-branch slot: the survivor's
+    // gain must NOT jump. renderParallel divides the summed wets by the ACTIVE
+    // count; a just-bypassed slot (enabled=false but wetFade_ > 5e-4) still
+    // renders and STILL DIVIDES, so the blend is continuous — an immediate
+    // activeCount 2->1 re-derivation would scale the survivor +6 dB (an
+    // audible pop on bypass).
+    {
+        FxChain chain;
+        chain.prepare (48000.0, kBlock);
+        chain.setTopology (FxTopology::Parallel12to3);
+        chain.setSlotType (0, FxType::Echo);         // A: branch 1
+        chain.setSlotType (1, FxType::PlateReverb);  // B: branch 2 (the one bypassed)
+        chain.setSlotType (2, FxType::None);         // C: passthrough
+        chain.setSlotEnabled (0, true);
+        chain.setSlotEnabled (1, true);
+        chain.setSlotDryWet (0, 0.5f);
+        chain.setSlotDryWet (1, 0.5f);
+        for (int k = 0; k < kNumFxSlotParams; ++k)
+        {
+            chain.setSlotParam (0, k, 0.5f);
+            chain.setSlotParam (1, k, 0.5f);
+        }
+
+        float oL[kBlock], oR[kBlock];
+        for (int b = 0; b < 24; ++b)                 // fill tanks, fade -> 1
+            chain.process (inL, inR, oL, oR, kBlock);
+
+        const double rmsBefore = blockRms (oL, kBlock);
+        chain.setSlotEnabled (1, false);             // bypass branch B mid-stream
+        chain.process (inL, inR, oL, oR, kBlock);    // first bypassed block
+        const double rmsAtBypass = blockRms (oL, kBlock);
+
+        std::printf ("  [info] B9 rms: before=%.4f atBypass=%.4f\n", rmsBefore, rmsAtBypass);
+        const double ratio = rmsAtBypass / (rmsBefore > 1e-12 ? rmsBefore : 1e-12);
+        check (ratio > 0.7 && ratio < 1.4,
+               "B9: bypassing one parallel branch does NOT jump the blend "
+               "(still-divides; no +6 dB survivor snap)");
+        check (rmsAtBypass > 1.0e-4,
+               "B9: the just-bypassed branch still contributes while fading (not hard-cut)");
+
+        // The bypassed branch's contribution decays as wetFade_ dies: the
+        // divergence between a stay-enabled chain and the bypassed one (fed
+        // identical input, identical state) grows block-over-block. (The raw
+        // bypassed-chain energy alone is NOT monotonic — the surviving echo
+        // keeps filling — so the decay is pinned via this difference.)
+        {
+            auto buildPair = [] (FxChain& c)
+            {
+                c.prepare (48000.0, kBlock);
+                c.setTopology (FxTopology::Parallel12to3);
+                c.setSlotType (0, FxType::Echo);
+                c.setSlotType (1, FxType::PlateReverb);
+                c.setSlotType (2, FxType::None);
+                c.setSlotEnabled (0, true);
+                c.setSlotEnabled (1, true);
+                c.setSlotDryWet (0, 0.5f);
+                c.setSlotDryWet (1, 0.5f);
+                for (int k = 0; k < kNumFxSlotParams; ++k)
+                {
+                    c.setSlotParam (0, k, 0.5f);
+                    c.setSlotParam (1, k, 0.5f);
+                }
+            };
+            FxChain stay, byp;
+            buildPair (stay);
+            buildPair (byp);
+            float sL[kBlock], sR[kBlock], yL[kBlock], yR[kBlock];
+            for (int b = 0; b < 24; ++b)             // IDENTICAL warmup on both
+            {
+                stay.process (inL, inR, sL, sR, kBlock);
+                byp.process (inL, inR, yL, yR, kBlock);
+            }
+            byp.setSlotEnabled (1, false);           // only `byp` bypasses
+            double diff1 = 0.0, diffN = 0.0;
+            for (int b = 0; b < 40; ++b)              // fade: 0.982^40 ~ 0.48
+            {
+                stay.process (inL, inR, sL, sR, kBlock);
+                byp.process (inL, inR, yL, yR, kBlock);
+                double diff = 0.0;
+                for (int i = 0; i < kBlock; ++i)
+                    diff += std::fabs ((double) sL[i] - (double) yL[i]);
+                if (b == 0) diff1 = diff;
+                diffN = diff;
+            }
+            std::printf ("  [info] B9 stay-vs-bypassed |diff|: block1=%.4e block40=%.4e\n",
+                         diff1, diffN);
+            check (diff1 > 1.0e-4, "B9: bypassed branch's contribution is measurably fading (diff > 0)");
+            check (diffN > 3.0 * diff1,
+                   "B9: the stay-vs-bypassed difference grows >3x over 40 blocks (fade decays)");
+        }
+    }
+
+    // ---- B7b: mid-session re-prepare at a DIFFERENT sample rate (host
+    // rate change). Same continuity contract as B7 plus: a STAGED-but-unconsumed
+    // type swap is applied by prepare() at the new rate (never renders with
+    // undersized scratch), the HostRateBridge re-arms (AA filters on/off at
+    // the 32 kHz boundary), and delay rings are flushed (no stale-rate replay).
+    {
+        FxChain c;
+        c.prepare (48000.0, kBlock);
+        c.setSlotType (0, FxType::Reverb);
+        c.setSlotEnabled (0, true);
+        c.setSlotDryWet (0, 1.0f);
+        for (int k = 0; k < kNumFxSlotParams; ++k)
+            c.setSlotParam (0, k, 0.5f);
+
+        float oL[kBlock], oR[kBlock];
+        for (int b = 0; b < 24; ++b)                 // fill the tank at 48k
+            c.process (inL, inR, oL, oR, kBlock);
+
+        // Stage a type swap WITHOUT rendering it, then re-prepare at 96 kHz:
+        // prepare must consume the staged swap first and re-prepare it at the
+        // new rate (the swap lands wet on the very first block).
+        c.setSlotType (0, FxType::Echo);
+        c.prepare (96000.0, kBlock);
+        c.process (inL, inR, oL, oR, kBlock);
+        check (allFinite (oL, kBlock) && allFinite (oR, kBlock),
+               "B7b: staged swap + re-prepare @96 kHz renders finite");
+        check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
+               "B7b: post-re-prepare block is wet (staged swap applied, wet state preserved)");
+
+        // And back down to 44.1 kHz (AA filters re-arm; rings flushed).
+        c.prepare (44100.0, kBlock);
+        c.process (inL, inR, oL, oR, kBlock);
+        check (allFinite (oL, kBlock) && allFinite (oR, kBlock),
+               "B7b: second re-prepare @44.1 kHz renders finite");
+        check (differsFrom (oL, inL, kBlock) || differsFrom (oR, inR, kBlock),
+               "B7b: post-44.1 kHz block still wet (no stale-rate dropout)");
+    }
+
+    // ---- T1: FxChain::setTempo -> ClockedDelay host-BPM sync through the
+    // CHAIN seam (the engine path: AudioPlayHead -> fxChains_[p].setTempo ->
+    // slot override). The echo spacing of a 1/16 division must ~double when
+    // the BPM halves, driven ONLY by chain.setTempo.
+    {
+        constexpr int kTotal = 16384;
+        auto echoPeak = [] (double bpm) -> int
+        {
+            FxChain chain;
+            chain.prepare (48000.0, kBlock);
+            chain.setSlotType (0, FxType::ClockedDelay);
+            chain.setSlotEnabled (0, true);
+            chain.setSlotDryWet (0, 1.0f);
+            chain.setSlotParam (0, 0, 1.0f);   // sync -> 1/16 division
+            chain.setSlotParam (0, 1, 0.0f);   // no feedback: single clean echo
+            chain.setSlotParam (0, 2, 0.0f);   // no age
+            chain.setSlotParam (0, 3, 0.0f);   // no grit
+
+            std::vector<float> L ((size_t) kTotal, 0.0f), R ((size_t) kTotal, 0.0f);
+            std::vector<float> oL ((size_t) kBlock), oR ((size_t) kBlock);
+            std::vector<float> zeros ((size_t) kBlock, 0.0f);
+
+            // A staged type swap is INSTALLED by the next process()
+            // (servicePendingTypeSwaps); setTempo fans out to slots_, so it
+            // must run AFTER the processor exists. One silent block installs
+            // it (mirrors the engine: renderPartFx services swaps at the top
+            // of every block, setTempo arrives with the NEXT transport push).
+            chain.process (zeros.data(), zeros.data(), oL.data(), oR.data(), kBlock);
+            chain.setTempo (bpm, true);        // THE SEAM UNDER TEST
+
+            // The delay-length retarget GLIDES (<= 0.25 sample/internal-sample,
+            // ~8 ms tau — the click-free tape-style glide). The install block
+            // computed its length at the processor's DEFAULT tempo, so after
+            // setTempo the read pointer needs ~0.25 s to reach the new target
+            // before the impulse measures it. Render silence through the glide.
+            for (int b = 0; b < 64; ++b)
+                chain.process (zeros.data(), zeros.data(), oL.data(), oR.data(), kBlock);
+
+            // Single impulse at absolute sample 0.
+            std::vector<float> imp ((size_t) kBlock, 0.0f);
+            imp[0] = 0.9f;
+            chain.process (imp.data(), imp.data(), oL.data(), oR.data(), kBlock);
+            for (int i = 0; i < kBlock; ++i) { L[(size_t) i] = oL[(size_t) i]; R[(size_t) i] = oR[(size_t) i]; }
+            for (int off = kBlock; off < kTotal; off += kBlock)
+            {
+                chain.process (zeros.data(), zeros.data(), oL.data(), oR.data(), kBlock);
+                for (int i = 0; i < kBlock; ++i) { L[(size_t) (off + i)] = oL[(size_t) i]; R[(size_t) (off + i)] = oR[(size_t) i]; }
+            }
+            int argmax = 0; float mx = -1.0f;
+            for (int i = 200; i < kTotal; ++i)
+                if (std::fabs (L[(size_t) i]) > mx) { mx = std::fabs (L[(size_t) i]); argmax = i; }
+            return argmax;
+        };
+        const int peak240 = echoPeak (240.0);   // 1/16 @240 -> 62.5 ms -> ~3000 samples
+        const int peak120 = echoPeak (120.0);   // 1/16 @120 -> 125 ms  -> ~6000 samples
+        std::printf ("  [info] T1 chain echo peak: @240bpm=%d  @120bpm=%d\n", peak240, peak120);
+        check (peak240 > 2500, "T1: chain.setTempo @240 BPM puts the 1/16 echo in a sane range");
+        check (peak240 < peak120 - 2000, "T1: higher BPM shortens the chain-driven echo");
+        const double ratio = (double) peak120 / (double) peak240;
+        check (ratio > 1.7 && ratio < 2.3,
+               "T1: halving the BPM ~doubles the echo spacing through the chain seam");
+    }
+
+    // ---- T2: chain.setTempo on non-ClockedDelay slots is a bit-identical
+    // no-op (the default FxProcessor::setTransport does nothing).
+    {
+        auto renderWithTempo = [&] (double bpm, std::vector<float>& outL)
+        {
+            FxChain chain;
+            chain.prepare (48000.0, kBlock);
+            chain.setSlotType (0, FxType::Diffuser);   // non-tempo effect
+            chain.setSlotType (1, FxType::PlateReverb);
+            chain.setSlotEnabled (0, true);
+            chain.setSlotEnabled (1, true);
+            chain.setSlotDryWet (0, 0.5f);
+            chain.setSlotDryWet (1, 0.5f);
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+            {
+                chain.setSlotParam (0, k, 0.5f);
+                chain.setSlotParam (1, k, 0.5f);
+            }
+            float oL[kBlock], oR[kBlock];
+            chain.setTempo (bpm, true);                // differing BPM...
+            for (int b = 0; b < 8; ++b)
+                chain.process (inL, inR, oL, oR, kBlock);
+            outL.assign (oL, oL + kBlock);
+        };
+        std::vector<float> outA, outB;
+        renderWithTempo (120.0, outA);
+        renderWithTempo (187.5, outB);
+        bool identical = true;
+        for (int i = 0; i < kBlock; ++i)
+            if (outA[(size_t) i] != outB[(size_t) i]) identical = false;
+        check (identical,
+               "T2: setTempo on non-ClockedDelay slots is a bit-identical no-op");
     }
 
     std::printf ("\n%s (%d failure%s)\n",

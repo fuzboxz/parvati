@@ -246,6 +246,26 @@ int main()
     check (valueForText (proc, "fx1_enabled", "off") == 0, "fx1_enabled \"off\" -> 0");
     check (valueForText (proc, "osc1_param", "77") == 77, "osc1_param \"77\" -> 77 (plain int)");
     check (valueForText (proc, "part_octave", "2") == 2, "part_octave \"2\" -> 2");
+    // ---- extensions: the untested parse branches ----
+    check (valueForText (proc, "fx_eq_low", "off") == 0, "fx_eq_low \"off\" -> 0");
+    // fx_eq_low Hz text is NOT invertible: the DISPLAY for byte 127 is \"1k5\",
+    // but typed entry takes the leading integer -> 1. Pinned as documented
+    // non-invertibility (semantic strings stay raw-integer typed entry).
+    check (valueForText (proc, "fx_eq_low", "1k5") == 1,
+           "fx_eq_low \"1k5\" -> 1 (Hz display text is non-invertible)");
+    check (valueForText (proc, "fx_eq_high", "-12") == 0, "fx_eq_high \"-12\" -> 0 (-12 dB rail)");
+    check (valueForText (proc, "fx_eq_high", "+12") == 127, "fx_eq_high \"+12\" -> 127 (+12 dB rail)");
+    // fx{N}_paramK typed entry stays RAW-INTEGER (semantic strings like \"C4\"
+    // or \"1/16\" are not generally invertible).
+    check (valueForText (proc, "fx1_param1", "100") == 100,
+           "fx1_param1 \"100\" -> 100 (raw int, NOT percent-mapped)");
+    check (valueForText (proc, "fxmod1_amount", "-100") == -63,
+           "fxmod1_amount \"-100\" -> -63 (negative typed entry)");
+    // Garbage typed entry: non-numeric strings parse as 0 and land on the
+    // parameter's 0 (clamped by the normalisable range) — never a wild value.
+    check (valueForText (proc, "fx1_drywet", "") == 0, "garbage \"\" -> 0");
+    check (valueForText (proc, "fxmod1_amount", "abc") == 0, "garbage \"abc\" -> 0");
+    check (valueForText (proc, "osc1_param", "??") == 0, "garbage \"??\" -> 0");
 
     std::printf ("\n[6] part_select still non-automatable\n");
     check (! proc.getApvts().getParameter ("part_select")->isAutomatable(),

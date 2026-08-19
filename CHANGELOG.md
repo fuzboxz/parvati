@@ -4,7 +4,59 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **Oversized-block slice-0 MIDI drain (2026-08-19, test wave).** The chunked
+  oversized-block render handed slice 0 the FULL host MidiBuffer, and
+  `juce::Synthesiser::processNextBlock`'s closing `std::for_each` drains every
+  remaining event of the handed buffer beyond `numSamples`
+  (`juce_Synthesiser.cpp:232-235`) — so out-of-window MIDI events fired early
+  at slice 0's start AND re-fired in their home slice (double-fire): audible
+  timing corruption in offline/freeze renders whose blocks exceed the prepared
+  size (a note-on at sample 600 in a 1024-block sounded at ~266). Every slice
+  of a tiled render now receives ONLY its own window's events, rebased to
+  `[0,n)`; a single-slice (in-budget) block keeps the byte-identical fast path.
+  Found by the new `render_quality_test` [2b] checks (onset now 610 for @600,
+  778 for a @768 boundary), which previously pinned the bug as KNOWN-BUG.
+
 ### Changed
+- **Test wave: 17 new test targets + extensions across DSP core / FX /
+  engine / UI (2026-08-19).** A coverage-gap audit (specs in `audit/gap_*.md`,
+  lane reports in `audit/tests_*.md`) mapped every source area against the
+  existing ~105-binary suite; the previously-untested DSP core now has direct
+  unit tests, and the FX/render path, engine glue, and UI helpers gained the
+  missing pins. Full suite: 116/117 green (the one failure,
+  `parvati_fx_crackle_diag_test`, SIGBUSes ~2/5 runs on clean HEAD —
+  diagnostic-only binary, documented, not fixed). New targets:
+  `parvati_fixed_math_test` (fixed-point helpers + Random LFSR; corrected the
+  audit's U8AddClip expectation — the wrap happens before the compare),
+  `parvati_transient_generator_test` (255-sample decay, CLICK/GLITCH/POP,
+  shape clamps), `parvati_envelope_test` (stage chain, sustain target `<<1`,
+  DEAD trigger), `parvati_sub_oscillator_test` (shape half-increment, triangle
+  fold, amount-0 attenuation), `parvati_osc_sync_test` (UPDATE_PHASE reset
+  order, sync carry, plus a byte-exact voice-level OP_SYNC end-to-end render),
+  `parvati_voice_pitch_test` (kHighestNote clamp, bend offset, octave stride),
+  `parvati_note_stack_test` (sorted/played orderings, saturation eviction,
+  re-press dedup — the class behind a past hosted SIGBUS),
+  `parvati_transport_clock_test` (samplesPerTick, drift-free carry, BPM
+  clamps), `parvati_os_reaper_test` (deterministic retired-oversampling
+  reaper: cap-2 parking, inline-delete fallback, no growth),
+  `parvati_paramhelp_parity_test` (all 262 paramIDs have help),
+  `parvati_translations_test` (FR/DE key parity + fallback),
+  `parvati_note_step_control_test` (slider<->byte codec incl. the gate-off
+  data-loss pin), plus extensions: render-quality (tail table freeze/multi-part
+  MAX/tempo-move recompute, DC-blocker slice continuity + ~33 dB DC
+  attenuation, MIDI rebase), fx-param-coverage (chain latency invariants
+  N1/N2), fx-routing (FV-1 parallel topologies, mid-stream bypass gain, staged
+  swap across rate changes, chain setTempo), clouds-fx (<=32 kHz bridge
+  branch), midi-param (CC96/97 nudges + signed-range clamps), and formatter
+  families (seqnote_vel legato bit, part_*/mix_crush, env2/env3 dispatch,
+  valueFromString failure paths). Two small test-enabling surface changes:
+  `AmbikaVoice::debugRetiredOsCount()` (const, side-effect-free accessor) and
+  NoteStepControl's `sliderToByte`/`byteToSlider` statics made public. 78
+  missing FX help strings added to ParamHelp (slot/fxmod families loop-generated
+  to mirror the descriptor table); header contract updated to 198 curated +
+  64 generated = 262 ids.
+
 - **QoL wave: custom-scale removal, host parameter integration, offline
   max-quality render (2026-08-19).** A coordinated multi-lane quality pass
   from the JUCE-framework QoL audit (`audit/out_{tuning,render,host,ui}.md`).

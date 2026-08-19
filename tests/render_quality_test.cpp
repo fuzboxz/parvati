@@ -3,10 +3,16 @@
 //       persistence, restore on exit, double-entry guard, prepare-time leak
 //       guard).
 //   [2] Oversized-block CHUNKED render (host block > prepared size renders in
-//       prepared-size slices; no silent dropped tail).
+//       prepared-size slices; no silent dropped tail) + MIDI REBASE across
+//       slices (mid-slice + exact-boundary events land in their own window).
+//   [2c] DC-blocker slice/state continuity (one oversized block == four
+//       in-budget blocks) + near-DC attenuation vs the raw voicecard sum.
 //   [3] Dynamic getTailLengthSeconds: pure tailSecondsForFx table (reverbs +
-//       DELAYS with feedback-decay math + freeze caps + clamps) and the
-//       processor-level cache (all-None floor, reverb > floor, enabled gating).
+//       DELAYS with feedback-decay math + freeze caps + clamps + the
+//       zero-tail family) and the processor-level cache (all-None floor,
+//       reverb > floor, enabled gating, MULTI-PART MAX).
+//   [3e] Tail-cache TEMPO-MOVE invalidation (ClockedDelay halving at 4x BPM;
+//       the <=0.25 BPM jitter gate does not recompute).
 //
 // Built by default. Run with: ./build/parvati_render_quality_test
 
@@ -76,6 +82,33 @@ int savedOversampling (ParvatiAudioProcessor& p)
     }
     return -1;
 }
+
+// First index in [start, start+len) whose |sample| exceeds @p thr, or -1.
+// The engine renders silence as exact 0.0 (idle voices + cleared buffer), so
+// a small threshold cleanly separates "before the note" from "note onset".
+int onsetIndex (const juce::AudioBuffer<float>& b, int start, int len, double thr)
+{
+    for (int i = start; i < start + len && i < b.getNumSamples(); ++i)
+        if (std::fabs ((double) b.getSample (0, i)) > thr)
+            return i;
+    return -1;
+}
+
+// A settable play head so processBlock's transport reads a host BPM (the
+// tail-cache tempo-move path recompute gate). Pattern: synth_param_coverage.
+class FakePlayHead : public juce::AudioPlayHead
+{
+public:
+    double bpm = 120.0;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setBpm (bpm);
+        info.setIsPlaying (true);
+        info.setTimeInSamples ((int64_t) 0);
+        return info;
+    }
+};
 }   // namespace
 
 //==============================================================================
@@ -154,6 +187,162 @@ int main()
         // In-budget block (no behavior change): still renders.
         renderBlock (p, 256);
         check (true, "in-budget block renders after an oversized one");
+
+        // ---- [2b] MIDI REBASE across slices ----
+        // CONTRACT: every slice receives ONLY the events inside its window,
+        // rebased to [0,n) (PluginProcessor sliceMidiScratch_) — including
+        // slice 0 (FIXED 2026-08-19: slice 0 used to be handed the FULL host
+        // MidiBuffer, and JUCE's Synthesiser::processNextBlock closing
+        // std::for_each DRAINS every event beyond numSamples
+        // (juce_Synthesiser.cpp:232-235) — out-of-window events fired early in
+        // slice 0 and re-fired in their home slice. The fix window-filters
+        // slice 0 too whenever the block is tiled.) A note-on at sample 600
+        // lives in slice 2 ([512,768)) at rebased position 88; it must begin
+        // sounding near ABSOLUTE sample 600, never earlier.
+        {
+            ParvatiAudioProcessor q;
+            q.prepareToPlay (48000.0, 256);
+            juce::AudioBuffer<float> rebuf (2, 1024);
+            rebuf.clear();
+            juce::MidiBuffer rmidi;
+            rmidi.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 110), 600);
+            q.processBlock (rebuf, rmidi);
+
+            const int onset = onsetIndex (rebuf, 0, 1024, 1.0e-4);
+            std::printf ("  [info] note-on @600: onset sample = %d\n", onset);
+            // Correct contract: onset in (600, 780] — attack+latency after the
+            // rebased note-on at slice-2 position 88 (absolute 600).
+            check (onset > 600 && onset < 780,
+                   "mid-slice note-on (@600) starts in its own window");
+            check (blockPeak (rebuf, 700, 324) > 1.0e-5,
+                   "note is clearly sounding after its window (never dropped)");
+            check (blockPeak (rebuf, 0, 600) < 1.0e-6,
+                   "no audio before the rebased event (slice 0/1 silent)");
+        }
+        // Same contract for a note-on at EXACTLY a slice boundary (768 ==
+        // start of slice 3): must fire in slice 3, not one slice early.
+        {
+            ParvatiAudioProcessor q;
+            q.prepareToPlay (48000.0, 256);
+            juce::AudioBuffer<float> bbuf (2, 1024);
+            bbuf.clear();
+            juce::MidiBuffer bmidi;
+            bmidi.addEvent (juce::MidiMessage::noteOn (1, 62, (juce::uint8) 110), 768);
+            q.processBlock (bbuf, bmidi);
+
+            const int onset = onsetIndex (bbuf, 0, 1024, 1.0e-4);
+            std::printf ("  [info] note-on @768 (boundary): onset sample = %d\n", onset);
+            check (onset >= 768 && onset < 900,
+                   "boundary note-on fires within its own slice window");
+        }
+    }
+
+    std::printf ("\n[2c] DC-blocker slice/state continuity + DC attenuation\n");
+    {
+        juce::ScopedJuceInitialiser_GUI juceInit;
+
+        // Two identically-prepared/played instances: A renders four in-budget
+        // 256 blocks; B renders ONE 1024 oversized block (4 slices). The DC
+        // blocker runs per slice in both paths with time-contiguous state, so
+        // the outputs must match closely (any per-slice filter-state reset
+        // would show as a step at each 256 boundary).
+        auto renderSustained = [] (bool oversized)
+        {
+            ParvatiAudioProcessor p;
+            p.prepareToPlay (48000.0, 256);
+            juce::MidiBuffer note;
+            note.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100), 0);   // low sustained note
+            {
+                juce::AudioBuffer<float> b (2, 256);
+                b.clear();
+                p.processBlock (b, note);
+            }
+            for (int i = 0; i < 31; ++i)      // ~170 ms: envelope settled into sustain
+                renderBlock (p, 256);
+
+            juce::AudioBuffer<float> out (2, 1024);
+            out.clear();
+            juce::MidiBuffer empty;
+            if (oversized)
+            {
+                p.processBlock (out, empty);
+            }
+            else
+            {
+                for (int q = 0; q < 4; ++q)
+                {
+                    juce::AudioBuffer<float> b (2, 256);
+                    b.clear();
+                    p.processBlock (b, empty);
+                    for (int ch = 0; ch < 2; ++ch)
+                        out.copyFrom (ch, q * 256, b, ch, 0, 256);
+                }
+            }
+            return out;
+        };
+
+        const auto outSliced = renderSustained (false);
+        const auto outBig    = renderSustained (true);
+
+        double maxDiff = 0.0;
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 1024; ++i)
+                maxDiff = std::fmax (maxDiff,
+                                     std::fabs ((double) outSliced.getSample (ch, i)
+                                              - (double) outBig.getSample (ch, i)));
+        std::printf ("  [info] 4x256 vs 1x1024 sustained render: max |diff| = %.3e\n", maxDiff);
+        check (maxDiff < 1.0e-5,
+               "oversized block ~= four in-budget blocks (DC-blocker state contiguous, no step)");
+
+        // DC attenuation: the 15 Hz main-bus high-pass must suppress the
+        // near-DC offset the DC-coupled ladder filter + VCA produce. Setup
+        // that genuinely offsets: low sustained note + LOW filter cutoff
+        // (the ladder integrates; the init patch's ~8 kHz cutoff leaves the
+        // balanced oscillators with no DC to remove). Both signals are
+        // accumulated block-by-block so the two means cover the SAME window,
+        // long enough (64 blocks = 16384 samples ~ 22 note periods) that the
+        // partial-period LF ripple averages out and the mean is DC-dominated.
+        ParvatiAudioProcessor pDC;
+        pDC.prepareToPlay (48000.0, 256);
+        setParam (pDC, "filter1_cutoff", 10);       // sub-audio cutoff -> DC-heavy
+        setParam (pDC, "filter_env", 0);             // static cutoff (no env sweep)
+        setParam (pDC, "env1_sustain", 127);
+        {
+            juce::MidiBuffer note;
+            note.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100), 0);
+            juce::AudioBuffer<float> b (2, 256);
+            b.clear();
+            pDC.processBlock (b, note);
+        }
+        double meanRaw = 0.0, meanMain = 0.0;
+        int total = 0;
+        for (int blk = 0; blk < 256; ++blk)   // 65536 samples ~ 89 note periods: LF ripple averages out
+        {
+            juce::AudioBuffer<float> b (2, 256);
+            b.clear();
+            juce::MidiBuffer empty;
+            pDC.processBlock (b, empty);
+            const auto& vcBufs = pDC.getEngine().getVoiceCardBuffers();
+            for (int i = 0; i < 256; ++i)
+            {
+                double s = 0.0;
+                for (int pt = 0; pt < SynthEngine::getNumParts(); ++pt)
+                    s += (double) vcBufs[(size_t) pt].getSample (0, i);
+                meanRaw += s;
+                meanMain += (double) b.getSample (0, i);
+                ++total;
+            }
+        }
+        meanRaw /= (double) total;
+        meanMain /= (double) total;
+        std::printf ("  [info] %d-sample window mean: raw vc sum = %.4e, main bus = %.4e\n",
+                     total, meanRaw, meanMain);
+        // main = 0.5 x raw by the -6 dB headroom gain, so >=20 dB attenuation
+        // is |mean_main| <= 0.05 x 0.5 x |mean_raw|. (If this patch turns out
+        // to carry no DC at all, the fallback floor keeps the check honest.)
+        const bool dcOk = std::fabs (meanMain)
+                          <= juce::jmax (2.0e-4, 0.05 * 0.5 * std::fabs (meanRaw));
+        check (dcOk, "main-bus DC offset attenuated >=20 dB vs raw voicecard sum (low-cutoff patch)");
     }
 
     std::printf ("\n[3a] Pure tail table (reverbs)\n");
@@ -187,6 +376,25 @@ int main()
         }
         checkNear (tailSecondsForFx (FxType::Diffuser, zero, 120.0), 2048.0 / 32000.0, 1e-9,
                    "Diffuser = 2048-sample AP smear");
+
+        // The ZERO-tail family (memoryless / short memory): modulators,
+        // distortions, dynamics, pitch — the engine tail is dominated by the
+        // voice release, which the floor covers. All must report exactly 0.0
+        // so the cache's max() is driven by real reverb/delay slots only.
+        for (FxType t : { FxType::PitchShifter, FxType::Wavefolder,
+                          FxType::FrequencyShifter, FxType::RingModulator,
+                          FxType::Resonator, FxType::Ensemble,
+                          FxType::Phaser, FxType::VinylCompressor,
+                          FxType::Overdrive, FxType::LutDistortion,
+                          FxType::Compressor, FxType::Gate,
+                          FxType::Chorus, FxType::Flanger })
+        {
+            const bool zero2 = tailSecondsForFx (t, zero, 120.0) == 0.0;
+            char msg[96];
+            (void) std::snprintf (msg, sizeof (msg),
+                                  "zero-tail family: type %d reports 0.0", (int) t);
+            check (zero2, msg);
+        }
 
         std::printf ("\n[3b] Pure tail table (delays: time x feedback decay)\n");
         {
@@ -236,6 +444,12 @@ int main()
             const float spectralFreeze[5] = { 0.f, 0.f, 0.f, 0.f, 1.f };   // freeze is param[4]
             checkNear (tailSecondsForFx (FxType::Spectral, spectralFreeze, 120.0),
                        kTailCapSeconds, 1e-9, "Spectral freeze = infinite sentinel");
+            // WSOLAStretch: freeze is param[3] like LoopingDelay (the granular
+            // family's Freeze gate) — previously unpinned.
+            checkNear (tailSecondsForFx (FxType::WSOLAStretch, noFreeze, 120.0), 4.0, 1e-9,
+                       "WSOLAStretch = 4 s capture buffer (no freeze)");
+            checkNear (tailSecondsForFx (FxType::WSOLAStretch, freeze, 120.0), kTailCapSeconds,
+                       1e-9, "WSOLAStretch freeze (param[3]>0.5) = infinite sentinel");
         }
 
         std::printf ("\n[3c] Clamps\n");
@@ -276,6 +490,84 @@ int main()
         renderBlock (p, 256);
         checkNear (p.getTailLengthSeconds(), kTailCapSeconds, 1e-6,
                    "Echo max-feedback delay -> capped tail (delays count)");
+
+        // Multi-part MAX: the cache is the MAX over every part's enabled
+        // slots. Part 0 = Room @3 s decay; Part 1 = Plate @4.1 s (predelay+4 s)
+        // via the engine's per-part setters (the APVTS view is part-0 only).
+        // The cache must report Part 1's LONGER tail, and drop back to Part
+        // 0's when Part 1's slot is disabled — never part-0-only, never a sum.
+        setParam (p, "fx1_type", (int) FxType::Room);
+        setParam (p, "fx1_enabled", 1);
+        setParam (p, "fx1_param1", 127);   // decay -> 3 s
+        renderBlock (p, 256);
+        const double tailPart0 = p.getTailLengthSeconds();
+        checkNear (tailPart0, 3.0, 1e-3, "part 0 Room @3 s -> cache = 3 s (single-part baseline)");
+
+        auto& eng = p.getEngine();
+        eng.setCurrentPart (1);
+        eng.setFxSlotType (0, (uint8_t) FxType::PlateReverb);
+        eng.setFxSlotEnabled (0, 1);
+        eng.setFxSlotParam (0, 0, 127);   // predelay 100 ms
+        eng.setFxSlotParam (0, 1, 127);   // decay 4 s -> 4.1 s
+        eng.setCurrentPart (0);
+        renderBlock (p, 256);
+        checkNear (p.getTailLengthSeconds(), 4.1, 1e-3,
+                   "two parts with different tails -> cache reports the MAX (part 1 Plate 4.1 s)");
+
+        eng.setCurrentPart (1);
+        eng.setFxSlotEnabled (0, 0);      // disable the longer part-1 slot
+        eng.setCurrentPart (0);
+        renderBlock (p, 256);
+        checkNear (p.getTailLengthSeconds(), tailPart0, 1e-6,
+                   "disabling the longer part -> cache falls back to part 0's tail");
+    }
+
+    std::printf ("\n[3e] Tail-cache tempo-move invalidation (ClockedDelay)\n");
+    {
+        juce::ScopedJuceInitialiser_GUI juceInit;
+        ParvatiAudioProcessor p;
+        FakePlayHead playHead;
+        playHead.bpm = 120.0;
+        p.setPlayHead (&playHead);
+        p.prepareToPlay (48000.0, 256);
+
+        // Part 0 / FX1 = ClockedDelay, whole-note division (sync=0 -> div 1),
+        // mid feedback: T clamps to the 1 s line @120 BPM, halving to 0.5 s
+        // @480 BPM -> the t60 halves exactly (same feedback gain).
+        auto& eng = p.getEngine();
+        eng.setFxSlotType (0, (uint8_t) FxType::ClockedDelay);
+        eng.setFxSlotEnabled (0, 1);
+        eng.setFxSlotParam (0, 0, 0);     // sync -> div 1 (whole note)
+        eng.setFxSlotParam (0, 1, 63);    // feedback ~0.471
+        renderBlock (p, 256);             // services fxDirty_ + seeds tailBpmCache_ = 120
+        const double tail120 = p.getTailLengthSeconds();
+        std::printf ("  [info] tail @120 BPM = %.4f s\n", tail120);
+        check (tail120 > 4.0 && tail120 < 12.0,
+               "ClockedDelay fb tail @120 BPM is a real multi-second value");
+
+        // Material tempo move: 120 -> 480 recomputes; the clamped 1 s line
+        // halves, so the t60 halves.
+        playHead.bpm = 480.0;
+        renderBlock (p, 256);
+        const double tail480 = p.getTailLengthSeconds();
+        std::printf ("  [info] tail @480 BPM = %.4f s (ratio %.4f)\n",
+                     tail480, tail480 / tail120);
+        checkNear (tail480, tail120 * 0.5, 1.0e-3,
+                   "BPM x4 -> clocked-delay tail halves (tempo-move recomputes the cache)");
+
+        // Jitter gate: |dbpm| <= 0.25 must NOT recompute (bit-equal cache;
+        // exactlyEqual because a recompute at 480.2 WOULD move the value).
+        const double before = p.getTailLengthSeconds();
+        playHead.bpm = 480.2;
+        renderBlock (p, 256);
+        check (juce::exactlyEqual (p.getTailLengthSeconds(), before),
+               "+0.2 BPM jitter does NOT recompute the tail cache (bit-equal)");
+
+        // A real move just past the gate recomputes again (smaller tail).
+        playHead.bpm = 481.0;
+        renderBlock (p, 256);
+        check (p.getTailLengthSeconds() < before,
+               "+1.0 BPM move DOES recompute (tail shrinks with the tempo)");
     }
 
     std::printf ("\nRENDER-QUALITY TEST: %s (%d failures)\n",

@@ -567,21 +567,34 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // buffers always addressed from 0), then mixes into the host buffer at
     // [done, done+n). The FULL block renders -- no dropped tail.
     //
-    // MIDI: slice 0 consumes the (post-transport) buffer directly with
-    // startSample == 0 -- byte-identical to the old path for an in-budget
-    // block. Later slices get ONLY the events falling inside their window,
-    // rebased to [0, n) in a scratch MidiBuffer (juce::Synthesiser's
-    // processNextBlock fires EVERY event at/after startSample -- its closing
-    // for_each drains the rest of the given buffer -- so a slice must be handed
-    // a buffer holding nothing beyond its own window). The scratch is cleared
-    // per slice (clear() keeps capacity: no steady-state allocation).
-    // processTransport + the MIDI collector already ran on the FULL count
-    // above (unchanged).
+    // MIDI: when the block fits in ONE slice (an in-budget host block — the
+    // overwhelmingly common case), the buffer is handed as-is with
+    // startSample == 0: byte-identical to the old single-slice path. When the
+    // block is TILED, EVERY slice (slice 0 included) receives only the events
+    // inside its own window [done, done+n), rebased to [0,n) in a scratch
+    // MidiBuffer. This is REQUIRED by juce::Synthesiser's processNextBlock
+    // semantics: its closing std::for_each DRAINS every remaining event of
+    // the handed buffer beyond numSamples (juce_Synthesiser.cpp:232-235), so
+    // an unfiltered slice 0 would fire out-of-window events early (at its
+    // own start, with no audio for them) AND they would re-fire in their home
+    // slice — double-fire timing corruption in oversized/offline renders.
+    // (The pre-tiling clamp path had the same early-fire, minus the re-fire.)
+    // The scratch is cleared per slice (clear() keeps capacity: no
+    // steady-state allocation). processTransport + the MIDI collector
+    // already ran on the FULL count above (unchanged); the window filter sees
+    // both direct-played notes (forwarded at their host positions) and
+    // arp/sequencer-generated events (scheduled within [0, totalSamples)), so
+    // both classes land in the correct temporal slice.
     //
     // preparedMaxBlock_ == 0 (not yet prepared) bypasses the tiling, keeping
     // the old behaviour for degenerate pre-prepare blocks.
     const int totalSamples = buffer.getNumSamples();
     const int prepared = preparedMaxBlock_.load (std::memory_order_relaxed);
+    // True when the host block exceeds the prepared size and will be TILED:
+    // every slice must then be handed a window-filtered MidiBuffer (see the
+    // MIDI paragraph above). A single-slice render keeps the fast path (the
+    // host buffer handed as-is, byte-identical to the pre-tiling behaviour).
+    const bool tileMidi = (prepared > 0) && (totalSamples > prepared);
     const auto& vcBuffers = engine_.getVoiceCardBuffers();
     const auto& fxBuffers = engine_.getFxOutputBuffers();
     const int mainChans = getChannelCountOfBus (false, 0);
@@ -592,11 +605,13 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const int n = (prepared > 0) ? juce::jmin (prepared, totalSamples - done)
                                      : (totalSamples - done);
 
-        // Slice MIDI: slice 0 = the block's buffer as-is (startSample 0 fires
-        // every event, exactly the old semantics); later slices = the events in
-        // [done, done+n), positions rebased by -done.
+        // Slice MIDI: single-slice render = the block's buffer as-is (fires
+        // every event at its position, exactly the old semantics); tiled
+        // render = the events in [done, done+n), rebased by -done — for slice
+        // 0 too (the Synthesiser drain would otherwise double-fire/early-fire
+        // out-of-window events; see the MIDI paragraph above).
         const juce::MidiBuffer* sliceMidi = &midiMessages;
-        if (done > 0)
+        if (tileMidi)
         {
             sliceMidiScratch_.clear();
             for (const auto m : midiMessages)

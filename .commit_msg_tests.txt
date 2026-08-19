@@ -1,0 +1,55 @@
+test: coverage wave — DSP core, engine glue, FX/render, UI formats; fix slice-0 MIDI drain
+
+Gap audit (audit/gap_*.md) mapped every source area against the 105 existing
+binaries; this wave adds 12 test targets + 5 extended suites (116 PASS / 1
+pre-existing diagnostic SIGBUS).
+
+Bug fix found by the wave:
+- Oversized-block chunked render handed slice 0 the full host MidiBuffer;
+  Synthesiser::processNextBlock's closing drain (juce_Synthesiser.cpp:232)
+  fired out-of-window events early AND they re-fired in their home slice
+  (double-fire). All slices now window-filter [done,done+n) rebased to
+  [0,n); single-slice blocks keep the byte-identical fast path. Onset for a
+  note-on @600 now lands at 610 (was 266). (render_quality_test [2b])
+
+New unit tests (previously zero direct coverage):
+- fixed_math: U8Mix/S16ClipU14/U24AddC/U24Sub/InterpolateSample corners +
+  Random LFSR sequence (seed 0x21 -> 0xB410 -> 0x5A08)
+- transient_generator: CLICK 32-sample window + amplitude ramp, GLITCH LCG,
+  POP, shape clamps, 255-sample decay
+- envelope: LUT preconditions, ATTACK->DECAY->SUSTAIN->RELEASE->DEAD chain,
+  sustain<<1 target, Trigger(DEAD), peaks (253/254 semantics)
+- sub_oscillator: square/pulse/triangle folding, octave-halving shapes,
+  amount-0 1/256 attenuation, phase persistence
+- osc_sync: DirtyPWM threshold, sync-before-increment phase reset, carry
+  parity, voice-level OP_SYNC byte-exact vs hand-driven reference
+- voice_pitch: kHighestNote clamp, bend-offset semitone equivalence,
+  octave-loop stride identity, low-note region
+- note_stack: sorted/played orderings, most-recent, saturation eviction at
+  capacity 12, re-noteOn dedup, fresh-construction usability
+- transport_clock: samplesPerTick exact @48k/120, drift-free carry at 480
+  BPM over 1e6 samples, bpm clamps, reset
+- os_reaper: staged-install park/reap cycles, capacity-2 fallback, reaper
+  clears (deterministic; new test-only AmbikaVoice::debugRetiredOsCount)
+- paramhelp_parity: all 262 descriptor ids have help (78 missing FX strings
+  authored in ParamHelp.cpp, slot/fxmod families loop-generated)
+- translations: FR/DE key-set parity from shipped tables, lookups, fallback
+- note_step_control: slider/byte bijection incl. wrap-at-129 + asymmetric
+  gate-off decode, textFromValue readouts, midiNoteName edges (statics made
+  public for tests)
+
+Extended: render_quality (WSOLA freeze tail, 14 zero-tail types, multi-part
+cache MAX, tempo-move invalidation @120->480 BPM + jitter no-op, DC-blocker
+slice continuity bit-identical + 32.6 dB attenuation, MIDI rebasing),
+fx_param_coverage (chain latency topologies + disable invariance + bypassed
+OS pure-delay), fx_routing (FV-1 parallel survival, mid-stream bypass gain
+1.000 ratio, 48k->96k->44.1k re-prepare continuity, chain setTempo x2.0
+ratio + no-op bit-identity), clouds_fx (<=32k internal-upsample branch),
+fv1_clocked_delay (setTransport(0) guard), midi_param (CC96/97 nudges,
+signed-range clamps, unmapped no-op), synth_paramtext (seqnote_vel legato
+bit, env2/3 dispatch, filter_env, part_* rails, mix_crush),
+host_param_text (fx_eq parse rails + non-invertibility pin, fx param raw
+entry, fxmod negative, garbage clamps), editor (multi-bank factory stepping
+order + nested user dirs).
+
+Docs: ParamHelp contract comment 198+64=262; CHANGELOG entries.

@@ -680,6 +680,66 @@ target_link_libraries(parvati_lfo_sync_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# DSP-core unit pins (2026-08-19 coverage-gap wave). These compile the JUCE-
+# FREE dsp classes directly (the fv1-test pattern — no Parvati/JUCE link, fast
+# builds) with only the vendored .cpp translation units they reference.
+# Run with: ./build/parvati_<name>_test
+
+# fixed_math.h + random.h integer helpers (every waveform rides on these).
+add_executable(parvati_fixed_math_test
+    tests/fixed_math_test.cpp
+)
+target_include_directories(parvati_fixed_math_test PRIVATE Source)
+target_compile_features(parvati_fixed_math_test PRIVATE cxx_std_17)
+target_sources(parvati_fixed_math_test PRIVATE Source/dsp/random.cpp)
+
+# transient_generator.h — the 5 transient (noise-burst) generators.
+add_executable(parvati_transient_generator_test
+    tests/transient_generator_test.cpp
+)
+target_include_directories(parvati_transient_generator_test PRIVATE Source)
+target_compile_features(parvati_transient_generator_test PRIVATE cxx_std_17)
+
+# envelope.h — integer ADSR+DEAD stage machine (needs the resource tables).
+add_executable(parvati_envelope_test
+    tests/envelope_test.cpp
+)
+target_include_directories(parvati_envelope_test PRIVATE Source)
+target_compile_features(parvati_envelope_test PRIVATE cxx_std_17)
+target_sources(parvati_envelope_test PRIVATE Source/dsp/resources/resources_data.cpp)
+
+# sub_oscillator.h — square/pulse/triangle sub + octave halving.
+add_executable(parvati_sub_oscillator_test
+    tests/sub_oscillator_test.cpp
+)
+target_include_directories(parvati_sub_oscillator_test PRIVATE Source)
+target_compile_features(parvati_sub_oscillator_test PRIVATE cxx_std_17)
+
+# oscillator.{h,cpp} hard-sync contract + the Voice OP_SYNC routing.
+add_executable(parvati_osc_sync_test
+    tests/osc_sync_test.cpp
+)
+target_include_directories(parvati_osc_sync_test PRIVATE Source)
+target_compile_features(parvati_osc_sync_test PRIVATE cxx_std_17)
+target_sources(parvati_osc_sync_test PRIVATE
+    Source/dsp/voice.cpp
+    Source/dsp/oscillator.cpp
+    Source/dsp/random.cpp
+    Source/dsp/resources/resources_data.cpp)
+
+# Voice pitch-path extremes (kHighestNote clamp, octave loop, bend hook).
+add_executable(parvati_voice_pitch_test
+    tests/voice_pitch_test.cpp
+)
+target_include_directories(parvati_voice_pitch_test PRIVATE Source)
+target_compile_features(parvati_voice_pitch_test PRIVATE cxx_std_17)
+target_sources(parvati_voice_pitch_test PRIVATE
+    Source/dsp/voice.cpp
+    Source/dsp/oscillator.cpp
+    Source/dsp/random.cpp
+    Source/dsp/resources/resources_data.cpp)
+
+# ------------------------------------------------------------------------------
 # LFO retrigger-on-note verification (firmware Part::RetriggerLfos). Built by
 # default. Run with: ./build/parvati_lfo_retrigger_test
 add_executable(parvati_lfo_retrigger_test
@@ -1446,6 +1506,46 @@ target_link_libraries(parvati_host_param_text_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# ParamHelp descriptor<->help parity: every paramID in getPatchParamDescriptors()
+# (curated map + the 78 FX entries + the 64 generated step entries) answers
+# non-empty help, malformed/unknown ids answer empty. Built by default.
+# Run with: ./build/parvati_paramhelp_parity_test
+add_executable(parvati_paramhelp_parity_test
+    tests/paramhelp_parity_test.cpp
+)
+target_include_directories(parvati_paramhelp_parity_test PRIVATE Source)
+target_compile_features(parvati_paramhelp_parity_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_paramhelp_parity_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Chrome-translation verification: FR/DE key-set parity (the hand-synced
+# tables), runtime TRANS lookups, and the uninstall/unrecognised-code paths.
+# Built by default. Run with: ./build/parvati_translations_test
+add_executable(parvati_translations_test
+    tests/translations_test.cpp
+)
+target_include_directories(parvati_translations_test PRIVATE Source)
+target_compile_features(parvati_translations_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_translations_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# NoteStepControl slider<->byte mapping (Rest collapse, gate-bit recomposition,
+# the asymmetric gate-off decode), the constructed control's readout, and the
+# midiNoteName edges. Built by default. Run with: ./build/parvati_note_step_control_test
+add_executable(parvati_note_step_control_test
+    tests/note_step_control_test.cpp
+)
+target_include_directories(parvati_note_step_control_test PRIVATE Source)
+target_compile_features(parvati_note_step_control_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_note_step_control_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # ModDestMap unit test: the paramID <-> MOD_DST mapping table + per-slot amount
 # aggregation (aggregateAmount / slotsForDest) used by the mod-ring, hover-
 # highlight, and drag-and-drop features. Built by default.
@@ -1522,6 +1622,46 @@ add_executable(parvati_midi_param_test
 target_include_directories(parvati_midi_param_test PRIVATE Source)
 target_compile_features(parvati_midi_param_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_midi_param_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# NoteStack unit (linked-list + sorted-array semantics: pitch/played orderings,
+# saturation eviction, re-noteOn dedup). Header-only unit — no JUCE needed.
+# Built by default. Run with: ./build/parvati_note_stack_test
+add_executable(parvati_note_stack_test
+    tests/note_stack_test.cpp
+)
+target_include_directories(parvati_note_stack_test PRIVATE Source)
+target_compile_features(parvati_note_stack_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_note_stack_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# TransportClock unit (24-PPQN tempo math: samplesPerTick exactness, drift-free
+# fractional carry, bpm clamps, reset). Header-only unit — no JUCE needed.
+# Built by default. Run with: ./build/parvati_transport_clock_test
+add_executable(parvati_transport_clock_test
+    tests/transport_clock_test.cpp
+)
+target_include_directories(parvati_transport_clock_test PRIVATE Source)
+target_compile_features(parvati_transport_clock_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_transport_clock_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Retired-Oversampling reaper lifecycle (park capacity, inline-delete fallback,
+# explicit reap, bounded cycles) driven deterministically through the real
+# processor render path. Built by default.
+# Run with: ./build/parvati_os_reaper_test
+add_executable(parvati_os_reaper_test
+    tests/os_reaper_test.cpp
+)
+target_include_directories(parvati_os_reaper_test PRIVATE Source)
+target_compile_features(parvati_os_reaper_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_os_reaper_test PRIVATE
     Parvati
 )
 

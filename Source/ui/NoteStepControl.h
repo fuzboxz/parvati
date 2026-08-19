@@ -36,6 +36,13 @@ public:
     NoteStepControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
     ~NoteStepControl() override;
 
+    // Slider value (0..128: 0=Rest, 1..128=note 0..127) -> seqnote_step byte.
+    // Public for the unit test (tests/note_step_control_test.cpp): the
+    // Rest-collapse + gate-bit recomposition is the control's whole contract.
+    static int sliderToByte (double sliderValue) noexcept;
+    // seqnote_step byte (0..255) -> slider value (0=Rest, 1..128=note).
+    static int byteToSlider (int byte) noexcept;
+
 private:
     // APVTS::Listener: a byte change (preset load / host automation / undo /
     // Reset / Randomize) -> decode to the slider. Calls the base first so the
@@ -48,11 +55,6 @@ private:
 
     // slider drag -> recompose + write the byte param.
     void sliderValueChanged();
-
-    // Slider value (0..128: 0=Rest, 1..128=note 0..127) -> seqnote_step byte.
-    static int sliderToByte (double sliderValue) noexcept;
-    // seqnote_step byte (0..255) -> slider value (0=Rest, 1..128=note).
-    static int byteToSlider (int byte) noexcept;
 
     juce::Value noteValue_;   // getParameterAsValue(seqnote_step*) — byte writes
     juce::String paramID_;    // cached juce::String (desc_.paramID is std::string)

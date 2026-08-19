@@ -3,15 +3,18 @@
 // ParamHelp — paramID -> curated help/tooltip text for every Parvati APVTS
 // parameter.
 //
-// The patch surface exposed by getPatchParamDescriptors() is 184 parameters:
-//   120 concrete "curated" entries (oscillators, mixer, filters, the 3
+// The patch surface exposed by getPatchParamDescriptors() is 262 parameters:
+//   198 concrete "curated" entries (oscillators, mixer, filters, the 3
 //   env+lfo units, voice LFO, 14 modulation rows, 4 modifiers, part params,
-//   sequencer lengths, arpeggiator, and the synth options) live in the static
-//   map returned by parvatiParamHelp(); the remaining 64 step-sequencer entries
+//   sequencer lengths, arpeggiator, the synth options, the per-part FX slots
+//   + chain/master/EQ params, and the 16 FX-mod rows — slot/fxmod families are
+//   loop-generated inside buildHelpMap() mirroring the descriptor table's
+//   addFx loops so they can never drift) live in the static map returned by
+//   parvatiParamHelp(); the remaining 64 step-sequencer entries
 //   (seq1_step*, seq2_step*, seqnote_step*, seqnote_vel*) are generated on the
 //   fly by getParamHelp() so they can never drift from the descriptor table.
 //
-// getParamHelp() returns non-empty for all 184 paramIDs; it returns an empty
+// getParamHelp() returns non-empty for all 262 paramIDs; it returns an empty
 // string only for genuinely unknown IDs.
 
 #pragma once
@@ -21,7 +24,7 @@
 #include <string>
 #include <unordered_map>
 
-// Curated paramID -> description map (the 120 non-seq-step entries).
+// Curated paramID -> description map (the 198 non-seq-step entries).
 // Returned by reference to a function-local static so it is constructed once.
 const std::unordered_map<std::string, std::string>& parvatiParamHelp();
 

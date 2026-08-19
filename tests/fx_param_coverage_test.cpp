@@ -541,6 +541,104 @@ static void testLatency()
         std::snprintf (msg, sizeof (msg), "chain with one %s slot: latency()==8", nm);
         check (chain.latency() == 8, msg);
     }
+
+    // ---- Mixed-slot topologies: latency() accumulates through the graph ----
+    // Series sums the ordered slots; Parallel12to3 = max(A,B) + C;
+    // Parallel1to23 = A + max(B,C); a None/absent slot contributes 0.
+    {
+        FxChain chain;
+        chain.prepare (kRate, kBlock);
+        chain.setSlotType (0, FxType::Wavefolder);       // OS, 8
+        chain.setSlotType (1, FxType::RingModulator);    // OS, 8
+        chain.setSlotType (2, FxType::Wavefolder);       // OS, 8
+        check (chain.latency() == 24, "Series OS+OS+OS -> latency()==24 (sums)");
+
+        // Middle slot swapped to a latency-0 effect: 8 + 0 + 8 = 16.
+        chain.setSlotType (1, FxType::Diffuser);
+        check (chain.latency() == 16, "Series OS+0+OS -> latency()==16");
+
+        // Third slot removed (None): 8 + 0 + 0 = 8.
+        chain.setSlotType (2, FxType::None);
+        check (chain.latency() == 8, "Series OS+0+None -> latency()==8");
+    }
+    {
+        FxChain chain;
+        chain.prepare (kRate, kBlock);
+        chain.setSlotType (0, FxType::Wavefolder);       // A: OS, 8
+        chain.setSlotType (1, FxType::Diffuser);         // B: 0
+        chain.setSlotType (2, FxType::None);             // C: passthrough
+        chain.setTopology (FxTopology::Series);
+        check (chain.latency() == 8, "Series OS + latency-0 + None -> latency()==8");
+
+        chain.setTopology (FxTopology::Parallel12to3);   // max(8,0) + 0
+        check (chain.latency() == 8, "Parallel12to3 one OS branch (A=OS,B=0,C=None) -> 8");
+
+        chain.setTopology (FxTopology::Parallel1to23);   // A + max(B,C) = 8 + max(0,0)
+        check (chain.latency() == 8, "Parallel1to23 A=OS,B=0,C=None -> 8");
+
+        // The OS slot moved INTO the parallel pair: max picks it up.
+        chain.setSlotType (0, FxType::Diffuser);         // A: 0
+        chain.setSlotType (1, FxType::RingModulator);    // B: OS, 8
+        check (chain.latency() == 8, "Parallel1to23 pair (B=OS,C=None) -> 0 + max(8,0) == 8");
+    }
+
+    // ---- N1 invariant: latency() is UNCHANGED across enable/bypass ----
+    {
+        FxChain chain;
+        chain.prepare (kRate, kBlock);
+        chain.setSlotType (0, FxType::Wavefolder);
+        chain.setSlotEnabled (0, true);
+        chain.setSlotDryWet (0, 1.0f);
+        const int latEnabled = chain.latency();
+        check (latEnabled == 8, "N1 setup: enabled OS slot latency()==8");
+        chain.setSlotEnabled (0, false);
+        check (chain.latency() == latEnabled,
+               "N1: latency() unchanged across setSlotEnabled(false)");
+        chain.setSlotEnabled (0, true);
+        check (chain.latency() == latEnabled,
+               "N1: latency() unchanged across re-enable");
+    }
+
+    // ---- N2: a FULLY-FADED-OUT bypassed OS slot's passthrough stays ----
+    // latency-delayed. Right after bypass the slot still RENDERS (tail
+    // retention, wetFade_ > 5e-4); once the fade dies (~0.3 s tau; the
+    // threshold crossing needs ~2.3 s) the chain imposes the slot's latency
+    // via delayPassthrough, so an impulse entering the bypassed chain exits
+    // delayed by latency() samples — no output snap on the bypass.
+    {
+        FxChain chain;
+        chain.prepare (kRate, kBlock);
+        chain.setSlotType (0, FxType::Wavefolder);
+        chain.setSlotEnabled (0, true);
+        chain.setSlotDryWet (0, 1.0f);
+        chain.setSlotParam (0, 0, 0.8f);   // fold — input stays small anyway
+
+        float oL[kBlock], oR[kBlock];
+        std::vector<float> zeros ((size_t) kBlock, 0.0f);
+        for (int b = 0; b < 8; ++b)                        // settle the fade-in on silence
+            chain.process (zeros.data(), zeros.data(), oL, oR, kBlock);
+
+        chain.setSlotEnabled (0, false);                   // bypass
+        for (int b = 0; b < 500; ++b)                       // ~2.7 s: fade < 5e-4 -> inactive
+            chain.process (zeros.data(), zeros.data(), oL, oR, kBlock);
+
+        // Impulse block through the now-INACTIVE bypassed slot.
+        std::vector<float> imp ((size_t) kBlock, 0.0f);
+        imp[0] = 0.9f;
+        chain.process (imp.data(), imp.data(), oL, oR, kBlock);
+
+        // The impulse must appear at sample latency() (8), not at 0.
+        bool earlyLeak = false;
+        for (int i = 0; i < 8; ++i)
+            if (std::fabs (oL[i]) > 1.0e-6f) earlyLeak = true;
+        check (! earlyLeak, "N2: bypassed OS passthrough emits nothing before sample 8");
+        check (std::fabs (oL[8] - 0.9f) < 1.0e-5f,
+               "N2: bypassed OS passthrough carries the impulse AT sample 8 (latency-delayed)");
+        bool tailNoise = false;
+        for (int i = 9; i < kBlock; ++i)
+            if (std::fabs (oL[i]) > 1.0e-6f) tailNoise = true;
+        check (! tailNoise, "N2: bypassed passthrough is a pure delay (nothing after the impulse)");
+    }
 }
 
 // ---------------------------------------------------------------------------

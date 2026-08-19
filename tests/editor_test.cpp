@@ -1091,6 +1091,61 @@ int main()
         check (! empty.selectNext().existsAsFile(), "empty tree: step returns an invalid File");
         tmp18.deleteRecursively();
 
+        // ---- (a2) Multi-bank factory interleave + nested USER directories.
+        // The four factory banks step in kBanks order (A -> B -> F -> S),
+        // then Multi, then the recursive USER tree, then Templates; inside
+        // the USER tree a SUBDIRECTORY's leaves come before the parent's own
+        // leaves (the menu's subs-then-leaves traversal).
+        const auto tmp18b = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                .getChildFile ("parvati_preset_step_multibank");
+        tmp18b.deleteRecursively();
+        const auto fact18b = mkDir18 (tmp18b.getChildFile ("FACTORY"));
+        const char* const kBankNames18b[] = { "A", "B", "F", "S" };
+        bool bankSetupOk = true;
+        for (const char* bank : kBankNames18b)
+        {
+            const auto bankDir = mkDir18 (fact18b.getChildFile (bank));
+            if (! bankDir.getChildFile (juce::String (bank).toLowerCase() + ".PRO")
+                      .replaceWithText ("x", false))
+                bankSetupOk = false;
+        }
+        check (bankSetupOk, "setup: one .PRO per factory bank (A/B/F/S)");
+        const auto multi18b  = mkDir18 (tmp18b.getChildFile ("FACTORY_MULTI"));
+        const auto user18b   = mkDir18 (tmp18b.getChildFile ("USER"));
+        const auto tpl18b    = mkDir18 (tmp18b.getChildFile ("TEMPLATES"));
+        check (multi18b.getChildFile ("m1.MUL").replaceWithText ("x"), "setup: multi");
+        // Nested user tree: Sub/ holds u0, the user root holds z — "Sub"
+        // must be visited BEFORE the root's own leaf z.
+        const auto userSub18b = mkDir18 (user18b.getChildFile ("Sub"));
+        check (userSub18b.getChildFile ("u0.parvati").replaceWithText ("x"), "setup: user/Sub/u0");
+        check (user18b.getChildFile ("z.parvati").replaceWithText ("x"), "setup: user/z");
+        check (tpl18b.getChildFile ("t1.parvati").replaceWithText ("x"), "setup: template");
+        {
+            PresetBrowser multi (tpl18b, user18b, fact18b, multi18b,
+                                 [] (const juce::File&) {});
+            const char* const expectedOrder[] = {
+                "a.PRO", "b.PRO", "f.PRO", "s.PRO",   // factory banks A B F S
+                "m1.MUL",                                  // multi bank
+                "u0.parvati", "z.parvati",               // user: Sub before root leaves
+                "t1.parvati" };                           // templates last
+            bool orderOk = true;
+            for (int i = 0; i < 8; ++i)
+            {
+                const auto leaf = multi.selectNext();
+                if (leaf.getFileName() != expectedOrder[i])
+                {
+                    std::printf ("     step %d: got \"%s\" want \"%s\"\n", i,
+                                 leaf.getFileName().toRawUTF8(), expectedOrder[i]);
+                    orderOk = false;
+                }
+            }
+            check (orderOk, "multi-bank + nested-user step order (A,B,F,S,Multi,Sub,z,tpl)");
+            // Wrap from the last leaf back to the first bank.
+            check (multi.selectNext().getFileName() == "a.PRO",
+                   "step wraps from Templates back to bank A");
+        }
+        tmp18b.deleteRecursively();
+
         // ---- (b) Editor-level shortcuts through the REAL keyPressed path.
         auto* parEd18 = dynamic_cast<ParvatiEditor*> (editor);
         if (parEd18 != nullptr)

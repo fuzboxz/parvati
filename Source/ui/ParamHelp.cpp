@@ -4,9 +4,12 @@
 
 namespace
 {
-// Build the 120 curated entries. The {n} macros from the plan are expanded
+// Build the curated entries. The {n} macros from the plan are expanded
 // here at authoring time (env1_..env3_, mod1_..mod14_, modif1_..mod4_) so the
-// map holds literal concrete keys that match getPatchParamDescriptors().
+// map holds literal concrete keys that match getPatchParamDescriptors(). The
+// FX families (fx{1..3}_*, fxmod{1..16}_*) are generated with the SAME loops
+// the descriptor table uses (ParameterLayout's addFx), so the map can never
+// drift from those 78 paramIDs.
 std::unordered_map<std::string, std::string> buildHelpMap()
 {
     std::unordered_map<std::string, std::string> m;
@@ -156,6 +159,34 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["part_select"] = "Selects which Part (1..6) the editor edits.";
     m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, or SVF.";
     m["filter_drive"] = "Ladder filter saturation drive (1.2 = JUCE default). Higher = more OTA-style tanh saturation and bass-drop at high resonance. Only affects the Ladder filter card.";
+
+    // ---- Per-part FX (78 = 24 slot + 6 chain/master + 48 fxmod) ----
+    // Parvati-exclusive; no Ambika patch byte. Slot/fxmod entries are loop-
+    // generated to mirror the descriptor table (see the buildHelpMap comment).
+    for (int s = 1; s <= 3; ++s)
+    {
+        const auto n = std::to_string (s);
+        m["fx" + n + "_type"]    = "FX slot " + n + " effect algorithm (None, Diffuser, Pitch Shifter, Clouds Reverb, Echo, ...).";
+        m["fx" + n + "_enabled"] = "FX slot " + n + " enable / bypass toggle (0 = bypassed, 1 = active).";
+        m["fx" + n + "_drywet"]  = "FX slot " + n + " wet/dry blend (0 = fully dry, 127 = fully wet).";
+        for (int p = 1; p <= 5; ++p)
+            m["fx" + n + "_param" + std::to_string (p)] =
+                "FX slot " + n + " parameter " + std::to_string (p) +
+                " (meaning depends on the selected algorithm; the slot card shows its name).";
+    }
+    m["fx_topo"]     = "FX chain topology: FX1 -> FX2 -> FX3, FX1 + FX2 -> FX3, or FX1 -> FX2 + FX3.";
+    m["fx_order"]    = "Slot order within the FX chain (permutation index 0..5).";
+    m["fx_mix"]      = "Global FX wet/dry mix applied after the chain (0 = fully dry, 127 = fully wet).";
+    m["fx_eq_low"]   = "Master FX low-cut (high-pass): 0 = Off, otherwise the cutoff frequency.";
+    m["fx_eq_mid"]   = "Master FX mid peaking gain (64 = 0 dB; roughly 0.19 dB per step).";
+    m["fx_eq_high"]  = "Master FX high-shelf gain (64 = 0 dB; roughly 0.19 dB per step).";
+    for (int fm = 1; fm <= 16; ++fm)
+    {
+        const auto q = std::to_string (fm);
+        m["fxmod" + q + "_source"] = "FX mod " + q + " source (env, LFO, seq, velocity, pitch bend...).";
+        m["fxmod" + q + "_dest"]   = "FX mod " + q + " destination (one FX parameter).";
+        m["fxmod" + q + "_amount"] = "FX mod " + q + " depth (-63..+63; bipolar).";
+    }
 
     return m;
 }

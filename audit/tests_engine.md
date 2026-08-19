@@ -1,0 +1,20 @@
+# Engine-glue unit tests — work report (gap_engine.md items 3, 4, 5 + residual)
+
+## tests/note_stack_test.cpp → `parvati_note_stack_test` (ALL PASS)
+Pins vs the firmware port: fresh-construction usability (the old zero-init pool → hosted-SIGBUS class — first `noteOn` lands, size 1); `sorted_note(i)` ascending pitch regardless of press order; `played_note(i)` insertion order (0 = oldest, last = most recent); `most_recent_note` = LIFO head; `noteOff` removes from BOTH orderings (gap-closure in each, most-recent survives a middle removal); re-noteOn dedup (size not inflated, note moves to most-recent with the NEW velocity, sorted position unchanged); saturation at capacity 12 evicts the least-recently-played (`next_ptr==0` tail) — 13th note admitted at size 12, and recency refresh (re-pressing an old note redirects the NEXT eviction); `clear()`/`init()` full reset + reuse. 7 sections, 38 checks.
+
+## tests/transport_clock_test.cpp → `parvati_transport_clock_test` (ALL PASS)
+Pins: `samplesPerTick = 1000.0` exactly @48k/120 (advance(999)→0, +1→1, carry returns to exactly 0; 24 PPQN × 120 BPM = 2880 ticks/min = 48 Hz). **NOTE: the gap-audit's "100.0" was an arithmetic slip** — sr·60/(bpm·24) = 2,880,000/2,880 = 1000; the code is correct and the test documents this. Drift-free carry: 3-sample calls at 480 BPM over 1e6 samples → exactly 4000 ticks (spt=250, integer-exact doubles). bpm>999 clamps (5000 BPM behaves as 999: 1 tick/200 samples, not the unclamped 8); `advance` never returns more ticks than samples; bpm<=0 (0 and −7) keeps the previous rate; `reset()` zeroes the phase (500-sample no-tick proof). 5 sections, 11 checks.
+
+## tests/os_reaper_test.cpp → `parvati_os_reaper_test` (ALL PASS)
+Deterministic (reap invoked explicitly; no timers — the 60 Hz DeferredParamTimer never fires without a message pump). Drives the REAL path: sustained note (env2_sustain=127 keeps one voice active) so every staged OS swap is consumed on the next block by `fillInternalBlock` → `consumeStagedOversampling`. Baseline: ctor-staged 2x installs via prepare, nothing parked. Two swaps without reaping → exactly 1 parked each (cap 2 reached). 3rd swap → the documented inline-delete fallback; count stays at cap (bounded, no leak). `SynthEngine::reapRetiredAudioObjects()` → 0. 5 flip+reap cycles: each parks exactly 1, reaps to 0, never grows. 5 sections, 6 checks.
+**Accessor added** (Source/AmbikaVoice.h, public, after `reapRetired()`): `int debugRetiredOsCount() const noexcept` — counts non-null `retiredOs_` slots (0..kRetiredOsCap), relaxed loads, 12 lines incl. the "TEST-ONLY" comment. No other Source/ change was needed — the public processor/engine seams (`prepareToPlay`/`processBlock`/`setOversamplingFactor`/`reapRetiredAudioObjects`) + `Synthesiser::getVoice` covered everything, so no simplification was necessary.
+
+## tests/midi_param_test.cpp extension — new §[9] (ALL PASS, whole file)
+CC96/97 data increment/decrement: ±1 nudge of the ADDRESSED parameter (NRPN select 16 + 2×CC96 + CC97 → 97); clamps at max (127) and min (0); **signed-range clamp** on osc1_detune (−64 set via the CC6-flagged 0xC0 path; CC97 clamps without moving, CC96 → −63); unmapped address 192 (kUnmapped in midi_nrpn_map) is a no-op. 5 checks + a new `addCcAt` helper. Two drafting bugs found and fixed en route (worth keeping in mind): equal-timestamp CC insertion runs nudges BEFORE the address select (nudges must carry sample positions after 0..2), and a plain data byte 0 on an INT8 param is 0, not the range minimum.
+
+## Validation
+`cmake -S . -B build` (new targets) + `cmake --build build` full-suite: 0 errors. All four targets ALL CHECKS PASSED post-full-build; `parvati_idle_silence_test`, `parvati_polyphony_test` re-verified green (AmbikaVoice.h is compiled into the lib).
+
+## Cross-lane note
+`parvati_render_quality_test` currently fails 5 checks — those are the SIBLING lane's in-flight +311-line additions (gap items 1/6: mid-slice MIDI rebasing, DC-blocker attenuation) in `tests/render_quality_test.cpp`; none of my files are implicated and my accessor is behavior-inert (const, side-effect-free).

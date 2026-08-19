@@ -191,6 +191,46 @@ int main()
         check (ratio > 1.7 && ratio < 2.3, "1/12 delay scales ~2x when BPM halves");
     }
 
+    // ---- effect-specific 3: setTransport(bpm <= 0) keeps the cached tempo ----
+    // (Fv1ClockedDelay::setTransport guards `if (bpm > 0.0)` — the pure tail
+    // table pins the bpm=0 fallback for the ESTIMATE only; this pins the DSP.)
+    // NOTE: the CHAIN-level seam (FxChain::setTempo -> slot override, and its
+    // bit-identical no-op on non-ClockedDelay slots) is covered by the chain
+    // sections T1/T2 of tests/fx_routing_test.cpp — FxChain needs the full
+    // Parvati/JUCE link, which this deliberately JUCE-free target omits.
+    {
+        constexpr int n = 16384;
+        const float sync18 = 6.0f / 7.0f;   // 1/12 division
+        auto renderEcho = [sync18] (double goodBpm, bool pushGarbage) -> int
+        {
+            fv1::Fv1ClockedDelay fx;
+            fx.prepare (48000.0, kPreparedBlock);
+            fx.reset();
+            fx.setTransport (goodBpm, true);
+            if (pushGarbage)
+                fx.setTransport (0.0, true);   // the guarded push under test
+            setAll (fx, sync18, 0.0f, 0.0f, 0.0f);
+            float L[n], R[n];
+            for (int i = 0; i < n; ++i) { L[i] = 0.0f; R[i] = 0.0f; }
+            L[0] = R[0] = 0.9f;
+            processChunked (fx, L, R, n);
+            int argmax = 0; float mx = -1.0f;
+            for (int i = 200; i < n; ++i)
+                if (std::fabs (L[i]) > mx) { mx = std::fabs (L[i]); argmax = i; }
+            return argmax;
+        };
+        // A 0-BPM push after a good one must NOT reset the cached tempo: the
+        // echo stays at the 240-BPM position (~4000 samples), NOT the ~8000
+        // default-120 position (and matches the plain 240-only render).
+        const int peakGuarded = renderEcho (240.0, true);
+        const int peakPlain   = renderEcho (240.0, false);
+        std::printf ("  [info] guarded-0-BPM echo peak = %d, plain-240 = %d\n", peakGuarded, peakPlain);
+        check (peakGuarded < 6000,
+               "setTransport(0) keeps the cached tempo (echo stays at the 240-BPM position)");
+        check (std::abs (peakGuarded - peakPlain) < 200,
+               "guarded-0-BPM echo matches the plain 240-BPM render");
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_fail ? "FV1 CLOCKED DELAY TEST: FAILURES"
                         : "FV1 CLOCKED DELAY TEST: ALL CHECKS PASSED",

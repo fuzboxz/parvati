@@ -46,6 +46,13 @@ void addCc (juce::MidiBuffer& buf, int controller, int value)
     buf.addEvent (juce::MidiMessage::controllerEvent (1, controller, value & 0x7f), 0);
 }
 
+// Push a single CC at an explicit sample position (the NRPN address-select
+// sequence occupies 0..2; nudges must follow it).
+void addCcAt (juce::MidiBuffer& buf, int controller, int value, int pos)
+{
+    buf.addEvent (juce::MidiMessage::controllerEvent (1, controller, value & 0x7f), pos);
+}
+
 // Run the MIDI through the processor (handleBuffer runs first inside processBlock).
 void processMidi (ParvatiAudioProcessor& proc, const juce::MidiBuffer& midi)
 {
@@ -218,6 +225,80 @@ int main()
         const int v2 = static_cast<int> (rawVal (proc, "osc1_detune"));
         std::printf ("     NRPN(3, 0x40) -> osc1_detune = %d (expect +64)\n", v2);
         check (v2 == 64, "positive control: plain byte 64 -> +64");
+    }
+
+    // ---- CC96/97 data increment/decrement nudges the ADDRESSED parameter ----
+    // (MidiParameterMap::nudgeValue; firmware part.cc CC 0x60/0x61). The
+    // currently-selected NRPN parameter moves by +/-1 raw step, clamped at
+    // its min/max; an unmapped address is a no-op.
+    std::printf ("\n[9] CC96/97 nudge the addressed parameter (+/-1, clamped)\n");
+    {
+        // Unsigned 0..127 parameter: filter1_cutoff (NRPN addr 16). The nudge
+        // CCs carry positions AFTER the address-select sequence (equal-time
+        // insertion would otherwise run them against the stale address).
+        juce::MidiBuffer m;
+        addNrpn (m, 16, 96);            // select addr 16 + set 96 (pos 0..2)
+        addCcAt (m, 96, 0, 3);          // CC96 increment -> 97
+        addCcAt (m, 96, 0, 4);          // -> 98
+        addCcAt (m, 97, 0, 5);          // CC97 decrement -> 97
+        processMidi (proc, m);
+        const int v = static_cast<int> (rawVal (proc, "filter1_cutoff"));
+        std::printf ("     NRPN(16,96) + 2xCC96 + CC97 -> filter1_cutoff = %d (expect 97)\n", v);
+        check (v == 97, "CC96/97 nudge +/-1 from the current value");
+    }
+    {
+        // Clamp at max.
+        juce::MidiBuffer m;
+        addNrpn (m, 16, 127);
+        addCcAt (m, 96, 0, 3);      // increment past 127
+        processMidi (proc, m);
+        const int v = static_cast<int> (rawVal (proc, "filter1_cutoff"));
+        std::printf ("     NRPN(16,127) + CC96 -> filter1_cutoff = %d (expect 127)\n", v);
+        check (v == 127, "CC96 clamps at the parameter max");
+    }
+    {
+        // Clamp at min.
+        juce::MidiBuffer m;
+        addNrpn (m, 16, 0);
+        addCcAt (m, 97, 0, 3);      // decrement below 0
+        processMidi (proc, m);
+        const int v = static_cast<int> (rawVal (proc, "filter1_cutoff"));
+        std::printf ("     NRPN(16,0) + CC97 -> filter1_cutoff = %d (expect 0)\n", v);
+        check (v == 0, "CC97 clamps at the parameter min");
+    }
+    {
+        // Signed INT8 parameter: osc1_detune (addr 3, -64..64). Set -64 the
+        // CC6-flagged way (data byte 0xC0), then decrement (clamped at -64,
+        // NO move) and increment -> -63. The nudge must clamp against the
+        // SIGNED range (getter reads the denormalized value), not 0..127.
+        juce::MidiBuffer m;
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 99, 0), 0);   // NRPN MSB
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 98, 3), 1);   // addr 3 = osc1_detune
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 6, 1),  2);   // data-entry MSB -> flag 128
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 38, 64), 3);  // byte 192 (0xC0) -> -64
+        addCcAt (m, 97, 0, 4);      // CC97 at the signed min: clamped, no move
+        addCcAt (m, 96, 0, 5);      // CC96 -> -63
+        processMidi (proc, m);
+        const int v = static_cast<int> (rawVal (proc, "osc1_detune"));
+        std::printf ("     -64 + CC97(clamped) + CC96 -> osc1_detune = %d (expect -63)\n", v);
+        check (v == -63, "CC96/97 clamp against the signed (-64..64) range");
+    }
+    {
+        // Unmapped NRPN address (192..255 = kUnmapped in midi_nrpn_map): a
+        // no-op even though a parameter value is adjacent.
+        {
+            if (auto* param = proc.getApvts().getParameter ("filter1_cutoff"))
+                param->setValueNotifyingHost (param->convertTo0to1 (50.0f));
+        }
+        juce::MidiBuffer addr;
+        addr.addEvent (juce::MidiMessage::controllerEvent (1, 99, 0), 0);   // NRPN MSB
+        addr.addEvent (juce::MidiMessage::controllerEvent (1, 98, 192), 1); // addr 192 = unmapped
+        addr.addEvent (juce::MidiMessage::controllerEvent (1, 96, 0), 2);   // CC96
+        addr.addEvent (juce::MidiMessage::controllerEvent (1, 97, 0), 3);   // CC97
+        processMidi (proc, addr);
+        const int v = static_cast<int> (rawVal (proc, "filter1_cutoff"));
+        std::printf ("     CC96/97 @ unmapped addr 192 -> filter1_cutoff = %d (expect 50)\n", v);
+        check (v == 50, "CC96/97 on an unmapped address is a no-op");
     }
 
     std::printf ("\n=== %s (%d failure%s) ===\n",

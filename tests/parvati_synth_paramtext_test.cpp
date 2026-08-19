@@ -98,6 +98,13 @@ static void testModSeqArpPart()
     checkEqual (T ("seqnote_step0", 60.0),
                 juce::String (juce::CharPointer_UTF8 ("\xE2\x80\x94")),
                 "seqnote_step0 60 (gate off -> em dash)");
+    // seqnote_vel: velocity | legato bit. 100/127 = 78.74 -> 79% (L = legato).
+    checkEqual (T ("seqnote_vel3", static_cast<double> (0x80 | 100)), "79%L",
+                "seqnote_vel3 0x80|100 (velocity + legato bit)");
+    checkEqual (T ("seqnote_vel3", 100.0), "79%",
+                "seqnote_vel3 100 (velocity only, no legato)");
+    checkEqual (T ("seqnote_vel7", static_cast<double> (0x80 | 0)), "0%L",
+                "seqnote_vel7 0x80|0 (legato with zero velocity)");
     checkEqual (T ("arp_octave", 2.0),   "2oct",  "arp_octave 2");
     checkEqual (T ("part_octave", -1.0), "-1oct", "part_octave -1");
     checkEqual (T ("part_tuning", 64.0), "+50ct", "part_tuning 64 (1/128-st units -> 50 ct)");
@@ -110,6 +117,34 @@ static void testModSeqArpPart()
     checkEqual (T ("part_raga", 1.0),  "Just",        "part_raga 1 (just)");
     checkEqual (T ("part_raga", 2.0),  "Pythagorean", "part_raga 2 (pythagorean)");
     checkEqual (T ("seq_length_1", 16.0),"16", "seq_length_1 16");
+}
+
+static void testUntestedFamilies()
+{
+    std::printf ("(filter depths / mix_crush / seq steps / part scales / env2-3 dispatch)\n");
+    // filter_env / filter_lfo ride the 0..63 depth fall-through of the filter
+    // branch (not the cutoff/reso special cases).
+    checkEqual (T ("filter_env", 63.0), "100%", "filter_env 63 (max depth)");
+    checkEqual (T ("filter_lfo", 63.0), "100%", "filter_lfo 63 (max depth)");
+    checkEqual (T ("filter_env", 0.0), "0%", "filter_env 0");
+    // mix_crush non-zero: the 0..31 decimator scale (0 alone reads Off).
+    checkEqual (T ("mix_crush", 31.0), "100%", "mix_crush 31 (full, /31 scale)");
+    checkEqual (T ("mix_crush", 16.0), "52%", "mix_crush 16 (mid, /31 scale)");
+    // seq1/2_step modulation values use the 0..127 scale.
+    checkEqual (T ("seq1_step5", 127.0), "100%", "seq1_step5 127 (max)");
+    checkEqual (T ("seq2_step0", 64.0), "50%", "seq2_step0 64 (mid)");
+    // Part params with per-parameter denominators: spread /40, portamento /63,
+    // volume /127 — each at its own 100% rail.
+    checkEqual (T ("part_spread", 40.0), "100%", "part_spread 40 (max, /40)");
+    checkEqual (T ("part_portamento", 63.0), "100%", "part_portamento 63 (max, /63)");
+    checkEqual (T ("part_volume", 127.0), "100%", "part_volume 127 (max, /127)");
+    // env2_/env3_ prefix dispatch hits the same env branch as env1_: the
+    // synced/free LFO-rate boundary (14 = last synced division, 15 = first
+    // free-running rate) must hold for EVERY env unit.
+    checkEqual (T ("env3_lfo_rate", 14.0), "1/64T", "env3_lfo_rate 14 (last synced division)");
+    checkContains (T ("env3_lfo_rate", 15.0), "Hz", "env3_lfo_rate 15 (first free rate)");
+    checkEqual (T ("env2_lfo_rate", 0.0), "1/1", "env2_lfo_rate 0 (first synced division)");
+    checkEqual (T ("env2_sustain", 127.0), "100%", "env2_sustain 127 (max)");
 }
 
 static void testFallback()
@@ -128,6 +163,7 @@ int main()
     testEnvelopes();
     testLfoRates();
     testModSeqArpPart();
+    testUntestedFamilies();
     testFallback();
 
     std::printf ("\n%s (%d failure%s)\n",

@@ -1146,6 +1146,82 @@ int main()
         }
     }
 
+    // ---- HostRateBridge at host rates <= 32 kHz (internal-UPSAMPLE branch) ----
+    // Every Clouds effect runs its engine at a FIXED 32 kHz via HostRateBridge;
+    // at host rates BELOW 32 kHz the bridge ratio exceeds 1 (more internal than
+    // host samples per block) and the anti-alias/reconstruction Svf cascade is
+    // OFF (aaActive_ only when host > 32 kHz) — a different resampling shape
+    // than the tested 44.1/48/96 kHz downsample path. Diffuser / CVerb /
+    // LoopingDelay must render finite, non-silent, input-different output at
+    // {22050, 32000} Hz AND produce a DIFFERENT waveform than the 48 kHz render
+    // of the identical input (the bridge is genuinely resampling differently).
+    // Per-effect params/inputs mirror the proven sections above (the CVerb
+    // tank needs predelay 0 + ~8 blocks; the looper needs the CONTINUOUS tone
+    // and position 0 — the burst input's tail is silent, so its recorded past
+    // would starve the read head).
+    {
+        struct CloudsProbe
+        {
+            FxType t;
+            const char* name;
+            const float* inL;
+            const float* inR;
+            float p[5];
+            int blocks;
+        };
+        const CloudsProbe probes[] = {
+            // Diffuser has no user params; the full-wet smear is immediate.
+            { FxType::Diffuser, "Diffuser", inL, inR, { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, 6 },
+            // CVerb: predelay 0 / diffusion / time / tone (amount fixed 1.0).
+            { FxType::Reverb, "CVerb", inL, inR, { 0.0f, 0.6f, 0.6f, 0.7f, 0.0f }, 12 },
+            // Looper: position 0, continuous tone, freeze off.
+            { FxType::LoopingDelay, "LoopingDelay", loopL, loopR, { 0.0f, 0.5f, 0.5f, 0.0f, 0.0f }, 12 }
+        };
+
+        for (const auto& e : probes)
+        {
+            // Reference render at 48 kHz (the already-tested branch).
+            float ref48[kBlock] = {};
+            {
+                auto fx = createFxProcessor (e.t);
+                fx->prepare (48000.0, kBlock);
+                fx->reset();
+                fx->setParams (e.p);
+                for (int b = 0; b < e.blocks; ++b)
+                {
+                    for (int i = 0; i < kBlock; ++i) { outL[i] = e.inL[i]; outR[i] = e.inR[i]; }
+                    fx->process (outL, outR, kBlock);
+                }
+                for (int i = 0; i < kBlock; ++i) ref48[i] = outL[i];
+            }
+            check (maxAbs (ref48, kBlock) > 1.0e-5f,
+                   "[setup] the 48 kHz reference render is itself non-silent");
+
+            for (const double sr : { 22050.0, 32000.0 })
+            {
+                auto fx = createFxProcessor (e.t);
+                fx->prepare (sr, kBlock);
+                fx->reset();
+                fx->setParams (e.p);
+                const auto r = runFx (*fx, e.inL, e.inR, outL, outR, kBlock, e.blocks);
+
+                char msg[96];
+                std::snprintf (msg, sizeof (msg),
+                               "%s @%d Hz (upsample branch): finite", e.name, (int) sr);
+                check (r.finite, msg);
+                std::snprintf (msg, sizeof (msg),
+                               "%s @%d Hz (upsample branch): non-silent", e.name, (int) sr);
+                check (r.nonSilent, msg);
+                std::snprintf (msg, sizeof (msg),
+                               "%s @%d Hz (upsample branch): differs from dry", e.name, (int) sr);
+                check (r.differs, msg);
+                std::snprintf (msg, sizeof (msg),
+                               "%s @%d Hz: waveform differs from the 48 kHz render", e.name, (int) sr);
+                check (differsFrom (outL, ref48, kBlock), msg);
+            }
+        }
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "CLOUDS FX TEST: FAILURES" : "CLOUDS FX TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

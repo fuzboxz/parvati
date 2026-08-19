@@ -143,6 +143,18 @@ public:
     // SynthEngine::reapRetiredAudioObjects() at ~60 Hz.
     void reapRetired() noexcept;
 
+    // TEST-ONLY (tests/os_reaper_test.cpp): how many retired-OS objects this
+    // voice currently has parked for the reaper (0..kRetiredOsCap). Advisory
+    // count of non-null parking slots; relaxed loads.
+    int debugRetiredOsCount() const noexcept
+    {
+        int n = 0;
+        for (const auto& r : retiredOs_)
+            if (r.load (std::memory_order_relaxed) != nullptr)
+                ++n;
+        return n;
+    }
+
     // Write/read a modulation-source slot (SEQ_1/2 are injected by the engine-
     // side sequencer; LoadSources does not clobber them).
     void setModulationSource (uint8_t idx, uint8_t value)
