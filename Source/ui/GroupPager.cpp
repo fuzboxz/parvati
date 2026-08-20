@@ -11,7 +11,7 @@ namespace
 //==============================================================================
 // DraggableTabButton — a TabbedButtonBar tab button that can itself be DRAGGED
 // onto a destination knob to assign the tab's modulation source. Mirrors the
-// row-grip drag in ModMatrixView (ModSourceDragGrip): mouseDrag past ~5px starts
+// mod-pill drag in CentralModBar: mouseDrag past ~5px starts
 // an internal DragAndDropContainer drag carrying "parvatiModSrc:<enum>" and a
 // themed chip image; a clean click still switches the sub-tab.
 //

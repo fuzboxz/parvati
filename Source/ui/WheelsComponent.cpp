@@ -86,7 +86,7 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
             ParamControl::setTapSelectedSource (src_);
     }
 
-    // A small themed chip (mirrors ModSourceDragGrip::buildDragImage).
+    // A small themed chip (mirrors the CentralModBar mod-pill drag image).
     juce::Image buildDragImage() const
     {
         auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());

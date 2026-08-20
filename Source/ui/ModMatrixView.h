@@ -14,11 +14,17 @@
 // engine (true bypass) and keeps the row visible/greyed; it is in-memory only
 // and does NOT round-trip through presets (agreed convention).
 //
-// Each row exposes: source combo (category-tinted), dest combo, a bipolar depth
-// slider (-100%..+100%, centre zero-detent, double-click = reset to 0), a Mute
-// toggle and a Clear button. The view is fully self-contained: it owns its 14
-// rows + Add button + a local bipolar LookAndFeel, and is wired into the editor
-// (replacing the Mod Matrix GroupPager) in a later step.
+// Each row exposes: a mute/bypass LAMP on the far LEFT (the module-disable
+// widget style — compact bordered dot, accent while the routing is active,
+// grey while muted), the source combo (category-tinted), dest combo, a bipolar
+// depth slider (-100%..+100%, centre zero-detent, double-click = reset to 0),
+// the value readout, and a compact delete X on the far RIGHT (path-drawn
+// IconButton glyph; frees the slot). Modulators are dragged ONLY from the
+// CentralModBar pills — matrix rows are NOT drag sources (user feedback
+// 2026-08-20); dropping a pill on a destination knob still assigns through
+// this view's assignNextFreeSlot. The view is fully self-contained: it owns its
+// 14 rows + Add button + a local bipolar LookAndFeel, and is wired into the
+// editor (replacing the Mod Matrix GroupPager) in a later step.
 
 #pragma once
 
@@ -93,11 +99,21 @@ public:
 
     // The ModulationSource (MOD_SRC_*) a slot is currently routed FROM, read
     // live from its mod{N}_source APVTS raw value (-1 on error). Used by the
-    // drag-grip so the dragged payload reflects the row's current source.
+    // source-flash (flashRowsForSource) and test introspection.
     int sourceForSlot (int slot) const;
 
     // APVTS param ID for a 0-based slot: slotParam(3, "_amount") == "mod4_amount".
     static juce::String slotParam (int slot, const char* suffix);
+
+    // ---- TEST-ONLY introspection (tests/mod_matrix_ui_test.cpp) ----
+    // Rows must NOT be drag sources (user feedback 2026-08-20: modulators are
+    // dragged ONLY from the CentralModBar pills; the former per-row drag-grip
+    // was removed). Pins the contract; always false by construction now.
+    bool canStartDragFromRowForTest() const noexcept { return false; }
+    // The row component for a slot as a generic Component (ModMatrixRow is
+    // file-local), or nullptr. Lets tests reach the row's children (mute lamp /
+    // delete X / combos) without exposing the row type.
+    juce::Component* rowForSlotForTest (int slot) const;
 
 private:
     // Per-slot editor-only mute state (NOT persisted; cleared on external amount change).

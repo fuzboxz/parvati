@@ -10,7 +10,6 @@
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // appFont() via the inherited editor L&F
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_*
-#include "PluginEditor.h"   // ParamControl (tap-to-assign state)
 
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachments + AudioParameterChoice
 
@@ -144,112 +143,6 @@ private:
     ThemeManager& themeManager_;
 };
 
-//==============================================================================
-// A small drag-grip (six-dot handle) rendered left of a row's source combo.
-// mouseDrag (past a small threshold) starts an INTERNAL DragAndDropContainer
-// drag carrying "parvatiModSrc:<sourceEnum>" and a themed drag image — the SAME
-// payload the synth matrix grip / CentralModBar emit. Dropping it on a
-// destination knob assigns the next free slot for that source on the matching
-// matrix — an FX knob (offset-encoded FX dest) takes an FX-mod slot, a synth
-// knob takes a synth slot; each matrix's handler ignores the other's domain.
-// Matrix rows themselves are not drop targets. Clicking (no drag) is a no-op so
-// the grip never competes with the adjacent source combo.
-struct FxSourceDragGrip : public juce::Component,
-                              public juce::SettableTooltipClient
-{
-    FxSourceDragGrip (FxMatrixView& owner, int slot) : owner_ (owner), slot_ (slot)
-    {
-        setTooltip (TRANS ("Drag onto a knob to assign this modulation"));
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        const auto& t = owner_.themeManager().getCurrentTheme();
-        g.setColour (t.textSecondary);
-        const float r  = 1.4f;
-        const int   w  = getWidth();
-        const int   h  = getHeight();
-        const float x0 = static_cast<float> (w) * 0.35f;
-        const float x1 = static_cast<float> (w) * 0.65f;
-        const float ys[3] = { h * 0.35f, h * 0.5f, h * 0.65f };
-        for (const float y : ys)
-        {
-            g.fillEllipse (juce::Rectangle<float> (r * 2.0f, r * 2.0f)
-                               .withCentre (juce::Point<float> (x0, y)));
-            g.fillEllipse (juce::Rectangle<float> (r * 2.0f, r * 2.0f)
-                               .withCentre (juce::Point<float> (x1, y)));
-        }
-    }
-
-    void mouseDown (const juce::MouseEvent&) override { dragStarted_ = false; }
-
-    void mouseDrag (const juce::MouseEvent& e) override
-    {
-        // Debounce: start exactly one drag per press, and only past a small
-        // threshold so a stray jitter never fires a phantom drag.
-        if (dragStarted_ || e.getDistanceFromDragStart() < 5)
-            return;
-        dragStarted_ = true;
-
-        const int src = owner_.sourceForSlot (slot_);
-        if (src < 0)
-            return;
-
-        auto* ddc = findParentComponentOfClass<juce::DragAndDropContainer>();
-        if (ddc == nullptr)
-            return;   // no DragAndDropContainer ancestor (e.g. a headless test)
-
-        ddc->startDragging ("parvatiModSrc:" + juce::String (src), this, buildDragImage(), true);
-    }
-
-    // Tap-to-assign: a clean tap (no drag) selects this row's mod source for
-    // the next dest tap. Mirrors the CentralModBar pill's clean-tap detection
-    // (! dragStarted_ + small movement). Available on all platforms; inert
-    // unless [MOD] tap-to-assign is toggled on (tapAssignActive()).
-    void mouseUp (const juce::MouseEvent& e) override
-    {
-        if (ParamControl::tapAssignActive() && ! dragStarted_ && e.getDistanceFromDragStart() <= 5)
-        {
-            const int src = owner_.sourceForSlot (slot_);
-            if (src >= 0)
-                ParamControl::setTapSelectedSource (src);
-        }
-    }
-
-private:
-    // A small themed drag image composited under the cursor: the source's
-    // category colour chip + its short name, on a container-fill rounded tile.
-    juce::Image buildDragImage() const
-    {
-        const auto&      t    = owner_.themeManager().getCurrentTheme();
-        const juce::String name = owner_.sourceNameForSlot (slot_);
-        const juce::Font  f    = appFontOr (owner_, 13.0f);
-        const int textW = juce::GlyphArrangement::getStringWidthInt (f, name);
-        const int w = juce::jmax (48, 12 + 8 + textW + 10);
-        const int h = 22;
-
-        juce::Image img (juce::Image::ARGB, w, h, true);
-        juce::Graphics g (img);
-        g.setColour (t.containerFill);
-        g.fillRoundedRectangle (img.getBounds().toFloat(), 5.0f);
-
-        const juce::Colour cat = sourceCategoryColour (t, name);
-        g.setColour (cat.isTransparent() ? t.accentPrimary : cat);
-        g.fillRoundedRectangle (juce::Rectangle<float> (5.0f, 5.0f, 7.0f, static_cast<float> (h) - 10.0f), 2.0f);
-
-        g.setColour (t.textPrimary);
-        g.setFont (f);
-        g.drawText (name, juce::Rectangle<int> (17, 0, w - 17, h), juce::Justification::centredLeft, true);
-
-        g.setColour (t.accentPrimary.withAlpha (0.6f));
-        g.drawRoundedRectangle (img.getBounds().toFloat().reduced (0.5f), 5.0f, 1.0f);
-        return img;
-    }
-
-    FxMatrixView& owner_;
-    int slot_;
-    bool dragStarted_ = false;
-};
 
 //==============================================================================
 // One FX matrix row. Owns its source/dest combos + bipolar depth slider, each
@@ -281,9 +174,6 @@ struct FxMatrixRow : public juce::Component,
         indexLabel_.setText (juce::String (slot + 1), juce::dontSendNotification);
         indexLabel_.setJustificationType (juce::Justification::centred);
         addAndMakeVisible (indexLabel_);
-
-        dragGrip_ = std::make_unique<FxSourceDragGrip> (owner_, slot);
-        addAndMakeVisible (*dragGrip_);
 
         addAndMakeVisible (sourceCombo_);
         addAndMakeVisible (destCombo_);
@@ -328,7 +218,6 @@ struct FxMatrixRow : public juce::Component,
         // (local + the ModMatrixHighlight broadcast), not just the bare gaps.
         // `false` => child events only (no recursion into popup children).
         indexLabel_.addMouseListener (this, false);
-        dragGrip_->addMouseListener (this, false);
         sourceCombo_.addMouseListener (this, false);
         destCombo_.addMouseListener (this, false);
         depthSlider_.addMouseListener (this, false);
@@ -347,7 +236,6 @@ struct FxMatrixRow : public juce::Component,
         sourceCombo_.removeListener (this);
         destCombo_.removeListener (this);
         indexLabel_.removeMouseListener (this);
-        dragGrip_->removeMouseListener (this);
         sourceCombo_.removeMouseListener (this);
         destCombo_.removeMouseListener (this);
         depthSlider_.removeMouseListener (this);
@@ -573,9 +461,9 @@ struct FxMatrixRow : public juce::Component,
         auto b = getLocalBounds().reduced (4, 2);
 
         indexLabel_.setBounds (b.removeFromLeft (18));
-        b.removeFromLeft (4);
-        dragGrip_->setBounds (b.removeFromLeft (44));   // drag-grip touch target (unified)
-        b.removeFromLeft (8);
+        b.removeFromLeft (12);   // (the former drag-grip slot — its width now flows
+                                 // into the proportional combo widths below, mirroring
+                                 // ModMatrixView: rows are NOT drag sources; pills are)
 
         // Source + dest combos: proportional, floored so the choice text stays legible.
         const int comboW = juce::jmax (70, b.getWidth() / 5);
@@ -602,7 +490,6 @@ struct FxMatrixRow : public juce::Component,
     const int slot_;
 
     juce::Label    indexLabel_;
-    std::unique_ptr<FxSourceDragGrip> dragGrip_;   // drag source (parvatiModSrc payload)
     juce::ComboBox sourceCombo_;
     juce::ComboBox destCombo_;
     juce::Slider   depthSlider_;

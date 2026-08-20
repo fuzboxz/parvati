@@ -37,8 +37,8 @@ struct ParvatiTheme
     juce::Colour backgroundInputHover;// hover state of an input (NEW, lighter than backgroundInput)
 
     // ---- Layer 2: INFORMATION (text / icons) ------------------------------
-    juce::Colour textPrimary;         // active values, selected-tab text, active dropdown (was textValue/text)
-    juce::Colour textSecondary;       // parameter labels, section headers, dim text (was labelText/panelHeader/textDim)
+    juce::Colour textPrimary;         // active values, selected-tab text, active dropdown, MODULE/SECTION HEADERS (group titles — raised to this tier 2026-08-20; was textSecondary) (was textValue/text)
+    juce::Colour textSecondary;       // parameter labels, dim text (NOT section headers — they use textPrimary) (was labelText/panelHeader/textDim)
     juce::Colour textDisabled;        // bypassed / inactive / empty slots (NEW)
     juce::Colour trackEmpty;          // knob empty arc / slider zero path (was knobTrack) — visible but recedes
 

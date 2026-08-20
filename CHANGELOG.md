@@ -5,6 +5,33 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **UI polish wave 2 (2026-08-20): mod-matrix interactions, seq combo font,
+  module-header contrast, top-bar chrome.** Four user-reported items:
+  (1) **Mod matrix rows are no longer drag sources** — modulators are dragged
+  ONLY from the CentralModBar pills (the per-row six-dot grip is deleted from
+  ModMatrixView AND, for consistency, the FX matrix's FxSourceDragGrip from
+  FxMatrixView; rows remain drop-targets/assignable). "Clear" is replaced by a
+  path-drawn delete **X** (IconButton::Close, new glyph + setGlyphInset) as the
+  row's rightmost control; mute/bypass is now the FxSlotCard PowerToggle-style
+  lamp widget, moved to the far LEFT, accent-lit while the routing is active
+  (new `parvati_mod_matrix_ui_test`: no-drag sweep over every row child, X
+  position/click-clears, lamp position/mute-restore, incl. the FX-matrix
+  sweep). (2) **Seq dropdown font normalized** — the SEQ length picker's inline
+  number was 17pt bold (largest text on the page) and every PopupMenu list
+  read 15pt against 14pt combo text; both are now 14pt (bold retained for the
+  value tier) — unified in the L&F so every dropdown matches (new
+  `parvati_ui_typography_test`). (3) **Module headers ("FX", "Sequencer",
+  "Osc 1"…) brightened** — GroupComponent titles moved from the dim
+  textSecondary tier to textPrimary: contrast vs the card rises from
+  4.6–5.8:1 to 12.9–15.8:1 across all six themes (≥7:1 target; light themes
+  improve too). (4) **Top-bar polish** — the brand block now sizes to the
+  version subtitle (the 10px "by 805Labs · v…" overhung the wordmark and
+  nearly touched the patch indicator; gap ≥18px, pinned ≥10), header buttons
+  are 36pt-tall on desktop (44pt iOS hit targets preserved, HIG asserts
+  intact) with Save/Load trimmed to keep the 1024px minimum-width contract,
+  and unselected header buttons + the patch indicator get a ~16% accent wash
+  + textPrimary so they read as clickable (selected state unchanged, still
+  visually stronger).
 - **UI fixes (2026-08-20): preview updates, seq-length indicator, themed
   keyboard.** Three user-reported UI regressions:
   (1) **Oscillator/envelope/filter previews never updated** — the F-ios-perf-3

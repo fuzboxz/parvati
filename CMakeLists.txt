@@ -2213,3 +2213,32 @@ target_compile_features(parvati_seq_stepper_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_seq_stepper_test PRIVATE
     Parvati
 )
+
+# ------------------------------------------------------------------------------
+# Typography consistency + module-header contrast (UI feedback 2026-08-20):
+# group titles on the textPrimary tier with WCAG >= 7:1 on every theme, and
+# the 14pt app-control font unification (combo == popup == button == the seq
+# length stepper's number). Built by default.
+# Run with: ./build/parvati_ui_typography_test
+add_executable(parvati_ui_typography_test
+    tests/ui_typography_test.cpp
+)
+target_include_directories(parvati_ui_typography_test PRIVATE Source)
+target_compile_features(parvati_ui_typography_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_ui_typography_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
+# Mod-matrix interaction redesign (UI feedback 2026-08-20): rows are not drag
+# sources (pills only), Clear -> far-right delete X, mute/bypass restyled as the
+# module-disable lamp on the LEFT. Built by default.
+# Run with: ./build/parvati_mod_matrix_ui_test
+add_executable(parvati_mod_matrix_ui_test
+    tests/mod_matrix_ui_test.cpp
+)
+target_include_directories(parvati_mod_matrix_ui_test PRIVATE Source)
+target_compile_features(parvati_mod_matrix_ui_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_mod_matrix_ui_test PRIVATE
+    Parvati
+)

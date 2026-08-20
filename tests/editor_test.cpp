@@ -1224,6 +1224,119 @@ int main (int argc, char** argv)
         }
     }
 
+    // ------------------------------------------------------------------
+    // [20] Top-bar chrome polish (user feedback round 2):
+    //   (a) version/patch separation — the brand block is sized to its WIDEST
+    //       line (the "by 805Labs · v<ver>" subtitle, wider than the bold
+    //       wordmark) + a breathing margin, so the patch indicator no longer
+    //       jams against the version text;
+    //   (b) slimmer header buttons on desktop (36pt visual height, vertically
+    //       centred in the unchanged 44pt strip; iOS keeps full 44pt cells —
+    //       HIG, not compiled here);
+    //   (c) unselected-state colour affordance — accent wash (alpha <= 0.35)
+    //       + textPrimary text on every header TextButton + the preset
+    //       indicator, distinct from the stronger selected state.
+    // ------------------------------------------------------------------
+    std::printf ("\n[20] top-bar chrome polish\n");
+    {
+        auto* parEd = dynamic_cast<ParvatiEditor*> (editor);
+        check (parEd != nullptr, "[20] editor casts to ParvatiEditor");
+        if (parEd != nullptr)
+        {
+            editor->setSize (1280, 634);
+
+            // ---- (a) version/patch separation ----
+            const auto logo = parEd->getLogoAreaForTest();
+            // Measure the subtitle with the SAME font paint()/resized() use.
+            const ParvatiLookAndFeel measureLnf;
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (measureLnf.appFont (10.0f, juce::Font::plain),
+                              juce::String (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION)),
+                              0.0f, 0.0f);
+            const int subW = juce::roundToInt (
+                ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
+            check (logo.getWidth() >= subW + 12,
+                   "[20] brand block fits the version subtitle + >=12px margin");
+            // The preset indicator must start at/after the brand block's right
+            // edge, and the VISIBLE gap (from the subtitle text end) is >= 10px.
+            const juce::Component* browser = nullptr;
+            for (auto* c : editor->getChildren())
+                if (auto* b = dynamic_cast<const PresetBrowser*> (c)) { browser = b; break; }
+            check (browser != nullptr, "[20] preset browser found");
+            if (browser != nullptr)
+            {
+                const int visibleGap = browser->getBounds().getX()
+                                       - (logo.getX() + subW);
+                check (visibleGap >= 10,
+                       "[20] version text -> patch indicator gap >= 10px");
+            }
+
+            // ---- (b) desktop-slimmer header buttons ----
+            // Find every direct-child TextButton + the part combo and assert
+            // the visual height band (36 on this desktop build) with unchanged
+            // widths (>= 44pt cells).
+            int checkedH = 0;
+            for (auto* c : editor->getChildren())
+            {
+                if (auto* b = dynamic_cast<juce::TextButton*> (c))
+                {
+                    if (! b->isShowing() && b->getWidth() == 0) continue;
+                    check (b->getHeight() >= 30 && b->getHeight() <= 38,
+                           "[20] header TextButton visual height in [30,38] (slim, desktop)");
+                    check (b->getHeight() < ParvatiEditor::kBarHeight,
+                           "[20] header TextButton shorter than the 44pt strip");
+                    ++checkedH;
+                }
+                else if (auto* combo = dynamic_cast<juce::ComboBox*> (c))
+                {
+                    if (combo->getWidth() == 0) continue;
+                    check (combo->getHeight() >= 30 && combo->getHeight() <= 38,
+                           "[20] part combo visual height in [30,38] (slim, desktop)");
+                    ++checkedH;
+                }
+            }
+            check (checkedH >= 8, "[20] found >= 8 header controls to pin");
+
+            // ---- (c) unselected-state colour affordance ----
+            const ThemeManager tm;   // default Carbon == the editor's startup theme
+            const auto& th = tm.getCurrentTheme();
+            const juce::Colour wash = th.accentSecondary.withAlpha ((juce::uint8) 0x2A);
+            int checkedC = 0;
+            for (const char* name : { "Synth", "FX", "Patch", "Load", "Save" })
+            {
+                juce::TextButton* b = nullptr;
+                for (auto* c : editor->getChildren())
+                    if (auto* tb = dynamic_cast<juce::TextButton*> (c))
+                        if (tb->getButtonText() == name) { b = tb; break; }
+                if (b == nullptr) { check (false, "[20] header button found (colour pin)"); continue; }
+                const auto fill = b->findColour (juce::TextButton::buttonColourId);
+                const float a = fill.getFloatAlpha();
+                check (a > 0.0f && a <= 0.35f,
+                       "[20] unselected header fill is a translucent wash (0 < a <= 0.35)");
+                check (fill != th.backgroundPanel,
+                       "[20] unselected fill differs from the flat panel default");
+                check (fill != b->findColour (juce::TextButton::buttonOnColourId),
+                       "[20] unselected fill differs from the selected (on) fill");
+                check (b->findColour (juce::TextButton::textColourOffId) == th.textPrimary,
+                       "[20] unselected text uses the bright textPrimary tier");
+                check (fill == wash, "[20] unselected fill is the accentSecondary wash");
+                ++checkedC;
+            }
+            check (checkedC == 5, "[20] pinned the colour treatment on 5 header buttons");
+            // Patch indicator (PresetBrowser's name button): bright text tier.
+            if (browser != nullptr)
+                if (auto* pb = dynamic_cast<juce::TextButton*> (
+                        const_cast<juce::Component*> (browser)->getChildComponent (0)))
+                {
+                    check (pb->findColour (juce::TextButton::textColourOffId) == th.textPrimary,
+                           "[20] patch indicator text uses textPrimary");
+                    const float a = pb->findColour (juce::TextButton::buttonColourId).getFloatAlpha();
+                    check (a > 0.0f && a <= 0.35f,
+                           "[20] patch indicator fill is a translucent wash");
+                }
+        }
+    }
+
     // ---- teardown ----
     delete editor;
 

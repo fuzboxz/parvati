@@ -73,8 +73,10 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::TabbedButtonBar::frontOutlineColourId,    t.accentPrimary);
 
     // ---- GroupComponent (borderless solid rounded-rect panel CARDS; the title
-    // is a bold muted-gray header drawn by drawGroupComponentOutline) ----
-    setColour (juce::GroupComponent::textColourId,             t.textSecondary);
+    // is a bold BRIGHT header on the textPrimary tier — UI feedback 2026-08-20:
+    // the old textSecondary titles read too dim on the dark themes (WCAG
+    // 4.6-5.8:1 vs the card fill); drawn by drawGroupComponentOutline) ----
+    setColour (juce::GroupComponent::textColourId,             t.textPrimary);
     setColour (juce::GroupComponent::outlineColourId,          juce::Colour (0x00000000));   // no outline (borderless cards)
 
     // ---- ToggleButton (Multi page voice-allocation bits) ----
@@ -246,8 +248,11 @@ juce::Font ParvatiLookAndFeel::getPopupMenuFont()
 {
     // The drop-down list of every ComboBox (and the Save format menu). Without
     // this override, PopupMenu would always render in the JUCE default font;
-    // this routes it through the app sans-serif.
-    return appFont (15.0f, juce::Font::plain);
+    // this routes it through the app sans-serif. 14pt — the SAME height as
+    // getComboBoxFont/getTextButtonFont so a combo's inline text and its
+    // open list match (was 15pt; UI feedback 2026-08-20: the seq length
+    // picker read noticeably larger than every other dropdown text).
+    return appFont (14.0f, juce::Font::plain);
 }
 
 void ParvatiLookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
@@ -442,7 +447,7 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     // background, sitting LIGHTER than the window for tonal separation. NO
     // outline and NO skeuomorphic depth ring / inset shadow — those effects are
     // eliminated, so depth is implied ONLY by the tonal step between the window
-    // bg and the card. The section title is a BOLD muted-gray header at the
+    // bg and the card. The section title is a BOLD BRIGHT header at the
     // top-left (the old fieldset/legend border-break motif is gone). The card's
     // geometry (panel position / size) is unchanged.
     constexpr float corner = 7.0f;
@@ -461,8 +466,11 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
         g.fillRoundedRectangle (cardBounds, corner);
     }
 
-    // Bold muted-gray section header, left-aligned within the card's top band
-    // (GroupComponent::textColourId == theme_->textSecondary after setTheme).
+    // Bold bright section header, left-aligned within the card's top band
+    // (GroupComponent::textColourId == theme_->textPrimary after setTheme —
+    // raised from textSecondary 2026-08-20 so module headers like "FX" /
+    // "Sequencer" / "Osc 1" read clearly on every dark theme; see
+    // parvati_ui_typography_test for the per-theme contrast table).
     const juce::Font f = appFont (textH, juce::Font::bold);
     const juce::String displayText = text.toUpperCase();
     const juce::Colour titleCol = group.findColour (juce::GroupComponent::textColourId)

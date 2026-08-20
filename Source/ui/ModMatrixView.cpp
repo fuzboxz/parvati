@@ -8,8 +8,8 @@
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // appFont() via the inherited editor L&F
+#include "IconButton.h"           // IconButton (row delete X)
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_*, MOD_DST_*, kNumModulations
-#include "PluginEditor.h"   // ParamControl (tap-to-assign state)
 
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachments + AudioParameterChoice
 
@@ -146,109 +146,62 @@ private:
 };
 
 //==============================================================================
-// A small drag-grip (six-dot handle) rendered left of a row's source combo.
-// mouseDrag (past a small threshold) starts an INTERNAL DragAndDropContainer
-// drag carrying "parvatiModSrc:<sourceEnum>" and a themed drag image (the
-// source's category colour chip + its short name). The nearest
-// DragAndDropContainer ancestor (the editor) hosts the drag; dropping it on a
-// destination knob (ParamControl, a DragAndDropTarget) assigns the next free
-// slot for that source. Clicking (no drag) is a no-op so the grip never
-// competes with the adjacent source combo's own click-to-open behaviour.
-struct ModSourceDragGrip : public juce::Component,
-                              public juce::SettableTooltipClient
+// MuteLamp — the per-row mute/bypass toggle (user feedback 2026-08-20): the
+// SAME widget style as the FX slot module-disable toggle (FxSlotCard's
+// PowerToggle — a compact bordered indicator dot with a full-bounds hit area),
+// in the mod matrix's accent family. Dot = accentPrimary while the routing is
+// ACTIVE, the theme's inactive grey (textDisabled) while MUTED (accent = "on"
+// parity with the FX power lamps). The toggle STATE is driven by the row
+// (setMutedLook); a click routes through the view's toggleMute() — the SAME
+// stash-amount/restore seam the old text "M" button used (editor-only mute,
+// never persisted).
+class MuteLamp : public juce::Button
 {
-    ModSourceDragGrip (ModMatrixView& owner, int slot) : owner_ (owner), slot_ (slot)
+public:
+    MuteLamp() : juce::Button ({}) { setClickingTogglesState (false); }
+
+    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
-        setTooltip (TRANS ("Drag onto a knob to assign this modulation"));
+        const ParvatiTheme* t = nullptr;
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            t = lnf->getTheme();
+
+        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
+        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
+        const juce::Colour grey   = t ? t->textDisabled  : juce::Colour (0xff6b7280);
+        const juce::Colour ring   = t ? t->outline       : text.withAlpha (0.45f);
+
+        const bool on = getToggleState() || isButtonDown;
+
+        // Fill: accent lamp while the routing is active, the theme's inactive
+        // grey while muted (visible on every theme — dark: mid grey, light:
+        // warm grey).
+        juce::Colour fill = on ? accent : grey;
+        if (! isEnabled())
+            fill = fill.withAlpha (0.25f);
+
+        // Border ring: the panel outline colour, brightened on hover so the
+        // dot reads as tappable (the only hover affordance).
+        juce::Colour border = ring;
+        if (isMouseOverButton)
+            border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
+        if (! isEnabled())
+            border = ring.withAlpha (0.30f);
+
+        // Compact centred dot (~12pt max); the HIT area stays the full bounds
+        // (44pt HIG floor — the row is 48pt tall), mirroring PowerToggle's
+        // lamp-in-a-large-hit-zone idiom.
+        const auto b = getLocalBounds().toFloat();
+        const float dot = juce::jlimit (5.0f, 12.0f,
+                                        juce::jmin (b.getWidth(), b.getHeight()) * 0.45f);
+        const auto centre = b.getCentre();
+        const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
+
+        g.setColour (fill);
+        g.fillEllipse (r);
+        g.setColour (border);
+        g.drawEllipse (r, 1.5f);
     }
-
-    void paint (juce::Graphics& g) override
-    {
-        const auto& t = owner_.themeManager().getCurrentTheme();
-        g.setColour (t.textSecondary);
-        const float r  = 1.4f;
-        const int   w  = getWidth();
-        const int   h  = getHeight();
-        const float x0 = static_cast<float> (w) * 0.35f;
-        const float x1 = static_cast<float> (w) * 0.65f;
-        const float ys[3] = { h * 0.35f, h * 0.5f, h * 0.65f };
-        for (const float y : ys)
-        {
-            g.fillEllipse (juce::Rectangle<float> (r * 2.0f, r * 2.0f)
-                               .withCentre (juce::Point<float> (x0, y)));
-            g.fillEllipse (juce::Rectangle<float> (r * 2.0f, r * 2.0f)
-                               .withCentre (juce::Point<float> (x1, y)));
-        }
-    }
-
-    void mouseDown (const juce::MouseEvent&) override { dragStarted_ = false; }
-
-    void mouseDrag (const juce::MouseEvent& e) override
-    {
-        // Debounce: start exactly one drag per press, and only past a small
-        // threshold so a stray jitter never fires a phantom drag.
-        if (dragStarted_ || e.getDistanceFromDragStart() < 5)
-            return;
-        dragStarted_ = true;
-
-        const int src = owner_.sourceForSlot (slot_);
-        if (src < 0)
-            return;
-
-        auto* ddc = findParentComponentOfClass<juce::DragAndDropContainer>();
-        if (ddc == nullptr)
-            return;   // no DragAndDropContainer ancestor (e.g. a headless test)
-
-        ddc->startDragging ("parvatiModSrc:" + juce::String (src), this, buildDragImage(), true);
-    }
-
-    // Tap-to-assign: a clean tap (no drag) selects this row's mod source for
-    // the next dest tap. Mirrors the CentralModBar pill's clean-tap detection
-    // (! dragStarted_ + small movement). Available on all platforms; inert
-    // unless [MOD] tap-to-assign is toggled on (tapAssignActive()).
-    void mouseUp (const juce::MouseEvent& e) override
-    {
-        if (ParamControl::tapAssignActive() && ! dragStarted_ && e.getDistanceFromDragStart() <= 5)
-        {
-            const int src = owner_.sourceForSlot (slot_);
-            if (src >= 0)
-                ParamControl::setTapSelectedSource (src);
-        }
-    }
-
-private:
-    // A small themed drag image composited under the cursor: the source's
-    // category colour chip + its short name, on a container-fill rounded tile.
-    juce::Image buildDragImage() const
-    {
-        const auto&      t    = owner_.themeManager().getCurrentTheme();
-        const juce::String name = owner_.sourceNameForSlot (slot_);
-        const juce::Font  f    = appFontOr (owner_, 13.0f);
-        const int textW = juce::GlyphArrangement::getStringWidthInt (f, name);
-        const int w = juce::jmax (48, 12 + 8 + textW + 10);
-        const int h = 22;
-
-        juce::Image img (juce::Image::ARGB, w, h, true);
-        juce::Graphics g (img);
-        g.setColour (t.containerFill);
-        g.fillRoundedRectangle (img.getBounds().toFloat(), 5.0f);
-
-        const juce::Colour cat = sourceCategoryColour (t, name);
-        g.setColour (cat.isTransparent() ? t.accentPrimary : cat);
-        g.fillRoundedRectangle (juce::Rectangle<float> (5.0f, 5.0f, 7.0f, static_cast<float> (h) - 10.0f), 2.0f);
-
-        g.setColour (t.textPrimary);
-        g.setFont (f);
-        g.drawText (name, juce::Rectangle<int> (17, 0, w - 17, h), juce::Justification::centredLeft, true);
-
-        g.setColour (t.accentPrimary.withAlpha (0.6f));
-        g.drawRoundedRectangle (img.getBounds().toFloat().reduced (0.5f), 5.0f, 1.0f);
-        return img;
-    }
-
-    ModMatrixView& owner_;
-    int slot_;
-    bool dragStarted_ = false;
 };
 
 //==============================================================================
@@ -279,8 +232,15 @@ struct ModMatrixRow : public juce::Component,
         indexLabel_.setJustificationType (juce::Justification::centred);
         addAndMakeVisible (indexLabel_);
 
-        dragGrip_ = std::make_unique<ModSourceDragGrip> (owner_, slot);
-        addAndMakeVisible (*dragGrip_);
+        // Mute/bypass LAMP (module-disable widget parity; see MuteLamp) — the
+        // LEFTMOST control of the row. Click routes through the view's
+        // toggleMute() (the same stash/restore seam the old "M" text button
+        // used; editor-only mute, never persisted).
+        muteLamp_ = std::make_unique<MuteLamp>();
+        muteLamp_->setTitle (TRANS ("Mute / bypass this modulation"));
+        muteLamp_->setTooltip (TRANS ("Mute / bypass this modulation"));
+        muteLamp_->onClick = [this] { owner_.toggleMute (slot_); };
+        addAndMakeVisible (*muteLamp_);
 
         addAndMakeVisible (sourceCombo_);
         addAndMakeVisible (destCombo_);
@@ -294,16 +254,15 @@ struct ModMatrixRow : public juce::Component,
         valueLabel_.setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (valueLabel_);
 
-        muteButton_.setButtonText (TRANS ("M"));
-        muteButton_.setClickingTogglesState (true);
-        muteButton_.setTooltip (TRANS ("Mute / bypass this modulation"));
-        muteButton_.onClick = [this] { owner_.toggleMute (slot_); };
-        addAndMakeVisible (muteButton_);
-
-        clearButton_.setButtonText (TRANS ("Clear"));
-        clearButton_.setTooltip (TRANS ("Clear this modulation (free the slot)"));
-        clearButton_.onClick = [this] { owner_.clearSlot (slot_); };
-        addAndMakeVisible (clearButton_);
+        // Delete X (IconButton, path-drawn glyph) — the RIGHTMOST control of
+        // the row, replacing the old "Clear" text button. 44pt HIG hit target
+        // with a visually compact glyph (setGlyphInset). Same action as Clear:
+        // free the slot through the view's clearSlot().
+        clearButton_ = std::make_unique<IconButton> (IconButton::Icon::Close);
+        clearButton_->setTooltip (TRANS ("Delete modulation"));
+        clearButton_->setGlyphInset (11.0f);
+        clearButton_->onClick = [this] { owner_.clearSlot (slot_); };
+        addAndMakeVisible (*clearButton_);
 
         // Bind to the APVTS AFTER the widgets are populated.
         srcAttach_   = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, srcId, sourceCombo_);
@@ -321,13 +280,12 @@ struct ModMatrixRow : public juce::Component,
         // highlight bus, not just the few-pixel bare gaps between widgets.
         // `false` => child events only (no recursion into popup children).
         indexLabel_.addMouseListener (this, false);
-        dragGrip_->addMouseListener (this, false);
+        muteLamp_->addMouseListener (this, false);
         sourceCombo_.addMouseListener (this, false);
         destCombo_.addMouseListener (this, false);
         depthSlider_.addMouseListener (this, false);
         valueLabel_.addMouseListener (this, false);
-        muteButton_.addMouseListener (this, false);
-        clearButton_.addMouseListener (this, false);
+        clearButton_->addMouseListener (this, false);
 
         // Accessibility-only: name the row after its slot (matches the visible
         // index label; "Mod " + N follows the suffix-key i18n idiom).
@@ -339,13 +297,12 @@ struct ModMatrixRow : public juce::Component,
         depthSlider_.removeListener (this);
         sourceCombo_.removeListener (this);
         indexLabel_.removeMouseListener (this);
-        dragGrip_->removeMouseListener (this);
+        muteLamp_->removeMouseListener (this);
         sourceCombo_.removeMouseListener (this);
         destCombo_.removeMouseListener (this);
         depthSlider_.removeMouseListener (this);
         valueLabel_.removeMouseListener (this);
-        muteButton_.removeMouseListener (this);
-        clearButton_.removeMouseListener (this);
+        clearButton_->removeMouseListener (this);
         // Drop the custom L&F before the slider is destroyed (the L&F is owned by
         // the view and outlives this row, but unsetting keeps the contract clean).
         depthSlider_.setLookAndFeel (nullptr);
@@ -407,7 +364,9 @@ struct ModMatrixRow : public juce::Component,
         sourceCombo_.setEnabled (! muted);
         destCombo_.setEnabled (! muted);
         depthSlider_.setEnabled (! muted);
-        muteButton_.setToggleState (muted, juce::dontSendNotification);
+        // Lamp semantics = module-disable parity: accent (toggle ON) while the
+        // routing is ACTIVE, grey while muted.
+        muteLamp_->setToggleState (! muted, juce::dontSendNotification);
         const auto& t = owner_.themeManager().getCurrentTheme();
         valueLabel_.setColour (juce::Label::textColourId, muted ? t.textSecondary : t.textPrimary);
         refreshValueDisplay();
@@ -445,8 +404,6 @@ struct ModMatrixRow : public juce::Component,
         depthSlider_.getProperties().set ("parvatiRowFill",
             (int) rowCategoryColour (t, owner_.sourceNameForSlot (slot_)).getARGB());
 
-        muteButton_.setColour (juce::TextButton::buttonOnColourId, t.accentPrimary);
-        muteButton_.setColour (juce::TextButton::textColourOnId, t.backgroundBase);
         repaint();
     }
 
@@ -502,22 +459,23 @@ struct ModMatrixRow : public juce::Component,
         auto b = getLocalBounds().reduced (4, 2);
 
         // F-ios-touch (bug hunt 2026-08-19): the right-column ACTION targets
-        // (Mute / Clear) and the value readout are FIXED 44pt-floor buttons —
-        // reserve them FIRST so a narrow row squeezes the proportional COMBOS
-        // (their choice text scrolls), never the buttons. Pre-fix the combos'
-        // jmax floors consumed the strip and removeFromRight() silently clamped:
-        // a 12x44 'M' (mis-tap magnet) and a 0-width 'Clear' (unreachable).
-        muteButton_.setBounds (b.removeFromRight (44));   // mute touch target (unified)
-        b.removeFromRight (8);
-        clearButton_.setBounds (b.removeFromRight (44));
+        // and the value readout are FIXED 44pt-floor widgets — reserve them
+        // FIRST so a narrow row squeezes the proportional COMBOS (their choice
+        // text scrolls), never the buttons. The delete X is the RIGHTMOST
+        // control (user feedback 2026-08-20); the value readout sits left of it.
+        clearButton_->setBounds (b.removeFromRight (44));   // delete X hit target (unified)
         b.removeFromRight (8);
         valueLabel_.setBounds (b.removeFromRight (46));
         b.removeFromRight (8);
 
+        // LEFT cluster: the mute/bypass lamp (module-disable widget parity,
+        // user feedback 2026-08-20), then the row index. The former drag-grip
+        // slot is gone — rows are NOT drag sources; modulators are dragged
+        // only from the CentralModBar pills.
+        muteLamp_->setBounds (b.removeFromLeft (44));   // mute lamp hit target (unified)
+        b.removeFromLeft (4);
         indexLabel_.setBounds (b.removeFromLeft (18));
         b.removeFromLeft (4);
-        dragGrip_->setBounds (b.removeFromLeft (44));   // drag-grip touch target (unified)
-        b.removeFromLeft (8);
 
         // Source + dest combos share the REST with the depth slider, capped so
         // the slider keeps >= 40pt (its row height is the real hit surface).
@@ -547,13 +505,12 @@ struct ModMatrixRow : public juce::Component,
     const int slot_;
 
     juce::Label    indexLabel_;
-    std::unique_ptr<ModSourceDragGrip> dragGrip_;   // drag source (parvatiModSrc payload)
+    std::unique_ptr<MuteLamp>  muteLamp_;    // mute/bypass lamp (module-disable parity)
     juce::ComboBox sourceCombo_;
     juce::ComboBox destCombo_;
     juce::Slider   depthSlider_;
     juce::Label    valueLabel_;
-    juce::TextButton muteButton_;
-    juce::TextButton clearButton_;
+    std::unique_ptr<IconButton> clearButton_;   // delete X (far right)
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> srcAttach_, dstAttach_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   depthAttach_;
@@ -633,6 +590,12 @@ ModMatrixView::~ModMatrixView()
 juce::String ModMatrixView::slotParam (int slot, const char* suffix)
 {
     return "mod" + juce::String (slot + 1) + suffix;
+}
+
+juce::Component* ModMatrixView::rowForSlotForTest (int slot) const
+{
+    slot = juce::jlimit (0, 13, slot);
+    return rows_[(size_t) slot].get();
 }
 
 int ModMatrixView::amountForSlot (int slot) const

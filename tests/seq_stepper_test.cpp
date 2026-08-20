@@ -8,8 +8,8 @@
 //       always-on-top, label bounds non-empty, hit band >= 44pt),
 //   [2] per-theme: the number's colour == theme.textPrimary (the value-readout
 //       tier, not the dim caption tier) with WCAG contrast >= 4.5:1 against
-//       BOTH backgroundPanel and backgroundBase, font height >= the app
-//       readout baseline (15) at 17pt bold,
+//       BOTH backgroundPanel and backgroundBase, font height == the app
+//       CONTROL height (14pt, matching combos/buttons/popup rows) and bold,
 //   [3] value text updates through the real slider backing (set + keyboard
 //       nudge + 1..16 clamp),
 //   [4] a live theme switch re-resolves the colour (the lookAndFeelChanged
@@ -95,9 +95,10 @@ const PatchParamDescriptor& lengthDescriptor()
 // The sequencer grid cell size (PluginEditor.cpp configureGroupLayouts:
 // stepGrid groups get cellW = 72, cellH = 64).
 constexpr int kCellW = 72, kCellH = 64;
-// The app's readout font baseline family (popup rows 15 / buttons 14); the
-// number is deliberately a step ABOVE this at 17pt bold.
-constexpr float kReadoutBaseline = 15.0f;
+// The app's CONTROL font height (combos / buttons / popup rows are all 14pt
+// since the 2026-08-20 popup unification); the seq number deliberately MATCHES
+// it (was 17pt bold — read oversized next to every neighbouring font).
+constexpr float kControlFontHeight = 14.0f;
 }  // namespace
 
 int main()
@@ -185,11 +186,11 @@ int main()
                            (std::string (name) + ": WCAG contrast >= 4.5:1 on both surfaces").c_str());
 
                     const float fh = number->getFont().getHeight();
-                    check (fh > 0.0f && fh >= kReadoutBaseline,
-                           (std::string (name) + ": font height >= readout baseline").c_str());
-                    check (number->getFont().isBold(), "font is bold (17pt bold family)");
+                    check (fh > 0.0f && std::abs (fh - kControlFontHeight) < 0.01f,
+                           (std::string (name) + ": font height == app control height (14)").c_str());
+                    check (number->getFont().isBold(), "font is bold (value-tier emphasis)");
                 }
-                check (number->getFont().getHeight() == 17.0f, "font height is 17pt");
+                check (std::abs (number->getFont().getHeight() - 14.0f) < 0.01f, "font height is 14pt (app control height)");
             }
         }
         else

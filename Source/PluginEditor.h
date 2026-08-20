@@ -608,6 +608,11 @@ public:
     // mod-bar pill click drives.
     SynthWorkspace* getSynthWorkspaceForTest() { return synthWorkspace_.get(); }
 
+    // TEST-ONLY ([20] top-bar chrome pins): the header brand-block geometry
+    // (wordmark + version subtitle), for the version/patch-separation layout
+    // assertion in editor_test.
+    const juce::Rectangle<int>& getLogoAreaForTest() const noexcept { return logoArea_; }
+
     // One iteration of the poll timer's VISIBLE-Patch-page mirror check: when
     // the Patch page is on screen and the engine's display version moved
     // (an out-of-band write — host automation of part_polyphony / part_raga,
@@ -886,6 +891,16 @@ private:
     // invoked when selectByName actually moves the selection, so without this
     // explicit call the category colours could stay on the L&F default.
     void applyAllColoursFromTheme();
+
+    // Top-bar chrome affordance ([20]): every header TextButton (page/mode/
+    // view toggles, Load/Save, the "..." overflow) and the preset-indicator
+    // button gets an unselected-state treatment that reads as CLICKABLE — a
+    // low-alpha accentSecondary wash fill + the bright textPrimary text tier —
+    // instead of the flat backgroundPanel fill. Selected (toggle-on) keeps the
+    // L&F's solid accent fill + dark text, so the on state stays clearly
+    // stronger. Resolved from the ACTIVE theme; called from
+    // applyAllColoursFromTheme() so it tracks every theme switch.
+    void applyHeaderButtonChrome();
 
     // ---- Synth<->FX mode toggle ----
     // Swap the page-selector tab (index 0 = SYNTH workspace, 1 = FX workspace)

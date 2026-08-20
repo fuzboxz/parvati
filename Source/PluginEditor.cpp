@@ -3888,6 +3888,8 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // explicit pass guarantees them regardless of any L&F-resolution timing.
     ParamControl::reapplyCategoryColours();
     reapplyGraphCategoryColours();
+    // [20] Top-bar clickable affordance (re-resolved from the new theme).
+    applyHeaderButtonChrome();
     statusCountLabel_.setColour (juce::Label::textColourId,
                                  themeManager_.getCurrentTheme().accentPrimary);
     statusTooltipLabel_.setColour (juce::Label::textColourId,
@@ -3896,6 +3898,45 @@ void ParvatiEditor::applyAllColoursFromTheme()
     if (keyboardView_ != nullptr)
         keyboardView_->refresh();
     repaint();
+}
+
+void ParvatiEditor::applyHeaderButtonChrome()
+{
+    // [20] Clickable affordance for the top bar (user feedback: "introduce
+    // some color to the unselected items to signal that they are clickable").
+    // The L&F default off-state fill is the flat backgroundPanel — visually
+    // identical to the surrounding chrome, so unselected header buttons read
+    // as dead captions. Every header TextButton now gets:
+    //   - fill:   accentSecondary at ~16% alpha (a subtle themed colour wash;
+    //             alpha kept <= 0.35 so it stays subordinate to the on state),
+    //   - text:   textPrimary (the bright value tier).
+    // Toggled-on keeps the L&F's buttonOnColourId (solid accent fill + dark
+    // text) so SELECTED stays clearly stronger than the wash; hover/press
+    // derive automatically in ParvatiLookAndFeel::drawButtonBackground
+    // (brighter on hover, darker on press). Component-level setColour wins
+    // over the L&F defaults by design; this helper re-resolves from the
+    // ACTIVE theme on every switch (called from applyAllColoursFromTheme).
+    const auto& t = themeManager_.getCurrentTheme();
+    const auto wash = t.accentSecondary.withAlpha ((juce::uint8) 0x2A);   // 42/255 ~= 16%
+    for (auto* b : { &synthModeButton_, &fxModeButton_, &globalButton_,
+                     &kbdToggleButton_, &modBarToggleButton_, &modAssignButton_,
+                     &loadButton_, &saveButton_, &zoomOverflowButton_ })
+    {
+        b->setColour (juce::TextButton::buttonColourId, wash);
+        b->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+    }
+    // The patch indicator: PresetBrowser's name button (its only child
+    // TextButton) gets the same treatment + the brighter text tier (user
+    // feedback: the patch indicator should match the other header contrast).
+    if (presetBrowser_ != nullptr)
+        if (auto* pb = dynamic_cast<juce::TextButton*> (presetBrowser_->getChildComponent (0)))
+        {
+            pb->setColour (juce::TextButton::buttonColourId, wash);
+            pb->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+        }
+    // patchCaption_ is hidden in the current layout but stays wired — keep it
+    // on the bright tier so it is correct if it ever returns.
+    patchCaption_.setColour (juce::Label::textColourId, t.textPrimary);
 }
 
 void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -4272,13 +4313,16 @@ void ParvatiEditor::resized()
     // lane-C finding: AUM keyboard-open ~570pt, GarageBand panes ~700pt).
     // Secondary controls fold into the existing "..." overflow popup at
     // MEASURED budget breakpoints (derived from the fixed budgets below:
-    // right cluster 486pt full / 330 without the view trio / 278 without
-    // Redo; fixed left overhead 106pt (insets 12 + edge 8 + logo ~86);
+    // right cluster 466pt full (7x44 icons + gaps + slim Load 48/Save 52) /
+    // 310 without the view trio / 258 without Redo; fixed left overhead 123pt
+    // (insets 12 + edge 8 + logo ~103 = the WIDER version-subtitle line + 18px
+    // breathing margin, per the version/patch-separation fix);
     // preset 156 + Patch 64 + the Part/Synth/FX cluster 212):
     //   < 1024: Part combo + [Synth]/[FX] fold (the cluster's designed budget
-    //           is exactly 1024 — below it SYNTH/FX historically collapsed);
+    //           is exactly 1024 — below it SYNTH/FX historically collapsed;
+    //           at the floor the budget closes at ~1015, 9pt slack);
     //   < 810:  [MOD]/[MAP]/gear additionally fold (the preset+Patch cluster
-    //           + full right cluster needs 830);
+    //           + full right cluster needs ~815);
     //   < 650:  Redo AND the [Patch] page button additionally fold (with both
     //           placed, 560pt runs ~46pt over; the Patch page stays reachable
     //           via the popup's page items).
@@ -4291,42 +4335,59 @@ void ParvatiEditor::resized()
     const bool foldViewCluster = editorW < 810;
     const bool foldHistoryBand = editorW < 650;
 
+    // ---- Header-button visual height (user feedback: "a tiny bit less
+    //      tall") ----
+    // The header STRIP stays the full 44pt (kHeaderH/kBarHeight unchanged;
+    // pinned by ipad_hig_sizing_test). On desktop the header BUTTONS now draw
+    // at 36pt, vertically centred in their strip cell — a slimmer chrome. On
+    // iOS the button fills the whole 44pt cell so every touch target keeps
+    // the HIG 44pt minimum (the shrink is visual-only and desktop-only).
+    // (Preprocessor, not a ternary: JUCE_IOS is undefined on non-iOS builds,
+    // which an expression would reject as an undeclared identifier.)
+#if JUCE_IOS
+    constexpr int kHeaderBtnH = 44;
+#else
+    constexpr int kHeaderBtnH = 36;
+#endif
+    const auto slimCell = [] (juce::Rectangle<int> cell)
+    { return cell.withSizeKeepingCentre (cell.getWidth(), kHeaderBtnH); };
+
     kbdToggleButton_.setVisible (true);   // primary: never folds
-    kbdToggleButton_.setBounds (bar.removeFromRight (44));     // [KBD] keyboard-overlay toggle (far right)
+    kbdToggleButton_.setBounds (slimCell (bar.removeFromRight (44)));     // [KBD] keyboard-overlay toggle (far right)
     bar.removeFromRight (8);
     modBarToggleButton_.setVisible (! foldViewCluster);
     if (! foldViewCluster)
     {
-        modBarToggleButton_.setBounds (bar.removeFromRight (44)); // [MOD] mod-pill bar seam toggle (left of [KBD])
+        modBarToggleButton_.setBounds (slimCell (bar.removeFromRight (44))); // [MOD] mod-pill bar seam toggle (left of [KBD])
         bar.removeFromRight (8);
     }
     modAssignButton_.setVisible (! foldViewCluster);
     if (! foldViewCluster)
     {
-        modAssignButton_.setBounds (bar.removeFromRight (44));     // [MOD] tap-to-assign toggle
+        modAssignButton_.setBounds (slimCell (bar.removeFromRight (44)));     // [MOD] tap-to-assign toggle
         bar.removeFromRight (8);
     }
     settingsButton_.setVisible (! foldViewCluster);
     if (! foldViewCluster)
     {
-        settingsButton_.setBounds (bar.removeFromRight (44));      // gear
+        settingsButton_.setBounds (slimCell (bar.removeFromRight (44)));      // gear
         bar.removeFromRight (8);
     }
     zoomOverflowButton_.setVisible (true);   // the overflow host: never folds (it carries the folded actions)
-    zoomOverflowButton_.setBounds (bar.removeFromRight (44));  // "..." zoom overflow (popup)
+    zoomOverflowButton_.setBounds (slimCell (bar.removeFromRight (44)));  // "..." zoom overflow (popup)
     bar.removeFromRight (8);
     redoButton_.setVisible (! foldHistoryBand);
     if (! foldHistoryBand)
     {
-        redoButton_.setBounds (bar.removeFromRight (44));          // redo
+        redoButton_.setBounds (slimCell (bar.removeFromRight (44)));          // redo
         bar.removeFromRight (8);
     }
     undoButton_.setVisible (true);   // primary: never folds
-    undoButton_.setBounds (bar.removeFromRight (44));          // undo
-    bar.removeFromRight (6);   // separates the history/view icons from the file group
-    saveButton_.setBounds (bar.removeFromRight (64));          // Save (carries the format popup menu)
+    undoButton_.setBounds (slimCell (bar.removeFromRight (44)));          // undo
+    bar.removeFromRight (4);   // separates the history/view icons from the file group
+    saveButton_.setBounds (slimCell (bar.removeFromRight (52)));          // Save (carries the format popup menu)
     bar.removeFromRight (6);
-    loadButton_.setBounds (bar.removeFromRight (54));          // Load
+    loadButton_.setBounds (slimCell (bar.removeFromRight (48)));          // Load
 
 
     // Left: brand icon + white "Parvati" wordmark (painted) + version label
@@ -4338,13 +4399,27 @@ void ParvatiEditor::resized()
         juce::GlyphArrangement ga;
         ga.addLineOfText (textFont, kLogoText, 0.0f, 0.0f);
         const int textW = juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
-        // logoArea_ shrinks to the wordmark width (the subtitle
-        // "by 805Labs \xc2\xb7 v<ver>" rides beneath it in paint()). The inline
-        // version label is replaced by the painted subtitle, so it is hidden
-        // here (it stays wired on desktop).
-        // +16px slack so the wordmark breathes and the (now left-aligned)
-        // preset dropdown can sit close to it without jamming against the text.
-        logoArea_ = bar.removeFromLeft (textW + 16);
+        // ---- Version/patch separation (user feedback: "more distance between
+        //      the version and the patch indicator") ----
+        // The version subtitle ("by 805Labs · v<ver>", 10px) is painted inside
+        // the SAME brand block and is WIDER than the bold wordmark — the old
+        // block sized to the wordmark alone (+16 slack), so the subtitle nearly
+        // touched the preset dropdown. Size the block to fit BOTH lines (the
+        // wider of the two) plus an 18px breathing margin, so the visible gap
+        // from the version text to the patch indicator is a comfortable ~18px.
+        // The version stays in the brand block (moving it far-right would
+        // collide with the folding icon cluster); the extra ~17px is reclaimed
+        // from Save/Load below so the 1024px minimum-width budget still holds.
+        const juce::Font subFont = lnf_.appFont (10.0f, juce::Font::plain);
+        juce::GlyphArrangement gaSub;
+        gaSub.addLineOfText (subFont,
+                             juce::String (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION)),
+                             0.0f, 0.0f);
+        const int subW = juce::roundToInt (gaSub.getBoundingBox (0, gaSub.getNumGlyphs(), true).getWidth());
+        const int brandW = juce::jmax (textW, subW);
+        // logoArea_ carries the breathing-room slack for the left-aligned
+        // preset dropdown that follows it.
+        logoArea_ = bar.removeFromLeft (brandW + 18);
         versionLabel_.setVisible (false);
 
     }
@@ -4394,17 +4469,17 @@ void ParvatiEditor::resized()
         }
         if (! foldHistoryBand)
         {
-            globalButton_.setBounds (cluster.removeFromLeft (globalW));   // Patch page overlay toggle (between Patch dropdown and Part)
+            globalButton_.setBounds (slimCell (cluster.removeFromLeft (globalW)));   // Patch page overlay toggle (between Patch dropdown and Part)
             cluster.removeFromLeft (gapW);
         }
         if (! foldPartCluster)
         {
-            partCombo_.setBounds (cluster.removeFromLeft (partComboW));
+            partCombo_.setBounds (slimCell (cluster.removeFromLeft (partComboW)));
             cluster.removeFromLeft (gapW);
             // Synth/FX mode toggle (radio group) after Part.
-            synthModeButton_.setBounds (cluster.removeFromLeft (modeW));
+            synthModeButton_.setBounds (slimCell (cluster.removeFromLeft (modeW)));
             cluster.removeFromLeft (gapW);
-            fxModeButton_.setBounds (cluster.removeFromLeft (modeW));
+            fxModeButton_.setBounds (slimCell (cluster.removeFromLeft (modeW)));
         }
     }
 

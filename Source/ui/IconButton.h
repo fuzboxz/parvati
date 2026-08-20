@@ -18,19 +18,22 @@
 class IconButton : public juce::Button
 {
 public:
-    enum class Icon { Undo, Redo, Gear };
+    enum class Icon { Undo, Redo, Gear, Close };
 
     // Accessible name for each glyph (screen readers see only this — the icon
     // itself is pure Path drawing). "Undo"/"Redo"/"Settings" are existing
     // chrome translation keys (Translations.cpp), so the fallback chain is
-    // localized for free; English elsewhere.
+    // localized for free; English elsewhere. "Delete modulation" names the
+    // mod-matrix row X (the Close glyph's introducing consumer — a reuse can
+    // override the title with setTitle()).
     static juce::String iconTitle (Icon icon)
     {
         switch (icon)
         {
-            case Icon::Undo: return TRANS ("Undo");
-            case Icon::Redo: return TRANS ("Redo");
-            case Icon::Gear: return TRANS ("Settings");
+            case Icon::Undo:  return TRANS ("Undo");
+            case Icon::Redo:  return TRANS ("Redo");
+            case Icon::Gear:  return TRANS ("Settings");
+            case Icon::Close: return TRANS ("Delete modulation");
         }
         return {};
     }
@@ -46,6 +49,13 @@ public:
 
     void setIcon (Icon icon) { icon_ = icon; setTitle (iconTitle (icon)); repaint(); }
 
+    // Visual compactness for a large hit target: the glyph is drawn inside the
+    // bounds reduced by @p inset px (default 4 — the historical look of the
+    // header Undo/Redo/Gear icons). The mod-matrix row delete X uses a larger
+    // inset so a 44pt HIG hit target renders a compact glyph (the
+    // FxSlotCard PowerToggle pinning idiom, expressed as an inset).
+    void setGlyphInset (float inset) { glyphInset_ = juce::jmax (1.0f, inset); repaint(); }
+
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
         const ParvatiTheme* t = nullptr;
@@ -60,12 +70,27 @@ public:
         else if (isMouseOverButton)   c = text.brighter (0.20f);
 
         g.setColour (c);
-        const auto r = getLocalBounds().toFloat().reduced (4.0f);
-        if (icon_ == Icon::Gear) drawGear (g, r);
-        else                     drawCurvedArrow (g, r, icon_ == Icon::Redo);
+        const auto r = getLocalBounds().toFloat().reduced (glyphInset_);
+        if (icon_ == Icon::Gear)       drawGear (g, r);
+        else if (icon_ == Icon::Close) drawClose (g, r);
+        else                           drawCurvedArrow (g, r, icon_ == Icon::Redo);
     }
 
 private:
+    // A compact "X": two rounded-cap strokes corner to corner. Pure Path
+    // drawing (no font dependency), themed like the other glyphs.
+    static void drawClose (juce::Graphics& g, juce::Rectangle<float> r)
+    {
+        const auto inner = r.reduced (juce::jmin (r.getWidth(), r.getHeight()) * 0.18f);
+        juce::Path x;
+        x.startNewSubPath (inner.getTopLeft());
+        x.lineTo (inner.getBottomRight());
+        x.startNewSubPath (inner.getTopRight());
+        x.lineTo (inner.getBottomLeft());
+        g.strokePath (x, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    }
+
     // A "rainbow" arc with an arrowhead at one foot. Undo => head at the LEFT
     // foot pointing left; Redo => mirror (head at the RIGHT foot pointing right).
     static void drawCurvedArrow (juce::Graphics& g, juce::Rectangle<float> r, bool clockwise)
@@ -112,4 +137,5 @@ private:
     }
 
     Icon icon_;
+    float glyphInset_ = 4.0f;
 };
