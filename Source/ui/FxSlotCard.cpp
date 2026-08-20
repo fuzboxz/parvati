@@ -16,85 +16,16 @@
 namespace
 {
 //==============================================================================
-// PowerToggle — the Enable/Bypass button. Draws an INDICATOR DOT: a compact
-// bordered circle (~12pt) FILLED with accentSecondary (the FX accent) when
-// the slot is ENABLED and filled grey (textDisabled — the theme's "bypassed /
-// inactive" grey) when bypassed, with an outline-colour border ring that
-// brightens on hover (the tap affordance). Pure juce primitives
-// (fillEllipse/drawEllipse — no path, no unicode/font dependency). Its toggle
-// STATE is driven from the fx{N}_enable APVTS Value by FxSlotCard; clicking
-// flips that Value (handled by the card's onClick), so this button does NOT
-// toggle its own state on click.
-class PowerToggle : public juce::Button
-{
-public:
-    PowerToggle() : juce::Button ({}) { setClickingTogglesState (false); }
-
-    // Pin the drawn LAMP to an explicit centre, as an offset from the button's
-    // TOP-LEFT (the hit area stays the FULL bounds). The header-left placement
-    // sizes the button as a 44x44 corner band whose centre falls mid-type-row;
-    // the lamp must instead align with the painted "FX N" title's optical
-    // middle (see FxSlotCard::resized). A negative x keeps the default:
-    // centred in the bounds.
-    void setLampCentreOffset (juce::Point<float> centreFromTopLeft)
-    {
-        lampCentre_ = centreFromTopLeft;
-    }
-
-    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
-    {
-        const ParvatiTheme* t = nullptr;
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            t = lnf->getTheme();
-
-        const juce::Colour accent = t ? t->accentSecondary : parvati::parvatiFallbackAccent;
-        const juce::Colour text   = t ? t->textPrimary     : juce::Colour (0xffe8e8ee);
-        const juce::Colour grey   = t ? t->textDisabled    : juce::Colour (0xff6b7280);
-        const juce::Colour ring   = t ? t->outline         : text.withAlpha (0.45f);
-
-        const bool on = getToggleState() || isButtonDown;
-
-        // Fill: accent lamp when enabled, the theme's inactive grey when
-        // bypassed (visible on every theme — dark: mid grey, light: warm grey).
-        juce::Colour fill = on ? accent : grey;
-        if (! isEnabled())
-            fill = fill.withAlpha (0.25f);
-
-        // Border ring: the panel outline colour, brightened on hover so the
-        // dot reads as tappable (the only hover affordance; no behaviour
-        // change — the click wiring is the card's onClick).
-        juce::Colour border = ring;
-        if (isMouseOverButton)
-            border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
-        if (! isEnabled())
-            border = ring.withAlpha (0.30f);
-
-        // ---- Dot pinning: the drawn circle is a compact ~12pt lamp centred on
-        // the pinned lampCentre_ (default: the bounds centre), so the button's
-        // HIT area can be the full 44x44 card-corner band (HIG #1 — see
-        // FxSlotCard::resized()) while the lamp reads as a small status
-        // indicator next to the title, not a button face. (Clamped into the
-        // bounds for degenerate button sizes, e.g. unplaced cards in tests.) ----
-        const auto b = getLocalBounds().toFloat();
-        const float dot = juce::jlimit (5.0f, 12.0f,
-                                        juce::jmin (b.getWidth(), b.getHeight()) * 0.45f);
-        const auto centre = lampCentre_.x >= 0.0f
-            ? juce::Point<float> (juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getWidth() - dot * 0.5f), lampCentre_.x),
-                                  juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getHeight() - dot * 0.5f), lampCentre_.y))
-            : b.getCentre();
-        const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
-
-        g.setColour (fill);
-        g.fillEllipse (r);
-        g.setColour (border);
-        g.drawEllipse (r, 1.5f);
-    }
-
-private:
-    juce::Point<float> lampCentre_ { -1.0f, -1.0f };   // <0 x => centre in bounds
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PowerToggle)
-};
+// PowerToggle — the Enable/Bypass button. THE SHARED ParvatiModuleLAMP
+// (2026-08-20 unification): the FX slot power toggle, the synth mod-matrix
+// bypass lamp and the FX mod-matrix lamp are the SAME widget — accentPrimary
+// fill when enabled (the former accentSecondary fill was the style mismatch
+// the user reported), textDisabled grey when bypassed, outline ring that
+// brightens on hover. Pure juce primitives; the dot scales with the band.
+// Its toggle STATE is driven from the fx{N}_enable APVTS Value by FxSlotCard;
+// clicking flips that Value (handled by the card's onClick), so this button
+// does NOT toggle its own state on click.
+class PowerToggle final : public ParvatiModuleLamp {};
 
 // A small themed chevron button ("<" / ">") that steps the FX slot's effect
 // TYPE selection prev/next — a shortcut alongside the algorithm ComboBox. Draws
@@ -341,12 +272,13 @@ constexpr float kBypassedAlpha = 0.5f;
 constexpr float kCorner        = 7.0f; // card panel corner radius (synth GroupComponent parity)
 
 // Header-left LAMP geometry (the enable indicator dot beside the "FX N"
-// title): a 12pt dot whose centre sits on the title band's optical middle
+// title): the SHARED ParvatiModuleLamp's dot for the header hit band
+// (44 x (kPad + kHeaderH) = 44x22) resolves to jmin(44,22)*0.68 ≈ 15pt
 // (kPad + kHeaderH/2 vertically) and kPad in from the left edge horizontally.
 // The toggle's hit band is the 44pt-wide HEADER band (44 x kPad+kHeaderH) —
 // see FxSlotCard::resized().
-constexpr float kLampDotW  = 12.0f;                              // lamp diameter
-constexpr float kLampCx    = static_cast<float> (kPad) + kLampDotW * 0.5f;   // 12
+constexpr float kLampDotW  = 15.0f;                              // lamp diameter (ParvatiModuleLamp @ 44x22 band)
+constexpr float kLampCx    = static_cast<float> (kPad) + kLampDotW * 0.5f;   // 13.5
 constexpr float kLampCy    = static_cast<float> (kPad) + static_cast<float> (kHeaderH) * 0.5f;   // title optical middle
 constexpr int   kLampTitleGap = 5;   // lamp -> title gap
 
@@ -797,7 +729,7 @@ void FxSlotCard::resized()
         // (kLampCx/kLampCy are relative to the card's top-left == the band's
         // top-left). powerToggle_ is declared as its juce::Button base in the
         // header (PowerToggle is file-local), so downcast to the concrete
-        // type we constructed.
+        // type we constructed (now the SHARED ParvatiModuleLamp subclass).
         if (auto* lamp = static_cast<PowerToggle*> (powerToggle_.get ()))
             lamp->setLampCentreOffset ({ kLampCx, kLampCy });
     }
@@ -889,7 +821,13 @@ void FxSlotCard::paint (juce::Graphics& g)
     const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme () : nullptr;
 
     const juce::Colour panel   = t ? t->containerFill   : juce::Colour (0xff202028);
-    const juce::Colour title   = t ? t->textSecondary   : juce::Colour (0xffb0b0bc);
+    // HEADER COLOUR PARITY (user feedback 2026-08-20): the synth page's
+    // module headers are GroupComponent titles painted by the L&F in
+    // textPrimary (GroupComponent::textColourId == theme.textPrimary after
+    // setTheme). The FX card title previously used textSecondary — the
+    // mismatch the user reported. Same token now; re-resolved per paint so a
+    // theme switch re-colours both paths together.
+    const juce::Colour title   = t ? t->textPrimary     : juce::Colour (0xffe8e8ee);
 
     const auto r = getLocalBounds ().toFloat ();
 
@@ -906,7 +844,7 @@ void FxSlotCard::paint (juce::Graphics& g)
     juce::Font font = lnf != nullptr ? lnf->appFont (14.0f, juce::Font::bold)
                                     : juce::Font (juce::FontOptions (14.0f, juce::Font::bold));
     const juce::String name = "FX" + juce::String (slot_ + 1);   // "FX1" (uppercase)
-    // kLampTitleGap right of the 12pt lamp sits the title text. (The old
+    // kLampTitleGap right of the 15pt lamp sits the title text. (The old
     // accent tick between the lamp and the title went away with the lamp
     // redesign — one indicator glyph per header is enough.)
     const int titleX = kPad + static_cast<int> (kLampDotW) + kLampTitleGap;
@@ -934,4 +872,19 @@ void FxSlotCard::applyThemeColors()
     }
 
     repaint();
+}
+
+juce::Colour FxSlotCard::headerTitleColourForTest() const
+{
+    // (getLookAndFeel() returns LookAndFeel& even on a const Component — JUCE
+    // semantics — so the cast targets the non-const type.)
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (const ParvatiTheme* t = lnf->getTheme())
+            return t->textPrimary;
+    return juce::Colour (0xffe8e8ee);   // paint()'s no-L&F fallback
+}
+
+ParvatiModuleLamp* FxSlotCard::powerLampForTest() const
+{
+    return static_cast<ParvatiModuleLamp*> (powerToggle_.get());
 }

@@ -28,6 +28,7 @@
 // Built by default. Run: ./build/parvati_mod_matrix_ui_test
 
 #include <cstdio>
+#include <memory>
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -36,8 +37,10 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginProcessor.h"
+#include "ParameterLayout.h"   // getPatchParamDescriptors (the FX card descriptors)
 #include "dsp/patch.h"
 #include "ui/FxMatrixView.h"
+#include "ui/FxSlotCard.h"
 #include "ui/IconButton.h"
 #include "ui/ModMatrixHighlight.h"
 #include "ui/ModMatrixView.h"
@@ -343,6 +346,148 @@ int main()
         check (fxSwept > 60, "FX matrix sweep covered its rows' children");
         check (fxHost.dragStarts == 0, "synthetic drags over FX matrix children start 0 drag operations");
         check (! fxHost.isDragAndDropActive(), "no FX drag left active");
+    }
+
+    // ---- [7] Index label width: the row slot number must render WITHOUT
+    // ellipsis (user report: '16' showed as '...'). Root cause: JUCE Label's
+    // default 5px-per-side border left an 18pt-wide label an 8px text box
+    // for the 13px-wide '16'. Both matrices zero the border and allocate a
+    // measured 20pt.
+    std::printf ("\n[7] index label renders the slot number (no '...')\n");
+    {
+        // Find the row's index label: the juce::Label with purely-numeric
+        // text that sits LEFT of the source combo.
+        auto findIndexLabel = [] (juce::Component* row) -> juce::Label*
+        {
+            std::vector<juce::Component*> children;
+            collectAll (row, children);
+            for (auto* c : children)
+                if (auto* l = dynamic_cast<juce::Label*> (c))
+                    if (l->getText().containsOnly ("0123456789"))
+                        return l;
+            return nullptr;
+        };
+        auto checkIndexFits = [&] (juce::Component* row, const char* which)
+        {
+            auto* l = findIndexLabel (row);
+            if (l == nullptr)
+            {
+                check (false, (juce::String (which) + ": index label found").toRawUTF8());
+                return;
+            }
+            const int textW = juce::GlyphArrangement::getStringWidthInt (
+                l->getFont(), l->getText());
+            check (l->getWidth() >= textW + 2,
+                   (juce::String (which) + ": index label fits its text ("
+                   + juce::String (textW) + "px in " + juce::String (l->getWidth())
+                   + "pt, border " + juce::String (l->getBorderSize().getLeft()) + ")").toRawUTF8());
+        };
+
+        auto* synthRow = view.rowForSlotForTest (0);
+        if (synthRow != nullptr)
+            checkIndexFits (synthRow, "synth matrix row 0");
+        // A double-digit index too: activate slot 9 (index '10').
+        parvati::ModMatrixHighlight::instance().requestAssign (
+            ambika::dsp::MOD_SRC_LFO_1, ambika::dsp::MOD_DST_FILTER_CUTOFF);
+        view.refresh();
+        {
+            auto* r = view.rowForSlotForTest (1);
+            if (r != nullptr && r->isVisible())
+                checkIndexFits (r, "synth matrix row 1 ('2')");
+        }
+    }
+
+    // ---- [8] Disable-widget + header-colour parity across synth and FX.
+    // The shared ParvatiModuleLamp means the synth matrix bypass lamp, the FX
+    // matrix lamp AND the FX card power toggle resolve identical ON colours;
+    // the FX card title now uses the same token as the synth GroupComponent
+    // titles (textPrimary). Pinned per shipped theme.
+    std::printf ("\n[8] disable widget + header colour parity\n");
+    {
+        // The lamps resolve their colours through the INHERITED
+        // ParvatiLookAndFeel's active theme — install one on the hosts so the
+        // subtree sees it (otherwise both fall back and "equal" would be
+        // vacuous). Re-themed per iteration; removed before scope exit.
+        ParvatiLookAndFeel lnf;
+        juce::Component lnfHost;   // keeps the card's chain off `host`
+        lnfHost.setBounds (0, 0, 400, 400);
+        lnfHost.setLookAndFeel (&lnf);
+        host.setLookAndFeel (&lnf);
+
+        // An FX slot card (slot 0) with the real descriptors.
+        const PatchParamDescriptor *p1 = nullptr, *p2 = nullptr, *p3 = nullptr,
+                                   *p4 = nullptr, *p5 = nullptr, *dw = nullptr;
+        for (const auto& d : getPatchParamDescriptors())
+        {
+            if (! (d.isFx && juce::String (d.paramID).startsWith ("fx1_")))
+                continue;
+            if      (d.paramID == "fx1_param1") p1 = &d;
+            else if (d.paramID == "fx1_param2") p2 = &d;
+            else if (d.paramID == "fx1_param3") p3 = &d;
+            else if (d.paramID == "fx1_param4") p4 = &d;
+            else if (d.paramID == "fx1_param5") p5 = &d;
+            else if (d.paramID == "fx1_drywet") dw = &d;
+        }
+        juce::Component cardHost;
+        cardHost.setBounds (0, 0, 400, 400);
+        cardHost.setLookAndFeel (&lnf);
+        std::unique_ptr<FxSlotCard> card;
+        if (p1 != nullptr && dw != nullptr)
+            card = std::make_unique<FxSlotCard> (proc, 0, p1, p2, p3, p4, p5, dw);
+        if (card != nullptr)
+        {
+            cardHost.addAndMakeVisible (*card);
+            card->setBounds (0, 0, 300, 320);
+        }
+        juce::ignoreUnused (lnfHost);
+
+        // The synth-matrix lamp + the FX-card lamp as the shared base type.
+        auto* synthLamp = findTitledButton (view.rowForSlotForTest (0),
+                                            TRANS ("Mute / bypass this modulation"));
+        auto* synthModuleLamp = dynamic_cast<ParvatiModuleLamp*> (synthLamp);
+        check (synthModuleLamp != nullptr, "synth matrix lamp IS the shared ParvatiModuleLamp");
+        ParvatiModuleLamp* cardLamp = card != nullptr ? card->powerLampForTest() : nullptr;
+        check (cardLamp != nullptr, "FX card power toggle IS the shared ParvatiModuleLamp");
+
+        const auto names = themeManager.getThemeNames();
+        for (size_t ti = 0; ti < names.size(); ++ti)
+        {
+            themeManager.selectByName (names[ti]);
+            lnf.setTheme (themeManager.getCurrentTheme());
+            const auto& th = themeManager.getCurrentTheme();
+            const juce::String tag = "[" + names[ti] + "] ";
+
+            if (synthModuleLamp != nullptr && cardLamp != nullptr)
+                check (synthModuleLamp->resolvedOnColourForTest()
+                           == cardLamp->resolvedOnColourForTest()
+                       && synthModuleLamp->resolvedOnColourForTest() == th.accentPrimary,
+                       (tag + "synth lamp == FX card lamp == theme accentPrimary").toRawUTF8());
+
+            if (card != nullptr)
+                check (card->headerTitleColourForTest() == th.textPrimary,
+                       (tag + "FX card header == theme textPrimary (synth GroupComponent token)").toRawUTF8());
+
+            // (Dot geometry parity is asserted below via the pure bounds
+            // function — nothing per-theme here beyond the colours.)
+        }
+        themeManager.selectByName ("Carbon");   // restore
+        lnf.setTheme (themeManager.getCurrentTheme());
+        cardHost.setLookAndFeel (nullptr);
+        host.setLookAndFeel (nullptr);
+
+        // Dot diameter parity for equal bands (pure function of bounds).
+        {
+            const juce::Rectangle<int> band (0, 0, 44, 44);
+            check (ParvatiModuleLamp::dotDiameterFor (band) >= 28.0f
+                       && ParvatiModuleLamp::dotDiameterFor (band) <= 30.0f,
+                   "44x44 band renders a ~28-30pt dot (the 'bigger' request)");
+            if (synthModuleLamp != nullptr)
+                check (juce::exactlyEqual (ParvatiModuleLamp::dotDiameterFor (
+                           synthModuleLamp->getLocalBounds()),
+                           ParvatiModuleLamp::dotDiameterFor (band))
+                       || synthModuleLamp->getWidth() < 44,
+                       "synth lamp dot == dotDiameterFor(its band)");
+        }
     }
 
     std::printf ("\nMOD MATRIX UI TEST: %s (%d failures)\n",

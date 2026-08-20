@@ -29,6 +29,48 @@
 constexpr int parvatiTabCategoryColourId = 0x2F000001;
 
 //==============================================================================
+// ModuleLamp — the ONE module enable/disable indicator widget (2026-08-20).
+// Shared by the synth mod matrix rows, the FX mod matrix rows, and the FX
+// slot cards' power toggles so all three render the IDENTICAL control: a
+// centred round lamp filled with the theme's accentPrimary while ON and the
+// theme's textDisabled grey while OFF/bypassed, an outline-colour ring that
+// brightens on hover, and an optional lamp-centre pin (the FX card header
+// aligns the dot to the title's optical middle while the HIT area stays the
+// full bounds — the 44pt HIG floor everywhere). The dot scales with the
+// band (jmin(w,h) * 0.68, capped 30pt): matrix rows' 44pt bands render a
+// ~28-30pt dot (the user-requested "a bit bigger"); tighter header bands
+// clamp proportionally. Unified deliberately on accentPrimary (the FX card
+// previously used accentSecondary — the style mismatch the user reported).
+class ParvatiModuleLamp : public juce::Button
+{
+public:
+    ParvatiModuleLamp() : juce::Button ({}) { setClickingTogglesState (false); }
+
+    // Pin the drawn LAMP to an explicit centre, as an offset from the
+    // button's TOP-LEFT (the hit area stays the FULL bounds). A negative x
+    // keeps the default: centred in the bounds.
+    void setLampCentreOffset (juce::Point<float> centreFromTopLeft)
+    {
+        lampCentre_ = centreFromTopLeft;
+    }
+
+    // Test hook: the ON colour this instance would paint with RIGHT NOW
+    // (resolved through the inherited L&F's active theme, with the shared
+    // fallback). Style-parity tests call this on lamps from BOTH the synth
+    // matrix and the FX card and assert equality per theme.
+    juce::Colour resolvedOnColourForTest() const;
+    // Test hook: the current drawn dot diameter for the given bounds.
+    static float dotDiameterFor (juce::Rectangle<int> bounds);
+
+    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override;
+
+private:
+    juce::Point<float> lampCentre_ { -1.0f, -1.0f };   // <0 x => centre in bounds
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiModuleLamp)
+};
+
+//==============================================================================
 class ParvatiLookAndFeel : public juce::LookAndFeel_V4
 {
 public:

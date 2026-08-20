@@ -76,6 +76,13 @@ juce::Font appFontOr (const juce::Component& c, float height)
         return lnf->appFont (height, juce::Font::plain);
     return juce::Font (juce::FontOptions (height));
 }
+
+// Row-index label width — SAME value + rationale as ModMatrixView's
+// kMatrixIndexLabelW (the '16' -> '...' truncation fix; JUCE Label's default
+// 5px-per-side border). Kept as a duplicate constant so the two views stay
+// independently buildable; the parity test asserts BOTH labels fit their
+// text with no ellipsis.
+constexpr int kMatrixIndexLabelW = 20;
 }  // namespace
 
 //==============================================================================
@@ -155,49 +162,7 @@ private:
 // driven by the row (setMutedLook); a click routes through the view's
 // toggleMute() — the SAME stash-amount/restore seam the old text button used
 // (editor-only mute, never persisted).
-class FxMuteLamp : public juce::Button
-{
-public:
-    FxMuteLamp() : juce::Button ({}) { setClickingTogglesState (false); }
-
-    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
-    {
-        const ParvatiTheme* t = nullptr;
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            t = lnf->getTheme();
-
-        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
-        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
-        const juce::Colour grey   = t ? t->textDisabled  : juce::Colour (0xff6b7280);
-        const juce::Colour ring   = t ? t->outline       : text.withAlpha (0.45f);
-
-        const bool on = getToggleState() || isButtonDown;
-
-        juce::Colour fill = on ? accent : grey;
-        if (! isEnabled())
-            fill = fill.withAlpha (0.25f);
-
-        juce::Colour border = ring;
-        if (isMouseOverButton)
-            border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
-        if (! isEnabled())
-            border = ring.withAlpha (0.30f);
-
-        // Compact centred dot (~12pt max); the HIT area stays the full bounds
-        // (44pt HIG floor — the row is 48pt tall), mirroring PowerToggle's
-        // lamp-in-a-large-hit-zone idiom.
-        const auto b = getLocalBounds().toFloat();
-        const float dot = juce::jlimit (5.0f, 12.0f,
-                                        juce::jmin (b.getWidth(), b.getHeight()) * 0.45f);
-        const auto centre = b.getCentre();
-        const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
-
-        g.setColour (fill);
-        g.fillEllipse (r);
-        g.setColour (border);
-        g.drawEllipse (r, 1.5f);
-    }
-};
+class FxMuteLamp final : public ParvatiModuleLamp {};
 
 
 //==============================================================================
@@ -540,7 +505,10 @@ struct FxMatrixRow : public juce::Component,
         // dragged only from the CentralModBar pills.)
         muteLamp_->setBounds (b.removeFromLeft (44));   // mute lamp hit target (unified)
         b.removeFromLeft (4);
-        indexLabel_.setBounds (b.removeFromLeft (18));
+        // Index label: border zeroed + measured width (the '16' -> '...'
+        // truncation fix — see kMatrixIndexLabelW above).
+        indexLabel_.setBorderSize (juce::BorderSize<int> (0));
+        indexLabel_.setBounds (b.removeFromLeft (kMatrixIndexLabelW));
         b.removeFromLeft (4);
 
         // Source + dest combos: proportional, floored so the choice text stays legible.

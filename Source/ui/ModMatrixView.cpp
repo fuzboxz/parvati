@@ -69,6 +69,14 @@ juce::Font appFontOr (const juce::Component& c, float height)
         return lnf->appFont (height, juce::Font::plain);
     return juce::Font (juce::FontOptions (height));
 }
+
+// Row-index label width (user feedback 2026-08-20: the slot number '16'
+// truncated to '...' — JUCE Label's default 5px-per-side border left an 18pt
+// label an 8px text box). Measured from the 12pt app font's WIDEST index
+// text ('16') + 6px slack, floored at the old 18. A compile-time constant
+// (not per-row measurement) so every row is identical and the tests can pin
+// it: 13px + 6 = 19pt for the default sans-serif at 12pt.
+constexpr int kMatrixIndexLabelW = 20;
 }  // namespace
 
 //==============================================================================
@@ -155,54 +163,7 @@ private:
 // (setMutedLook); a click routes through the view's toggleMute() — the SAME
 // stash-amount/restore seam the old text "M" button used (editor-only mute,
 // never persisted).
-class MuteLamp : public juce::Button
-{
-public:
-    MuteLamp() : juce::Button ({}) { setClickingTogglesState (false); }
-
-    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
-    {
-        const ParvatiTheme* t = nullptr;
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            t = lnf->getTheme();
-
-        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
-        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
-        const juce::Colour grey   = t ? t->textDisabled  : juce::Colour (0xff6b7280);
-        const juce::Colour ring   = t ? t->outline       : text.withAlpha (0.45f);
-
-        const bool on = getToggleState() || isButtonDown;
-
-        // Fill: accent lamp while the routing is active, the theme's inactive
-        // grey while muted (visible on every theme — dark: mid grey, light:
-        // warm grey).
-        juce::Colour fill = on ? accent : grey;
-        if (! isEnabled())
-            fill = fill.withAlpha (0.25f);
-
-        // Border ring: the panel outline colour, brightened on hover so the
-        // dot reads as tappable (the only hover affordance).
-        juce::Colour border = ring;
-        if (isMouseOverButton)
-            border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
-        if (! isEnabled())
-            border = ring.withAlpha (0.30f);
-
-        // Compact centred dot (~12pt max); the HIT area stays the full bounds
-        // (44pt HIG floor — the row is 48pt tall), mirroring PowerToggle's
-        // lamp-in-a-large-hit-zone idiom.
-        const auto b = getLocalBounds().toFloat();
-        const float dot = juce::jlimit (5.0f, 12.0f,
-                                        juce::jmin (b.getWidth(), b.getHeight()) * 0.45f);
-        const auto centre = b.getCentre();
-        const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
-
-        g.setColour (fill);
-        g.fillEllipse (r);
-        g.setColour (border);
-        g.drawEllipse (r, 1.5f);
-    }
-};
+class MuteLamp final : public ParvatiModuleLamp {};
 
 //==============================================================================
 // One matrix row. Owns its source/dest combos + bipolar depth slider, each bound
@@ -474,7 +435,13 @@ struct ModMatrixRow : public juce::Component,
         // only from the CentralModBar pills.
         muteLamp_->setBounds (b.removeFromLeft (44));   // mute lamp hit target (unified)
         b.removeFromLeft (4);
-        indexLabel_.setBounds (b.removeFromLeft (18));
+        // INDEX LABEL (user feedback 2026-08-20: '16' showed as "..."): JUCE
+        // Label's DEFAULT border is 5px per side, so an 18pt-wide label leaves
+        // an 8px text box for "16" (13px at the 12pt app font) -> ellipsis.
+        // Border zeroed (the text is centred anyway) and the width measured
+        // from the font: text + 6px slack, floored at 18.
+        indexLabel_.setBorderSize (juce::BorderSize<int> (0));
+        indexLabel_.setBounds (b.removeFromLeft (kMatrixIndexLabelW));
         b.removeFromLeft (4);
 
         // Source + dest combos share the REST with the depth slider, capped so

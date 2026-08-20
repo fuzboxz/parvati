@@ -61,6 +61,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachment
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ParvatiLookAndFeel.h"   // ParvatiModuleLamp (the shared disable widget)
+
 #include <memory>
 
 class ParvatiAudioProcessor;
@@ -127,6 +129,19 @@ public:
         same-item no-op guard (a re-pick of the current type must NOT re-seed
         and clobber the user's knob values). */
     void simulateUserTypePickForTest (int typeIndex);
+
+    /** Test-only (header parity, 2026-08-20): the colour the painted "FX N"
+        title resolves to RIGHT NOW (through the inherited ParvatiLookAndFeel's
+        active theme, with paint()'s no-L&F fallback). The parity test asserts
+        this equals the synth side's GroupComponent::textColourId (both are
+        theme.textPrimary) for every shipped theme. */
+    juce::Colour headerTitleColourForTest() const;
+
+    /** Test-only (disable-widget parity): the card's power toggle as the
+        shared ParvatiModuleLamp base, so tests can resolve its ON colour and
+        dot diameter against the synth mod-matrix lamps (identical by
+        construction — same widget class). Nullptr before construction. */
+    ParvatiModuleLamp* powerLampForTest() const;
 
 private:
     // APVTS::Listener — fires on ANY fx{N}_type / fx{N}_enabled change (combo

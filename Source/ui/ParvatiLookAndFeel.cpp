@@ -1012,3 +1012,72 @@ void ParvatiLookAndFeel::drawTextUncurtained (juce::Graphics& g, const juce::Str
     g.setColour (colour);
     ga.draw (g);
 }
+
+//==============================================================================
+// ParvatiModuleLamp — the unified module enable/disable indicator (see the
+// header comment). ONE painting path for the synth mod matrix rows, the FX
+// mod matrix rows and the FX slot cards' power toggles: accentPrimary fill
+// when ON, textDisabled grey when OFF, outline ring brightening on hover.
+void ParvatiModuleLamp::paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown)
+{
+    const ParvatiTheme* t = nullptr;
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        t = lnf->getTheme();
+
+    const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
+    const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
+    const juce::Colour grey   = t ? t->textDisabled  : juce::Colour (0xff6b7280);
+    const juce::Colour ring   = t ? t->outline       : text.withAlpha (0.45f);
+
+    const bool on = getToggleState() || isButtonDown;
+
+    // Fill: accent lamp while the module/routing is active, the theme's
+    // inactive grey while bypassed/muted (visible on every theme).
+    juce::Colour fill = on ? accent : grey;
+    if (! isEnabled())
+        fill = fill.withAlpha (0.25f);
+
+    // Border ring: the panel outline colour, brightened on hover so the dot
+    // reads as tappable (the only hover affordance).
+    juce::Colour border = ring;
+    if (isMouseOverButton)
+        border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
+    if (! isEnabled())
+        border = ring.withAlpha (0.30f);
+
+    // ---- Dot: scales with the band (44pt matrix bands render a ~28-30pt
+    // dot; the FX card's tighter header band clamps proportionally). The HIT
+    // area stays the full bounds. An optional pinned centre keeps the card
+    // header's lamp aligned with the painted title's optical middle. ----
+    const auto b = getLocalBounds().toFloat();
+    const float dot = dotDiameterFor (getLocalBounds());
+    const auto centre = lampCentre_.x >= 0.0f
+        ? juce::Point<float> (juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getWidth() - dot * 0.5f), lampCentre_.x),
+                              juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getHeight() - dot * 0.5f), lampCentre_.y))
+        : b.getCentre();
+    const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
+
+    g.setColour (fill);
+    g.fillEllipse (r);
+    g.setColour (border);
+    g.drawEllipse (r, 1.5f);
+}
+
+float ParvatiModuleLamp::dotDiameterFor (juce::Rectangle<int> bounds)
+{
+    // 0.68 of the band's short side, clamped 8..30pt: the matrix rows' 44pt
+    // bands give ~28-30pt dots ("a bit bigger", user feedback), and tighter
+    // bands (the FX card header) shrink proportionally without ever
+    // vanishing. Pure function of the bounds — identical bands render
+    // identical dots everywhere (the style-parity test pins this).
+    const float s = static_cast<float> (juce::jmin (bounds.getWidth(), bounds.getHeight()));
+    return juce::jlimit (8.0f, 30.0f, s * 0.68f);
+}
+
+juce::Colour ParvatiModuleLamp::resolvedOnColourForTest() const
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (const ParvatiTheme* t = lnf->getTheme())
+            return t->accentPrimary;
+    return parvati::parvatiFallbackAccent;
+}

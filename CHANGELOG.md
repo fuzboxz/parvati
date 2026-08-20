@@ -5,6 +5,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **Mod-matrix index label, unified disable widget, header colour parity
+  (2026-08-20).** (1) The row slot number showed "..." instead of "16":
+  JUCE Label's default 5px-per-side border left the 18pt-wide index label an
+  8px text box for the 13px text. Both matrices zero the border and allocate
+  a measured 20pt. (2) ONE shared disable widget — `ParvatiModuleLamp`
+  (ParvatiLookAndFeel.h) — now renders the synth mod-matrix bypass lamp, the
+  FX mod-matrix lamp AND the FX slot power toggle: the FX toggle previously
+  filled with accentSecondary (the style mismatch); all three now use
+  accentPrimary on / textDisabled off, with the dot scaled by the band
+  (44pt bands render a ~28-30pt dot — the "a bit bigger" request; the FX
+  card header band ~15pt). (3) The FX card's "FX N" title now uses the SAME
+  token as the synth GroupComponent titles (textPrimary; was textSecondary —
+  the colour mismatch), re-resolved per paint. Tests: mod_matrix_ui_test [7]
+  (index fits, no ellipsis) + [8] (shared-widget type check, per-theme lamp
+  colour equality across synth/FX, FX header == theme textPrimary, dot
+  diameter 28-30pt @ 44pt band).
 - **Patch-table header alignment + tab regrouping (2026-08-20).** The
   column captions were painted from the header's full band while the row
   cells laid out from a 4px-inset band — every caption sat 4px left of its
