@@ -1,0 +1,31 @@
+feat(ui): full-width patch table + Voice/MIDI tabs, synth padding parity, FX-matrix icons, concise tooltips
+
+Batch-3 UI polish (three lanes, finished after the usage-limit interruption):
+
+- Patch table: Voice/MIDI segmented tabs (inline in the summary row,
+  GroupPager idiom) splitting the 13 columns into focused views; the shared
+  column geometry (partColumnRects) now distributes the FULL band width via
+  per-column min/flex/max specs across the ACTIVE tab's columns — the table
+  previously used fixed 942pt arithmetic and left ~40% of the page empty on
+  wide editors. Hidden-tab cells stay constructed: all accessors, write
+  seams and host automation work on both tabs. Cumulative-rounding clamp
+  keeps the row inside its band at every width.
+- Synth page: FX-page padding parity — uniform 8pt kRowGap on all sides and
+  between the OSC/MIX/FILTER columns (constant hoisted on both workspaces,
+  pinned by the new parvati_workspace_padding_test); pages reflow against
+  the full row height so the inset is breathing room, not an override.
+- FX mod matrix: rows now use the synth matrix's mute-lamp + delete-X icon
+  buttons (44pt targets, accessible titles) instead of text M/Clear.
+- Tooltips: long ParamHelp entries trimmed to single sentences (part_* set
+  rewritten concisely; >200-char entries cut to first sentence; ranges and
+  units preserved). check_translations violations unchanged (3 pre-existing).
+- TabbedButtonBar change messages are async (triggerAsyncUpdate): the test
+  hook applies the tab synchronously so timing cannot flake.
+
+Tests: editor_test [22] caption count 13->12 (Voice tab), new [23] pins tab
+switching, masks, hidden-cell seams, header relabels; workspace_padding test
+(X/lamp presence, hit targets, no text buttons, padding parity); layout
+overlap green at all widths after the clamps. Battery: multigui, ui_mirror,
+paramhelp_parity, translations, layout_minwidth, layout_overlap,
+ipad_hig_sizing, patch_arrangement, multitimbral, partstate, mod_dest_map,
+mod_matrix_ui, lifecycle, keyboard_view — all PASS.

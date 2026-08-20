@@ -49,6 +49,14 @@ class SynthWorkspace : public juce::Component
 public:
     explicit SynthWorkspace (ThemeManager& themeManager);
 
+    // FX-page top-row padding parity (2026-08-20): the uniform gap taken off
+    // ALL FOUR sides of the top row AND placed between its columns (the exact
+    // FxWorkspace::kRowGap treatment), so the OSC/MIX/FILTER panels sit in the
+    // same generous whitespace the FX cards do instead of butting the row
+    // edges and each other. Exposed for the workspace-padding parity test.
+    static constexpr int kRowGap = 8;
+    int rowPaddingForTest() const noexcept { return kRowGap; }
+
     // Main-row columns in signal-chain order (OSC | MIX | FILTER at 40/20/40).
     // All three are direct editor-owned pages (reparented, never regenerated).
     void setMainLeft    (ParamPage* page);          // Mixer (direct)

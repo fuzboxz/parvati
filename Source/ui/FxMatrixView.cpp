@@ -6,6 +6,7 @@
 #include "ModMatrixHighlight.h" // onAssignRequest bus (drag-and-drop -> fxmod slot)
 
 #include "PluginProcessor.h"   // ParvatiAudioProcessor (complete type)
+#include "IconButton.h"           // IconButton (row delete X)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // appFont() via the inherited editor L&F
@@ -143,6 +144,61 @@ private:
     ThemeManager& themeManager_;
 };
 
+//==============================================================================
+// FxMuteLamp — the per-row mute/bypass toggle (2026-08-20): the SAME widget
+// style as the synth ModMatrixView's MuteLamp and the FX slot module-disable
+// toggle (FxSlotCard's PowerToggle — a compact bordered indicator dot with a
+// full-bounds hit area), replacing the former text "M" button. Dot =
+// accentPrimary while the routing is ACTIVE, the theme's inactive grey
+// (textDisabled) while MUTED (accent = "on" parity with the FX power lamps,
+// the same inverted-state convention ModMatrixView uses). The toggle STATE is
+// driven by the row (setMutedLook); a click routes through the view's
+// toggleMute() — the SAME stash-amount/restore seam the old text button used
+// (editor-only mute, never persisted).
+class FxMuteLamp : public juce::Button
+{
+public:
+    FxMuteLamp() : juce::Button ({}) { setClickingTogglesState (false); }
+
+    void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
+    {
+        const ParvatiTheme* t = nullptr;
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+            t = lnf->getTheme();
+
+        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
+        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
+        const juce::Colour grey   = t ? t->textDisabled  : juce::Colour (0xff6b7280);
+        const juce::Colour ring   = t ? t->outline       : text.withAlpha (0.45f);
+
+        const bool on = getToggleState() || isButtonDown;
+
+        juce::Colour fill = on ? accent : grey;
+        if (! isEnabled())
+            fill = fill.withAlpha (0.25f);
+
+        juce::Colour border = ring;
+        if (isMouseOverButton)
+            border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
+        if (! isEnabled())
+            border = ring.withAlpha (0.30f);
+
+        // Compact centred dot (~12pt max); the HIT area stays the full bounds
+        // (44pt HIG floor — the row is 48pt tall), mirroring PowerToggle's
+        // lamp-in-a-large-hit-zone idiom.
+        const auto b = getLocalBounds().toFloat();
+        const float dot = juce::jlimit (5.0f, 12.0f,
+                                        juce::jmin (b.getWidth(), b.getHeight()) * 0.45f);
+        const auto centre = b.getCentre();
+        const auto r = juce::Rectangle<float> (centre.x - dot * 0.5f, centre.y - dot * 0.5f, dot, dot);
+
+        g.setColour (fill);
+        g.fillEllipse (r);
+        g.setColour (border);
+        g.drawEllipse (r, 1.5f);
+    }
+};
+
 
 //==============================================================================
 // One FX matrix row. Owns its source/dest combos + bipolar depth slider, each
@@ -187,16 +243,25 @@ struct FxMatrixRow : public juce::Component,
         valueLabel_.setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (valueLabel_);
 
-        muteButton_.setButtonText (TRANS ("M"));
-        muteButton_.setClickingTogglesState (true);
-        muteButton_.setTooltip (TRANS ("Mute / bypass this modulation"));
-        muteButton_.onClick = [this] { owner_.toggleMute (slot_); };
-        addAndMakeVisible (muteButton_);
+        // Mute/bypass LAMP (module-disable widget parity with the synth
+        // matrix; see FxMuteLamp) — replaces the former text "M" button.
+        // Same action as before: owner_.toggleMute(slot_).
+        muteLamp_ = std::make_unique<FxMuteLamp>();
+        muteLamp_->setTitle (TRANS ("Mute / bypass this modulation"));
+        muteLamp_->setTooltip (TRANS ("Mute / bypass this modulation"));
+        muteLamp_->onClick = [this] { owner_.toggleMute (slot_); };
+        addAndMakeVisible (*muteLamp_);
 
-        clearButton_.setButtonText (TRANS ("Clear"));
-        clearButton_.setTooltip (TRANS ("Clear this modulation (free the slot)"));
-        clearButton_.onClick = [this] { owner_.clearSlot (slot_); };
-        addAndMakeVisible (clearButton_);
+        // Delete X (IconButton, path-drawn glyph) — the RIGHTMOST control of
+        // the row, replacing the old "Clear" text button. 44pt HIG hit target
+        // with a visually compact glyph (setGlyphInset — the ModMatrixView
+        // delete-X idiom). Same action as Clear: owner_.clearSlot(slot_).
+        clearButton_ = std::make_unique<IconButton> (IconButton::Icon::Close);
+        clearButton_->setTitle (TRANS ("Delete modulation"));
+        clearButton_->setTooltip (TRANS ("Delete modulation"));
+        clearButton_->setGlyphInset (11.0f);
+        clearButton_->onClick = [this] { owner_.clearSlot (slot_); };
+        addAndMakeVisible (*clearButton_);
 
         // Bind to the APVTS AFTER the widgets are populated. Only the SOURCE combo
         // uses a ComboBoxAttachment; the DEST combo is manually index-bound (see
@@ -222,8 +287,8 @@ struct FxMatrixRow : public juce::Component,
         destCombo_.addMouseListener (this, false);
         depthSlider_.addMouseListener (this, false);
         valueLabel_.addMouseListener (this, false);
-        muteButton_.addMouseListener (this, false);
-        clearButton_.addMouseListener (this, false);
+        muteLamp_->addMouseListener (this, false);
+        clearButton_->addMouseListener (this, false);
 
         // Accessibility-only: name the row after its slot ("FX Mod N", suffix-
         // key i18n idiom — "FX" is a proper noun, "Mod " is translatable).
@@ -240,8 +305,8 @@ struct FxMatrixRow : public juce::Component,
         destCombo_.removeMouseListener (this);
         depthSlider_.removeMouseListener (this);
         valueLabel_.removeMouseListener (this);
-        muteButton_.removeMouseListener (this);
-        clearButton_.removeMouseListener (this);
+        muteLamp_->removeMouseListener (this);
+        clearButton_->removeMouseListener (this);
         // Drop the custom L&F before the slider is destroyed (the L&F is owned by
         // the view and outlives this row, but unsetting keeps the contract clean).
         depthSlider_.setLookAndFeel (nullptr);
@@ -377,7 +442,10 @@ struct FxMatrixRow : public juce::Component,
         sourceCombo_.setEnabled (! muted);
         destCombo_.setEnabled (! muted);
         depthSlider_.setEnabled (! muted);
-        muteButton_.setToggleState (muted, juce::dontSendNotification);
+        // Lamp state is INVERTED vs the old text button's toggle (accent lamp =
+        // routing ACTIVE, grey = muted) — the ModMatrixView convention.
+        muteLamp_->setToggleState (! muted, juce::dontSendNotification);
+        muteLamp_->setEnabled (true);   // stays clickable to UN-mute
         const auto& t = owner_.themeManager().getCurrentTheme();
         valueLabel_.setColour (juce::Label::textColourId, muted ? t.textSecondary : t.textPrimary);
         refreshValueDisplay();
@@ -409,9 +477,7 @@ struct FxMatrixRow : public juce::Component,
         depthSlider_.getProperties().set ("parvatiRowFill",
             (int) rowCategoryColour (t, owner_.sourceNameForSlot (slot_)).getARGB());
 
-        muteButton_.setColour (juce::TextButton::buttonOnColourId, t.accentPrimary);
-        muteButton_.setColour (juce::TextButton::textColourOnId, t.backgroundBase);
-        repaint();
+        repaint();   // the lamp self-themes per paint (no colour pushes needed)
     }
 
     void paint (juce::Graphics& g) override
@@ -460,10 +526,22 @@ struct FxMatrixRow : public juce::Component,
     {
         auto b = getLocalBounds().reduced (4, 2);
 
+        // F-ios-touch (the ModMatrixView order): the FIXED 44pt-floor targets
+        // are reserved FIRST so a narrow row squeezes the proportional COMBOS
+        // (their choice text scrolls), never the buttons. Delete X is the
+        // RIGHTMOST control; the value readout sits left of it.
+        clearButton_->setBounds (b.removeFromRight (44));   // delete X hit target (unified)
+        b.removeFromRight (8);
+        valueLabel_.setBounds (b.removeFromRight (46));
+        b.removeFromRight (8);
+
+        // LEFT cluster: mute/bypass lamp, then the row index. (The former
+        // drag-grip slot is gone — rows are NOT drag sources; modulators are
+        // dragged only from the CentralModBar pills.)
+        muteLamp_->setBounds (b.removeFromLeft (44));   // mute lamp hit target (unified)
+        b.removeFromLeft (4);
         indexLabel_.setBounds (b.removeFromLeft (18));
-        b.removeFromLeft (12);   // (the former drag-grip slot — its width now flows
-                                 // into the proportional combo widths below, mirroring
-                                 // ModMatrixView: rows are NOT drag sources; pills are)
+        b.removeFromLeft (4);
 
         // Source + dest combos: proportional, floored so the choice text stays legible.
         const int comboW = juce::jmax (70, b.getWidth() / 5);
@@ -471,14 +549,6 @@ struct FxMatrixRow : public juce::Component,
         b.removeFromLeft (14);   // arrow gap
         destCombo_.setBounds (b.removeFromLeft (juce::jmax (70, b.getWidth() / 4)));
         b.removeFromLeft (8);
-
-        // Right-aligned controls: Mute, Clear, value, then slider fills the rest.
-        muteButton_.setBounds (b.removeFromRight (44));   // mute touch target (unified)
-        b.removeFromRight (8);
-        clearButton_.setBounds (b.removeFromRight (juce::jmax (44, b.getWidth() / 8)));
-        b.removeFromRight (8);
-        valueLabel_.setBounds (b.removeFromRight (46));
-        b.removeFromRight (8);
 
         // iOS HIG: the depth slider fills the remaining row area, so on the 48pt
         // row it is ~44pt tall -> a large invisible hit zone while the visual
@@ -494,8 +564,8 @@ struct FxMatrixRow : public juce::Component,
     juce::ComboBox destCombo_;
     juce::Slider   depthSlider_;
     juce::Label    valueLabel_;
-    juce::TextButton muteButton_;
-    juce::TextButton clearButton_;
+    std::unique_ptr<FxMuteLamp> muteLamp_;          // mute/bypass lamp (was text "M")
+    std::unique_ptr<IconButton> clearButton_;       // delete X (was text "Clear")
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> srcAttach_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   depthAttach_;
@@ -585,6 +655,13 @@ FxMatrixView::~FxMatrixView()
 }
 
 //==============================================================================
+juce::Component* FxMatrixView::rowForSlotForTest (int slot)
+{
+    if (slot < 0 || slot >= kNumFxMatrixSlots)
+        return nullptr;
+    return rows_[(size_t) slot].get();
+}
+
 juce::String FxMatrixView::slotParam (int slot, const char* suffix)
 {
     return "fxmod" + juce::String (slot + 1) + suffix;

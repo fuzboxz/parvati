@@ -85,10 +85,16 @@ public:
     // part table too.
     void setTableTooltipsEnabled (bool enabled);
 
-    // Test hooks: the column-header caption list (column order), and whether
-    // every interactive cell of every row exposes a non-empty tooltip.
+    // Test hooks: the column-header caption list (ACTIVE tab's columns, in
+    // column order), whether every interactive cell of every row exposes a
+    // non-empty tooltip, the active table tab (0 = Voice, 1 = MIDI), and the
+    // active column mask (the rows' visible set).
     juce::StringArray headerLabelsForTest() const;
     bool tableTooltipsCompleteForTest();
+    int activeTableTabForTest() const;
+    const bool* tableVisibleMaskForTest() const;
+    // Switch tabs as if the user clicked the segmented toggle.
+    void chooseTableTabForTest (int tabIndex);
 
     // The six rows' DISPLAYED name labels (placeholder applied), in part
     // order — the mirror test's name-label source (the former layout-derived

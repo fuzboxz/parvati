@@ -51,6 +51,14 @@ class FxWorkspace : public juce::Component
 public:
     explicit FxWorkspace (ThemeManager& themeManager);
 
+    // The SPACIOUS top-row gap: taken off ALL FOUR sides of the top row AND
+    // placed between its four columns (routing + 3 FX cards), so the
+    // borderless card panels sit in generous whitespace. SynthWorkspace
+    // mirrors this constant for synth-page header-padding parity (2026-08-20;
+    // pinned equal by tests/workspace_padding_test.cpp).
+    static constexpr int kRowGap = 8;
+    int rowPaddingForTest() const noexcept { return kRowGap; }
+
     // TOP-row FX-slot cards: one self-contained FxSlotCard per slot (0..2),
     // reparented directly (never regenerated). setFxSlotCard(slot, card).
     void setFxSlotCard (int slot, FxSlotCard* card);

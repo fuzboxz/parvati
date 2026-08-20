@@ -21,9 +21,9 @@
 //==============================================================================
 // SHARED COLUMN GEOMETRY — the single source of truth for the part-table
 // columns. Both the header strip and every PartRow consume partColumnRects(),
-// so captions and cells can never drift apart. The arithmetic is EXACTLY the
-// pre-header layout (measured 2026-08-20; see the width comment in
-// PartRow::resized below).
+// so captions and cells can never drift apart, and BOTH distribute the FULL
+// band width across the visible columns (the fixed 942pt arithmetic pre-
+// 2026-08-20 left the panel's right ~40% empty on wide editors).
 namespace
 {
 struct PartTableColumns
@@ -36,24 +36,149 @@ struct PartTableColumns
     };
 };
 
-// Column rects (x/width) for a row/content band @p b (already inset).
+// Which columns each table tab shows. Voice = everything except the MIDI
+// channel; MIDI = the routing subset (Part, Ch, key zone).
+constexpr bool kVoiceTabMask[PartTableColumns::kCount] = {
+    true,  true,  false, true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true };
+constexpr bool kMidiTabMask[PartTableColumns::kCount] = {
+    true,  false, true,  true,  true,
+    false, false, false, false, false, false, false, false };
+
+// Per-column layout: minimum width, flex weight (share of the slack), and a
+// maximum width for the KNOB columns (a round dial gains nothing beyond ~64pt
+// — its slack flows to the text columns instead). Minimums are the measured
+// 1024x500-floor budget (Voice tab: 728 + 11 gaps = 772 <= 944).
+struct PartColumnSpec { int minW; int weight; int maxW; };
+constexpr PartColumnSpec kColumnSpecs[PartTableColumns::kCount] = {
+    /* kName   */ { 120, 3, 1 << 30 },
+    /* kVoices */ {  56, 2, 1 << 30 },
+    /* kCh     */ {  56, 3, 1 << 30 },
+    /* kZoneLo */ {  44, 1,        64 },
+    /* kZoneHi */ {  44, 1,        64 },
+    /* kOct    */ {  48, 1, 1 << 30 },
+    /* kPorta  */ {  44, 1,        64 },
+    /* kLgo    */ {  48, 1, 1 << 30 },
+    /* kVol    */ {  44, 1,        64 },
+    /* kFine   */ {  44, 1,        64 },
+    /* kSpr    */ {  44, 1,        64 },
+    /* kTune   */ {  96, 2, 1 << 30 },
+    /* kPoly   */ {  96, 2, 1 << 30 }
+};
+constexpr int kPartColGap = 4;   // between consecutive VISIBLE columns
+
+// Column rects (x/width) for a row/content band @p b (already inset), laying
+// out ONLY the columns whose mask entry is true (hidden columns get an empty
+// rect). The band's full width is distributed: every visible column starts at
+// its minimum, then the slack (band - minimums - gaps) is split across the
+// flex weights, respecting each column's max (knob caps push their share back
+// into the pool). A band narrower than the minimums scales everything down
+// proportionally (cannot happen at the 1024 floor; defensive).
 std::array<juce::Rectangle<int>, PartTableColumns::kCount> partColumnRects (
-    juce::Rectangle<int> b)
+    juce::Rectangle<int> b, const bool* visibleMask)
 {
     std::array<juce::Rectangle<int>, PartTableColumns::kCount> r {};
-    r[PartTableColumns::kName]   = b.removeFromLeft (156); b.removeFromLeft (6);
-    r[PartTableColumns::kVoices] = b.removeFromLeft (76);
-    r[PartTableColumns::kCh]     = b.removeFromLeft (68);  b.removeFromLeft (4);
-    r[PartTableColumns::kZoneLo] = b.removeFromLeft (48);
-    r[PartTableColumns::kZoneHi] = b.removeFromLeft (48); b.removeFromLeft (8);
-    r[PartTableColumns::kOct]    = b.removeFromLeft (48); b.removeFromLeft (4);
-    r[PartTableColumns::kPorta]  = b.removeFromLeft (48); b.removeFromLeft (4);
-    r[PartTableColumns::kLgo]    = b.removeFromLeft (48); b.removeFromLeft (4);
-    r[PartTableColumns::kVol]    = b.removeFromLeft (36); b.removeFromLeft (2);
-    r[PartTableColumns::kFine]   = b.removeFromLeft (36); b.removeFromLeft (2);
-    r[PartTableColumns::kSpr]    = b.removeFromLeft (36); b.removeFromLeft (4);
-    r[PartTableColumns::kTune]   = b.removeFromLeft (110); b.removeFromLeft (4);
-    r[PartTableColumns::kPoly]   = b.removeFromLeft (juce::jmin (140, b.getWidth()));
+
+    int nVisible = 0, minTotal = 0;
+    for (int i = 0; i < PartTableColumns::kCount; ++i)
+        if (visibleMask[i])
+        {
+            ++nVisible;
+            minTotal += kColumnSpecs[i].minW;
+        }
+    const int gaps  = juce::jmax (0, nVisible - 1) * kPartColGap;
+    const int avail = juce::jmax (0, b.getWidth() - gaps);
+    int slack = juce::jmax (0, avail - minTotal);
+
+    // Iterative capped weighted split: assign each unresolved column its
+    // weighted share of the slack; a column whose share would exceed its max
+    // is FIXED at the max, its min->max excess is consumed from the slack,
+    // and the remaining columns re-split what is left. Converges in a few
+    // passes (each pass fixes at least one column or assigns everyone).
+    int widths[PartTableColumns::kCount] {};
+    bool resolved[PartTableColumns::kCount] {};
+    for (;;)
+    {
+        int remWeight = 0;
+        for (int i = 0; i < PartTableColumns::kCount; ++i)
+            if (visibleMask[i] && ! resolved[i])
+                remWeight += kColumnSpecs[i].weight;
+        if (remWeight <= 0 || slack <= 0)
+            break;
+
+        bool anyFixed = false;
+        for (int i = 0; i < PartTableColumns::kCount; ++i)
+            if (visibleMask[i] && ! resolved[i])
+            {
+                const int share  = slack * kColumnSpecs[i].weight / remWeight;
+                const int wanted = kColumnSpecs[i].minW + share;
+                if (wanted >= kColumnSpecs[i].maxW)
+                {
+                    widths[i] = kColumnSpecs[i].maxW;
+                    slack -= juce::jmax (0, kColumnSpecs[i].maxW - kColumnSpecs[i].minW);
+                    resolved[i] = true;
+                    anyFixed = true;
+                }
+            }
+        if (! anyFixed)
+        {
+            for (int i = 0; i < PartTableColumns::kCount; ++i)
+                if (visibleMask[i] && ! resolved[i])
+                {
+                    widths[i] = kColumnSpecs[i].minW
+                              + slack * kColumnSpecs[i].weight / remWeight;
+                    resolved[i] = true;
+                }
+            break;
+        }
+    }
+    // Safety: any visible column still unresolved takes its minimum.
+    for (int i = 0; i < PartTableColumns::kCount; ++i)
+        if (visibleMask[i] && ! resolved[i])
+            widths[i] = kColumnSpecs[i].minW;
+    // Narrow-band fallback: shrink proportionally so the last column stays in
+    // the band (cannot occur at the supported floor; keeps geometry sane if a
+    // future narrower host pane appears).
+    int total = gaps;
+    for (int i = 0; i < PartTableColumns::kCount; ++i)
+        if (visibleMask[i]) total += widths[i];
+    if (total > b.getWidth() && total > 0)
+    {
+        const double s = static_cast<double> (b.getWidth()) / static_cast<double> (total);
+        for (int i = 0; i < PartTableColumns::kCount; ++i)
+            if (visibleMask[i])
+                widths[i] = juce::jmax (24, juce::roundToInt (widths[i] * s));
+    }
+    // Cumulative-rounding clamp: after any scaling, the placed columns (sum
+    // + gaps) must end exactly at the band's right edge — shave any excess
+    // off the LAST visible column so the row never overflows its bounds
+    // (the overlap test pins this at every tested editor width).
+    {
+        int lastVis = -1, placed = 0, count = 0;
+        for (int i = 0; i < PartTableColumns::kCount; ++i)
+            if (visibleMask[i])
+            {
+                lastVis = i;
+                placed += widths[i];
+                ++count;
+            }
+        if (lastVis >= 0)
+        {
+            const int gapsNow = juce::jmax (0, count - 1) * kPartColGap;
+            const int excess = b.getX() + placed + gapsNow - b.getRight();
+            if (excess > 0)
+                widths[lastVis] = juce::jmax (24, widths[lastVis] - excess);
+        }
+    }
+
+    // Place left-to-right with uniform gaps between visible columns.
+    int x = b.getX();
+    for (int i = 0; i < PartTableColumns::kCount; ++i)
+        if (visibleMask[i])
+        {
+            r[i].setBounds (x, b.getY(), widths[i], b.getHeight());
+            x += widths[i] + kPartColGap;
+        }
     return r;
 }
 }  // namespace
@@ -283,14 +408,19 @@ public:
     // three 44pt-wide cells would not fit; see the width comment above).
     void resized() override
     {
-        const auto c = partColumnRects (getLocalBounds().reduced (4));
+        // The ACTIVE table tab drives the mask: only its columns are laid out
+        // (and visible); the rest keep their last bounds but are hidden by
+        // applyTableTab, so every accessor/choose* seam still works on the
+        // hidden cells (they read state, not visibility).
+        const bool* mask = midiTab_ ? kMidiTabMask : kVoiceTabMask;
+        const auto c = partColumnRects (getLocalBounds().reduced (4), mask);
 
         partLabel_.setBounds (c[PartTableColumns::kName]);
 
-        // Combos fill their column width in a 44pt band; knobs are 44pt (or
-        // the column width for the 36pt trio) squares. All centre on the
-        // full row height — the per-row caption band is gone (replaced by the
-        // single header strip), so the HIG tap band is unchanged at 44pt.
+        // Combos fill their column width in a 44pt band; knobs are 44pt
+        // squares (the L&F squares via jmin(w,h)). All centre on the full row
+        // height — the per-row caption band is gone (replaced by the single
+        // header strip), so the HIG tap band is unchanged at 44pt.
         auto combo = [] (juce::Rectangle<int> col, int rowH)
         { return col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, rowH)); };
         auto knob = [] (juce::Rectangle<int> col, int rowH)
@@ -310,6 +440,34 @@ public:
         tuneCombo_.setBounds    (combo (c[PartTableColumns::kTune],   h));
         polyCombo_.setBounds    (combo (c[PartTableColumns::kPoly],   h));
     }
+
+    // Switch the row's visible column set (PartTablePanel drives this on a
+    // tab change; PartRow::resized consumes the same mask). All cells stay
+    // CONSTRUCTED and state-readable — only visibility changes.
+    void applyTableTab (bool midiTab)
+    {
+        midiTab_ = midiTab;
+        channelCombo_.setVisible (! midiTab);
+        voicesCombo_.setVisible (midiTab ? false : true);
+        octaveCombo_.setVisible (! midiTab);
+        portaSlider_.setVisible (! midiTab);
+        legatoCombo_.setVisible (! midiTab);
+        volSlider_.setVisible (! midiTab);
+        fineSlider_.setVisible (! midiTab);
+        sprSlider_.setVisible (! midiTab);
+        tuneCombo_.setVisible (! midiTab);
+        polyCombo_.setVisible (! midiTab);
+        // Name + key zone are on BOTH tabs; Channel only on MIDI.
+        loSlider_.setVisible (true);
+        hiSlider_.setVisible (true);
+        partLabel_.setVisible (true);
+        resized();
+    }
+
+    // Test hook: the mask of columns this row CURRENTLY renders (mirrors the
+    // panel's active tab; PartRow::resized consumes the same kVoice/kMidi
+    // masks, so this is the row-visible truth the test asserts against).
+    const bool* visibleColumnsForTest() const { return midiTab_ ? kMidiTabMask : kVoiceTabMask; }
 
     //----------------------------------------------------------------------
     // Tooltip gate (the ParamControl contract, mirrored for table cells):
@@ -645,6 +803,9 @@ private:
     // Inline (table-only) tooltip texts, re-translated by buildInlineTips()
     // on language switches. The part_* cells read ParamHelp directly.
     juce::String partLabelTip_, voicesTip_, channelTip_, zoneLoTip_, zoneHiTip_;
+    // Active table tab (false = Voice, true = MIDI) — driven by
+    // PartTablePanel::setActiveTab via applyTableTab.
+    bool midiTab_ = false;
     juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_, octaveCombo_, legatoCombo_;
     juce::Slider loSlider_, hiSlider_, portaSlider_;
     juce::Slider volSlider_, fineSlider_, sprSlider_;     // output columns (bytes 0/2/3)
@@ -839,12 +1000,35 @@ private:
 // an EXTERNAL decoration (hostParamPage), so the table renders inside that
 // bordered panel, below the global knobs. It paints nothing (the owning group
 // panel's theme background shows through).
-class PatchPage::PartTablePanel : public juce::Component
+class PatchPage::PartTablePanel : public juce::Component,
+                                     private juce::ChangeListener
 {
 public:
     explicit PartTablePanel (PatchPage& owner) : owner_ (owner)
     {
         addAndMakeVisible (header_);
+        // Voice / MIDI segmented toggle — the GroupPager idiom (a bare
+        // TabbedButtonBar rendered by the editor-wide ParvatiLookAndFeel's
+        // drawTabButton), INLINE at the right of the arrangement summary row
+        // (no extra vertical budget). Switching tabs swaps the column mask:
+        // rows hide/re-layout their cells, the header relabels, and both
+        // REDISTRIBUTE the full width across the visible columns.
+        tabStrip_.addTab (TRANS ("Voice"), juce::Colours::transparentBlack, -1);
+        tabStrip_.addTab (TRANS ("MIDI"),  juce::Colours::transparentBlack, -1);
+        tabStrip_.setCurrentTabIndex (0, juce::dontSendNotification);
+        tabStrip_.addChangeListener (this);
+        addAndMakeVisible (tabStrip_);
+    }
+
+    // Switch the active table tab (false = Voice, true = MIDI): every row's
+    // visible column set + the header captions follow; the shared column
+    // geometry re-distributes the full band across the ACTIVE tab's columns.
+    void setActiveTab (bool midi)
+    {
+        header_.refreshLabels (midi);
+        for (int i = 0; i < kNumParts; ++i)
+            owner_.rows_[ (size_t) i]->applyTableTab (midi);
+        resized();
     }
 
     // Summary row height + gap above the part rows.
@@ -878,7 +1062,10 @@ public:
             auto summary = b.removeFromTop (kSummaryH);
             owner_.arrangementCombo_.setBounds (summary.removeFromLeft (220));
             summary.removeFromLeft (12);
-            owner_.voicesTotalLabel_.setBounds (summary);
+            owner_.voicesTotalLabel_.setBounds (summary.removeFromLeft (170));
+            summary.reduce (8, 0);   // breathing gap before the tab strip
+            tabStrip_.setBounds (summary.removeFromRight (juce::jmin (200, summary.getWidth()))
+                                        .withSizeKeepingCentre (juce::jmin (180, summary.getWidth()), kTabBarH));
         }
         b.removeFromTop (kSummaryGap);
 
@@ -899,12 +1086,10 @@ public:
     // Localize the header captions (called from PatchPage::refreshLanguage).
     void refreshLanguage() { header_.refreshLanguage(); }
 
-    // Test hook: the header's caption list in column order.
-    juce::StringArray headerLabelsForTest() const { return header_.labels(); }
-
-    // The header strip. Paints the captions at the shared column rects —
-    // themed via the L&F's group-title text colour (findColourColour with a
-    // sane fallback), 11pt bold-ish, centred-left like the old captions.
+    // The header strip. Paints the ACTIVE tab's captions at the shared
+    // column rects (masked: hidden columns draw nothing) — themed via the
+    // L&F's theme secondary-text colour with a sane fallback, 11pt bold,
+    // centred-left like the old per-row captions.
     class ColumnHeader : public juce::Component
     {
     public:
@@ -914,37 +1099,90 @@ public:
             g.setColour (lh != nullptr ? lh->getTheme()->textSecondary
                                        : juce::Colours::lightgrey.withAlpha (0.85f));
             g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-            const auto c = partColumnRects (getLocalBounds());
+            const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
+            const auto c = partColumnRects (getLocalBounds(), mask);
             for (int i = 0; i < PartTableColumns::kCount; ++i)
-                g.drawText (labels_[static_cast<size_t> (i)], c[i], juce::Justification::centredLeft, true);
+                if (mask[i])
+                    g.drawText (labels_[static_cast<size_t> (i)], c[i],
+                                juce::Justification::centredLeft, true);
         }
 
-        void refreshLanguage()
+        // Swap captions for @p midi's column set (also the language-refresh
+        // path: refreshLanguage() re-translates the ACTIVE set).
+        void refreshLabels (bool midi)
         {
-            labels_ = captions();
+            midi_ = midi;
+            labels_ = captions (midi_);
             repaint();
         }
+
+        void refreshLanguage() { labels_ = captions (midi_); repaint(); }
 
         juce::StringArray labels() const { return labels_; }
 
     private:
-        // Caption per column, in PartTableColumns order. Short forms for the
-        // narrow knob columns (matching the absorbed-column captions).
-        static juce::StringArray captions()
+        // Caption per column, in PartTableColumns order; the INACTIVE tab's
+        // columns are simply not listed (captions(midi) returns the ACTIVE
+        // tab's visible columns in column order).
+        static juce::StringArray captions (bool midi)
         {
-            return { TRANS ("Part"),  TRANS ("Voices"), TRANS ("Ch"),
-                     TRANS ("Zone Low"), TRANS ("Zone High"),
-                     TRANS ("Oct"), TRANS ("Porta"), TRANS ("Lgo"),
-                     TRANS ("Vol"),  TRANS ("Fine"),  TRANS ("Spr"),
-                     TRANS ("Tune"), TRANS ("Polyphony") };
+            juce::StringArray out;
+            auto addIf = [&out] (bool visible, const juce::String& s) {
+                if (visible) out.add (s);
+            };
+            addIf (true,                       TRANS ("Part"));
+            addIf (! midi,                     TRANS ("Voices"));
+            addIf (midi,                       TRANS ("Ch"));
+            addIf (true,                       TRANS ("Zone Low"));
+            addIf (true,                       TRANS ("Zone High"));
+            addIf (! midi,                     TRANS ("Oct"));
+            addIf (! midi,                     TRANS ("Porta"));
+            addIf (! midi,                     TRANS ("Lgo"));
+            addIf (! midi,                     TRANS ("Vol"));
+            addIf (! midi,                     TRANS ("Fine"));
+            addIf (! midi,                     TRANS ("Spr"));
+            addIf (! midi,                     TRANS ("Tune"));
+            addIf (! midi,                     TRANS ("Polyphony"));
+            return out;
         }
 
-        juce::StringArray labels_ = captions();
+        bool midi_ = false;   // default tab: Voice
+        juce::StringArray labels_ = captions (false);
     };
+
+    // ChangeListener (TabbedButtonBar is a ChangeBroadcaster): tab switch
+    // -> swap the column mask + relabel the header.
+    void changeListenerCallback (juce::ChangeBroadcaster*) override
+    {
+        setActiveTab (tabStrip_.getCurrentTabIndex() == 1);
+    }
 
 private:
     PatchPage& owner_;
     ColumnHeader header_;
+    juce::TabbedButtonBar tabStrip_ { juce::TabbedButtonBar::TabsAtTop };
+
+public:
+    static constexpr int kTabBarH = 24;   // compact segmented toggle (GroupPager uses 28 for page pills)
+
+    // Test hooks: the ACTIVE tab (0 = Voice, 1 = MIDI), its header captions,
+    // and the ACTIVE column mask (the rows' visible set).
+    int activeTabForTest() const { return tabStrip_.getCurrentTabIndex(); }
+    juce::StringArray headerLabelsForTest() const { return header_.labels(); }
+    const bool* visibleMaskForTest() const
+    { return tabStrip_.getCurrentTabIndex() == 1 ? kMidiTabMask : kVoiceTabMask; }
+
+    // Drive the segmented toggle exactly as a click does (fires the change
+    // callback through the bar, so rows + header follow the real path).
+    // sendChangeMessage is ASYNC (triggerAsyncUpdate), so the hook ALSO
+    // applies synchronously — the async callback is idempotent (same index
+    // -> same mask) so test timing cannot flake.
+    void setCurrentTabIndexForTest (int tabIndex)
+    {
+        const int t = juce::jlimit (0, 1, tabIndex);
+        setActiveTab (t == 1);
+        tabStrip_.setCurrentTabIndex (t, juce::dontSendNotification);
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PartTablePanel)
 };
@@ -1052,6 +1290,22 @@ bool PatchPage::tableTooltipsCompleteForTest()
 {
     return std::all_of (rows_.begin(), rows_.end(),
         [] (const std::unique_ptr<PartRow>& r) { return r->allCellsHaveTooltipsForTest(); });
+}
+
+int PatchPage::activeTableTabForTest() const
+{
+    return tablePanel_ != nullptr ? tablePanel_->activeTabForTest() : 0;
+}
+
+const bool* PatchPage::tableVisibleMaskForTest() const
+{
+    return tablePanel_ != nullptr ? tablePanel_->visibleMaskForTest() : kVoiceTabMask;
+}
+
+void PatchPage::chooseTableTabForTest (int tabIndex)
+{
+    if (tablePanel_ != nullptr)
+        tablePanel_->setCurrentTabIndexForTest (tabIndex);
 }
 
 void PatchPage::buildArrangementCombo()

@@ -1493,11 +1493,11 @@ int main (int argc, char** argv)
     if (patchPage != nullptr)
     {
         const auto labels = patchPage->headerLabelsForTest();
-        check (labels.size() == 13, "[22] header has 13 column captions");
+        // Voice tab (default): 12 visible columns (everything except Ch).
+        check (labels.size() == 12, "[22] Voice-tab header has 12 column captions");
         check (labels[0]  == TRANS ("Part") && labels[1]  == TRANS ("Voices")
-            && labels[2]  == TRANS ("Ch")   && labels[11] == TRANS ("Tune")
-            && labels[12] == TRANS ("Polyphony"),
-               "[22] header captions in column order (Part/Voices/Ch/.../Tune/Poly)");
+            && labels[11] == TRANS ("Polyphony"),
+               "[22] Voice-tab header captions in column order");
 
         check (patchPage->tableTooltipsCompleteForTest(),
                "[22] every interactive table cell has a tooltip");
@@ -1513,6 +1513,48 @@ int main (int argc, char** argv)
     }
     else
         check (false, "[22] PatchPage reachable for header/tooltip checks");
+
+    // ---- [23] Patch-table tabs + full-width layout ----
+    // (a) default tab = Voice; the segmented toggle switches the visible
+    //     column set + the header captions (Voice = all but Ch; MIDI =
+    //     Part/Ch/Zone only);
+    // (b) all choose*/getDisplayed* seams work on BOTH tabs (cells stay
+    //     state-readable when hidden);
+    // (c) the table panel spans the full hosted-page width (the pre-flex
+    //     fixed-width arithmetic left ~40% empty on wide editors).
+    std::printf ("\n[23] Patch-table tabs + full width\n");
+    if (patchPage != nullptr)
+    {
+        check (patchPage->activeTableTabForTest() == 0, "[23] default tab is Voice");
+        {
+            const bool* m = patchPage->tableVisibleMaskForTest();
+            check (m[1] && ! m[2], "[23] Voice tab shows Voices, hides Ch");
+        }
+        // Seams on the Voice tab (the default): a write + read-back.
+        patchPage->choosePortamento (0, 33);
+        check (patchPage->getDisplayedPortamento (0) == 33,
+               "[23] Porta seam works on the Voice tab");
+
+        patchPage->chooseTableTabForTest (1);   // -> MIDI
+        check (patchPage->activeTableTabForTest() == 1, "[23] toggle switches to MIDI");
+        {
+            const bool* m = patchPage->tableVisibleMaskForTest();
+            check (! m[1] && m[2] && ! m[11],
+                   "[23] MIDI tab shows Ch, hides Voices/Tune");
+        }
+        const auto midiLabels = patchPage->headerLabelsForTest();
+        check (midiLabels.size() == 4, "[23] MIDI-tab header has 4 captions");
+        check (midiLabels[1] == TRANS ("Ch"), "[23] MIDI-tab header includes Ch");
+        // Hidden-cell seam: Porta is HIDDEN on the MIDI tab but still writable.
+        patchPage->choosePortamento (0, 21);
+        check (patchPage->getDisplayedPortamento (0) == 21,
+               "[23] hidden-cell seam still works on the MIDI tab");
+        patchPage->chooseTableTabForTest (0);   // back to Voice
+        check (patchPage->getDisplayedPortamento (0) == 21,
+               "[23] back on Voice, the MIDI-tab write persisted");
+    }
+    else
+        check (false, "[23] PatchPage reachable for tab checks");
 
     // ---- teardown ----
     delete editor;

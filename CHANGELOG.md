@@ -4,7 +4,35 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
-### Fixed
+### Added
+- **Patch-table Voice / MIDI tabs (2026-08-20).** A compact segmented
+  toggle (GroupPager idiom) inline in the table's summary row splits the
+  13-column row into two focused views: **Voice** (default — Part, Voices,
+  zone, Oct/Porta/Lgo, Vol/Fine/Spr, Tune, Poly) and **MIDI** (Part, Ch,
+  zone). The shared column geometry now distributes the FULL band width
+  across the ACTIVE tab's columns (per-column min/flex/max specs; knob
+  columns cap at 64pt so text columns drink the slack) — fixing the table
+  occupying only ~60% of the page on wide editors (measured 1208/1248pt at
+  the default 1280 window). Cells stay constructed on the hidden tab: every
+  accessor/write seam and host automation works regardless of the active
+  tab. A cumulative-rounding clamp keeps the last column inside the band at
+  every width (overlap-test pinned).
+
+### Changed
+- **Synth-page header padding parity (2026-08-20).** The synth top row now
+  takes the FX page's uniform 8pt gap on all four sides + between the
+  OSC/MIX/FILTER columns (kRowGap hoisted to a class constant on both
+  workspaces, pinned equal by the new workspace_padding test). Pages reflow
+  against the full row height so the padding stays breathing room, not a
+  height override.
+- **FX matrix on the icon idiom (2026-08-20).** The FX mod-matrix rows now
+  use the synth matrix's mute-lamp + delete-X buttons (44pt hit targets,
+  accessible titles) instead of the old text "M"/"Clear" buttons; rows were
+  already drag-source-free.
+- **Concise tooltips (2026-08-20).** The long multi-sentence ParamHelp
+  entries were trimmed to single sentences (ranges/units preserved; part
+  scale/tuning/volume/spread rewritten, everything >200 chars cut to its
+  first sentence).
 - **Patch-table column headers + tooltips (2026-08-20).** The part table
   gained a single localized column-header strip (Part/Voices/Ch/Zone Low/Zone
   High/Oct/Porta/Lgo/Vol/Fine/Spr/Tune/Polyphony) painted from the SAME shared

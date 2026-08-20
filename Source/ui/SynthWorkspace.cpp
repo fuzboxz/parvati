@@ -273,21 +273,44 @@ void SynthWorkspace::resized()
     const int rowH = juce::jmax (0, mainRow.getHeight());
     auto layoutTopRow = [&] (int w)
     {
-        auto hostRow = juce::Rectangle<int> (0, 0, w, rowH);
-        auto oc = hostRow.removeFromLeft (w * 40 / 100);
-        auto mc = hostRow.removeFromLeft (w * 20 / 100);
+        // SPACIOUS layout (FX-page parity, 2026-08-20): a uniform kRowGap
+        // margin is taken off ALL FOUR sides of the row AND placed between
+        // the three columns, so the bordered OSC/MIX/FILTER GroupComponent
+        // panels sit in generous whitespace (page backgroundBase) exactly
+        // like the FX page's cards — mirroring FxWorkspace::resized's top-row
+        // treatment. (The panels' own header padding INSIDE each GroupComponent
+        // is ParamPage/L&F territory and is unchanged; this seam adds the
+        // AROUND-panel breathing room the user asked for.) The 40/20/40 split
+        // is preserved against the column budget (inner width minus the two
+        // inter-column gaps).
+        auto hostRow = juce::Rectangle<int> (0, 0, w, rowH).reduced (kRowGap);
+        const int colBudget = juce::jmax (0, hostRow.getWidth() - 2 * kRowGap);
+        auto oc = hostRow.removeFromLeft (colBudget * 40 / 100);
+        hostRow.removeFromLeft (kRowGap);
+        auto mc = hostRow.removeFromLeft (colBudget * 20 / 100);
+        hostRow.removeFromLeft (kRowGap);
         auto fc = hostRow;
-        auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b)
+        auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b,
+                              int fullRowH)
         {
             if (page == nullptr)
                 return 0;
-            page->setBounds (b);
-            page->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, b.getHeight()));
-            return page->getHeight();
+            // Reflow against the FULL row height (not the inset band): a
+            // fitting page grows to at least the view height, and the reduced
+            // band's 2*kRowGap of vertical padding stays as breathing room
+            // instead of forcing the page taller than its host (reflowToWidth
+            // ends with setSize(w, contentHeight_), which would otherwise
+            // override the inset band's height — so re-position AFTER).
+            page->reflowToWidth (juce::jmax (150, b.getWidth()), juce::jmax (0, fullRowH));
+            page->setTopLeftPosition (b.getPosition());
+            // Report the page's BOTTOM edge (position + height): the inset
+            // band starts kRowGap down, so the host must account for the top
+            // inset too or the page escapes it by exactly that amount.
+            return b.getY() + page->getHeight();
         };
-        return juce::jmax (juce::jmax (sizeDirect (mainOscPage_,   oc),
-                                       sizeDirect (mainLeftPage_,  mc)),
-                            juce::jmax (sizeDirect (mainRightPage_, fc), rowH));
+        return juce::jmax (juce::jmax (sizeDirect (mainOscPage_,   oc, rowH),
+                                       sizeDirect (mainLeftPage_,  mc, rowH)),
+                            juce::jmax (sizeDirect (mainRightPage_, fc, rowH), rowH));
     };
     int hostH = layoutTopRow (rowW);
     if (hostH > rowH)

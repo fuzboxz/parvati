@@ -258,8 +258,9 @@ void FxWorkspace::resized()
     // generous whitespace (page backgroundBase) instead of butting each other
     // and the workspace edges — mirroring how the synth page's kMargin insets
     // its GroupComponent cards. Each card gets the remaining height and sizes
-    // its knobs/visualizer internally.
-    constexpr int kGap = 8;
+    // its knobs/visualizer internally. (kRowGap is the class constant; the
+    // former local kGap was hoisted for the parity test.)
+    constexpr int kGap = kRowGap;
     // R3: the top row's NATURAL height — the routing bar's stacked rows (flow
     // diagram 50 + EQ 60 + Dry/Wet band) need ~190px, and the FX-slot cards'
     // FIXED-height knob grid (2 x kCellH = 140px of grid + header/type/

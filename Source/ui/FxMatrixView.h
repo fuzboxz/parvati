@@ -70,6 +70,11 @@ public:
     bool isSlotMuted (int slot) const noexcept { return muted_[(size_t) juce::jlimit (0, 15, slot)]; }
     int  stashedAmount (int slot) const noexcept { return stashedAmount_[(size_t) juce::jlimit (0, 15, slot)]; }
     bool isSlotActive (int slot) const;              // amount != 0 || muted
+
+    // Test hook: the live row component for @p slot (0-based) — lets headless
+    // tests sweep the row's children (icon buttons / lamp presence, the
+    // no-text-button regression) without reaching into the file-local struct.
+    juce::Component* rowForSlotForTest (int slot);
     int  firstFreeSlot() const;                      // 0..15 or -1 if the matrix is full
 
     // Operations invoked from a row (Mute / Clear / Add). All write through the

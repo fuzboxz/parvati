@@ -2243,3 +2243,18 @@ target_link_libraries(parvati_mod_matrix_ui_test PRIVATE
     Parvati
 )
 
+
+# ------------------------------------------------------------------------------
+# Batch-3 UI polish part C (2026-08-20): synth-page top-row padding parity with
+# the FX page (kRowGap) + FX-matrix rows on the synth-matrix icon idiom (mute
+# lamp + delete X, no text buttons). Built by default.
+# Run with: ./build/parvati_workspace_padding_test
+add_executable(parvati_workspace_padding_test
+    tests/workspace_padding_test.cpp
+)
+target_include_directories(parvati_workspace_padding_test PRIVATE Source)
+target_compile_features(parvati_workspace_padding_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_workspace_padding_test PRIVATE
+    Parvati
+)
+
