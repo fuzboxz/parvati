@@ -1141,10 +1141,34 @@ public:
             // x-positions are then exactly the cell x-positions (pinned by
             // the header-vs-row alignment test).
             const auto c = partColumnRects (getLocalBounds().reduced (kTableContentInset), mask);
+            // labels_ is the FILTERED caption list (hidden columns absent),
+            // so the binding column→caption must resolve the filtered
+            // position — indexing labels_ by the raw column index painted
+            // the wrong caption over every column after the first hidden
+            // one (2026-08-20: "legato has tune as the column header").
+            // captionForColumn() is the single mapping both paint and the
+            // test hook use.
             for (int i = 0; i < PartTableColumns::kCount; ++i)
                 if (mask[i])
-                    g.drawText (labels_[static_cast<size_t> (i)], c[i],
+                    g.drawText (captionForColumn (i), c[i],
                                 juce::Justification::centredLeft, true);
+        }
+
+        // The caption paint() draws over column @p col (filtered-list
+        // position resolved against the ACTIVE mask). Test hook: pins the
+        // label↔column binding, not just the x-alignment.
+        juce::String captionForColumn (int col) const
+        {
+            const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
+            int vi = 0;
+            for (int i = 0; i < PartTableColumns::kCount; ++i)
+                if (mask[i])
+                {
+                    if (i == col)
+                        return labels_[static_cast<size_t> (vi)];
+                    ++vi;
+                }
+            return {};
         }
 
         // Swap captions for @p midi's column set (also the language-refresh
@@ -1228,6 +1252,8 @@ public:
     // Test hooks: the header's painted column x and ROW 0's cell column x
     // for @p i — the alignment pin compares them per visible column.
     int headerColumnXForTest (int i) const { return header_.columnXForTest (i); }
+    juce::String headerCaptionForTest (int col) const { return header_.captionForColumn (col); }
+
     int rowColumnXForTest (int i) const
     { return owner_.rows_.empty() ? -1 : owner_.rows_[0]->columnXForTest (i); }
 
@@ -1370,6 +1396,13 @@ void PatchPage::chooseTableTabForTest (int tabIndex)
 int PatchPage::headerColumnXForTest (int column) const
 {
     return tablePanel_ != nullptr ? tablePanel_->headerColumnXForTest (column) : -1;
+}
+
+// The caption paint() draws over @p column (the label↔column binding).
+juce::String PatchPage::headerCaptionForTest (int column) const
+{
+    return tablePanel_ != nullptr ? tablePanel_->headerCaptionForTest (column)
+                                  : juce::String();
 }
 
 int PatchPage::rowColumnXForTest (int column) const

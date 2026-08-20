@@ -98,6 +98,7 @@ public:
     // Alignment pins (see PartTablePanel): header vs row-0 column x, and the
     // tab strip's x (leftmost-control assertion).
     int headerColumnXForTest (int column) const;
+    juce::String headerCaptionForTest (int column) const;
     int rowColumnXForTest (int column) const;
     int tabStripXForTest() const;
 

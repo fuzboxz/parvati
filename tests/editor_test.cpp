@@ -1559,6 +1559,22 @@ int main (int argc, char** argv)
             check (ok, "[23] every Voice-tab caption x == its cell x (0px drift)");
         }
 
+        // ---- (b2) LABEL BINDING: the caption PAINTED over each column is
+        // that column's own caption (the 2026-08-20 regression indexed the
+        // filtered caption list by the raw column index — "legato has tune
+        // as the column header").
+        {
+            struct ColCap { int col; const char* key; };
+            const ColCap voiceCols[] = {
+                { 0, "Part" }, { 1, "Voices" }, { 6, "Porta" }, { 7, "Lgo" },
+                { 8, "Vol" },  { 9, "Fine" },  { 10, "Spr" }, { 11, "Tune" },
+                { 12, "Polyphony" } };
+            bool ok = true;
+            for (const auto& cc : voiceCols)
+                ok = ok && (patchPage->headerCaptionForTest (cc.col) == TRANS (cc.key));
+            check (ok, "[23] Voice-tab caption over each column is its own (Lgo != Tune)");
+        }
+
         // ---- (c) the tab strip leads the summary row.
         check (patchPage->tabStripXForTest() >= 232
                && patchPage->tabStripXForTest() <= 245,
@@ -1597,6 +1613,18 @@ int main (int argc, char** argv)
                     ok = ok && (patchPage->headerColumnXForTest (i)
                                 == patchPage->rowColumnXForTest (i));
             check (ok, "[23] every MIDI-tab caption x == its cell x (0px drift)");
+        }
+
+        // MIDI-tab label binding (the same regression class).
+        {
+            struct ColCap { int col; const char* key; };
+            const ColCap midiCols[] = {
+                { 0, "Part" }, { 2, "Ch" }, { 3, "Zone Low" },
+                { 4, "Zone High" }, { 5, "Oct" } };
+            bool ok = true;
+            for (const auto& cc : midiCols)
+                ok = ok && (patchPage->headerCaptionForTest (cc.col) == TRANS (cc.key));
+            check (ok, "[23] MIDI-tab caption over each column is its own");
         }
 
         // Hidden-cell seam: Porta is HIDDEN on the MIDI tab but still writable.
