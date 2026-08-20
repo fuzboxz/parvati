@@ -76,7 +76,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
 
     // ---- 14 modulation routings (42 = 3 each) ----
     m["mod1_source"]  = "Mod 1 source (env, LFO, seq, velocity, pitch bend...).";
-    m["mod1_dest"]    = "Mod 1 destination parameter.";
+    m["mod1_dest"]    = "Mod 1 destination parameter. Filter Cutoff also always receives Env2 x FilterEnv + LFO2 x FilterLFO + key tracking; VCA amounts multiply (matrix slots stack with these pre-routes, like the hardware).";
     m["mod1_amount"]  = "Mod 1 depth (-63..+63; bipolar).";
     m["mod2_source"]  = "Mod 2 source (env, LFO, seq, velocity, pitch bend...).";
     m["mod2_dest"]    = "Mod 2 destination parameter.";
