@@ -454,14 +454,29 @@ int main()
         {
             themeManager.selectByName (names[ti]);
             lnf.setTheme (themeManager.getCurrentTheme());
+            view.applyThemeColors();   // the editor's theme-switch seam — re-resolves every row's lamp/slider/tint colours
             const auto& th = themeManager.getCurrentTheme();
             const juce::String tag = "[" + names[ti] + "] ";
 
             if (synthModuleLamp != nullptr && cardLamp != nullptr)
-                check (synthModuleLamp->resolvedOnColourForTest()
-                           == cardLamp->resolvedOnColourForTest()
-                       && synthModuleLamp->resolvedOnColourForTest() == th.accentPrimary,
-                       (tag + "synth lamp == FX card lamp == theme accentPrimary").toRawUTF8());
+            {
+                // 2026-08-20: the synth matrix lamp now carries its ROW's
+                // modulator category colour (row 0's source is set below), so
+                // the pinned contract is: FX card lamp == theme accent, and
+                // the matrix lamp == the row's category colour — no longer
+                // equal to each other by design (user: "the color of the
+                // button should be the same as the modulator's color").
+                check (cardLamp->resolvedOnColourForTest() == th.accentPrimary,
+                       (tag + "FX card lamp == theme accentPrimary").toRawUTF8());
+                if (synthLamp != nullptr)
+                {
+                    // Resolve the row's expected category colour the same way
+                    // the row does (rowCategoryColour over the row's source).
+                    const auto expected = view.rowCategoryColourForTest (0);
+                    check (synthModuleLamp->resolvedOnColourForTest() == expected,
+                           (tag + "matrix lamp == its modulator's category colour").toRawUTF8());
+                }
+            }
 
             if (card != nullptr)
                 check (card->headerTitleColourForTest() == th.textPrimary,

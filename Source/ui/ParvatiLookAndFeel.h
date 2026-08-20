@@ -54,6 +54,18 @@ public:
         lampCentre_ = centreFromTopLeft;
     }
 
+    // Pin the drawn DOT to an explicit diameter (the hit area stays the FULL
+    // bounds). <= 0 keeps the default: proportional (jmin(w,h)*0.68, capped).
+    // The mod-matrix rows pin the FX-card size (15pt) so the synth matrix's
+    // taller band does not render a bigger dot than the FX modules' (2026-08-20
+    // user request: the matrix lamp should use the FX enable/disable size).
+    void setLampDiameter (float d) { lampDiameter_ = d; }
+
+    // Override the ON fill colour (e.g. the row's modulator category colour).
+    // An unset (transparent) colour falls back to the theme accent. The OFF
+    // state keeps the theme's disabled grey.
+    void setOnColour (juce::Colour c) { onColour_ = c; }
+
     // Test hook: the ON colour this instance would paint with RIGHT NOW
     // (resolved through the inherited L&F's active theme, with the shared
     // fallback). Style-parity tests call this on lamps from BOTH the synth
@@ -66,6 +78,8 @@ public:
 
 private:
     juce::Point<float> lampCentre_ { -1.0f, -1.0f };   // <0 x => centre in bounds
+    float lampDiameter_ = -1.0f;                       // <=0 => proportional
+    juce::Colour onColour_ {};                         // transparent => theme accent
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiModuleLamp)
 };

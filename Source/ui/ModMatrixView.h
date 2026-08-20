@@ -84,6 +84,12 @@ public:
     // rows for the category tint + accent bar.
     juce::String sourceNameForSlot (int slot) const;
 
+    // Test hook: the category colour the given row's lamp/slider/tint resolve
+    // to for its CURRENT source (the same rowCategoryColour mapping the row
+    // uses; exposed so tests can pin the lamp == modulator-colour contract
+    // without duplicating the mapping).
+    juce::Colour rowCategoryColourForTest (int slot) const;
+
     // Briefly flash every ACTIVE row currently routed FROM @p sourceEnum (a
     // MOD_SRC_* value), reusing the same transient flash the slot-selection
     // (knob double-click) uses. Called from the CentralModBar when a drag-only

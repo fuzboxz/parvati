@@ -1031,9 +1031,10 @@ void ParvatiModuleLamp::paintButton (juce::Graphics& g, bool isMouseOverButton, 
 
     const bool on = getToggleState() || isButtonDown;
 
-    // Fill: accent lamp while the module/routing is active, the theme's
-    // inactive grey while bypassed/muted (visible on every theme).
-    juce::Colour fill = on ? accent : grey;
+    // Fill: the row's overridden colour while ON (the mod-matrix rows tag the
+    // lamp with their modulator's category colour), else the theme accent;
+    // the theme's inactive grey while bypassed/muted (visible on every theme).
+    juce::Colour fill = on ? (onColour_.isTransparent() ? accent : onColour_) : grey;
     if (! isEnabled())
         fill = fill.withAlpha (0.25f);
 
@@ -1050,7 +1051,8 @@ void ParvatiModuleLamp::paintButton (juce::Graphics& g, bool isMouseOverButton, 
     // area stays the full bounds. An optional pinned centre keeps the card
     // header's lamp aligned with the painted title's optical middle. ----
     const auto b = getLocalBounds().toFloat();
-    const float dot = dotDiameterFor (getLocalBounds());
+    const float dot = lampDiameter_ > 0.0f ? lampDiameter_
+                                           : dotDiameterFor (getLocalBounds());
     const auto centre = lampCentre_.x >= 0.0f
         ? juce::Point<float> (juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getWidth() - dot * 0.5f), lampCentre_.x),
                               juce::jlimit (dot * 0.5f, juce::jmax (dot * 0.5f, b.getHeight() - dot * 0.5f), lampCentre_.y))
@@ -1076,8 +1078,9 @@ float ParvatiModuleLamp::dotDiameterFor (juce::Rectangle<int> bounds)
 
 juce::Colour ParvatiModuleLamp::resolvedOnColourForTest() const
 {
-    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel()))
-        if (const ParvatiTheme* t = lnf->getTheme())
-            return t->accentPrimary;
-    return parvati::parvatiFallbackAccent;
+    const ParvatiTheme* t = nullptr;
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        t = lnf->getTheme();
+    const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
+    return onColour_.isTransparent() ? accent : onColour_;
 }

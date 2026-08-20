@@ -114,7 +114,11 @@ public:
         const juce::Colour thumbCol = t.textPrimary;
 
         const float cy      = static_cast<float> (y) + static_cast<float> (height) * 0.5f;
-        const float trackH  = 4.0f;
+        // BIGGER visual slider, SMALLER thumb (2026-08-20): track 4 -> 7pt so
+        // the depth control reads at a glance, thumb fixed at 15pt — the same
+        // diameter as the enable/disable lamp — instead of 0.30*height (~13-30pt
+        // depending on the band).
+        const float trackH  = 7.0f;
         const float radius  = trackH * 0.5f;
         const float left    = static_cast<float> (x);
         const float right   = static_cast<float> (x + width);
@@ -142,8 +146,9 @@ public:
         g.setColour (thumbCol.withAlpha (slider.isEnabled() ? 0.9f : 0.4f));
         g.fillRect (juce::Rectangle<float> (centreX - 0.5f, cy - trackH, 1.0f, trackH * 2.0f));
 
-        // Flat solid circle thumb (no 3D/gradient / no outline ring).
-        const float tr = juce::jmax (3.0f, static_cast<float> (height) * 0.30f);
+        // Flat solid circle thumb (no 3D/gradient / no outline ring), fixed
+        // at the lamp diameter (15pt) regardless of the band height.
+        const float tr = 7.5f;
         const auto  thumbRect = juce::Rectangle<float> (tr * 2.0f, tr * 2.0f).withCentre (juce::Point<float> (sp, cy));
         g.setColour (slider.isEnabled() ? thumbCol : thumbCol.withAlpha (0.4f));
         g.fillEllipse (thumbRect);
@@ -201,6 +206,10 @@ struct ModMatrixRow : public juce::Component,
         muteLamp_->setTitle (TRANS ("Mute / bypass this modulation"));
         muteLamp_->setTooltip (TRANS ("Mute / bypass this modulation"));
         muteLamp_->onClick = [this] { owner_.toggleMute (slot_); };
+        // FX-module enable/disable SIZE (2026-08-20): pin the drawn dot to the
+        // FX card's 15pt diameter instead of the proportional ~30pt the tall
+        // 44pt row band renders — same visual size as the FX modules' toggle.
+        muteLamp_->setLampDiameter (15.0f);
         addAndMakeVisible (*muteLamp_);
 
         addAndMakeVisible (sourceCombo_);
@@ -351,6 +360,10 @@ struct ModMatrixRow : public juce::Component,
         // row tint resolve to) — it tags the family WITHOUT colouring the dropdown
         // fill. The DEST combo gets NO tag (just dark + white).
         const juce::Colour famCol = rowCategoryColour (t, owner_.sourceNameForSlot (slot_));
+        // Lamp ON colour = the row's modulator category colour (2026-08-20:
+        // the user asked the enable/disable button to carry the modulator's
+        // colour, matching the row tint / slider fill / combo tag).
+        muteLamp_->setOnColour (famCol);
         sourceCombo_.getProperties().set ("parvatiComboTag", (int) famCol.getARGB());
         sourceCombo_.removeColour (juce::ComboBox::backgroundColourId);
         destCombo_.getProperties().remove ("parvatiComboTag");
@@ -590,6 +603,11 @@ int ModMatrixView::firstFreeSlot() const
         if (amountForSlot (i) == 0 && ! muted_[(size_t) i])
             return i;
     return -1;
+}
+
+juce::Colour ModMatrixView::rowCategoryColourForTest (int slot) const
+{
+    return rowCategoryColour (themeManager_.getCurrentTheme(), sourceNameForSlot (slot));
 }
 
 juce::String ModMatrixView::sourceNameForSlot (int slot) const
