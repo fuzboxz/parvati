@@ -93,43 +93,10 @@ PatchPage* findPatchPage (juce::Component* root)
 
 // A juce::Label's top-left position in @p ancestor's coordinate space (walks
 // the parent chain; every label collected here has @p ancestor above it).
-juce::Point<int> posInAncestor (juce::Component* c, juce::Component* ancestor)
-{
-    int x = 0, y = 0;
-    while (c != nullptr && c != ancestor)
-    {
-        x += c->getX();
-        y += c->getY();
-        c = c->getParentComponent();
-    }
-    return { x, y };
-}
+// (posInAncestor removed with collectLabels.)
 
-struct LabelAt
-{
-    int x = 0, y = 0;
-    juce::String text;
-};
-
-// Every juce::Label in the subtree, with its position in @p root's space.
-std::vector<LabelAt> collectLabels (juce::Component* root)
-{
-    std::vector<LabelAt> out;
-    juce::Array<juce::Component*> nodes;
-    nodes.add (root);
-    for (int i = 0; i < nodes.size(); ++i)
-    {
-        auto* c = nodes.getUnchecked (i);
-        if (auto* l = dynamic_cast<juce::Label*> (c))
-        {
-            const auto pos = posInAncestor (l, root);
-            out.push_back ({ pos.x, pos.y, l->getText() });
-        }
-        for (auto* child : c->getChildren())
-            nodes.add (child);
-    }
-    return out;
-}
+// (collectLabels + LabelAt were removed with the "Voices Y/96" summary
+// label — the name-label source is PatchPage::displayedPartNamesForTest.)
 
 // The six part rows' NAME labels, in part order. Source: the rows
 // themselves via PatchPage::displayedPartNamesForTest (the former
@@ -266,30 +233,10 @@ MirrorReport mirrorMatches (ParvatiAudioProcessor& proc, PatchPage* page)
               + ", engine infers "
               + juce::String (arrangementLabel (engArr)));
 
-    // "Voices Y/96" pool-budget readout == the sum of the assigned slots.
-    {
-        int engTotal = 0;
-        for (int p = 0; p < SynthEngine::getNumParts(); ++p)
-            engTotal += eng.getPartVoiceSlots (p);
-
-        const juce::String prefix = TRANS ("Voices") + " ";
-        const juce::String suffix = "/" + juce::String (kNumVoices);
-        int shownTotal = -1;
-        for (const auto& l : collectLabels (page))
-            if (l.text.startsWith (prefix) && l.text.endsWith (suffix))
-            {
-                const auto mid = l.text.substring (prefix.length(),
-                                                   l.text.length() - suffix.length());
-                shownTotal = mid.getIntValue();
-                break;
-            }
-        if (shownTotal < 0)
-            fail ("pool-budget label \"Voices Y/" + juce::String (kNumVoices)
-                  + "\" not found on the page");
-        else if (shownTotal != engTotal)
-            fail ("pool-budget label shows " + juce::String (shownTotal)
-                  + ", engine slot sum is " + juce::String (engTotal));
-    }
+    // (The "Voices Y/96" pool-budget label was removed 2026-08-20 at the
+    // user's request — redundant with the per-row Voices column. The mirror
+    // contract now derives the total from the per-row Voices combos, which
+    // the row-scan below already covers.)
 
     return r;
 }

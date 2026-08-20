@@ -189,7 +189,6 @@ private:
     // NO page-level heading chrome: both live INSIDE the Global panel's table
     // (the 44pt summary row above the 6 part rows — see PartTablePanel), so
     // the arrangement sits with the per-part rows it configures.
-    juce::Label voicesTotalLabel_;       // "Voices Y/96" pool-budget readout (summary row, right of the arrangement combo)
     juce::ComboBox arrangementCombo_;   // 5 template items (ids 1..5) + separator + a DISABLED infer-only "Custom" item (id 6)
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 
@@ -235,7 +234,6 @@ private:
     // Refresh the "Voices Y/96" pool-budget readout from the engine (source of
     // truth; the total sums the audio-thread-published per-part voiceCount_
     // snapshots).
-    void updateVoicesTotal();
     // (Re)lay out scrollBody_ inside viewport_ (the rows + hosted page),
     // sizing it to its natural height — or the view height when it fits.
     void layoutScrollBody();

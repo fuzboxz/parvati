@@ -56,10 +56,10 @@ constexpr int kTableContentInset = 4;
 //          kVol, kFine, kSpr, kTune, kPoly
 constexpr bool kVoiceTabMask[PartTableColumns::kCount] = {
     true,  true,  false, false, false,
-    false, true,  true,  true,  true,  true,  true,  false };
+    false, true,  true,  true,  true,  true,  true,  true };
 constexpr bool kMidiTabMask[PartTableColumns::kCount] = {
     true,  false, true,  true,  true,
-    true,  false, false, false, false, false, false, true };
+    true,  false, false, false, false, false, false, false };
 
 // Per-column layout: minimum width, flex weight (share of the slack), and a
 // maximum width for the KNOB columns (a round dial gains nothing beyond ~64pt
@@ -67,7 +67,7 @@ constexpr bool kMidiTabMask[PartTableColumns::kCount] = {
 // 1024x500-floor budget (Voice tab: 728 + 11 gaps = 772 <= 944).
 struct PartColumnSpec { int minW; int weight; int maxW; };
 constexpr PartColumnSpec kColumnSpecs[PartTableColumns::kCount] = {
-    /* kName   */ { 120, 3, 1 << 30 },
+    /* kName   */ {  96, 1,        160 },   // capped: the name field should hug its 16-char content, not drink the row
     /* kVoices */ {  56, 2, 1 << 30 },
     /* kCh     */ {  56, 3, 1 << 30 },
     /* kZoneLo */ {  44, 1,        64 },
@@ -477,7 +477,7 @@ public:
         fineSlider_.setVisible (! midiTab);
         sprSlider_.setVisible (! midiTab);
         tuneCombo_.setVisible (! midiTab);
-        polyCombo_.setVisible (midiTab);
+        polyCombo_.setVisible (! midiTab);
         partLabel_.setVisible (true);
         resized();
     }
@@ -1092,17 +1092,17 @@ public:
         // has access). ----
         {
             auto summary = b.removeFromTop (kSummaryH);
-            // Tab strip FIRST (leftmost): [Voice|MIDI] leads the row, then
-            // the arrangement combo; the "Voices Y/96" readout right-aligns
-            // in whatever remains (2026-08-20: the strip sat at the RIGHT
-            // edge before; the user expects the group selector at the left).
-            const int stripW = juce::jmin (150, juce::jmax (0, summary.getWidth() - 240));
-            tabStrip_.setBounds (summary.removeFromLeft (stripW)
-                                        .withSizeKeepingCentre (stripW, kTabBarH));
-            summary.removeFromLeft (12);
+            // Arrangement combo FIRST (leftmost — the user's 2026-08-20
+            // follow-up: the Custom/Mono/etc selector leads the row), then
+            // the [Voice|MIDI] tab strip. The former "Voices Y/96" readout
+            // is GONE (redundant with the per-row Voices column; the user
+            // asked for it removed) — the remaining space stays empty so the
+            // row reads as a calm toolbar, not a packed strip.
             owner_.arrangementCombo_.setBounds (summary.removeFromLeft (220));
             summary.removeFromLeft (12);
-            owner_.voicesTotalLabel_.setBounds (summary.removeFromLeft (170));
+            const int stripW = juce::jmin (150, juce::jmax (0, summary.getWidth() - 12));
+            tabStrip_.setBounds (summary.removeFromLeft (stripW)
+                                        .withSizeKeepingCentre (stripW, kTabBarH));
         }
         b.removeFromTop (kSummaryGap);
 
@@ -1195,7 +1195,7 @@ public:
             addIf (! midi,                     TRANS ("Fine"));
             addIf (! midi,                     TRANS ("Spr"));
             addIf (! midi,                     TRANS ("Tune"));
-            addIf (midi,                       TRANS ("Polyphony"));
+            addIf (! midi,                     TRANS ("Polyphony"));
             return out;
         }
 
@@ -1270,10 +1270,6 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     // across all parts (sum of the per-part voiceCount_ snapshots) — the only
     // budget label in the voice-first model (any combination of per-part
     // counts is legal, so there is nothing to cap).
-    voicesTotalLabel_.setFont (juce::FontOptions (14.0f, juce::Font::bold));
-    voicesTotalLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().accentPrimary);
-    voicesTotalLabel_.setJustificationType (juce::Justification::centredLeft);
-    tablePanel_->addAndMakeVisible (voicesTotalLabel_);
 
     for (int i = 0; i < kNumParts; ++i)
     {
@@ -1310,7 +1306,6 @@ void PatchPage::paint (juce::Graphics& g)
 void PatchPage::applyThemeColors()
 {
     const auto theme = themeManager_.getCurrentTheme();
-    voicesTotalLabel_.setColour (juce::Label::textColourId, theme.accentPrimary);
     repaint();
 }
 
@@ -1321,7 +1316,6 @@ void PatchPage::refreshLanguage()
         r->refreshLanguage();
     if (tablePanel_ != nullptr)
         tablePanel_->refreshLanguage();   // the column-header strip
-    updateVoicesTotal();   // "Voices Y/96" is TRANS-built chrome
     repaint();
 }
 
@@ -1550,32 +1544,12 @@ void PatchPage::chooseVoiceSlots (int part, int slots)
     rows_[(size_t) part]->chooseVoiceSlots (slots);
 }
 
-void PatchPage::updateVoicesTotal()
-{
-    // Pool budget: the sum of the per-part ASSIGNED slots (getPartVoiceSlots)
-    // — the user-configured counts the rows below this label edit, read
-    // immediately on the message thread. The old basis (the
-    // audio-thread-published voiceCount_ snapshot) was wrong for this readout:
-    // it lagged a fresh slots edit until the next process block (so a part
-    // lowered to 1 kept reading 16) and reflected CHAIN's doubled voice sets,
-    // so the label disagreed with the rows. Assigned slots are the honest
-    // "how big is my patch" number: one active part with 1 voice reads
-    // "Voices 1/96".
-    int voices = 0;
-    for (int p = 0; p < kNumParts; ++p)
-        voices += proc_.getEngine().getPartVoiceSlots (p);
-    voicesTotalLabel_.setText (TRANS ("Voices") + " " + juce::String (voices) + "/"
-                                   + juce::String (kNumVoices),
-                               juce::dontSendNotification);
-}
-
 void PatchPage::refresh()
 {
     refreshing_ = true;
     for (auto& r : rows_)
         r->refresh();
     refreshing_ = false;
-    updateVoicesTotal();
     setArrangementFromEngine();
 }
 
@@ -1583,7 +1557,6 @@ void PatchPage::postPartEdit()
 {
     for (auto& r : rows_)
         r->updateDimState();
-    updateVoicesTotal();
     setArrangementFromEngine();
 }
 

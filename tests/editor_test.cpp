@@ -1493,12 +1493,12 @@ int main (int argc, char** argv)
     if (patchPage != nullptr)
     {
         const auto labels = patchPage->headerLabelsForTest();
-        // Voice tab (default): 12 visible columns (everything except Ch).
-        // Voice tab (default): 8 visible columns after the 2026-08-20
-        // regrouping (Part, Voices, Porta, Lgo, Vol, Fine, Spr, Tune).
-        check (labels.size() == 8, "[22] Voice-tab header has 8 column captions");
+        // Voice tab (default): 9 visible columns after the 2026-08-20
+        // follow-up regrouping (Part, Voices, Porta, Lgo, Vol, Fine, Spr,
+        // Tune, Polyphony).
+        check (labels.size() == 9, "[22] Voice-tab header has 9 column captions");
         check (labels[0]  == TRANS ("Part") && labels[1]  == TRANS ("Voices")
-            && labels[7]  == TRANS ("Tune"),
+            && labels[7]  == TRANS ("Tune") && labels[8] == TRANS ("Polyphony"),
                "[22] Voice-tab header captions in column order");
 
         check (patchPage->tableTooltipsCompleteForTest(),
@@ -1538,7 +1538,7 @@ int main (int argc, char** argv)
             //                    Oct     Porta   Lgo     Vol     Fine
                                   false,  true,   true,   true,   true,
             //                    Spr     Tune    Poly
-                                  true,   true,   false };
+                                  true,   true,   true };
             bool ok = true;
             for (int i = 0; i < 13; ++i) ok = ok && (m[i] == want[i]);
             check (ok, "[23] Voice-tab mask = sound-shaping columns");
@@ -1560,9 +1560,9 @@ int main (int argc, char** argv)
         }
 
         // ---- (c) the tab strip leads the summary row.
-        check (patchPage->tabStripXForTest() >= 0
-               && patchPage->tabStripXForTest() <= 8,
-               "[23] [Voice|MIDI] strip is the leftmost summary-row control");
+        check (patchPage->tabStripXForTest() >= 232
+               && patchPage->tabStripXForTest() <= 245,
+               "[23] [Voice|MIDI] strip sits right of the arrangement combo");
 
         // Seams on the Voice tab (the default): a write + read-back.
         patchPage->choosePortamento (0, 33);
@@ -1578,15 +1578,15 @@ int main (int argc, char** argv)
             //                    Oct     Porta   Lgo     Vol     Fine
                                   true,   false,  false,  false,  false,
             //                    Spr     Tune    Poly
-                                  false,  false,  true };
+                                  false,  false,  false };
             bool ok = true;
             for (int i = 0; i < 13; ++i) ok = ok && (m[i] == want[i]);
-            check (ok, "[23] MIDI-tab mask = note-routing columns (incl. Oct/Poly)");
+            check (ok, "[23] MIDI-tab mask = note-routing columns (Ch/Zones/Oct)");
         }
         const auto midiLabels = patchPage->headerLabelsForTest();
-        check (midiLabels.size() == 6, "[23] MIDI-tab header has 6 captions");
-        check (midiLabels[1] == TRANS ("Ch") && midiLabels[5] == TRANS ("Polyphony"),
-               "[23] MIDI-tab header order Part/Ch/Zone/Zone/Oct/Poly");
+        check (midiLabels.size() == 5, "[23] MIDI-tab header has 5 captions");
+        check (midiLabels[1] == TRANS ("Ch") && midiLabels[4] == TRANS ("Oct"),
+               "[23] MIDI-tab header order Part/Ch/Zone/Zone/Oct");
 
         // Alignment pin on the MIDI tab too (the geometry re-distributes).
         {
@@ -1603,7 +1603,7 @@ int main (int argc, char** argv)
         patchPage->choosePortamento (0, 21);
         check (patchPage->getDisplayedPortamento (0) == 21,
                "[23] hidden-cell seam still works on the MIDI tab");
-        // Hidden-cell seam on the other side: Oct/Poly are Voice-hidden here.
+        // Hidden-cell seam on the other side: Oct is Voice-hidden here.
         patchPage->chooseOctave (1, -1);
         check (static_cast<int8_t> (proc.getEngine().getPart (1).partBytes[1]) == -1,
                "[23] hidden Oct column still writes the engine byte");
