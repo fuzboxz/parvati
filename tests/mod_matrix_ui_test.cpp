@@ -502,6 +502,11 @@ int main()
                            ParvatiModuleLamp::dotDiameterFor (band))
                        || synthModuleLamp->getWidth() < 44,
                        "synth lamp dot == dotDiameterFor(its band)");
+            // Border ring: the 2026-08-20 "a tiny bit thicker" pin — one
+            // shared constant, drawn by paintButton and asserted here.
+            check (ParvatiModuleLamp::kLampBorderWidth >= 2.0f
+                       && ParvatiModuleLamp::kLampBorderWidth <= 3.0f,
+                   "lamp border ring stroke is the slightly-thicker value (2-3pt)");
         }
     }
 

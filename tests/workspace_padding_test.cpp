@@ -182,6 +182,12 @@ int main()
         if (lamp != nullptr)
         {
             check (lamp->getWidth() >= 44, "lamp hit target >= 44pt wide");
+            // Border-ring stroke pin (2026-08-20 "a tiny bit thicker"): the
+            // lamp draws the shared constant (asserted in mod_matrix_ui_test
+            // too — one value, two pins).
+            check (ParvatiModuleLamp::kLampBorderWidth >= 2.0f
+                       && ParvatiModuleLamp::kLampBorderWidth <= 3.0f,
+                   "lamp border ring stroke is the slightly-thicker value (2-3pt)");
             const bool before = view.isSlotMuted (0);
             click (lamp);
             const bool after = view.isSlotMuted (0);

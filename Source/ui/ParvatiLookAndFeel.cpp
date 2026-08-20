@@ -1038,9 +1038,11 @@ void ParvatiModuleLamp::paintButton (juce::Graphics& g, bool isMouseOverButton, 
     if (! isEnabled())
         fill = fill.withAlpha (0.25f);
 
-    // Border ring: the panel outline colour, brightened on hover so the dot
-    // reads as tappable (the only hover affordance).
-    juce::Colour border = ring;
+    // Border ring: slightly brightened outline so the dot's contour stays
+    // legible on every theme (user 2026-08-20: "a tiny bit" more border),
+    // brightened further on hover so the dot reads as tappable (the only
+    // hover affordance).
+    juce::Colour border = ring.brighter (0.25f);
     if (isMouseOverButton)
         border = on ? ring.brighter (0.8f) : text.brighter (0.20f);
     if (! isEnabled())
@@ -1062,7 +1064,7 @@ void ParvatiModuleLamp::paintButton (juce::Graphics& g, bool isMouseOverButton, 
     g.setColour (fill);
     g.fillEllipse (r);
     g.setColour (border);
-    g.drawEllipse (r, 1.5f);
+    g.drawEllipse (r, kLampBorderWidth);
 }
 
 float ParvatiModuleLamp::dotDiameterFor (juce::Rectangle<int> bounds)

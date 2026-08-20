@@ -46,6 +46,11 @@ class ParvatiModuleLamp : public juce::Button
 public:
     ParvatiModuleLamp() : juce::Button ({}) { setClickingTogglesState (false); }
 
+    // The dot's border-ring stroke width (user 2026-08-20: "increase the
+    // border of the indicator lights a tiny bit"). Public so paint and the
+    // style tests read ONE value.
+    static constexpr float kLampBorderWidth = 2.5f;
+
     // Pin the drawn LAMP to an explicit centre, as an offset from the
     // button's TOP-LEFT (the hit area stays the FULL bounds). A negative x
     // keeps the default: centred in the bounds.
