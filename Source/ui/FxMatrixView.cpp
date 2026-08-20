@@ -511,11 +511,17 @@ struct FxMatrixRow : public juce::Component,
         indexLabel_.setBounds (b.removeFromLeft (kMatrixIndexLabelW));
         b.removeFromLeft (4);
 
-        // Source + dest combos: proportional, floored so the choice text stays legible.
-        const int comboW = juce::jmax (70, b.getWidth() / 5);
+        // Source + dest combos: lean fit-to-content caps (the SLIDER takes
+        // the freed width — user feedback 2026-08-20: sliders wider, combos
+        // narrower; mirrors the synth matrix's slider-first split).
+        const int rowW = b.getWidth();
+        const int sliderFloor = juce::jmax (96, rowW * 35 / 100);
+        const int comboBudget = juce::jmax (0, rowW - sliderFloor - 14 - 8);
+        const int comboW = juce::jlimit (56, 130, comboBudget * 5 / 9);
         sourceCombo_.setBounds (b.removeFromLeft (comboW));
         b.removeFromLeft (14);   // arrow gap
-        destCombo_.setBounds (b.removeFromLeft (juce::jmax (70, b.getWidth() / 4)));
+        const int dstW = juce::jlimit (60, 150, comboBudget - 14 - comboW);
+        destCombo_.setBounds (b.removeFromLeft (dstW));
         b.removeFromLeft (8);
 
         // iOS HIG: the depth slider fills the remaining row area, so on the 48pt

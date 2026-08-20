@@ -70,14 +70,14 @@ constexpr PartColumnSpec kColumnSpecs[PartTableColumns::kCount] = {
     /* kName   */ {  96, 1,        160 },   // capped: the name field should hug its 16-char content, not drink the row
     /* kVoices */ {  56, 2, 1 << 30 },
     /* kCh     */ {  56, 3, 1 << 30 },
-    /* kZoneLo */ {  44, 1,        64 },
-    /* kZoneHi */ {  44, 1,        64 },
+    /* kZoneLo */ {  44, 1,        72 },
+    /* kZoneHi */ {  44, 1,        72 },
     /* kOct    */ {  48, 1, 1 << 30 },
-    /* kPorta  */ {  44, 1,        64 },
+    /* kPorta  */ {  44, 1,        88 },   // "Portamento" caption needs ~64pt+
     /* kLgo    */ {  48, 1, 1 << 30 },
-    /* kVol    */ {  44, 1,        64 },
-    /* kFine   */ {  44, 1,        64 },
-    /* kSpr    */ {  44, 1,        64 },
+    /* kVol    */ {  44, 1,        72 },
+    /* kFine   */ {  44, 1,        80 },   // "Fine Tune"
+    /* kSpr    */ {  44, 1,        72 },
     /* kTune   */ {  96, 2, 1 << 30 },
     /* kPoly   */ {  96, 2, 1 << 30 }
 };
@@ -1209,15 +1209,15 @@ public:
             };
             addIf (true,                       TRANS ("Part"));
             addIf (! midi,                     TRANS ("Voices"));
-            addIf (midi,                       TRANS ("Ch"));
+            addIf (midi,                       TRANS ("Channel"));
             addIf (midi,                       TRANS ("Zone Low"));
             addIf (midi,                       TRANS ("Zone High"));
-            addIf (midi,                       TRANS ("Oct"));
-            addIf (! midi,                     TRANS ("Porta"));
-            addIf (! midi,                     TRANS ("Lgo"));
-            addIf (! midi,                     TRANS ("Vol"));
-            addIf (! midi,                     TRANS ("Fine"));
-            addIf (! midi,                     TRANS ("Spr"));
+            addIf (midi,                       TRANS ("Octave"));
+            addIf (! midi,                     TRANS ("Portamento"));
+            addIf (! midi,                     TRANS ("Legato"));
+            addIf (! midi,                     TRANS ("Volume"));
+            addIf (! midi,                     TRANS ("Fine Tune"));
+            addIf (! midi,                     TRANS ("Spread"));
             addIf (! midi,                     TRANS ("Tune"));
             addIf (! midi,                     TRANS ("Polyphony"));
             return out;

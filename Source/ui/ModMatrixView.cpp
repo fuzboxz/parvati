@@ -457,12 +457,16 @@ struct ModMatrixRow : public juce::Component,
         indexLabel_.setBounds (b.removeFromLeft (kMatrixIndexLabelW));
         b.removeFromLeft (4);
 
-        // Source + dest combos share the REST with the depth slider, capped so
-        // the slider keeps >= 40pt (its row height is the real hit surface).
-        const int sliderFloor = 40;
-        const int comboBudget = juce::jmax (0, b.getWidth() - sliderFloor - 14 - 8);
-        int srcW = juce::jmax (70, comboBudget * 5 / 9);
-        int dstW = juce::jmax (84, comboBudget * 4 / 9);
+        // Source + dest combos share the REST with the depth slider. The
+        // SLIDER leads (user feedback 2026-08-20: sliders much wider, combos
+        // leaner): it takes the width remaining after the combos' measured
+        // floors — the combo floors are fit-to-widest-item, capped so a long
+        // choice list can never push the slider under ~35% of the row.
+        const int rowW = b.getWidth();
+        const int sliderFloor = juce::jmax (96, rowW * 35 / 100);
+        const int comboBudget = juce::jmax (0, rowW - sliderFloor - 14 - 8);
+        int srcW = juce::jmax (56, juce::jmin (comboBudget * 5 / 9, 130));
+        int dstW = juce::jmax (60, juce::jmin (comboBudget - 14 - srcW, 150));
         // When even the floors cannot fit, shrink the SOURCE first (the
         // narrower semantic: the fixed source list), then hard-floor both at
         // 44 — the HIG minimum for a functional combo on touch.

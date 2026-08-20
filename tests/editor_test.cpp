@@ -1566,8 +1566,8 @@ int main (int argc, char** argv)
         {
             struct ColCap { int col; const char* key; };
             const ColCap voiceCols[] = {
-                { 0, "Part" }, { 1, "Voices" }, { 6, "Porta" }, { 7, "Lgo" },
-                { 8, "Vol" },  { 9, "Fine" },  { 10, "Spr" }, { 11, "Tune" },
+                { 0, "Part" }, { 1, "Voices" }, { 6, "Portamento" }, { 7, "Legato" },
+                { 8, "Volume" }, { 9, "Fine Tune" }, { 10, "Spread" }, { 11, "Tune" },
                 { 12, "Polyphony" } };
             bool ok = true;
             for (const auto& cc : voiceCols)
@@ -1601,7 +1601,7 @@ int main (int argc, char** argv)
         }
         const auto midiLabels = patchPage->headerLabelsForTest();
         check (midiLabels.size() == 5, "[23] MIDI-tab header has 5 captions");
-        check (midiLabels[1] == TRANS ("Ch") && midiLabels[4] == TRANS ("Oct"),
+        check (midiLabels[1] == TRANS ("Channel") && midiLabels[4] == TRANS ("Octave"),
                "[23] MIDI-tab header order Part/Ch/Zone/Zone/Oct");
 
         // Alignment pin on the MIDI tab too (the geometry re-distributes).
@@ -1619,8 +1619,8 @@ int main (int argc, char** argv)
         {
             struct ColCap { int col; const char* key; };
             const ColCap midiCols[] = {
-                { 0, "Part" }, { 2, "Ch" }, { 3, "Zone Low" },
-                { 4, "Zone High" }, { 5, "Oct" } };
+                { 0, "Part" }, { 2, "Channel" }, { 3, "Zone Low" },
+                { 4, "Zone High" }, { 5, "Octave" } };
             bool ok = true;
             for (const auto& cc : midiCols)
                 ok = ok && (patchPage->headerCaptionForTest (cc.col) == TRANS (cc.key));
