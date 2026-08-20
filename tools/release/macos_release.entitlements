@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Hardened-runtime entitlements for the RELEASE (Developer ID) signing of
+      the Parvati plugin bundles + Standalone app (tools/release/sign_and_notarize.sh).
+
+      disable-library-validation: REQUIRED for audio plugins under the hardened
+      runtime — hosts (DAWs) load plugin binaries into their own process, and
+      library validation would reject any library/plugin not signed by the same
+      team as the host. This is the JUCE-documented setting for VST3/AU/CLAP
+      distribution.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

@@ -28,19 +28,35 @@ microcontroller / voicecard hardware.
 - All 3 Ambika filter topologies (4-pole LM13700, 4-pole SSM2164, 2-pole SVF)
 - Loads/saves original Ambika `.PRO` (program) and `.MUL` (multi) patch files
 - 6-part multitimbral with per-part MIDI channel, key zone & voice count
-- **Per-part microtonal tuning** — the 32 firmware scale presets, custom
-  12-entry per-note-class tables, and Scala `.scl`/`.kbm` import
+- **Per-part microtonal tuning** — the 32 firmware "raga" scale presets
+  (plus 12-EDO), restored verbatim from the Ambika controller and
+  round-tripping `.PRO`/`.MUL`
 - Host-tempo sync, MPE, multi-output buses (6 individual outs + main mix)
 - Factory preset banks bundled (GPL-3.0 "goldencard" banks)
+- **iOS 14+ AUv3 + Standalone** build (iPad-only, landscape) sharing the same
+  engine and presets container as the desktop plugin
+
+## Requirements
+
+- **macOS 13 (Ventura) or newer, Apple Silicon (arm64)**. Intel/x86_64 is not
+  shipped (Rosetta is being phased out by Apple); a universal build is still
+  possible from source with `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
+- **iOS 14+** for the AUv3 app-extension + Standalone build (iPad-only,
+  landscape-only — the dense editor layout has no portrait form). The iOS
+  build is not yet App-Store shipped; see `audit/release_readiness.md`.
+- Build-from-source additionally needs **JUCE 9** (9.0.1 was the version
+  developed against) at `~/JUCE` and CMake ≥ 3.22. Linux builds VST3 + CLAP
+  + Standalone (no AU).
 
 ## Build & install (macOS)
 
-### Requirements
+### Build requirements
 
 - **CMake** ≥ 3.22 (`brew install cmake`)
 - Xcode command-line tools (`xcode-select --install`)
-- **JUCE 9** checked out at `~/JUCE` (clone JUCE 9.0.0:
-  `git clone --branch 9.0.0 https://github.com/juce-framework/JUCE ~/JUCE`)
+- **JUCE 9** checked out at `~/JUCE` (clone JUCE 9.0.1:
+  `git clone --branch 9.0.1 https://github.com/juce-framework/JUCE ~/JUCE`;
+  override with `-DJUCE_GLOBAL_PATH=/path/to/JUCE`)
 
 ### Build
 
@@ -72,12 +88,19 @@ cp -R build/Parvati_artefacts/Release/Standalone/Parvati.app /Applications/
 all formats, renders `./screens`, and installs VST3 + AU + CLAP into
 `~/Library/Audio/Plug-Ins` **and the Standalone into `/Applications`** for you.)
 
-Restart your DAW and rescan plugins. To run the AU for the first time you may
-need to clear the quarantine attribute:
+Restart your DAW and rescan plugins.
+
+Binaries built locally with `deploy` are ad-hoc signed; macOS Gatekeeper
+may quarantine files downloaded/copied around, in which case clear the
+attribute once:
 
 ```bash
 xattr -cr ~/Library/Audio/Plug-Ins/Components/Parvati.component
 ```
+
+For distribution, use [`tools/release/sign_and_notarize.sh`](tools/release/)
+instead — Developer-ID signing + notarization + stapling, so end users never
+see a Gatekeeper prompt.
 
 ## Build (Linux)
 
@@ -104,22 +127,15 @@ Every part has its own tuning (the **Tune** column on the Patch page):
   firmware feature). Presets round-trip `.PRO`/`.MUL` files, so they also
   play back on the hardware. Scale-muted note classes (some presets) are
   refused exactly like the hardware.
-- **Custom…** opens a per-part editor: twelve note-class offsets in steps of
-  1 unit = 1/128 semitone (≈ 0.78 ¢ — the oscillator's actual resolution;
-  the readout never promises finer), double-click a row to reset it, and
-  **Import .scl/.kbm…** converts a Scala tuning file into the table.
-- Scala import stays honest to the hardware rather than approximating:
-  12-key octave-repeating mappings only (other sizes, non-octave periods
-  such as Bohlen-Pierce, and over-long keymaps are rejected with the
-  reason), offsets are clamped to ±127 with a per-class warning, unmapped
-  classes become the firmware's muted-note behaviour, and a 432 Hz-style
-  reference pitch folds in exactly.
-- Caveats: custom tables (unlike presets) do not export to `.MUL`/`.PRO`
-  (the formats have no field for them — the export falls back to the part's
-  Scale preset byte or 12-EDO, and the export dialog says so); arpeggiator
-  octave shifts transpose by one scale period; scale offsets also shift
-  filter key tracking and the NOTE modulation source (the offsets apply to
-  the triggered pitch, as on the hardware).
+- Arpeggiator octave shifts transpose by one scale period; scale offsets
+  also shift filter key tracking and the NOTE modulation source (the
+  offsets apply to the triggered pitch, as on the hardware).
+
+> **Custom / Scala tuning was removed** (2026-08): an earlier build offered
+> custom 12-entry per-note-class tables with `.scl`/`.kbm` Scala import.
+> It was removed to keep tuning hardware-faithful to the Ambika. Old presets,
+> host states, and `.parvati` files that carried a custom table still load —
+> they fall back to 12-EDO (or the part's scale-preset byte).
 
 ---
 

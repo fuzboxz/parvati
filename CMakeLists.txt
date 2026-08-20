@@ -111,6 +111,20 @@ if(APPLE)
     endif()
 endif()
 
+# Desktop-macOS deployment target (release-prep): without this the binaries
+# target the BUILD SDK's minimum, which both silently limits the install base
+# and changes per-SDK-number. 13.0 (Ventura) is the floor for the first
+# public release — Apple-silicon Macs that can run current Xcode all reach it.
+# Override per-build with -DCMAKE_OSX_DEPLOYMENT_TARGET=…; the iOS branch
+# below sets its own 14.0.
+if(APPLE AND NOT PARVATI_IOS)
+    # FORCE: CMake pre-seeds an EMPTY cache entry for this variable, which makes
+    # a plain set(... CACHE ...) a silent no-op in already-configured build dirs.
+    if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "macOS deployment target" FORCE)
+    endif()
+endif()
+
 # Default to a Debug build (the config this project is developed/tested with);
 # artefacts then land in build/Parvati_artefacts/Debug/. Override with
 # -DCMAKE_BUILD_TYPE=Release for an optimized build.
@@ -603,7 +617,9 @@ target_compile_definitions(Parvati PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0
+    # NOTE: no JUCE_DISPLAY_SPLASH_SCREEN define here — JUCE 9 has no splash
+    # screen at all; the JUCE 8-era flag is ignored (juce_gui_basics emits an
+    # "ignored" warning for it), so setting it would be dead weight.
     PARVATI_VERSION="${CMAKE_PROJECT_VERSION}"
 )
 

@@ -94,32 +94,36 @@ apps. A save that only exists in Files with no browser entry = the import path f
 
 ---
 
-## D4. Open-in from Files / AirDrop / Mail (F-ios-build-1, now declared; REMAINING integration)
+## D4. Open-in from Files / AirDrop / Mail (F-ios-build-1; integration LANDED — device verify only)
 
-**Why:** this wave declared `CFBundleDocumentTypes` + `UTExportedTypeDeclarations`
-for .parvati/.PRO/.MUL/.scl/.kbm (CMakeLists grafted via `ios/parvati_filetypes.plist`,
-verify step below), which is what makes the OS offer "Open in Parvati"/"Copy to Parvati".
-⚠️ **REMAINING INTEGRATION (follow-up):** declaring the types only *invokes* the app.
-Parvati must then **handle the opened URL at launch** — JUCE exposes this via the
-Standalone `JUCEApplicationBase` / `StandaloneFilterApp` `anotherInstanceStarted` /
-`openFile` delegate seam (or a custom `juce::JUCEApplication` overriding
-`moreThanOneInstanceAllowed()` + handling the file-open message). That seam is NOT yet
-implemented: today "Open in Parvati" launches the app but does not load the file.
-Scope it as its own follow-up task before App-Store submission.
+**Why:** `CFBundleDocumentTypes` + `UTExportedTypeDeclarations` are declared
+(CMakeLists grafted via `ios/parvati_filetypes.plist`) for .parvati/.PRO/.MUL
+(**3 types** — the former .scl/.kbm entries were removed together with the
+Scala/custom-tuning subsystem in the 2026-08-19 QoL wave), which is what makes
+the OS offer "Open in Parvati"/"Copy to Parvati".
 
-**Steps (post-declaration):**
+**Integration status:** the open-in HANDLING is implemented —
+`Source/ui/IosOpenIn.{h,mm}` routes an opened preset (.parvati/.PRO/.MUL)
+atomically into the shared USER tree and loads it through the normal
+message-thread seams (headless-pinned by `tests/ios_openin_test.cpp`).
+What remains is purely on-device confirmation of the OS interaction.
+
+**Steps:**
 1. Build config sanity first (deterministic, no device):
    `plutil -p build_ios_dev/Parvati_artefacts/Release/Standalone/Parvati.app/Info.plist`
    must show `CFBundleDocumentTypes[0].LSItemContentTypes[0] = com.805labs.parvati-patch`
-   and `UTExportedTypeDeclarations[0..4].UTTypeIdentifier` (the five ids).
+   and `UTExportedTypeDeclarations[0..2].UTTypeIdentifier` (the three ids:
+   parvati-patch / parvati-program / parvati-multi).
 2. AirDrop a .parvati from another iDevice → the share sheet must offer Parvati.
 3. Mail yourself a .PRO/.MUL → long-press the attachment → "Copy to Parvati" appears.
 4. In Files, tap a .parvati → Parvati opens (icon shown by type).
-5. Choose "Copy to Parvati": the app launches; note whether the patch actually LOADS —
-   that is the D4 follow-up item (expected today: launches, does not auto-load).
+5. Choose "Copy to Parvati": the app launches AND the patch must appear in the
+   USER bank of the patch browser (imported + loaded). If the app launches but
+   the file does not appear, capture the console (`xcrun devicectl device console`)
+   — the security-scoped-URL read is the most likely failure point.
 
-**Expected:** steps 2–4 all offer/launch Parvati (types registered). Step 5 launches
-the app; auto-loading is the known follow-up, record its status.
+**Expected:** steps 2–5 all pass. A .scl/.kbm file must NOT offer Parvati anymore
+(negative check — types removed).
 
 ---
 

@@ -8,10 +8,18 @@ The factory patches shipped with Parvati (`presets/FACTORY/<BANK>/*.PRO` and
 ## License
 
 These presets are part of the Ambika firmware, released under the
-**GNU General Public License v3.0** (GPL-3.0) by Emilie Gillet. Parvati is a
-software port of the Ambika synthesizer and is therefore itself licensed under
-the GPL-3.0; bundling these GPL-3.0 factory presets is fully compatible with
-that license. See the project root `LICENSE` file for the full GPL-3.0 text.
+**GNU General Public License v3.0** (GPL-3.0) by Emilie Gillet.
+
+Parvati itself is licensed under the **GNU Affero General Public License
+v3.0** (AGPL-3.0) — see the project root [`LICENSE`](../LICENSE) and
+[`NOTICES.md`](../NOTICES.md). The two are compatible in the direction used
+here: GPL-3.0 material (these preset banks, and the Ambika-derived DSP) may
+be combined with and distributed under AGPL-3.0, since AGPL-3.0 §13 adds
+further obligations (network-use source offer) on top of GPL-3.0 without
+removing any. Both are Free Software licenses; redistributing these presets
+unmodified carries the GPL-3.0 notice obligation (this file), and
+distributing the combined Parvati binary/source carries the AGPL-3.0
+corresponding-source obligation.
 
 ## Contents
 
