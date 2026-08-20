@@ -14,30 +14,40 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
     the Zone-knob idiom. Writes use the established engine-direct pattern
     (setCurrentPart + applyPartByte + restore + postPartEdit + current-part
     APVTS re-sync), exactly like the Poly/Tune columns.
+  - **Completing absorption (same day, follow-up):** Volume / Tuning /
+    Spread joined the table as the Vol / Fine / Spr columns (bytes 0 / 2 / 3;
+    byte 2 SIGNED int8) — the compact "Part / Play" row is GONE and the
+    hosted page renders ONLY [Global options + arrangement + table], per
+    the "ideally everything in the table except global" direction. Width
+    was re-MEASURED (probe at the 1024x500 floor): editor 992 -> scrollbar
+    8 -> hosted page 984 -> group panel 952 -> row 944. The briefed
+    "~130pt slack" measured 108pt, so the two 8pt gaps before Tune/Poly
+    were tightened to the 4pt idiom the Oct/Porta/Lgo trio already uses
+    (no cell shrunk) to fund three 36pt cells; the measured row ends at
+    940 <= 944 with the symmetric inset intact (row 944 <= the 948 target).
+    The knobs are 36pt dials in 36x44 bands (L&F squares via jmin(w,h)):
+    full 44pt-tall tap bands; three 44pt-wide cells (132pt + gaps) are
+    arithmetically impossible at the floor. Readouts match the established
+    formatters exactly (% of 127 / ±ct via x*100/128 / % of 40).
   - **Removed the duplicate knobs** part_raga ("Scale" — the table's Tune
     column already covers it) and part_polyphony ("Polyphony" — the Poly
     column). The APVTS PARAMETERS remain fully valid (created by the
     untouched descriptor table): host automation, saved states and files keep
-    driving the bytes; only the page knobs are gone.
-  - **Volume / Tuning / Spread stay on the Patch-hosted Global page** as one
-    compact "Part / Play" row directly above the part table. DEVIATION from
-    the design brief's step 1 (which moved them to the Mixer page), taken
-    per an approved supervisor decision after measurement: the Mixer page
-    had only ~41px of top-row slack at the default 1280x634, so any 3-knob
-    panel would introduce a NEW top-row scrollbar (measured +55px overflow);
-    the Patch page already scrolls by design (T4), so option (2) keeps zero
-    new scrollbars and no Mixer degradation. The Global page is now 6
-    controls (3 global options + the compact row), down from 11.
+    driving the bytes; only the page knobs are gone. With the completing
+    absorption ALL EIGHT part knobs are table columns; the Global page is
+    exactly the 3 global options (VCA curve / filter card / drive), down
+    from 11.
   - **Mirror:** SynthEngine::applyPartByte's display-version bump (the 30 Hz
-    pollPatchPageMirror seam) now covers bytes 1 / 5 / 6 in addition to 4 /
-    15, so host automation / NRPN / undo of part_octave / part_legato /
-    part_portamento keep the visible table honest.
-  - New localized captions ("Oct" / "Porta" / "Lgo" + "On"/"Off" FR+DE), new
-    PatchPage test hooks (getDisplayed/choose for all three columns),
-    editor_test [21] placement + byte-write coverage, ui_mirror_test
-    battery extensions (APVTS + engine-direct writes, both seams),
-    tools/editor_test coverage-count update. Row width: ~824pt against the
-    ~952pt working width at the 1024pt floor.
+    pollPatchPageMirror seam) now covers bytes 0 / 1 / 2 / 3 / 5 / 6 in
+    addition to 4 / 15, so host automation / NRPN / undo of every absorbed
+    part param keeps the visible table honest.
+  - New localized captions ("Oct" / "Porta" / "Lgo" / "Vol" / "Fine" /
+    "Spr" + "On"/"Off" FR+DE; the dead "Part / Play" strings removed), new
+    PatchPage test hooks (getDisplayed/choose for all six columns),
+    editor_test [21] placement + byte-write coverage (incl. the SIGNED
+    bytes), ui_mirror_test battery extensions (APVTS + engine-direct
+    writes, both seams), tools/editor_test coverage-count + Global-page
+    identity update (6 -> 3).
 
 ### Fixed
 - **UI polish wave 2 (2026-08-20): mod-matrix interactions, seq combo font,

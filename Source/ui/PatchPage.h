@@ -134,6 +134,25 @@ public:
     // the normal byte-6 write path (clamped 0..63).
     void choosePortamento (int part, int value);
 
+    // ---- Output columns (the completing absorption of the old "Part / Play"
+    // page knobs — 2026-08-20 follow-up). Same observe/drive contract: they
+    // read/set the row's Vol / Fine / Spr cells through the normal engine
+    // write path (PartData bytes 0 / 2 / 3; byte 2 is SIGNED int8). ----
+    // Part volume shown in @p part's Vol knob (0..127; -1 out of range).
+    int getDisplayedVolume (int part) const;
+    // Set @p part's volume as if the user dragged the Vol knob (byte 0,
+    // clamped 0..127).
+    void chooseVolume (int part, int value);
+    // Fine tuning shown in @p part's Fine knob (-127..127 in 1/128-semitone
+    // units; -1 out of range).
+    int getDisplayedFineTune (int part) const;
+    // Set @p part's fine tuning (SIGNED byte 2, clamped -127..127).
+    void chooseFineTune (int part, int value);
+    // Detune spread shown in @p part's Spr knob (0..40; -1 out of range).
+    int getDisplayedSpread (int part) const;
+    // Set @p part's spread (byte 3, clamped 0..40).
+    void chooseSpread (int part, int value);
+
 private:
     ParvatiAudioProcessor& proc_;
     ThemeManager& themeManager_;

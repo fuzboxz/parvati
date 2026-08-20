@@ -166,6 +166,32 @@ public:
         };
         portaSlider_.onValueChange = [this] { onPortamentoChanged(); };
 
+        // ---- Output columns (the completing absorption): Vol = part volume
+        // (PartData byte 0, 0..127), Fine = fine tuning (SIGNED byte 2,
+        // -127..127 in 1/128-semitone units), Spr = per-voice detune spread
+        // (byte 3, 0..40). Compact 36pt NoTextBox knobs with centre-arc
+        // readouts (the Porta/Zone idiom; the readout formats match
+        // SynthParamLabels exactly: % of 127 / +-ct via x*100/128 / % of 40).
+        // The part_* APVTS parameters stay valid for host automation. ----
+        setupKnob (volSlider_, 0.0, 127.0);
+        volSlider_.textFromValueFunction = [] (double v) {
+            return juce::String (juce::roundToInt (v * 100.0 / 127.0)) + "%";
+        };
+        volSlider_.onValueChange = [this] { onVolumeChanged(); };
+
+        setupKnob (fineSlider_, -127.0, 127.0);
+        fineSlider_.textFromValueFunction = [] (double v) {
+            const int ct = juce::roundToInt (v * 100.0 / 128.0);
+            return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + "ct";
+        };
+        fineSlider_.onValueChange = [this] { onFineTuneChanged(); };
+
+        setupKnob (sprSlider_, 0.0, 40.0);
+        sprSlider_.textFromValueFunction = [] (double v) {
+            return juce::String (juce::roundToInt (v * 100.0 / 40.0)) + "%";
+        };
+        sprSlider_.onValueChange = [this] { onSpreadChanged(); };
+
         // ---- Lgo: legato (PartData byte 5, 0/1). Compact On/Off combo. ----
         buildLegatoItems();
         legatoCombo_.onChange = [this] { onLegatoChanged(); };
@@ -199,16 +225,21 @@ public:
 
     //----------------------------------------------------------------------
     // Layout: a horizontal strip of labelled columns. The name column absorbed
-    // the removed Cards column's width (128 -> 156; the voice-first model has
-    // one Voices column instead of Cards + Voices). The Tune column is
-    // budgeted for the longest preset name ("Parameshwari" ≈ 81px at the
-    // combo's 14pt text) + the 24px combo chrome — narrower columns measured
-    // against the actual caption/preset text widths (Patch-page working width
-    // floor 1024pt; captions 11pt, verified non-truncating). With the absorbed
-    // part-character columns (Oct / Porta / Lgo, 48pt each + 4pt gaps) the row
-    // consumes 672 + 152 = ~824pt against the ~952pt working width at the
-    // 1024pt floor (~130pt slack; volume/tuning/spread stay page knobs on the
-    // Mixer page — absorbing them too would overrun the budget).
+    // the removed Cards column's width (128 -> 156); the Tune column is
+    // budgeted for the longest preset name ("Parameshwari" ~81px + 24px combo
+    // chrome). WIDTH ARITHMETIC (measured by probe at the 1024x500 floor,
+    // 2026-08-20): editor content 992 -> vertical scrollbar 8 -> hosted page
+    // 984 -> Global group panel x=16 w=952 -> table panel 952 -> row (4px
+    // insets) w=944. Row content: 156+6+76+68+4+48+48+8+48+4+48+4+48 (through
+    // Lgo) = 566 + 4+110+4+140 (Tune/Poly, gaps tightened 8->4 to fund the
+    // new cells — the same 4pt gap the Oct/Porta/Lgo trio already uses; no
+    // CELL was shrunk) + 2+36+2+36+2+36 (Vol/Fine/Spr) = 942 <= 944 (2px
+    // breathing); row + insets = 946 <= the 948 budget. The briefed
+    // "~130pt slack" measured 108pt — without the 8pt gap reclaim even 33pt
+    // cells would not fit. The knobs are 36pt dials in 36x44 bands (the L&F
+    // squares via jmin(w,h)): full 44pt-tall tap band, 36pt wide — three
+    // 44pt-wide cells (132pt + gaps) are arithmetically impossible at the
+    // floor, and overlapping bounds would steal neighbour hits.
     void resized() override
     {
         auto b = getLocalBounds().reduced (4);
@@ -267,14 +298,36 @@ public:
             lgoCaption_.setBounds (col.removeFromTop (12));
             legatoCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
-        b.removeFromLeft (8);
+        b.removeFromLeft (4);
+        // ---- Output columns absorbed from the old "Part / Play" page knobs:
+        // Vol (volume, byte 0), Fine (fine tuning, SIGNED byte 2), Spr (detune
+        // spread, byte 3). 36pt cells with 2pt gaps = 114pt (see the width
+        // arithmetic in the layout comment above). ----
+        {
+            auto col = b.removeFromLeft (36);
+            volCaption_.setBounds (col.removeFromTop (12));
+            volSlider_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (2);
+        {
+            auto col = b.removeFromLeft (36);
+            fineCaption_.setBounds (col.removeFromTop (12));
+            fineSlider_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (2);
+        {
+            auto col = b.removeFromLeft (36);
+            sprCaption_.setBounds (col.removeFromTop (12));
+            sprSlider_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (4);
         // Tune (microtonal scale preset / Custom… popover)
         {
             auto col = b.removeFromLeft (110);
             tuneCaption_.setBounds (col.removeFromTop (12));
             tuneCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
-        b.removeFromLeft (8);
+        b.removeFromLeft (4);
         // Poly (sized to the dropdown width - no longer the row tail)
         {
             auto col = b.removeFromLeft (juce::jmin (140, b.getWidth()));
@@ -315,6 +368,17 @@ public:
         portaSlider_.setValue (static_cast<double> (juce::jlimit (0, 63,
                        static_cast<int> (part.partBytes[6]))), juce::dontSendNotification);
 
+        // Output columns (completing absorption): byte 0 = volume (0..127),
+        // byte 2 = fine tuning (SIGNED int8 -127..127), byte 3 = spread
+        // (0..40).
+        volSlider_.setValue (static_cast<double> (juce::jlimit (0, 127,
+                       static_cast<int> (part.partBytes[0]))), juce::dontSendNotification);
+        fineSlider_.setValue (static_cast<double> (juce::jlimit (-127, 127,
+                       static_cast<int> (static_cast<int8_t> (part.partBytes[2])))),
+                       juce::dontSendNotification);
+        sprSlider_.setValue (static_cast<double> (juce::jlimit (0, 40,
+                       static_cast<int> (part.partBytes[3]))), juce::dontSendNotification);
+
         syncTuningDisplay();
 
         refreshing_ = false;
@@ -333,6 +397,9 @@ public:
         octCaption_.setText (TRANS ("Oct"), juce::dontSendNotification);
         portaCaption_.setText (TRANS ("Porta"), juce::dontSendNotification);
         lgoCaption_.setText (TRANS ("Lgo"), juce::dontSendNotification);
+        volCaption_.setText (TRANS ("Vol"), juce::dontSendNotification);
+        fineCaption_.setText (TRANS ("Fine"), juce::dontSendNotification);
+        sprCaption_.setText (TRANS ("Spr"), juce::dontSendNotification);
         polyCaption_.setText (TRANS ("Polyphony"), juce::dontSendNotification);
         tuneCaption_.setText (TRANS ("Tune"), juce::dontSendNotification);
 
@@ -445,6 +512,44 @@ public:
         onPortamentoChanged();
     }
 
+    // ---- Output-column display/drive hooks (Vol / Fine / Spr) ----
+    int displayedVolume() const
+    {
+        return juce::jlimit (0, 127, juce::roundToInt (volSlider_.getValue()));
+    }
+    void chooseVolume (int value)
+    {
+        refreshing_ = true;
+        volSlider_.setValue (static_cast<double> (juce::jlimit (0, 127, value)),
+                             juce::dontSendNotification);
+        refreshing_ = false;
+        onVolumeChanged();
+    }
+    int displayedFineTune() const
+    {
+        return juce::jlimit (-127, 127, juce::roundToInt (fineSlider_.getValue()));
+    }
+    void chooseFineTune (int value)
+    {
+        refreshing_ = true;
+        fineSlider_.setValue (static_cast<double> (juce::jlimit (-127, 127, value)),
+                              juce::dontSendNotification);
+        refreshing_ = false;
+        onFineTuneChanged();
+    }
+    int displayedSpread() const
+    {
+        return juce::jlimit (0, 40, juce::roundToInt (sprSlider_.getValue()));
+    }
+    void chooseSpread (int value)
+    {
+        refreshing_ = true;
+        sprSlider_.setValue (static_cast<double> (juce::jlimit (0, 40, value)),
+                             juce::dontSendNotification);
+        refreshing_ = false;
+        onSpreadChanged();
+    }
+
     // The Voices combo's currently-displayed voice count (0..16; 0 = the
     // part is disabled — a real selected item, not a placeholder).
     int displayedVoiceSlots() const
@@ -508,8 +613,10 @@ private:
 
     juce::Label partLabel_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_,
                  octCaption_, portaCaption_, lgoCaption_, polyCaption_, tuneCaption_;
+    juce::Label volCaption_, fineCaption_, sprCaption_;   // output columns (Vol/Fine/Spr)
     juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_, octaveCombo_, legatoCombo_;
     juce::Slider loSlider_, hiSlider_, portaSlider_;
+    juce::Slider volSlider_, fineSlider_, sprSlider_;     // output columns (bytes 0/2/3)
 
     // (Re)build the Tune combo items: "12-EDO" (id 1) + the 32 firmware
     // presets (ids 2..33, untranslated proper nouns). Id mapping:
@@ -629,6 +736,31 @@ private:
     {
         if (refreshing_) return;
         writeCharacterByte (5, legatoCombo_.getSelectedId() == 2 ? 1 : 0);
+    }
+
+    // Output-column write paths (completing absorption): byte 0 = volume,
+    // byte 2 = fine tuning (SIGNED), byte 3 = spread. Same writeCharacterByte
+    // idiom (setCurrentPart + applyPartByte + restore + postPartEdit +
+    // current-part APVTS re-sync).
+    void onVolumeChanged()
+    {
+        if (refreshing_) return;
+        writeCharacterByte (0, static_cast<uint8_t> (juce::jlimit (0, 127,
+                          juce::roundToInt (volSlider_.getValue()))));
+    }
+
+    void onFineTuneChanged()
+    {
+        if (refreshing_) return;
+        writeCharacterByte (2, static_cast<uint8_t> (static_cast<int8_t> (juce::jlimit (-127, 127,
+                          juce::roundToInt (fineSlider_.getValue())))));
+    }
+
+    void onSpreadChanged()
+    {
+        if (refreshing_) return;
+        writeCharacterByte (3, static_cast<uint8_t> (juce::jlimit (0, 40,
+                          juce::roundToInt (sprSlider_.getValue()))));
     }
 
     // Rebuild the Lgo items ("Off"/"On", translated), preserving selection.
@@ -917,6 +1049,42 @@ void PatchPage::choosePortamento (int part, int value)
     rows_[(size_t) part]->choosePortamento (value);
 }
 
+int PatchPage::getDisplayedVolume (int part) const
+{
+    if (part < 0 || part >= kNumParts) return -1;
+    return rows_[(size_t) part]->displayedVolume();
+}
+
+void PatchPage::chooseVolume (int part, int value)
+{
+    if (part < 0 || part >= kNumParts) return;   // clamped inside the row
+    rows_[(size_t) part]->chooseVolume (value);
+}
+
+int PatchPage::getDisplayedFineTune (int part) const
+{
+    if (part < 0 || part >= kNumParts) return -1;
+    return rows_[(size_t) part]->displayedFineTune();
+}
+
+void PatchPage::chooseFineTune (int part, int value)
+{
+    if (part < 0 || part >= kNumParts) return;   // clamped inside the row
+    rows_[(size_t) part]->chooseFineTune (value);
+}
+
+int PatchPage::getDisplayedSpread (int part) const
+{
+    if (part < 0 || part >= kNumParts) return -1;
+    return rows_[(size_t) part]->displayedSpread();
+}
+
+void PatchPage::chooseSpread (int part, int value)
+{
+    if (part < 0 || part >= kNumParts) return;   // clamped inside the row
+    rows_[(size_t) part]->chooseSpread (value);
+}
+
 void PatchPage::chooseVoiceSlots (int part, int slots)
 {
     if (part < 0 || part >= kNumParts) return;   // slots clamped inside the row (0 disables the part)
@@ -1041,8 +1209,10 @@ void PatchPage::hostParamPage (juce::Component* paramPage)
     if (hostedParamPage_ != nullptr)
     {
         scrollBody_->addAndMakeVisible (hostedParamPage_);
-        // END STATE: the hosted page renders [Part / Play panel] then [Global
-        // panel: 3 global knobs + the 6-part voice-allocation table]. The table
+        // END STATE (completing absorption, 2026-08-20): the hosted page
+        // renders ONLY [Global panel: the 3 global-option knobs + the 6-part
+        // table] — every per-part setting (incl. Vol/Fine/Spr) is a table
+        // column. The table
         // rides the page's EXTERNAL decoration slot (non-owning):
         // PatchPage keeps owning tablePanel_ (which parents the rows); the
         // page only parents + positions it. Contract: tablePanel_ must

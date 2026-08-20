@@ -26,12 +26,12 @@
 //   - the top-level page selector has exactly 2 tabs ([SYNTH] + [FX]; the
 //     Patch page is a header-button overlay, not a tab)
 //   - every patch/part descriptor EXCEPT `part_select`, the mod-matrix slot
-//     params, and the five Patch-table-absorbed part knobs (octave/legato/
-//     portamento/raga/polyphony) gets exactly one ParamControl cell (counted
-//     across ALL generated pages, parented or not)
-//   - the Oscillators page has exactly 8 controls; the Global page has 6
-//     (the three global options + the compact volume/tuning/spread row —
-//     the rest absorbed into the Patch table, 2026-08-20)
+//     params, and the eight Patch-table-absorbed part knobs (octave/legato/
+//     portamento/raga/polyphony/volume/tuning/spread) gets exactly one
+//     ParamControl cell (counted across ALL generated pages, parented or not)
+//   - the Oscillators page has exactly 8 controls; the Global page has 3
+//     (the three global options only — EVERY part knob is a Patch-table
+//     column, 2026-08-20 completing absorption)
 //   - clicking a CentralModBar generator pill reparents the right page into the
 //     active-editor host (the new click-wiring's first automated coverage)
 //   - a ModMatrixView is a DIRECT child of SynthWorkspace (no longer tab content)
@@ -179,12 +179,15 @@ int main()
             && d.paramID[3] == '_')
             continue;   // fx{1,2,3}_... -> an FxSlotCard's 6 owned ParamControls
         // Patch-page simplification (2026-08-20): octave / legato /
-        // portamento are Patch-table COLUMNS, and raga (Scale) / polyphony are
-        // covered by the table's Tune / Poly columns — no page generates them
-        // (the APVTS parameters remain for host automation / state / files).
+        // portamento are Patch-table COLUMNS, raga (Scale) / polyphony are
+        // covered by the table's Tune / Poly columns, and (the completing
+        // absorption) volume / tuning / spread joined as the Vol / Fine /
+        // Spr columns — no page generates them (the APVTS parameters remain
+        // for host automation / state / files).
         if (d.paramID == "part_octave" || d.paramID == "part_legato"
             || d.paramID == "part_portamento" || d.paramID == "part_raga"
-            || d.paramID == "part_polyphony")
+            || d.paramID == "part_polyphony" || d.paramID == "part_volume"
+            || d.paramID == "part_tuning" || d.paramID == "part_spread")
             continue;
         ++expectedCells;
     }
@@ -231,21 +234,22 @@ int main()
         };
         const auto oscPage = std::find_if (pages.begin(), pages.end(), isOscPage);
 
-        // Global page: 6 controls — the 3 global options + the compact
-        // Part / Play row (volume / tuning / spread). The other 5 part knobs
-        // were absorbed into the Patch page's table (2026-08-20).
+        // Global page: exactly the 3 global-option controls — every part
+        // knob (incl. volume / tuning / spread) is a Patch-table column
+        // (2026-08-20 completing absorption; the compact "Part / Play" row
+        // is gone).
         const auto globalPage = std::find_if (pages.begin(), pages.end(), [] (ParamPage* p)
         {
             auto cs = pageControls (p);
-            if (cs.size() != 6) return false;
-            bool hasCard = false, hasCurve = false, hasVolume = false;
+            if (cs.size() != 3) return false;
+            bool hasCard = false, hasCurve = false, hasDrive = false;
             for (auto* c : cs)
             {
                 if (c->getParamID() == "filter_card")  hasCard = true;
                 if (c->getParamID() == "vca_curve")    hasCurve = true;
-                if (c->getParamID() == "part_volume")  hasVolume = true;
+                if (c->getParamID() == "filter_drive") hasDrive = true;
             }
-            return hasCard && hasCurve && hasVolume;
+            return hasCard && hasCurve && hasDrive;
         });
 
         auto* topTabs = findTabs (ed);
@@ -419,10 +423,10 @@ int main()
         }
 
         std::printf ("\n[3b] Page grouping (Oscillators / Global)\n");
-        std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (6 controls)\n",
+        std::printf ("     Oscillators page found = %d (8 osc controls); Global page found = %d (3 controls)\n",
                      oscPage != pages.end(), globalPage != pages.end());
         check (oscPage != pages.end(), "Oscillators page has exactly 8 osc_* controls");
-        check (globalPage != pages.end(), "Global page has 6 controls: filter_card + vca_curve + filter_drive + volume/tuning/spread");
+        check (globalPage != pages.end(), "Global page has 3 controls: filter_card + vca_curve + filter_drive (every part knob is a table column)");
 
         std::printf ("\n[4] Top-bar Part selector is wired to the engine\n");
         processor.getApvts().getParameterAsValue ("part_select") = 3.0f;   // 1-based part 3

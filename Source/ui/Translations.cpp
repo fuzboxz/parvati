@@ -72,6 +72,9 @@ const juce::String& frenchChromeStrings()
         "\"Oct\" = \"Oct\"\n"        // abbreviation (octave) — same in FR
         "\"Porta\" = \"Porta\"\n"      // portamento — same term in FR
         "\"Lgo\" = \"Lgo\"\n"          // abbreviation (legato) — same in FR
+        "\"Vol\" = \"Vol\"\n"          // abbreviation (volume) — same in FR
+        "\"Fine\" = \"Fin\"\n"        // fine tuning (accord fin)
+        "\"Spr\" = \"Spr\"\n"          // abbreviation (spread/detune) — same in FR
         "\"Off\" = \"Off\"\n"          // gear-standard term (kept, cf. param value lists)
         "\"On\" = \"On\"\n"
         "\"Polyphony\" = \"Polyphonie\"\n"
@@ -105,7 +108,6 @@ const juce::String& frenchChromeStrings()
         "\"Filter Mod\" = \"Modulation du filtre\"\n"
         "\"Note Sequencer\" = \"Séquenceur de notes\"\n"
         "\"Voice LFO\" = \"LFO de voix\"\n"
-        "\"Part / Play\" = \"Partie / Jeu\"\n"
         "\"Other\" = \"Autre\"\n"
         "\"Osc 1\" = \"Osc 1\"\n"
         "\"Osc 2\" = \"Osc 2\"\n"
@@ -233,6 +235,9 @@ const juce::String& germanChromeStrings()
         "\"Oct\" = \"Okt\"\n"         // abbreviation (Oktave)
         "\"Porta\" = \"Porta\"\n"      // Portamento — same term in DE
         "\"Lgo\" = \"Lgo\"\n"          // abbreviation (Legato) — same in DE
+        "\"Vol\" = \"Vol\"\n"          // abbreviation (Volume) — same in DE
+        "\"Fine\" = \"Fein\"\n"       // Feinstimmung
+        "\"Spr\" = \"Spr\"\n"          // abbreviation (Spread/Verstreuung) — same in DE
         "\"Off\" = \"Aus\"\n"
         "\"On\" = \"Ein\"\n"
         "\"Polyphony\" = \"Polyphonie\"\n"
@@ -266,7 +271,6 @@ const juce::String& germanChromeStrings()
         "\"Filter Mod\" = \"Filtermod\"\n"
         "\"Note Sequencer\" = \"Notensequenzer\"\n"
         "\"Voice LFO\" = \"Stimmen-LFO\"\n"
-        "\"Part / Play\" = \"Part / Wiedergabe\"\n"
         "\"Other\" = \"Sonstige\"\n"
         "\"Osc 1\" = \"Osz 1\"\n"
         "\"Osc 2\" = \"Osz 2\"\n"

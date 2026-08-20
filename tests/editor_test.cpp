@@ -1338,12 +1338,14 @@ int main (int argc, char** argv)
     }
 
     // ---- [21] Patch-page simplification: part settings placement ----
-    // (a) part_volume / part_tuning / part_spread knobs live on the MIXER page
-    //     (one extra "Part / Play" panel — the per-part output stage);
-    // (b) NO page shows the absorbed knobs (octave/legato/portamento → table
-    //     columns; raga/polyphony → covered by the Tune/Poly columns);
-    // (c) the Global (Patch-hosted) page carries ONLY the Global group knobs;
-    // (d) the new table cells drive the engine bytes through the real seams.
+    // (a) NO page shows ANY part knob (octave/legato/portamento/raga/
+    //     polyphony/volume/tuning/spread are ALL table columns now — the
+    //     completing absorption);
+    // (b) the Global (Patch-hosted) page carries ONLY the Global group knobs
+    //     (the compact "Part / Play" row is gone);
+    // (c) no page renders a "Part / Play" group;
+    // (d) the table cells drive the engine bytes through the real seams
+    //     (incl. the SIGNED bytes 1 / 2).
     std::printf ("\n[21] Patch-page simplification (part settings placement)\n");
     {
         struct PageScan { juce::StringArray groups; juce::StringArray paramIds; };
@@ -1374,7 +1376,8 @@ int main (int argc, char** argv)
             if (ps.groups.contains ("Mixer"))
                 mixerPage = &ps;
             for (const char* id : { "part_octave", "part_legato", "part_portamento",
-                                    "part_raga", "part_polyphony" })
+                                    "part_raga", "part_polyphony", "part_volume",
+                                    "part_tuning", "part_spread" })
                 if (ps.paramIds.contains (id)) ++absorbedKnobsAnywhere;
         }
 
@@ -1388,16 +1391,14 @@ int main (int argc, char** argv)
                    && globalPage->paramIds.contains ("filter_card")
                    && globalPage->paramIds.contains ("filter_drive"),
                    "[21] Global page keeps the three global-option knobs");
-            check (globalPage->paramIds.contains ("part_volume")
-                   && globalPage->paramIds.contains ("part_tuning")
-                   && globalPage->paramIds.contains ("part_spread"),
-                   "[21] volume/tuning/spread stay on the Patch-hosted Global page (Part / Play)");
             int stray = 0;
             for (const auto& id : globalPage->paramIds)
-                if (id == "part_octave" || id == "part_legato" || id == "part_portamento"
-                    || id == "part_raga" || id == "part_polyphony")
+                if (id.startsWith ("part_"))
                     ++stray;
-            check (stray == 0, "[21] Global page carries NONE of the absorbed knobs");
+            check (stray == 0,
+                   "[21] Global page carries ONLY the global options (every part knob absorbed into the table)");
+            check (globalPage->paramIds.size() == 3,
+                   "[21] Global page is exactly the 3 global knobs (Part / Play row gone)");
         }
         if (mixerPage != nullptr)
         {
@@ -1408,6 +1409,12 @@ int main (int argc, char** argv)
         }
         check (absorbedKnobsAnywhere == 0,
                "[21] no page generates the absorbed part knobs (table covers them)");
+        // The dead "Part / Play" group must be gone from every page.
+        int partPlayGroups = 0;
+        for (const auto& ps : scans)
+            if (ps.groups.contains ("Part / Play")) ++partPlayGroups;
+        check (partPlayGroups == 0,
+               "[21] no page renders a Part / Play group (the row is gone)");
 
         // (d) table cells drive the engine bytes (PartData 1 / 5 / 6).
         if (patchPage != nullptr)
@@ -1435,6 +1442,29 @@ int main (int argc, char** argv)
             // (the write path calls loadPartIntoApvts(currentPart)).
             check (juce::roundToInt (proc.getApvts().getRawParameterValue ("part_portamento")->load()) == 40,
                    "[21] Porta write re-syncs the part_portamento APVTS value");
+
+            // (e) the output columns drive PartData bytes 0 / 2 / 3 (the
+            // completing absorption; byte 2 is SIGNED int8).
+            patchPage->chooseVolume (0, 96);
+            check (eng.getPart (0).partBytes[0] == 96,
+                   "[21] Vol column writes PartData byte 0 (96)");
+            check (patchPage->getDisplayedVolume (0) == 96,
+                   "[21] Vol column shows 96");
+            check (juce::roundToInt (proc.getApvts().getRawParameterValue ("part_volume")->load()) == 96,
+                   "[21] Vol write re-syncs the part_volume APVTS value");
+            patchPage->chooseFineTune (2, 64);
+            check (static_cast<int8_t> (eng.getPart (2).partBytes[2]) == 64,
+                   "[21] Fine column writes SIGNED byte 2 (+64)");
+            patchPage->chooseFineTune (3, -127);
+            check (static_cast<int8_t> (eng.getPart (3).partBytes[2]) == -127,
+                   "[21] Fine column writes the SIGNED byte (-127 -> 0x81)");
+            check (patchPage->getDisplayedFineTune (3) == -127,
+                   "[21] Fine column shows -127");
+            patchPage->chooseSpread (1, 40);
+            check (eng.getPart (1).partBytes[3] == 40,
+                   "[21] Spr column writes PartData byte 3 (40 = max)");
+            check (patchPage->getDisplayedSpread (1) == 40,
+                   "[21] Spr column shows 40");
         }
 
         // The Patch-hosted Global page stays well-formed with its slimmed

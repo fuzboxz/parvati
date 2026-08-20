@@ -247,6 +247,30 @@ MirrorReport mirrorMatches (ParvatiAudioProcessor& proc, PatchPage* page)
             fail ("part " + juce::String (p + 1) + " Lgo combo shows "
                   + juce::String (shownLgo) + ", engine byte 5 is "
                   + juce::String (engLgo));
+
+        // Output columns (the completing absorption — 2026-08-20):
+        // Vol/Fine/Spr must mirror PartData bytes 0 / 2 / 3 (byte 2 SIGNED).
+        const int shownVol = page->getDisplayedVolume (p);
+        const int engVol = static_cast<int> (eng.getPart (p).partBytes[0]);
+        if (shownVol != engVol)
+            fail ("part " + juce::String (p + 1) + " Vol knob shows "
+                  + juce::String (shownVol) + ", engine byte 0 is "
+                  + juce::String (engVol));
+
+        const int shownFine = page->getDisplayedFineTune (p);
+        const int engFine = static_cast<int> (static_cast<int8_t> (
+            eng.getPart (p).partBytes[2]));
+        if (shownFine != engFine)
+            fail ("part " + juce::String (p + 1) + " Fine knob shows "
+                  + juce::String (shownFine) + ", engine byte 2 is "
+                  + juce::String (engFine));
+
+        const int shownSpr = page->getDisplayedSpread (p);
+        const int engSpr = static_cast<int> (eng.getPart (p).partBytes[3]);
+        if (shownSpr != engSpr)
+            fail ("part " + juce::String (p + 1) + " Spr knob shows "
+                  + juce::String (shownSpr) + ", engine byte 3 is "
+                  + juce::String (engSpr));
     }
 
     // Name labels (layout-derived, see collectPartNameLabels).
@@ -404,6 +428,12 @@ int main()
         proc.getApvts().getParameterAsValue ("part_octave")     = -2.0f;  // signed byte
         proc.getApvts().getParameterAsValue ("part_portamento") = 52.0f;
         proc.getApvts().getParameterAsValue ("part_legato")     = 1.0f;
+        // Output columns (completing absorption): host automation of
+        // part_volume / part_tuning / part_spread (PartData bytes 0 / 2 / 3)
+        // must reach the table through the SAME poll seam.
+        proc.getApvts().getParameterAsValue ("part_volume") = 90.0f;
+        proc.getApvts().getParameterAsValue ("part_tuning") = 64.0f;   // signed byte
+        proc.getApvts().getParameterAsValue ("part_spread") = 12.0f;
         editor->pollPatchPageMirror();                 // the automation seam
 
         const auto r = mirrorMatches (proc, page);

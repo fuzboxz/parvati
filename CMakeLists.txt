@@ -2242,3 +2242,4 @@ target_compile_features(parvati_mod_matrix_ui_test PRIVATE cxx_std_17)
 target_link_libraries(parvati_mod_matrix_ui_test PRIVATE
     Parvati
 )
+

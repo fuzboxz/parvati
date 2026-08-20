@@ -1599,8 +1599,9 @@ juce::String ParamPage::groupForId (const juce::String& id)
         return "Mod " + num;
     }
 
-    // ---- Part / Play + Arp ----
-    if (id.startsWith ("part_")) return "Part / Play";
+    // ---- Arp (the "Part / Play" group is GONE: every part_* descriptor is
+    // either absorbed into the Patch page's table or skipped from generation;
+    // no part_* id can reach a page group any more) ----
     if (id.startsWith ("arp_"))  return "Arp";
 
     return "Other";
@@ -2408,27 +2409,31 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // below; this covers the audio side for hosts that show the editor).
     processorRef_.setParameterSmoothing (processorRef_.getUiSmoothing());
 
-    // Group every descriptor into its section bucket; Part params (volume,
-    // tuning, spread) stay on the Patch-hosted Global page as the "Part / Play"
-    // panel directly above the part table. `part_select` is intentionally
-    // skipped here: it has a dedicated top-bar ComboBox (partCombo_) bound to
-    // the same APVTS param, so generating a second control for it on a page
-    // would be redundant.
+    // Group every descriptor into its section bucket; EVERY part_* param
+    // (volume/tuning/spread included, 2026-08-20 completing absorption) lives
+    // in the Patch page's part table — no part knob is generated on any page.
+    // `part_select` is intentionally skipped here: it has a dedicated top-bar
+    // ComboBox (partCombo_) bound to the same APVTS param, so generating a
+    // second control for it on a page would be redundant.
     std::vector<const PatchParamDescriptor*> sec[10];
     for (const auto& d : getPatchParamDescriptors())
     {
         if (d.paramID == "part_select")
             continue;
         // Part settings ABSORBED into the Patch page's per-part table: Octave /
-        // Legato / Portamento are TABLE COLUMNS (PartRow), and raga (Scale) /
-        // polyphony are already covered by the table's Tune / Poly columns.
-        // The APVTS PARAMETERS stay fully valid (created by the untouched
-        // descriptor table in createParvatiParameterLayout — host automation,
-        // state, .parvati); only the page KNOB is not generated, so there is
-        // exactly ONE editor surface per setting (the table).
+        // Legato / Portamento are TABLE COLUMNS (PartRow), raga (Scale) /
+        // polyphony are already covered by the table's Tune / Poly columns,
+        // and Volume / Tuning / Spread joined the table as the Vol / Fine /
+        // Spr columns (the completing absorption — the hosted page renders
+        // ONLY the Global options now). The APVTS PARAMETERS stay fully valid
+        // (created by the untouched descriptor table in
+        // createParvatiParameterLayout — host automation, state, .parvati);
+        // only the page KNOB is not generated, so there is exactly ONE editor
+        // surface per setting (the table).
         if (d.paramID == "part_octave" || d.paramID == "part_legato"
             || d.paramID == "part_portamento" || d.paramID == "part_raga"
-            || d.paramID == "part_polyphony")
+            || d.paramID == "part_polyphony" || d.paramID == "part_volume"
+            || d.paramID == "part_tuning" || d.paramID == "part_spread")
             continue;
         // FX params (fx* / fxmod*) are per-part Parvati-exclusive params routed
         // via applyFxParameter; they are NEVER bucketed into the synth pages.

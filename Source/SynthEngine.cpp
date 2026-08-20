@@ -231,11 +231,12 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
     // generic write below, so the display-version bump stays change-only
     // (applyPartByte fires for EVERY part-param automation write; bumping only
     // on a real change of a MIRRORED byte keeps the 30 Hz poll check O(1) and
-    // quiet). Mirrored offsets: 15 (polyphony), 4 (raga/Tune), and the three
-    // part-character columns absorbed from the old "Part / Play" page knobs —
-    // 1 (octave), 5 (legato), 6 (portamento).
+    // quiet). Mirrored offsets: 15 (polyphony), 4 (raga/Tune), the three
+    // part-character columns — 1 (octave), 5 (legato), 6 (portamento) — and
+    // (the completing absorption, 2026-08-20) the output columns 0 (Vol),
+    // 2 (Fine tuning), 3 (Spread).
     const auto isMirrorOffset = [] (int o)
-    { return o == 15 || o == 4 || o == 1 || o == 5 || o == 6; };
+    { return o == 15 || o == 4 || o == 1 || o == 5 || o == 6 || o == 0 || o == 2 || o == 3; };
     const uint8_t prevMirrored = isMirrorOffset (offset) ? part.partBytes[(size_t) offset] : 0;
     if (offset >= 0 && offset < 84) part.partBytes[(size_t) offset] = value;
     // PartData byte 15 = polyphony_mode. Defer the mode engage (and, for CHAIN,
