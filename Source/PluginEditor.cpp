@@ -2517,28 +2517,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Zoom actions: the buttons stay CONSTRUCTED (the '...' overflow popup
     // and the keyboard shortcuts drive the same applyZoom() helper) but are
     // NOT placed and NOT visible. F-ios-touch-3 (bug hunt 2026-08-19): they
-    // used to stay "visible" at 0x0 extent, so juce focus traversal included
-    // them — on an iPad hardware keyboard, Tab could hand focus to an
-    // INVISIBLE button and Space would then fire a zoom change; musical typing
-    // also stops reaching the keyboard view while an invisible control holds
-    // focus. setVisible(false) removes them from the traversal list
-    // (FocusTraverser filters isVisible). (The old comment claimed "visible on
-    // every platform" — stale: resized() never placed them and the overflow
-    // popup is the real UI since W9.)
-    zoomInButton_.setTooltip (TRANS ("Zoom in"));
-    zoomInButton_.onClick = [this] { applyZoom (zoom_ + 0.1); };
-    zoomInButton_.setVisible (false);
-    zoomOutButton_.setTooltip (TRANS ("Zoom out"));
-    zoomOutButton_.onClick = [this] { applyZoom (zoom_ - 0.1); };
-    zoomOutButton_.setVisible (false);
-    zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
-    zoomResetButton_.onClick = [this] { applyZoom (1.0); };
-    zoomResetButton_.setVisible (false);
-    // Zoom overflow: one "..." button opens a 44pt-row popup holding the three
-    // zoom actions, so the grown (44pt) icon cluster still fits the 1280pt
-    // editor width. The three zoom buttons above stay constructed (their logic
-    // is reused here) but are not placed on iOS (see resized()).
-    zoomOverflowButton_.setTooltip (TRANS ("Zoom"));
+    // (The three former top-bar zoom buttons were REMOVED 2026-08-20: zoom
+    // lives in the Settings panel now (three buttons + readout replacing the
+    // old zoom slider). The Cmd/Ctrl +/-/0 keyboard shortcuts remain, and the
+    // "..." overflow button below stays — it is the W9 folded-actions host,
+    // not a zoom control.)
+    zoomOverflowButton_.setTooltip (TRANS ("More"));
     zoomOverflowButton_.onClick = [this]
     {
         juce::PopupMenu m;
@@ -2548,9 +2532,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // the menu outlives onClick's stack frame, so a raw `this` would
         // dangle when the item action finally runs.
         juce::Component::SafePointer<ParvatiEditor> safe (this);
-        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom In")).setAction  ([safe] { if (safe != nullptr) safe->applyZoom (safe->zoom_ + 0.1); }));
-        m.addItem (juce::PopupMenu::Item (TRANS ("Zoom Out")).setAction ([safe] { if (safe != nullptr) safe->applyZoom (safe->zoom_ - 0.1); }));
-        m.addItem (juce::PopupMenu::Item (TRANS ("Reset Zoom")).setAction ([safe] { if (safe != nullptr) safe->applyZoom (1.0); }));
         // ---- W9 folded header actions (AUv3 compact panes): the popup grows
         // the sections whose header controls are currently folded away (the
         // SAME breakpoints resized() uses, re-evaluated at click time so a
@@ -4158,9 +4139,6 @@ void ParvatiEditor::applyChromeTranslations()
     saveButton_.setTooltip (TRANS ("Save the current patch (Cmd/Ctrl+S)"));
     undoButton_.setTooltip (TRANS ("Undo"));
     redoButton_.setTooltip (TRANS ("Redo"));
-    zoomInButton_.setTooltip (TRANS ("Zoom in"));
-    zoomOutButton_.setTooltip (TRANS ("Zoom out"));
-    zoomResetButton_.setTooltip (TRANS ("Reset zoom"));
     settingsButton_.setTooltip (TRANS ("Settings"));
     globalButton_.setButtonText (TRANS ("Patch"));
     globalButton_.setTooltip (TRANS ("Patch / arrangement"));

@@ -780,15 +780,9 @@ private:
     juce::TextButton saveButton_  { "Save" };
     IconButton       undoButton_  { IconButton::Icon::Undo };   // top-bar Undo (Cmd/Ctrl+Z)
     IconButton       redoButton_  { IconButton::Icon::Redo };   // top-bar Redo (Cmd/Ctrl+Shift+Z / Y)
-    // On-screen zoom (+/-/0). Visible on every platform (iPad has no keyboard
-    // shortcuts); they call the same zoom logic as Cmd/Ctrl +/-/0 via applyZoom().
-    juce::TextButton zoomInButton_    { "+" };
-    juce::TextButton zoomOutButton_   { "-" };
-    juce::TextButton zoomResetButton_ { "0" };
-    // The three zoom buttons (+/-/0) are folded into one "..." overflow
-    // that opens a 44pt-row popup, so the grown (44pt) icon cluster still fits
-    // the 1280pt editor width. The three zoom buttons stay constructed (their
-    // logic is reused) but are not placed on iOS.
+    // The "..." overflow opens the W9 folded-actions popup (Part/pages/
+    // toggles on compact panes; the zoom actions moved to the Settings
+    // panel 2026-08-20, so it no longer hosts zoom items).
     juce::TextButton zoomOverflowButton_ { "..." };
     std::unique_ptr<juce::FileChooser> fileChooser_;
 

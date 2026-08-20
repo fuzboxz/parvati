@@ -1575,10 +1575,16 @@ int main (int argc, char** argv)
             check (ok, "[23] Voice-tab caption over each column is its own (Lgo != Tune)");
         }
 
-        // ---- (c) the tab strip leads the summary row.
-        check (patchPage->tabStripXForTest() >= 232
-               && patchPage->tabStripXForTest() <= 245,
-               "[23] [Voice|MIDI] strip sits right of the arrangement combo");
+        // ---- (c) the tab strip leads the summary row (INSIDE the centred
+        // table band: expected x = inset + centre-offset + 220 combo + 12
+        // gap, within a small tolerance for the flex rounding).
+        {
+            const int centreOff = (patchPage->tableBandWidthForTest()
+                                   - patchPage->tableContentWidthForTest()) / 2;
+            const int expectX  = 4 + centreOff + 220 + 12;
+            check (std::abs (patchPage->tabStripXForTest() - expectX) <= 4,
+                   "[23] [Voice|MIDI] strip sits right of the arrangement combo");
+        }
 
         // Seams on the Voice tab (the default): a write + read-back.
         patchPage->choosePortamento (0, 33);

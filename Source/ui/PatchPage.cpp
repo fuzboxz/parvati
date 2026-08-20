@@ -68,20 +68,46 @@ constexpr bool kMidiTabMask[PartTableColumns::kCount] = {
 struct PartColumnSpec { int minW; int weight; int maxW; };
 constexpr PartColumnSpec kColumnSpecs[PartTableColumns::kCount] = {
     /* kName   */ {  96, 1,        160 },   // capped: the name field should hug its 16-char content, not drink the row
-    /* kVoices */ {  56, 2, 1 << 30 },
-    /* kCh     */ {  56, 3, 1 << 30 },
+    /* kVoices */ {  56, 2,         90 },   // measured fit: numbers 0..16 + combo chrome
+    /* kCh     */ {  56, 3,        110 },   // "Omni" + 1..16 + chrome
     /* kZoneLo */ {  44, 1,        72 },
     /* kZoneHi */ {  44, 1,        72 },
-    /* kOct    */ {  48, 1, 1 << 30 },
+    /* kOct    */ {  48, 1,         90 },
     /* kPorta  */ {  44, 1,        88 },   // "Portamento" caption needs ~64pt+
-    /* kLgo    */ {  48, 1, 1 << 30 },
+    /* kLgo    */ {  48, 1,         90 },
     /* kVol    */ {  44, 1,        72 },
     /* kFine   */ {  44, 1,        80 },   // "Fine Tune"
     /* kSpr    */ {  44, 1,        72 },
-    /* kTune   */ {  96, 2, 1 << 30 },
-    /* kPoly   */ {  96, 2, 1 << 30 }
+    /* kTune   */ {  96, 2,        170 },   // "Parameshwari" + chrome
+    /* kPoly   */ {  96, 2,        150 }
 };
 constexpr int kPartColGap = 4;   // between consecutive VISIBLE columns
+
+// The table's CONTENT width for a mask: every visible column at its MAXIMUM
+// plus the gaps (2026-08-20: fixed reasonable column widths — the combos no
+// longer stretch to fill a wide editor; when the band is wider than this the
+// whole table body centres instead of growing).
+int tableContentWidth (const bool* visibleMask)
+{
+    int n = 0, w = 0;
+    for (int i = 0; i < PartTableColumns::kCount; ++i)
+        if (visibleMask[i])
+        {
+            ++n;
+            w += kColumnSpecs[i].maxW;
+        }
+    return w + juce::jmax (0, n - 1) * kPartColGap;
+}
+
+// The centred content band for a full-width @p band: min(band, content-max)
+// wide, horizontally centred. Both the rows' resized() and the header's
+// paint() consume THIS, so captions and cells stay aligned inside the
+// centred table.
+juce::Rectangle<int> centredTableBand (juce::Rectangle<int> band, const bool* visibleMask)
+{
+    const int contentW = juce::jmin (band.getWidth(), tableContentWidth (visibleMask));
+    return band.withSizeKeepingCentre (contentW, band.getHeight());
+}
 
 // Column rects (x/width) for a row/content band @p b (already inset), laying
 // out ONLY the columns whose mask entry is true (hidden columns get an empty
@@ -429,7 +455,8 @@ public:
         // applyTableTab, so every accessor/choose* seam still works on the
         // hidden cells (they read state, not visibility).
         const bool* mask = midiTab_ ? kMidiTabMask : kVoiceTabMask;
-        const auto c = partColumnRects (getLocalBounds().reduced (kTableContentInset), mask);
+        const auto c = partColumnRects (
+            centredTableBand (getLocalBounds().reduced (kTableContentInset), mask), mask);
         lastColumnRects_ = c;   // test hook: the row's ACTUAL column geometry
 
         partLabel_.setBounds (c[PartTableColumns::kName]);
@@ -1085,6 +1112,21 @@ public:
         constexpr int inset = 4;
         auto b = getLocalBounds().reduced (inset, inset);
 
+        // ---- Fixed-width centred table body (2026-08-20): the combos no
+        // longer stretch to fill a wide editor — every column has a measured
+        // MAXIMUM and the whole table (summary row + header + part rows)
+        // lives in a band of min(full, sum-of-maxes + gaps), horizontally
+        // CENTRED. At/below the 1024 floor the band IS the full width (the
+        // flex minimums still fill it), so nothing shrinks. Rows/header also
+        // centre internally from their own bounds (idempotent) so a direct
+        // bounds set cannot de-centre them. ----
+        const bool* mask = tabStrip_.getCurrentTabIndex() == 1 ? kMidiTabMask : kVoiceTabMask;
+        const int bandW  = b.getWidth();
+        const int contW  = juce::jmin (bandW, tableContentWidth (mask));
+        lastBandW_  = bandW;
+        lastContW_  = contW;
+        b = b.withX (b.getX() + (bandW - contW) / 2).withWidth (contW);
+
         // ---- Arrangement summary row: the arrangement combo (220pt wide, a
         // 44pt HIG tap band with a 26pt visual box — same idiom as the part
         // rows) + the "Voices Y/96" pool-budget readout to its right.
@@ -1140,7 +1182,8 @@ public:
             // SAME inset band the rows use (kTableContentInset): the caption
             // x-positions are then exactly the cell x-positions (pinned by
             // the header-vs-row alignment test).
-            const auto c = partColumnRects (getLocalBounds().reduced (kTableContentInset), mask);
+            const auto c = partColumnRects (
+                centredTableBand (getLocalBounds().reduced (kTableContentInset), mask), mask);
             // labels_ is the FILTERED caption list (hidden columns absent),
             // so the binding column→caption must resolve the filtered
             // position — indexing labels_ by the raw column index painted
@@ -1192,7 +1235,8 @@ public:
             const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
             if (i < 0 || i >= PartTableColumns::kCount || ! mask[i])
                 return -1;
-            return partColumnRects (getLocalBounds().reduced (kTableContentInset), mask)[static_cast<size_t> (i)].getX();
+            return partColumnRects (centredTableBand (getLocalBounds().reduced (kTableContentInset), mask),
+                                    mask)[static_cast<size_t> (i)].getX();
         }
 
     private:
@@ -1237,6 +1281,10 @@ public:
 private:
     PatchPage& owner_;
     ColumnHeader header_;
+
+    // Last resized() geometry (test pins: content <= sum-of-maxes + gaps and
+    // the centring offset >= 0 at wide editors).
+    int lastBandW_ = 0, lastContW_ = 0;
     juce::TabbedButtonBar tabStrip_ { juce::TabbedButtonBar::TabsAtTop };
 
 public:
@@ -1245,6 +1293,11 @@ public:
     // Test hooks: the ACTIVE tab (0 = Voice, 1 = MIDI), its header captions,
     // and the ACTIVE column mask (the rows' visible set).
     int activeTabForTest() const { return tabStrip_.getCurrentTabIndex(); }
+
+    // Test pins for the fixed-width centred policy: the band width and the
+    // actual table content width from the last resized().
+    int bandWidthForTest() const { return lastBandW_; }
+    int contentWidthForTest() const { return lastContW_; }
     juce::StringArray headerLabelsForTest() const { return header_.labels(); }
     const bool* visibleMaskForTest() const
     { return tabStrip_.getCurrentTabIndex() == 1 ? kMidiTabMask : kVoiceTabMask; }
@@ -1383,6 +1436,17 @@ int PatchPage::activeTableTabForTest() const
 const bool* PatchPage::tableVisibleMaskForTest() const
 {
     return tablePanel_ != nullptr ? tablePanel_->visibleMaskForTest() : kVoiceTabMask;
+}
+
+// Fixed-width centred table policy pins (band vs content from last resized).
+int PatchPage::tableBandWidthForTest() const
+{
+    return tablePanel_ != nullptr ? tablePanel_->bandWidthForTest() : -1;
+}
+
+int PatchPage::tableContentWidthForTest() const
+{
+    return tablePanel_ != nullptr ? tablePanel_->contentWidthForTest() : -1;
 }
 
 void PatchPage::chooseTableTabForTest (int tabIndex)

@@ -40,31 +40,42 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     };
     addAndMakeVisible (themeCombo_);
 
-    // ---- Zoom ----
+    // ---- Zoom: three buttons (the old top-bar controls moved here,
+    // 2026-08-20) + a percentage readout. Steps of 0.1 on the same [0.75, 2.0]
+    // clamp the editor's applyZoom uses; the value persists through
+    // proc_.setUiZoom exactly like the old slider did. ----
     zoomLabel_.setText (TRANS ("Zoom"), juce::dontSendNotification);
     zoomLabel_.setFont (juce::FontOptions (14.0f));
     zoomLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (zoomLabel_);
 
-    zoomSlider_.setSliderStyle (juce::Slider::LinearHorizontal);
-    zoomSlider_.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 20);
-    zoomSlider_.setRange (0.75, 2.0, 0.05);
-    zoomSlider_.setNumDecimalPlacesToDisplay (0);
-    // Display as a percentage (75% .. 200%).
-    zoomSlider_.textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v * 100.0)) + "%"; };
-    zoomSlider_.valueFromTextFunction = [] (const juce::String& t) {
-        return t.replace ("%", "").getDoubleValue() / 100.0;
-    };
-    zoomSlider_.setValue (proc_.getUiZoom(), juce::dontSendNotification);
-    zoomSlider_.onValueChange = [this] {
-        if (suppressCallback_)
-            return;   // programmatic update from setZoomValue — don't re-fire
-        const double v = zoomSlider_.getValue();
+    auto applyZoomFromSettings = [this] (double v)
+    {
+        v = juce::jlimit (0.75, 2.0, v);
+        // Snap to the 0.05 grid the persisted values historically used so a
+        // step from a restored odd value lands on a clean percentage.
+        v = juce::roundToInt (v * 20.0) / 20.0;
         proc_.setUiZoom (v);
+        refreshZoomReadout();
         if (onZoomChanged_)
             onZoomChanged_ (v);
     };
-    addAndMakeVisible (zoomSlider_);
+    zoomOutBt_.setTooltip (TRANS ("Zoom out"));
+    zoomOutBt_.onClick = [this, applyZoomFromSettings]
+        { applyZoomFromSettings (proc_.getUiZoom() - 0.1); };
+    zoomInBt_.setTooltip (TRANS ("Zoom in"));
+    zoomInBt_.onClick = [this, applyZoomFromSettings]
+        { applyZoomFromSettings (proc_.getUiZoom() + 0.1); };
+    zoomResetBt_.setTooltip (TRANS ("Reset zoom"));
+    zoomResetBt_.onClick = [applyZoomFromSettings] { applyZoomFromSettings (1.0); };
+    addAndMakeVisible (zoomOutBt_);
+    addAndMakeVisible (zoomInBt_);
+    addAndMakeVisible (zoomResetBt_);
+
+    zoomValueLabel_.setFont (juce::FontOptions (14.0f));
+    zoomValueLabel_.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (zoomValueLabel_);
+    refreshZoomReadout();
 
     // ---- Tooltips ----
     tooltipsToggle_.setButtonText (TRANS ("Tooltips"));
@@ -176,13 +187,19 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     startTimerHz (2);   // clock-status line only (gated by isShowing())
 }
 
-void SettingsPanel::setZoomValue (double zoom)
+void SettingsPanel::setZoomValue (double)
 {
-    // Move the slider to reflect a zoom change made elsewhere (e.g. the
-    // editor's keyboard shortcuts) without re-firing onValueChange. The
-    // ScopedValueSetter flips suppressCallback_ for the duration of the set.
-    juce::ScopedValueSetter<bool> svs (suppressCallback_, true);
-    zoomSlider_.setValue (zoom, juce::sendNotificationSync);
+    // Reflect a zoom change made elsewhere (the editor's keyboard shortcuts) —
+    // buttons have no value-change callback to suppress, so this only
+    // refreshes the readout (no onZoomChanged_ re-fire, no feedback loop).
+    refreshZoomReadout();
+}
+
+void SettingsPanel::refreshZoomReadout()
+{
+    zoomValueLabel_.setText (
+        juce::String (juce::roundToInt (proc_.getUiZoom() * 100.0)) + "%",
+        juce::dontSendNotification);
 }
 
 void SettingsPanel::timerCallback()
@@ -312,12 +329,21 @@ void SettingsPanel::resized()
     rowOrHide (&themeCombo_, takeRow (comboRowH));
     takeRow (gap + 8);
 
-    // Zoom row (44pt like every other slider/combo row — the L&F scales the
-    // drawn thumb with row height, so a 28pt zoom row next to the 44pt BPM
-    // row would draw visibly mismatched thumbs AND miss the HIG tap minimum).
+    // Zoom row (44pt HIG tap band — the three buttons + readout).
     rowOrHide (&zoomLabel_, takeRow (18));
     takeRow (2);
-    rowOrHide (&zoomSlider_, takeRow (comboRowH));
+    {
+        auto row = takeRow (comboRowH);
+        // [ - ] [ 100% ] [ + ] [ 0 ] — 44pt square buttons, readout centred
+        // between out/in; reset at the right.
+        zoomResetBt_.setBounds (row.removeFromRight (44));
+        row.removeFromRight (8);
+        zoomInBt_.setBounds (row.removeFromRight (44));
+        row.removeFromRight (8);
+        zoomValueLabel_.setBounds (row.removeFromRight (56));
+        row.removeFromRight (8);
+        zoomOutBt_.setBounds (row.removeFromRight (44));
+    }
     takeRow (gap + 8);
 
     // Tooltips row.

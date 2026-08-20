@@ -52,6 +52,9 @@ public:
     // loop back into the editor's setZoom). Phase 4b.
     void setZoomValue (double zoom);
 
+    // Refresh the zoom percentage readout from the persisted preference.
+    void refreshZoomReadout();
+
     // Re-apply every chrome string through TRANS() and rebuild the
     // language-dependent combos (called by the editor after a live language
     // switch so the panel updates immediately).
@@ -91,14 +94,17 @@ private:
     juce::Label     themeLabel_, zoomLabel_, osLabel_, langLabel_;
     juce::Label     clockLabel_, clockStatusLabel_;   // Arp Clock caption + live source line
     juce::ComboBox  themeCombo_, osCombo_, langCombo_;
-    juce::Slider    zoomSlider_;
+    // Zoom row (2026-08-20): the slider was REPLACED by the three header zoom
+    // buttons (in / out / reset) + a percentage readout — the user asked for
+    // the top-bar buttons to live here instead. Steps of 0.1, clamped to the
+    // editor's [0.75, 2.0] zoom range (the same applyZoom contract).
+    juce::TextButton zoomOutBt_   { "-" };
+    juce::TextButton zoomInBt_    { "+" };
+    juce::TextButton zoomResetBt_ { "0" };
+    juce::Label      zoomValueLabel_;
     juce::Slider    bpmSlider_;                       // manual arp-clock tempo (40..300 BPM)
     juce::ToggleButton tooltipsToggle_ { "Tooltips" };
     juce::ToggleButton smoothingToggle_ { "Parameter Smoothing" };
-
-    // While true, zoomSlider_ value changes are programmatic (setZoomValue) and
-    // must NOT re-fire onZoomChanged_ (avoids an editor<->panel feedback loop).
-    bool suppressCallback_ { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsPanel)
 };

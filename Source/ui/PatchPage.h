@@ -93,6 +93,11 @@ public:
     bool tableTooltipsCompleteForTest();
     int activeTableTabForTest() const;
     const bool* tableVisibleMaskForTest() const;
+    // Fixed-width centred table policy pins: the band width and the table's
+    // actual content width from the last layout (content <= sum-of-maxes +
+    // gaps; centring offset = (band - content) / 2 >= 0 at wide editors).
+    int tableBandWidthForTest() const;
+    int tableContentWidthForTest() const;
     // Switch tabs as if the user clicked the segmented toggle.
     void chooseTableTabForTest (int tabIndex);
     // Alignment pins (see PartTablePanel): header vs row-0 column x, and the
