@@ -95,6 +95,11 @@ public:
     const bool* tableVisibleMaskForTest() const;
     // Switch tabs as if the user clicked the segmented toggle.
     void chooseTableTabForTest (int tabIndex);
+    // Alignment pins (see PartTablePanel): header vs row-0 column x, and the
+    // tab strip's x (leftmost-control assertion).
+    int headerColumnXForTest (int column) const;
+    int rowColumnXForTest (int column) const;
+    int tabStripXForTest() const;
 
     // The six rows' DISPLAYED name labels (placeholder applied), in part
     // order — the mirror test's name-label source (the former layout-derived

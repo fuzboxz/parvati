@@ -4,6 +4,21 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **Patch-table header alignment + tab regrouping (2026-08-20).** The
+  column captions were painted from the header's full band while the row
+  cells laid out from a 4px-inset band — every caption sat 4px left of its
+  column. Both now consume the SAME inset band (kTableContentInset shared
+  constant); a per-column x-equality test pins 0px drift on both tabs. The
+  [Voice|MIDI] segmented toggle moved to the LEFT of the summary row
+  (before the arrangement combo). Column split regrouped to the Ambika
+  note-path semantics: **MIDI** = Part, Ch, Zone Lo/Hi, Octave (transpose
+  acts on the note stream), Polyphony (the Mono/Poly/Unison/Cyclic/Chain
+  note-to-voice allocator); **Voice** = Part, Voices, Porta, Lgo, Vol,
+  Fine, Spr, Tune (sound-shaping; Porta/Legato straddle the line — they
+  shape note transitions but live with the sound character). Hidden-tab
+  cells remain live (automation + write seams on both tabs).
+
 ### Added
 - **Patch-table Voice / MIDI tabs (2026-08-20).** A compact segmented
   toggle (GroupPager idiom) inline in the table's summary row splits the

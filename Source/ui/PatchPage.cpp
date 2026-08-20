@@ -36,14 +36,30 @@ struct PartTableColumns
     };
 };
 
-// Which columns each table tab shows. Voice = everything except the MIDI
-// channel; MIDI = the routing subset (Part, Ch, key zone).
+// The content inset shared by BOTH the header strip and every row: the
+// header paints its captions from the SAME inset band the rows lay their
+// cells out from, so a caption's x always equals its column's cell x (the
+// pre-2026-08-20 header painted from the full band while rows used
+// reduced(4) — every caption sat 4px left of its column; "headers don't
+// line up with the controls").
+constexpr int kTableContentInset = 4;
+
+// Which columns each table tab shows (regrouped 2026-08-20 per the Ambika
+// note-path split: MIDI carries the NOTE-ROUTING controls — channel, key
+// zone, the voice ALLOCATOR (Mono/Poly/Unison/Cyclic/Chain, which decides
+// how incoming notes map to voices) and Octave (transpose acts on the note
+// stream); Voice carries the SOUND-shaping controls — voice count, glide,
+// legato feel, output level/tuning/detune, scale. Portamento/Legato
+// straddle the line (they shape note TRANSITIONS); they stay on Voice
+// where the sound character lives.
+//   order: kName, kVoices, kCh, kZoneLo, kZoneHi, kOct, kPorta, kLgo,
+//          kVol, kFine, kSpr, kTune, kPoly
 constexpr bool kVoiceTabMask[PartTableColumns::kCount] = {
-    true,  true,  false, true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true };
+    true,  true,  false, false, false,
+    false, true,  true,  true,  true,  true,  true,  false };
 constexpr bool kMidiTabMask[PartTableColumns::kCount] = {
     true,  false, true,  true,  true,
-    false, false, false, false, false, false, false, false };
+    true,  false, false, false, false, false, false, true };
 
 // Per-column layout: minimum width, flex weight (share of the slack), and a
 // maximum width for the KNOB columns (a round dial gains nothing beyond ~64pt
@@ -413,7 +429,8 @@ public:
         // applyTableTab, so every accessor/choose* seam still works on the
         // hidden cells (they read state, not visibility).
         const bool* mask = midiTab_ ? kMidiTabMask : kVoiceTabMask;
-        const auto c = partColumnRects (getLocalBounds().reduced (4), mask);
+        const auto c = partColumnRects (getLocalBounds().reduced (kTableContentInset), mask);
+        lastColumnRects_ = c;   // test hook: the row's ACTUAL column geometry
 
         partLabel_.setBounds (c[PartTableColumns::kName]);
 
@@ -443,23 +460,24 @@ public:
 
     // Switch the row's visible column set (PartTablePanel drives this on a
     // tab change; PartRow::resized consumes the same mask). All cells stay
-    // CONSTRUCTED and state-readable — only visibility changes.
+    // CONSTRUCTED and state-readable — only visibility changes. Regrouped
+    // 2026-08-20: Ch/Zone/Oct/Poly live on MIDI; Voices/Porta/Lgo/Vol/Fine/
+    // Spr/Tune on Voice; Name on both.
     void applyTableTab (bool midiTab)
     {
         midiTab_ = midiTab;
-        channelCombo_.setVisible (! midiTab);
-        voicesCombo_.setVisible (midiTab ? false : true);
-        octaveCombo_.setVisible (! midiTab);
+        channelCombo_.setVisible (midiTab);
+        voicesCombo_.setVisible (! midiTab);
+        loSlider_.setVisible (midiTab);
+        hiSlider_.setVisible (midiTab);
+        octaveCombo_.setVisible (midiTab);
         portaSlider_.setVisible (! midiTab);
         legatoCombo_.setVisible (! midiTab);
         volSlider_.setVisible (! midiTab);
         fineSlider_.setVisible (! midiTab);
         sprSlider_.setVisible (! midiTab);
         tuneCombo_.setVisible (! midiTab);
-        polyCombo_.setVisible (! midiTab);
-        // Name + key zone are on BOTH tabs; Channel only on MIDI.
-        loSlider_.setVisible (true);
-        hiSlider_.setVisible (true);
+        polyCombo_.setVisible (midiTab);
         partLabel_.setVisible (true);
         resized();
     }
@@ -529,6 +547,16 @@ public:
 
     // The DISPLAYED name (placeholder "Part N" applied when empty).
     juce::String displayedNameForTest() const { return partLabel_.getText (true); }
+
+    // Test hook: the x-position of column @p i from this row's LAST layout
+    // (-1 for a hidden/empty column rect). Used with the header's accessor
+    // to pin caption/cell alignment.
+    int columnXForTest (int i) const
+    {
+        if (i < 0 || i >= PartTableColumns::kCount)
+            return -1;
+        return lastColumnRects_[static_cast<size_t> (i)].getX();
+    }
 
     //----------------------------------------------------------------------
     // Re-read this Part's engine state into the controls WITHOUT firing onChange.
@@ -806,6 +834,10 @@ private:
     // Active table tab (false = Voice, true = MIDI) — driven by
     // PartTablePanel::setActiveTab via applyTableTab.
     bool midiTab_ = false;
+
+    // The row's last-computed column rects (test-hook source; refreshed in
+    // resized from the SAME partColumnRects() call that positions the cells).
+    std::array<juce::Rectangle<int>, PartTableColumns::kCount> lastColumnRects_ {};
     juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_, octaveCombo_, legatoCombo_;
     juce::Slider loSlider_, hiSlider_, portaSlider_;
     juce::Slider volSlider_, fineSlider_, sprSlider_;     // output columns (bytes 0/2/3)
@@ -1060,12 +1092,17 @@ public:
         // has access). ----
         {
             auto summary = b.removeFromTop (kSummaryH);
+            // Tab strip FIRST (leftmost): [Voice|MIDI] leads the row, then
+            // the arrangement combo; the "Voices Y/96" readout right-aligns
+            // in whatever remains (2026-08-20: the strip sat at the RIGHT
+            // edge before; the user expects the group selector at the left).
+            const int stripW = juce::jmin (150, juce::jmax (0, summary.getWidth() - 240));
+            tabStrip_.setBounds (summary.removeFromLeft (stripW)
+                                        .withSizeKeepingCentre (stripW, kTabBarH));
+            summary.removeFromLeft (12);
             owner_.arrangementCombo_.setBounds (summary.removeFromLeft (220));
             summary.removeFromLeft (12);
             owner_.voicesTotalLabel_.setBounds (summary.removeFromLeft (170));
-            summary.reduce (8, 0);   // breathing gap before the tab strip
-            tabStrip_.setBounds (summary.removeFromRight (juce::jmin (200, summary.getWidth()))
-                                        .withSizeKeepingCentre (juce::jmin (180, summary.getWidth()), kTabBarH));
         }
         b.removeFromTop (kSummaryGap);
 
@@ -1100,7 +1137,10 @@ public:
                                        : juce::Colours::lightgrey.withAlpha (0.85f));
             g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
             const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
-            const auto c = partColumnRects (getLocalBounds(), mask);
+            // SAME inset band the rows use (kTableContentInset): the caption
+            // x-positions are then exactly the cell x-positions (pinned by
+            // the header-vs-row alignment test).
+            const auto c = partColumnRects (getLocalBounds().reduced (kTableContentInset), mask);
             for (int i = 0; i < PartTableColumns::kCount; ++i)
                 if (mask[i])
                     g.drawText (labels_[static_cast<size_t> (i)], c[i],
@@ -1120,10 +1160,23 @@ public:
 
         juce::StringArray labels() const { return labels_; }
 
+        // Test hook: the x-position this header paints column @p i at
+        // (-1 when hidden). Computed from the EXACT paint geometry
+        // (getLocalBounds() == (0,0,getWidth(),getHeight()) at paint time).
+        int columnXForTest (int i) const
+        {
+            const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
+            if (i < 0 || i >= PartTableColumns::kCount || ! mask[i])
+                return -1;
+            return partColumnRects (getLocalBounds().reduced (kTableContentInset), mask)[static_cast<size_t> (i)].getX();
+        }
+
     private:
         // Caption per column, in PartTableColumns order; the INACTIVE tab's
         // columns are simply not listed (captions(midi) returns the ACTIVE
-        // tab's visible columns in column order).
+        // tab's visible columns in column order). Regrouped 2026-08-20:
+        // MIDI = Part/Ch/Zone Lo/Hi/Oct/Polyphony; Voice = Part/Voices/
+        // Porta/Lgo/Vol/Fine/Spr/Tune (masks above carry the reasoning).
         static juce::StringArray captions (bool midi)
         {
             juce::StringArray out;
@@ -1133,16 +1186,16 @@ public:
             addIf (true,                       TRANS ("Part"));
             addIf (! midi,                     TRANS ("Voices"));
             addIf (midi,                       TRANS ("Ch"));
-            addIf (true,                       TRANS ("Zone Low"));
-            addIf (true,                       TRANS ("Zone High"));
-            addIf (! midi,                     TRANS ("Oct"));
+            addIf (midi,                       TRANS ("Zone Low"));
+            addIf (midi,                       TRANS ("Zone High"));
+            addIf (midi,                       TRANS ("Oct"));
             addIf (! midi,                     TRANS ("Porta"));
             addIf (! midi,                     TRANS ("Lgo"));
             addIf (! midi,                     TRANS ("Vol"));
             addIf (! midi,                     TRANS ("Fine"));
             addIf (! midi,                     TRANS ("Spr"));
             addIf (! midi,                     TRANS ("Tune"));
-            addIf (! midi,                     TRANS ("Polyphony"));
+            addIf (midi,                       TRANS ("Polyphony"));
             return out;
         }
 
@@ -1171,6 +1224,16 @@ public:
     juce::StringArray headerLabelsForTest() const { return header_.labels(); }
     const bool* visibleMaskForTest() const
     { return tabStrip_.getCurrentTabIndex() == 1 ? kMidiTabMask : kVoiceTabMask; }
+
+    // Test hooks: the header's painted column x and ROW 0's cell column x
+    // for @p i — the alignment pin compares them per visible column.
+    int headerColumnXForTest (int i) const { return header_.columnXForTest (i); }
+    int rowColumnXForTest (int i) const
+    { return owner_.rows_.empty() ? -1 : owner_.rows_[0]->columnXForTest (i); }
+
+    // Test hook: the tab strip's x (the LEFTMOST-control pin; the strip is a
+    // direct child of this panel, in panel-local coords).
+    int tabStripXForTest() const { return tabStrip_.getX(); }
 
     // Drive the segmented toggle exactly as a click does (fires the change
     // callback through the bar, so rows + header follow the real path).
@@ -1306,6 +1369,23 @@ void PatchPage::chooseTableTabForTest (int tabIndex)
 {
     if (tablePanel_ != nullptr)
         tablePanel_->setCurrentTabIndexForTest (tabIndex);
+}
+
+// Alignment pins: the header's painted column x vs row 0's cell x for the
+// same column (equal per visible column), and the tab strip's x position.
+int PatchPage::headerColumnXForTest (int column) const
+{
+    return tablePanel_ != nullptr ? tablePanel_->headerColumnXForTest (column) : -1;
+}
+
+int PatchPage::rowColumnXForTest (int column) const
+{
+    return tablePanel_ != nullptr ? tablePanel_->rowColumnXForTest (column) : -1;
+}
+
+int PatchPage::tabStripXForTest() const
+{
+    return tablePanel_ != nullptr ? tablePanel_->tabStripXForTest() : -1;
 }
 
 void PatchPage::buildArrangementCombo()

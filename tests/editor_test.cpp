@@ -1494,9 +1494,11 @@ int main (int argc, char** argv)
     {
         const auto labels = patchPage->headerLabelsForTest();
         // Voice tab (default): 12 visible columns (everything except Ch).
-        check (labels.size() == 12, "[22] Voice-tab header has 12 column captions");
+        // Voice tab (default): 8 visible columns after the 2026-08-20
+        // regrouping (Part, Voices, Porta, Lgo, Vol, Fine, Spr, Tune).
+        check (labels.size() == 8, "[22] Voice-tab header has 8 column captions");
         check (labels[0]  == TRANS ("Part") && labels[1]  == TRANS ("Voices")
-            && labels[11] == TRANS ("Polyphony"),
+            && labels[7]  == TRANS ("Tune"),
                "[22] Voice-tab header captions in column order");
 
         check (patchPage->tableTooltipsCompleteForTest(),
@@ -1514,22 +1516,54 @@ int main (int argc, char** argv)
     else
         check (false, "[22] PatchPage reachable for header/tooltip checks");
 
-    // ---- [23] Patch-table tabs + full-width layout ----
-    // (a) default tab = Voice; the segmented toggle switches the visible
-    //     column set + the header captions (Voice = all but Ch; MIDI =
-    //     Part/Ch/Zone only);
-    // (b) all choose*/getDisplayed* seams work on BOTH tabs (cells stay
-    //     state-readable when hidden);
-    // (c) the table panel spans the full hosted-page width (the pre-flex
-    //     fixed-width arithmetic left ~40% empty on wide editors).
-    std::printf ("\n[23] Patch-table tabs + full width\n");
+    // ---- [23] Patch-table tabs: alignment + regrouped split + left tabs ----
+    // (a) default tab = Voice; MIDI = the note-routing tab (Ch, zone, Oct,
+    //     Polyphony) and Voice = the sound-shaping tab (Voices, Porta, Lgo,
+    //     Vol, Fine, Spr, Tune) — the 2026-08-20 regrouping;
+    // (b) header captions ALIGN with the row cells (per-column x equality:
+    //     both consume partColumnRects over the same kTableContentInset
+    //     band — the pre-fix header painted from the un-inset band and sat
+    //     4px left of every column);
+    // (c) the [Voice|MIDI] strip is the LEFTMOST control of the summary row;
+    // (d) all choose*/getDisplayed* seams work on BOTH tabs (cells stay
+    //     state-readable when hidden).
+    std::printf ("\n[23] Patch-table tabs: alignment + regrouping\n");
     if (patchPage != nullptr)
     {
         check (patchPage->activeTableTabForTest() == 0, "[23] default tab is Voice");
         {
             const bool* m = patchPage->tableVisibleMaskForTest();
-            check (m[1] && ! m[2], "[23] Voice tab shows Voices, hides Ch");
+            //            Name    Voices  Ch      ZoneLo  ZoneHi
+            const bool want[] = { true,  true,   false,  false,  false,
+            //                    Oct     Porta   Lgo     Vol     Fine
+                                  false,  true,   true,   true,   true,
+            //                    Spr     Tune    Poly
+                                  true,   true,   false };
+            bool ok = true;
+            for (int i = 0; i < 13; ++i) ok = ok && (m[i] == want[i]);
+            check (ok, "[23] Voice-tab mask = sound-shaping columns");
         }
+
+        // ---- (b) ALIGNMENT: per visible column, header x == row-0 cell x.
+        {
+            const bool* m = patchPage->tableVisibleMaskForTest();
+            bool ok = true; int checked = 0;
+            for (int i = 0; i < 13; ++i)
+                if (m[i])
+                {
+                    ++checked;
+                    ok = ok && (patchPage->headerColumnXForTest (i)
+                                == patchPage->rowColumnXForTest (i));
+                }
+            check (checked >= 8, "[23] alignment pin covers the visible columns");
+            check (ok, "[23] every Voice-tab caption x == its cell x (0px drift)");
+        }
+
+        // ---- (c) the tab strip leads the summary row.
+        check (patchPage->tabStripXForTest() >= 0
+               && patchPage->tabStripXForTest() <= 8,
+               "[23] [Voice|MIDI] strip is the leftmost summary-row control");
+
         // Seams on the Voice tab (the default): a write + read-back.
         patchPage->choosePortamento (0, 33);
         check (patchPage->getDisplayedPortamento (0) == 33,
@@ -1539,19 +1573,45 @@ int main (int argc, char** argv)
         check (patchPage->activeTableTabForTest() == 1, "[23] toggle switches to MIDI");
         {
             const bool* m = patchPage->tableVisibleMaskForTest();
-            check (! m[1] && m[2] && ! m[11],
-                   "[23] MIDI tab shows Ch, hides Voices/Tune");
+            //            Name    Voices  Ch      ZoneLo  ZoneHi
+            const bool want[] = { true,  false,  true,   true,   true,
+            //                    Oct     Porta   Lgo     Vol     Fine
+                                  true,   false,  false,  false,  false,
+            //                    Spr     Tune    Poly
+                                  false,  false,  true };
+            bool ok = true;
+            for (int i = 0; i < 13; ++i) ok = ok && (m[i] == want[i]);
+            check (ok, "[23] MIDI-tab mask = note-routing columns (incl. Oct/Poly)");
         }
         const auto midiLabels = patchPage->headerLabelsForTest();
-        check (midiLabels.size() == 4, "[23] MIDI-tab header has 4 captions");
-        check (midiLabels[1] == TRANS ("Ch"), "[23] MIDI-tab header includes Ch");
+        check (midiLabels.size() == 6, "[23] MIDI-tab header has 6 captions");
+        check (midiLabels[1] == TRANS ("Ch") && midiLabels[5] == TRANS ("Polyphony"),
+               "[23] MIDI-tab header order Part/Ch/Zone/Zone/Oct/Poly");
+
+        // Alignment pin on the MIDI tab too (the geometry re-distributes).
+        {
+            const bool* m = patchPage->tableVisibleMaskForTest();
+            bool ok = true;
+            for (int i = 0; i < 13; ++i)
+                if (m[i])
+                    ok = ok && (patchPage->headerColumnXForTest (i)
+                                == patchPage->rowColumnXForTest (i));
+            check (ok, "[23] every MIDI-tab caption x == its cell x (0px drift)");
+        }
+
         // Hidden-cell seam: Porta is HIDDEN on the MIDI tab but still writable.
         patchPage->choosePortamento (0, 21);
         check (patchPage->getDisplayedPortamento (0) == 21,
                "[23] hidden-cell seam still works on the MIDI tab");
+        // Hidden-cell seam on the other side: Oct/Poly are Voice-hidden here.
+        patchPage->chooseOctave (1, -1);
+        check (static_cast<int8_t> (proc.getEngine().getPart (1).partBytes[1]) == -1,
+               "[23] hidden Oct column still writes the engine byte");
         patchPage->chooseTableTabForTest (0);   // back to Voice
         check (patchPage->getDisplayedPortamento (0) == 21,
                "[23] back on Voice, the MIDI-tab write persisted");
+        check (patchPage->getDisplayedOctave (1) == -1,
+               "[23] back on Voice, the MIDI-tab Oct write shows");
     }
     else
         check (false, "[23] PatchPage reachable for tab checks");
