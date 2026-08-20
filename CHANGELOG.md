@@ -4,6 +4,25 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **Patch-table column headers + tooltips (2026-08-20).** The part table
+  gained a single localized column-header strip (Part/Voices/Ch/Zone Low/Zone
+  High/Oct/Porta/Lgo/Vol/Fine/Spr/Tune/Polyphony) painted from the SAME shared
+  column-geometry source the rows lay out from (new `partColumnRects()` — one
+  source of truth, so captions and cells can never drift); the per-row caption
+  bands are gone (one header instead of six repetitions, rows now centre their
+  controls on the full row height — 44pt HIG bands unchanged). Every
+  interactive table cell now carries a tooltip: the part_* columns read their
+  existing ParamHelp entries (volume/tuning/spread/octave/legato/portamento/
+  raga/polyphony), the table-only controls (name, Voices, Ch, key-zone knobs)
+  get inline localized help. The tooltips honour the editor-wide Settings
+  toggle via `PatchPage::setTableTooltipsEnabled` (the ParamControl contract,
+  mirrored); language switches re-translate the inline texts. Tests:
+  editor_test [22] (header captions/order, per-cell tooltip completeness,
+  gate blank/restore) + ui_mirror_test's name-label source moved from the
+  dead caption-cluster layout detector to a row accessor
+  (`displayedPartNamesForTest`).
+
 ### Changed
 - **Patch-page simplification (2026-08-20).** The Patch page now owns the
   per-part settings outright, with exactly ONE editor surface per setting:

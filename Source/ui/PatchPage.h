@@ -78,6 +78,23 @@ public:
     // live language switch.
     void refreshLanguage();
 
+    // Table tooltip gate (the ParamControl contract mirrored for table cells):
+    // re-applies every cell's tooltip per the CURRENT ParamControl::
+    // tooltipsEnabled() state. The editor calls this right after
+    // ParamControl::setTooltipsEnabled so the Settings toggle covers the
+    // part table too.
+    void setTableTooltipsEnabled (bool enabled);
+
+    // Test hooks: the column-header caption list (column order), and whether
+    // every interactive cell of every row exposes a non-empty tooltip.
+    juce::StringArray headerLabelsForTest() const;
+    bool tableTooltipsCompleteForTest();
+
+    // The six rows' DISPLAYED name labels (placeholder applied), in part
+    // order — the mirror test's name-label source (the former layout-derived
+    // caption-cluster detector died with the per-row captions).
+    juce::StringArray displayedPartNamesForTest() const;
+
     // Re-apply theme-derived colours and repaint (page fill is read at paint
     // time; the heading accent is explicit). Colours come from the inherited
     // L&F / the active ParvatiTheme.

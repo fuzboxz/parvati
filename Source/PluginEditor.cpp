@@ -2403,6 +2403,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     themeManager_.selectByName (processorRef_.getUiTheme());
     lnf_.setTheme (themeManager_.getCurrentTheme());
     ParamControl::setTooltipsEnabled (processorRef_.getUiTooltips());
+    if (patchPage_ != nullptr)
+        patchPage_->setTableTooltipsEnabled (processorRef_.getUiTooltips());
 
     // Apply the persisted parameter-smoothing preference to the engine (the
     // SettingsPanel toggle is seeded from getUiSmoothing() when it is built
@@ -3209,7 +3211,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     settingsPanelHost_ = std::make_unique<juce::SidePanel> (TRANS ("Settings"), 300, false);
     settingsPanel_ = new SettingsPanel (processorRef_, themeManager_,
         [this] (double z) { setZoom (z); repaint(); },
-        [] (bool b)         { ParamControl::setTooltipsEnabled (b); },
+        [this] (bool b)         { ParamControl::setTooltipsEnabled (b);
+                                 if (patchPage_ != nullptr)
+                                     patchPage_->setTableTooltipsEnabled (b); },
         [this] (bool b)     { processorRef_.setParameterSmoothing (b); },
         [] (int)            {},   // processor.setOversamplingFactor already applied in the panel
         [this] (const juce::String& code) {

@@ -131,54 +131,17 @@ std::vector<LabelAt> collectLabels (juce::Component* root)
     return out;
 }
 
-// The six part rows' NAME labels, in part order (top to bottom). A part row
-// is identified by its label Y-cluster containing ALL six column captions
-// ("Voices", "Ch", "Zone Low", "Zone High", "Polyphony", "Tune" — the same
-// TRANS keys PatchPage::refreshLanguage writes); the NAME label is the
-// leftmost label of the cluster (PartRow::resized puts the name column
-// first, before the Voices caption column). Returns an empty vector when the
-// row structure is not found — the mirror check then reports it.
+// The six part rows' NAME labels, in part order. Source: the rows
+// themselves via PatchPage::displayedPartNamesForTest (the former
+// layout-derived caption-cluster detector died with the per-row captions —
+// one header strip now labels the columns). Returns an empty vector when
+// the page is not reachable — the mirror check then reports it.
 std::vector<juce::String> collectPartNameLabels (PatchPage* page)
 {
-    const juce::String captionKeys[6] = {
-        TRANS ("Voices"), TRANS ("Ch"), TRANS ("Zone Low"),
-        TRANS ("Zone High"), TRANS ("Polyphony"), TRANS ("Tune") };
-
-    auto labels = collectLabels (page);
-    // Cluster by top Y (labels inside one row share the row's top inset).
-    std::sort (labels.begin(), labels.end(),
-               [] (const LabelAt& a, const LabelAt& b) { return a.y < b.y; });
-
-    std::vector<juce::String> names;
-    int i = 0;
-    while (i < (int) labels.size())
-    {
-        int j = i;
-        while (j < (int) labels.size() && labels[(size_t) j].y - labels[(size_t) i].y <= 4)
-            ++j;
-
-        // Does this Y-cluster carry the part-row caption set?
-        bool isPartRow = true;
-        for (const auto& key : captionKeys)
-        {
-            bool found = false;
-            for (int k = i; k < j; ++k)
-                if (labels[(size_t) k].text == key) { found = true; break; }
-            if (! found) { isPartRow = false; break; }
-        }
-
-        if (isPartRow)
-        {
-            // The name label is the LEFTMOST label of the row.
-            int leftmost = i;
-            for (int k = i + 1; k < j; ++k)
-                if (labels[(size_t) k].x < labels[(size_t) leftmost].x)
-                    leftmost = k;
-            names.push_back (labels[(size_t) leftmost].text);
-        }
-        i = j;
-    }
-    return names;
+    if (page == nullptr)
+        return {};
+    const auto arr = page->displayedPartNamesForTest();
+    return std::vector<juce::String> (arr.begin(), arr.end());
 }
 
 //==============================================================================

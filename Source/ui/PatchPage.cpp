@@ -12,8 +12,51 @@
 #include "PluginEditor.h"      // ParamPage complete type (reflowToWidth/getContentHeight)
 #include "TuningTables.h"      // tuningPresetName (Tune combo items)
 #include "ui/NoteName.h"       // midiNoteName (key-zone knob readouts)
+#include "ui/ParamHelp.h"      // getParamHelp (table-cell tooltips)
 
+#include <array>
 #include <cstdint>
+#include <vector>
+
+//==============================================================================
+// SHARED COLUMN GEOMETRY — the single source of truth for the part-table
+// columns. Both the header strip and every PartRow consume partColumnRects(),
+// so captions and cells can never drift apart. The arithmetic is EXACTLY the
+// pre-header layout (measured 2026-08-20; see the width comment in
+// PartRow::resized below).
+namespace
+{
+struct PartTableColumns
+{
+    enum Index
+    {
+        kName = 0, kVoices, kCh, kZoneLo, kZoneHi,
+        kOct, kPorta, kLgo, kVol, kFine, kSpr, kTune, kPoly,
+        kCount
+    };
+};
+
+// Column rects (x/width) for a row/content band @p b (already inset).
+std::array<juce::Rectangle<int>, PartTableColumns::kCount> partColumnRects (
+    juce::Rectangle<int> b)
+{
+    std::array<juce::Rectangle<int>, PartTableColumns::kCount> r {};
+    r[PartTableColumns::kName]   = b.removeFromLeft (156); b.removeFromLeft (6);
+    r[PartTableColumns::kVoices] = b.removeFromLeft (76);
+    r[PartTableColumns::kCh]     = b.removeFromLeft (68);  b.removeFromLeft (4);
+    r[PartTableColumns::kZoneLo] = b.removeFromLeft (48);
+    r[PartTableColumns::kZoneHi] = b.removeFromLeft (48); b.removeFromLeft (8);
+    r[PartTableColumns::kOct]    = b.removeFromLeft (48); b.removeFromLeft (4);
+    r[PartTableColumns::kPorta]  = b.removeFromLeft (48); b.removeFromLeft (4);
+    r[PartTableColumns::kLgo]    = b.removeFromLeft (48); b.removeFromLeft (4);
+    r[PartTableColumns::kVol]    = b.removeFromLeft (36); b.removeFromLeft (2);
+    r[PartTableColumns::kFine]   = b.removeFromLeft (36); b.removeFromLeft (2);
+    r[PartTableColumns::kSpr]    = b.removeFromLeft (36); b.removeFromLeft (4);
+    r[PartTableColumns::kTune]   = b.removeFromLeft (110); b.removeFromLeft (4);
+    r[PartTableColumns::kPoly]   = b.removeFromLeft (juce::jmin (140, b.getWidth()));
+    return r;
+}
+}  // namespace
 
 //==============================================================================
 namespace
@@ -70,21 +113,14 @@ public:
         // viewport's default nonHover mode is touch-only).
         setViewportIgnoreDragFlag (true);
 
-        auto setupCaption = [this] (juce::Label& l) {
-            l.setJustificationType (juce::Justification::centredLeft);
-            l.setFont (juce::FontOptions (11.0f));
-            addAndMakeVisible (l);
-        };
-        setupCaption (voicesCaption_);
-        setupCaption (chCaption_);
-        setupCaption (zoneLoCaption_);
-        setupCaption (zoneHiCaption_);
-        setupCaption (octCaption_);
-        setupCaption (portaCaption_);
-        setupCaption (lgoCaption_);
-        setupCaption (polyCaption_);
-        setupCaption (tuneCaption_);
-
+        // ---- Tooltips: every interactive cell carries help text — the
+        // ParamHelp entries for the part_* params, inline TRANS text for the
+        // table-only controls (re-translated by buildInlineTips on language
+        // switches). Applied through applyTooltipState(), which honours the
+        // editor-wide tooltips toggle (the ParamControl contract, mirrored so
+        // the Settings switch covers the table too). ----
+        buildInlineTips();
+        applyTooltipState();
         // HIG touch target: the DRAWN dropdown stays a compact 24pt strip
         // while each combo's BOUNDS — its tap band — fill the column height
         // (44pt after the 12pt caption band; see resized). The L&F reads this
@@ -106,13 +142,13 @@ public:
         // Localised (TRANS per sentence — the codebase idiom for multi-line
         // tooltips is concatenation of TRANS fragments, since TRANS must wrap
         // each COMPLETE source string to hit the translation table).
-        voicesCombo_.setTooltip (
+        voicesTip_ =
             TRANS ("How many voices this part plays at once, drawn from the shared ")
             + TRANS ("96-voice pool (0-16). 0 disables the part entirely — it gets no ")
             + TRANS ("voice in the pool and stops sounding. Every part can be maxed out ")
             + TRANS ("at the same time — the pool holds 6 x 16. The hardware voicecards ")
             + TRANS ("are shared out automatically for the individual outputs and the ")
-            + TRANS (".MUL hardware export."));
+            + TRANS (".MUL hardware export.");
         addAndMakeVisible (voicesCombo_);
 
         // ---- Ch: Omni (0) + 1..16 (id = channel + 1). ----
@@ -240,101 +276,101 @@ public:
     // squares via jmin(w,h)): full 44pt-tall tap band, 36pt wide — three
     // 44pt-wide cells (132pt + gaps) are arithmetically impossible at the
     // floor, and overlapping bounds would steal neighbour hits.
+    // Width arithmetic (measured 2026-08-20, see partColumnRects above):
+    // 942pt of content at the 1024x500 floor vs the 944pt row budget. The
+    // knobs are dials in 44pt-tall tap bands centred on the full row height
+    // (36pt wide for the Vol/Fine/Spr trio — the L&F squares via jmin(w,h);
+    // three 44pt-wide cells would not fit; see the width comment above).
     void resized() override
     {
-        auto b = getLocalBounds().reduced (4);
+        const auto c = partColumnRects (getLocalBounds().reduced (4));
 
-        partLabel_.setBounds (b.removeFromLeft (156));
-        b.removeFromLeft (6);
+        partLabel_.setBounds (c[PartTableColumns::kName]);
 
-        // Voices (the part's pool voice count; 44pt HIG tap band)
-        {
-            auto col = b.removeFromLeft (76);
-            voicesCaption_.setBounds (col.removeFromTop (12));
-            voicesCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        // Ch (68pt: the widest item "Omni" + the combo's dropdown-arrow
-        // reserve at 13pt text needs ~64pt — 56 truncated it; the row still
-        // consumes ~712pt, well inside the 1024 floor)
-        {
-            auto col = b.removeFromLeft (68);
-            chCaption_.setBounds (col.removeFromTop (12));
-            channelCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (4);
-        // Zone Low knob. Caption band 14->12 (the same trick T7 applied to the
-        // combo captions) so the 56pt row yields a full 44pt band for the
-        // dial — the HIG touch minimum (was a 40px dial in a 42px band).
-        {
-            auto col = b.removeFromLeft (48);
-            zoneLoCaption_.setBounds (col.removeFromTop (12));
-            loSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
-        }
-        // Zone High knob (same 44pt band as Zone Low).
-        {
-            auto col = b.removeFromLeft (48);
-            zoneHiCaption_.setBounds (col.removeFromTop (12));
-            hiSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (8);
-        // ---- Part-character columns absorbed from the old "Part / Play"
-        // page knobs: Oct (transpose), Porta (glide), Lgo (legato). 48pt each
-        // + 4pt gaps = 152pt; the row totals ~824pt against the ~952pt
-        // working width at the 1024 floor (see the layout comment above). ----
-        {
-            auto col = b.removeFromLeft (48);
-            octCaption_.setBounds (col.removeFromTop (12));
-            octaveCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (4);
-        {
-            auto col = b.removeFromLeft (48);
-            portaCaption_.setBounds (col.removeFromTop (12));
-            portaSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (4);
-        {
-            auto col = b.removeFromLeft (48);
-            lgoCaption_.setBounds (col.removeFromTop (12));
-            legatoCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (4);
-        // ---- Output columns absorbed from the old "Part / Play" page knobs:
-        // Vol (volume, byte 0), Fine (fine tuning, SIGNED byte 2), Spr (detune
-        // spread, byte 3). 36pt cells with 2pt gaps = 114pt (see the width
-        // arithmetic in the layout comment above). ----
-        {
-            auto col = b.removeFromLeft (36);
-            volCaption_.setBounds (col.removeFromTop (12));
-            volSlider_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (2);
-        {
-            auto col = b.removeFromLeft (36);
-            fineCaption_.setBounds (col.removeFromTop (12));
-            fineSlider_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (2);
-        {
-            auto col = b.removeFromLeft (36);
-            sprCaption_.setBounds (col.removeFromTop (12));
-            sprSlider_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (4);
-        // Tune (microtonal scale preset / Custom… popover)
-        {
-            auto col = b.removeFromLeft (110);
-            tuneCaption_.setBounds (col.removeFromTop (12));
-            tuneCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
-        b.removeFromLeft (4);
-        // Poly (sized to the dropdown width - no longer the row tail)
-        {
-            auto col = b.removeFromLeft (juce::jmin (140, b.getWidth()));
-            polyCaption_.setBounds (col.removeFromTop (12));
-            polyCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
-        }
+        // Combos fill their column width in a 44pt band; knobs are 44pt (or
+        // the column width for the 36pt trio) squares. All centre on the
+        // full row height — the per-row caption band is gone (replaced by the
+        // single header strip), so the HIG tap band is unchanged at 44pt.
+        auto combo = [] (juce::Rectangle<int> col, int rowH)
+        { return col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, rowH)); };
+        auto knob = [] (juce::Rectangle<int> col, int rowH)
+        { return col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, rowH)); };
+        const int h = getHeight();
+
+        voicesCombo_.setBounds  (combo (c[PartTableColumns::kVoices], h));
+        channelCombo_.setBounds (combo (c[PartTableColumns::kCh],     h));
+        loSlider_.setBounds     (knob   (c[PartTableColumns::kZoneLo], h));
+        hiSlider_.setBounds     (knob   (c[PartTableColumns::kZoneHi], h));
+        octaveCombo_.setBounds  (combo (c[PartTableColumns::kOct],    h));
+        portaSlider_.setBounds  (knob   (c[PartTableColumns::kPorta], h));
+        legatoCombo_.setBounds  (combo (c[PartTableColumns::kLgo],    h));
+        volSlider_.setBounds    (knob   (c[PartTableColumns::kVol],   h));
+        fineSlider_.setBounds   (knob   (c[PartTableColumns::kFine],  h));
+        sprSlider_.setBounds    (knob   (c[PartTableColumns::kSpr],   h));
+        tuneCombo_.setBounds    (combo (c[PartTableColumns::kTune],   h));
+        polyCombo_.setBounds    (combo (c[PartTableColumns::kPoly],   h));
     }
+
+    //----------------------------------------------------------------------
+    // Tooltip gate (the ParamControl contract, mirrored for table cells):
+    // stash each cell's help text, apply or blank per the editor-wide toggle.
+    // Called at construction, on language changes (translated inline texts)
+    // and from PatchPage::setTableTooltipsEnabled when the Settings toggle
+    // flips.
+    void applyTooltipState()
+    {
+        const bool on = ParamControl::tooltipsEnabled();
+        auto apply = [on] (juce::SettableTooltipClient& c, const juce::String& text) {
+            c.setTooltip (on ? text : juce::String());
+        };
+        apply (partLabel_,    partLabelTip_);
+        apply (voicesCombo_,  voicesTip_);
+        apply (channelCombo_, channelTip_);
+        apply (loSlider_,     zoneLoTip_);
+        apply (hiSlider_,     zoneHiTip_);
+        apply (octaveCombo_,  getParamHelp ("part_octave"));
+        apply (portaSlider_,  getParamHelp ("part_portamento"));
+        apply (legatoCombo_,  getParamHelp ("part_legato"));
+        apply (volSlider_,    getParamHelp ("part_volume"));
+        apply (fineSlider_,   getParamHelp ("part_tuning"));
+        apply (sprSlider_,    getParamHelp ("part_spread"));
+        apply (polyCombo_,    getParamHelp ("part_polyphony"));
+        apply (tuneCombo_,    getParamHelp ("part_raga"));
+    }
+
+    // Re-translate the inline (table-only) tooltip texts. Called at
+    // construction and from refreshLanguage so a live language switch
+    // re-renders them (ParamHelp strings are English-only by design).
+    void buildInlineTips()
+    {
+        partLabelTip_ =
+            TRANS ("Click (or tap) to rename this part — an empty name reverts to the ")
+            + TRANS ("default 'Part N' label.");
+        channelTip_ =
+            TRANS ("MIDI channel this part listens on. Omni responds on every ")
+            + TRANS ("channel (multitimbral stacks usually want distinct channels).");
+        zoneLoTip_ =
+            TRANS ("Key zone: the lowest MIDI note this part responds to. Notes ")
+            + TRANS ("below stay silent so another part can own them.");
+        zoneHiTip_ =
+            TRANS ("Key zone: the highest MIDI note this part responds to. Notes ")
+            + TRANS ("above stay silent so another part can own them.");
+    }
+
+    // Test hook: every interactive cell exposes a tooltip when the global
+    // toggle is ON (pins the "tooltips seem empty" regression class).
+    bool allCellsHaveTooltipsForTest()
+    {
+        juce::SettableTooltipClient* cells[] = {
+            &partLabel_, &voicesCombo_, &channelCombo_, &loSlider_, &hiSlider_,
+            &octaveCombo_, &portaSlider_, &legatoCombo_, &volSlider_,
+            &fineSlider_, &sprSlider_, &polyCombo_, &tuneCombo_ };
+        return std::all_of (std::begin (cells), std::end (cells),
+            [] (juce::SettableTooltipClient* c) { return c->getTooltip().isNotEmpty(); });
+    }
+
+    // The DISPLAYED name (placeholder "Part N" applied when empty).
+    juce::String displayedNameForTest() const { return partLabel_.getText (true); }
 
     //----------------------------------------------------------------------
     // Re-read this Part's engine state into the controls WITHOUT firing onChange.
@@ -390,18 +426,10 @@ public:
     // + mode names are translated), preserving each selection.
     void refreshLanguage()
     {
-        voicesCaption_.setText (TRANS ("Voices"), juce::dontSendNotification);
-        chCaption_.setText (TRANS ("Ch"), juce::dontSendNotification);
-        zoneLoCaption_.setText (TRANS ("Zone Low"), juce::dontSendNotification);
-        zoneHiCaption_.setText (TRANS ("Zone High"), juce::dontSendNotification);
-        octCaption_.setText (TRANS ("Oct"), juce::dontSendNotification);
-        portaCaption_.setText (TRANS ("Porta"), juce::dontSendNotification);
-        lgoCaption_.setText (TRANS ("Lgo"), juce::dontSendNotification);
-        volCaption_.setText (TRANS ("Vol"), juce::dontSendNotification);
-        fineCaption_.setText (TRANS ("Fine"), juce::dontSendNotification);
-        sprCaption_.setText (TRANS ("Spr"), juce::dontSendNotification);
-        polyCaption_.setText (TRANS ("Polyphony"), juce::dontSendNotification);
-        tuneCaption_.setText (TRANS ("Tune"), juce::dontSendNotification);
+        // (Column captions moved to the single header strip —
+        // PartTablePanel::ColumnHeader::refreshLanguage.)
+        buildInlineTips();
+        applyTooltipState();
 
         {
             // Legato items are translated; the Octave items are bare signed
@@ -611,9 +639,12 @@ private:
     SynthEngine& engine_;
     bool refreshing_ = false;
 
-    juce::Label partLabel_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_,
-                 octCaption_, portaCaption_, lgoCaption_, polyCaption_, tuneCaption_;
-    juce::Label volCaption_, fineCaption_, sprCaption_;   // output columns (Vol/Fine/Spr)
+    // (The former per-row caption labels were replaced by the single header
+    // strip — PartTablePanel::ColumnHeader — sharing partColumnRects().)
+    juce::Label partLabel_;
+    // Inline (table-only) tooltip texts, re-translated by buildInlineTips()
+    // on language switches. The part_* cells read ParamHelp directly.
+    juce::String partLabelTip_, voicesTip_, channelTip_, zoneLoTip_, zoneHiTip_;
     juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_, octaveCombo_, legatoCombo_;
     juce::Slider loSlider_, hiSlider_, portaSlider_;
     juce::Slider volSlider_, fineSlider_, sprSlider_;     // output columns (bytes 0/2/3)
@@ -811,16 +842,25 @@ private:
 class PatchPage::PartTablePanel : public juce::Component
 {
 public:
-    explicit PartTablePanel (PatchPage& owner) : owner_ (owner) {}
+    explicit PartTablePanel (PatchPage& owner) : owner_ (owner)
+    {
+        addAndMakeVisible (header_);
+    }
 
     // Summary row height + gap above the part rows.
     static constexpr int kSummaryH = 44;
     static constexpr int kSummaryGap = 8;
+    // Header strip: the single column-caption row (replaces the former
+    // per-row caption bands — ONE header, localized, sharing the exact
+    // column geometry the rows lay out from).
+    static constexpr int kHeaderH = 18;
+    static constexpr int kHeaderGap = 4;
     // Natural panel height: 4px top inset + the arrangement summary row
-    // (44px + 8px gap) + 6 rows x 56 + 5 gaps x 4 + 4px bottom inset. The
-    // reserved external-decoration height the hosted page uses for the
-    // group's layout (see hostParamPage).
-    static constexpr int kTableH = 4 + kSummaryH + kSummaryGap + 6 * 56 + 5 * 4 + 4;
+    // (44px + 8px gap) + the header strip (18px + 4px gap) + 6 rows x 56
+    // + 5 gaps x 4 + 4px bottom inset. The reserved external-decoration
+    // height the hosted page uses for the group's layout (see hostParamPage).
+    static constexpr int kTableH = 4 + kSummaryH + kSummaryGap
+                                 + kHeaderH + kHeaderGap + 6 * 56 + 5 * 4 + 4;
 
     void resized() override
     {
@@ -842,6 +882,12 @@ public:
         }
         b.removeFromTop (kSummaryGap);
 
+        // ---- Single column-header strip (localized captions, painted at
+        // the shared column x-positions so it can never drift from the
+        // cells; non-interactive so no HIG target is required). ----
+        header_.setBounds (b.removeFromTop (kHeaderH));
+        b.removeFromTop (kHeaderGap);
+
         for (int i = 0; i < kNumParts; ++i)
         {
             // rows_ is PatchPage-private; a nested class has access.
@@ -850,8 +896,55 @@ public:
         }
     }
 
+    // Localize the header captions (called from PatchPage::refreshLanguage).
+    void refreshLanguage() { header_.refreshLanguage(); }
+
+    // Test hook: the header's caption list in column order.
+    juce::StringArray headerLabelsForTest() const { return header_.labels(); }
+
+    // The header strip. Paints the captions at the shared column rects —
+    // themed via the L&F's group-title text colour (findColourColour with a
+    // sane fallback), 11pt bold-ish, centred-left like the old captions.
+    class ColumnHeader : public juce::Component
+    {
+    public:
+        void paint (juce::Graphics& g) override
+        {
+            const auto* lh = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel());
+            g.setColour (lh != nullptr ? lh->getTheme()->textSecondary
+                                       : juce::Colours::lightgrey.withAlpha (0.85f));
+            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            const auto c = partColumnRects (getLocalBounds());
+            for (int i = 0; i < PartTableColumns::kCount; ++i)
+                g.drawText (labels_[static_cast<size_t> (i)], c[i], juce::Justification::centredLeft, true);
+        }
+
+        void refreshLanguage()
+        {
+            labels_ = captions();
+            repaint();
+        }
+
+        juce::StringArray labels() const { return labels_; }
+
+    private:
+        // Caption per column, in PartTableColumns order. Short forms for the
+        // narrow knob columns (matching the absorbed-column captions).
+        static juce::StringArray captions()
+        {
+            return { TRANS ("Part"),  TRANS ("Voices"), TRANS ("Ch"),
+                     TRANS ("Zone Low"), TRANS ("Zone High"),
+                     TRANS ("Oct"), TRANS ("Porta"), TRANS ("Lgo"),
+                     TRANS ("Vol"),  TRANS ("Fine"),  TRANS ("Spr"),
+                     TRANS ("Tune"), TRANS ("Polyphony") };
+        }
+
+        juce::StringArray labels_ = captions();
+    };
+
 private:
     PatchPage& owner_;
+    ColumnHeader header_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PartTablePanel)
 };
@@ -925,8 +1018,40 @@ void PatchPage::refreshLanguage()
     buildArrangementCombo();
     for (auto& r : rows_)
         r->refreshLanguage();
+    if (tablePanel_ != nullptr)
+        tablePanel_->refreshLanguage();   // the column-header strip
     updateVoicesTotal();   // "Voices Y/96" is TRANS-built chrome
     repaint();
+}
+
+void PatchPage::setTableTooltipsEnabled (bool)
+{
+    // The gate is ParamControl::tooltipsEnabled() (the editor flips it via
+    // ParamControl::setTooltipsEnabled before calling this); rows re-read it
+    // and blank/restore their cell tooltips accordingly.
+    for (auto& r : rows_)
+        r->applyTooltipState();
+}
+
+juce::StringArray PatchPage::headerLabelsForTest() const
+{
+    return tablePanel_ != nullptr ? tablePanel_->headerLabelsForTest()
+                                  : juce::StringArray();
+}
+
+// Test hooks: the six part rows' DISPLAYED name labels, in part order
+juce::StringArray PatchPage::displayedPartNamesForTest() const
+{
+    juce::StringArray out;
+    for (const auto& r : rows_)
+        out.add (r->displayedNameForTest());
+    return out;
+}
+
+bool PatchPage::tableTooltipsCompleteForTest()
+{
+    return std::all_of (rows_.begin(), rows_.end(),
+        [] (const std::unique_ptr<PartRow>& r) { return r->allCellsHaveTooltipsForTest(); });
 }
 
 void PatchPage::buildArrangementCombo()

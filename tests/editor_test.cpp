@@ -1467,8 +1467,8 @@ int main (int argc, char** argv)
                    "[21] Spr column shows 40");
         }
 
-        // The Patch-hosted Global page stays well-formed with its slimmed
-        // Part / Play panel (3 knobs) + the Global panel + the merged table.
+        // The Patch-hosted Global page stays well-formed with the Global
+        // panel + the merged table (all part knobs are table columns now).
         if (parvatiEd != nullptr)
         for (auto* page : parvatiEd->allGeneratedPages())
         {
@@ -1480,6 +1480,39 @@ int main (int argc, char** argv)
                 check (page->layoutIsSane(), "[21] Global (Patch-hosted) page layoutIsSane after slimming");
         }
     }
+
+    // ---- [22] Patch-table column headers + tooltips ----
+    // (a) the header strip exists with one localized caption per column, in
+    //     column order (shared geometry — partColumnRects is the single source
+    //     of truth, so this pins the caption count + order);
+    // (b) every interactive cell of every row carries a NON-empty tooltip
+    //     (the "patch table tooltips seem empty" regression class);
+    // (c) the editor-wide tooltips gate blanks them (the ParamControl
+    //     contract extended to the table).
+    std::printf ("\n[22] Patch-table column headers + tooltips\n");
+    if (patchPage != nullptr)
+    {
+        const auto labels = patchPage->headerLabelsForTest();
+        check (labels.size() == 13, "[22] header has 13 column captions");
+        check (labels[0]  == TRANS ("Part") && labels[1]  == TRANS ("Voices")
+            && labels[2]  == TRANS ("Ch")   && labels[11] == TRANS ("Tune")
+            && labels[12] == TRANS ("Polyphony"),
+               "[22] header captions in column order (Part/Voices/Ch/.../Tune/Poly)");
+
+        check (patchPage->tableTooltipsCompleteForTest(),
+               "[22] every interactive table cell has a tooltip");
+
+        ParamControl::setTooltipsEnabled (false);
+        patchPage->setTableTooltipsEnabled (false);
+        check (! patchPage->tableTooltipsCompleteForTest(),
+               "[22] tooltips gate blanks the table cells");
+        ParamControl::setTooltipsEnabled (true);
+        patchPage->setTableTooltipsEnabled (true);
+        check (patchPage->tableTooltipsCompleteForTest(),
+               "[22] gate restore re-applies the tooltips");
+    }
+    else
+        check (false, "[22] PatchPage reachable for header/tooltip checks");
 
     // ---- teardown ----
     delete editor;
