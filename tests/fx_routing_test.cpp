@@ -448,6 +448,118 @@ int main()
         }
     }
 
+    // ---- B10: PARALLEL PER-BRANCH DRY/WET (audit/drywet_investigation Bug
+    // B, 2026-08-20). The old shared-mean blend scaled the summed raw wets
+    // by the MEAN dw: a branch at dw=0 leaked at -6 dB (feedback repeats ran
+    // forever) and sweeping one branch's dw shifted the OTHER branch's gain.
+    // Fixed: each branch's wet is scaled by its OWN effective dw inside the
+    // sum (the mean only drives the dry gain). ----
+    {
+        // (a) Sweep branch A's dw 1.0 -> 0.0; A's pulse must fall under -60 dB
+        //     of its dw=1 level while branch B's output stays BIT-IDENTICAL.
+        auto branchPeaks = [] (float dwA, float (&pA)[2], float (&pB)[2])
+        {
+            FxChain c;
+            c.prepare (48000.0, kBlock);
+            c.setTopology (FxTopology::Parallel12to3);
+            c.setSlotType (0, FxType::Echo);            // A: click @ 100 ms
+            c.setSlotType (1, FxType::Echo);            // B: click @ 300 ms
+            c.setSlotType (2, FxType::None);            // C: passthrough
+            c.setSlotEnabled (0, true);
+            c.setSlotEnabled (1, true);
+            c.setSlotDryWet (0, dwA);
+            c.setSlotDryWet (1, 1.0f);
+            c.setSlotParam (0, 0, 0.598f);               // 100 ms (ms = 10*47^p0)
+            c.setSlotParam (1, 0, 0.883f);               // 300 ms
+            c.setSlotParam (0, 1, 0.0f);                // fb 0 (isolated pulses)
+            c.setSlotParam (1, 1, 0.0f);
+            for (int k = 2; k < kNumFxSlotParams; ++k)
+            {
+                c.setSlotParam (0, k, 0.5f);
+                c.setSlotParam (1, k, 0.5f);
+            }
+            float iL[kBlock] {}, iR[kBlock] {};
+            float oL[kBlock], oR[kBlock];
+            // Feed one click, then silence, 1 s total; record the peak in each
+            // branch's echo window (100 ms and 300 ms after the click).
+            const int tA = (int) (0.100 * 48000), tB = (int) (0.300 * 48000);
+            pA[0] = pA[1] = pB[0] = pB[1] = 0.0f;
+            int clickAt = -1;
+            for (int smp = 0, b = 0; smp < 48000; smp += kBlock, ++b)
+            {
+                std::fill (iL, iL + kBlock, 0.0f);
+                if (smp == 0) { iL[0] = 0.9f; clickAt = smp; }
+                c.process (iL, iR, oL, oR, kBlock);
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    const int t = smp + i;
+                    if (t > clickAt + tA - 256 && t < clickAt + tA + 256)
+                        { pA[0] = std::max (pA[0], std::abs (oL[i])); pA[1] = std::max (pA[1], std::abs (oR[i])); }
+                    if (t > clickAt + tB - 256 && t < clickAt + tB + 256)
+                        { pB[0] = std::max (pB[0], std::abs (oL[i])); pB[1] = std::max (pB[1], std::abs (oR[i])); }
+                }
+            }
+        };
+        float a1[2], a0[2], b1[2], b0[2];
+        branchPeaks (1.0f, a1, b1);
+        branchPeaks (0.0f, a0, b0);
+        const auto db = [] (float x) { return 20.0 * std::log10 ((double) std::max (x, 1.0e-12f)); };
+        std::printf ("  [info] B10a A-branch: dw1=%.2f dB dw0=%.2f dB (delta %.2f dB)\n",
+                     db (a1[0]), db (a0[0]), db (a1[0]) - db (a0[0]));
+        std::printf ("  [info] B10a B-branch: dw1=%.2f dB dw0=%.2f dB (delta %.2f dB)\n",
+                     db (b1[0]), db (b0[0]), db (b1[0]) - db (b0[0]));
+        check (db (a1[0]) - db (a0[0]) > 60.0,
+               "B10a: branch A at dw=0 falls >60 dB below its dw=1 level (was -6 dB leak)");
+        check (b0[0] == b1[0] && b0[1] == b1[1],
+               "B10a: branch B is BIT-IDENTICAL across A's dw sweep (gain invariance)");
+
+        // (b) Feedback variant: A = echo fb 0.85 at dw 0 FROM THE START,
+        //     B = plate. The ECHO-PERIODIC component is isolated by
+        //     difference against a twin chain whose A has fb 0 (identical dry
+        //     gain + plate branch => the difference is exactly A's feedback
+        //     path). No repeats above -60 dB of the click after 2 blocks.
+        {
+            auto renderFb = [] (float fb, double& postPeak)
+            {
+                FxChain c;
+                c.prepare (48000.0, kBlock);
+                c.setTopology (FxTopology::Parallel12to3);
+                c.setSlotType (0, FxType::Echo);
+                c.setSlotType (1, FxType::PlateReverb);
+                c.setSlotType (2, FxType::None);
+                c.setSlotEnabled (0, true);
+                c.setSlotEnabled (1, true);
+                c.setSlotDryWet (0, 0.0f);             // BUG: was never silent
+                c.setSlotDryWet (1, 1.0f);
+                c.setSlotParam (0, 0, 0.598f);          // 100 ms
+                c.setSlotParam (0, 1, fb);
+                for (int k = 2; k < kNumFxSlotParams; ++k) c.setSlotParam (0, k, 0.5f);
+                for (int k = 0; k < kNumFxSlotParams; ++k) c.setSlotParam (1, k, 0.5f);
+                float iL[kBlock] {}, iR[kBlock] {};
+                float oL[kBlock], oR[kBlock];
+                postPeak = 0.0;
+                int blocks = 0;
+                for (int smp = 0; smp < 48000; smp += kBlock)
+                {
+                    std::fill (iL, iL + kBlock, 0.0f);
+                    if (smp == 0) iL[0] = 0.9f;
+                    c.process (iL, iR, oL, oR, kBlock);
+                    ++blocks;
+                    if (blocks > 2)                     // past the click's own echo window
+                        for (int i = 0; i < kBlock; ++i)
+                            postPeak = std::max (postPeak, (double) std::abs (oL[i]));
+                }
+            };
+            double withFb = 0.0, noFb = 0.0;
+            renderFb (0.85f, withFb);
+            renderFb (0.0f,  noFb);
+            const double echoComponent = withFb - noFb;   // plate + dry cancel exactly
+            std::printf ("  [info] B10b echo-path peak (fb0.85 minus fb0) = %.6e\n", echoComponent);
+            check (echoComponent < 0.9 * 1.0e-3,
+                   "B10b: dw=0 echo branch leaves no feedback repeats (was -22.8 dB repeats forever)");
+        }
+    }
+
     // ---- B7b: mid-session re-prepare at a DIFFERENT sample rate (host
     // rate change). Same continuity contract as B7 plus: a STAGED-but-unconsumed
     // type swap is applied by prepare() at the new rate (never renders with

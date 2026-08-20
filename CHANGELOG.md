@@ -4,6 +4,19 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Removed
+- **FX-slot graphic visualizers (2026-08-20).** The per-slot FxSlotVisualizer
+  canvas (the dimmed-grid + per-algorithm illustration band in each FX card)
+  was removed at the user's request — the cards now show header / algorithm
+  picker / the 3x2 knob grid only. Source/ui/FxSlotVisualizer.{h,cpp}
+  deleted; the knob grid owns the card body and centres in the freed height.
+  FxWorkspace's FX top-row natural height was reclaimed 264 -> 240 (the
+  band's 24px: nudge 4 + band up-to-30 + gap), which flows to the workspace
+  rows below; the fixed 2 x 70px knob grid keeps full-size dials (44pt hit
+  areas unchanged). Bypass alpha, theme re-tint and the card's test seams
+  no longer reference the component; tools/editor_test [13]'s
+  has-an-FxSlotVisualizer assertions removed with it.
+
 ### Fixed
 - **Mod-matrix index label, unified disable widget, header colour parity
   (2026-08-20).** (1) The row slot number showed "..." instead of "16":

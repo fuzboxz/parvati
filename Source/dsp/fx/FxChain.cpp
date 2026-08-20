@@ -852,9 +852,13 @@ void FxChain::renderParallel (const float* inL, const float* inR,
             // Per-sample mean dry/wet from each active slot's one-pole fade AND
             // one-pole dry/wet smoother (dw = dwCur * fade per slot).
             float dwSum = 0.0f;
+            float actDw[2] {};   // per-slot EFFECTIVE dw (dwCur*fade); renderParallel sums exactly 2 branches
             for (int a = 0; a < activeCount; ++a)
-                dwSum += actDwCur[a] * actFade[a];
-            const float W   = dwSum * inv;   // mean dry/wet, 0..1
+            {
+                actDw[a] = actDwCur[a] * actFade[a];
+                dwSum += actDw[a];
+            }
+            const float W   = dwSum * inv;   // mean dry/wet, 0..1 (DRY gain only)
             const float dry = 1.0f - W;
 
             // Sum the active wets, each delayed to Lmax so differing-latency
@@ -880,8 +884,16 @@ void FxChain::renderParallel (const float* inL, const float* inR,
                     wl = wetL_[(size_t) s][(size_t) i];
                     wr = wetR_[(size_t) s][(size_t) i];
                 }
-                sumWL += wl;
-                sumWR += wr;
+                // PER-BRANCH dry/wet (2026-08-20, audit/drywet_investigation
+                // Bug B): scale each slot's OWN wet by its own effective dw
+                // inside the sum. The old shared-mean (sumWL * inv * W)
+                // scaled the summed raw wets by the MEAN dw, so a branch at
+                // dw=0 leaked at -6 dB (its feedback repeats ran forever)
+                // and sweeping one branch's dw changed the OTHER branch's
+                // gain. The mean W stays as the DRY gain so the equal-gain
+                // character at dw=1 (both branches full) is unchanged.
+                sumWL += wl * actDw[a];
+                sumWR += wr * actDw[a];
             }
 
             // Delay the parallel dry by Lmax so it aligns with the Lmax-aligned
@@ -904,9 +916,11 @@ void FxChain::renderParallel (const float* inL, const float* inR,
             }
 
             // outL/outR currently hold the summed wet outputs of the active
-            // slots; blend the mean wet against the dry input.
-            outL[i] = dL * dry + sumWL * inv * W;
-            outR[i] = dR * dry + sumWR * inv * W;
+            // slots; blend against the dry input. The WET path carries the
+            // per-branch dw already (see the sum loop above); the DRY gain
+            // keeps the mean W (1 - mean dw) for the equal-gain character.
+            outL[i] = dL * dry + sumWL * inv;
+            outR[i] = dR * dry + sumWR * inv;
             // Advance each active slot's two per-sample one-poles: the dry/wet
             // smoother (smoothCoef_) toward dryWet_[s] (target), and the wet
             // fade (coefIn_/coefOut_) toward 1/0 (1 if enabled, else 0).

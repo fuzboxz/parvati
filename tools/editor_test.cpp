@@ -76,7 +76,6 @@
 #include "ui/FxMatrixView.h"       // complete type for findFirst<FxMatrixView>
 #include "ui/FxSlotCard.h"         // complete type for findFirst/collectAll<FxSlotCard>
 #include "ui/FxRoutingBar.h"       // complete type for findFirst<FxRoutingBar>
-#include "ui/FxSlotVisualizer.h"   // complete type for findFirst<FxSlotVisualizer>
 
 namespace
 {
@@ -689,7 +688,7 @@ int main()
         // ------------------------------------------------------------------
         // [13] FX top-section layout (3 FxSlotCards + FxRoutingBar). Headless
         // layout-sanity coverage so regressions (knob cells too small, a missing
-        // visualizer / type combo / power toggle) are caught WITHOUT a render.
+        // type combo / power toggle) are caught WITHOUT a render.
         // Switches to the FX tab, asserts the card + routing-bar child structure
         // + bounds + dynamic knob visibility, then restores SYNTH. The FX top row
         // is a 4-column [ ROUTING | FX1 | FX2 | FX3 ] layout: the slim
@@ -743,22 +742,20 @@ int main()
                                (int) i + 1, knobControls.size());
                 check (knobControls.size() == 6, msg);
 
-                // DIRECT children: a type ComboBox, a power/bypass Button, + an
-                // FxSlotVisualizer. (Direct-child checks avoid matching the
-                // ComboBox's internal arrow Button.)
-                bool hasCombo = false, hasButton = false, hasVisualizer = false;
+                // DIRECT children: a type ComboBox + a power/bypass Button.
+                // (Direct-child checks avoid matching the ComboBox's internal
+                // arrow Button. The FxSlotVisualizer assertion was removed with
+                // the component, 2026-08-20.)
+                bool hasCombo = false, hasButton = false;
                 for (auto* child : card->getChildren())
                 {
                     if (dynamic_cast<juce::ComboBox*> (child)     != nullptr) hasCombo     = true;
                     if (dynamic_cast<juce::Button*> (child)       != nullptr) hasButton     = true;
-                    if (dynamic_cast<FxSlotVisualizer*> (child)   != nullptr) hasVisualizer  = true;
                 }
                 std::snprintf (msg, sizeof (msg), "FX%d card has a type ComboBox", (int) i + 1);
                 check (hasCombo, msg);
                 std::snprintf (msg, sizeof (msg), "FX%d card has a power/bypass Button", (int) i + 1);
                 check (hasButton, msg);
-                std::snprintf (msg, sizeof (msg), "FX%d card has an FxSlotVisualizer", (int) i + 1);
-                check (hasVisualizer, msg);
 
                 // Visible knobs must be usable (catches a "knobs collapsed to a
                 // sliver" regression; the dial targets 52px so the cell needs

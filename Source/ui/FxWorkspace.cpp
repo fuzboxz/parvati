@@ -258,20 +258,23 @@ void FxWorkspace::resized()
     // generous whitespace (page backgroundBase) instead of butting each other
     // and the workspace edges — mirroring how the synth page's kMargin insets
     // its GroupComponent cards. Each card gets the remaining height and sizes
-    // its knobs/visualizer internally. (kRowGap is the class constant; the
-    // former local kGap was hoisted for the parity test.)
+    // its knobs internally. (kRowGap is the class constant; the former local
+    // kGap was hoisted for the parity test.)
     constexpr int kGap = kRowGap;
     // R3: the top row's NATURAL height — the routing bar's stacked rows (flow
     // diagram 50 + EQ 60 + Dry/Wet band) need ~190px, and the FX-slot cards'
-    // FIXED-height knob grid (2 x kCellH = 140px of grid + header/type/
-    // visualizer overhead ≈ 108px + card padding) needs ~248px + the host's
-    // kGap margins for FULL-SIZE knobs. The viewport host is never laid shorter
-    // than this; a shorter FRAME scrolls instead of starving the rows (which
-    // previously made the EQ labels / Dry/Wet caption / stepper buttons paint
-    // outside the bar and over the rows below — and, pre-2026-08, shrank the
-    // FX knob cells themselves). Knob-size stability parity with the synth
-    // pages (ParamPage::reflowToWidth scrolls the same way).
-    constexpr int kTopRowNaturalH = 264;
+    // FIXED-height knob grid (2 x kCellH = 140px of grid + header 16 + type row
+    // 44 + gaps 4 + card padding 12 = 216px) needs 216px + the host's 2*kGap
+    // margins = 232px for FULL-SIZE knobs; 240 keeps a small breathing margin.
+    // (The per-slot VISUALIZER band was REMOVED 2026-08-20 — 264 became 240;
+    // the freed 24px flows to the workspace rows below.) The viewport host is
+    // never laid shorter than this; a shorter FRAME scrolls instead of
+    // starving the rows (which previously made the EQ labels / Dry/Wet caption
+    // / stepper buttons paint outside the bar and over the rows below — and,
+    // pre-2026-08, shrank the FX knob cells themselves). Knob-size stability
+    // parity with the synth pages (ParamPage::reflowToWidth scrolls the same
+    // way).
+    constexpr int kTopRowNaturalH = 240;
     topRowViewport_->setBounds (mainRow);
     // mainRow (NOT Viewport::getViewWidth()) is the width source: the viewport
     // caches its visible area and can be stale mid-cascade (SynthWorkspace hit

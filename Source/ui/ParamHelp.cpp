@@ -168,7 +168,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
         const auto n = std::to_string (s);
         m["fx" + n + "_type"]    = "FX slot " + n + " effect algorithm (None, Diffuser, Pitch Shifter, Clouds Reverb, Echo, ...).";
         m["fx" + n + "_enabled"] = "FX slot " + n + " enable / bypass toggle (0 = bypassed, 1 = active).";
-        m["fx" + n + "_drywet"]  = "FX slot " + n + " wet/dry blend (0 = fully dry, 127 = fully wet).";
+        m["fx" + n + "_drywet"]  = "FX slot " + n + " wet/dry blend (0 = fully dry, 127 = fully wet). Per-slot; a delay placed before a reverb/echo keeps sounding in that module's tail for a while after drying it out — move it later for an immediate cut.";
         for (int p = 1; p <= 5; ++p)
             m["fx" + n + "_param" + std::to_string (p)] =
                 "FX slot " + n + " parameter " + std::to_string (p) +

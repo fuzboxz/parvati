@@ -3,7 +3,6 @@
 #include "FxSlotCard.h"
 #include "FxSlotLabels.h"   // activeParamCount/paramLabel — defined in FxSlotLabels.cpp
 
-#include "FxSlotVisualizer.h"
 #include "ParvatiLookAndFeel.h"
 #include "ParvatiTheme.h"
 #include "PluginEditor.h"          // ParamControl complete type
@@ -246,14 +245,14 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
     return { 0, 0, { 0, 0, 0, 0, 0 } };
 }
 
-// Layout constants (px). The card sits in the FX top row (~261..271px tall at
-// the 600..620px editor height). The layout mirrors the synth OSC/Mixer/Filter
-// sections: a header band, a STYLED algorithm dropdown (Shape/Mode parity), a
-// COMPACT visualizer band (synth decoration parity, <= kVisMax), and a
-// Mixer-style 3-column knob GRID (kCellH = the synth cell height). Fixed
-// header / dropdown / visualizer heights keep the three cards' baselines
-// aligned; the grid centres vertically in its remainder so a short row-set
-// reads balanced + spacious.
+// Layout constants (px). The card sits in the FX top row (~228px tall at
+// the 600..620px editor height; the visualizer band was REMOVED 2026-08-20
+// — the knob grid now owns the body). The layout mirrors the synth
+// OSC/Mixer/Filter sections: a header band, a STYLED algorithm dropdown
+// (Shape/Mode parity), and a Mixer-style 3-column knob GRID (kCellH = the
+// synth cell height). Fixed header / dropdown heights keep the three cards'
+// baselines aligned; the grid centres vertically in its remainder so a
+// short row-set reads balanced + spacious.
 constexpr int kPad         = 6;      // card edge inset
 constexpr int kHeaderH     = 16;     // header row (title + power toggle; synth kGroupTitleH parity)
 constexpr int kHalfGap     = 2;      // gap below the header + between bands
@@ -263,9 +262,7 @@ constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron 
 constexpr int kComboMinW   = 80;     // dropdown floor width
 constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
 constexpr int kCellH       = 70;     // knob cell height (bigger, more visible dials + tighter spacing)
-constexpr int kVisMax      = 30;     // visualizer band cap (compact — shorter modules, knobs prioritised). No kVisMin floor
-                                       // any more: the band shrinks to 0 before the FIXED-height knob grid yields a pixel.
-// Bypass affordance: a bypassed slot's live controls (knobs + visualizer + type
+// Bypass affordance: a bypassed slot's live controls (knobs + type
 // combo) are recessed to this alpha so the slot reads as inactive at a glance
 // (0.5 matches the synth GroupComponent / knob disabled alpha).
 constexpr float kBypassedAlpha = 0.5f;
@@ -417,23 +414,6 @@ FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
     processor.getApvts ().addParameterListener (prefix_ + "type", this);
     processor.getApvts ().addParameterListener (prefix_ + "enabled", this);
 
-    // ---- Visualizer (normalized APVTS getters) ----
-    const auto prefixStr = prefix_;
-    auto norm = [&processor, prefixStr] (const char* tail) -> float
-    {
-        auto* p = processor.getApvts ().getParameter (prefixStr + tail);
-        return p != nullptr ? p->getValue () : 0.0f;
-    };
-    visualizer_ = std::make_unique<FxSlotVisualizer> (
-        [norm] { return norm ("type"); },
-        [norm] { return norm ("param1"); },
-        [norm] { return norm ("param2"); },
-        [norm] { return norm ("param3"); },
-        [norm] { return norm ("param4"); },
-        [norm] { return norm ("param5"); },
-        [norm] { return norm ("drywet"); });
-    addAndMakeVisible (*visualizer_);
-
     // Initial knob visible set + semantic labels + power state.
     refreshFromType();
     refreshEnabled();
@@ -464,7 +444,7 @@ int FxSlotCard::currentTypeIndex() const
     // fx{N}_type is an AudioParameterChoice: getValue() is NORMALIZED 0..1, so
     // scale it back to the choice index (0..Count-1). Without this, e.g. Reverb
     // (idx 3, normalized 0.75) would read as idx 1 (GainPan) -> wrong knobs.
-    // Mirrors FxSlotVisualizer::typeIndex().
+    // (Mirrors the removed visualizer's typeIndex() convention.)
     constexpr int kLast = static_cast<int> (FxType::Count) - 1;
     return juce::jlimit (0, kLast, juce::roundToInt (v * static_cast<float> (kLast)));
 }
@@ -568,7 +548,7 @@ void FxSlotCard::refreshEnabled()
         powerToggle_->setEnabled (! none);
     }
 
-    // Bypass affordance: recess the LIVE controls (knobs + visualizer + type
+    // Bypass affordance: recess the LIVE controls (knobs + type
     // combo) when the slot is bypassed, so a disabled slot reads as inactive at a
     // glance — without it a bypassed slot's knobs stay full-brightness and look
     // live. NON-colour (alpha only): the panel / title / power indicator dot keep
@@ -577,7 +557,7 @@ void FxSlotCard::refreshEnabled()
     // editable even while bypassed.
     const float contentAlpha = on ? 1.0f : kBypassedAlpha;
     juce::Component* content[] = { p1_.get(), p2_.get(), p3_.get(), p4_.get(), p5_.get(),
-                                   drywet_.get(), visualizer_.get(), typeCombo_.get(),
+                                   drywet_.get(), typeCombo_.get(),
                                    typePrev_.get(), typeNext_.get() };
     for (auto* c : content)
         if (c != nullptr)
@@ -639,7 +619,7 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
         drywet_->setVisible (false);
 
     // None => NO Dry/Wet, NO params (the grid collapses; the card shows just the
-    // header + type combo + visualizer). This is the explicit "Dry/Wet hidden
+    // header + type combo). This is the explicit "Dry/Wet hidden
     // when None" rule.
     if (t == FxType::None || gridArea.isEmpty())
         return;
@@ -769,47 +749,18 @@ void FxSlotCard::resized()
         area.removeFromTop (kHalfGap);
     }
 
-    // ---- Body: a COMPACT visualizer band (<= kVisMax, synth decoration parity)
-    //      on top + a Mixer-style 3-column knob GRID below. The grid is the
-    //      primary control surface, so it claims its ideal height (rows *
-    //      kCellH) first; the band fills the rest down to kVisMin. If even the
-    //      band floor cannot fit alongside the ideal grid, the band holds at
-    //      kVisMin and the grid shrinks. (Was: a large ~2/3-body band + a single
-    //      knob row.) ----
+    // ---- Body: the Mixer-style 3-column knob GRID owns the whole body
+    //      (the visualizer band was REMOVED 2026-08-20 — the user asked for
+    //      the FX graphic illustrations gone; the grid centres vertically in
+    //      the freed height, so the card has no hole where the band was). ----
     const auto t = static_cast<FxType> (currentTypeIndex());
-    // The knob grid is a FIXED 3x2 layout (up to 5 params + Dry/Wet) whenever the
-    // slot has an effect; for None the grid collapses entirely (Dry/Wet hidden).
-    // The grid height is FIXED at rows*kCellH (knob size stability — see
-    // layoutParamGrid); only the visualizer band is elastic (kVisMax down to
-    // 0). Below the band's floor the grid keeps its fixed height and the card
-    // relies on the workspace top-row scroll floor (kTopRowNaturalH) — the grid
-    // is never squeezed.
-    const bool hasGrid = (t != FxType::None);
-    const int gridIdealH = hasGrid ? (2 * kCellH) : 0;
-
-    const int bodyH = area.getHeight();
-    int visH  = kVisMax;
-    int gridH = gridIdealH;
-    if (visH + gridH + kHalfGap > bodyH)          // ideal grid + max band does not fit
-    {
-        // Band shrinks toward 0 (kVisMax -> kVisMin -> 0) to keep the FIXED grid;
-        // below that the grid keeps its fixed height regardless (the workspace
-        // top-row scroll floor is the real relief valve — the grid is never
-        // squeezed).
-        visH  = juce::jmax (0, bodyH - gridIdealH - kHalfGap);
-        gridH = gridIdealH;
-    }
-
-    if (visualizer_ != nullptr && visH > 0)
-    {
-        if (area.getHeight() > visH + 4)
-            area.removeFromTop (4);   // nudge the FX graphics down a touch off the type row
-        auto visRow = area.removeFromTop (visH);
-        const int inset = visRow.getWidth() * 15 / 100;   // ~70% width, centred (less-wide graphics)
-        visualizer_->setBounds (visRow.reduced (inset, 0));
-        if (! area.isEmpty())
-            area.removeFromTop (kHalfGap);
-    }
+    // The knob grid is a FIXED 3x2 layout (up to 5 params + Dry/Wet) whenever
+    // the slot has an effect; for None the grid collapses entirely (Dry/Wet
+    // hidden). The grid height is FIXED at rows*kCellH (knob size stability —
+    // see layoutParamGrid); if the body is shorter, the grid keeps its fixed
+    // height and the card relies on the workspace top-row scroll floor
+    // (kTopRowNaturalH) — the grid is never squeezed.
+    static_cast<void> (t);
 
     layoutParamGrid (area);
 }
@@ -859,18 +810,9 @@ void FxSlotCard::paint (juce::Graphics& g)
 //==============================================================================
 void FxSlotCard::applyThemeColors()
 {
-    // Push the live theme token onto the visualizer trace so a theme switch
-    // re-tints it immediately (the visualizer otherwise reads accentSecondary
-    // live each paint).
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel ()))
-    {
-        if (const auto* th = lnf->getTheme ())
-        {
-            if (visualizer_ != nullptr)
-                visualizer_->setCategoryColour (th->accentSecondary);
-        }
-    }
-
+    // (The per-slot visualizer was REMOVED 2026-08-20 — nothing to re-tint;
+    // the owned ParamControl knobs are re-themed by the editor's global
+    // ParamControl::reapplyCategoryColours() pass on a theme switch.)
     repaint();
 }
 

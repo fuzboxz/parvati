@@ -20,12 +20,7 @@
 //       "Mode" selectors (it inherits the same editor-wide ComboBox theme
 //       colours via the LookAndFeel). The card panel is BORDERLESS
 //       (containerFill, 7px corners — a sibling of the synth GroupComponent cards).
-//   VISUALIZER (compact band): an FxSlotVisualizer canvas (the same visual
-//       family as the OSC waveform box and the Filter curve box). Dimmed grid +
-//       outline when the type is None; a live per-algorithm graphic otherwise.
-//       Capped at kVisMax (synth kDecorationH parity — the OSC/Filter preview
-//       height); floored at kVisMin. Sits above the knob grid.
-//   Bypass: a disabled slot recesses its knobs/visualizer/type-combo to a
+//   Bypass: a disabled slot recesses its knobs/type-combo to a
 //       reduced alpha so it reads as inactive; the panel + title + power glyph
 //       stay full-alpha (legible state + identity).
 //   PARAM GRID (bottom): a Mixer-style knob GRID (kCellH = the synth cell
@@ -49,12 +44,13 @@
 // synth knobs have: FX-mod-matrix drag-and-drop assignment, per-source concentric
 // mod rings, tooltips, and the category arc. The toggle + combo are bound to the
 // APVTS (a Value for the 0..1 Int enable param, a ComboBoxAttachment for the
-// type choice). The visualizer is fed by normalized APVTS getters built here.
+// type choice).
 //
 // Colours are read from the active ParvatiTheme via the component's LookAndFeel
-// every repaint; applyThemeColors() re-tints the visualizer (accentSecondary)
-// and repaints. The owned ParamControl knobs are re-themed by the editor's
-// global ParamControl::reapplyCategoryColours() pass on a theme switch.
+// every repaint; applyThemeColors() just repaints. The owned ParamControl knobs
+// are re-themed by the editor's global ParamControl::reapplyCategoryColours()
+// pass on a theme switch. (The per-slot FxSlotVisualizer band was REMOVED
+// 2026-08-20 at the user's request — the knob grid owns the body.)
 
 #pragma once
 
@@ -67,7 +63,6 @@
 
 class ParvatiAudioProcessor;
 class ParamControl;
-class FxSlotVisualizer;
 struct PatchParamDescriptor;
 
 //==============================================================================
@@ -108,9 +103,8 @@ public:
     // controls carry their own names/handlers. EnvelopeDisplay pattern.
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
-    /** Re-resolve theme colours onto the visualizer + repaint (theme switch).
-        The owned ParamControl knobs are re-themed by the editor's global
-        ParamControl::reapplyCategoryColours() pass. */
+    /** Repaint (theme switch). The owned ParamControl knobs are re-themed by
+        the editor's global ParamControl::reapplyCategoryColours() pass. */
     void applyThemeColors();
 
     /** Seed the per-type ENGAGEMENT defaults (enabled / drywet / param1..5 of
@@ -191,8 +185,6 @@ private:
     std::unique_ptr<juce::Button> typePrev_, typeNext_;
 
     std::unique_ptr<juce::Button> powerToggle_;   // PowerToggle (defined in the .cpp)
-
-    std::unique_ptr<FxSlotVisualizer> visualizer_;
 
     // ---- APVTS bindings (type + enable) ---------------------------------
     // The fx{N}_type value is read LIVE via getParameter() in currentTypeIndex()

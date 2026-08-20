@@ -749,7 +749,7 @@ private:
     // discipline, like fxMatrixView_): fxWorkspace_ tears down FIRST and merely
     // DETACHES these non-owned views, then they are destroyed here. Each card
     // owns its 6 ParamControls (param1..5 + drywet) + the power/bypass toggle +
-    // the type combo + an FxSlotVisualizer; the bar owns the topology combo +
+    // the type combo; the bar owns the topology combo +
     // the drag-reorderable chain.
     std::unique_ptr<FxRoutingBar> fxRoutingBar_;
     std::unique_ptr<FxSlotCard>   fxSlotCards_[3] {};
