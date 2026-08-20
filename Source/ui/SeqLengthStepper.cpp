@@ -30,13 +30,29 @@ SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
     numberLabel_->setJustificationType (juce::Justification::centred);
     numberLabel_->setFont (juce::FontOptions (17.0f, juce::Font::bold));
     numberLabel_->setInterceptsMouseClicks (false, false);   // the CELL is the button
-    addAndMakeVisible (*numberLabel_);
+    // VISIBILITY FIX (UI hunt 2026-08-20): the number was INVISIBLE in every
+    // theme. resized() gives tapBtn_ the full cell and — being created AFTER
+    // the label — it painted its opaque drawButtonBackground fill
+    // (TextButton::buttonColourId == backgroundPanel) straight over the
+    // number; on Carbon that fill is near-identical to the page fill, so the
+    // cell just read as empty. Three independent defences, each pinned by
+    // parvati_seq_stepper_test: (1) the button is added BEFORE the label so
+    // it can never overpaint it, (2) the label is always-on-top (it does not
+    // intercept mouse clicks, so taps still reach the button beneath), and
+    // (3) the button's fill colours are fully transparent so its background
+    // can never occlude anything no matter the stacking order.
+    numberLabel_->setAlwaysOnTop (true);
 
     tapBtn_ = std::make_unique<juce::TextButton> (juce::String(), TRANS ("Set sequence length"));
     tapBtn_->setBounds ({});   // logic-only: the whole cell IS its hit band
+    tapBtn_->setColour (juce::TextButton::buttonColourId,   juce::Colour (0x00000000));
+    tapBtn_->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0x00000000));
     tapBtn_->addListener (this);
+    // Button FIRST, number SECOND: the later sibling paints above (defence 1).
     addAndMakeVisible (*tapBtn_);
+    addAndMakeVisible (*numberLabel_);
 
+    applyNumberLabelStyle();   // no-op until a themed L&F is reachable
     refreshNumberLabel();
 }
 
@@ -114,6 +130,27 @@ void SeqLengthStepper::refreshNumberLabel()
         return;
     numberLabel_->setText (juce::String (juce::roundToInt (slider_->getValue())),
                            juce::dontSendNotification);
+}
+
+void SeqLengthStepper::applyNumberLabelStyle()
+{
+    if (numberLabel_ == nullptr)
+        return;
+    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (const ParvatiTheme* t = lnf->getTheme())
+            numberLabel_->setColour (juce::Label::textColourId, t->textPrimary);
+}
+
+void SeqLengthStepper::lookAndFeelChanged()
+{
+    ParamControl::lookAndFeelChanged();   // category arc / mod tint / ring
+    applyNumberLabelStyle();
+}
+
+void SeqLengthStepper::parentHierarchyChanged()
+{
+    ParamControl::parentHierarchyChanged();
+    applyNumberLabelStyle();
 }
 
 void SeqLengthStepper::resized()

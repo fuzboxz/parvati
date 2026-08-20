@@ -16,6 +16,9 @@
 #include "PluginEditor.h"
 #include "PatchFile.h"              // AmbikaProgram parse (expected .PRO PartData bytes)
 #include "ui/CentralModBar.h"     // [MOD] toggle check (dynamic_cast target)
+#include "ui/EnvelopeDisplay.h"    // [19] preview-generation regression
+#include "ui/FilterResponseDisplay.h"
+#include "ui/OscPreviewDisplay.h"
 
 // Headless run-loop pump for the asynchronous triggerClick (Apple-only; the
 // JUCE MessageQueue IS a CFRunLoopSource on the main loop — the
@@ -39,7 +42,10 @@ int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 }
 
-int main()
+// [19] preview-display update regression (defined after main; see its comment).
+static int runPreviewRegression (bool windowed);
+
+int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -1221,8 +1227,193 @@ int main()
     // ---- teardown ----
     delete editor;
 
+    // ---- [19] preview-display update regression (headless always; windowed
+    // via --windowed for the real on-desktop visibility path) ----
+    std::printf ("\n[19] Preview-update regression (headless)\n");
+    runPreviewRegression (false);
+    if (argc > 1 && std::strcmp (argv[1], "--windowed") == 0)
+    {
+        std::printf ("\n[19] Preview-update regression (windowed)\n");
+        runPreviewRegression (true);
+    }
+
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "EDITOR TEST: FAILURES" : "EDITOR TEST: ALL CHECKS PASSED",
                  g_failures);
     return g_failures ? 1 : 0;
+}
+
+// ============================================================================
+// [19] Preview-display update regression (osc waveform / ADSR / filter curve)
+// ----------------------------------------------------------------------------
+// Each preview owns a 30 Hz poll timer with an eps-diff gate. A param change
+// MUST produce a refresh (generation bump) within ~1 s of message pumping.
+// Run WINDOWED (argv[1] == "--windowed") to exercise the real on-desktop
+// visibility path as well (the Standalone scenario).
+// ============================================================================
+static int runPreviewRegression (bool windowed)
+{
+    juce::ScopedJuceInitialiser_GUI gui;
+    ParvatiAudioProcessor proc;
+    proc.prepareToPlay (48000.0, 256);
+    auto* ed = dynamic_cast<ParvatiEditor*> (proc.createEditor());
+    if (ed == nullptr)
+    {
+        std::printf ("  FAIL: createEditor() -> ParvatiEditor\n");
+        return 1;
+    }
+    ed->setSize (1280, 634);
+
+    // Optional: host the editor in a real on-desktop window (the Standalone
+    // scenario — a REAL peer changes isShowing() semantics for the preview
+    // timers gated in visibilityChanged).
+    std::unique_ptr<juce::DocumentWindow> win;
+    if (windowed)
+    {
+        win = std::make_unique<juce::DocumentWindow> ("PreviewProbe",
+            juce::Colours::black, juce::DocumentWindow::allButtons);
+        win->setUsingNativeTitleBar (true);
+        win->setContentNonOwned (ed, false);
+        win->centreWithSize (1280, 700);
+        win->setVisible (true);
+        win->addToDesktop (juce::ComponentPeer::windowAppearsOnTaskbar);
+    }
+
+    auto pump = [] (int ms)
+    {
+#if defined (__APPLE__)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.001 * ms, false);
+#else
+        juce::Thread::sleep (ms);
+#endif
+    };
+
+    // Locate the preview components through the generated pages.
+    OscPreviewDisplay*  oscPrev[2]  = {};
+    EnvelopeDisplay*    envPrev     = nullptr;
+    FilterResponseDisplay* filtPrev = nullptr;
+    for (auto* page : ed->allGeneratedPages())
+    {
+        if (auto* c = dynamic_cast<OscPreviewDisplay*> (page->getGroupInlinePreviewForTest ("Osc 1")))
+            oscPrev[0] = c;
+        if (auto* c = dynamic_cast<OscPreviewDisplay*> (page->getGroupInlinePreviewForTest ("Osc 2")))
+            oscPrev[1] = c;
+        if (auto* c = dynamic_cast<EnvelopeDisplay*> (page->getGroupDecorationForTest ("Env 1 (Mod)")))
+            envPrev = c;
+        if (auto* c = dynamic_cast<FilterResponseDisplay*> (page->getGroupDecorationForTest ("Filter")))
+            filtPrev = c;
+    }
+
+    const char* mode = windowed ? "windowed" : "headless";
+    check (oscPrev[0] != nullptr && oscPrev[1] != nullptr,
+           (std::string ("[19] ") + mode + ": both Osc previews found").c_str());
+    check (envPrev != nullptr,
+           (std::string ("[19] ") + mode + ": Env 1 ADSR preview found").c_str());
+    check (filtPrev != nullptr,
+           (std::string ("[19] ") + mode + ": Filter response preview found").c_str());
+
+    // HEADLESS semantics pin: with no desktop peer, isShowing() is false for
+    // the whole hierarchy, so the F-ios-perf-3 gate keeps the 30 Hz poll
+    // STOPPED (getTimerInterval()==0) — no battery/CPU burn for an invisible
+    // UI. (This is the deliberate behaviour, not the frozen-preview bug: the
+    // bug was that the timers never RESTARTED once the editor became visible.)
+    if (! windowed)
+    {
+        char msg[128];
+        std::snprintf (msg, sizeof (msg), "[19] headless: osc preview poll stopped (running=%d)",
+                       oscPrev[0] ? (int) oscPrev[0]->isPollRunningForTest() : -1);
+        check (oscPrev[0] != nullptr && ! oscPrev[0]->isPollRunningForTest(), msg);
+        std::snprintf (msg, sizeof (msg), "[19] headless: env preview poll stopped (running=%d)",
+                       envPrev ? (int) envPrev->isPollRunningForTest() : -1);
+        check (envPrev != nullptr && ! envPrev->isPollRunningForTest(), msg);
+        std::snprintf (msg, sizeof (msg), "[19] headless: filter preview poll stopped (running=%d)",
+                       filtPrev ? (int) filtPrev->isPollRunningForTest() : -1);
+        check (filtPrev != nullptr && ! filtPrev->isPollRunningForTest(), msg);
+    }
+    else
+    {
+        // THE REGRESSION: give the editor hierarchy a real desktop peer (the
+        // Standalone scenario). Before the parentHierarchyChanged fix the
+        // polls stayed dead even here — visibilityChanged never re-fires
+        // after construction — so the generation counters froze and the
+        // previews never updated on any param change.
+        ed->addToDesktop (juce::ComponentPeer::windowAppearsOnTaskbar);
+        pump (300);
+        char msg[128];
+        std::snprintf (msg, sizeof (msg), "[19] windowed: osc preview poll RUNNING after peer attach (running=%d)",
+                       oscPrev[0] ? (int) oscPrev[0]->isPollRunningForTest() : -1);
+        check (oscPrev[0] != nullptr && oscPrev[0]->isPollRunningForTest(), msg);
+        std::snprintf (msg, sizeof (msg), "[19] windowed: env preview poll RUNNING after peer attach (running=%d)",
+                       envPrev ? (int) envPrev->isPollRunningForTest() : -1);
+        check (envPrev != nullptr && envPrev->isPollRunningForTest(), msg);
+        std::snprintf (msg, sizeof (msg), "[19] windowed: filter preview poll RUNNING after peer attach (running=%d)",
+                       filtPrev ? (int) filtPrev->isPollRunningForTest() : -1);
+        check (filtPrev != nullptr && filtPrev->isPollRunningForTest(), msg);
+    }
+
+    auto& apvts = proc.getApvts();
+    auto setParam = [&apvts] (const char* id, float v)
+    {
+        if (auto* p = apvts.getParameter (id))
+            p->setValueNotifyingHost (v);
+    };
+
+    if (windowed)
+    {
+        pump (700);   // let the 30 Hz polls settle past the initial build
+
+        const int failuresBefore = g_failures;
+
+        // osc1 shape dropdown: switch Saw -> Square (choice index 1 -> 2 of 17).
+        if (oscPrev[0] != nullptr)
+        {
+            const int gen0 = oscPrev[0]->previewGeneration();
+            setParam ("osc1_shape", 2.0f / 16.0f);
+            pump (700);
+            char msg[128];
+            std::snprintf (msg, sizeof (msg), "[19] windowed: osc1 shape change -> preview rebuilt (gen %d -> %d)",
+                           gen0, oscPrev[0]->previewGeneration());
+            check (oscPrev[0]->previewGeneration() > gen0, msg);
+
+            const int gen1 = oscPrev[0]->previewGeneration();
+            setParam ("osc1_param", 0.75f);
+            pump (700);
+            std::snprintf (msg, sizeof (msg), "[19] windowed: osc1 param change -> preview rebuilt (gen %d -> %d)",
+                           gen1, oscPrev[0]->previewGeneration());
+            check (oscPrev[0]->previewGeneration() > gen1, msg);
+        }
+
+        if (envPrev != nullptr)
+        {
+            const int gen0 = envPrev->previewGeneration();
+            setParam ("env1_attack", 0.8f);
+            pump (700);
+            char msg[128];
+            std::snprintf (msg, sizeof (msg), "[19] windowed: env1_attack change -> ADSR refreshed (gen %d -> %d)",
+                           gen0, envPrev->previewGeneration());
+            check (envPrev->previewGeneration() > gen0, msg);
+        }
+
+        if (filtPrev != nullptr)
+        {
+            const int gen0 = filtPrev->previewGeneration();
+            setParam ("filter1_cutoff", 0.9f);
+            pump (700);
+            char msg[128];
+            std::snprintf (msg, sizeof (msg), "[19] windowed: filter1_cutoff change -> response refreshed (gen %d -> %d)",
+                           gen0, filtPrev->previewGeneration());
+            check (filtPrev->previewGeneration() > gen0, msg);
+        }
+
+        (void) failuresBefore;
+        ed->removeFromDesktop();
+    }
+
+    if (win != nullptr)
+    {
+        win->clearContentComponent();   // detach the editor before teardown
+        win.reset();
+    }
+    delete ed;
+    return 0;
 }

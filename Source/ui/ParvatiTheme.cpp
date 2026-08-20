@@ -9,7 +9,7 @@
 //   backgroundBase, backgroundPanel, backgroundInput, backgroundInputHover,
 //   textPrimary, textSecondary, textDisabled, trackEmpty,
 //   accentPrimary, accentSecondary,
-//   outline, divider, containerFill, tabUnselectedBg, tabSelectedBg, keyWhite,
+//   outline, divider, containerFill, tabUnselectedBg, tabSelectedBg, keyWhite, keyBlack,
 //   catAudio, catEnv, catLfo, catSeq, catArp,
 //   catPerf, catUtil, catMod, catConst,
 //   isDark (bool)  <-- trailing bool is a positional-init sentinel
@@ -34,9 +34,11 @@ const ParvatiTheme& carbonTheme()
         juce::Colour (0xff3B3F46),
         // Layer 3 — ACTION: cyan brand / steel complementary.
         juce::Colour (0xff38BDF8), juce::Colour (0xff5b8db8),
-        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg, keyWhite
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (natural-key elevated slate), keyBlack (near-background recessed)
         juce::Colour (0xff2C3138), juce::Colour (0xff2A2E35), juce::Colour (0xff1E2228),
-        juce::Colour (0xff1A1E24), juce::Colour (0xff252A31), juce::Colour (0xffeeeae0),
+        juce::Colour (0xff1A1E24), juce::Colour (0xff252A31), juce::Colour (0xff4A5361),
+        juce::Colour (0xff15171C),
         // modulation routing palette — catAudio adopts the CYAN brand accent
         // (was the shared family amber) so osc/filter previews match the accent.
         // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT (sequencer family).
@@ -65,9 +67,11 @@ const ParvatiTheme& midnightTheme()
         juce::Colour (0xff3B4354),
         // Layer 3 — ACTION: teal / blue
         juce::Colour (0xff2bb6c4), juce::Colour (0xff5b9bd5),
-        // auxiliary
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (blue-slate naturals), keyBlack (near-black blue recessed)
         juce::Colour (0xff2E3950), juce::Colour (0xff26303F), juce::Colour (0xff1C2433),
-        juce::Colour (0xff182030), juce::Colour (0xff242E40), juce::Colour (0xffeceef1),
+        juce::Colour (0xff182030), juce::Colour (0xff242E40), juce::Colour (0xff435470),
+        juce::Colour (0xff0F141C),
         // modulation routing palette — catAudio adopts the BLUE complementary
         // accent (the primary teal would collide with the Env family teal on
         // knob rings/previews). Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER,
@@ -95,9 +99,11 @@ const ParvatiTheme& obsidianTheme()
         juce::Colour (0xff3B3B49),
         // Layer 3 — ACTION: violet / fuchsia
         juce::Colour (0xff8b5cf6), juce::Colour (0xffd946ef),
-        // auxiliary
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (violet-slate naturals), keyBlack (near-black recessed)
         juce::Colour (0xff2C2C3C), juce::Colour (0xff262634), juce::Colour (0xff1C1C26),
-        juce::Colour (0xff181820), juce::Colour (0xff252532), juce::Colour (0xffefeaf2),
+        juce::Colour (0xff181820), juce::Colour (0xff252532), juce::Colour (0xff4D4864),
+        juce::Colour (0xff0F0F16),
         // modulation routing palette — catAudio adopts the VIOLET brand accent
         // (was the shared family amber) so osc/filter previews match the accent.
         // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE,
@@ -128,9 +134,11 @@ const ParvatiTheme& paperTheme()
         juce::Colour (0xffD5D1C7),
         // Layer 3 — ACTION: deep amber / blue
         juce::Colour (0xffb45309), juce::Colour (0xff2563eb),
-        // auxiliary
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (neutral near-white — NOT warm bone), keyBlack (warm charcoal)
         juce::Colour (0xffc2beb3), juce::Colour (0xffdedbd1), juce::Colour (0xffeceae4),
-        juce::Colour (0xffe0ddd3), juce::Colour (0xffece9e0), juce::Colour (0xfffbf9f4),
+        juce::Colour (0xffe0ddd3), juce::Colour (0xffece9e0), juce::Colour (0xffFDFDFB),
+        juce::Colour (0xff33302B),
         // modulation routing palette — catAudio adopts the BLUE accent (600-tier
         // for light-bg contrast; the primary is itself amber). Env=TEAL, LFO=MAGENTA,
         // Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
@@ -158,9 +166,11 @@ const ParvatiTheme& crimsonTheme()
         juce::Colour (0xff4C3232),
         // Layer 3 — ACTION: crimson / blue
         juce::Colour (0xffe5484d), juce::Colour (0xff3b82f6),
-        // auxiliary
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (rosy-taupe naturals), keyBlack (near-black red recessed)
         juce::Colour (0xff3E2424), juce::Colour (0xff2E1818), juce::Colour (0xff2A1818),
-        juce::Colour (0xff201212), juce::Colour (0xff341E1E), juce::Colour (0xfff1ebe7),
+        juce::Colour (0xff201212), juce::Colour (0xff341E1E), juce::Colour (0xff5F4448),
+        juce::Colour (0xff120808),
         // modulation routing palette — catAudio adopts the CRIMSON brand accent
         // (was a harmonized amber-orange). Env=TEAL, LFO=MAGENTA,
         // Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
@@ -183,8 +193,9 @@ const ParvatiTheme& legacyTheme()
     //  - #333333 is the reference workhorse for labels / scale markers / grid
     //    lines / dividers -> textSecondary + outline; the in-panel divider uses a
     //    slightly lighter #555555 so it recedes below the structural border.
-    //  - Control Group 1 (Neutral): off-white #F4F4F0 indicators on flat-black
-    //    #1A1A1A bases -> keyWhite = cream; #1A1A1A = primary / active-value text.
+    //  - Control Group 1 (Neutral): off-white #F4F4F0-class indicators on flat-black
+    //    #1A1A1A bases -> keyWhite = neutral off-white (the reference's cream,
+    //    neutralised); keyBlack = the #1A1A1A bases; #1A1A1A also = primary / active-value text.
     //  - Control Group 2 (Magenta #C8216A) is the LEAD accent -> accentPrimary
     //    (knob arcs, selected tabs, active fills) AND catAudio (the primary audio
     //    section's osc/filter previews then match the brand — cohesive). The
@@ -213,9 +224,12 @@ const ParvatiTheme& legacyTheme()
         juce::Colour (0xffBFBFBF),
         // Layer 3 — ACTION: magenta lead / cyan complementary
         juce::Colour (0xffC8216A), juce::Colour (0xff009696),
-        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg, keyWhite
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (neutral off-white — the reference's cream, neutralised),
+        // keyBlack (the reference's flat-black #1A1A1A key bases)
         juce::Colour (0xff333333), juce::Colour (0xff555555), juce::Colour (0xffDEDEDE),
-        juce::Colour (0xffD8D8D8), juce::Colour (0xffC8C8C8), juce::Colour (0xffF4F4F0),
+        juce::Colour (0xffD8D8D8), juce::Colour (0xffC8C8C8), juce::Colour (0xffF7F7F5),
+        juce::Colour (0xff1A1A1A),
         // modulation routing palette — adopted from the reference identities:
         // Audio=MAGENTA(brand), Env=CYAN, Lfo=ORANGE-GOLD, Seq/Arp=PALE-GREEN
         juce::Colour (0xffC8216A), juce::Colour (0xff009696), juce::Colour (0xffE5B55C),

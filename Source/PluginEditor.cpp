@@ -2175,6 +2175,22 @@ void ParamPage::setGroupDecorationHeight (const juce::String& groupName, int hei
     applyLayout();
 }
 
+juce::Component* ParamPage::getGroupDecorationForTest (const juce::String& groupName) const
+{
+    for (const auto& g : groups_)
+        if (g.name == groupName)
+            return g.decoration;
+    return nullptr;
+}
+
+juce::Component* ParamPage::getGroupInlinePreviewForTest (const juce::String& groupName) const
+{
+    for (const auto& g : groups_)
+        if (g.name == groupName)
+            return g.inlinePreview;
+    return nullptr;
+}
+
 void ParamPage::setVisibleGroups (const juce::StringArray& groupNames)
 {
     visibleGroups_ = groupNames;

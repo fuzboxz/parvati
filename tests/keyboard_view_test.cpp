@@ -19,6 +19,12 @@
 //   [7] Ableton-style keyboard controls: X/Z shift the octave (the visible
 //       window follows, clamped at the MIDI edges) and V/C step the typing
 //       velocity by 20/127 (default 100/127)
+//   [8] themed key palette: for EVERY shipped theme the resolved
+//       KeyboardColours are theme-token-driven (none equals a stock JUCE
+//       MidiKeyboardComponent default incl. the ivory 0xfff0f0f0 family),
+//       pressed differs from idle, naturals vs sharps keep a >=1.6:1 WCAG
+//       contrast (legibility on light AND dark themes), and a live theme
+//       switch re-resolves the palette (the refresh() seam)
 //
 // All tested notes are inside the visible two-octave window (48..72) — the
 // old 5-octave [36,96] range is gone; the drag/release notes 60/62/64 were
@@ -37,6 +43,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "ui/KeyboardView.h"
+#include "ui/ParvatiLookAndFeel.h"
+#include "ui/ParvatiTheme.h"
 
 namespace
 {
@@ -264,6 +272,106 @@ int main()
             check (pressures.size() == (size_t) nAtRelease,
                    "release emits no extra pressure events (stream holds last value)");
         }
+    }
+
+
+    // ---- [8]: themed key palette (theme-driven, legible, re-resolving) ----
+    std::printf ("[8] Themed key palette\n");
+    {
+        // WCAG relative luminance + contrast ratio (the legibility metric).
+        const auto channel = [] (float c01)
+        {
+            return (c01 <= 0.03928f) ? c01 / 12.92f
+                                     : std::pow ((c01 + 0.055f) / 1.055f, 2.4f);
+        };
+        const auto luminance = [&] (const juce::Colour& c)
+        {
+            return 0.2126f * channel (c.getFloatRed())
+                 + 0.7152f * channel (c.getFloatGreen())
+                 + 0.0722f * channel (c.getFloatBlue());
+        };
+        const auto contrast = [&] (const juce::Colour& a, const juce::Colour& b)
+        {
+            const float la = luminance (a), lb = luminance (b);
+            const float hi = std::max (la, lb), lo = std::min (la, lb);
+            return (hi + 0.05f) / (lo + 0.05f);
+        };
+
+        // Stock juce::MidiKeyboardComponent / LookAndFeel_V4 key defaults the
+        // themed palette must NEVER equal (the bone/ivory complaint): V4 uses
+        // pure white naturals + raw black sharps; V2's family is the classic
+        // 0xfff0f0f0 bone; the yellow press/hover overlays are stock too.
+        const juce::uint32 stockDefaults[] = {
+            0xffffffff,   // whiteNoteColourId (V4)
+            0xfff0f0f0,   // whiteNoteColourId (V2 "bone" family)
+            0xff000000,   // blackNoteColourId / textLabelColourId
+            0x80ffff00,   // mouseOverKeyOverlayColourId
+            0xffb6b600    // keyDownOverlayColourId
+        };
+        const auto isStock = [&] (const juce::Colour& c)
+        {
+            for (const auto argb : stockDefaults)
+                if (c.getARGB() == argb)
+                    return true;
+            return false;
+        };
+
+        ParvatiLookAndFeel lnf;   // defaults to Carbon
+        juce::Array<juce::uint32> naturalsSeen;
+        for (const auto& theme : getBuiltinThemes())
+        {
+            lnf.setTheme (theme);
+            const auto pal = KeyboardView::resolveColours (lnf);
+
+            char msg[128];
+
+            // (a) theme-resolved: no key colour is a stock JUCE default.
+            std::snprintf (msg, sizeof (msg), "%s: natural/sharp/pressed are not stock JUCE key colours", theme.name.toRawUTF8());
+            check (! isStock (pal.natural) && ! isStock (pal.sharp) && ! isStock (pal.pressed), msg);
+
+            // The palette is TOKEN-driven: the resolver mirrors the theme tokens.
+            std::snprintf (msg, sizeof (msg), "%s: natural == theme.keyWhite, sharp == theme.keyBlack", theme.name.toRawUTF8());
+            check (pal.natural.getARGB() == theme.keyWhite.getARGB()
+                       && pal.sharp.getARGB() == theme.keyBlack.getARGB(), msg);
+
+            // (b) pressed (accent) differs from both idle fills.
+            std::snprintf (msg, sizeof (msg), "%s: pressed differs from idle naturals AND sharps", theme.name.toRawUTF8());
+            check (pal.pressed.getARGB() != pal.natural.getARGB()
+                       && pal.pressed.getARGB() != pal.sharp.getARGB(), msg);
+
+            // (c) legibility: naturals vs sharps keep >= 1.6:1 WCAG contrast.
+            std::snprintf (msg, sizeof (msg), "%s: natural/sharp contrast %.2f:1 (>= 1.6)", theme.name.toRawUTF8(), (double) contrast (pal.natural, pal.sharp));
+            check (contrast (pal.natural, pal.sharp) >= 1.6f, msg);
+
+            // Legibility against the strip panel, polarity-aware: on a DARK
+            // theme the ELEVATED naturals must step off the recessed panel; on
+            // a LIGHT theme the near-white naturals legitimately sit on a
+            // light panel (hairline separators + the dark sharps delineate
+            // them), so the check asserts the DARK sharps step off it instead.
+            const float panelStep = theme.isDark ? contrast (pal.natural, pal.panel)
+                                                  : contrast (pal.sharp, pal.panel);
+            std::snprintf (msg, sizeof (msg), "%s: %s step off the panel (>= 1.3:1)",
+                           theme.name.toRawUTF8(), theme.isDark ? "naturals" : "sharps");
+            check (panelStep >= 1.3f, msg);
+
+            // (d-part1) themes are individually resolved (all six naturals distinct).
+            naturalsSeen.add (pal.natural.getARGB());
+        }
+        check (naturalsSeen.size() == static_cast<int> (getBuiltinThemes().size()),
+               "every theme resolves a DISTINCT natural-key colour (6/6)");
+
+        // (d-part2) a LIVE keyboard re-resolves on theme switch (refresh seam).
+        kb.removeFromDesktop();
+        kb.setLookAndFeel (&lnf);
+        lnf.setTheme (carbonTheme());
+        const auto before = KeyboardView::resolveColours (kb.getLookAndFeel());
+        lnf.setTheme (paperTheme());
+        kb.refresh();
+        const auto after = KeyboardView::resolveColours (kb.getLookAndFeel());
+        check (before.natural.getARGB() != after.natural.getARGB()
+                   && before.sharp.getARGB() != after.sharp.getARGB(),
+               "theme switch + refresh() re-resolves the live keyboard palette");
+        kb.setLookAndFeel (nullptr);   // detach before lnf leaves scope
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",

@@ -253,6 +253,8 @@ void OscPreviewDisplay::buildSampled (int shapeIdx, uint8_t paramByte)
 
 void OscPreviewDisplay::rebuildCycle (int shapeIdx, uint8_t paramByte)
 {
+    ++generation_;   // TEST-ONLY: every real rebuild is observable (see header)
+
     // The 5 basic shapes are drawn ANALYTICALLY (exact).
     if (shapeIdx == ambika::dsp::WAVEFORM_NONE
         || shapeIdx == ambika::dsp::WAVEFORM_SAW
@@ -360,12 +362,19 @@ std::unique_ptr<juce::AccessibilityHandler> OscPreviewDisplay::createAccessibili
 
 void OscPreviewDisplay::visibilityChanged()
 {
-    // F-ios-perf-3 (iOS hunt 2026-08-19): run the 30 Hz poll only while this
-    // display is actually showing (its page is current / the editor is on a
-    // desktop). visibilityChanged fires on tab-page unparent (the
-    // TabbedComponent removes non-current content) and on the initial
-    // add-to-parent; the constructor's startTimerHz stays for the
-    // first-show case (stopTimer on an already-stopped timer is a no-op).
+    updatePollTimer();
+}
+
+void OscPreviewDisplay::parentHierarchyChanged()
+{
+    updatePollTimer();
+}
+
+void OscPreviewDisplay::updatePollTimer()
+{
+    // See the header: run the 30 Hz poll only while actually showing. Both
+    // hooks funnel here — visibilityChanged alone cannot see "became showing
+    // via parenting / peer creation" (the frozen-preview bug).
     if (isShowing())
         startTimerHz (30);
     else

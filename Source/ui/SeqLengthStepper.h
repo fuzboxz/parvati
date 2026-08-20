@@ -41,6 +41,17 @@ public:
     void setValueForTest (int v) { setValue (v); }
     bool keyPressedForTest (const juce::KeyPress& k) { return keyPressed (k); }
 
+    // Theme plumbing (the ParamControl pattern): the number label's colour is
+    // resolved from the ACTIVE theme whenever the L&F changes — at construction
+    // no themed L&F exists yet, and the L&F-wide Label::textColourId default is
+    // the dim CAPTION tier (textSecondary) while this number is a VALUE
+    // readout (the knob centre readout's textPrimary tier). lookAndFeelChanged
+    // fires on setLookAndFeel AND on the editor's theme switch
+    // (sendLookAndFeelChange); parentHierarchyChanged catches the inherited-L&F
+    // case at the initial reparent into the editor tree.
+    void lookAndFeelChanged() override;
+    void parentHierarchyChanged() override;
+
 private:
     // Button::Listener: the full-cell tap button.
     void buttonClicked (juce::Button*) override;
@@ -53,6 +64,12 @@ private:
     void setValue (int v);
 
     void refreshNumberLabel();
+
+    // Push the ACTIVE theme's textPrimary (the value-readout colour tier, the
+    // same token the knob centre readout uses via Slider::textBoxTextColourId)
+    // onto the number label. No-op when no themed ParvatiLookAndFeel is
+    // reachable (the label then keeps the inherited L&F default).
+    void applyNumberLabelStyle();
 
     // The invisible full-cell button that turns the NUMBER into the control.
     std::unique_ptr<juce::TextButton> tapBtn_;

@@ -77,7 +77,10 @@ void EnvelopeDisplay::timerCallback()
     // Repaint only when the target moved since the last tick or on a shape
     // switch (eps gate: no constant repaint when idle).
     if (shapeChanged || paramChanged)
+    {
+        ++generation_;   // TEST-ONLY: a real refresh is observable (see header)
         repaint();
+    }
 }
 
 //==============================================================================
@@ -250,12 +253,22 @@ std::unique_ptr<juce::AccessibilityHandler> EnvelopeDisplay::createAccessibility
 
 void EnvelopeDisplay::visibilityChanged()
 {
-    // F-ios-perf-3 (iOS hunt 2026-08-19): run the 30 Hz poll only while this
-    // display is actually showing (its page is current / the editor is on a
-    // desktop). visibilityChanged fires on tab-page unparent (the
-    // TabbedComponent removes non-current content) and on the initial
-    // add-to-parent; the constructor's startTimerHz stays for the
-    // first-show case (stopTimer on an already-stopped timer is a no-op).
+    updatePollTimer();
+}
+
+void EnvelopeDisplay::parentHierarchyChanged()
+{
+    updatePollTimer();
+}
+
+void EnvelopeDisplay::updatePollTimer()
+{
+    // F-ios-perf-3 gate (see OscPreviewDisplay.h for the full rationale):
+    // BOTH hooks are required — visibilityChanged fires while still unparented
+    // (addAndMakeVisible's setVisible precedes parenting) and never again once
+    // ancestors change; parentHierarchyChanged fires on every hierarchy change
+    // including the editor gaining its peer, which is the reliable
+    // "became showing" signal. Fixed the frozen-preview regression.
     if (isShowing())
         startTimerHz (30);
     else

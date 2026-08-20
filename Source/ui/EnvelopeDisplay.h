@@ -43,6 +43,14 @@ public:
     void setPreviewMode (int mode) { previewMode_ = mode; repaint(); }
     int  getPreviewMode() const noexcept { return previewMode_; }
 
+    // TEST-ONLY diagnostic: incremented on every REAL refresh (a param or
+    // shape change that passed the eps gate and triggered the repaint). Lets
+    // a headless test observe "the preview reacted" without painting.
+    int previewGeneration() const noexcept { return generation_; }
+
+    // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
+    bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
+
     /** Relabel the unit (e.g. "Env 1"). */
     void setTitle (const juce::String& title) { title_ = title; juce::Component::setTitle (title); repaint(); }
 
@@ -67,7 +75,15 @@ private:
     // — ~10 components x 30 Hz of atomic/APVTS fetches burn battery for
     // nothing then. The callbacks are change-only (cheap idle tick), so the
     // gating is about the wakeup cadence, not the tick cost.
+    //
+    // BUG FIX (frozen previews): BOTH hooks funnel into updatePollTimer —
+    // see OscPreviewDisplay.h for the full rationale (components are born
+    // hidden; visibilityChanged fires pre-parenting and never again from
+    // ancestor changes; parentHierarchyChanged recurses on every hierarchy
+    // change including the editor gaining its peer).
     void visibilityChanged() override;
+    void parentHierarchyChanged() override;
+    void updatePollTimer();
 
     // Safely read a getter (0 if it is empty); clamps to 0..1.
     float fetch (const std::function<float()>& f) const;
@@ -89,6 +105,9 @@ private:
     // gate).
     float dispA_ = -1.0f, dispD_ = -1.0f, dispS_ = -1.0f, dispR_ = -1.0f;
     float lastShape_ = -1.0f;
+
+    // TEST-ONLY (see previewGeneration).
+    int generation_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EnvelopeDisplay)
 };

@@ -2197,3 +2197,19 @@ add_custom_target(parvati_static_checks
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Running static scanners (combo-clear / async-this / translations)"
     VERBATIM)
+
+# ------------------------------------------------------------------------------
+# SeqLengthStepper visibility regression (UI hunt 2026-08-20): the length
+# number was fully occluded by its full-cell tap button's opaque background
+# fill (near-identical to the page fill on Carbon). Pins the z-order /
+# transparency fix, the per-theme value-tier colour + WCAG contrast, and the
+# live theme-switch re-resolution. Built by default.
+# Run with: ./build/parvati_seq_stepper_test
+add_executable(parvati_seq_stepper_test
+    tests/seq_stepper_test.cpp
+)
+target_include_directories(parvati_seq_stepper_test PRIVATE Source)
+target_compile_features(parvati_seq_stepper_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_seq_stepper_test PRIVATE
+    Parvati
+)

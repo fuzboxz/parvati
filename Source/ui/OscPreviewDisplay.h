@@ -73,6 +73,17 @@ public:
     bool hasCategoryColour() const noexcept { return hasCategoryColour_; }
     juce::Colour getCategoryColour() const noexcept { return categoryColour_; }
 
+    // TEST-ONLY diagnostic: incremented on every real cycle REBUILD (shape
+    // switch / quantized-param change / analytic exact-param rebuild). Lets a
+    // headless test observe "the preview reacted to a param change" without
+    // touching painting. Not read by any product code.
+    int previewGeneration() const noexcept { return generation_; }
+
+    // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base;
+    // getTimerInterval() is inaccessible externally.) Pins the F-ios-perf-3
+    // gate semantics: stopped while not showing, running once shown.
+    bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
+
     void paint (juce::Graphics&) override;
 
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
@@ -85,7 +96,22 @@ private:
     // — ~10 components x 30 Hz of atomic/APVTS fetches burn battery for
     // nothing then. The callbacks are change-only (cheap idle tick), so the
     // gating is about the wakeup cadence, not the tick cost.
+    //
+    // BUG FIX (preview-update regression): BOTH hierarchy hooks are needed.
+    // juce::Component is constructed HIDDEN (componentFlags(0)), and
+    // addAndMakeVisible() calls setVisible(true) BEFORE parenting — so the
+    // display's visibilityChanged() fires while UNPARENTED (isShowing()==false)
+    // and used to stopTimer() immediately after construction. JUCE only sends
+    // visibilityChanged to the component whose OWN flag changed (ancestor
+    // visibility / peer creation never propagates it to descendants), so the
+    // timer stayed dead forever — frozen previews from launch. JUCE DOES
+    // recurse internalHierarchyChanged() through all children on every
+    // hierarchy change (add/remove, and addToDesktop when the editor gets its
+    // peer), so parentHierarchyChanged() is the reliable "did we become
+    // showing?" hook. Both funnel into updatePollTimer().
     void visibilityChanged() override;
+    void parentHierarchyChanged() override;
+    void updatePollTimer();
     float fetch (const std::function<float()>& f) const;
 
     // Fill cycle_ (normalized -1..1) with one cycle of the given shape/parameter.
@@ -122,6 +148,9 @@ private:
     float morphProgress_   = 1.0f;
     float displayedParam_  = 0.0f;
     float lastBuiltParamF_ = -1.0f;
+
+    // TEST-ONLY (see previewGeneration).
+    int generation_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OscPreviewDisplay)
 };

@@ -5,6 +5,39 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **UI fixes (2026-08-20): preview updates, seq-length indicator, themed
+  keyboard.** Three user-reported UI regressions:
+  (1) **Oscillator/envelope/filter previews never updated** — the F-ios-perf-3
+  30 Hz battery gate relied on `visibilityChanged()`, which JUCE only sends on
+  the component's OWN `setVisible` call; combined with `addAndMakeVisible()`
+  firing it BEFORE parenting (so `isShowing()==false`), the constructor-started
+  poll timer was stopped once at construction and never restarted — previews
+  froze on their constructor-built first render. Fix: all three displays now
+  override BOTH `visibilityChanged()` and `parentHierarchyChanged()` (which JUCE
+  DOES recurse through children — editor peer attach, page hosting swaps),
+  funnelling into one `updatePollTimer()`. New [19] regression test in
+  `editor_test` runs headless AND `--windowed` (real desktop peer): shape
+  dropdown change, osc param, env attack, and filter cutoff each drive a
+  preview generation bump (fail-frozen pre-fix). Test hooks:
+  `previewGeneration()`/`isPollRunningForTest()` + `ParamPage::getGroup*ForTest`.
+  (2) **Seq-length number invisible** — the tap-hit button (solid
+  `backgroundPanel` fill) was created AFTER the label and `resized()` bounds it
+  over the full cell, occluding the number (the Carbon seam is nearly
+  invisible). Three independent defences, each test-pinned: tap button added
+  BEFORE the label, `numberLabel_->setAlwaysOnTop(true)` (click-through), and
+  fully transparent button fills. The number also moved from the dim caption
+  tier to `textPrimary` (the knob-readout token), re-resolved on theme change;
+  per-theme contrast now 12.7-17.6:1 (WCAG AA ≥ 4.5). New
+  `parvati_seq_stepper_test` (43 checks incl. live theme switch).
+  (3) **Bone-colored keyboard** — `keyWhite` was warm ivory in every factory
+  and sharps used `backgroundBase` (near-invisible on light themes). Token
+  re-spec: `keyWhite` = theme-matched elevated surface (mid-slate on dark,
+  neutral near-white on light), NEW `keyBlack` token (recessed / charcoal).
+  KeyboardView resolves EVERYTHING through the theme (zero colour literals
+  left in the .cpp), rounded modern key-fronts per the L&F card idiom, presses
+  = accentPrimary, hover washes, C-labels auto-contrast. `keyboard_view_test`
+  [8]: 30 new checks — no stock JUCE bone palette, resolver mirrors tokens per
+  theme, natural/sharp contrast 2.2-16.2:1, live re-resolve on switch.
 - **FX review waves 1-3 (2026-08-19): reverb decay / drive calibration /
   tail-table corrections + hardening.** A per-algorithm DSP review (specs in
   `audit/fx_review_20260819/`, lane reports in `audit/fx_fix_20260819/`)

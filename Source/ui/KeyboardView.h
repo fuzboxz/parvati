@@ -20,6 +20,14 @@
 // Colours are read from the editor-wide ParvatiLookAndFeel (inherited through
 // the component tree) in applyThemeColours(); call refresh() after adding the
 // component and whenever the theme changes. Phase 3 of docs/UI_MODERNIZATION_PLAN.md.
+//
+// THEMED-KEY WAVE: every key colour is a ParvatiTheme token (keyWhite/keyBlack
+// + the accents/outline) resolved through the public KeyboardColours resolver
+// below — the naturals are a theme-matched ELEVATED surface (slate on dark
+// themes, neutral near-white on light themes — deliberately NOT piano ivory),
+// the sharps a recessed near-background tone, and presses/hovers ride the
+// brand accents. ZERO colour literals live in KeyboardView: even the pre-L&F
+// fallback resolves from carbonTheme().
 
 #pragma once
 
@@ -103,6 +111,25 @@ public:
     // Re-apply theme colours. Call after addAndMakeVisible (so the inherited
     // LookAndFeel is visible) and on every theme switch.
     void refresh();
+
+    //==========================================================================
+    // The complete themed key palette, resolved from a LookAndFeel (see
+    // resolveColours). Public + trivially copyable so tests can assert the
+    // theming contract per shipped theme without painting.
+    struct KeyboardColours
+    {
+        juce::Colour natural;     // natural-key resting fill (theme keyWhite token)
+        juce::Colour sharp;       // sharp-key resting fill (theme keyBlack token)
+        juce::Colour pressed;     // pressed/latched key fill (brand accent)
+        juce::Colour hover;       // hover wash OVERLAY colour (complementary accent)
+        juce::Colour separator;   // hairline seam between naturals (theme outline)
+        juce::Colour panel;       // the rounded strip panel behind the keys (containerFill)
+    };
+
+    /** Resolve the key palette from @p lnf: the ParvatiLookAndFeel's active
+        ParvatiTheme when the cast succeeds, else Carbon (the same values the
+        editor shows before any L&F is inherited — no literals). */
+    static KeyboardColours resolveColours (const juce::LookAndFeel& lnf);
 
     //==========================================================================
     void paint (juce::Graphics&) override;

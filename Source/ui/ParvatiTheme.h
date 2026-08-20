@@ -52,7 +52,8 @@ struct ParvatiTheme
     juce::Colour containerFill;       // subtle interior fill of functional panels
     juce::Colour tabUnselectedBg;     // inactive tab-button background
     juce::Colour tabSelectedBg;       // active tab-button background
-    juce::Colour keyWhite;            // natural (white) key resting fill (piano white)
+    juce::Colour keyWhite;            // natural-key resting fill — theme-matched ELEVATED surface (NOT piano ivory: dark themes use a light slate step above the panels, light themes a neutral near-white)
+    juce::Colour keyBlack;            // sharp-key resting fill — near-background recessed tone on dark themes, dark key-charcoal on light themes (NEW with the themed-keyboard wave)
 
     // ---- Modulation routing palette ---------------------------------------
     // The per-category ROUTING colours. The synth needs every category colour,

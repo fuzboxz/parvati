@@ -430,6 +430,14 @@ public:
     // single control or APVTS attachment. An empty array shows ALL groups.
     void setVisibleGroups (const juce::StringArray& groupNames);
 
+    // TEST-ONLY accessors: the live decoration / inline-preview components
+    // for a named group (nullptr when the group or the component does not
+    // exist). Lets headless tests reach the real preview displays (cast to
+    // OscPreviewDisplay / EnvelopeDisplay / FilterResponseDisplay) and observe
+    // their generation counters. Not used by product code.
+    juce::Component* getGroupDecorationForTest (const juce::String& groupName) const;
+    juce::Component* getGroupInlinePreviewForTest (const juce::String& groupName) const;
+
     // Headless layout sanity check (called by parvati_editor_test): every group
     // panel has positive size, no two panels overlap, every (active) control
     // sits inside its group, and at least one non-dense row fills the page width.
