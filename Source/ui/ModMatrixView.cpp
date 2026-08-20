@@ -218,6 +218,7 @@ struct ModMatrixRow : public juce::Component,
         depthSlider_.setSliderStyle (juce::Slider::LinearHorizontal);
         depthSlider_.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         depthSlider_.setDoubleClickReturnValue (true, 0.0);   // double-click = reset to 0 (centre)
+        depthSlider_.setScrollWheelEnabled (false);           // wheel scrolls the page (ParamControl idiom)
         depthSlider_.setLookAndFeel (&sliderLnf);
         addAndMakeVisible (depthSlider_);
 
