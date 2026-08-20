@@ -1337,6 +1337,120 @@ int main (int argc, char** argv)
         }
     }
 
+    // ---- [21] Patch-page simplification: part settings placement ----
+    // (a) part_volume / part_tuning / part_spread knobs live on the MIXER page
+    //     (one extra "Part / Play" panel — the per-part output stage);
+    // (b) NO page shows the absorbed knobs (octave/legato/portamento → table
+    //     columns; raga/polyphony → covered by the Tune/Poly columns);
+    // (c) the Global (Patch-hosted) page carries ONLY the Global group knobs;
+    // (d) the new table cells drive the engine bytes through the real seams.
+    std::printf ("\n[21] Patch-page simplification (part settings placement)\n");
+    {
+        struct PageScan { juce::StringArray groups; juce::StringArray paramIds; };
+        juce::Array<PageScan> scans;
+        auto* parvatiEd = dynamic_cast<ParvatiEditor*> (editor);
+        check (parvatiEd != nullptr, "[21] ParvatiEditor cast for allGeneratedPages");
+        if (parvatiEd != nullptr)
+        for (auto* page : parvatiEd->allGeneratedPages())
+        {
+            PageScan ps;
+            for (auto* child : page->getChildren())
+            {
+                if (auto* pc = dynamic_cast<ParamControl*> (child))
+                    ps.paramIds.add (pc->getParamID());
+                if (auto* gc = dynamic_cast<juce::GroupComponent*> (child))
+                    ps.groups.add (gc->getName());
+            }
+            scans.add (std::move (ps));
+        }
+
+        const PageScan* globalPage = nullptr;
+        const PageScan* mixerPage  = nullptr;
+        int absorbedKnobsAnywhere = 0;
+        for (const auto& ps : scans)
+        {
+            if (ps.groups.contains ("Global"))
+                globalPage = &ps;
+            if (ps.groups.contains ("Mixer"))
+                mixerPage = &ps;
+            for (const char* id : { "part_octave", "part_legato", "part_portamento",
+                                    "part_raga", "part_polyphony" })
+                if (ps.paramIds.contains (id)) ++absorbedKnobsAnywhere;
+        }
+
+        // Option-(2) placement (see audit/work_patch_page.md): volume /
+        // tuning / spread stay on the PATCH-hosted Global page (the per-part
+        // output stage sits directly above the part table); the Mixer page
+        // gained NO part knobs (measured: no top-row slack for a panel).
+        if (globalPage != nullptr)
+        {
+            check (globalPage->paramIds.contains ("vca_curve")
+                   && globalPage->paramIds.contains ("filter_card")
+                   && globalPage->paramIds.contains ("filter_drive"),
+                   "[21] Global page keeps the three global-option knobs");
+            check (globalPage->paramIds.contains ("part_volume")
+                   && globalPage->paramIds.contains ("part_tuning")
+                   && globalPage->paramIds.contains ("part_spread"),
+                   "[21] volume/tuning/spread stay on the Patch-hosted Global page (Part / Play)");
+            int stray = 0;
+            for (const auto& id : globalPage->paramIds)
+                if (id == "part_octave" || id == "part_legato" || id == "part_portamento"
+                    || id == "part_raga" || id == "part_polyphony")
+                    ++stray;
+            check (stray == 0, "[21] Global page carries NONE of the absorbed knobs");
+        }
+        if (mixerPage != nullptr)
+        {
+            int partKnobs = 0;
+            for (const auto& id : mixerPage->paramIds)
+                if (id.startsWith ("part_")) ++partKnobs;
+            check (partKnobs == 0, "[21] Mixer page carries NO part_* knobs (top-row budget preserved)");
+        }
+        check (absorbedKnobsAnywhere == 0,
+               "[21] no page generates the absorbed part knobs (table covers them)");
+
+        // (d) table cells drive the engine bytes (PartData 1 / 5 / 6).
+        if (patchPage != nullptr)
+        {
+            auto& eng = proc.getEngine();
+            patchPage->chooseOctave (0, 2);
+            check (static_cast<int8_t> (eng.getPart (0).partBytes[1]) == 2,
+                   "[21] Oct column writes PartData byte 1 (+2)");
+            check (patchPage->getDisplayedOctave (0) == 2,
+                   "[21] Oct column shows +2");
+            patchPage->chooseOctave (1, -2);
+            check (static_cast<int8_t> (eng.getPart (1).partBytes[1]) == -2,
+                   "[21] Oct column writes the SIGNED byte (-2 -> 0xFE)");
+            patchPage->chooseLegato (0, 1);
+            check (eng.getPart (0).partBytes[5] == 1,
+                   "[21] Lgo column writes PartData byte 5 (on)");
+            check (patchPage->getDisplayedLegato (0) == 1,
+                   "[21] Lgo column shows On");
+            patchPage->choosePortamento (0, 40);
+            check (eng.getPart (0).partBytes[6] == 40,
+                   "[21] Porta column writes PartData byte 6 (40)");
+            check (patchPage->getDisplayedPortamento (0) == 40,
+                   "[21] Porta column shows 40");
+            // APVTS re-sync: the current part's knobs must reflect the write
+            // (the write path calls loadPartIntoApvts(currentPart)).
+            check (juce::roundToInt (proc.getApvts().getRawParameterValue ("part_portamento")->load()) == 40,
+                   "[21] Porta write re-syncs the part_portamento APVTS value");
+        }
+
+        // The Patch-hosted Global page stays well-formed with its slimmed
+        // Part / Play panel (3 knobs) + the Global panel + the merged table.
+        if (parvatiEd != nullptr)
+        for (auto* page : parvatiEd->allGeneratedPages())
+        {
+            bool isGlobal = false;
+            for (auto* child : page->getChildren())
+                if (auto* gc = dynamic_cast<juce::GroupComponent*> (child))
+                    if (gc->getName() == "Global") isGlobal = true;
+            if (isGlobal)
+                check (page->layoutIsSane(), "[21] Global (Patch-hosted) page layoutIsSane after slimming");
+        }
+    }
+
     // ---- teardown ----
     delete editor;
 

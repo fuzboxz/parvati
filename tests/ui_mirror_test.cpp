@@ -223,6 +223,30 @@ MirrorReport mirrorMatches (ParvatiAudioProcessor& proc, PatchPage* page)
             fail ("part " + juce::String (p + 1) + " Tune combo shows mode "
                   + juce::String (shownTune) + ", engine resolved mode is "
                   + juce::String (engTune));
+
+        // Part-character columns (absorbed knobs — 2026-08-20): Oct/Porta/Lgo
+        // must mirror PartData bytes 1 / 6 / 5 exactly like Voices/Tune above.
+        const int shownOct = page->getDisplayedOctave (p);
+        const int engOct = juce::jlimit (-2, 2, static_cast<int> (
+            static_cast<int8_t> (eng.getPart (p).partBytes[1])));
+        if (shownOct != engOct)
+            fail ("part " + juce::String (p + 1) + " Oct combo shows "
+                  + juce::String (shownOct) + ", engine byte 1 is "
+                  + juce::String (engOct));
+
+        const int shownPorta = page->getDisplayedPortamento (p);
+        const int engPorta = static_cast<int> (eng.getPart (p).partBytes[6]);
+        if (shownPorta != engPorta)
+            fail ("part " + juce::String (p + 1) + " Porta knob shows "
+                  + juce::String (shownPorta) + ", engine byte 6 is "
+                  + juce::String (engPorta));
+
+        const int shownLgo = page->getDisplayedLegato (p);
+        const int engLgo = eng.getPart (p).partBytes[5] != 0 ? 1 : 0;
+        if (shownLgo != engLgo)
+            fail ("part " + juce::String (p + 1) + " Lgo combo shows "
+                  + juce::String (shownLgo) + ", engine byte 5 is "
+                  + juce::String (engLgo));
     }
 
     // Name labels (layout-derived, see collectPartNameLabels).
@@ -373,6 +397,13 @@ int main()
         proc.getApvts().getParameterAsValue ("part_select")    = 3.0f;
         proc.getApvts().getParameterAsValue ("part_polyphony") = 2.0f;   // UNISON_2X
         proc.getApvts().getParameterAsValue ("part_raga")      = 5.0f;
+        // Absorbed part-character columns: host automation of part_octave /
+        // part_portamento / part_legato (PartData bytes 1 / 6 / 5) must reach
+        // the table through the SAME poll seam (the display-version bump in
+        // SynthEngine::applyPartByte now covers them).
+        proc.getApvts().getParameterAsValue ("part_octave")     = -2.0f;  // signed byte
+        proc.getApvts().getParameterAsValue ("part_portamento") = 52.0f;
+        proc.getApvts().getParameterAsValue ("part_legato")     = 1.0f;
         editor->pollPatchPageMirror();                 // the automation seam
 
         const auto r = mirrorMatches (proc, page);
@@ -388,6 +419,12 @@ int main()
         check (page->getDisplayedArrangement() == Arrangement::Custom,
                "apvts poly flip re-infers Custom (arrangement mirror moved)");
         check (eng.getPart (2).partBytes[15] == 2, "engine part 3 byte 15 is UNISON_2X");
+        // The absorbed columns landed in the engine bytes (the mirror check
+        // above verified the DISPLAY; pin the bytes themselves).
+        check (static_cast<int8_t> (eng.getPart (2).partBytes[1]) == -2,
+               "engine part 3 byte 1 is the SIGNED octave -2");
+        check (eng.getPart (2).partBytes[6] == 52, "engine part 3 byte 6 is 52");
+        check (eng.getPart (2).partBytes[5] == 1, "engine part 3 byte 5 is legato on");
 
         // Same class through the REVEAL seam: hide, mutate, reveal.
         editor->setCurrentTopPage (0);
@@ -415,6 +452,16 @@ int main()
         eng.setPartChannel (2, 5);
         eng.setPartKeyZone (4, 36, 84);
         eng.setPartName (5, "MirrorTom");
+        {
+            // Absorbed character bytes via the engine-direct idiom the table
+            // itself uses (setCurrentPart + applyPartByte + restore).
+            const int saved = eng.getCurrentPart();
+            eng.setCurrentPart (4);
+            eng.applyPartByte (1, static_cast<uint8_t> (static_cast<int8_t> (1)));
+            eng.applyPartByte (5, 1);
+            eng.applyPartByte (6, 30);
+            eng.setCurrentPart (saved);
+        }
         editor->setCurrentTopPage (2);
         const auto r = mirrorMatches (proc, page);
         char m[200];

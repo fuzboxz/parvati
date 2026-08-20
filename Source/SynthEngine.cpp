@@ -227,10 +227,16 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
     // param, including part_polyphony, with its current value — re-servicing
     // that would needlessly rebuild+push every block and perturb render state).
     const uint8_t prevMode = (offset == 15) ? part.partBytes[15] : 0;
-    // Same pre-write capture for byte 4 (the raga preset — mirrored by the
-    // Patch page's Tune combo); captured BEFORE the generic write below so the
-    // change test compares against the OLD value.
-    const uint8_t prevRaga = (offset == 4) ? part.partBytes[4] : 0;
+    // Capture the previous values of the Patch-page-mirrored bytes BEFORE the
+    // generic write below, so the display-version bump stays change-only
+    // (applyPartByte fires for EVERY part-param automation write; bumping only
+    // on a real change of a MIRRORED byte keeps the 30 Hz poll check O(1) and
+    // quiet). Mirrored offsets: 15 (polyphony), 4 (raga/Tune), and the three
+    // part-character columns absorbed from the old "Part / Play" page knobs —
+    // 1 (octave), 5 (legato), 6 (portamento).
+    const auto isMirrorOffset = [] (int o)
+    { return o == 15 || o == 4 || o == 1 || o == 5 || o == 6; };
+    const uint8_t prevMirrored = isMirrorOffset (offset) ? part.partBytes[(size_t) offset] : 0;
     if (offset >= 0 && offset < 84) part.partBytes[(size_t) offset] = value;
     // PartData byte 15 = polyphony_mode. Defer the mode engage (and, for CHAIN,
     // the voice-set rebuild) to the audio thread via markAllocationDirty() so
@@ -248,12 +254,11 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
         }
         return;
     }
-    // Byte 4 = the raga preset selection (the Patch page's Tune combo) —
-    // same visible-mirror invalidation as byte 15 above. Other part bytes
-    // are NOT mirrored by the Patch page, so they do not bump the version
-    // (applyPartByte fires for EVERY part-param automation write; keeping
-    // the bump to the two mirrored offsets keeps the poll check change-only).
-    if (offset == 4 && value != prevRaga)
+    // The other Patch-page mirrors (byte 4 = raga/Tune combo; bytes 1/5/6 =
+    // the absorbed Oct / Lgo / Porta columns) — same visible-mirror
+    // invalidation as byte 15 above. Bytes NOT mirrored by the Patch page do
+    // not bump the version (keeps the poll check change-only).
+    if (isMirrorOffset (offset) && value != prevMirrored)
         bumpDisplayVersion();
     // DEFER the voice write to the audio thread (same fence as applyPatchByte):
     // setPartByte mutates voice_.part_ which the renderer reads; writing it on the

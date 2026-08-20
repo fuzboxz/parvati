@@ -79,6 +79,9 @@ public:
         setupCaption (chCaption_);
         setupCaption (zoneLoCaption_);
         setupCaption (zoneHiCaption_);
+        setupCaption (octCaption_);
+        setupCaption (portaCaption_);
+        setupCaption (lgoCaption_);
         setupCaption (polyCaption_);
         setupCaption (tuneCaption_);
 
@@ -87,7 +90,8 @@ public:
         // (44pt after the 12pt caption band; see resized). The L&F reads this
         // "parvatiComboVisualH" property (drawComboBox /
         // positionComboBoxText), so the rows keep their exact look.
-        for (auto* c : { &voicesCombo_, &channelCombo_, &polyCombo_, &tuneCombo_ })
+        for (auto* c : { &voicesCombo_, &channelCombo_, &polyCombo_, &tuneCombo_,
+                        &octaveCombo_, &legatoCombo_ })
             c->getProperties().set ("parvatiComboVisualH", 24);
 
         // ---- Voices: this Part's voice count drawn from the shared 96-voice
@@ -120,25 +124,52 @@ public:
 
         // ---- Zone: two compact knobs (Lo/Hi, 0..127). NoTextBox — the L&F
         // draws the readout in the centre of the arc-ring (no value box). ----
-        auto setupKnob = [this] (juce::Slider& s) {
+        auto setupKnob = [this] (juce::Slider& s, double mn, double mx) {
             s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
             s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-            s.setRange (0.0, 127.0, 1.0);
+            s.setRange (mn, mx, 1.0);
             // The knob is drag-only: a wheel over it must never tweak the
             // value (same idiom as the ParamControl cells / the FX knobs) —
             // an unhandled wheel bubbles up so it scrolls the page instead.
             s.setScrollWheelEnabled (false);
-            // Show the MIDI note name ("C4") instead of the raw 0..127 number.
-            s.textFromValueFunction = [] (double v) {
-                return midiNoteName (juce::roundToInt (v));
-            };
             addAndMakeVisible (s);
         };
-        setupKnob (loSlider_);
-        setupKnob (hiSlider_);
+        setupKnob (loSlider_, 0.0, 127.0);
+        setupKnob (hiSlider_, 0.0, 127.0);
+        // Show the MIDI note name ("C4") instead of the raw 0..127 number.
+        loSlider_.textFromValueFunction = [] (double v) {
+            return midiNoteName (juce::roundToInt (v));
+        };
+        hiSlider_.textFromValueFunction = [] (double v) {
+            return midiNoteName (juce::roundToInt (v));
+        };
         const auto onZone = [this] { onZoneChanged(); };
         loSlider_.onValueChange = onZone;
         hiSlider_.onValueChange = onZone;
+
+        // ---- Oct: per-part transpose (PartData byte 1, signed int8 -2..+2).
+        // A compact 5-item combo — the table's per-part pitch setting (moved
+        // here from the old "Part / Play" page knob; the part_octave APVTS
+        // parameter stays valid for host automation). Combo id = value + 3
+        // (JUCE ids must be non-zero). ----
+        for (int o = -2; o <= 2; ++o)
+            octaveCombo_.addItem ((o > 0 ? "+" : "") + juce::String (o), o + 3);
+        octaveCombo_.onChange = [this] { onOctaveChanged(); };
+        addAndMakeVisible (octaveCombo_);
+
+        // ---- Porta: glide time (PartData byte 6, 0..63). A compact 44pt
+        // NoTextBox knob copying the Zone-knob idiom — the L&F draws the
+        // percentage readout in the arc centre. ----
+        setupKnob (portaSlider_, 0.0, 63.0);
+        portaSlider_.textFromValueFunction = [] (double v) {
+            return juce::String (juce::roundToInt (v * 100.0 / 63.0)) + "%";
+        };
+        portaSlider_.onValueChange = [this] { onPortamentoChanged(); };
+
+        // ---- Lgo: legato (PartData byte 5, 0/1). Compact On/Off combo. ----
+        buildLegatoItems();
+        legatoCombo_.onChange = [this] { onLegatoChanged(); };
+        addAndMakeVisible (legatoCombo_);
 
         // ---- Poly: Mono/Poly/Unison 2x/Cyclic/Chain (id = mode + 1).
         // Written via the same idiom PatchArrangement uses (setCurrentPart +
@@ -173,7 +204,11 @@ public:
     // budgeted for the longest preset name ("Parameshwari" ≈ 81px at the
     // combo's 14pt text) + the 24px combo chrome — narrower columns measured
     // against the actual caption/preset text widths (Patch-page working width
-    // floor 1024pt; captions 11pt, verified non-truncating).
+    // floor 1024pt; captions 11pt, verified non-truncating). With the absorbed
+    // part-character columns (Oct / Porta / Lgo, 48pt each + 4pt gaps) the row
+    // consumes 672 + 152 = ~824pt against the ~952pt working width at the
+    // 1024pt floor (~130pt slack; volume/tuning/spread stay page knobs on the
+    // Mixer page — absorbing them too would overrun the budget).
     void resized() override
     {
         auto b = getLocalBounds().reduced (4);
@@ -209,6 +244,28 @@ public:
             auto col = b.removeFromLeft (48);
             zoneHiCaption_.setBounds (col.removeFromTop (12));
             hiSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (8);
+        // ---- Part-character columns absorbed from the old "Part / Play"
+        // page knobs: Oct (transpose), Porta (glide), Lgo (legato). 48pt each
+        // + 4pt gaps = 152pt; the row totals ~824pt against the ~952pt
+        // working width at the 1024 floor (see the layout comment above). ----
+        {
+            auto col = b.removeFromLeft (48);
+            octCaption_.setBounds (col.removeFromTop (12));
+            octaveCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (4);
+        {
+            auto col = b.removeFromLeft (48);
+            portaCaption_.setBounds (col.removeFromTop (12));
+            portaSlider_.setBounds (col.withSizeKeepingCentre (44, juce::jmin (44, col.getHeight())));
+        }
+        b.removeFromLeft (4);
+        {
+            auto col = b.removeFromLeft (48);
+            lgoCaption_.setBounds (col.removeFromTop (12));
+            legatoCombo_.setBounds (col.withSizeKeepingCentre (col.getWidth(), juce::jmin (44, col.getHeight())));
         }
         b.removeFromLeft (8);
         // Tune (microtonal scale preset / Custom… popover)
@@ -248,6 +305,16 @@ public:
         const uint8_t poly = engine_.getPart (partIndex_).partBytes[15];   // PartData byte 15 = polyphony
         polyCombo_.setSelectedId (static_cast<int> (poly) + 1, juce::dontSendNotification);
 
+        // Part-character columns (absorbed knobs): byte 1 is SIGNED int8
+        // (-2..+2); bytes 5/6 are 0/1 and 0..63.
+        const auto& part = engine_.getPart (partIndex_);
+        const int oct = juce::jlimit (-2, 2, static_cast<int> (
+            static_cast<int8_t> (part.partBytes[1])));
+        octaveCombo_.setSelectedId (oct + 3, juce::dontSendNotification);
+        legatoCombo_.setSelectedId ((part.partBytes[5] != 0 ? 2 : 1), juce::dontSendNotification);
+        portaSlider_.setValue (static_cast<double> (juce::jlimit (0, 63,
+                       static_cast<int> (part.partBytes[6]))), juce::dontSendNotification);
+
         syncTuningDisplay();
 
         refreshing_ = false;
@@ -263,8 +330,19 @@ public:
         chCaption_.setText (TRANS ("Ch"), juce::dontSendNotification);
         zoneLoCaption_.setText (TRANS ("Zone Low"), juce::dontSendNotification);
         zoneHiCaption_.setText (TRANS ("Zone High"), juce::dontSendNotification);
+        octCaption_.setText (TRANS ("Oct"), juce::dontSendNotification);
+        portaCaption_.setText (TRANS ("Porta"), juce::dontSendNotification);
+        lgoCaption_.setText (TRANS ("Lgo"), juce::dontSendNotification);
         polyCaption_.setText (TRANS ("Polyphony"), juce::dontSendNotification);
         tuneCaption_.setText (TRANS ("Tune"), juce::dontSendNotification);
+
+        {
+            // Legato items are translated; the Octave items are bare signed
+            // numbers (language-independent, like the Voices numbers).
+            const int prev = legatoCombo_.getSelectedId();
+            buildLegatoItems();
+            legatoCombo_.setSelectedId (prev, juce::dontSendNotification);
+        }
 
         {
             const int prev = channelCombo_.getSelectedId();
@@ -331,6 +409,42 @@ public:
         return juce::jlimit (0, 4, id - 1);
     }
 
+    // ---- Part-character display/drive hooks (Oct / Porta / Lgo columns) ----
+    int displayedOctave() const
+    {
+        return juce::jlimit (-2, 2, octaveCombo_.getSelectedId() - 3);
+    }
+    void chooseOctave (int octaves)
+    {
+        refreshing_ = true;
+        octaveCombo_.setSelectedId (juce::jlimit (-2, 2, octaves) + 3, juce::dontSendNotification);
+        refreshing_ = false;
+        onOctaveChanged();
+    }
+    int displayedLegato() const
+    {
+        return legatoCombo_.getSelectedId() == 2 ? 1 : 0;
+    }
+    void chooseLegato (int on)
+    {
+        refreshing_ = true;
+        legatoCombo_.setSelectedId (on != 0 ? 2 : 1, juce::dontSendNotification);
+        refreshing_ = false;
+        onLegatoChanged();
+    }
+    int displayedPortamento() const
+    {
+        return juce::jlimit (0, 63, juce::roundToInt (portaSlider_.getValue()));
+    }
+    void choosePortamento (int value)
+    {
+        refreshing_ = true;
+        portaSlider_.setValue (static_cast<double> (juce::jlimit (0, 63, value)),
+                               juce::dontSendNotification);
+        refreshing_ = false;
+        onPortamentoChanged();
+    }
+
     // The Voices combo's currently-displayed voice count (0..16; 0 = the
     // part is disabled — a real selected item, not a placeholder).
     int displayedVoiceSlots() const
@@ -392,9 +506,10 @@ private:
     SynthEngine& engine_;
     bool refreshing_ = false;
 
-    juce::Label partLabel_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_, polyCaption_, tuneCaption_;
-    juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_;
-    juce::Slider loSlider_, hiSlider_;
+    juce::Label partLabel_, voicesCaption_, chCaption_, zoneLoCaption_, zoneHiCaption_,
+                 octCaption_, portaCaption_, lgoCaption_, polyCaption_, tuneCaption_;
+    juce::ComboBox voicesCombo_, channelCombo_, polyCombo_, tuneCombo_, octaveCombo_, legatoCombo_;
+    juce::Slider loSlider_, hiSlider_, portaSlider_;
 
     // (Re)build the Tune combo items: "12-EDO" (id 1) + the 32 firmware
     // presets (ids 2..33, untranslated proper nouns). Id mapping:
@@ -478,6 +593,50 @@ private:
         // Same APVTS staleness reason as onPolyChanged: the hosted param
         // grid's part_raga combo reads the CURRENT part's value.
         owner_.proc_.loadPartIntoApvts (engine_.getCurrentPart());
+    }
+
+    // The three part-character write paths share the Poly/Tune idiom:
+    // setCurrentPart + applyPartByte(offset, value) + restore (the byte has no
+    // dedicated setter), then postPartEdit + a CURRENT-part APVTS re-sync so
+    // the hosted knobs / a save stay correct (engine storage is authoritative;
+    // the next part switch re-reads it).
+    void writeCharacterByte (int offset, uint8_t value)
+    {
+        const int saved = engine_.getCurrentPart();
+        engine_.setCurrentPart (partIndex_);
+        engine_.applyPartByte (offset, value);
+        engine_.setCurrentPart (saved);
+        owner_.postPartEdit();
+        owner_.proc_.loadPartIntoApvts (engine_.getCurrentPart());
+    }
+
+    void onOctaveChanged()
+    {
+        if (refreshing_) return;
+        // Combo id = value + 3; the byte is signed int8 (-2..+2).
+        const int oct = juce::jlimit (-2, 2, octaveCombo_.getSelectedId() - 3);
+        writeCharacterByte (1, static_cast<uint8_t> (static_cast<int8_t> (oct)));
+    }
+
+    void onPortamentoChanged()
+    {
+        if (refreshing_) return;
+        writeCharacterByte (6, static_cast<uint8_t> (juce::jlimit (0, 63,
+                          juce::roundToInt (portaSlider_.getValue()))));
+    }
+
+    void onLegatoChanged()
+    {
+        if (refreshing_) return;
+        writeCharacterByte (5, legatoCombo_.getSelectedId() == 2 ? 1 : 0);
+    }
+
+    // Rebuild the Lgo items ("Off"/"On", translated), preserving selection.
+    void buildLegatoItems()
+    {
+        legatoCombo_.clear (juce::dontSendNotification);
+        legatoCombo_.addItem (TRANS ("Off"), 1);
+        legatoCombo_.addItem (TRANS ("On"), 2);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PartRow)
@@ -720,6 +879,42 @@ int PatchPage::getDisplayedPolyphony (int part) const
 {
     if (part < 0 || part >= kNumParts) return -1;
     return rows_[(size_t) part]->displayedPolyphony();
+}
+
+int PatchPage::getDisplayedOctave (int part) const
+{
+    if (part < 0 || part >= kNumParts) return 0;
+    return rows_[(size_t) part]->displayedOctave();
+}
+
+void PatchPage::chooseOctave (int part, int octaves)
+{
+    if (part < 0 || part >= kNumParts) return;   // clamped inside the row
+    rows_[(size_t) part]->chooseOctave (octaves);
+}
+
+int PatchPage::getDisplayedLegato (int part) const
+{
+    if (part < 0 || part >= kNumParts) return 0;
+    return rows_[(size_t) part]->displayedLegato();
+}
+
+void PatchPage::chooseLegato (int part, int on)
+{
+    if (part < 0 || part >= kNumParts) return;
+    rows_[(size_t) part]->chooseLegato (on);
+}
+
+int PatchPage::getDisplayedPortamento (int part) const
+{
+    if (part < 0 || part >= kNumParts) return -1;
+    return rows_[(size_t) part]->displayedPortamento();
+}
+
+void PatchPage::choosePortamento (int part, int value)
+{
+    if (part < 0 || part >= kNumParts) return;   // clamped inside the row
+    rows_[(size_t) part]->choosePortamento (value);
 }
 
 void PatchPage::chooseVoiceSlots (int part, int slots)

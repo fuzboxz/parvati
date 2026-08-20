@@ -112,6 +112,28 @@ public:
     // engine's PartData byte 15 after a file load.
     int getDisplayedPolyphony (int part) const;
 
+    // ---- Part-character columns (absorbed from the old "Part / Play" page
+    // knobs — 2026-08-20 Patch-page simplification). Same observe/drive hook
+    // contract as the Tune/Poly columns above: they read/set the row's cells
+    // through the normal engine write path (PartData bytes 1 / 5 / 6). ----
+    // Octave transpose shown in @p part's Oct combo (-2..+2; 0 for an
+    // out-of-range part).
+    int getDisplayedOctave (int part) const;
+    // Set @p part's octave as if the user chose it in the Oct combo, then run
+    // the normal byte-1 write path (clamped to -2..+2).
+    void chooseOctave (int part, int octaves);
+    // Legato flag shown in @p part's Lgo combo (0 = off, 1 = on; 0 for an
+    // out-of-range part).
+    int getDisplayedLegato (int part) const;
+    // Set @p part's legato as if the user toggled the Lgo combo (0/1).
+    void chooseLegato (int part, int on);
+    // Portamento shown in @p part's Porta knob (0..63; -1 for an out-of-range
+    // part).
+    int getDisplayedPortamento (int part) const;
+    // Set @p part's portamento as if the user dragged the Porta knob, then run
+    // the normal byte-6 write path (clamped 0..63).
+    void choosePortamento (int part, int value);
+
 private:
     ParvatiAudioProcessor& proc_;
     ThemeManager& themeManager_;

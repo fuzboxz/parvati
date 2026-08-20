@@ -69,6 +69,11 @@ const juce::String& frenchChromeStrings()
         "\"Ch\" = \"Canal\"\n"
         "\"Zone Low\" = \"Zone (bas)\"\n"
         "\"Zone High\" = \"Zone (haut)\"\n"
+        "\"Oct\" = \"Oct\"\n"        // abbreviation (octave) — same in FR
+        "\"Porta\" = \"Porta\"\n"      // portamento — same term in FR
+        "\"Lgo\" = \"Lgo\"\n"          // abbreviation (legato) — same in FR
+        "\"Off\" = \"Off\"\n"          // gear-standard term (kept, cf. param value lists)
+        "\"On\" = \"On\"\n"
         "\"Polyphony\" = \"Polyphonie\"\n"
         "\"Poly\" = \"Poly\"\n"
         "\"Unison 2x\" = \"Unisson 2x\"\n"
@@ -225,6 +230,11 @@ const juce::String& germanChromeStrings()
         "\"Ch\" = \"Kanal\"\n"
         "\"Zone Low\" = \"Zone (tief)\"\n"
         "\"Zone High\" = \"Zone (hoch)\"\n"
+        "\"Oct\" = \"Okt\"\n"         // abbreviation (Oktave)
+        "\"Porta\" = \"Porta\"\n"      // Portamento — same term in DE
+        "\"Lgo\" = \"Lgo\"\n"          // abbreviation (Legato) — same in DE
+        "\"Off\" = \"Aus\"\n"
+        "\"On\" = \"Ein\"\n"
         "\"Polyphony\" = \"Polyphonie\"\n"
         "\"Poly\" = \"Poly\"\n"
         "\"Unison 2x\" = \"Unison 2x\"\n"

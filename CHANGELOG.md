@@ -4,6 +4,41 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Changed
+- **Patch-page simplification (2026-08-20).** The Patch page now owns the
+  per-part settings outright, with exactly ONE editor surface per setting:
+  - **New table columns** Oct / Porta / Lgo (octave, portamento, legato —
+    PartData bytes 1 / 6 / 5) absorb three knobs from the old "Part / Play"
+    panel: Oct and Lgo are compact combos (the 24pt-drawn/44pt-band HIG
+    idiom), Porta a 44pt NoTextBox knob with a centre-arc %-readout copying
+    the Zone-knob idiom. Writes use the established engine-direct pattern
+    (setCurrentPart + applyPartByte + restore + postPartEdit + current-part
+    APVTS re-sync), exactly like the Poly/Tune columns.
+  - **Removed the duplicate knobs** part_raga ("Scale" — the table's Tune
+    column already covers it) and part_polyphony ("Polyphony" — the Poly
+    column). The APVTS PARAMETERS remain fully valid (created by the
+    untouched descriptor table): host automation, saved states and files keep
+    driving the bytes; only the page knobs are gone.
+  - **Volume / Tuning / Spread stay on the Patch-hosted Global page** as one
+    compact "Part / Play" row directly above the part table. DEVIATION from
+    the design brief's step 1 (which moved them to the Mixer page), taken
+    per an approved supervisor decision after measurement: the Mixer page
+    had only ~41px of top-row slack at the default 1280x634, so any 3-knob
+    panel would introduce a NEW top-row scrollbar (measured +55px overflow);
+    the Patch page already scrolls by design (T4), so option (2) keeps zero
+    new scrollbars and no Mixer degradation. The Global page is now 6
+    controls (3 global options + the compact row), down from 11.
+  - **Mirror:** SynthEngine::applyPartByte's display-version bump (the 30 Hz
+    pollPatchPageMirror seam) now covers bytes 1 / 5 / 6 in addition to 4 /
+    15, so host automation / NRPN / undo of part_octave / part_legato /
+    part_portamento keep the visible table honest.
+  - New localized captions ("Oct" / "Porta" / "Lgo" + "On"/"Off" FR+DE), new
+    PatchPage test hooks (getDisplayed/choose for all three columns),
+    editor_test [21] placement + byte-write coverage, ui_mirror_test
+    battery extensions (APVTS + engine-direct writes, both seams),
+    tools/editor_test coverage-count update. Row width: ~824pt against the
+    ~952pt working width at the 1024pt floor.
+
 ### Fixed
 - **UI polish wave 2 (2026-08-20): mod-matrix interactions, seq combo font,
   module-header contrast, top-bar chrome.** Four user-reported items:
