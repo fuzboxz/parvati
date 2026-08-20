@@ -1615,6 +1615,32 @@ int main (int argc, char** argv)
             check (ok, "[23] every MIDI-tab caption x == its cell x (0px drift)");
         }
 
+        // ---- (c) FIXED CENTRED WIDTHS: on a wide editor the table content
+        // stops at the column maximums and CENTRES (the combos never stretch
+        // to full width; at/below the 1024 floor the flex minimums still fill
+        // the band, so nothing shrinks).
+        const int prevW = editor->getWidth();
+        const int prevH = editor->getHeight();
+        editor->setSize (1600, 900);
+        for (int i = 0; i < 4; ++i) { juce::Thread::sleep (2); juce::Timer::callPendingTimersSynchronously(); }
+        {
+            const int bandW = patchPage->tableBandWidthForTest();
+            const int contW = patchPage->tableContentWidthForTest();
+            // Voice tab maxes (kColumnSpecs): Name 160 + Voices 90 + Porta 88
+            // + Lgo 90 + Vol 72 + Fine 80 + Spr 72 + Tune 170 + Poly 150
+            // + 8 gaps x 4 — a PIN: changing a max without updating this
+            // fails loudly so the policy cannot silently drift.
+            constexpr int kVoiceTabContentMax = 160 + 90 + 88 + 90 + 72 + 80
+                                                + 72 + 170 + 150 + 8 * 4;
+            check (bandW > contW, "[23] at 1600pt the table band is wider than the content");
+            check (contW <= kVoiceTabContentMax,
+                   "[23] content width <= sum of column maximums + gaps");
+            check (contW > 0 && (bandW - contW) / 2 >= 0,
+                   "[23] centring offset >= 0 (table centred in the band)");
+        }
+        editor->setSize (prevW, prevH);
+        for (int i = 0; i < 4; ++i) { juce::Thread::sleep (2); juce::Timer::callPendingTimersSynchronously(); }
+
         // MIDI-tab label binding (the same regression class).
         {
             struct ColCap { int col; const char* key; };
@@ -1812,6 +1838,37 @@ static int runPreviewRegression (bool windowed)
             std::snprintf (msg, sizeof (msg), "[19] windowed: env1_attack change -> ADSR refreshed (gen %d -> %d)",
                            gen0, envPrev->previewGeneration());
             check (envPrev->previewGeneration() > gen0, msg);
+        }
+
+        // ---- Envelope SHAPE pin: the initial 0 -> peak transient is ALWAYS
+        // drawn (2026-08-20 user report: a sub-4 ms attack collapsed to an
+        // invisible sliver / nothing at attack == 0). The pure curve function
+        // paint() traces: with the attack floor, even a == 0 starts at 0.0 and
+        // climbs to the peak over a visible left-edge ramp; a slower attack
+        // keeps its proportional share (unchanged behaviour).
+        if (envPrev != nullptr)
+        {
+            using ED = EnvelopeDisplay;
+            const float d = 0.4f, s = 0.6f, r = 0.3f;   // typical A/D/S/R backdrop
+
+            // (a) instant attack (a == 0, ~1 ms): the curve STARTS AT ZERO and
+            // reaches >= 90% within the first 12% of the plot width.
+            check (ED::adsrCurveLevelForTest (0.0f, d, s, r, 0.0f) < 0.05f,
+                   "[19] a=0: curve starts at ~0 (the transient is drawn)");
+            check (ED::adsrCurveLevelForTest (0.0f, d, s, r, 0.12f) > 0.9f,
+                   "[19] a=0: reaches ~peak within the first 12% of width");
+
+            // (b) a very fast but non-zero attack (~1-2 ms knob position).
+            check (ED::adsrCurveLevelForTest (0.02f, d, s, r, 0.0f) < 0.05f
+                   && ED::adsrCurveLevelForTest (0.02f, d, s, r, 0.12f) > 0.9f,
+                   "[19] a=0.02 (fast): 0 -> peak transient visible at the left edge");
+
+            // (c) a moderate attack keeps its proportional look: the midpoint
+            // of the attack segment sits below the peak (the ramp is not
+            // instant) and beyond the floor region.
+            const float midRamp = ED::adsrCurveLevelForTest (0.45f, d, s, r, 0.20f);
+            check (midRamp > 0.1f && midRamp < 0.99f,
+                   "[19] a=0.45 (moderate): the attack ramp is still gradual");
         }
 
         if (filtPrev != nullptr)

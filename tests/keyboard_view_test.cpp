@@ -43,6 +43,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "ui/KeyboardView.h"
+#include "ui/WheelsComponent.h"
 #include "ui/ParvatiLookAndFeel.h"
 #include "ui/ParvatiTheme.h"
 
@@ -372,6 +373,78 @@ int main()
                    && before.sharp.getARGB() != after.sharp.getARGB(),
                "theme switch + refresh() re-resolves the live keyboard palette");
         kb.setLookAndFeel (nullptr);   // detach before lnf leaves scope
+    }
+
+    // ---- [8] Wheels: mouse-wheel scrolling must NEVER tweak their values ----
+    // (The ParamControl idiom, applied to the pitch/mod wheels: a wheel scroll
+    // over the strip is page scrolling. Synthetic MouseWheelDetails are fed to
+    // each slider's mouseWheelMove directly; the values must not move.)
+    std::printf ("[9] Wheel-scroll does not tweak the pitch/mod wheels\n");
+    {
+        WheelsComponent wheels;
+        wheels.setBounds (0, 0, 200, 160);
+
+        float pitch = 0.0f, mod = 0.0f;
+        wheels.onPitch = [&pitch] (float v) { pitch = v; };
+        wheels.onMod   = [&mod]   (float v) { mod = v; };
+
+        // Find the two Sliders inside (pitch is bipolar vertical, mod is 0..1).
+        juce::Slider* pitchSlider = nullptr;
+        juce::Slider* modSlider = nullptr;
+        juce::Array<juce::Component*> nodes { &wheels };
+        for (int i = 0; i < nodes.size(); ++i)
+        {
+            auto* c = nodes.getUnchecked (i);
+            if (auto* s = dynamic_cast<juce::Slider*> (c))
+            {
+                if (s->getMinimum() < 0.0f && pitchSlider == nullptr)
+                    pitchSlider = s;
+                else if (s->getMinimum() >= 0.0f && modSlider == nullptr)
+                    modSlider = s;
+            }
+            for (auto* ch : c->getChildren())
+                nodes.add (ch);
+        }
+        check (pitchSlider != nullptr && modSlider != nullptr,
+               "wheels expose a pitch (-1..1) and a mod (0..1) slider");
+
+        const auto source = juce::Desktop::getInstance().getMainMouseSource();
+        auto wheelOn = [&] (juce::Slider* s)
+        {
+            const auto centre = s->getLocalBounds().getCentre().toFloat();
+            const auto me = juce::MouseEvent (source, centre,
+                                              juce::ModifierKeys().withFlags (juce::ModifierKeys::noModifiers),
+                                              juce::MouseInputSource::defaultPressure,
+                                              juce::MouseInputSource::defaultOrientation,
+                                              juce::MouseInputSource::defaultRotation,
+                                              juce::MouseInputSource::defaultTiltX,
+                                              juce::MouseInputSource::defaultTiltY,
+                                              s, s,
+                                              juce::Time::getCurrentTime(), centre,
+                                              juce::Time::getCurrentTime(), 1, false);
+            juce::MouseWheelDetails wheel;
+            wheel.deltaX = 0.0f;
+            wheel.deltaY = 0.5f;         // a healthy scroll notch
+            wheel.isSmooth = false;
+            wheel.isReversed = false;
+            for (int k = 0; k < 4; ++k)
+                s->mouseWheelMove (me, wheel);
+        };
+
+        if (pitchSlider != nullptr)
+        {
+            const double before = pitchSlider->getValue();
+            wheelOn (pitchSlider);
+            check (pitchSlider->getValue() == before && pitch == 0.0f,
+                   "4 scroll notches over the PITCH wheel leave the value untouched");
+        }
+        if (modSlider != nullptr)
+        {
+            const double before = modSlider->getValue();
+            wheelOn (modSlider);
+            check (modSlider->getValue() == before && mod == 0.0f,
+                   "4 scroll notches over the MOD wheel leave the value untouched");
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",

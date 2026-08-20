@@ -7,6 +7,47 @@
 #include "VectorTrace.h"
 
 //==============================================================================
+// PURE ADSR curve shape (normalized 0..1 knob values -> level at normalized x).
+// Segment widths are proportional to the a/d/r knob values EXCEPT the attack,
+// which has a MINIMUM VISUAL WIDTH (kMinAttackShare of the other segments' sum,
+// 2026-08-20 user request: "display the initial transient going from 0 to 100%",
+// previously a sub-4 ms attack collapsed to an invisible 1-2% sliver — or to
+// nothing at a == 0, where the trace started AT the peak). With the floor, a
+// fast attack renders as a near-vertical ramp at the left edge — always
+// visible — and slower attacks keep their proportional share unchanged.
+// The sustain plateau keeps its fixed minimum so it always reads.
+float EnvelopeDisplay::adsrCurveLevel (float a, float d, float s, float r, float xf)
+{
+    constexpr float kSustainMin  = 0.5f;   // sustain plateau (fixed minimum)
+    constexpr float kMinAttackShare = 0.09f;   // attack floor: >= ~8% of total
+
+    const float wS = kSustainMin;
+    const float wA = juce::jmax (a, kMinAttackShare * (d + wS + r));
+    const float wD = d;
+    const float wR = r;
+    const float total = wA + wD + wS + wR;   // wS keeps total > 0 (no /0)
+    const float fracA = wA / total, fracD = wD / total, fracS = wS / total, fracR = wR / total;
+    const float xEndA = fracA;
+    const float xEndD = fracA + fracD;
+    const float xEndS = fracA + fracD + fracS;
+
+    if (xf <= xEndA)
+    {
+        const float tt = fracA > 0.0f ? xf / fracA : 1.0f;
+        return 1.0f - std::pow (1.0f - tt, 2.0f);                 // attack ease-out (0 -> 1)
+    }
+    if (xf <= xEndD)
+    {
+        const float tt = fracD > 0.0f ? (xf - xEndA) / fracD : 1.0f;
+        return s + (1.0f - s) * std::pow (1.0f - tt, 2.0f);        // decay settle
+    }
+    if (xf <= xEndS)
+        return s;                                                  // sustain plateau
+    const float tt = fracR > 0.0f ? (xf - xEndS) / fracR : 1.0f;
+    return s * std::pow (1.0f - tt, 2.0f);                         // release decay
+}
+
+//==============================================================================
 EnvelopeDisplay::EnvelopeDisplay (juce::String title,
                                  std::function<float()> getAttack,
                                  std::function<float()> getDecay,
@@ -198,39 +239,13 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     const float s = dispS_ >= 0.0f ? dispS_ : fetch (getSustain_);
     const float r = dispR_ >= 0.0f ? dispR_ : fetch (getRelease_);
 
-    // Segment widths are proportional to the 0..127 knob value (a/d/r are the
-    // normalized 0..1 parameter), so a value of 0 collapses that stage to zero
-    // width (an instant jump) and equal values draw equal widths. The sustain
-    // plateau has a FIXED minimum so it always reads; when A/D/R are all 0 the
-    // whole display becomes a rectangle at the sustain height.
-    const float wA = a;
-    const float wD = d;
-    const float wR = r;
-    const float wS = 0.5f;                 // sustain plateau (fixed minimum)
-    const float total = wA + wD + wS + wR;   // wS keeps total > 0 (no /0)
-    const float fracA = wA / total, fracD = wD / total, fracS = wS / total, fracR = wR / total;
-    const float xEndA = fracA;
-    const float xEndD = fracA + fracD;
-    const float xEndS = fracA + fracD + fracS;
-
     // Envelope level (0..1) at a normalized x position (0..1), using the same
-    // exponential attack/decay/release eases as the smooth curve did.
+    // exponential attack/decay/release eases as the smooth curve did. EXPOSED
+    // as a pure static (adsrLevelForTest) so the shape is testable without a
+    // Graphics context.
     auto envLevel = [&] (float xf) -> float
     {
-        if (xf <= xEndA)
-        {
-            const float tt = fracA > 0.0f ? xf / fracA : 1.0f;
-            return 1.0f - std::pow (1.0f - tt, 2.0f);                 // attack ease-out
-        }
-        if (xf <= xEndD)
-        {
-            const float tt = fracD > 0.0f ? (xf - xEndA) / fracD : 1.0f;
-            return s + (1.0f - s) * std::pow (1.0f - tt, 2.0f);        // decay settle
-        }
-        if (xf <= xEndS)
-            return s;                                                  // sustain plateau
-        const float tt = fracR > 0.0f ? (xf - xEndS) / fracR : 1.0f;
-        return s * std::pow (1.0f - tt, 2.0f);                         // release decay
+        return adsrCurveLevel (a, d, s, r, xf);
     };
 
     // Smooth vector trace + translucent gradient fill (unipolar, filled from the

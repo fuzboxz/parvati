@@ -124,6 +124,10 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
 WheelsComponent::WheelsComponent()
 {
     pitch_ = std::make_unique<SpringSlider>();
+    // Wheel-scroll must NEVER tweak the wheels (the ParamControl idiom): a
+    // scroll over the strip is page scrolling, not pitch/mod editing. An
+    // unhandled wheel bubbles to the enclosing Viewport.
+    pitch_->setScrollWheelEnabled (false);
     // Accessibility-only: both wheels are juce::Sliders, so JUCE's built-in
     // Slider accessibility handler (ranged numeric value, -1..1 pitch /
     // 0..1 mod, adjustable) is already attached — only the NAME was missing
@@ -136,6 +140,7 @@ WheelsComponent::WheelsComponent()
 
     mod_ = std::make_unique<juce::Slider> (juce::Slider::LinearVertical, juce::Slider::NoTextBox);
     mod_->setRange (0.0, 1.0, 0.001);
+    mod_->setScrollWheelEnabled (false);   // wheel-scroll is page scroll, not mod editing
     mod_->setTitle (TRANS ("Mod Wheel"));
     mod_->setDescription (TRANS ("Mod Wheel"));
     mod_->setValue (0.0, juce::dontSendNotification);

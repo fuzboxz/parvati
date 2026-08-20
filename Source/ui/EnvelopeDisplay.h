@@ -48,6 +48,12 @@ public:
     // a headless test observe "the preview reacted" without painting.
     int previewGeneration() const noexcept { return generation_; }
 
+    // TEST-ONLY: the pure ADSR curve shape (the exact function paint() traces):
+    // normalized a/d/s/r knob values -> the level at normalized x (0..1).
+    // Pins the always-visible initial 0 -> peak transient (attack floor).
+    static float adsrCurveLevelForTest (float a, float d, float s, float r, float xf)
+    { return adsrCurveLevel (a, d, s, r, xf); }
+
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
 
@@ -67,6 +73,10 @@ public:
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
 private:
+    // The pure ADSR curve (segment math incl. the attack visual floor). Static
+    // + file-scope so paint() and the test hook share ONE definition.
+    static float adsrCurveLevel (float a, float d, float s, float r, float xf);
+
     // juce::Timer — re-read the getters and repaint when the shape changes.
     void timerCallback() override;
     // F-ios-perf-3 (iOS hunt 2026-08-19): gate the 30 Hz poll on visibility.
