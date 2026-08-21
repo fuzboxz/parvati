@@ -292,13 +292,30 @@ Write path (audio thread, inside `renderPartFx`):
 
 - `tests/ui_telemetry_test.cpp` (engine task; target `parvati_ui_telemetry_test`
   registered in CMakeLists): drives the engine headless (copy the
-  controller_mod_test harness idioms) and asserts: history populates while a
-  note sounds + stays frozen after release; `resetUiTelemetry` invalidates
-  (epoch bump) and the next render repopulates; part switch clears; envelope
-  stage walks ATTACK→DECAY→SUSTAIN while a key is held with a long-ish attack
-  and RELEASE→DEAD after note-off; `effCutoff` follows the base cutoff with no
-  modulation and departs from it with env-2→cutoff modulation active;
-  `readUiTelemetry` is false immediately after a reset (stale epoch).
+  controller_mod_test harness idioms) and asserts — ALWAYS-ON contract
+  (2026-08-21, replacing the old "populates only while a note sounds / frozen
+  after release" semantics): history populates from a ZERO BUFFER before any
+  note and keeps scrolling forever; per-voice generators (LFO/ENV/...) fall
+  to ZERO on release and STAY zero while idle (their actual state); persisted
+  controllers (WHEEL/WHEEL_2/EXPRESSION — the voice tables handleController
+  writes them into, sounding AND idle — plus PITCH_BEND via lastModSources_)
+  show their live value while idle; constants keep their literal values;
+  `resetUiTelemetry` invalidates (epoch bump) and the next render
+  repopulates; part switch clears; envelope stage walks ATTACK→DECAY→SUSTAIN
+  while a key is held with a long-ish attack and RELEASE→DEAD after note-off;
+  `effCutoff` follows the base cutoff with no modulation and departs from it
+  with env-2→cutoff modulation active; `readUiTelemetry` is false immediately
+  after a reset (stale epoch). Section [8] pins the four contract corners
+  end-to-end (zero start / animate while held / fall-to-zero + stay / idle
+  wheel visible).
+  - Classification lives ONCE in ModTelemetryTypes.h
+    (`telemetrySourcePersistsWhenIdle` / `telemetryConstantByte` /
+    `telemetryIdleRow`): PITCH_BEND/WHEEL/WHEEL_2/EXPRESSION persist,
+    CONSTANT_* are literals, everything else is zero when idle.
+  - `voiceActive` in the snapshot stays TRUTHFUL (drives the envelope-marker
+    and filter-overlay hiding) — only the history appends became
+    unconditional; the FX tail-modulation use of lastModSources_ is
+    untouched.
 - editor_test.cpp additions (verify task): bar telemetry generation increments
   when fed a synthetic moving snapshot and NOT when the snapshot is static;
   `clearTelemetry` hides strips; EnvelopeDisplay marker visibility/x monotonic

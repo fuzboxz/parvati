@@ -2318,21 +2318,23 @@ void SynthEngine::renderPartFx (int numSamples)
             for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
                 lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
             // UI telemetry: decimated history append of THIS internal block's
-            // sources — only while the tracked part has an ACTIVE voice (a
-            // released/idle part keeps its window frozen instead of scrolling
-            // held values). PURE OBSERVATION.
+            // sources — ALWAYS (2026-08-21 always-on contract, user request:
+            // strips start at zero, keep scrolling, and show the modulator's
+            // ACTUAL state; a released/idle part no longer freezes mid-air).
+            // PURE OBSERVATION.
             //
-            // STICKY VOICE (2026-08-21 — the "jumpy slow envelope" fix): the
-            // appends follow ONE voice per note, NOT the FX representative.
-            // The rep voice switches to the NEWEST note on every strike, so a
-            // slow release tail interleaved with fresh attacks made the ENV
-            // rows read as noise. The telemetry pick sticks to its voice while
-            // that exact trigger is still active (slot + triggerSeq identify
-            // it; a recycled slot never masquerades) and only re-picks when it
-            // dies — one clean switch per note lifecycle. Global/part-global
-            // sources are identical across voices, so only the per-voice rows
-            // (ENV / VELOCITY / NOTE / MPE) change story.
-            if (uiTelTrack && repVoice != nullptr)
+            // STICKY VOICE (2026-08-21 — the "jumpy slow envelope" fix): while
+            // a voice sounds, appends follow ONE voice per note, NOT the FX
+            // representative (the rep voice switches to the NEWEST note on
+            // every strike, so a slow release tail interleaved with fresh
+            // attacks read as noise). The telemetry pick sticks to its voice
+            // while that exact trigger is still active (slot + triggerSeq
+            // identify it) and only re-picks when it dies. When NOTHING is
+            // active the IDLE row carries the actual state: persisted
+            // controllers (bend/wheels/expression) + literal constants, zeros
+            // for the per-voice generators (LFO/ENV/... only run inside active
+            // voices here — not running = zero, the user's LFO example).
+            if (uiTelTrack)
             {
                 // Sticky alive check: the exact trigger must still be sounding
                 // (slot active + seq match; a recycled slot never masquerades).
@@ -2359,7 +2361,25 @@ void SynthEngine::renderPartFx (int numSamples)
                 }
                 else
                 {
-                    uiTelVoiceSlot_ = -1;   // nothing picked (should not happen): retry next sub-chunk
+                    // IDLE (no active voice): the actual-state row. Base:
+                    // persisted values from lastModSources_ (PITCH_BEND — the
+                    // task contract; per-voice bend mirrors live only while a
+                    // voice sounds) + literal constants + zeros elsewhere.
+                    // Override: WHEEL/WHEEL_2/EXPRESSION from the PART'S VOICE
+                    // TABLE — handleController (CC1/2/4) writes them to every
+                    // voice, sounding AND idle, so that table is their live
+                    // truth even before the first note.
+                    uint8_t idleRow[ambika::dsp::MOD_SRC_LAST];
+                    parvati::telemetryIdleRow (idleRow, ambika::dsp::MOD_SRC_LAST,
+                                      lastModSources_[(size_t) p].data());
+                    if (! part.voiceIndices.empty())
+                        if (auto* gv = getAmbikaVoice (part.voiceIndices[0]))
+                            for (int src = ambika::dsp::MOD_SRC_WHEEL;
+                                 src <= ambika::dsp::MOD_SRC_EXPRESSION; ++src)
+                                idleRow[(size_t) src] = gv->getModulationSource (
+                                    static_cast<uint8_t> (src));
+                    uiTelAppendHistory (idleRow, part.seq);
+                    uiTelVoiceSlot_ = -1;   // the pick is gone; re-pick on the next note
                 }
             }
             // Advance the crossfade phase for the next sub-chunk (drift-free:

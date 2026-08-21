@@ -116,4 +116,48 @@ inline constexpr bool isBipolarModSource (int modSrcEnum) noexcept
         || modSrcEnum == 20;                         // NOTE
 }
 
+//==============================================================================
+// ALWAYS-ON telemetry contract (2026-08-21 user request): the history strips
+// start at zero, keep scrolling forever, and always show the modulator's
+// ACTUAL state — including while the tracked part is idle (no active voice).
+// Only the live-per-voice generators stop existing when nothing sounds; the
+// classes below keep their true value instead of freezing mid-air:
+//   * PITCH_BEND / WHEEL / WHEEL_2 / EXPRESSION — persisted controller values
+//     (a held wheel position IS the modulator's state; they never decay).
+//   * CONSTANT_* — literal constants (a constant's state is its value).
+// Everything else (ENV, LFO, OP, SEQ, ARP, VELOCITY, AFTERTOUCH, NOTE, GATE,
+// NOISE, RANDOM and the NOTE-SEQ spare slot) exists only inside active
+// voices in this engine: idle = ZERO (the strips fall to the floor, exactly
+// the user's "LFO goes to zero when no key is held").
+inline constexpr bool telemetrySourcePersistsWhenIdle (int modSrcEnum) noexcept
+{
+    // PITCH_BEND 16, WHEEL 17, WHEEL_2 18, EXPRESSION 19, CONSTANTS 24..30
+    // (dsp/patch.h order — this header deliberately includes no DSP headers).
+    return (modSrcEnum >= 16 && modSrcEnum <= 19)
+        || (modSrcEnum >= 24 && modSrcEnum <= 30);
+}
+
+// The literal byte a CONSTANT_* source carries (modulation_sources_ init,
+// voice.cpp: enum 24..30 -> 255/128/64/32/16/8/4 = min(255, 256 >> n)).
+inline constexpr uint8_t telemetryConstantByte (int modSrcEnum) noexcept
+{
+    return modSrcEnum <= 24
+        ? uint8_t { 255 }   // CONSTANT_256 (a byte cannot hold 256; the voice uses 255)
+        : static_cast<uint8_t> (256 >> (modSrcEnum - 24));
+}
+
+// Build the IDLE telemetry row for @p lastSources (the part's persisted
+// lastModSources_): persisting classes keep their value, everything else 0.
+inline constexpr void telemetryIdleRow (uint8_t* row, int rowLen,
+                                        const uint8_t* lastSources) noexcept
+{
+    for (int src = 0; src < rowLen; ++src)
+    {
+        if (! telemetrySourcePersistsWhenIdle (src))            row[src] = 0;
+        else if (src >= 24 && src < rowLen)                     row[src] = telemetryConstantByte (src);
+        else if (lastSources != nullptr)                        row[src] = lastSources[src];
+        else                                                    row[src] = 0;
+    }
+}
+
 }  // namespace parvati
