@@ -34,6 +34,7 @@ protected:
 private:
     DelayLine<1024> line_;          // 31 ms cap; 6 ms + 4.5 ms swing max
     OnePoleLpFx damp_;              // 8 kHz fixed loop damper
+    LoopDcKiller fbDc_ {};          // (2026-08-21 consistency: fb 0.92 = 12.5x DC loop gain)
     float inc_ = 0.0f;
     float phase_ = 0.0f;            // L voice phase; R = +0.5 (180 deg)
     float depthSamp_ = 0.0f;

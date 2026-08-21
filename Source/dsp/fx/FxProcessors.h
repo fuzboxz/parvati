@@ -283,6 +283,7 @@ private:
     float  toneLpL_     = 0.0f;      // post-fold one-pole LP state (L/R)
     float  toneLpR_     = 0.0f;
 
+
     float driveParam_ = 0.0f;   // 0..1 (1x..4x pre-gain; 0 = unity = bit-identical)
     float foldParam_  = 0.0f;   // 0..1 (fold amount)
     float biasParam_  = 0.5f;   // 0..1 (0.5 = no bias / symmetric fold)

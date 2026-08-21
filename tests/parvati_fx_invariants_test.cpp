@@ -40,6 +40,8 @@
 #include "dsp/fx/fv1/Fv1PlateReverb.h"
 #include "dsp/fx/fv1/Fv1Room.h"
 #include "dsp/fx/fv1/Fv1Spring.h"
+#include "dsp/fx/fv1/Fv1Chorus.h"
+#include "dsp/fx/fv1/Fv1Ensemble.h"
 #include "dsp/fx/fv1/Fv1LutDistortion.h"
 #include "dsp/fx/fv1/Fv1Overdrive.h"
 
@@ -50,6 +52,8 @@ using parvati::fv1::Fv1Phaser;
 using parvati::fv1::Fv1PlateReverb;
 using parvati::fv1::Fv1Room;
 using parvati::fv1::Fv1Spring;
+using parvati::fv1::Fv1Chorus;
+using parvati::fv1::Fv1Ensemble;
 using parvati::fv1::Fv1LutDistortion;
 using parvati::fv1::Fv1Overdrive;
 
@@ -150,7 +154,7 @@ int main()
         const Row rows[] = {
             { "Echo        ", 0 }, { "ClockedDelay", 1 }, { "Flanger     ", 2 },
             { "Phaser      ", 3 }, { "Plate       ", 4 },  { "Room        ", 5 },
-            { "Spring      ", 6 },
+            { "Spring      ", 6 }, { "Chorus      ", 7 },  { "Ensemble    ", 8 },
         };
         for (const auto& r : rows)
         {
@@ -167,6 +171,8 @@ int main()
                 case 4: { Fv1PlateReverb f;  out = render (f, all, 2.0); break; }
                 case 5: { Fv1Room f;         out = render (f, all, 2.0); break; }
                 case 6: { Fv1Spring f;       out = render (f, all, 2.0); break; }
+                case 7: { Fv1Chorus f;       out = render (f, all, 2.0, 0.95f); break; }
+                case 8: { Fv1Ensemble f;     out = render (f, all, 2.0, 0.95f); break; }
             }
             char msg[96];
             const double ratio = dcRatio (out, 0.4);
@@ -227,6 +233,97 @@ int main()
                 check (finite && bounded && live && maxRun < 4096, msg);
             }
         }
+    }
+
+    // ============================================ [I2b] near-Nyquist loop gain
+    std::printf ("[I2b] feedback loops do not amplify near-Nyquist content\n");
+    {
+        // The phaser-crackle mechanism, measured directly: a QUIET 15.9 kHz
+        // tone (just below the 16.384 kHz internal Nyquist) through each
+        // feedback effect at 100% params. A resonant loop (positive fb phase
+        // at Nyquist, gain g) amplifies it up to 1/(1-g); a properly damped
+        // loop passes it at <= ~2x. Gate: <= 3x (pre-damp Ensemble measured
+        // ~10x bound; the phaser fix measured this class back to unity).
+        // Direct processSampleFx drive (bypasses the bridge's 15 kHz output
+        // LP — the loop's own amplification is the quantity under test).
+        struct PEnsemble : Fv1Ensemble      { using Fv1FxProcessor::processSampleFx; };
+        struct PClocked  : Fv1ClockedDelay  { using Fv1FxProcessor::processSampleFx; };
+        struct PSpring   : Fv1Spring        { using Fv1FxProcessor::processSampleFx; };
+        struct PFlanger  : Fv1Flanger       { using Fv1FxProcessor::processSampleFx; };
+        struct PPhaser   : Fv1Phaser        { using Fv1FxProcessor::processSampleFx; };
+        auto nyqGain = [&all] (int kind) -> double
+        {
+            const int n = (int) (2.0 * kSr);
+            std::vector<float> out ((size_t) n, 0.f);
+            std::vector<float> in ((size_t) n, 0.f);
+            for (int i = 0; i < n; ++i)
+                in[(size_t) i] = (float) (0.05 * std::sin (6.283185307 * 15900.0 * i / kSr));
+            auto runFx = [n, &in, &out] (auto& f)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    const int32_t x = parvati::fv1::f24_fromFloat (in[(size_t) i]);
+                    int32_t lo = 0, ro = 0;
+                    f.processSampleFx (x, x, lo, ro);
+                    out[(size_t) i] = parvati::fv1::f24_toFloat (lo);
+                }
+            };
+            switch (kind)
+            {
+                case 0: { PEnsemble f; f.prepare (kSr, kBuf); f.setParams (all); runFx (f); break; }
+                case 1: { PClocked f;  f.prepare (kSr, kBuf); f.setParams (all); runFx (f); break; }
+                case 2: { PSpring f;   f.prepare (kSr, kBuf); f.setParams (all); runFx (f); break; }
+                case 3: { PFlanger f;  f.prepare (kSr, kBuf); f.setParams (all); runFx (f); break; }
+                case 4: { PPhaser f;   f.prepare (kSr, kBuf); f.setParams (all); runFx (f); break; }
+            }
+            // Goertzel at 15900 over the last 1.5 s
+            const int from = (int) (0.5 * kSr);
+            double sw = 6.283185307 * 15900.0 / kSr, coeff = 2 * std::cos (sw);
+            double s1 = 0, s2 = 0, t1 = 0, t2 = 0;
+            for (int i = from; i < n; ++i)
+            {
+                const double v = out[(size_t) i];
+                const double a = v + coeff * s1 - s2; s2 = s1; s1 = a;
+                const double b = in[(size_t) i] + coeff * t1 - t2; t2 = t1; t1 = b;
+            }
+            return std::sqrt ((s1*s1 + s2*s2 - coeff*s1*s2) / (t1*t1 + t2*t2 - coeff*t1*t2));
+        };
+        const struct { const char* name; int kind; } rows[] = {
+            { "Ensemble    ", 0 }, { "ClockedDelay", 1 }, { "Spring      ", 2 },
+            { "Flanger     ", 3 }, { "Phaser      ", 4 },
+        };
+        for (const auto& row : rows)
+        {
+            char msg[96];
+            const double g = nyqGain (row.kind);
+            std::snprintf (msg, sizeof (msg), "%s 15.9 kHz gain %.2fx (<= 3.0)", row.name, g);
+            check (g <= 3.0, msg);
+        }
+    }
+
+    // ================================================ [I4] drive knob resolution
+    std::printf ("[I4] Drive knob has continuous resolution (not a powers-of-2 staircase)\n");
+    {
+        // The q14-remainder bug (audit 2026-08-21): the fractional drive stage
+        // was clamped to unity, so every position between 2^k and 2^(k+1)
+        // produced IDENTICAL output. Distinct drive settings must produce
+        // distinct output levels (a loud-but-saturated shaper monotonically
+        // changes tone with drive).
+        auto rmsAt = [] (float p0) -> double
+        {
+            Fv1LutDistortion f;
+            const float prm[5] = { p0, 0.0f, 0.0f, 0.6f, 0.0f };   // shape Clip, tone mid
+            const auto out = render (f, prm, 0.6, 0.45);
+            double s = 0; int n = 0;
+            for (int i = (int) (0.25 * kSr); i < (int) out.size(); ++i)
+            { s += (double) out[(size_t) i] * out[(size_t) i]; ++n; }
+            return std::sqrt (s / n);
+        };
+        const double a = rmsAt (0.30f), b = rmsAt (0.38f), c = rmsAt (0.46f);
+        char msg[128];
+        std::snprintf (msg, sizeof (msg), "Drive 2.66x/3.28x/4.03x distinct (rms %.4f/%.4f/%.4f)", a, b, c);
+        // Pre-fix: p0 in [0.25,0.5) all read as 2x -> IDENTICAL rms values.
+        check (std::fabs (a - b) > 1e-4 && std::fabs (b - c) > 1e-4, msg);
     }
 
     std::printf ("\n%s (%d failure%s)\n",

@@ -71,6 +71,12 @@ private:
     // OUTPUT DC blocker state (the Grit truncation-DC removal — see the
     // output comment in the .cpp).
     float dcOX1_ = 0.0f, dcOY1_ = 0.0f;
+    // IN-LOOP HF DAMP (2026-08-21, subagent audit): the loop (fb 0.95,
+    // integer tempo-synced reads = zero interpolation loss) had NO high-
+    // frequency damping — tapeLp_ ages the INPUT branch only — so even-parity
+    // delays put a pole at internal Nyquist with a 20x bound, right in the
+    // bridge's resampler-artifact band (the phaser crackle mechanism).
+    OnePoleLpFx fbDamp_[2] {};
 
     // Tempo-sync state (BPM persists across reset; it is transport, not DSP).
     double bpm_      = 120.0;  // host BPM from setTransport()

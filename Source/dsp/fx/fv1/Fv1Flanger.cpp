@@ -41,6 +41,7 @@ void Fv1Flanger::setParams (const float param[5])
 
 void Fv1Flanger::resetInternal()
 {
+    fbDc_.clear();
     line_.clear();
     damp_.clear();
     phase_ = 0.0f;
@@ -66,13 +67,16 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
     // a regen analog stage — the jet character stays, the edges go.
     const int32_t fbTap = damp_.process (rL);
     {
-        const float inF = f24_toFloat (lin);
-        const float fbF = f24_toFloat (fbTap)
-                        * (static_cast<float> (fb14_) * (1.0f / 8191.0f));
-        float s = inF + fbF;
-        if (s > 0.6f)       s =  0.6f + 0.4f * std::tanh (( s - 0.6f) * 2.5f);
-        else if (s < -0.6f) s = -0.6f - 0.4f * std::tanh ((-s - 0.6f) * 2.5f);
-        line_.write (f24_fromFloat (s));
+        // Knee + DC killer on the FEEDBACK COMPONENT only (2026-08-21
+        // refinement): killing the whole write added a small phase lead that
+        // perturbed near-tie lag measurements; in the RETURN branch (the
+        // Echo/ClockedDelay placement) the input path stays pristine while
+        // the loop DC gain still drops to ~0 (fb * |HP(0)| = 0).
+        float fbF = f24_toFloat (fbTap)
+                  * (static_cast<float> (fb14_) * (1.0f / 8191.0f));
+        if (fbF > 0.6f)       fbF =  0.6f + 0.4f * std::tanh (( fbF - 0.6f) * 2.5f);
+        else if (fbF < -0.6f) fbF = -0.6f - 0.4f * std::tanh ((-fbF - 0.6f) * 2.5f);
+        line_.write (f24_addSat (lin, f24_mulk (fbDc_.process (f24_fromFloat (fbF)), fb14_)));
     }
 
     phase_ += inc_;

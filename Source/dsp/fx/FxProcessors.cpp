@@ -504,6 +504,22 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
             R[i] = toneLpR_;
         }
     }
+
+    // BIAS-REFERENCE DC REMOVAL (2026-08-21, subagent audit — bug class 4):
+    // Bias is wired as a CONSTANT second input into the fold, so the wet path
+    // carries a static offset lut(x2*gain) — up to ~+-0.62 DC at the bias
+    // extremes, the exact feeder of the DC->shaper dropout chain. Subtracting
+    // the SAME fold evaluated at the reference point removes the offset
+    // EXACTLY, statelessly (no filter transient — the RAW-param contract the
+    // HARDEN-2b check pins — and no audio-phase shift).
+    {
+        const float x2   = (biasParam_ - 0.5f) * 0.4f;
+        const float gain = 0.02f + foldParam_;
+        constexpr float kScale2 = 2048.0f / ((1.0f + 1.0f + 0.25f) * 1.02f);
+        const float dcRef = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
+                                                 juce::jlimit (-2.29f, 2.29f, x2 * gain), kScale2);
+        for (int i = 0; i < numSamples; ++i) { L[i] -= dcRef; R[i] -= dcRef; }
+    }
 }
 
 void FxWavefolder::setParams (const float param[5])

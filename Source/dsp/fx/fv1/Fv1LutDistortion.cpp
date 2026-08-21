@@ -123,8 +123,11 @@ void Fv1LutDistortion::setParams (const float param[5])
     // param[4] is UNUSED (Mix is the chain Dry/Wet — never read here).
 
     const float drive = 1.0f + p0 * 7.0f;                 // 1..8x
+    // Remainder in [0.5,1): q14() clamps c >= 1.0 to unity, so the OLD [1,2)
+    // split pinned the fractional stage to 1.0x — Drive was a powers-of-two
+    // staircase (1/2/4/8x; subagent audit 2026-08-21).
     driveShift_ = 0;
-    while (drive / static_cast<float> (1 << (driveShift_ + 1)) >= 1.0f) ++driveShift_;
+    while (drive / static_cast<float> (1 << (driveShift_ + 1)) >= 0.5f) ++driveShift_;
     drive14_ = q14 (drive / static_cast<float> (1 << driveShift_));
 
     int s = static_cast<int> (p1 * static_cast<float> (kShapes));

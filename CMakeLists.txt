@@ -1168,6 +1168,16 @@ target_link_libraries(parvati_fx_foldback_probe PRIVATE Parvati)
 # cascade's near-Nyquist positive-feedback phase amplified the bridge's
 # resampler artifacts ~4x; the 4-pole regen HF damp pins it to the no-FX
 # floor. Built by default.
+# Keyboard fast-drag crackle repro (2026-08-21): the exact MIDI event stream
+# a fast mouse sweep produces (note retargets ~75/s + the pressure flood).
+add_executable(parvati_kbd_drag_repro EXCLUDE_FROM_ALL
+    tests/parvati_kbd_drag_repro.cpp
+)
+target_include_directories(parvati_kbd_drag_repro PRIVATE Source)
+target_compile_features(parvati_kbd_drag_repro PRIVATE cxx_std_17)
+target_link_libraries(parvati_kbd_drag_repro PRIVATE Parvati)
+# needs the full GUI module
+
 add_executable(parvati_phaser_crackle_test
     tests/parvati_phaser_drag_repro.cpp
 )
@@ -1183,6 +1193,8 @@ target_include_directories(parvati_fx_invariants_test SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
 target_compile_features(parvati_fx_invariants_test PRIVATE cxx_std_17)
 target_sources(parvati_fx_invariants_test PRIVATE
+    Source/dsp/fx/fv1/Fv1Chorus.cpp
+    Source/dsp/fx/fv1/Fv1Ensemble.cpp
     Source/dsp/fx/fv1/Fv1Echo.cpp
     Source/dsp/fx/fv1/Fv1ClockedDelay.cpp
     Source/dsp/fx/fv1/Fv1Flanger.cpp

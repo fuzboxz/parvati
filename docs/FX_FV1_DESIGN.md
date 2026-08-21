@@ -290,6 +290,49 @@ running median mid-note):
 Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
 rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).
 
+### Subagent audit wave (2026-08-21): the phaser class, family-wide
+
+Three parallel code audits (feedback loops / shapers / rate-bridging) over the
+FV-1 tree. REAL findings, all fixed + pinned:
+
+* **Overdrive drive ladder**: an earlier unsaturated-ladder fix was LOST to a
+  `git checkout` during red-validation (the audit caught it) — re-applied.
+* **q14 drive remainder pinned to unity (BOTH distortions)**: the fractional
+  drive stage was encoded in [1,2) but q14 clamps c>=1.0 to 1.0 — the Drive
+  knob was a powers-of-two staircase (1/2/4/8[/16]x; every intermediate
+  position dead). Remainder now in [0.5,1). Pinned by fx-invariants [I4]
+  (red: rms identical across a 1.5x drive span).
+* **Ensemble**: fb ±0.9 raw addSat loop — the phaser pre-fix signature twice
+  over (no HF damp: near-Nyquist resonance at the depth-clamp dl=1.0 dwell;
+  no DC killer: 10x DC loop gain). Full phaser treatment (per-line 4-pole
+  damp + knee + killer).
+* **ClockedDelay**: no in-loop HF damping (tapeLp_ ages the INPUT branch
+  only); integer tempo reads + fb 0.95 => even-parity Nyquist pole, 20x
+  bound. 2-pole 5 kHz damp added in the loop.
+* **Spring A**: delay 1146 (EVEN) + six odd chirp APs => total loop phase 0
+  mod 2pi at Nyquist with 0.60 gain on one damp pole — the measured-
+  insufficient regime. Delay now 1145 (odd => negative fb). Measured by
+  fx-invariants [I2b]: 1.65x -> 0.71x at 15.9 kHz.
+* **Flanger**: LoopDcKiller added to the return branch (12.5x DC loop gain;
+  placed in the FEEDBACK component — killing the whole write added a phase
+  lead that flipped a near-tie lag measurement in drive_calib [7]).
+* **Wavefolder bias DC**: constant bias into the fold parked the wet path at
+  lut(x2*gain) ~= ±0.62 DC. Fixed by subtracting the SAME fold evaluated at
+  the reference point — exact, stateless (no transient: keeps the RAW-param
+  contract HARDEN-2b pins).
+
+New invariant layers in tests/parvati_fx_invariants_test.cpp: [I2] extended
+to Chorus/Ensemble; **[I2b]** near-Nyquist loop gain (quiet 15.9 kHz probe
+straight into processSampleFx — bypassing the bridge's 15 kHz output LP —
+must stay <= 3x); **[I4]** Drive-knob resolution (distinct drive settings
+must produce distinct output; red-validated 0.2298/0.2298 identical pre-fix).
+
+Documented residuals (deliberate): Echo's worst-corner Nyquist loop gain
+0.447 (below the 0.5 positive-fb threshold, ~1.8x peaking — thin but safe);
+master EQ +12 dB high shelf multiplies the bridge floor band ~4x post-effect
+(character, stacks statically); LUT Jitter's readFrac floor-pinning at
+Jitter=1 (character-level, no loop).
+
 ### Phaser regen HF damp (2026-08-21 — the "100% params crackle")
 
 User repro: all phaser params at 100% — crackle with NO modulation (dragging

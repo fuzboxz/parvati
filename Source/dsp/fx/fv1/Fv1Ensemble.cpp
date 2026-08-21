@@ -28,6 +28,10 @@ void Fv1Ensemble::resetInternal()
 {
     lineA_.clear();
     lineB_.clear();
+    for (auto& f : fbDampA_) f.clear();
+    for (auto& f : fbDampB_) f.clear();
+    fbDcA_.clear();
+    fbDcB_.clear();
     phaseA_ = 0.0f;
     phaseB_ = 0.25f;
 }
@@ -63,6 +67,8 @@ void Fv1Ensemble::setParams (const float param[5])
     // Feedback: -0.9..0.9, quantized to a 14-bit coefficient.
     const float fb = -0.9f + p3 * 1.8f;
     fb14_ = q14 (fb);
+    for (auto& f : fbDampA_) f.setCutoff (5000.0f);   // regen HF damp, 4-pole (see header)
+    for (auto& f : fbDampB_) f.setCutoff (5000.0f);
 }
 
 FxType Fv1Ensemble::type() const
@@ -78,11 +84,20 @@ void Fv1Ensemble::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t readA = lineA_.readFrac (centerSamp_ + depthSamp_ * lutSine32 (phaseA_));
     const int32_t readB = lineB_.readFrac (centerSamp_ + depthSamp_ * lutSine32 (phaseB_));
 
-    // Per-line feedback loop (14-bit feedback coefficient, saturating add).
-    const int32_t writeA = f24_addSat (lin, f24_mulk (readA, fb14_));
-    const int32_t writeB = f24_addSat (lin, f24_mulk (readB, fb14_));
-    lineA_.write (writeA);
-    lineB_.write (writeB);
+    // Per-line feedback loop through the treated return (see the header):
+    // own 4-pole HF damp -> float soft knee -> own DC killer, then the fb gain.
+    auto treated = [] (int32_t x, OnePoleLpFx (&damp) [4], LoopDcKiller& dc,
+                       int32_t in, int16_t fbK) -> int32_t
+    {
+        int32_t d = damp[0].process (x);
+        d = damp[1].process (d); d = damp[2].process (d); d = damp[3].process (d);
+        float f = f24_toFloat (d);
+        if (f > 0.6f)       f =  0.6f + 0.4f * std::tanh (( f - 0.6f) * 2.5f);
+        else if (f < -0.6f) f = -0.6f - 0.4f * std::tanh ((-f - 0.6f) * 2.5f);
+        return f24_addSat (in, f24_mulk (dc.process (f24_fromFloat (f)), fbK));
+    };
+    lineA_.write (treated (readA, fbDampA_, fbDcA_, lin, fb14_));
+    lineB_.write (treated (readB, fbDampB_, fbDcB_, lin, fb14_));
 
     // Advance the LFO: phaseA_ wraps to [0,1); phaseB_ trails it by 0.25.
     // (lutSine32 wraps its argument internally, so phaseB_ > 1 is fine.)

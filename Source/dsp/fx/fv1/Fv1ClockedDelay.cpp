@@ -72,6 +72,8 @@ void Fv1ClockedDelay::resetInternal()
     dcY1_ = 0.0f;
     dcOX1_ = 0.0f;
     dcOY1_ = 0.0f;
+    fbDamp_[0].clear();
+    fbDamp_[1].clear();
     delay_.clear();
     tapeLp_.clear();
     lfoPhase_ = 0.0f;
@@ -92,6 +94,8 @@ void Fv1ClockedDelay::setParams (const float param[5])
 
     // Feedback gain (display 0..0.95): quantize to 14-bit.
     fbK14_ = q14 (pFb_ * 0.95f);
+    fbDamp_[0].setCutoff (5000.0f);   // in-loop HF damp (see header)
+    fbDamp_[1].setCutoff (5000.0f);
 
     // Tape-age read-pointer LFO depth (0..~6 samples).
     ageLfoDepth_ = pAge_ * 6.0f;
@@ -197,7 +201,8 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
         const float y  = x - dcX1_ + kDcPole * dcY1_;
         dcX1_ = x;
         dcY1_ = y;
-        delay_.write (f24_addSat (lpOut, f24_mulk (f24_fromFloat (y), fbK14_)));
+        const int32_t damped = fbDamp_[1].process (fbDamp_[0].process (f24_fromFloat (y)));
+        delay_.write (f24_addSat (lpOut, f24_mulk (damped, fbK14_)));
     }
 
     // Advance the LFO phase (~0.6 Hz at 32.768 kHz).

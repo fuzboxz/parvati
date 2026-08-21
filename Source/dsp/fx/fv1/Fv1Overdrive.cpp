@@ -67,10 +67,13 @@ void Fv1Overdrive::setParams (const float param[5])
     // param[4] is UNUSED (Mix is the chain Dry/Wet — never read here).
 
     const float drive = std::pow (16.0f, p0);            // 1..16x
-    // Split drive into integer 2x stages + a 14-bit fractional remainder
-    // (q14 tops out at 1.99; 16x alone would overflow).
+    // Split drive into integer 2x stages + a 14-bit fractional remainder.
+    // The remainder is kept in [0.5,1) — q14() clamps any c >= 1.0 to unity
+    // (the OLD [1,2) split was therefore pinned to 1.0x and the Drive knob
+    // collapsed to a powers-of-two staircase: 1/2/4/8/16x only, every
+    // intermediate position dead — caught by the subagent audit 2026-08-21).
     driveShift_ = 0;
-    while (drive / static_cast<float> (1 << (driveShift_ + 1)) >= 1.0f) ++driveShift_;
+    while (drive / static_cast<float> (1 << (driveShift_ + 1)) >= 0.5f) ++driveShift_;
     drive14_ = q14 (drive / static_cast<float> (1 << driveShift_));
 
     biasIdx_  = static_cast<int> (std::lround ((p1 - 0.5f) * 0.6f * 128.0f));  // ±0.3 domain = ±38 idx
@@ -171,10 +174,16 @@ void Fv1Overdrive::processSampleFx (int32_t lin, int32_t /*rin*/,
     // so the curve is read at xT = D*x — the documented 1..16x Drive.
     // (The old >>13 read the table at 8*D*x: every documented gain and the
     // "low-Drive transparent" slope were 8x hot — see audit rev_dyn.md.)
-    int32_t v = f24_mulk (lin, drive14_);
+    // UNSATURATED gain ladder (2026-08-21: re-applied — an earlier fix was
+    // lost to a git checkout during red-validation; the subagent audit caught
+    // it). f24_addSat doublings rail-clamped v at 2^23, collapsing the table
+    // read domain to x_table in [-1,1]+bias for EVERY drive setting — the
+    // outer 3/4 of the [-4,4) curve (the positive droop tail, the far
+    // negative region) was unreachable. int64 ladder: |v| <= 16*2^23 = 2^27.
+    int64_t v = f24_mulk (lin, drive14_);
     for (int s = 0; s < driveShift_; ++s)
-        v = f24_addSat (v, v);                     // x * 2^shift (saturating)
-    int idx = (v >> 16) + 512 + biasIdx_;
+        v += v;                                    // x * 2^shift (unsaturated)
+    int idx = static_cast<int> ((v >> 16) + 512 + biasIdx_);
     if (idx < 0)   idx = 0;
     if (idx > 1023) idx = 1023;
     const int32_t y = static_cast<int32_t> (table_[static_cast<size_t> (idx)]) * 512;   // Q.14 -> Q.23

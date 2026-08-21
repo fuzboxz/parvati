@@ -53,6 +53,18 @@ private:
     float depthSamp_  = 0.0f;   // LFO depth in samples.
     float centerSamp_ = 0.0f;   // Center delay in samples.
     int16_t fb14_     = 0;      // q14(feedback) in [-0.9, 0.9].
+
+    // REGEN RETURN TREATMENT (2026-08-21, subagent audit — the phaser pre-fix
+    // signature, twice over): fb +-0.9 with a raw addSat loop had (a) NO HF
+    // damping — the depth clamp's dl=1.0 dwell + the sweep past dl~2 give
+    // near-Nyquist resonance (bound 10x, +20 dB over the 0.025 bridge floor
+    // = audible LFO-rate ticks), and (b) NO DC killer — 10x DC loop gain, the
+    // delay->shaper poisoning class. 4 poles @ 5 kHz + soft knee + killer
+    // (the exact Fv1Phaser recipe).
+    // Per-LINE chains (A and B are independent loops: shared filter state
+    // would interleave the two signals' history).
+    OnePoleLpFx fbDampA_[4] {}, fbDampB_[4] {};
+    LoopDcKiller fbDcA_ {}, fbDcB_ {};
 };
 
 } // namespace parvati::fv1

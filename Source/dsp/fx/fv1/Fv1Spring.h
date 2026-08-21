@@ -38,7 +38,13 @@ protected:
     void processSampleFx (int32_t lin, int32_t rin, int32_t& lout, int32_t& rout) override;
 
 private:
-    static constexpr int kSpringDelay[2] = { 1146, 1123 };          // ~35 ms loops
+    // Spring A is ODD (2026-08-21, subagent audit): 1146 (even) + the six
+    // odd-length chirp APs (each exactly -1 at Nyquist) gave total loop phase
+    // 0 mod 2*pi at Nyquist = positive feedback with ~0.60 loop gain on a
+    // single damp pole — the measured-insufficient phaser-crackle regime.
+    // 1145 keeps the ~35 ms loop but makes the total Nyquist phase pi
+    // (negative feedback). Spring B (1123) was already odd/safe.
+    static constexpr int kSpringDelay[2] = { 1145, 1123 };          // ~35 ms loops
     static constexpr int kApLen[2][6] = { { 23, 29, 31, 37, 41, 43 },
                                           { 21, 27, 33, 39, 43, 47 } };
     DelayLine<2048> delay_[2];
