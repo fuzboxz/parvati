@@ -132,6 +132,12 @@ public:
     // The bar's no-clipping minimum width (CentralModBar::preferredWidth).
     int barPreferredWidth() const;
 
+    // The workspace-owned CentralModBar (never null after construction).
+    // Live-modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the editor
+    // uses this seam to bind the bar's telemetry provider + refresh rate —
+    // the bar itself stays self-contained (no provider = no strips).
+    CentralModBar* modBar() const noexcept { return modBar_.get(); }
+
 private:
     ThemeManager& themeManager_;
 

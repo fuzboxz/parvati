@@ -49,6 +49,13 @@ class FxRoutingBar;
 class FxSlotCard;
 class EnvelopeDisplay;
 
+// Live-modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the editor-
+// owned poll that reads ONE engine telemetry frame per tick and caches it for
+// every consumer (mod-bar strips, envelope stage marker, live filter curve).
+// Forward-declared so the header stays light; the unique_ptr member below
+// needs only an incomplete type at declaration (defined in the .cpp).
+namespace parvati { class LiveFeedbackHub; }
+
 //==============================================================================
 // One control cell: a rotary Slider (numeric params) or a ComboBox (choice
 // params), plus a label, all bound to one APVTS parameter. Colours are taken
@@ -711,6 +718,16 @@ private:
     // the on-screen +/-/0 buttons so both use one code path.
     void applyZoom (double zoom);
 
+    // ---- Live mod-feedback refresh-rate application ----
+    // Push @p hz (already clamped by the processor pref) to the ONE poll pump
+    // (liveHub_) and BOTH workspace mod bars, and record it in
+    // lastAppliedRefreshHz_. The ctor calls it once; timerCallback re-checks
+    // the persisted pref every tick so a Settings-panel change lands within
+    // one tick with no dedicated plumbing (the panel's own callback ALSO
+    // routes here for an immediate effect).
+    void applyLiveFeedbackRefreshRate (int hz);
+
+
     // The Patch page is owned here and shown as a full-page view over the
     // content area. It hosts the editor-owned Section::Global ParamPage
     // (patch-wide knobs) with this page's 6-part allocation table (and the
@@ -766,6 +783,21 @@ private:
     std::unique_ptr<FxSlotCard>   fxSlotCards_[3] {};
 
     std::unique_ptr<FxWorkspace>  fxWorkspace_;
+
+    // ---- Live modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // The single poll pump: one bounded seqlock read of the engine's telemetry
+    // frame per tick at the user's refresh rate (ui_refresh_hz, default 30),
+    // cached here for every consumer — the two CentralModBars' pill strips
+    // and the envelope/filter display overlays read the CACHE, so the engine's
+    // lock is taken once per tick no matter how many components animate.
+    // A PURE OBSERVER: no child components, no workspace/bar ownership, no
+    // APVTS state — only a fetcher bound to engine.readUiTelemetry. Declared
+    // AFTER fxWorkspace_/synthWorkspace_ (reverse-destruction discipline): it
+    // destroys FIRST, before the bars whose provider lambdas capture it (the
+    // lambdas null-check liveHub_ at call time; timer callbacks run on this
+    // same message thread, so nothing can interleave during teardown anyway).
+    std::unique_ptr<parvati::LiveFeedbackHub> liveHub_;
+
     // Two-tab page selector (bar hidden via depth 0). Index 0 = synthWorkspace_,
     // index 1 = fxWorkspace_; the header [Synth]/[FX] buttons swap the current
     // tab (setFxMode). PATCH is a header-button overlay (patchPage_), not a
@@ -946,6 +978,15 @@ private:
     int timerHz_ { 30 };               // current editor-timer rate
     juce::Point<int> lastMousePos_ { -9999, -9999 };   // detects mouse-moved-since-last-tick
     juce::Time lastMouseActivity_;      // last time the cached mouse position changed
+
+    // ---- Live-feedback refresh-rate application (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // The persisted processor pref (ui_refresh_hz) is the single source of
+    // truth; this editor-side shadow detects a CHANGE across the ~30 Hz status
+    // tick and re-applies it to the hub + both mod bars within one tick, so
+    // the Settings combo takes effect with no dedicated plumbing. -1 seeds an
+    // impossible value so the first tick always applies (matching the ctor's
+    // initial application).
+    int lastAppliedRefreshHz_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiEditor)
 };

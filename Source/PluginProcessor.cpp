@@ -995,6 +995,15 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
     loadPartIntoApvts (newPart);
     syncAllParamsToEngine();   // ensure the new Part's voices match (idempotent)
 
+    // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): re-point the
+    // engine's telemetry frame at the newly-edited part and wipe its history
+    // so the pill sparklines / stage markers / live filter curve never carry
+    // the PREVIOUS part's values across the switch (this is the AUTHORITATIVE
+    // seam — every editor path (combo, Cmd+1..6, context menu) and every file
+    // load routes through part_select -> here).
+    engine_.resetUiTelemetry();
+    engine_.setUiTelemetryPart (currentPart_);
+
     // DATA-INTEGRITY GUARD (undo cannot cross a part switch). Two hazards:
     //   (1) DUMP POLLUTION — the display dump above rewrites ~250 params;
     //       recorded as undo actions they would make the switch one giant
@@ -1183,6 +1192,13 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     for (const auto& d : getPatchParamDescriptors())
         if (d.isFx)
             apvts.getParameterAsValue (d.paramID) = (float) d.defaultValue;
+
+    // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the new patch's
+    // histories/markers start clean — the pill sparklines + envelope stage
+    // dots + live filter curve never carry the previous patch's motion across
+    // the load seam (epoch bump + engine-side wipe + re-point at this part).
+    engine_.resetUiTelemetry();
+    engine_.setUiTelemetryPart (currentPart_);
     return true;
 }
 
@@ -1344,6 +1360,13 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
 
     loadedProgramName_ = multi.name.isNotEmpty() ? multi.name
                                                  : file.getFileNameWithoutExtension();
+
+    // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): a whole-multi
+    // load swaps every part's patch — wipe the telemetry history and re-point
+    // the frame at the freshly-shown Part 0 (onPartSelect early-returns here:
+    // currentPart_ was set directly, so its hook cannot run for this seam).
+    engine_.resetUiTelemetry();
+    engine_.setUiTelemetryPart (currentPart_);
     return true;
 }
 
@@ -1593,6 +1616,12 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
     // Derive a display name from the file (the in-document name is applied via
     // the loaded-program title separately by the editor).
     loadedProgramName_ = file.getFileNameWithoutExtension();
+
+    // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): a patch-file load
+    // swaps the whole edited patch — wipe the telemetry history + re-point at
+    // the edited part so the pill sparklines / live markers start clean.
+    engine_.resetUiTelemetry();
+    engine_.setUiTelemetryPart (currentPart_);
     return true;
 }
 
@@ -1673,6 +1702,13 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
     if (! parvati::preset::applyParvatiMulti (*this, text))
         return false;
     loadedProgramName_ = file.getFileNameWithoutExtension();
+
+    // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): whole-multi load —
+    // wipe the telemetry history + re-point at the restored current part
+    // (applyParvatiMulti routes its own part-0 select through the part_select
+    // seam, but this explicit reset also covers a same-part restore).
+    engine_.resetUiTelemetry();
+    engine_.setUiTelemetryPart (currentPart_);
     return true;
 }
 
@@ -1877,6 +1913,13 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 for (const auto& d : getPatchParamDescriptors())
                     if (d.isOption && d.paramID != "part_select")
                         applyOptionParameter (d, apvts.getRawParameterValue (d.paramID)->load());
+                // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the
+                // restore swapped the whole 6-Part engine state — wipe the
+                // telemetry history + re-point at the restored part so the pill
+                // sparklines / live markers never carry the pre-restore session's
+                // motion (replacing state mid-session leaves the editor open).
+                engine_.resetUiTelemetry();
+                engine_.setUiTelemetryPart (currentPart_);
                 return true;
             }();
             if (! restored)
@@ -1894,6 +1937,11 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 engine_.setCurrentPart (savedPart);
                 syncAllParamsToEngine();
                 loadPartIntoApvts (savedPart);   // display refresh (no-op values)
+                // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): same
+                // wipe + re-point for the legacy (APVTS-authoritative) restore
+                // path above — a restored session starts with clean histories.
+                engine_.resetUiTelemetry();
+                engine_.setUiTelemetryPart (currentPart_);
             }
         }
         engine_.setParameterSmoothing (getUiSmoothing());

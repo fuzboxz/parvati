@@ -49,6 +49,32 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   cells remain live (automation + write seams on both tabs).
 
 ### Added
+- **Live modulation feedback system (2026-08-21).** Pigments-style live
+  indicators, GPU-disciplined end to end
+  (docs/LIVE_MOD_FEEDBACK_DESIGN.md). (1) **Mod-pill history strips**: every
+  CentralModBar pill (except the Const cluster + the bar-only NOTE sentinel)
+  draws a subtle family-coloured sparkline of the RECENT values its modulation
+  source produced (LFO waveform, envelope motion, aftertouch, velocity hits,
+  ~1.57 s window at an ~81.7 Hz engine-side append rate) — bipolar sources
+  (LFO/bend/note) centre on the strip midline, unipolar ones fill from the
+  bottom. (2) **Envelope stage marker**: while a key is held, the ADSR
+  EnvelopeDisplay previews draw a dot + hairline riding the curve through
+  Attack/Decay/Sustain/Release from the engine's REAL envelope stage +
+  progress. (3) **Live filter preview**: when cutoff/resonance is ACTIVELY
+  modulated (env-2 sweep, LFO, matrix, wheel...), FilterResponseDisplay draws
+  the live EFFECTIVE curve + cutoff tick over the opaque base preview (kept
+  in place), with the base tick dimming while modulation is active.
+  Architecture: ONE seqlock-guarded engine frame (audio thread, fixed-size
+  bounded writes inside renderPartFx — no allocation, bit-identical audio)
+  read ONCE per tick by the editor's LiveFeedbackHub; consumers repaint via
+  per-pill bounded dirty RECTS gated by change signatures, so idle sources
+  cost nothing and there is exactly one timer per seam (visibility-gated).
+  **Visual Refresh** setting (Settings, 10/15/30/60 Hz, persisted as
+  `ui_refresh_hz`, default 30) re-times the whole system. Patch loads /
+  .MUL / .parvati loads / part switches / state restores reset the
+  histories (epoch bump + wipe) so indicators never carry a previous patch
+  or part across the seam. Engine-side suite:
+  tests/ui_telemetry_test.cpp (parvati_ui_telemetry_test).
 - **Patch-table Voice / MIDI tabs (2026-08-20).** A compact segmented
   toggle (GroupPager idiom) inline in the table's summary row splits the
   13-column row into two focused views: **Voice** (default — Part, Voices,

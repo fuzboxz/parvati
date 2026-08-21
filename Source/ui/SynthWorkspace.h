@@ -112,6 +112,12 @@ public:
     // page + the ModMatrixView. Called by the editor on a theme switch.
     void applyThemeColors();
 
+    // The workspace-owned CentralModBar (never null after construction).
+    // Live-modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the editor
+    // uses this seam to bind the bar's telemetry provider + refresh rate —
+    // the bar itself stays self-contained (no provider = no strips).
+    CentralModBar* modBar() const noexcept { return modBar_.get(); }
+
     // The bar's no-clipping ideal width (CentralModBar::preferredWidth).
     // Diagnostic only since R3: the bar scrolls horizontally inside its own
     // Viewport, so the editor's width floor is a fixed 1024pt (tablets) and

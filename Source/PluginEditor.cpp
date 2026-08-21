@@ -22,6 +22,8 @@
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
 #include "ui/ChromeRule.h"      // parvati::ChromeRule (the shared separator-rule family)
+#include "ui/LiveFeedbackHub.h"   // parvati::LiveFeedbackHub (live mod-feedback pump)
+#include "ui/ModTelemetryTypes.h" // parvati::ModTelemetrySnapshot / LiveEnvStage / LiveFilterValues
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
@@ -2597,6 +2599,17 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     [norm, e] { return norm (e + "_sustain"); },
                     [norm, e] { return norm (e + "_release"); });
                 disp->setPreviewMode (0);   // ADSR curve
+                // Live stage marker (docs/LIVE_MOD_FEEDBACK_DESIGN.md): while a
+                // key is held, a dot + hairline rides the curve through
+                // Attack/Decay/Sustain/Release from the engine's REAL envelope
+                // telemetry. The provider captures `this` and null-checks
+                // liveHub_ at CALL time because the displays are built BEFORE
+                // the hub exists in the ctor (and the pages outlive neither).
+                disp->setLiveStageProvider ([this, i]
+                {
+                    return liveHub_ != nullptr ? liveHub_->envStage (i)
+                                               : parvati::LiveEnvStage{};
+                });
                 // Cyan trace from the Envelopes category token (re-resolved live
                 // on theme change via the binding registered below).
                 disp->setCategoryColour (theme.catEnv);
@@ -2667,6 +2680,17 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 [norm] { return norm ("filter1_cutoff"); },
                 [norm] { return norm ("filter1_reso"); },
                 [norm] { return norm ("filter1_mode"); });
+            // Live modulation overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md): when
+            // the cutoff/resonance is ACTIVELY being modulated (env-2 sweep,
+            // LFO, matrix, wheel...), the display draws the live EFFECTIVE
+            // curve + cutoff tick over the opaque base preview. Same call-time
+            // null-check pattern as the envelope markers above (construction
+            // precedes the hub).
+            disp->setLiveValuesProvider ([this]
+            {
+                return liveHub_ != nullptr ? liveHub_->liveFilter()
+                                           : parvati::LiveFilterValues{};
+            });
             disp->setCategoryColour (theme.catAudio);   // amber trace
             bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                        &ParvatiTheme::catAudio);
@@ -2853,6 +2877,33 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // default) owns it (set above). setFxMode(true) releases it from SYNTH and
     // reparents it into FX on demand (via activeGeneratorModSrc_).
 
+    // ---- Live modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // ONE poll pump for the whole system: constructed now that both workspaces
+    // exist, BEFORE the status timer starts. Its fetcher is the engine's bounded
+    // seqlock read; the hub caches ONE consistent frame per tick and every
+    // consumer (the two mod bars' pill strips + the envelope/filter display
+    // overlays, whose providers were bound during page construction ABOVE and
+    // null-check liveHub_ at CALL time) reads the cache — so the engine's lock
+    // is taken once per tick no matter how many components animate.
+    liveHub_ = std::make_unique<parvati::LiveFeedbackHub> (
+        [this] (parvati::ModTelemetrySnapshot& s)
+        { return processorRef_.getEngine().readUiTelemetry (s); });
+    // Bind the SAME cached-snapshot provider to BOTH workspace bars (each bar
+    // owns its own poll timer — both stop while unparented, so only the VISIBLE
+    // seam animates).
+    const auto barTelemetryProvider = [this] (parvati::ModTelemetrySnapshot& s)
+    { return liveHub_ != nullptr ? liveHub_->snapshot (s) : false; };
+    if (auto* bar = synthWorkspace_->modBar())
+        bar->setTelemetryProvider (barTelemetryProvider);
+    if (auto* bar = fxWorkspace_->modBar())
+        bar->setTelemetryProvider (barTelemetryProvider);
+    // Point the engine's telemetry at the part being EDITED (the frame follows
+    // the header Part selector; the processor's load/part-switch reset hooks are
+    // the authoritative re-sync, this is the startup belt-and-braces copy).
+    processorRef_.getEngine().setUiTelemetryPart (processorRef_.getEngine().getCurrentPart());
+    // Apply the persisted refresh rate once up front (the timerCallback
+    // re-checks every tick, so a Settings change lands within one tick).
+    applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
 
     // ---- Top-level page selector [SYNTH | FX] ----
     // Two NON-owned tab contents (synthWorkspace_ at index 0, fxWorkspace_ at
@@ -3143,7 +3194,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             processorRef_.setUiLanguage (code);
             installLanguage (code);
             applyChromeTranslations();
-        });
+        },
+        // Visual Refresh (live mod-feedback cadence): the panel already
+        // persists via proc.setUiRefreshHz; route the editor hook straight to
+        // the shared applier so the hub + both mod bars re-time IMMEDIATELY
+        // (timerCallback's shadow check would otherwise pick it up within one
+        // ~30 Hz tick — that poll covers restores / out-of-band writes).
+        [this] (int hz) { applyLiveFeedbackRefreshRate (hz); });
     settingsPanelHost_->setContent (settingsPanel_, true);
     // Keep the Settings button's toggle state in sync when the panel is
     // dismissed by other means (the dismiss glyph / clicking outside / ESC) —
@@ -3438,6 +3495,20 @@ void ParvatiEditor::timerCallback()
     // poll re-reads it whenever the engine's display version moved (change-
     // only; see pollPatchPageMirror). Cheap no-op on every other page.
     pollPatchPageMirror();
+
+    // ---- Live mod-feedback refresh-rate application (~30 Hz, change-only) ----
+    // The persisted ui_refresh_hz pref is the single source of truth; this
+    // shadow check re-times the hub + BOTH mod bars within one tick of a
+    // Settings-panel change (the panel persists via proc.setUiRefreshHz and
+    // ALSO routes its onRefreshChanged callback straight to the same helper,
+    // so the effect is immediate; this poll covers host-state restores and any
+    // other out-of-band pref write). Static pref => one int compare, nothing
+    // else. NOTE on PART tracking: every part switch (combo, Cmd+1..6, context
+    // menu, file loads, state restores) funnels through the processor's
+    // part_select -> onPartSelect seam, whose engine telemetry reset hook is
+    // the AUTHORITATIVE re-sync — the ctor's setUiTelemetryPart is the startup
+    // belt-and-braces copy; nothing further is needed here.
+    applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
 
     // Mouse-activity tracking for the adaptive poll rate (see the END of this
     // callback): getMouseXYRelative() is the peer-cached position (cheap), so a
@@ -3926,6 +3997,26 @@ void ParvatiEditor::applyZoom (double zoom)
     processorRef_.setUiZoom (zoom_);              // persist the clamped value
     if (settingsPanel_ != nullptr)
         settingsPanel_->setZoomValue (zoom_);     // mirror into the slider (no re-fire)
+}
+
+void ParvatiEditor::applyLiveFeedbackRefreshRate (int hz)
+{
+    // Live mod-feedback cadence (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the ONE
+    // hub poll + both mod-bar strip timers follow the persisted pref
+    // (clamped 5..60 by the processor setter / the hub itself). Idempotent
+    // through lastAppliedRefreshHz_ so a static pref costs one compare per
+    // 30 Hz status tick and nothing else.
+    if (hz == lastAppliedRefreshHz_)
+        return;
+    lastAppliedRefreshHz_ = hz;
+    if (liveHub_ != nullptr)
+        liveHub_->setRateHz (hz);
+    if (synthWorkspace_ != nullptr)
+        if (auto* bar = synthWorkspace_->modBar())
+            bar->setTelemetryRateHz (hz);
+    if (fxWorkspace_ != nullptr)
+        if (auto* bar = fxWorkspace_->modBar())
+            bar->setTelemetryRateHz (hz);
 }
 
 std::vector<ParamPage*> ParvatiEditor::allGeneratedPages() const
