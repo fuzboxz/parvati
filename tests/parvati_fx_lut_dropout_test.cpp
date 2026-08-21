@@ -162,6 +162,37 @@ int main()
         }
     }
 
+    std::printf ("[lut-dropout] Overdrive max drive never gates to silence\n");
+    {
+        // The OVERDRIVE half of the "complete voice dropout" (2026-08-21): the
+        // saturated drive ladder pinned the table index at one rail entry ->
+        // constant DC -> the DC blocker removed it -> rms 5e-6 SILENCE on a
+        // held chord. The unsaturated ladder reads the table's real tail:
+        // loud driven tube fold (measured rms 0.25 vs the dry 0.19).
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (kSr, kBuf);
+        setChoice (proc, "fx1_type", 16);   // Overdrive
+        setInt (proc, "fx1_enabled", 1);
+        setInt (proc, "fx1_drywet", 127);
+        setInt (proc, "osc1_shape", 1);
+        const int pv[5] = { 127, 64, 64, 64, 64 };   // MAX drive
+        for (int k = 0; k < 5; ++k)
+            setInt (proc, ("fx1_param" + std::to_string (k + 1)).c_str(), pv[k]);
+        std::vector<float> capL ((size_t) (kDur * kSr), 0.0f);
+        renderChord (proc, capL);
+        // absolute RMS floor: the silence bug measured ~5e-6; healthy loud
+        // drive measures 0.15+. (Windowed-relative checks are meaningless on
+        // a constant; absolute is the pin.)
+        double rms = 0.0;
+        const int from = (int) (0.3 * kSr), to = (int) (kDur * kSr);
+        for (int i = from; i < to; ++i) rms += (double) capL[(size_t) i] * capL[(size_t) i];
+        rms = std::sqrt (rms / (to - from));
+        char msg[128];
+        std::snprintf (msg, sizeof (msg),
+                       "Overdrive max-drive output level rms=%.4f (>= 0.10; the silence bug measured 0.000005)", rms);
+        check (rms >= 0.10, msg);
+    }
+
     std::printf ("[lut-dropout] max-drive hot chain stays loud (no gating)\n");
     {
         ParvatiAudioProcessor proc;

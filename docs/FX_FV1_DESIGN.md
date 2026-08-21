@@ -289,3 +289,26 @@ running median mid-note):
 
 Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
 rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).
+
+### Native-shape quality pass (2026-08-21, second wave)
+
+* **Overdrive**: the drive gain ladder is UNSATURATED (64-bit intermediate,
+  |v| <= 2^27) exactly like the LUT fix above — the old Q.23-saturating
+  doublings pinned the table index at the rail for Drive >= ~8x, squaring the
+  signal instead of folding through the tube curve's droop tail. Max-drive now
+  reads the real curve; pinned by the Overdrive row in parvati_fx_lut_dropout_test.
+* **LUT shapes**: Fuzz (#5) and Sparse (#15) had hard C0 discontinuities in
+  their transfer curves (a knee step at x=0.12; a zero-crossing flip with a
+  ~400x slope) — step garbage no oversampling can repair. Fuzz now
+  cosine-tapers below the knee; Sparse is the continuous x/(|x|+0.05)^0.7
+  expander (same intent, no discontinuity).
+* **Flanger**: the regen loop write is SOFT-SATURATED (float-domain knee,
+  transparent to +/-0.6, tanh to the rail). At fb 0.92 the loop resonates
+  ~12.5x and the old f24_addSat hard-clipped every recirculation — measured
+  -58 dB inharmonic foldback on a pure sine (tests/parvati_fx_foldback_probe);
+  -64 dB with the knee. The jet self-oscillation character is preserved.
+* **Harness note**: test binaries that construct juce objects without
+  ScopedJuceInitialiser_GUI bind the MessageManager to a background thread —
+  every APVTS write then takes the DEFERRED param path and, with no message
+  loop, silently never reaches the engine (the FX appear "not to engage").
+  probes must initialise GUI + (belt) call syncAllParamsToEngine().

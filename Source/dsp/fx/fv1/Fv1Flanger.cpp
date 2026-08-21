@@ -56,8 +56,24 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t rR = line_.readFrac (dr);
 
     // One feedback loop on the L-phase tap, damped (jet regeneration).
-    const int32_t fb = damp_.process (rL);
-    line_.write (f24_addSat (lin, f24_mulk (fb, fb14_)));
+    // SOFT-SATURATED loop write (2026-08-21 — the flanger "crackle" fix): the
+    // regen loop at high feedback resonates ~1/(1-fb) (12.5x at fb 0.92), so
+    // the loop signal LEGALLY exceeds the Q.23 rail on a unity input — the old
+    // f24_addSat hard-clipped every recirculation, squaring the resonant
+    // buildup: measured -58 dB inharmonic foldback splatter on a PURE SINE
+    // (tests/parvati_fx_foldback_probe). The float-domain soft knee below is
+    // transparent up to +/-0.6 (C1 at the knee) and eases into the rail like
+    // a regen analog stage — the jet character stays, the edges go.
+    const int32_t fbTap = damp_.process (rL);
+    {
+        const float inF = f24_toFloat (lin);
+        const float fbF = f24_toFloat (fbTap)
+                        * (static_cast<float> (fb14_) * (1.0f / 8191.0f));
+        float s = inF + fbF;
+        if (s > 0.6f)       s =  0.6f + 0.4f * std::tanh (( s - 0.6f) * 2.5f);
+        else if (s < -0.6f) s = -0.6f - 0.4f * std::tanh ((-s - 0.6f) * 2.5f);
+        line_.write (f24_fromFloat (s));
+    }
 
     phase_ += inc_;
     phase_ -= std::floor (phase_);

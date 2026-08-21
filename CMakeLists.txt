@@ -1135,6 +1135,30 @@ add_executable(parvati_fx_glitch_dump EXCLUDE_FROM_ALL
 # LUT-distortion dropout regression (2026-08-21): the wrap-family wavetable
 # shapes must never gate to silence at high drive (index wrap + unsaturated
 # gain ladder). Built by default.
+add_executable(parvati_native_dist_probe EXCLUDE_FROM_ALL
+    tests/parvati_native_dist_probe.cpp
+)
+target_include_directories(parvati_native_dist_probe PRIVATE Source)
+target_compile_features(parvati_native_dist_probe PRIVATE cxx_std_17)
+
+add_executable(parvati_fx_live_repro EXCLUDE_FROM_ALL
+    tests/parvati_fx_live_repro.cpp
+)
+target_include_directories(parvati_fx_live_repro PRIVATE Source)
+target_compile_features(parvati_fx_live_repro PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_live_repro PRIVATE
+    Parvati
+)
+
+add_executable(parvati_fx_foldback_probe EXCLUDE_FROM_ALL
+    tests/parvati_fx_foldback_probe.cpp
+    Source/dsp/fx/fv1/Fv1Phaser.cpp
+    Source/dsp/fx/fv1/Fv1Flanger.cpp
+)
+target_include_directories(parvati_fx_foldback_probe PRIVATE Source)
+target_compile_features(parvati_fx_foldback_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_foldback_probe PRIVATE Parvati)
+
 add_executable(parvati_fx_lut_dropout_test
     tests/parvati_fx_lut_dropout_test.cpp
 )

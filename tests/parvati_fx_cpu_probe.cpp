@@ -58,6 +58,21 @@ int main (int argc, char** argv)
             setInt (proc, (base + "_enabled").c_str(), 1);
             setInt (proc, (base + "_drywet").c_str(), 96);
         }
+        // ALL SIX PARTS carry the same chain (multitimbral worst case): select
+        // each part in turn and copy the FX settings onto it.
+        const int fxChoice = c.t;
+        for (int part = 1; part <= 6; ++part)
+        {
+            setInt (proc, "part_select", part);
+            for (int slot = 1; slot <= 3; ++slot)
+            {
+                const std::string base = "fx" + std::to_string (slot);
+                setChoice (proc, (base + "_type").c_str(), fxChoice);
+                setInt (proc, (base + "_enabled").c_str(), 1);
+                setInt (proc, (base + "_drywet").c_str(), 96);
+            }
+        }
+        setInt (proc, "part_select", 1);
         const int total = (int) (dur * sr);
         bool noteOn = false;
         double busyNs = 0;
@@ -69,8 +84,9 @@ int main (int argc, char** argv)
             juce::MidiBuffer midi;
             if (! noteOn)
             {
-                for (int n = 0; n < 6; ++n)
-                    midi.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) (48 + 4 * n), (uint8_t) 100), 0);
+                for (int ch = 1; ch <= 6; ++ch)          // one note per part channel
+                    for (int n = 0; n < 3; ++n)
+                        midi.addEvent (juce::MidiMessage::noteOn (ch, (uint8_t) (48 + 5 * n), (uint8_t) 100), 0);
                 noteOn = true;
             }
             const auto t0 = std::chrono::steady_clock::now();

@@ -172,7 +172,7 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     const double sr = (argc > 1) ? std::atof (argv[1]) : 48000.0;
-    const int bufSize = 512;
+    const int bufSize = (argc > 2) ? std::atoi (argv[2]) : 512;
     const double dur = 3.0;
 
     // Phaser: p0 rate, p1 depth, p2 feedback, p3 center (p4 unused)
@@ -202,7 +202,7 @@ int main (int argc, char** argv)
     }
     // EXTREME matrix (user report): every LUT shape at MAX drive, and a hot
     // 3-slot chain (LutDist max -> Phaser max fb -> Overdrive max).
-    if (argc > 2)
+    if (argc > 3)
     {
         for (int shape = 0; shape < 16; ++shape)
         {

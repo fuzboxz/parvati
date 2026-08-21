@@ -48,8 +48,17 @@ float shapeFn (int s, float x)
         }
         case 4:  // OctUp: full-wave rectified, offset down (octave fuzz)
             return clamp1 (1.5f * std::fabs (x) - 0.45f);
-        case 5:  // Fuzz: gated soft-rect (sparse, buzzy)
-            return clamp1 (x >= 0.12f ? 2.4f * (x - 0.12f) / (1.0f + x) : 0.15f * x);
+        case 5:  // Fuzz: gated soft-rect (sparse, buzzy). CONTINUOUS at the
+                 // 0.12 knee (2026-08-21 native-quality fix): the old two-branch
+                 // form stepped 0.018 -> 0 at x=0.12 — a hard C0 discontinuity in
+                 // the transfer curve that no oversampling can repair (buzzy
+                 // step garbage on every knee crossing). The below-knee branch
+                 // now cosine-tapers to 0 AT the knee, meeting the driven branch
+                 // exactly; the negative side keeps the soft 0.15x line.
+            return clamp1 (x >= 0.12f
+                ? 2.4f * (x - 0.12f) / (1.0f + x)
+                : (x >= 0.0f ? 0.15f * x * (0.5f + 0.5f * std::cos (3.14159265f * x / 0.12f))
+                             : 0.15f * x));
         case 6:  // Square: near-comparator with soft edges
             return clamp1 (std::tanh (2.5f * x));
         case 7:  // Steps: 6-level staircase of the soft clip (gritty ladder)
@@ -80,8 +89,14 @@ float shapeFn (int s, float x)
                                      : 0.3f * x / (1.0f + std::fabs (x)));
         case 14: // Crush4: 16-level staircase, loud (the "digital rasp")
             return clamp1 (1.35f * std::round (x * 8.0f) / 8.0f);
-        case 15: // Sparse: sign*|x|^0.3 (expander curve — loud, gate-like)
-            return clamp1 ((x < 0.0f ? -1.0f : 1.0f) * std::pow (std::fabs (x) + 1.0e-6f, 0.3f));
+        case 15: // Sparse: loud expander curve (gate-like). CONTINUOUS at zero
+                 // (2026-08-21 native-quality fix): sign*|x|^0.3 FLIPS -0.016 ->
+                 // +0.016 across the zero crossing with a ~400x slope — a signal
+                 // crosses zero constantly, so the shape was a built-in crackle
+                 // generator. y = x/(|x|+0.05)^0.7 keeps the intent (tiny inputs
+                 // boosted loudly, ~|x|^0.3 at large amplitudes) while passing
+                 // through 0 continuously with a bounded slope (~6).
+            return clamp1 (x / std::pow (std::fabs (x) + 0.05f, 0.7f));
         default: return clamp1 (x);
     }
 }
