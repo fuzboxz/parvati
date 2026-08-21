@@ -29,17 +29,25 @@ namespace
     // within CentralModBar's members.
     constexpr int kPillHPad        = 8;    // horizontal padding inside a pill
     constexpr int kPillMinW        = 36;   // minimum pill width (wider floor for the bigger pills)
-    constexpr int kClusterGap      = 20;   // gap between clusters
-    constexpr int kSideGap         = 40;   // larger gap splitting generators (L) from drag-only (R)
+    constexpr int kClusterGap      = 26;   // gap between clusters
+    constexpr int kSideGap         = 44;   // larger gap splitting generators (L) from drag-only (R)
     constexpr int kEdgePad         = 6;    // left/right outer padding
 
     // Category-segment geometry: each cluster is wrapped in a labelled rounded
     // segment background, and the pill row scrolls horizontally so 25+ pills
-    // never widen the editor.
-    constexpr int kSegPad      = 3;    // coloured tab horizontal padding
-    constexpr int kSegVPad     = 4;    // top inset of the coloured tab
-    constexpr int kLabelTabH   = 14;   // coloured label-tab header height (above the pills)
-    constexpr int kLabelTabGap = 4;    // gap between the label tab and the pills
+    // never widen the editor. 2026-08-21 breathing-room pass: the pills used
+    // to touch the bar's bottom edge (4+14+4+56 == 78 == kBarHeight, ZERO
+    // bottom inset) and sat 3px off the segment edge — everything read as
+    // cramped against the separators. The vertical budget now allocates a
+    // real bottom inset (kBarHeight 78 -> 88) and the horizontal paddings
+    // grew (kSegPad 3 -> 6, kPillGap 8 -> 12, kClusterGap 20 -> 26).
+    constexpr int kSegPad        = 6;    // segment-edge horizontal padding around the pills
+    constexpr int kSegVPad       = 5;    // top inset of the coloured tab
+    constexpr int kSegBottomPad  = 8;    // bottom inset below the pills (whitespace, not pills-touching-edge)
+    constexpr int kLabelTabH     = 14;   // coloured label-tab header height (above the pills)
+    constexpr int kLabelTabGap    = 5;    // gap between the label tab and the pills
+    static_assert (kSegVPad + kLabelTabH + kLabelTabGap + CentralModBar::kPillH + kSegBottomPad
+                   == CentralModBar::kBarHeight, "mod-bar vertical budget must equal kBarHeight");
 
     // `<` / `>` nav scrollers that flank the viewport (replacing the scrollbar).
     // QUIET chrome (2026-08, F-ios-touch-1 2026-08-19): the VISUAL glyph is a
@@ -53,15 +61,18 @@ namespace
     constexpr int kNavGap = 4;    // gap between a nav hit band and the viewport
 
     // ---- History-strip geometry (the live telemetry sparklines, ----
-    // docs/LIVE_MOD_FEEDBACK_DESIGN.md). The strip is a quiet 13px band at the
-    // bottom of each pill, sitting just above the family underline; the label
-    // centres in the remaining top area. kStripMaxPts caps the downsampled
-    // polyline so both the per-tick diff gate and the stroke stay O(24) per
-    // pill — the bar repaints at most a 13px-tall rect per ANIMATING pill.
-    constexpr int kStripH       = 13;    // strip band height
-    constexpr int kStripXInset  = 2;     // horizontal inset inside the pill
-    constexpr int kStripFootGap = 3;     // clearance above the family underline
-    constexpr int kStripMaxPts  = 24;    // downsampled points per strip
+    // docs/LIVE_MOD_FEEDBACK_DESIGN.md). 2026-08-21 redesign (user request):
+    // the sparkline spans the WHOLE PILL BEHIND THE LABEL — a Pigments-style
+    // scope reading, not a separate bottom band. The trace is drawn BEFORE
+    // the label text and kept clear of the top accent band / bottom
+    // underline so those cues stay crisp. kStripMaxPts still caps the
+    // downsampled polyline so both the per-tick diff gate and the stroke stay
+    // O(24) per pill — the bar repaints at most the trace's rect per
+    // ANIMATING pill.
+    constexpr int kStripXInset = 3;    // horizontal inset inside the pill
+    constexpr int kStripTopGap = 5;    // clearance below the top accent band
+    constexpr int kStripBotGap = 3;    // clearance above the family underline
+    constexpr int kStripMaxPts = 24;   // downsampled points per strip
 
     // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
@@ -230,17 +241,20 @@ struct CentralModBar::ModPill : public juce::Component,
         }
     }
 
-    /** Bounding rect of the history strip band (pill-local). paint() draws the
+    /** Bounding rect of the history trace (pill-local). paint() draws the
         sparkline inside THIS rect and the bar's telemetry tick passes it to
         repaint(), so the bounded dirty region always covers exactly what the
-        strip can draw — the GPU-cost control for the animating pills
-        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). */
+        trace can draw — the GPU-cost control for the animating pills
+        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). Full-pill scope rect: clear of the
+        top accent band and the bottom family underline; the label text draws
+        ON TOP of whatever the trace paints here. */
     juce::Rectangle<int> stripRect() const
     {
         auto r = getLocalBounds();
-        r.removeFromBottom (kStripFootGap);   // stay clear of the family underline
-        return { r.getX() + kStripXInset, r.getBottom() - kStripH,
-                 r.getWidth() - 2 * kStripXInset, kStripH };
+        r.removeFromTop (kStripTopGap);
+        r.removeFromBottom (kStripBotGap);
+        return { r.getX() + kStripXInset, r.getY(),
+                 r.getWidth() - 2 * kStripXInset, r.getHeight() };
     }
 
     /** Downsamples @p count OLDEST->NEWEST history samples into the cached
@@ -344,7 +358,7 @@ struct CentralModBar::ModPill : public juce::Component,
             if (i == 0)  path.startNewSubPath (x, y);
             else         path.lineTo (x, y);
         }
-        g.setColour (accent_.withAlpha (active_ ? 0.60f : 0.45f));
+        g.setColour (accent_.withAlpha (active_ ? 0.70f : 0.55f));
         // A single sample has no segment to stroke (startNewSubPath alone
         // draws nothing) — draw a small dot instead so the strip's first
         // ~12 ms (one append at the 81.7 Hz cadence) still shows a value.
@@ -352,7 +366,7 @@ struct CentralModBar::ModPill : public juce::Component,
             g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (
                                juce::Point<float> (sr.getCentreX(), singleY)));
         else
-            g.strokePath (path, juce::PathStrokeType (1.25f,
+            g.strokePath (path, juce::PathStrokeType (1.4f,
                               juce::PathStrokeType::JointStyle::curved,
                               juce::PathStrokeType::EndCapStyle::rounded));
     }
@@ -393,11 +407,10 @@ struct CentralModBar::ModPill : public juce::Component,
                                  : (hovered_ ? t.textSecondary.brighter (0.20f)
                                              : t.textSecondary));
             g.setFont (f);
-            // The label centres in the pill MINUS the reserved strip band (the
-            // history sparkline area at the bottom), so it sits above the strip.
-            auto labelArea = getLocalBounds();
-            labelArea.removeFromBottom (kStripH + kStripFootGap);
-            g.drawText (shortLabel_, labelArea, juce::Justification::centred, true);
+            // The label centres in the FULL pill: the history sparkline spans
+            // the pill BEHIND the text (the Pigments-style scope reading —
+            // 2026-08-21 redesign; was a reserved bottom band).
+            g.drawText (shortLabel_, getLocalBounds(), juce::Justification::centred, true);
         }
         else
         {
@@ -418,10 +431,7 @@ struct CentralModBar::ModPill : public juce::Component,
 
             const float hx  = r.getX() + 2.0f;
             const float hy0 = r.getY() + 7.0f;
-            // The dotted handle now stops ABOVE the reserved strip band (it
-            // used to run to bottom-7), so the drag cue never collides with
-            // the history sparkline that occupies that band on Perf/Util pills.
-            const float hy1 = r.getBottom() - static_cast<float> (kStripH + kStripFootGap) - 2.0f;
+            const float hy1 = r.getBottom() - 7.0f;
             const float step = 3.0f;
             g.setColour (t.textSecondary);
             for (int i = 0;; ++i)
@@ -437,12 +447,9 @@ struct CentralModBar::ModPill : public juce::Component,
 
             g.setColour (t.textSecondary);
             g.setFont (f);
-            // Same reserved strip band as the generator pills (labels align on
-            // one line across the bar); the drag-only reduced(5,0) label inset
-            // is kept.
-            auto labelArea = getLocalBounds().reduced (5, 0);
-            labelArea.removeFromBottom (kStripH + kStripFootGap);
-            g.drawText (shortLabel_, labelArea, juce::Justification::centred, true);
+            // Label over the full pill (minus the drag-only horizontal inset);
+            // the sparkline spans the pill BEHIND the text like the generators.
+            g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
         }
     }
 
