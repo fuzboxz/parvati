@@ -4,6 +4,7 @@
 // snapshots to /tmp/settings_shots/ for inspection. Scenarios: default
 // 1280x634, short 1280x500, after theme switch, after close+reopen.
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <typeinfo>
 #include <filesystem>
 #include <memory>
@@ -59,17 +60,17 @@ void snapshot (juce::Component& c, const juce::String& name)
 }
 } // namespace
 
-int main (int argc, char** argv)
+TEST(parvati_settings_probe)
 {
     ::setenv ("PARVATI_HEADLESS", "1", 1);
     juce::ScopedJuceInitialiser_GUI gui;
 
-    const bool interactive = argc > 1 && juce::String (argv[1]) == "--hold";
+    const bool interactive = juce::SystemStats::getEnvironmentVariable ("PARVATI_TEST_HOLD", "0") == "1";
 
     auto proc = std::make_unique<ParvatiAudioProcessor>();
     proc->prepareToPlay (48000.0, 256);
     auto* ed = dynamic_cast<ParvatiEditor*> (proc->createEditor());
-    if (ed == nullptr) { std::printf ("FAIL: no editor\n"); return 1; }
+    if (ed == nullptr) { std::printf ("FAIL: no editor\n"); return false; }
 
     auto win = std::make_unique<juce::DocumentWindow> ("SettingsProbe",
         juce::Colours::black, juce::DocumentWindow::allButtons);
@@ -119,5 +120,5 @@ int main (int argc, char** argv)
     win->setVisible (false);
     delete ed;
     std::printf ("PROBE DONE (shots in /tmp/settings_shots)\n");
-    return 0;
+    return true;
 }

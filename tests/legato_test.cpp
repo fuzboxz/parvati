@@ -17,6 +17,7 @@
 // Only adds tests/ + a CMake target; no Source/ changes.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -107,7 +108,7 @@ std::set<int> heldPitches (SynthEngine& e, int part)
 }
 }  // namespace
 
-int main()
+TEST(legato_test)
 {
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
@@ -260,5 +261,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "LEGATO TEST: FAILURES" : "LEGATO TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

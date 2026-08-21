@@ -14,6 +14,7 @@
 // Build: linked as parvati_fx_bridge_tinychunk_test (see CMakeLists).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -55,7 +56,7 @@ std::vector<float> renderPattern (double sr, const std::vector<int>& pattern, in
 }
 }  // namespace
 
-int main()
+TEST(parvati_fx_bridge_tinychunk)
 {
     std::printf ("=== HostRateBridge tiny-chunk (m==0) dropout regression ===\n");
     constexpr double sr = 48000.0;
@@ -96,5 +97,5 @@ int main()
     }
 
     std::printf ("\n%s\n", g_failures == 0 ? "All HostRateBridge tiny-chunk checks PASSED." : "FAILED.");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

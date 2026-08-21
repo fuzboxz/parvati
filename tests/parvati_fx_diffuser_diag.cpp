@@ -7,6 +7,7 @@
 // Build: linked as parvati_fx_diffuser_diag_test (see CMakeLists).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -198,7 +199,7 @@ void printBoundaryTable()
 
 }  // namespace
 
-int main()
+TEST(parvati_fx_diffuser_diag)
 {
     std::printf ("=== Diffuser rhythmic-pop diagnostic (static, NO modulation) ===\n");
 
@@ -258,5 +259,5 @@ int main()
     printResult ("Reverb, single(256),  220Hz", renderSlotType (FxType::Reverb, Input::Tone220, singleBlock, blocksSingle), singleBlock * blocksSingle);
 
     std::printf ("\n=== Done. Correlate the measured period with the boundary table above. ===\n");
-    return 0;
+    return true;
 }

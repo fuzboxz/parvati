@@ -31,6 +31,7 @@
 // Built by default. Run with: ./build_release/parvati_fx_param_coverage_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -1219,7 +1220,7 @@ static void testFxTypeChoiceLabels()
            "no \"LUT Distortion\" label remains");
 }
 
-int main()
+TEST(fx_param_coverage_test)
 {
     std::printf ("=== Parvati FX parameter + module coverage ===\n\n");
     testFxTable();
@@ -1241,5 +1242,5 @@ int main()
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_checks - g_failures, g_checks, g_failures,
                  g_failures == 1 ? "" : "s", g_drifts, g_drifts == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

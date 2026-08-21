@@ -4,6 +4,7 @@
 //   B5 — Mix Crush actually affects the rendered audio (sample-and-hold decimator).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -72,7 +73,7 @@ double peak (const std::vector<float>& s)
 }
 }  // namespace
 
-int main()
+TEST(patch_load_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
     std::printf ("=== Parvati Patch-Load + DSP Regression ===\n");
@@ -205,5 +206,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "PATCH-LOAD TEST: FAILURES" : "PATCH-LOAD TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

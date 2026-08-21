@@ -33,6 +33,7 @@
 // Built by default. Run with: ./build/parvati_ui_telemetry_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <cstring>
 
@@ -108,7 +109,7 @@ bool readSnap (ParvatiAudioProcessor& proc, parvati::ModTelemetrySnapshot& snap,
 }  // namespace
 
 //==============================================================================
-int main()
+TEST(ui_telemetry_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -575,5 +576,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "UI TELEMETRY TEST: FAILURES" : "UI TELEMETRY TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

@@ -11,6 +11,7 @@
 //   * Default (AsIs) keeps the legacy behaviour: bitmasks unchanged.
 
 #include <array>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <set>
 #include <string>
@@ -90,7 +91,7 @@ juce::File tempDir()
 }
 }  // namespace
 
-int main()
+TEST(export_fallback_test)
 {
     std::printf ("EXPORT FALLBACK TEST\n");
 
@@ -350,5 +351,5 @@ int main()
     tempDir().deleteRecursively();
     std::printf ("\nEXPORT FALLBACK TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

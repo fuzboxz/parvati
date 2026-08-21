@@ -12,6 +12,7 @@
 // Build: linked as parvati_fx_matrix_probe_test (EXCLUDE_FROM_ALL).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -193,7 +194,7 @@ void runScenario (const char* name, double sr, int bufSize,
 
 } // namespace
 
-int main ()
+TEST(parvati_fx_matrix_probe)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     constexpr double sr = 48000.0;
@@ -256,5 +257,5 @@ int main ()
                          pk > 1.0 ? "   <== ABOVE 0 dBFS" : "");
         }
     }
-    return 0;
+    return true;
 }

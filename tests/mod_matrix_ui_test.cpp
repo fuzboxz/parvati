@@ -28,6 +28,7 @@
 // Built by default. Run: ./build/parvati_mod_matrix_ui_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <memory>
 #include <vector>
 
@@ -159,7 +160,7 @@ juce::Button* findTitledButton (juce::Component* row, const juce::String& title)
 }
 }  // namespace
 
-int main()
+TEST(mod_matrix_ui_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -512,5 +513,5 @@ int main()
 
     std::printf ("\nMOD MATRIX UI TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

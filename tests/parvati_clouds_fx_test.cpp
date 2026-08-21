@@ -13,6 +13,7 @@
 // Built by default. Run with: ./build/parvati_clouds_fx_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <string>
 #include <cstdio>
 #include <cstring>
@@ -88,7 +89,7 @@ RunResult runFx (FxProcessor& fx, const float* inL, const float* inR,
 }
 }  // namespace
 
-int main()
+TEST(parvati_clouds_fx_test)
 {
     constexpr int kBlock = 256;
     constexpr double kRate = 48000.0;
@@ -1255,5 +1256,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "CLOUDS FX TEST: FAILURES" : "CLOUDS FX TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

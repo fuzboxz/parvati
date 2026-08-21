@@ -4,6 +4,7 @@
 // means the standalone's device callback overruns = the "full voice dropouts
 // and horrible audio quality" signature.
 #include <chrono>
+#include "unified_test_runner.h"
 #include <cstdlib>
 #include <cstdio>
 
@@ -29,7 +30,7 @@ void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
 }
 } // namespace
 
-int main (int argc, char** argv)
+TEST(parvati_fx_cpu_probe)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -44,7 +45,9 @@ int main (int argc, char** argv)
         { "Ensemble    ", 12 },
     };
     const double sr = 48000.0;
-    const int bufSize = (argc > 1) ? std::atoi (argv[1]) : 512;
+    // PARVATI_TEST_BUFSIZE env var replaces the old argv[1] buffer-size override.
+    const char* bufEnv = std::getenv ("PARVATI_TEST_BUFSIZE");
+    const int bufSize = (bufEnv != nullptr) ? std::atoi (bufEnv) : 512;
     const double dur = 4.0;
 
     for (const auto& c : combos)
@@ -98,5 +101,5 @@ int main (int argc, char** argv)
         std::printf ("%s x3 slots @%d : busy %.1f ms / %.1f%% of realtime\n",
                      c.name, bufSize, busyNs / 1.0e6, 100.0 * busyNs / rtNs);
     }
-    return 0;
+    return true;
 }

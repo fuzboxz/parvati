@@ -2,6 +2,7 @@
 // drive 4x, 44.1k) and print the raw samples around the minimum-RMS window
 // plus the same window with the FX bypassed (dry reference).
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -51,7 +52,7 @@ void render (ParvatiAudioProcessor& proc, double sr, int bufSize,
 }
 } // namespace
 
-int main()
+TEST(parvati_fx_glitch_dump)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     const double sr = 44100.0;
@@ -93,5 +94,5 @@ int main()
         for (int k = 0; k < 8; ++k) std::printf ("%+.4f ", dry[(size_t) (i + k)]);
         std::printf ("\n");
     }
-    return 0;
+    return true;
 }

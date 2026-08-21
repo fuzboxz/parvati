@@ -14,6 +14,7 @@
 // the output is a pure deterministic function of the oscillator phases.
 
 #include "dsp/constants.h"
+#include "unified_test_runner.h"
 #include "dsp/fixed_math.h"
 #include "dsp/fixed_types.h"
 #include "dsp/oscillator.h"
@@ -44,7 +45,7 @@ static uint24_t inc24 (uint16_t integral)
     return i;
 }
 
-int main()
+TEST(osc_sync_test)
 {
     printf("[1] Dirty PWM threshold (no sync): top byte crosses 127+parameter\n");
     {
@@ -224,5 +225,5 @@ int main()
     printf("\n%s (%d failures)\n",
            g_failures ? "OSC SYNC TEST: FAILURES" : "OSC SYNC TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

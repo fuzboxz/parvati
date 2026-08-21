@@ -10,6 +10,7 @@
 // Built by default. Run with: ./build/parvati_paramhelp_parity_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <string>
 #include <vector>
 
@@ -29,7 +30,7 @@ void check (bool cond, const char* msg)
 }
 }  // namespace
 
-int main()
+TEST(paramhelp_parity_test)
 {
     const auto& descs = getPatchParamDescriptors();
     std::printf ("[1] Every descriptor paramID has help text\n");
@@ -97,5 +98,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

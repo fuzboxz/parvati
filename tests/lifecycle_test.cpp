@@ -27,6 +27,7 @@
 // Built by default. Run: ./build/parvati_lifecycle_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <functional>
 #include <cstdio>
 #include <memory>
@@ -91,7 +92,7 @@ double blockEnergy (juce::AudioBuffer<float>& buf)
 }
 }  // namespace
 
-int main()
+TEST(lifecycle_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
 
@@ -339,5 +340,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "LIFECYCLE TEST: FAILURES" : "LIFECYCLE TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

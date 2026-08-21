@@ -12,6 +12,7 @@
 // Dependency-light: includes SynthEngine via the Parvati lib only (no GUI).
 
 #include "ui/PatchArrangement.h"
+#include "unified_test_runner.h"
 #include "SynthEngine.h"
 
 #include <algorithm>
@@ -88,7 +89,7 @@ constexpr Expect kExpect[] = {
 };
 }  // namespace
 
-int main()
+TEST(patch_arrangement_test)
 {
     printf ("[1] arrangementCount() == 5 (built-in templates, excl. Custom)\n");
     CHECK (arrangementCount() == 5, "arrangementCount() == 5");
@@ -282,5 +283,5 @@ int main()
             g_failures ? "PATCH ARRANGEMENT TEST: FAILURES"
                        : "PATCH ARRANGEMENT TEST: ALL CHECKS PASSED",
             g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

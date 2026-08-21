@@ -5,6 +5,7 @@
 // while free-running rates (>= 15) are tempo-independent.
 
 #include "dsp/voice.h"
+#include "unified_test_runner.h"
 #include "dsp/constants.h"
 #include "dsp/patch.h"
 
@@ -72,7 +73,7 @@ static double measureLfoFreq(uint8_t shape, uint8_t rate, double bpm, int numBlo
     return kInternalSampleRate / (cyc * (double) kAudioBlockSize);
 }
 
-int main()
+TEST(lfo_sync_test)
 {
     const double bpm = 120.0;
     const double ticksPerSec = 24.0 * bpm / 60.0;  // 48.0
@@ -110,5 +111,5 @@ int main()
     printf("\n%s (%d failures)\n",
            g_failures ? "LFO SYNC TEST: FAILURES" : "LFO SYNC TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

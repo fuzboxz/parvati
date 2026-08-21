@@ -21,6 +21,7 @@
 // Built by default. Run with: ./build/parvati_analog_filter_batch_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -142,7 +143,7 @@ void runTopologySanity (const char* label, ambika::dsp::FilterTopology topo, int
 }
 }  // namespace
 
-int main()
+TEST(analog_filter_batch_test)
 {
     constexpr size_t kNumSamples = 4096;
 
@@ -195,5 +196,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "ANALOG-FILTER TEST: FAILURES" : "ANALOG-FILTER TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

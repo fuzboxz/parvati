@@ -6,6 +6,7 @@
 // reads the extra 257th table entry at the 0xFFFF endpoint.
 
 #include "dsp/fixed_math.h"
+#include "unified_test_runner.h"
 #include "dsp/random.h"
 
 #include <cstdio>
@@ -48,7 +49,7 @@ static uint32_t as24 (uint24c_t a)
     return (static_cast<uint32_t>(a.integral) << 8) | a.fractional;
 }
 
-int main()
+TEST(fixed_math_test)
 {
     printf("[1] Mixers (>>8 division-by-256 truncation)\n");
     CHECK(U8Mix(255, 0, 0) == 254, "U8Mix(255,x,0)==254 (documented /256, not /255)");
@@ -151,17 +152,19 @@ int main()
         CHECK(s1.state() == 0xB400 && s1.state_msb() == 0xB4, "Seed(1) update -> 0xB400");
 
         // The shared global singleton advances the same sequence.
-        random().Seed(0x21);
+        // (fully qualified: "using namespace ambika::dsp" + libc <stdlib.h>'s
+        //  ::random() make an unqualified random() ambiguous in this TU)
+        ambika::dsp::random().Seed(0x21);
         Random ref;
         ref.Seed(0x21);
         bool same = true;
         for (int i = 0; i < 16; ++i)
-            same = same && random().GetByte() == ref.GetByte();
+            same = same && ambika::dsp::random().GetByte() == ref.GetByte();
         CHECK(same, "global random() tracks a same-seeded instance for 16 draws");
     }
 
     printf("\n%s (%d failures)\n",
            g_failures ? "FIXED MATH TEST: FAILURES" : "FIXED MATH TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

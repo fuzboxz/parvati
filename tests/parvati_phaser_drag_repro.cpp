@@ -3,6 +3,7 @@
 // Full-engine phaser drag repro: real processor, phaser 100%, center knob
 // dragged (APVTS writes during render), impulse census on the main bus.
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -12,7 +13,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_events/juce_events.h>
 #include "PluginProcessor.h"
-int main()
+TEST(parvati_phaser_drag_repro)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     const double sr = 44100.0;
@@ -89,5 +90,5 @@ int main()
     }
     std::printf ("%s (%d failure%s)\n", g_failures ? "PHASER CRACKLE TEST: FAILURES" : "PHASER CRACKLE TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

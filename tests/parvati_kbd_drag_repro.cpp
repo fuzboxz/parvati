@@ -4,6 +4,7 @@
 // (~120 Hz, the y-position=pressure feature). Impulse census vs a plain held
 // note. Exit 1 = crackle reproduced.
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -42,7 +43,7 @@ int census (const std::vector<float>& capL, int from, int to, float* worstOut)
 }
 } // namespace
 
-int main()
+TEST(parvati_kbd_drag_repro)
 {
     ::setenv ("PARVATI_HEADLESS", "1", 1);
     juce::ScopedJuceInitialiser_GUI gui;
@@ -195,5 +196,5 @@ int main()
     std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", msg);
     std::printf ("%s (%d failure%s)\n", g_failures ? "KBD DRAG TEST: FAILURES" : "KBD DRAG TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

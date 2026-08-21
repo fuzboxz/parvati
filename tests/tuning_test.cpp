@@ -15,6 +15,7 @@
 // Built by default. Run with: ./build/parvati_tuning_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <cstring>
 
@@ -613,7 +614,7 @@ void testMulRagaRoundTrip()
 }
 }  // namespace
 
-int main()
+TEST(tuning_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // the processor runs Timers (deferred-param drain)
     std::printf ("parvati_tuning_test\n");
@@ -630,8 +631,8 @@ int main()
     if (g_failures == 0)
     {
         std::printf ("ALL PASS\n");
-        return 0;
+        return true;
     }
     std::printf ("%d FAILURE(S)\n", g_failures);
-    return 1;
+    return false;
 }

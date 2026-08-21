@@ -22,6 +22,7 @@
 // Build: linked as parvati_fx_bridge_pop_test (see CMakeLists).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -170,7 +171,7 @@ void testRate (double sr, int subChunk, int blocks, int singleChunk, int singleB
 
 }  // namespace
 
-int main()
+TEST(parvati_fx_bridge_pop_test)
 {
     std::printf ("=== HostRateBridge sub-chunk pop regression ===\n");
     std::printf ("Clouds FX must be pop-clean under 980 Hz sub-chunking (sub-chunk spikes <= single-block + %d).\n", kSubVsSingleMargin);
@@ -235,5 +236,5 @@ int main()
     }
 
     std::printf ("\nAll HostRateBridge sub-chunk pop checks PASSED.\n");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

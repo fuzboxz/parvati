@@ -5,6 +5,7 @@
 // No JUCE link needed (the framework is <array>/<cmath>/<cstdint>/<vector> only).
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include "dsp/fx/fv1/Fv1Engine.h"
@@ -36,7 +37,7 @@ public:
     FxType type() const override { return FxType::None; }
 };
 
-int main()
+TEST(fv1_engine_test)
 {
     using namespace parvati::fv1;
 
@@ -187,5 +188,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_fail ? "FV1 ENGINE TEST: FAILURES" : "FV1 ENGINE TEST: ALL CHECKS PASSED",
                  g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

@@ -13,6 +13,7 @@
 // Built by default. Run with: ./build/parvati_fx_modrate_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -367,7 +368,7 @@ static void testFrequencyShifterDefaultZeroHz()
            "FxFrequencyShifter default (0 Hz) render: bounded (<100)");
 }
 
-int main()
+TEST(parvati_fx_modrate_test)
 {
     std::printf ("=== FX mod-matrix @ 980 Hz verification ===\n\n");
     testCadence();
@@ -379,5 +380,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures == 0 ? "ALL PASS" : "FAILURES",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

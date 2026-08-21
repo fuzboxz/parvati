@@ -15,6 +15,7 @@
 // Built by default. Run with: ./build/parvati_partstate_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -77,7 +78,7 @@ void assertPartSelectInSync (ParvatiAudioProcessor& proc, int expectedPart0Based
 }
 }  // namespace
 
-int main()
+TEST(partstate_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -182,5 +183,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "PART-STATE TEST: FAILURES" : "PART-STATE TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

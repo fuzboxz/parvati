@@ -5,6 +5,7 @@
 // the 11.6 ms deadline = the device-callback underruns the user hears as
 // crackle. Also counts over-deadline blocks with/without the write load.
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -36,7 +37,7 @@ void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
 }
 } // namespace
 
-int main()
+TEST(parvati_fx_concurrency_probe)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -111,5 +112,5 @@ int main()
                      withWrites ? "WITH 120Hz writes" : "baseline          ",
                      sum / n, worst, over, n, writes.load());
     }
-    return 0;
+    return true;
 }

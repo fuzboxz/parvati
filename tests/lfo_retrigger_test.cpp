@@ -4,6 +4,7 @@
 // ambika::dsp::Voice directly and reads MOD_SRC_LFO_1 each block.
 
 #include "dsp/voice.h"
+#include "unified_test_runner.h"
 #include "dsp/constants.h"
 #include "dsp/patch.h"
 
@@ -53,7 +54,7 @@ static uint8_t runScenario (uint8_t retriggerMode, int mid, bool doRetrigger)
     return v.modulation_source (MOD_SRC_LFO_1);
 }
 
-int main()
+TEST(lfo_retrigger_test)
 {
     constexpr int mid = 40;  // well past the triangle midpoint
 
@@ -98,5 +99,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "LFO RETRIGGER TEST: FAILURES" : "LFO RETRIGGER TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

@@ -5,6 +5,7 @@
 // Run: cmake --build build --target parvati_arp_test && ./build/parvati_arp_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -65,7 +66,7 @@ private:
 };
 }  // namespace
 
-int main()
+TEST(arp_test)
 {
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
@@ -355,5 +356,5 @@ int main()
 
     // ---- report ----
     std::printf ("\nARP TEST: %s\n", g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

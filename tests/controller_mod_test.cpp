@@ -15,6 +15,7 @@
 // Built by default. Run with: ./build/parvati_controller_mod_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <functional>
 
@@ -149,7 +150,7 @@ bool controllerAudible (int slot, int sourceEnum,
 }
 }  // namespace
 
-int main()
+TEST(controller_mod_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -176,5 +177,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "CONTROLLER MOD TEST: FAILURES" : "CONTROLLER MOD TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

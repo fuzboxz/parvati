@@ -16,6 +16,7 @@
 // Chirp 0 for Spring), so each endpoint is asserted within +/-35%.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -117,7 +118,7 @@ void setP5 (float (&p) [5], float a, float b, float c, float d)
 }
 } // namespace
 
-int main()
+TEST(reverb_decay_test)
 {
     std::printf ("REVERB DECAY (t60 / EDC) TEST\n");
 
@@ -293,5 +294,5 @@ int main()
     const char* result = g_fail ? "REVERB DECAY TEST: FAILURES"
                                 : "REVERB DECAY TEST: ALL CHECKS PASSED";
     std::printf ("\n%s (%d failure%s)\n", result, g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

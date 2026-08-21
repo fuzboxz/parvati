@@ -9,6 +9,7 @@
 // Built by default. Run with: ./build/parvati_host_state_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -132,7 +133,7 @@ bool allFxAtDefaults (const PartFxState& fx)
 }
 }  // namespace
 
-int main()
+TEST(host_state_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -694,5 +695,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "HOST-STATE TEST: FAILURES" : "HOST-STATE TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

@@ -17,6 +17,7 @@
 // Built by default. Run: ./build/parvati_undo_clock_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <limits>
 
@@ -264,7 +265,7 @@ int testSettingsPanelDegradation()
 }
 
 //==============================================================================
-int main()
+TEST(undo_clock_test)
 {
     juce::ScopedJuceInitialiser_GUI juce;   // MessageManager on this thread
 
@@ -274,5 +275,5 @@ int main()
 
     std::printf ("\n%s: %d failure(s) (undo-bound %d, clock %d, panel %d)\n",
                  (g_failures == 0) ? "PASS" : "FAIL", g_failures, a, b, d);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

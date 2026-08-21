@@ -9,6 +9,7 @@
 // Run: cmake --build build --target parvati_sequencer_test && ./build/parvati_sequencer_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -45,7 +46,7 @@ public:
 };
 }  // namespace
 
-int main()
+TEST(sequencer_test)
 {
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
@@ -134,5 +135,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "SEQUENCER TEST: FAILURES" : "SEQUENCER TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

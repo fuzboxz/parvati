@@ -7,6 +7,7 @@
 // No JUCE link needed (the framework is <array>/<cmath>/<cstdint>/<vector> only).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -69,7 +70,7 @@ void processChunked (fv1::Fv1PlateReverb& fx, float* L, float* R, int n, int chu
 }
 } // namespace
 
-int main()
+TEST(fv1_plate_reverb_test)
 {
     using namespace parvati::fv1;
 
@@ -234,5 +235,5 @@ int main()
     const char* result = g_fail ? "FV1 PLATE REVERB TEST: FAILURES"
                                 : "FV1 PLATE REVERB TEST: ALL CHECKS PASSED";
     std::printf ("\n%s (%d failure%s)\n", result, g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

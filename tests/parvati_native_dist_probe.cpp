@@ -4,6 +4,7 @@
 // discontinuities (jumps = buzzy garbage no oversampling can fix), DC at
 // zero, and edge behavior. Diagnostic dump, not a gate.
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 
@@ -61,7 +62,7 @@ float shapeFn (int s, float x)
 }
 } // namespace
 
-int main()
+TEST(parvati_native_dist_probe)
 {
     const char* names[16] = { "Clip", "Soft", "Tube", "Wrap", "OctUp", "Fuzz",
                               "Square", "Steps", "SFold", "Cheby2", "Cheby3",
@@ -93,5 +94,5 @@ int main()
     // Sine-through-engine alias check for the previously-discontinuous shapes:
     // 220 Hz sine, drive 4x, shape swept; worst inharmonic spur (Goertzel at
     // k*220*(32768/44100)/... folded frequencies) vs the fundamental.
-    return 0;
+    return true;
 }

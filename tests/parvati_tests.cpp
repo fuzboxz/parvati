@@ -19,6 +19,7 @@
 // patch and before Trigger(). This is test-harness ordering, not a DSP quirk.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -217,7 +218,7 @@ bool hasNaNorInf (const std::vector<float>& x)
 
 } // namespace
 
-int main()
+TEST(parvati_tests)
 {
     std::printf ("=== Parvati Phase-3 verification ===\n");
     std::printf ("engine internal rate: %.1f Hz, block: %d samples\n",
@@ -355,5 +356,5 @@ int main()
     std::printf ("=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

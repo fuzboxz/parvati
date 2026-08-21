@@ -4,6 +4,7 @@
 //    reflects the patch bytes (osc1_shape, filter1_cutoff, a mod amount).
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <cstring>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -33,7 +34,7 @@ juce::File proFile (const char* bank, const char* idx)
 }
 }  // namespace
 
-int main()
+TEST(patch_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -98,5 +99,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "PATCH TEST: FAILURES" : "PATCH TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

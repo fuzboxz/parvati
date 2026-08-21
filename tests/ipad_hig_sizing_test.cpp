@@ -8,6 +8,7 @@
 //   ./build/parvati_ipad_hig_sizing_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_core/juce_core.h>
 
@@ -50,7 +51,7 @@ static_assert (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button must be 4
 static_assert (ParvatiLookAndFeel::kPopupRowHeight == 44, "default popup-menu rows must be 44 (HIG)");
 static_assert (WheelsComponent::kOctBtnSize == 44, "wheels octave-switch buttons must be 44 (HIG)");
 
-int main()
+TEST(ipad_hig_sizing_test)
 {
     std::printf ("[HIG sizing contract] unified UI (single style, all platforms)\n");
 
@@ -76,5 +77,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "HIG SIZING TEST: FAILURES" : "HIG SIZING TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

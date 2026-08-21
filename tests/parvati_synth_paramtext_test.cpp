@@ -9,6 +9,7 @@
 // Built by default. Run with: ./build/parvati_synth_paramtext_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_core/juce_core.h>
 
@@ -154,7 +155,7 @@ static void testFallback()
     checkEqual (T ("something_unknown", 42.0), "42", "unknown id -> raw int");
 }
 
-int main()
+TEST(parvati_synth_paramtext_test)
 {
     std::printf ("=== synth param readout formatter ===\n\n");
     testOscillators();
@@ -169,5 +170,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures == 0 ? "ALL PASS" : "FAILURES",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

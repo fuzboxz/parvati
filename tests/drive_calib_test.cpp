@@ -27,6 +27,7 @@
 // Built by default. Run with: ./build/parvati_drive_calib_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -509,7 +510,7 @@ static void testModDelayClamps()
     }
 }
 
-int main()
+TEST(drive_calib_test)
 {
     testDriveCalibration();
     testLevelMonotonic();
@@ -520,5 +521,5 @@ int main()
 
     std::printf ("\nDRIVE-CALIB TEST: %s (%d failure%s)\n",
                  g_fail == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_fail, g_fail == 1 ? "" : "s");
-    return g_fail == 0 ? 0 : 1;
+    return g_fail == 0;
 }

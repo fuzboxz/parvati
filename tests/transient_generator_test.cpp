@@ -6,6 +6,7 @@
 //   output    = U8Mix(prefill, value, amplitude) = (p*(255-a) + v*a)>>8
 
 #include "dsp/transient_generator.h"
+#include "unified_test_runner.h"
 
 #include <cstdio>
 #include <cstring>
@@ -38,7 +39,7 @@ static int renderAndCountChanged (uint8_t shape, uint8_t amount, uint8_t prefill
     return changed;
 }
 
-int main()
+TEST(transient_generator_test)
 {
     printf("[1] Guard clauses\n");
     {
@@ -135,5 +136,5 @@ int main()
            g_failures ? "TRANSIENT GENERATOR TEST: FAILURES"
                       : "TRANSIENT GENERATOR TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

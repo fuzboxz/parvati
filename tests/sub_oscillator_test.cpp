@@ -10,6 +10,7 @@
 // signal by 1/256: 128 -> 127).
 
 #include "dsp/sub_oscillator.h"
+#include "unified_test_runner.h"
 
 #include <cstdio>
 #include <cstring>
@@ -32,7 +33,7 @@ static uint24_t inc8PerSample()
     return inc;
 }
 
-int main()
+TEST(sub_oscillator_test)
 {
     printf("[1] Shape 0 (SQUARE_1, pulse 0x80): compare + 24-bit phase wrap\n");
     {
@@ -129,5 +130,5 @@ int main()
            g_failures ? "SUB OSCILLATOR TEST: FAILURES"
                       : "SUB OSCILLATOR TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

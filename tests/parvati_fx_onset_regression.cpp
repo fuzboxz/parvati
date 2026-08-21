@@ -29,9 +29,10 @@
 // parvati_clouds_fx_test (rails-bounded + continuous under deep overrun,
 // also validated to fail catastrophically on d2669c4).
 //
-// Build: linked as parvati_fx_onset_regression_test (built by default).
+// Build: part of the parvati_unified_tests binary (unified_test_runner harness).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -240,7 +241,7 @@ void runScenario (const char* name, double sr, int bufferSize, int chord, int ve
 }
 }  // namespace
 
-int main ()
+TEST(parvati_fx_onset_regression)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("=== FX note-onset + early-sustain crackle regression (all 24 FX) ===\n");
@@ -252,5 +253,5 @@ int main ()
     std::printf ("\n%s\n", g_failures == 0
         ? "FX note-onset regression PASSED."
         : "FX note-onset regression FAILED.");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

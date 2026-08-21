@@ -19,6 +19,7 @@
 // Built by default. Run with: ./build/parvati_transport_clock_test
 
 #include <cstdlib>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include "TransportClock.h"
@@ -34,7 +35,7 @@ void check (bool cond, const char* msg)
 }
 }  // namespace
 
-int main()
+TEST(transport_clock_test)
 {
     std::printf ("=== Parvati TransportClock unit (tempo math / clamps / drift) ===\n");
 
@@ -122,5 +123,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

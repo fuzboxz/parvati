@@ -5,6 +5,7 @@
 //   cmake --build build --target parvati_mod_silence_diag && ./build/parvati_mod_silence_diag
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -51,7 +52,7 @@ static double renderNote (ParvatiAudioProcessor& proc, int bufferSize = 256)
     return peak;
 }
 
-int main()
+TEST(mod_audio_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     juce::MessageManager::getInstance();   // main thread == message thread
@@ -96,5 +97,5 @@ int main()
                                 : "NO  -> editor is zeroing the amp routing (real bug)");
 
     delete ed;
-    return editorInnocent ? 0 : 2;
+    return editorInnocent;
 }

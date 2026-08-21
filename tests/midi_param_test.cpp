@@ -9,6 +9,7 @@
 // CC:   address = param.offset + param.stride*instance; value = 7-bit SCALED.
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -72,7 +73,7 @@ uint8_t patchByte (ParvatiAudioProcessor& proc, int offset)
 }
 }  // namespace
 
-int main()
+TEST(midi_param_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("=== Parvati MIDI CC/NRPN parameter mapping (spec F.4) ===\n");
@@ -304,5 +305,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

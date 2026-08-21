@@ -48,6 +48,7 @@
 // Built by default. Run with: ./build_release/parvati_ui_mirror_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -243,7 +244,7 @@ MirrorReport mirrorMatches (ParvatiAudioProcessor& proc, PatchPage* page)
 }  // namespace
 
 //==============================================================================
-int main()
+TEST(ui_mirror_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -257,7 +258,7 @@ int main()
     if (editor == nullptr)
     {
         std::printf ("\nUI MIRROR TEST: FAILURES (%d failures)\n", g_failures);
-        return 1;
+        return false;
     }
     editor->setSize (1280, 634);
 
@@ -266,7 +267,7 @@ int main()
     if (page == nullptr)
     {
         std::printf ("\nUI MIRROR TEST: FAILURES (%d failures)\n", g_failures);
-        return 1;
+        return false;
     }
     auto& eng = proc.getEngine();
 
@@ -525,5 +526,5 @@ int main()
 
     std::printf ("\nUI MIRROR TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

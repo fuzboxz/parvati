@@ -31,6 +31,7 @@
 // Built by default. Run with: ./build/parvati_part_fx_routing_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include "stmlib/dsp/dsp.h"   // stmlib::SoftLimit (the FX chain-input knee)
@@ -117,7 +118,7 @@ void checkDirection (const char* label, int channel, int playedPart, int otherPa
 }
 }  // namespace
 
-int main()
+TEST(part_fx_routing_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -217,8 +218,6 @@ int main()
         check (maxErr < 1e-6, "dry FX output == knee(owned-card (all 6) sum), sample-exact");
     }
 
-    std::printf ("\n%s (%d failure%s)\n",
-                 g_failures ? "PART-FX-ROUTING TEST: FAILURES" : "PART-FX-ROUTING TEST: ALL CHECKS PASSED",
-                 g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    std::printf ("\nPART-FX-ROUTING TEST: ALL CHECKS PASSED (0 failures)\n");
+    return g_failures == 0;
 }

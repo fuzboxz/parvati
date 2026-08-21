@@ -18,6 +18,7 @@
 // Built by default. Run with: ./build/parvati_translations_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <set>
 
 #include <juce_core/juce_core.h>
@@ -46,7 +47,7 @@ std::set<juce::String> installedKeys()
 }
 }  // namespace
 
-int main()
+TEST(translations_test)
 {
     std::printf ("[1] Available languages\n");
     {
@@ -107,5 +108,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

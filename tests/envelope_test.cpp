@@ -6,6 +6,7 @@
 // truncation means a 255 target renders as 254/253-scale bytes, never 255.
 
 #include "dsp/envelope.h"
+#include "unified_test_runner.h"
 #include "dsp/resources/resources.h"
 
 #include <cstdio>
@@ -31,7 +32,7 @@ static void checkTableAssumptions()
            "table assumption: expo curve tail saturates at 255");
 }
 
-int main()
+TEST(envelope_test)
 {
     checkTableAssumptions();
 
@@ -128,5 +129,5 @@ int main()
     printf("\n%s (%d failures)\n",
            g_failures ? "ENVELOPE TEST: FAILURES" : "ENVELOPE TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

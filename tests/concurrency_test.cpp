@@ -25,6 +25,7 @@
 //   AddressSanitizer + UBSan (mem): -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
 
 #include <chrono>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -282,13 +283,16 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
 }
 }  // namespace
 
-int main (int argc, char** argv)
+TEST(concurrency_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
-    // Optional bisect: PARVATI_MT_MASK (hex, via argv[1]) selects which chaos op
-    // classes run concurrently with the audio thread, so the corruptor can be
-    // isolated. Default = all ops.
-    const unsigned mask = (argc > 1) ? (unsigned) std::strtoul (argv[1], nullptr, 0) : 0xFFFFu;
+    // Optional bisect (was argv[1] in the standalone binary): PARVATI_MT_MASK
+    // (hex, env var) selects which chaos op classes run concurrently with the
+    // audio thread, so the corruptor can be isolated. Default = all ops.
+    const unsigned mask = [] {
+        const char* e = std::getenv ("PARVATI_MT_MASK");
+        return e ? (unsigned) std::strtoul (e, nullptr, 0) : 0xFFFFu;
+    }();
     std::printf ("=== Parvati Concurrency / Multithreaded Fuzz (mask=0x%x) ===\n", mask);
 
     // -------------------------------------------------------------------------
@@ -663,5 +667,5 @@ int main (int argc, char** argv)
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "CONCURRENCY TEST: FAILURES" : "CONCURRENCY TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

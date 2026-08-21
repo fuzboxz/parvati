@@ -16,6 +16,7 @@
 // Built by default. Run with: ./build/parvati_fx_routing_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -61,7 +62,7 @@ double blockRms (const float* d, int n)
 }
 }  // namespace
 
-int main()
+TEST(fx_routing_test)
 {
     constexpr int kBlock = 256;
 
@@ -698,5 +699,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "FX ROUTING TEST: FAILURES" : "FX ROUTING TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

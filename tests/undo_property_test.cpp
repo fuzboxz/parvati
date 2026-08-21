@@ -50,6 +50,7 @@
 // Run with: ./build_release/parvati_undo_property_test
 
 #include <cstdint>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <functional>
 #include <vector>
@@ -157,7 +158,7 @@ bool partBytesEqual (const PartBytes& a, const PartBytes& b)
 }  // namespace
 
 //==============================================================================
-int main()
+TEST(undo_property_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -382,5 +383,5 @@ int main()
     std::printf ("\n%s\n", ok ? "UNDO PROPERTY TEST: ALL CHECKS PASSED (0 failures)"
                               : "UNDO PROPERTY TEST: FAILURES");
     if (! ok) std::printf ("UNDO PROPERTY TEST: %d failures\n", g_failures);
-    return ok ? 0 : 1;
+    return ok;
 }

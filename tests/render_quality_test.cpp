@@ -17,6 +17,7 @@
 // Built by default. Run with: ./build/parvati_render_quality_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <memory>
 
@@ -112,7 +113,7 @@ public:
 }   // namespace
 
 //==============================================================================
-int main()
+TEST(render_quality_test)
 {
     std::printf ("[1] Offline auto-max oversampling\n");
     {
@@ -633,5 +634,5 @@ int main()
 
     std::printf ("\nRENDER-QUALITY TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

@@ -29,6 +29,7 @@
 // ≥ 2x after the fix (rmsMin 0.28–0.77).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <memory>
 #include <cmath>
 #include <cstdio>
@@ -138,7 +139,7 @@ Health lutDistHealth (int drive, int shape)
 }
 } // namespace
 
-int main()
+TEST(parvati_fx_lut_dropout_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -294,5 +295,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "LUT DROPOUT TEST: FAILURES" : "LUT DROPOUT TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

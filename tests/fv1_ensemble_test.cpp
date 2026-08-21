@@ -5,6 +5,7 @@
 //     -o /tmp/fv1_ensemble_test && /tmp/fv1_ensemble_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include "dsp/fx/fv1/Fv1Ensemble.h"
@@ -37,7 +38,7 @@ void run (fv1::Fv1Ensemble& fx, const float* in, int n, float* L, float* R)
 }
 } // namespace
 
-int main()
+TEST(fv1_ensemble_test)
 {
     constexpr int n = 1024;
     static float inBuf[n];
@@ -127,5 +128,5 @@ int main()
                  g_fail ? "FV1 ENSEMBLE TEST: FAILURES"
                         : "FV1 ENSEMBLE TEST: ALL CHECKS PASSED",
                  g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

@@ -11,6 +11,7 @@
 // blocks — the exact-equality oracle for the clamp and bend checks.
 
 #include "dsp/constants.h"
+#include "unified_test_runner.h"
 #include "dsp/patch.h"
 #include "dsp/resources/resources.h"
 #include "dsp/resources/resources_manager.h"
@@ -56,7 +57,7 @@ static bool blockSilent (const Voice& v)
     return true;
 }
 
-int main()
+TEST(voice_pitch_test)
 {
     printf("[0] Stride precondition from the pitch LUT\n");
     const uint16_t incRef = ResourcesManager::Lookup<uint16_t, uint16_t> (
@@ -166,5 +167,5 @@ int main()
     printf("\n%s (%d failures)\n",
            g_failures ? "VOICE PITCH TEST: FAILURES" : "VOICE PITCH TEST: ALL CHECKS PASSED",
            g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

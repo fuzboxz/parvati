@@ -36,6 +36,7 @@
 // and by code inspection (see KeyboardView::noteHeldByOtherSource).
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -61,7 +62,7 @@ struct Ev
 bool operator== (const Ev& a, const Ev& b) { return a.note == b.note && a.on == b.on; }
 } // namespace
 
-int main()
+TEST(keyboard_view_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -449,5 +450,5 @@ int main()
 
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

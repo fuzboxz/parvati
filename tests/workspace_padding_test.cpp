@@ -13,6 +13,7 @@
 // Built by default. Run: ./build/parvati_workspace_padding_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -91,7 +92,7 @@ void click (juce::Component* comp)
 }
 }  // namespace
 
-int main()
+TEST(workspace_padding_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -135,7 +136,7 @@ int main()
         {
             std::printf ("\nWORKSPACE PADDING TEST: %s (%d failures)\n",
                          g_failures ? "FAILURES" : "ALL CHECKS PASSED", g_failures);
-            return g_failures == 0 ? 0 : 1;
+            return g_failures == 0;
         }
 
         // (a) No text "Clear"/"M" button remains anywhere in the row.
@@ -200,5 +201,5 @@ int main()
 
     std::printf ("\nWORKSPACE PADDING TEST: %s (%d failures)\n",
                  g_failures ? "FAILURES" : "ALL CHECKS PASSED", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

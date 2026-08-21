@@ -13,6 +13,7 @@
 // Built by default. Run with: ./build/parvati_idle_silence_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -34,7 +35,7 @@ void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
 }
 }  // namespace
 
-int main()
+TEST(idle_silence_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // AudioProcessor needs this once.
 
@@ -74,5 +75,5 @@ int main()
 
 
     // Idle output must stay in the noise floor => success (exit 0).
-    return peak < 1.0e-4 ? 0 : 2;
+    return peak < 1.0e-4;
 }

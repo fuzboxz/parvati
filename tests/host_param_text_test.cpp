@@ -27,6 +27,7 @@
 // Built by default. Run with: ./build/parvati_host_param_text_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <string>
 #include <vector>
 
@@ -72,7 +73,7 @@ void setChoice (ParvatiAudioProcessor& proc, const char* id, int index)
 }
 }  // namespace
 
-int main()
+TEST(host_param_text_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     const auto& descs = getPatchParamDescriptors();
@@ -274,5 +275,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

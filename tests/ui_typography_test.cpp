@@ -17,6 +17,7 @@
 // Built by default. Run with: ./build/parvati_ui_typography_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -82,7 +83,7 @@ const PatchParamDescriptor& lengthDescriptor()
 }
 }  // namespace
 
-int main()
+TEST(ui_typography_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -182,5 +183,5 @@ int main()
 
     std::printf ("\nUI TYPOGRAPHY TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

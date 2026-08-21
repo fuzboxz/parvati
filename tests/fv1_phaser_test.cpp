@@ -9,6 +9,7 @@
 // every process() call uses a block of exactly 256 host samples (== maxBlock).
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include "dsp/fx/fv1/Fv1Phaser.h"
@@ -55,7 +56,7 @@ bool runSine (fv1::Fv1Phaser& fx, float* out, int nBlocks, DryFn dryAt)
 }
 } // namespace
 
-int main()
+TEST(fv1_phaser_test)
 {
     fv1::Fv1Phaser fx;
 
@@ -199,5 +200,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_fail ? "FV1 PHASER TEST: FAILURES" : "FV1 PHASER TEST: ALL CHECKS PASSED",
                  g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

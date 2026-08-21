@@ -15,6 +15,7 @@
 // realtime). Built by default. Run with: ./build/parvati_realtime_test
 
 #include <chrono>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -117,7 +118,7 @@ RenderOutcome renderDenseChord (int bufferSize, int numNotes, double sampleRate 
 }
 }  // namespace
 
-int main()
+TEST(realtime_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -150,5 +151,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "REALTIME TEST: FAILURES" : "REALTIME TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

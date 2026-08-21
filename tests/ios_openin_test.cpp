@@ -21,6 +21,7 @@
 // Built by default. Run: ./build/parvati_ios_openin_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <cstring>
 
 #include <juce_core/juce_core.h>
@@ -57,7 +58,7 @@ int countTempFragments (const juce::File& dir)
 }
 }  // namespace
 
-int main()
+TEST(ios_openin_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -191,5 +192,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "IOS OPEN-IN TEST: FAILURES" : "IOS OPEN-IN TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

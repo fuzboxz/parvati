@@ -7,6 +7,7 @@
 // No JUCE link needed (the framework is <array>/<cmath>/<cstdint>/<vector> only).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -41,7 +42,7 @@ void runSetting (fv1::Fv1VinylCompressor& fx, float c, float p, float k, float a
 }
 } // namespace
 
-int main()
+TEST(fv1_vinyl_compressor_test)
 {
     fv1::Fv1VinylCompressor fx;
     fx.prepare (48000.0, 256);
@@ -301,5 +302,5 @@ int main()
                  g_fail ? "FV1 VINYL COMPRESSOR TEST: FAILURES"
                         : "FV1 VINYL COMPRESSOR TEST: ALL CHECKS PASSED",
                  g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

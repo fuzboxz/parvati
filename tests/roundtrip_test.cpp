@@ -13,6 +13,7 @@
 // Built by default. Run with: ./build/parvati_roundtrip_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -63,7 +64,7 @@ int countApvtsMismatches (ParvatiAudioProcessor& a, ParvatiAudioProcessor& b)
 }
 }  // namespace
 
-int main()
+TEST(roundtrip_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // AudioProcessor needs this once.
 
@@ -165,5 +166,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "ROUNDTRIP TEST: FAILURES" : "ROUNDTRIP TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

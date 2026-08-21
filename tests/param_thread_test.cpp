@@ -31,6 +31,7 @@
 // Built by default. Run: ./build/parvati_param_thread_test
 
 #include <atomic>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <thread>
@@ -75,7 +76,7 @@ void messageThreadWrite (ParvatiAudioProcessor& p, const char* id, float v)
 }
 }  // namespace
 
-int main()
+TEST(param_thread_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
 
@@ -192,5 +193,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "PARAM THREAD TEST: FAILURES" : "PARAM THREAD TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

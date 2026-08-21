@@ -32,6 +32,7 @@
 // Built by default. Run with: ./build_release/parvati_shadow_state_test
 
 #include <cstdint>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -193,7 +194,7 @@ void pollute (ParvatiAudioProcessor& proc)
 }  // namespace
 
 //==============================================================================
-int main()
+TEST(shadow_state_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -293,5 +294,5 @@ int main()
     std::printf ("\n%s\n", g_failures == 0
                    ? "SHADOW-STATE TEST: ALL CHECKS PASSED (0 failures)"
                    : "SHADOW-STATE TEST: FAILURES (see above)");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

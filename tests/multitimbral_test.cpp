@@ -5,6 +5,7 @@
 // produce audible audio from their own patches simultaneously.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -54,7 +55,7 @@ double renderBlocks (ParvatiAudioProcessor& proc, int blocks)
 }
 }  // namespace
 
-int main()
+TEST(multitimbral_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
 
@@ -211,5 +212,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "MULTITIMBRAL TEST: FAILURES" : "MULTITIMBRAL TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

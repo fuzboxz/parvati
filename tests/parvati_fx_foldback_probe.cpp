@@ -4,6 +4,7 @@
 // measures inharmonic foldback energy (Goertzel at non-harmonic bins) plus
 // the harmonic energy, at the effect's OUTPUT. Diagnostic dump.
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -207,7 +208,7 @@ int probeMain()
     return 0;
 }
 
-int main()
+TEST(parvati_fx_foldback_probe)
 {
     // HARNESS NOTE (2026-08-21): without this initialiser the MessageManager
     // binds to a background thread at the first juce object, every main-thread
@@ -264,5 +265,5 @@ int main()
         for (int i = std::max (1, wi - 12); i < wi + 12; ++i)
             std::printf ("    %6d : %+9.6f  (d=%+9.6f)\n", i, x[(size_t) i], x[(size_t) i] - x[(size_t) (i - 1)]);
     }
-    return 0;
+    return true;
 }

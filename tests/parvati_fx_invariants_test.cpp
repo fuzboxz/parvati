@@ -28,6 +28,7 @@
 // pattern). Fast: each check renders <= 2 s of 32.768 kHz audio.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -103,7 +104,7 @@ double dcRatio (const std::vector<float>& x, double fromSec)
 }
 } // namespace
 
-int main()
+TEST(parvati_fx_invariants_test)
 {
     const float all[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };   // 100% everything
 
@@ -329,5 +330,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "FX INVARIANTS TEST: FAILURES" : "FX INVARIANTS TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

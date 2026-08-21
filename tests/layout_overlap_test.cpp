@@ -26,6 +26,7 @@
 // Built by default. Run: ./build/parvati_layout_overlap_test
 
 #include <cxxabi.h>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -183,7 +184,7 @@ void sweepSize (ParvatiEditor& editor, int w, int h)
 }
 } // namespace
 
-int main()
+TEST(layout_overlap_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -193,13 +194,13 @@ int main()
     auto* editorRaw = proc.createEditor();
     check (editorRaw != nullptr, "editor constructs");
     if (editorRaw == nullptr)
-        return 1;
+        return false;
     auto* editor = dynamic_cast<ParvatiEditor*> (editorRaw);
     check (editor != nullptr, "editor is a ParvatiEditor");
     if (editor == nullptr)
     {
         delete editorRaw;
-        return 1;
+        return false;
     }
     editor->setVisible (true);
 
@@ -215,5 +216,5 @@ int main()
     delete editor;
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

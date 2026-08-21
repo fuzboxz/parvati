@@ -22,6 +22,7 @@
 //          corrupt the line-based .parvati document on save).
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <cstring>
 #include <string>
 #include <vector>
@@ -148,7 +149,7 @@ int activeInPart (SynthEngine& e, int part)
 }
 }  // namespace
 
-int main()
+TEST(mul_strategies_test)
 {
     std::printf ("MUL STRATEGIES + NAMES TEST\n");
 
@@ -529,5 +530,5 @@ int main()
     tempDir().deleteRecursively();
     std::printf ("\nMUL STRATEGIES + NAMES TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

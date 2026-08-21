@@ -19,6 +19,7 @@
 // Each assertion FAILS if the per-sample interpolation is removed.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -143,7 +144,7 @@ void testPopRatio (FxType type, int paramIdx, float lo, float hi, double maxRati
 
 }  // namespace
 
-int main()
+TEST(parvati_fx_popdiag_test)
 {
     using namespace std::string_view_literals;
 
@@ -176,5 +177,5 @@ int main()
         std::printf ("FX POP REGRESSION TEST: ALL CHECKS PASSED (0 failures)\n");
     else
         std::printf ("FX POP REGRESSION TEST: %d FAILURE(S)\n", gFailures);
-    return gFailures == 0 ? 0 : 1;
+    return gFailures == 0;
 }

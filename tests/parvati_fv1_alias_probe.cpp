@@ -5,6 +5,7 @@
 // Build: parvati_fv1_alias_probe (EXCLUDE_FROM_ALL). Run: ./p
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -108,7 +109,7 @@ void run (bool saw, double freq, double driveParam, bool print)
 }
 } // namespace
 
-int main ()
+TEST(parvati_fv1_alias_probe)
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     std::printf ("=== Fv1Overdrive aliasing probe (direct, 48 kHz host, 0.5 amp) ===\n");
@@ -121,5 +122,5 @@ int main ()
     run (true,  220.0, 1.0f, true);
     run (false, 220.0, 0.0f, true);
     run (true,  220.0, 0.0f, true);
-    return 0;
+    return true;
 }

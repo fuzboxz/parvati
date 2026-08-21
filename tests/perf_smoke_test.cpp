@@ -48,6 +48,7 @@
 #endif
 
 #include <CoreFoundation/CoreFoundation.h>
+#include "unified_test_runner.h"
 #include <sys/resource.h>
 
 #include <algorithm>
@@ -147,7 +148,7 @@ struct CongestionProbe : public juce::Timer
 };
 } // namespace
 
-int main()
+TEST(perf_smoke_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;   // Timer/MessageManager plumbing
 
@@ -160,7 +161,7 @@ int main()
     juce::AudioProcessorEditor* editor = proc.createEditor();
     check (editor != nullptr, "editor constructs headlessly");
     if (editor == nullptr)
-        return 1;
+        return false;
 
     CongestionProbe probe;
     probe.startTimerHz (30);
@@ -292,5 +293,5 @@ int main()
     delete editor;
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

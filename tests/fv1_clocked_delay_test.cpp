@@ -6,6 +6,7 @@
 //   && /tmp/fv1_clocked_delay_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 
@@ -42,7 +43,7 @@ void processChunked (fv1::Fv1ClockedDelay& fx, float* L, float* R, int n)
 }
 } // namespace
 
-int main()
+TEST(fv1_clocked_delay_test)
 {
     constexpr int kPreparedBlock = 256;
 
@@ -235,5 +236,5 @@ int main()
                  g_fail ? "FV1 CLOCKED DELAY TEST: FAILURES"
                         : "FV1 CLOCKED DELAY TEST: ALL CHECKS PASSED",
                  g_fail, g_fail == 1 ? "" : "s");
-    return g_fail ? 1 : 0;
+    return g_fail == 0;
 }

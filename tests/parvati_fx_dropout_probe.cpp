@@ -7,6 +7,7 @@
 // over a 3 s held loud chord at 48k/512, for Phaser / Overdrive / LUT Dist /
 // Wavefolder. NOT a pass/fail gate — a diagnostic dump.
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
@@ -169,12 +170,17 @@ void probeFx (const char* name, int fxType, const int base[5],
 }
 } // namespace
 
-int main (int argc, char** argv)
+TEST(parvati_fx_dropout_probe)
 {
     juce::ScopedJuceInitialiser_GUI gui;
-    const double sr = (argc > 1) ? std::atof (argv[1]) : 48000.0;
+    // Unified-harness port: the argv[1] sample-rate and argv[2] buffer-size
+    // overrides are replaced by the fixed defaults the probe always used;
+    // the opt-in DIRECT-ISOLATION (was argc>2) and EXTREME-matrix (was argc>3)
+    // sections are gated on PARVATI_TEST_HOLD so the default run is
+    // deterministic and terminates.
+    const double sr = 48000.0;
     int bufSize = 512;
-    if (argc > 2) { const int v = std::atoi (argv[2]); if (v >= 16) bufSize = v; }
+    const bool extended = std::getenv ("PARVATI_TEST_HOLD") != nullptr;
     const double dur = 3.0;
 
     // Phaser: p0 rate, p1 depth, p2 feedback, p3 center (p4 unused)
@@ -320,7 +326,7 @@ int main (int argc, char** argv)
 
     // DIRECT ISOLATION: capture the Echo->Plate output, run it through a
     // standalone Fv1Overdrive at the repro params, and analyze.
-    if (argc > 2)
+    if (extended)
     {
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (sr, bufSize);
@@ -398,7 +404,7 @@ int main (int argc, char** argv)
 
     // EXTREME matrix (user report): every LUT shape at MAX drive, and a hot
     // 3-slot chain (LutDist max -> Phaser max fb -> Overdrive max).
-    if (argc > 3)
+    if (extended)
     {
         for (int shape = 0; shape < 16; ++shape)
         {
@@ -444,5 +450,5 @@ int main (int argc, char** argv)
         }
     }
     std::printf ("PROBE DONE\n");
-    return 0;
+    return true;
 }

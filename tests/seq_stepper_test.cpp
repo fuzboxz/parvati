@@ -18,6 +18,7 @@
 // Built by default. Run with: ./build/parvati_seq_stepper_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -101,7 +102,7 @@ constexpr int kCellW = 72, kCellH = 64;
 constexpr float kControlFontHeight = 14.0f;
 }  // namespace
 
-int main()
+TEST(seq_stepper_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -251,5 +252,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

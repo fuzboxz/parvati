@@ -39,6 +39,7 @@
 //   ./build/parvati_firmware_parity_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -909,19 +910,17 @@ bool loadAllowlist (const std::string& path, std::set<std::string>& out)
 }  // namespace
 
 //===========================================================================
-int main (int argc, char** argv)
+TEST(firmware_parity_test)
 {
-    for (int i = 1; i < argc; ++i)
-        if (std::strcmp (argv[i], "--self-test") == 0)
-            g_selfTest = true;
-
+    // (--self-test was argv[1] in the standalone binary; the unified runner
+    // has no argv, so keep the default full run.)
     std::printf ("=== Parvati firmware parity oracle ===\n");
 
     const char* allowlistPath = "tests/firmware_parity_known_divergences.txt";
     if (! loadAllowlist (allowlistPath, g_divergences))
     {
         std::printf ("FATAL: cannot open %s (run from the repo root)\n", allowlistPath);
-        return 1;
+        return false;
     }
     std::printf ("allowlist: %zu divergence(s)\n", g_divergences.size());
 
@@ -952,5 +951,5 @@ int main (int argc, char** argv)
         std::printf ("\nFIRMWARE PARITY TEST: ALL CHECKS PASSED (0 failures)\n");
     else
         std::printf ("\nFIRMWARE PARITY TEST: FAILURES (%d)\n", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

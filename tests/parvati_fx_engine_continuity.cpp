@@ -20,7 +20,9 @@
 //
 // Build: linked as parvati_fx_engine_continuity_test (see CMakeLists).
 
+
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -244,7 +246,7 @@ void wsolaStartupRegression()
 }
 }  // namespace
 
-int main()
+TEST(parvati_fx_engine_continuity)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("=== Full-engine Clouds-FX continuity regression ===\n");
@@ -263,5 +265,5 @@ int main()
     std::printf ("\n%s\n", g_failures == 0
         ? "Full-engine Clouds-FX continuity PASSED."
         : "Full-engine Clouds-FX continuity FAILED.");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

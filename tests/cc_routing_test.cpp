@@ -16,6 +16,7 @@
 // Built by default. Run with: ./build/parvati_cc_routing_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -77,7 +78,7 @@ int wheelValue (ParvatiAudioProcessor& p, int part)
 }
 }  // namespace
 
-int main()
+TEST(cc_routing_test)
 {
     // ------------------------------------------------------------------
     // [1] Sustain pedal CC64: swallow releases, drain on pedal-up.
@@ -187,5 +188,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "CC ROUTING TEST: FAILURES" : "CC ROUTING TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

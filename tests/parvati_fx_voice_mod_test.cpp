@@ -22,6 +22,7 @@
 // Built by default. Run with: ./build/parvati_fx_voice_mod_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -241,7 +242,7 @@ static void testCrossfadeArmed()
     check (std::fabs (phaseSettled - 1.0f) < 1.0e-4f, msg);
 }
 
-int main()
+TEST(parvati_fx_voice_mod_test)
 {
     std::printf ("=== FX mod-matrix voice-source handling ===\n\n");
     testAcCentering();
@@ -252,5 +253,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures == 0 ? "ALL PASS" : "FAILURES",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

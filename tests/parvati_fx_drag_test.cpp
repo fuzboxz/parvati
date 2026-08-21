@@ -16,6 +16,7 @@
 //
 // A fast drag fires several param ticks per audio block (kWritesPerBlock).
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -147,7 +148,7 @@ double dragArtifact (int fxType, const char* dragParam, int drywet,
 }
 } // namespace
 
-int main()
+TEST(parvati_fx_drag_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -199,5 +200,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "FX DRAG TEST: FAILURES" : "FX DRAG TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

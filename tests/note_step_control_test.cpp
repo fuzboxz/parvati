@@ -12,6 +12,7 @@
 // Built by default. Run with: ./build/parvati_note_step_control_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -55,7 +56,7 @@ public:
 };
 }  // namespace
 
-int main()
+TEST(note_step_control_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -114,5 +115,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

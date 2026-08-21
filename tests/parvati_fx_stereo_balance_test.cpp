@@ -16,6 +16,7 @@
 // Built by default. Run with: ./build_release/parvati_fx_stereo_balance_test
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -157,7 +158,7 @@ BalanceResult measureMono (FxType type, const float param[4],
 }
 }  // namespace
 
-int main()
+TEST(parvati_fx_stereo_balance_test)
 {
     constexpr int kTotalSeconds   = 3;   // measured window
     constexpr int kWarmupSeconds  = 1;   // settle (warmup is part of the buffer prefix)
@@ -328,5 +329,5 @@ int main()
 
     std::printf ("=== END === (%d non-finite result%s)\n",
                  worstSpectralFailures, worstSpectralFailures == 1 ? "" : "s");
-    return worstSpectralFailures ? 1 : 0;
+    return worstSpectralFailures == 0;
 }

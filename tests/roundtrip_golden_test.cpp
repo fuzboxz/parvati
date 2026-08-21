@@ -30,9 +30,10 @@
 // Canary self-check (required): the byte comparator reports a 1-flipped-byte
 // file with its exact offset; the title comparator flags a wrong expectation.
 //
-// Built by default. Run with: ./build_release/parvati_roundtrip_golden_test
+// Unified runner. Run with: ./build_unified/parvati_unified_tests roundtrip_golden_test
 
 #include <cstdint>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -386,7 +387,7 @@ void parvatiNameEscaping (const char* fmt, int idx, const NameCase& nc,
 }  // namespace
 
 //==============================================================================
-int main ()
+TEST(roundtrip_golden_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -457,5 +458,5 @@ int main ()
     // ---- summary ----
     std::printf ("\n=== GOLDEN ROUND-TRIP: %s (%d failures) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

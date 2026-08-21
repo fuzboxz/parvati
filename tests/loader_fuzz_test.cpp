@@ -39,6 +39,7 @@
 // Built by default. Run with: ./build_release/parvati_loader_fuzz_test
 
 #include <atomic>
+#include "unified_test_runner.h"
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -591,7 +592,7 @@ void runTextEdits (ParvatiAudioProcessor& proc, const Corpus& c,
 }  // namespace
 
 //==============================================================================
-int main()
+TEST(loader_fuzz_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
     std::printf ("=== Parvati Loader Fuzzer + Rollback Checker (T1) ===\n");
@@ -756,5 +757,5 @@ int main()
     std::printf ("\n%d mutation cases, %d failures\n", g_cases, g_failures);
     if (g_failures == 0) std::printf ("LOADER FUZZ TEST: ALL CHECKS PASSED\n");
     else                 std::printf ("LOADER FUZZ TEST: FAILURES (%d)\n", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

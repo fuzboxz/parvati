@@ -19,6 +19,7 @@
 // Built by default. Run with: ./build/parvati_os_reaper_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -68,7 +69,7 @@ int totalRetired (ParvatiAudioProcessor& p)
 }
 }  // namespace
 
-int main()
+TEST(os_reaper_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("=== Parvati retired-OS reaper (park capacity / fallback / reap) ===\n");
@@ -135,5 +136,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

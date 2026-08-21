@@ -4,6 +4,7 @@
 // Offline renders (no GUI) are clean; if the dropout is GUI-interaction-caused
 // this catches it. Also covers type-swap-mid-note and enable-mid-note.
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
 
@@ -75,7 +76,7 @@ Health analyze (const std::vector<float>& out, int from)
 }
 } // namespace
 
-int main()
+TEST(parvati_fx_live_repro)
 {
     ::setenv ("PARVATI_HEADLESS", "1", 1);
     juce::ScopedJuceInitialiser_GUI gui;
@@ -224,5 +225,5 @@ int main()
     win->setVisible (false);
     delete ed;
     std::printf ("\n%s (%d failures)\n", g_failures ? "REPRO: FAILURES" : "REPRO: CLEAN", g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

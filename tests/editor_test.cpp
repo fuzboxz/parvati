@@ -3,6 +3,7 @@
 // resize / teardown; no real message loop).
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>   // ::setenv (PARVATI_HEADLESS — native-dialog suppression in main)
@@ -71,7 +72,7 @@ static void pumpUntil25 (Pred&& pred, double maxSec = 3.0)
 }
 #endif
 
-int main (int argc, char** argv)
+TEST(editor_test)
 {
     // NATIVE-DIALOG SUPPRESSION (PluginEditor.cpp nativeDialogsSuppressed):
     // this harness puts the editor ON the desktop (addToDesktop is required
@@ -2260,16 +2261,15 @@ int main (int argc, char** argv)
     // via --windowed for the real on-desktop visibility path) ----
     std::printf ("\n[19] Preview-update regression (headless)\n");
     runPreviewRegression (false);
-    if (argc > 1 && std::strcmp (argv[1], "--windowed") == 0)
-    {
-        std::printf ("\n[19] Preview-update regression (windowed)\n");
-        runPreviewRegression (true);
-    }
+    // (--windowed was argv[1] in the standalone binary; the unified runner
+    // runs the headless path only.)
+    std::printf ("\n[19] Preview-update regression (headless)\n");
+    runPreviewRegression (false);
 
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "EDITOR TEST: FAILURES" : "EDITOR TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }
 
 // ============================================================================

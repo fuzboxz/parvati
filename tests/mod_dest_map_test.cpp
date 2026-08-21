@@ -6,6 +6,7 @@
 // Run with: ./build/parvati_mod_dest_map_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -58,7 +59,7 @@ void setFxMod (ParvatiAudioProcessor& proc, int slot, int fxDest, int amount)
 }
 }  // namespace
 
-int main()
+TEST(mod_dest_map_test)
 {
     using namespace parvati::ModDestMap;
 
@@ -178,5 +179,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

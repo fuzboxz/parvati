@@ -24,6 +24,7 @@
 // Built by default. Run: ./build/parvati_ios_file_flow_test
 
 #include <chrono>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <cstring>
 
@@ -99,7 +100,7 @@ struct Workspace
 };
 }  // namespace
 
-int main()
+TEST(ios_file_flow_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
 
@@ -426,5 +427,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "IOS FILE FLOW TEST: FAILURES" : "IOS FILE FLOW TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

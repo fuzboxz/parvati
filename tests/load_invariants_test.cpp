@@ -50,6 +50,7 @@
 // Built by default. Run with: ./build_release/parvati_load_invariants_test
 
 #include <atomic>
+#include "unified_test_runner.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -287,7 +288,7 @@ CaseResult runCase (const juce::String& yaml, const char* label)
 }  // namespace
 
 //==============================================================================
-int main()
+TEST(load_invariants_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("=== Parvati load invariants (edge corpus) ===\n");
@@ -425,5 +426,5 @@ int main()
     std::printf ("\nLOAD-INVARIANTS TEST: %s (%d failure%s)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures,
                  g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

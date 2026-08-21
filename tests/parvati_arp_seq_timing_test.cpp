@@ -13,6 +13,7 @@
 // Run: cmake --build build --target parvati_arp_seq_timing_test && ./build/parvati_arp_seq_timing_test
 
 #include <cstdint>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <set>
 #include <vector>
@@ -233,7 +234,7 @@ static void testEngineNoteSeqNoStuck()
     check (peakAfter < 0.002f, msg);
 }
 
-int main()
+TEST(parvati_arp_seq_timing_test)
 {
     std::printf ("=== arp/seq timing + note lifecycle ===\n\n");
     testPrescalerGating();
@@ -243,5 +244,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures == 0 ? "ALL PASS" : "FAILURES",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

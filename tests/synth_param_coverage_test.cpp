@@ -19,6 +19,7 @@
 // Built by default. Run: ./build_release/parvati_synth_param_coverage_test
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -1079,7 +1080,7 @@ static void testOptions (ParvatiAudioProcessor& proc)
 }
 
 // =============================================================================
-int main()
+TEST(synth_param_coverage_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -1108,5 +1109,5 @@ int main()
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_checks, g_checks == 1 ? "" : "s",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

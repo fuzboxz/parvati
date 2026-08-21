@@ -14,6 +14,7 @@
 // and embedded via the factory installer.
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <set>
 #include <vector>
@@ -74,7 +75,7 @@ int activeInPart (SynthEngine& e, int part)
 }
 }  // namespace
 
-int main()
+TEST(drum_kit_test)
 {
     std::printf ("DRUM KIT TEST\n");
 
@@ -84,7 +85,7 @@ int main()
     {
         std::printf ("  FAIL: template not found (run parvati_gen_templates first): %s\n",
                      tmpl.getFullPathName().toRawUTF8());
-        return 1;
+        return false;
     }
 
     ParvatiAudioProcessor proc;
@@ -188,5 +189,5 @@ int main()
 
     std::printf ("\nDRUM KIT TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

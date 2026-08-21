@@ -31,6 +31,7 @@
 // Built by default. Run: ./build/parvati_modbar_click_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -137,7 +138,7 @@ void click (juce::Component* comp)
 }
 } // namespace
 
-int main()
+TEST(modbar_pill_click_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -147,7 +148,7 @@ int main()
     juce::AudioProcessorEditor* editor = proc.createEditor();
     check (editor != nullptr, "editor constructs");
     if (editor == nullptr)
-        return 1;
+        return false;
 
     auto* workspace = findFirst<SynthWorkspace> (editor);
     check (workspace != nullptr, "SynthWorkspace found in the editor tree");
@@ -161,7 +162,7 @@ int main()
     if (workspace == nullptr || host == nullptr || bar == nullptr)
     {
         std::printf ("FAIL (prerequisites)\n");
-        return 1;
+        return false;
     }
 
     // The editor's own visible flag gates getComponentAt (a freshly created,
@@ -251,5 +252,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",
                  g_failures, g_failures == 1 ? "" : "s");
     delete editor;
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

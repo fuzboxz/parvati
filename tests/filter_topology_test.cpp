@@ -8,6 +8,7 @@
 // wired (its output changes with drive).
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -124,7 +125,7 @@ double renderLadderDrive (ParvatiAudioProcessor& proc, int driveIndex, std::vect
 }
 }  // namespace
 
-int main()
+TEST(filter_topology_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -181,5 +182,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "FILTER TOPOLOGY TEST: FAILURES" : "FILTER TOPOLOGY TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

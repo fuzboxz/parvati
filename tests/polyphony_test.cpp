@@ -6,6 +6,7 @@
 // channel) and the active voices are inspected on the engine.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -105,7 +106,7 @@ void setMode (ParvatiAudioProcessor& p, int modeIndex)
 }
 }
 
-int main()
+TEST(polyphony_test)
 {
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
@@ -351,5 +352,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "POLYPHONY TEST: FAILURES" : "POLYPHONY TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

@@ -6,6 +6,7 @@
 // the full parameter descriptor count and a per-group breakdown.
 
 #include <cmath>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <string>
 #include <unordered_map>
@@ -153,7 +154,7 @@ double detectPitchHz (const std::vector<float>& x, double fs,
 }
 }  // namespace
 
-int main()
+TEST(apvts_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -299,5 +300,5 @@ int main()
     std::printf ("\n=== %s (%d failure%s) ===\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

@@ -9,6 +9,7 @@
 // Built by default. Run with: ./build/parvati_fx_preset_test
 
 #include <cstdio>
+#include "unified_test_runner.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -118,7 +119,7 @@ void paintDiverseFx (ParvatiAudioProcessor& proc)
 }
 }  // namespace
 
-int main()
+TEST(fx_preset_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -320,5 +321,5 @@ int main()
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "FX PRESET TEST: FAILURES" : "FX PRESET TEST: ALL CHECKS PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

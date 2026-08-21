@@ -6,6 +6,7 @@
 //    part_mapping_[0].midi_channel.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <cstring>
 #include <set>
@@ -52,7 +53,7 @@ juce::File mulFile (const char* idx)
 }
 }  // namespace
 
-int main()
+TEST(multi_load_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -506,5 +507,5 @@ int main()
     std::printf ("\n%s (%d failures)\n",
                  g_failures ? "MULTI LOAD TEST: FAILURES" : "MULTI LOAD TEST: ALL CHECKS PASSED",
                  g_failures);
-    return g_failures ? 1 : 0;
+    return g_failures == 0;
 }

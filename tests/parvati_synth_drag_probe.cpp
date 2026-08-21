@@ -4,6 +4,7 @@
 // osc shape/param, mix), part params (volume/tuning), master EQ, master
 // volume, and the mod-matrix amount. Exit 0 = all clean; non-zero rows printed.
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -94,7 +95,7 @@ std::vector<int> sweep (int from, int to, int steps)
 }
 } // namespace
 
-int main()
+TEST(parvati_synth_drag_probe)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     const std::vector<float> base = renderDrag (nullptr, nullptr);
@@ -141,5 +142,5 @@ int main()
     }
     std::printf ("%s (%d fail%s)\n", fails ? "SYNTH DRAG PROBE: FAILURES" : "SYNTH DRAG PROBE: CLEAN",
                  fails, fails == 1 ? "" : "s");
-    return fails ? 1 : 0;
+    return fails == 0;
 }

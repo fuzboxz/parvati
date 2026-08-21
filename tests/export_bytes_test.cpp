@@ -19,6 +19,7 @@
 //       the raw file (APVTS -> byte bridge, verified in-file, not via reload).
 
 #include <cstdio>
+#include "unified_test_runner.h"
 #include <cstring>
 #include <string>
 #include <vector>
@@ -153,7 +154,7 @@ void setupProcessor (ParvatiAudioProcessor& proc)
 }
 }  // namespace
 
-int main()
+TEST(export_bytes_test)
 {
     std::printf ("EXPORT BYTES TEST\n");
 
@@ -413,5 +414,5 @@ int main()
     tempDir().deleteRecursively();
     std::printf ("\nEXPORT BYTES TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }

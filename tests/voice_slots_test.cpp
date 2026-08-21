@@ -23,6 +23,7 @@
 // engine API, notes on MIDI channel 1, active-voice inspection on the engine.
 
 #include <algorithm>
+#include "unified_test_runner.h"
 #include <cstdio>
 #include <set>
 #include <vector>
@@ -75,7 +76,7 @@ int activeVoices (SynthEngine& engine, int part = -1)
 }
 }  // namespace
 
-int main()
+TEST(voice_slots_test)
 {
     std::printf ("VOICE SLOTS TEST\n");
 
@@ -328,5 +329,5 @@ int main()
 
     std::printf ("\nVOICE SLOTS TEST: %s (%d failures)\n",
                  g_failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", g_failures);
-    return g_failures == 0 ? 0 : 1;
+    return g_failures == 0;
 }
