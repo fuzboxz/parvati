@@ -128,10 +128,6 @@ WheelsComponent::WheelsComponent()
     // scroll over the strip is page scrolling, not pitch/mod editing. An
     // unhandled wheel bubbles to the enclosing Viewport.
     pitch_->setScrollWheelEnabled (false);
-    // Wheels never take keyboard focus (2026-08-21, same musical-typing rule
-    // as ParamControl's knobs): dragging the pitch/mod wheel mid-performance
-    // must not stop the QWERTY keys playing the KeyboardView.
-    pitch_->setWantsKeyboardFocus (false);
     // Accessibility-only: both wheels are juce::Sliders, so JUCE's built-in
     // Slider accessibility handler (ranged numeric value, -1..1 pitch /
     // 0..1 mod, adjustable) is already attached — only the NAME was missing
@@ -145,7 +141,6 @@ WheelsComponent::WheelsComponent()
     mod_ = std::make_unique<juce::Slider> (juce::Slider::LinearVertical, juce::Slider::NoTextBox);
     mod_->setRange (0.0, 1.0, 0.001);
     mod_->setScrollWheelEnabled (false);   // wheel-scroll is page scroll, not mod editing
-    mod_->setWantsKeyboardFocus (false);   // musical-typing rule (see pitch_ above)
     mod_->setTitle (TRANS ("Mod Wheel"));
     mod_->setDescription (TRANS ("Mod Wheel"));
     mod_->setValue (0.0, juce::dontSendNotification);
@@ -168,8 +163,6 @@ WheelsComponent::WheelsComponent()
     // touch target.
     octaveDown_ = std::make_unique<juce::TextButton> ("<");
     octaveUp_   = std::make_unique<juce::TextButton> (">");
-    octaveDown_->setWantsKeyboardFocus (false);   // musical-typing rule (see pitch_)
-    octaveUp_->setWantsKeyboardFocus (false);
     octaveDown_->setTooltip (TRANS ("Octave down (Z)"));
     octaveUp_->setTooltip (TRANS ("Octave up (X)"));
     octaveDown_->onClick = [this] { if (onOctaveShift) onOctaveShift (-1); };

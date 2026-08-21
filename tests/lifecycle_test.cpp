@@ -28,10 +28,20 @@
 
 #include <cmath>
 #include "unified_test_runner.h"
-#include <functional>
+#include <chrono>
 #include <cstdio>
+#include <functional>
 #include <memory>
+#include <thread>
 #include <vector>
+
+// Headless run-loop pump for asynchronous UI (triggerClick posts to the
+// message queue; the JUCE MessageQueue IS a CFRunLoopSource on the main loop
+// — the editor_test / perf-smoke idiom). Apple-only like the rest of the
+// desktop harnesses in this suite.
+#if defined (__APPLE__)
+ #include <CoreFoundation/CoreFoundation.h>
+#endif
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
@@ -55,6 +65,17 @@ void pump (int ms)
 {
     std::this_thread::sleep_for (std::chrono::milliseconds (ms));
     juce::Timer::callPendingTimersSynchronously();
+}
+
+// Delivers posted messages (async clicks, focus grabs) for up to ~ms.
+void pumpRunLoop (int ms)
+{
+#if defined (__APPLE__)
+    for (int i = 0; i < (ms + 19) / 20; ++i)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.020, false);
+#else
+    pump (ms);
+#endif
 }
 
 // Active (sounding) voices of Part 0 — the arp_test accounting.
@@ -166,6 +187,97 @@ TEST(lifecycle_test)
                        zeroExtent, all.size());
         check (zeroExtent == 0, msg);
         check (! all.empty(), "focus traversal is non-empty (the gate is real)");
+    }
+
+    // ==================================================================
+    // [2b] Musical typing survives a focused control (2026-08-21 user
+    //      report): unhandled plain keys bubble to ParvatiEditor::keyPressed,
+    //      which forwards them to the visible KeyboardView — no tree-wide
+    //      wantsKeyboardFocus mutation (that approach emptied the traversal
+    //      guarded by [2]).
+    // ==================================================================
+    std::printf ("[2b] musical typing survives a focused control\n");
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+        check (ed != nullptr, "editor created");
+        // Desktop peer so isShowing() is meaningful (same requirement as
+        // editor_test: JUCE timers + visibility chains need the peer). A
+        // fresh component is born HIDDEN — setVisible BEFORE the peer so the
+        // children's hooks fire with the peer present (editor_test's order).
+        ed->setSize (1280, 800);
+        ed->setVisible (true);
+        ed->addToDesktop (0);
+        pump (20);
+
+        const juce::KeyPress noteA ('a', juce::ModifierKeys::noModifiers, 'a');
+
+        // Strip hidden at birth: a plain musical key is unclaimed at the
+        // editor level (the forward only runs while the strip is on screen).
+        check (! ed->keyPressed (noteA),
+               "plain musical key unclaimed while the strip is hidden");
+
+        // Show the strip the way the user does: the header [KBD] toggle.
+        juce::TextButton* kbdToggle = nullptr;
+        for (int i = 0; i < ed->getNumChildComponents() && kbdToggle == nullptr; ++i)
+            if (auto* b = dynamic_cast<juce::TextButton*> (ed->getChildComponent (i)))
+                if (b->getButtonText() == "KBD")
+                    kbdToggle = b;
+        check (kbdToggle != nullptr, "[KBD] header toggle found");
+        if (kbdToggle != nullptr)
+        {
+            kbdToggle->triggerClick();
+            pump (80);   // timers settle
+            pumpRunLoop (400);   // deliver the async click + the strip's own async focus grab
+        }
+        char tmsg[96];
+        std::snprintf (tmsg, sizeof (tmsg), "[KBD] toggle is ON after the click (state=%d)",
+                      kbdToggle != nullptr ? (int) kbdToggle->getToggleState() : -1);
+        check (kbdToggle != nullptr && kbdToggle->getToggleState(), tmsg);
+
+        // Musical typing is a STANDALONE-only affordance (the editor gates it:
+        // a host owns the computer keyboard). This harness builds a bare
+        // processor (wrapperType != Standalone), so re-arm the strip via its
+        // PUBLIC seam to exercise the forward path under test.
+        auto focusables = juce::KeyboardFocusTraverser().getAllComponents (ed.get());
+        KeyboardView* strip = nullptr;
+        for (auto* c : focusables)
+            if (auto* kv = dynamic_cast<KeyboardView*> (c))
+                strip = kv;
+        check (strip != nullptr && strip->isShowing(),
+               "keyboard strip is on screen after the [KBD] click");
+        if (strip != nullptr)
+            strip->setComputerKeyboardEnabled (true);
+
+        // A workspace control (NOT the strip) holds the focus — the
+        // clicked-knob mid-performance case the forward must cover. The
+        // traversal lists hidden focusables too; pick one with a real
+        // on-screen extent so the focus move actually takes.
+        juce::Component* held = nullptr;
+        for (auto* c : focusables)
+            if (dynamic_cast<KeyboardView*> (c) == nullptr && c->isShowing()
+                && c->getWidth() > 0 && c->getHeight() > 0)
+            {
+                held = c;
+                break;
+            }
+        if (held != nullptr)
+            held->grabKeyboardFocus();
+        check (held != nullptr && held->hasKeyboardFocus (true),
+               "a workspace control holds the focus");
+
+        // The musical key must STILL be claimed: it bubbles from the focused
+        // control up to the editor, which forwards it to the visible strip.
+        check (ed->keyPressed (noteA),
+               "musical key claimed while a control holds the focus");
+
+        // Release path: the editor-level keyStateChanged forward releases the
+        // held computer-key note (no stuck note when focus sits on a knob).
+        ed->keyStateChanged (false);
+        check (true, "keyStateChanged forward returned (no stuck note path)");
+
+        ed->removeFromDesktop();
     }
 
     // ==================================================================

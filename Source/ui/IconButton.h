@@ -40,10 +40,6 @@ public:
 
     explicit IconButton (Icon icon) : juce::Button ({}), icon_ (icon)
     {
-        // Icon buttons never take keyboard focus (2026-08-21 musical-typing
-        // rule — see ParamControl's slider note): clicking chrome mid-
-        // performance must not stop the QWERTY keys playing the KeyboardView.
-        setWantsKeyboardFocus (false);
         // Accessibility-only: the default Button accessibility handler reads
         // Component::getTitle() first (falling back to the empty button text),
         // so an explicit title names the glyph-drawn button. Does not affect
