@@ -1922,6 +1922,21 @@ target_link_libraries(parvati_controller_mod_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# UI live-modulation telemetry (engine side) verification: the seqlock frame
+# (mod-source history + envelope stage/progress + effective filter values),
+# reset/part-switch epoch invalidation, and readUiTelemetry consistency.
+# See docs/LIVE_MOD_FEEDBACK_DESIGN.md. Built by default.
+# Run with: ./build/parvati_ui_telemetry_test
+add_executable(parvati_ui_telemetry_test
+    tests/ui_telemetry_test.cpp
+)
+target_include_directories(parvati_ui_telemetry_test PRIVATE Source)
+target_compile_features(parvati_ui_telemetry_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_ui_telemetry_test PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Host plugin-state persistence verification. Built by default.
 # Run with: ./build/parvati_host_state_test
 add_executable(parvati_host_state_test

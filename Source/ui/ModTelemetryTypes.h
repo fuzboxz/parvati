@@ -1,0 +1,106 @@
+// Copyright (c) 2026 Jozsef Otticsak / Parvati.
+//
+// ModTelemetryTypes — the dependency-light shared contract for the LIVE
+// modulation feedback system (docs/LIVE_MOD_FEEDBACK_DESIGN.md):
+//
+//   * ModTelemetrySnapshot — the seqlock-guarded block the SynthEngine's audio
+//     thread writes (history ring + current mod-source values + envelope /
+//     filter observables) and the message thread reads for the UI.
+//   * LiveEnvStage / LiveFilterValues — the small provider payloads the
+//     EnvelopeDisplay / FilterResponseDisplay live overlays consume.
+//   * isBipolarModSource() — the display polarity map, mirroring the voice
+//     mod-matrix AC coupling (voice.cpp): LFO 1..4, Pitch Bend and Note are
+//     bipolar (128 = neutral); everything else is unipolar (0 = floor).
+//
+// This header deliberately includes NOTHING but <cstdint> so the engine
+// (SynthEngine.h) and every UI component can share it without dragging JUCE
+// module headers into the DSP shard.
+
+#pragma once
+
+#include <cstddef>   // size_t without dragging JUCE / DSP headers into this shard
+#include <cstdint>
+
+namespace parvati
+{
+
+//==============================================================================
+// One consistent telemetry frame. Trivially copyable (the engine memcpy-copies
+// it under a seqlock). kNumSources is pinned to the Ambika MOD_SRC_LAST count
+// by a static_assert in SynthEngine.h.
+struct ModTelemetrySnapshot
+{
+    static constexpr int kNumSources = 32;    // == ambika::dsp::MOD_SRC_LAST
+    static constexpr int kHistoryLen = 128;   // ~1.57 s at the ~81.7 Hz append rate
+
+    // MT-authoritative validity epoch: bumped by SynthEngine::resetUiTelemetry
+    // on patch load / part switch / init. A snapshot whose epoch does not match
+    // the engine's live epoch is STALE (readUiTelemetry reports invalid).
+    uint32_t epoch = 0;
+
+    // The multitimbral part this frame describes (0..5, -1 = none yet).
+    int part = -1;
+
+    // CURRENT effective mod-source values (0..255) of the tracked part's
+    // representative (most-recently-triggered active) voice — exactly what the
+    // FX mod matrix consumes.
+    uint8_t sources[(size_t) kNumSources] {};
+
+    // Recent history per source, OLDEST -> NEWEST, 0..255. historyCount == 0
+    // means "no history yet" (e.g. after a reset); fewer than kHistoryLen
+    // samples are left-aligned from index 0. The engine's internal storage is a
+    // ring; readUiTelemetry linearizes it into this layout.
+    uint8_t history[(size_t) kNumSources * (size_t) kHistoryLen] {};
+    int     historyCount = 0;
+
+    // Envelopes 1..3 of the representative voice.
+    uint8_t envStage[3] {};      // 0..4: ATTACK / DECAY / SUSTAIN / RELEASE / DEAD
+    float   envProgress[3] {};   // 0..1 progress within the current stage
+    float   envLevel[3] {};      // 0..1 current envelope output
+
+    // Filter (representative voice, EFFECTIVE = modulation-applied values).
+    uint16_t effCutoff     = 0;  // 0..255 (modulation_destinations domain)
+    uint16_t effResonance  = 0;  // 0..255
+    uint8_t  filterMode    = 0;  // 0..3 LP/BP/HP/Notch
+
+    // True while the tracked part has an active representative voice. False =>
+    // the envelope/filter observables are the held tail values and the UI hides
+    // its live markers.
+    bool voiceActive = false;
+};
+
+//==============================================================================
+// Live stage of one envelope, as consumed by EnvelopeDisplay's marker overlay.
+struct LiveEnvStage
+{
+    bool  active   = false;
+    int   stage    = 4;      // 0..4 ATTACK/DECAY/SUSTAIN/RELEASE/DEAD
+    float progress = 0.0f;   // 0..1 within the stage
+};
+
+// Live effective filter state, as consumed by FilterResponseDisplay's live
+// curve overlay. cutoff01/reso01 are normalized to the 0..255 effective-byte
+// domain (the same domain as the display's base curve bytes).
+struct LiveFilterValues
+{
+    bool  active  = false;
+    float cutoff01 = 0.5f;
+    float reso01   = 0.0f;
+};
+
+//==============================================================================
+// Display polarity for a MOD_SRC_* enum (mirrors the AC/DC coupling of the
+// voice mod matrix, voice.cpp): bipolar sources rest at 128 and swing both
+// ways; everything else is a unipolar 0..255 level.
+inline constexpr bool isBipolarModSource (int modSrcEnum) noexcept
+{
+    // MOD_SRC_LFO_1..4, MOD_SRC_PITCH_BEND, MOD_SRC_NOTE.
+    // Enum order (dsp/patch.h): ENV 0..2, LFO 3..6, OP 7..10, SEQ 11..12,
+    // ARP 13, VELOCITY 14, AFTERTOUCH 15, PITCH_BEND 16, WHEEL 17, WHEEL_2 18,
+    // EXPRESSION 19, NOTE 20, GATE 21, NOISE 22, RANDOM 23, CONSTANTS 24..30.
+    return (modSrcEnum >= 3 && modSrcEnum <= 6)      // LFO 1..4
+        || modSrcEnum == 16                          // PITCH_BEND
+        || modSrcEnum == 20;                         // NOTE
+}
+
+}  // namespace parvati

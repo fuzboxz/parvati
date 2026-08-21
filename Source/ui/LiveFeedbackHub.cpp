@@ -1,0 +1,72 @@
+// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See LiveFeedbackHub.h.
+
+#include "LiveFeedbackHub.h"
+
+namespace parvati
+{
+
+LiveFeedbackHub::LiveFeedbackHub (std::function<bool (ModTelemetrySnapshot&)> fetch)
+    : fetch_ (std::move (fetch))
+{
+    jassert (fetch_ != nullptr);   // the editor always binds readUiTelemetry
+    startTimerHz (rateHz_);
+}
+
+LiveFeedbackHub::~LiveFeedbackHub()
+{
+    stopTimer();
+}
+
+void LiveFeedbackHub::setRateHz (int hz)
+{
+    const int clamped = juce::jlimit (5, 60, hz);
+    if (clamped == rateHz_)
+        return;
+    rateHz_ = clamped;
+    // Restart the timer at the new cadence (a no-op repaint-wise: the next tick
+    // simply re-reads the engine frame).
+    startTimerHz (rateHz_);
+}
+
+bool LiveFeedbackHub::snapshot (ModTelemetrySnapshot& out) const
+{
+    out = cached_;
+    return valid_;
+}
+
+LiveEnvStage LiveFeedbackHub::envStage (int envIndex) const
+{
+    LiveEnvStage s;
+    if (! valid_ || envIndex < 0 || envIndex > 2)
+        return s;
+    s.active   = cached_.voiceActive;
+    s.stage    = static_cast<int> (cached_.envStage[(size_t) envIndex]);
+    s.progress = cached_.envProgress[(size_t) envIndex];
+    return s;
+}
+
+LiveFilterValues LiveFeedbackHub::liveFilter() const
+{
+    LiveFilterValues f;
+    if (! valid_ || ! cached_.voiceActive)
+        return f;
+    f.active   = true;
+    f.cutoff01 = static_cast<float> (cached_.effCutoff)    / 255.0f;
+    f.reso01   = static_cast<float> (cached_.effResonance) / 255.0f;
+    return f;
+}
+
+void LiveFeedbackHub::timerCallback()
+{
+    if (! fetch_)
+        return;
+    // One bounded seqlock read per tick. A torn/stale frame keeps the previous
+    // cache but flags it invalid (consumers hide their live overlays for one
+    // tick — exactly the desired behaviour across a patch reset).
+    ModTelemetrySnapshot frame;
+    valid_ = fetch_ (frame);
+    if (valid_)
+        cached_ = frame;
+}
+
+}  // namespace parvati
