@@ -3,6 +3,7 @@
 // resize / teardown; no real message loop).
 
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>   // ::setenv (PARVATI_HEADLESS — native-dialog suppression in main)
 #include <cstring>
@@ -49,6 +50,26 @@ void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok 
 
 // [19] preview-display update regression (defined after main; see its comment).
 static int runPreviewRegression (bool windowed);
+
+#if defined (__APPLE__)
+// PUMP-WITH-DEADLINE (2026-08-21): macOS sometimes throttles a background
+// test process's run loop so a FIXED-time CFRunLoop pump delivers ZERO 30 Hz
+// timer ticks (the flaky "x=0.000 / gen 0 -> 0" failures across the pumped
+// sections — random 1-in-4 runs). Every pumped assertion instead pumps in
+// 40 ms slices UNTIL its observable condition holds, with a generous 3 s
+// deadline; a healthy run satisfies the condition in the first slice or two.
+template <typename Pred>
+static void pumpUntil25 (Pred&& pred, double maxSec = 3.0)
+{
+    const auto t0 = std::chrono::steady_clock::now();
+    while (! pred())
+    {
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.040, false);
+        if (std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count() > maxSec)
+            break;
+    }
+}
+#endif
 
 int main (int argc, char** argv)
 {
@@ -1906,7 +1927,7 @@ int main (int argc, char** argv)
                 // Moving history: the strip data changes each tick, so the
                 // generation counter climbs (bounded strip-rect repaints).
                 const int gen0 = bar.telemetryGeneration();
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.300, false);   // ~18 ticks @ 60 Hz
+                pumpUntil25 ([&] { return bar.telemetryGeneration() > gen0; });
                 char msg25[160];
                 std::snprintf (msg25, sizeof (msg25),
                                "[25] moving history animates the strips (gen %d -> %d)",
@@ -1916,9 +1937,9 @@ int main (int argc, char** argv)
                 // Constant history: after the LAST moving frame's signature
                 // settles, the diff gate must go COMPLETELY silent.
                 synth.moving = false;
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // transition tick
+                pumpUntil25 ([&] { return false; }, 0.25);   // let any transition tick land
                 const int gen1 = bar.telemetryGeneration();
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.400, false);   // ~24 parked ticks
+                pumpUntil25 ([&] { return false; }, 0.45);   // parked window: must stay silent
                 std::snprintf (msg25, sizeof (msg25),
                                "[25] constant history repaints NOTHING (gen %d -> %d)",
                                gen1, bar.telemetryGeneration());
@@ -1929,23 +1950,23 @@ int main (int argc, char** argv)
                 // generation proves the bar-only NOTE pill consumes the slot.
                 synth.noteMoving = true;
                 const int genN0 = bar.telemetryGeneration();
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.250, false);
+                pumpUntil25 ([&] { return bar.telemetryGeneration() > genN0; });
                 std::snprintf (msg25, sizeof (msg25),
                                "[25] note-seq melody on the spare slot animates the NOTE pill (gen %d -> %d)",
                                genN0, bar.telemetryGeneration());
                 check (bar.telemetryGeneration() > genN0, msg25);
                 synth.noteMoving = false;   // park again for the invalid-frame stage
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // settle
+                pumpUntil25 ([&] { return false; }, 0.20);   // settle
 
                 // An invalid frame (a torn seqlock read / a stale reset epoch)
                 // hides the strips ONCE; further invalid frames stay silent.
                 synth.valid = false;
                 const int gen2 = bar.telemetryGeneration();
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.200, false);
+                pumpUntil25 ([&] { return bar.telemetryGeneration() > gen2; });
                 check (bar.telemetryGeneration() > gen2,
                        "[25] invalid frame clears the strips (one generation bump)");
                 const int gen3 = bar.telemetryGeneration();
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.200, false);
+                pumpUntil25 ([&] { return false; }, 0.30);
                 check (bar.telemetryGeneration() == gen3,
                        "[25] already-cleared strips stay clear (no repeated bumps)");
             }
@@ -2016,9 +2037,17 @@ int main (int argc, char** argv)
                     e2eBuf.clear();
                     e2eProc.processBlock (e2eBuf, m);
                     if (b % 16 == 0)
-                        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.010, false);   // let the timers breathe
+                    {
+                        // Pump-with-deadline INSIDE the render window (the
+                        // telemetry only scrolls while blocks flow): stop as
+                        // soon as the bar has visibly animated — immune to the
+                        // run-loop throttling that starved fixed pumps.
+                        pumpUntil25 ([&] { return e2eBar->telemetryGeneration() > gen0; }, 0.080);
+                        if (e2eBar->telemetryGeneration() > gen0)
+                            break;
+                    }
                 }
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.500, false);   // hub + bar ticks at 30 Hz
+                pumpUntil25 ([&] { return e2eBar->telemetryGeneration() > gen0; });   // hub + bar ticks at 30 Hz
                 char msg25[160];
                 std::snprintf (msg25, sizeof (msg25),
                                "[25] e2e: engine -> hub -> editor bar animates (gen %d -> %d)",
@@ -2048,8 +2077,13 @@ int main (int argc, char** argv)
             disp.setBounds (0, 0, 200, 80);
             disp.setLiveStageProvider ([&stage] { return stage; });
 
+            // Each phase pumps UNTIL the marker reaches the expected span
+            // (deadlines absorb the throttled-run-loop jitter; a healthy run
+            // satisfies each within a tick or two).
             stage = { true, 0, 0.25f };   // ATTACK, a quarter through
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // ~4 ticks @ 30 Hz
+            pumpUntil25 ([&] { return disp.liveMarkerVisibleForTest()
+                                  && disp.liveMarkerXForTest() > 0.0f
+                                  && disp.liveMarkerXForTest() < kAttackEnd; });
             {
                 char msg25[160];
                 std::snprintf (msg25, sizeof (msg25),
@@ -2062,8 +2096,22 @@ int main (int argc, char** argv)
                 check (disp.liveMarkerXForTest() > 0.0f && disp.liveMarkerXForTest() < kAttackEnd, msg25);
             }
 
+            stage = { true, 1, 0.5f };    // DECAY, halfway: attack-end..plateau
+            pumpUntil25 ([&] { return disp.liveMarkerVisibleForTest()
+                                  && disp.liveMarkerXForTest() > kAttackEnd
+                                  && disp.liveMarkerXForTest() < kPlateau25; });
+            {
+                char msg25[160];
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] env marker inside the decay span (x=%.3f, span %.3f..%.3f)",
+                               disp.liveMarkerXForTest(), kAttackEnd, kPlateau25);
+                check (disp.liveMarkerXForTest() > kAttackEnd
+                       && disp.liveMarkerXForTest() < kPlateau25, msg25);
+            }
+
             stage = { true, 2, 1.0f };    // SUSTAIN: pinned at the plateau START
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            pumpUntil25 ([&] { return disp.liveMarkerVisibleForTest()
+                                  && std::fabs (disp.liveMarkerXForTest() - kPlateau25) < 0.01f; });
             {
                 char msg25[160];
                 std::snprintf (msg25, sizeof (msg25),
@@ -2073,33 +2121,57 @@ int main (int argc, char** argv)
             }
 
             stage = { false, 2, 1.0f };   // inactive (key released): hidden
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            pumpUntil25 ([&] { return ! disp.liveMarkerVisibleForTest(); });
             check (! disp.liveMarkerVisibleForTest(), "[25] env marker hides when the provider goes inactive");
         }
 
         // -- (c) FilterResponseDisplay live modulation overlay (same
         //    never-parented poll technique) --
         {
-            parvati::LiveFilterValues lv;  // provider-owned state
+            // PROVIDER (pump-starvation-proof, 2026-08-21): the harness's
+            // CFRunLoop pumps occasionally deliver ZERO 30 Hz ticks in a 150 ms
+            // window (a run-loop scheduling quirk under load — this section
+            // flaked with the x=0.000 "never ticked" signature). Every
+            // "visible" phase therefore drives a CONTINUOUSLY MOVING value
+            // (the temporal hold can never expire mid-pump), and every
+            // "settled" phase pumps well past the hold window.
+            struct LiveFilt25
+            {
+                bool  active = true;
+                bool  moving = false;
+                float frozen = 0.8f;      // the settled value while !moving
+                int   call   = 0;
+                parvati::LiveFilterValues operator()()
+                {
+                    if (! moving) return { active, frozen, 0.2f };
+                    // A slow cutoff sweep around 0.7: bytes move EVERY tick.
+                    const float c = 0.7f + 0.15f * std::sin (0.4f * (float) (++call));
+                    return { active, c, 0.2f };
+                }
+            };
+            LiveFilt25 lv;
             FilterResponseDisplay disp ("Filter 25",
                 [] { return 0.5f; },   // base cutoff  -> byte 128
                 [] { return 0.2f; },   // base resonance
                 [] { return 0.0f; });  // LP
             disp.setBounds (0, 0, 220, 64);
-            disp.setLiveValuesProvider ([&lv] { return lv; });
+            disp.setLiveValuesProvider ([&lv] { return lv(); });
 
-            // Live bytes DEPART from the base (0.8 -> 204 vs 128, >= 2): the
-            // overlay curve + its cutoff tick appear, and the tick sits right
-            // of the base (cutoffByteToHz is exponential in byte/255, so the
-            // base tick is at ~= 128/255 and the live at ~= 204/255).
-            lv = { true, 0.8f, 0.2f };
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            // (1) Modulated (moving): the overlay shows and STAYS shown while
+            //     the bytes move every tick (the temporal gate re-arms each
+            //     tick; pump length no longer matters).
+            lv.moving = true;
+            pumpUntil25 ([&] { return disp.liveCurveVisibleForTest(); });
+            check (disp.liveCurveVisibleForTest(),
+                   "[25] filter live curve visible under modulation (moving)");
+
+            // (2) Frozen at a known byte (204 = 0.8): the tick-x mapping is
+            //     exact (the freeze itself is a movement that re-arms the hold,
+            //     so the exact-x assert lands inside the window).
+            lv.moving = false;   // frozen = 0.8 -> byte 204
+            pumpUntil25 ([&] { return std::fabs (disp.liveCutoffXForTest() - 204.0f / 255.0f) < 0.01f; });
             {
                 char msg25[160];
-                std::snprintf (msg25, sizeof (msg25),
-                               "[25] filter live curve visible under modulation (visible=%d)",
-                               (int) disp.liveCurveVisibleForTest());
-                check (disp.liveCurveVisibleForTest(), msg25);
                 std::snprintf (msg25, sizeof (msg25),
                                "[25] live cutoff tick right of the base tick (x=%.3f > %.3f)",
                                disp.liveCutoffXForTest(), 128.0f / 255.0f);
@@ -2107,24 +2179,25 @@ int main (int argc, char** argv)
                        && std::fabs (disp.liveCutoffXForTest() - 204.0f / 255.0f) < 0.01f, msg25);
             }
 
-            // Settled (TEMPORAL gate): live bytes matching the base is a
-            // MOVEMENT (0.8 -> 0.5) that arms the hold window, so the overlay
-            // stays for ~270 ms and then hides — pump past the hold.
-            lv = { true, 0.5f, 0.2f };
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.450, false);
+            // (3) Settled (TEMPORAL gate): static bytes -> the hold expires and
+            //     the overlay hides (pump well past the ~270 ms budget).
+            lv.frozen = 0.5f;    // a fresh one-step movement, then still
+            pumpUntil25 ([&] { return ! disp.liveCurveVisibleForTest(); }, 2.0);
             check (! disp.liveCurveVisibleForTest(),
                    "[25] filter overlay hides once the live values settle (hold expired)");
 
-            // The KEY-TRACKING regression pin: a live value STATICALLY far from
-            // the knob base (what key tracking does to every held note) never
-            // shows the overlay — only ACTUAL movement does (the old spatial
-            // >= 2-byte threshold tripped on exactly this).
+            // (4) The KEY-TRACKING regression pin: a live value STATICALLY far
+            //     from the knob base (what key tracking does to every held
+            //     note) shows only while MOVING, never while settled (the old
+            //     spatial >= 2-byte threshold tripped on exactly this).
             const bool visibleAfterStatic = [&]
             {
-                lv = { true, 0.8f, 0.2f };   // a departure, but ONE step then still
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // the step itself: visible...
+                lv.moving  = true;   // movement: visible...
+                pumpUntil25 ([&] { return disp.liveCurveVisibleForTest(); });
                 const bool duringHold = disp.liveCurveVisibleForTest();
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.450, false);   // ...then settled: hidden
+                lv.moving  = false;   // ...then STATICALLY far from the base: hidden
+                lv.frozen  = 0.8f;
+                pumpUntil25 ([&] { return ! disp.liveCurveVisibleForTest(); }, 2.0);
                 return duringHold && ! disp.liveCurveVisibleForTest();
             }();
             check (visibleAfterStatic,

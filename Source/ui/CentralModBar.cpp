@@ -363,12 +363,20 @@ struct CentralModBar::ModPill : public juce::Component,
 
         juce::Path path;
         float singleY = 0.0f;   // the lone point's y (stripCount_ == 1 dot below)
+        // Horizontal inset TOO (same class as the vertical jitter fix): the
+        // round caps would otherwise poke ~1.1px past the strip rect's
+        // left/right edges — past the animated repaint's dirty region AND
+        // into the pill's rounded-corner curve, leaving one-cap-width specks
+        // at both ends (the reported tiny artifacts). The x span now shares
+        // the same kPlotInset clearance.
+        const float x0 = sr.getX() + kPlotInset;
+        const float x1 = sr.getRight() - kPlotInset;
         for (int i = 0; i < stripCount_; ++i)
         {
             const float t = (stripCount_ > 1)
                 ? (float) i / (float) (stripCount_ - 1)
                 : 0.5f;
-            const float x = sr.getX() + t * sr.getWidth();
+            const float x = x0 + t * (x1 - x0);
             const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
             const float y = stripBipolar_
                 ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)

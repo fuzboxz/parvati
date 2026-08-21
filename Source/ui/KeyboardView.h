@@ -146,6 +146,11 @@ public:
     bool keyStateChanged (bool isKeyDown) override;
     void mouseDown (const juce::MouseEvent&) override;
     void focusLost (FocusChangeType) override;
+    // Musical typing: grab keyboard focus whenever the strip becomes visible
+    // (the [KBD] toggle, a host restore, any show path) — the QWERTY keys must
+    // play the moment the keyboard is up, no extra click needed. Cheap +
+    // idempotent when already focused; focus moves are no-ops while hidden.
+    void visibilityChanged() override;
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
 private:

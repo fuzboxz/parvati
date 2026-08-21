@@ -572,6 +572,22 @@ void KeyboardView::releaseAllNotes()
     releaseHeldComputerNotes();
 }
 
+void KeyboardView::visibilityChanged()
+{
+    // Focus-on-show (2026-08-21 user request): the strip receives QWERTY
+    // notes only while it holds keyboard focus, so every path that makes it
+    // visible hands it the focus. Deferred to the message queue because this
+    // can fire during layout (setVisible from resized()) where a synchronous
+    // focus move is unsafe; asyncOnMessageLoop = one clean grab after the
+    // layout settles. No-op when hidden or already focused.
+    if (isShowing())
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer (this)]
+        {
+            if (safe != nullptr && safe->isShowing() && ! safe->hasKeyboardFocus (false))
+                safe->grabKeyboardFocus();
+        });
+}
+
 bool KeyboardView::keyPressed (const juce::KeyPress& key)
 {
     if (! computerKeyboardEnabled_)

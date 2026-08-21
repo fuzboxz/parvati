@@ -150,6 +150,17 @@ private:
     float dispLiveCutX_    = 0.0f;  // normalized log-f x of the live cutoff tick
     int   liveHoldTicks_   = 0;     // temporal-gate hold budget (ticks)
 
+    // SMOOTHED display pair (2026-08-21 user request — "the filter movement
+    // seems a bit choppy"): both axes converge toward the CURRENT display
+    // target (the base knob bytes at rest, the live bytes under modulation)
+    // with a critically-damped exponential per tick, so the rendered curve
+    // GLIDES between states instead of snapping on every >= 1-byte telemetry
+    // step at the 30 Hz cadence. -1 = never painted (snap on first tick).
+    // The RAW bytes above stay exact (test seams + the temporal gate); only
+    // paint() reads these.
+    float smoothCut01_ = -1.0f;
+    float smoothRes01_ = -1.0f;
+
     // TEST-ONLY (see previewGeneration).
     int generation_ = 0;
 

@@ -187,10 +187,39 @@ void FilterResponseDisplay::timerCallback()
     dispLiveResByte_ = liveRes;
     dispLiveCutX_    = liveCutX;
 
-    if (modeChanged || paramChanged || liveChanged)
+    // ---- Smoothed display convergence (see the header) ----
+    // The paint target follows the OVERLAY state: live bytes while the
+    // temporal gate is armed, base bytes at rest — one continuous ease both
+    // ways (modulation onset glides in from the base curve, release glides
+    // back). tau ~ 55 ms reads as responsive-but-liquid at 30 Hz (the per-tick
+    // step alpha = 1 - e^(-dt/tau), rate-independent across the 5..60 Hz
+    // refresh pref). Convergence beyond the eps gate keeps the repaint going
+    // even when the raw bytes sit still for a tick.
     {
-        ++generation_;   // TEST-ONLY: a real refresh is observable (see header)
-        repaint();
+        const float tgtC = liveActive ? juce::jlimit (0.0f, 255.0f, (float) liveCut) / 255.0f : dispC_;
+        const float tgtR = liveActive ? juce::jlimit (0.0f, 255.0f, (float) liveRes) / 255.0f : dispR_;
+        if (smoothCut01_ < 0.0f || smoothRes01_ < 0.0f)
+        {
+            smoothCut01_ = tgtC;   // first tick (or after a reset): snap
+            smoothRes01_ = tgtR;
+        }
+        else
+        {
+            const int intervalMs = getTimerInterval();
+            const float dt = intervalMs > 0 ? (float) intervalMs * 0.001f : 1.0f / 30.0f;
+            const float alpha = 1.0f - std::exp (-dt / 0.055f);
+            smoothCut01_ += (tgtC - smoothCut01_) * alpha;
+            smoothRes01_ += (tgtR - smoothRes01_) * alpha;
+        }
+        const float epsS = 1.0f / 1024.0f;
+        const bool converging = std::fabs (smoothCut01_ - tgtC) > epsS
+                             || std::fabs (smoothRes01_ - tgtR) > epsS;
+        if (modeChanged || paramChanged || liveChanged || converging)
+        {
+            ++generation_;   // TEST-ONLY: a real refresh is observable (see header)
+            repaint();
+        }
+        return;
     }
 }
 
@@ -224,8 +253,11 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
 
     // ---- Resolve the current filter params (cutoff/resonance are SMOOTHED
     //      displayed values; mode is discrete/snapped) ----
-    const float cN = juce::jlimit (0.0f, 1.0f, dispC_ >= 0.0f ? dispC_ : fetch (getCutoff_));
-    const float rN = juce::jlimit (0.0f, 1.0f, dispR_ >= 0.0f ? dispR_ : fetch (getReso_));
+    // smoothCut01_/smoothRes01_ carry the eased display state (base at rest,
+    // live under modulation — see timerCallback); until the first tick they
+    // are -1, so fall back to the raw fetches for a correct static paint.
+    const float cN = smoothCut01_ >= 0.0f ? smoothCut01_ : juce::jlimit (0.0f, 1.0f, dispC_ >= 0.0f ? dispC_ : fetch (getCutoff_));
+    const float rN = smoothRes01_ >= 0.0f ? smoothRes01_ : juce::jlimit (0.0f, 1.0f, dispR_ >= 0.0f ? dispR_ : fetch (getReso_));
     const float mN = lastM_ >= 0.0f ? lastM_ : fetch (getMode_);
 
     const uint8_t cutoffByte = static_cast<uint8_t> (juce::roundToInt (cN * 255.0f));
