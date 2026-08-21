@@ -41,6 +41,15 @@ per its own rule.
   the live curve renders with the base recipe (gradient fill) so the preview
   reads as one curve that moves under modulation and settles back at rest
   (the temporal gate hands off seamlessly).
+- **STICKY telemetry voice (2026-08-21 — the "jumpy slow envelope" fix)**:
+  history appends follow ONE voice per note, NOT the FX representative voice
+  (which jumps to the newest strike). A slow-release tail interleaved with
+  fresh attacks made the ENV rows read as noise; the sticky pick (voice slot
+  + triggerSeq) holds until that exact trigger dies, then re-picks. Pinned by
+  ui_telemetry_test [7]: a held slow attack stays monotonic (max 1 byte/sample)
+  AND a re-strike mid-hold does not interleave. Also: kModRingCap 12 -> 34 —
+  larger host buffers (512+ @ 48k) dropped their trailing internal blocks,
+  re-reading a stale ring entry.
 - **Musical typing survives control tweaks (2026-08-21)**: every control in
   the editor tree has wantsKeyboardFocus OFF (except the KeyboardView itself
   and TextEditors) via a ctor-end + [KBD]-show pass — clicking knobs, wheels,

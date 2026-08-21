@@ -363,6 +363,95 @@ int main()
                "[6] effCutoff departs from the baseline under env-2 -> cutoff");
     }
 
+    // =========================================================================
+    std::printf ("[7] Slow-envelope history is smooth (representative-voice stability)\n");
+    {
+        // A SINGLE held note with a ~6 s attack (attack byte maxed): the ENV 1
+        // history must be a clean ramp — consecutive samples differ by ~1 byte.
+        // The regression this pins: the telemetry follows the REPRESENTATIVE
+        // voice (most-recently-triggered); if that pick churns between voices
+        // mid-hold (or any indexing bug interleaves ring entries), the ENV row
+        // jumps around and the pill strip reads as noise ("way too jumpy to be
+        // true with slow envelopes" — 2026-08-21).
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (kRate, kBlock);
+        setParam (proc, "env1_attack", 127);   // byte 127 ~= slowest attack
+        proc.syncAllParamsToEngine();
+        proc.getEngine().setUiTelemetryPart (0);   // wire tracking (the editor's job in app life)
+        const auto on = noteOnMsg();
+        renderBlocks (proc, blocksForMs (2500.0), &on);   // ~2.5 s INTO the attack
+
+        parvati::ModTelemetrySnapshot snap;
+        if (readSnap (proc, snap, "[7] valid while the slow attack runs"))
+        {
+            const uint8_t* env = snap.history + (size_t) 0 * kLen;   // MOD_SRC_ENV_1 == 0
+            const int n = snap.historyCount;
+            int maxJump = 0, bigJumps = 0, prev = -1;
+            bool monotonic = true;
+            for (int i = 0; i < n; ++i)
+            {
+                const int v = env[(size_t) i];
+                if (prev >= 0)
+                {
+                    const int d = std::abs (v - prev);
+                    if (d > maxJump) maxJump = d;
+                    if (d > 4) ++bigJumps;
+                    if (v < prev) monotonic = false;
+                }
+                prev = v;
+            }
+            {
+                char m[128];
+                std::snprintf (m, sizeof (m),
+                               "[7] ENV 1 ramp is smooth (maxJump=%d bytes, want <= 4)", maxJump);
+                check (maxJump <= 4, m);
+                std::snprintf (m, sizeof (m),
+                               "[7] ENV 1 ramp is monotonic non-decreasing (n=%d, first=%d last=%d)",
+                               n, n > 0 ? (int) env[0] : -1, n > 0 ? (int) env[n - 1] : -1);
+                check (n > 0 && monotonic, m);
+                check (bigJumps == 0, "[7] no per-sample jumps > 4 bytes during the attack");
+            }
+
+            // And the CURRENT value must sit mid-ramp (0 < v < 255): the
+            // attack is still running at 2.5 s of a ~6 s sweep.
+            const int now = snap.sources[0];
+            {
+                char m[96];
+                std::snprintf (m, sizeof (m),
+                               "[7] ENV 1 mid-attack current value (=%d, want 20..235)", now);
+                check (now > 20 && now < 235, m);
+            }
+            // STICKY-VOICE pin (the "jumpy slow envelope" regression): a
+            // RE-STRIKE while the first note still sounds must NOT interleave
+            // the two envelopes — the ENV row keeps telling the first note's
+            // story (monotonic attack) instead of snapping to the new voice.
+            // Note 62 re-triggers a FRESH voice while note 60 is held; the
+            // trace must stay monotonic across the re-strike.
+            const auto on2 = juce::MidiMessage::noteOn (1, 62, 0.9f);
+            renderBlocks (proc, blocksForMs (1500.0), &on2);
+            {
+                parvati::ModTelemetrySnapshot s3;
+                if (readSnap (proc, s3, "[7] valid after the re-strike"))
+                {
+                    const uint8_t* e2 = s3.history + 0 * kLen;
+                    bool mono2 = true; int prev2 = -1, maxJump2 = 0;
+                    for (int i = 0; i < s3.historyCount; ++i)
+                    {
+                        const int v = e2[(size_t) i];
+                        if (prev2 >= 0)
+                        {
+                            if (v < prev2) mono2 = false;
+                            maxJump2 = std::max (maxJump2, std::abs (v - prev2));
+                        }
+                        prev2 = v;
+                    }
+                    check (mono2 && maxJump2 <= 4,
+                           "[7] re-strike does not interleave envelopes (sticky telemetry voice)");
+                }
+            }
+        }
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "UI TELEMETRY TEST: FAILURES" : "UI TELEMETRY TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");

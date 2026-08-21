@@ -3259,11 +3259,26 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     settingsScroll_->setScrollBarsShown (false, true);   // vertical only, auto
     settingsScroll_->setViewedComponent (settingsPanel_, true);   // viewport owns + deletes
     settingsPanelHost_->setContent (settingsScroll_.get(), false);   // SidePanel does NOT delete
+    // SIZE THE CONTENT (the bug fix): a juce::Viewport NEVER sizes its viewed
+    // component, and the SidePanel now parents the VIEWPORT (not the panel),
+    // so without this listener the panel keeps its 0×0 birth size — the
+    // drawer rendered blank/mis-sized. Track the viewport: width = the live
+    // view width (minus the scrollbar when it auto-shows), height = the FULL
+    // row budget (never shorter than the view, so the scroll reads 1:1).
+    settingsScrollTracker_ = std::make_unique<SettingsScrollTracker> (
+        *settingsScroll_, *settingsPanel_);
+    settingsScroll_->addComponentListener (settingsScrollTracker_.get());
     // Keep the Settings button's toggle state in sync when the panel is
     // dismissed by other means (the dismiss glyph / clicking outside / ESC) —
     // onPanelShowHide fires after the slide animation on any show/hide.
     settingsPanelHost_->onPanelShowHide = [this] (bool isShown) {
         settingsButton_.setToggleState (isShown, juce::dontSendNotification);
+        // The scroll tracker sizes the panel ONLY while the drawer shows (a
+        // closed drawer keeps it 0×0 — see the class note): re-apply on both
+        // edges so opening sizes it immediately (the slide may not fire a
+        // resize) and closing collapses it.
+        if (settingsScrollTracker_ != nullptr)
+            settingsScrollTracker_->applyFromEditor();
     };
     addAndMakeVisible (*settingsPanelHost_);
 

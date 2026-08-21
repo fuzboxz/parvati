@@ -2318,11 +2318,50 @@ void SynthEngine::renderPartFx (int numSamples)
             for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
                 lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
             // UI telemetry: decimated history append of THIS internal block's
-            // effective sources — only while the tracked part has an ACTIVE
-            // representative voice (a released/idle part keeps its window
-            // frozen instead of scrolling held values). PURE OBSERVATION.
+            // sources — only while the tracked part has an ACTIVE voice (a
+            // released/idle part keeps its window frozen instead of scrolling
+            // held values). PURE OBSERVATION.
+            //
+            // STICKY VOICE (2026-08-21 — the "jumpy slow envelope" fix): the
+            // appends follow ONE voice per note, NOT the FX representative.
+            // The rep voice switches to the NEWEST note on every strike, so a
+            // slow release tail interleaved with fresh attacks made the ENV
+            // rows read as noise. The telemetry pick sticks to its voice while
+            // that exact trigger is still active (slot + triggerSeq identify
+            // it; a recycled slot never masquerades) and only re-picks when it
+            // dies — one clean switch per note lifecycle. Global/part-global
+            // sources are identical across voices, so only the per-voice rows
+            // (ENV / VELOCITY / NOTE / MPE) change story.
             if (uiTelTrack && repVoice != nullptr)
-                uiTelAppendHistory (effSrcs, part.seq);
+            {
+                // Sticky alive check: the exact trigger must still be sounding
+                // (slot active + seq match; a recycled slot never masquerades).
+                auto* sticky = (uiTelVoiceSlot_ >= 0)
+                    ? getAmbikaVoice (uiTelVoiceSlot_) : nullptr;
+                const bool stickyAlive = sticky != nullptr
+                    && sticky->isVoiceActive()
+                    && sticky->triggerSeq() == uiTelVoiceSeq_;
+                if (! stickyAlive)
+                {
+                    uiTelVoiceSlot_ = newestIdx;   // re-pick: the newest active trigger
+                    uiTelVoiceSeq_  = newestSeq;
+                    sticky = (uiTelVoiceSlot_ >= 0)
+                        ? getAmbikaVoice (uiTelVoiceSlot_) : nullptr;
+                }
+                if (sticky != nullptr && sticky->isVoiceActive()
+                    && sticky->triggerSeq() == uiTelVoiceSeq_)
+                {
+                    const int telRing = sticky->modRingCount();
+                    if (telRing > 0)
+                        uiTelAppendHistory (
+                            sticky->modRingEntry (juce::jmin (ringIdx, telRing - 1)),
+                            part.seq);
+                }
+                else
+                {
+                    uiTelVoiceSlot_ = -1;   // nothing picked (should not happen): retry next sub-chunk
+                }
+            }
             // Advance the crossfade phase for the next sub-chunk (drift-free:
             // tau in seconds => sample-rate independent).
             if (fade < 1.0f)
@@ -2447,6 +2486,8 @@ void SynthEngine::uiTelServiceStage (int p)
     // historyHead / historyCount are already zeroed by the wipe above.
     uiTelDecim_    = 0;
     uiTelWasActive_ = false;
+    uiTelVoiceSlot_ = -1;   // sticky pick dies with the wipe: the next append re-picks
+    uiTelVoiceSeq_  = 0;
     std::atomic_thread_fence (std::memory_order_release);
     uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
     uiTelWrittenPart_ = p;

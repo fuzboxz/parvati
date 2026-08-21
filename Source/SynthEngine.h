@@ -977,6 +977,8 @@ private:
     std::atomic<int>  uiTelPart_ { -1 };         // MT -> AT: the tracked part (-1 = not tracking)
     std::atomic<bool> uiTelResetReq_ { false };  // MT -> AT: wipe request (paired with the epoch bump)
     int  uiTelDecim_ = 0;                        // AT: internal-block decimation counter (history appends)
+    int      uiTelVoiceSlot_ = -1;               // AT: STICKY telemetry voice (see renderPartFx): one voice per note
+    uint64_t uiTelVoiceSeq_  = 0;                // AT: its triggerSeq (a recycled slot never masquerades as sticky)
     int  uiTelWrittenPart_ = -2;                 // AT: the part the frame was last serviced for (-2 => never)
     bool uiTelWasActive_ = false;                // AT: gates the one write on the active->inactive transition
     // History append decimation: the sub-chunk loop ticks at the internal-block

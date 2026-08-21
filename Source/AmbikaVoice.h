@@ -456,8 +456,12 @@ private:
 
     // Per-internal-block mod-source capture ring (read by renderPartFx to drive
     // the FX mod matrix at ~980 Hz). kModRingCap covers the worst-case
-    // internal-blocks-per-host-block (512 @ 44.1k ≈ 11.4 → 12; guarded on fill).
-    static constexpr int kModRingCap = 12;
+    // internal-blocks-per-host-block across supported hosts: 1024 @ 44.1k ≈
+    // 25.3 → 34 with headroom (2026-08-21: was 12, which DROPPED the trailing
+    // sub-chunks of larger host blocks — the FX matrix + UI telemetry re-read
+    // a stale entry, adding per-block discontinuities to the recorded ENV/
+    // LFO traces). ~1 KB per voice.
+    static constexpr int kModRingCap = 34;
     std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kModRingCap> modRing_ {};
     int modRingCount_ = 0;
 

@@ -75,7 +75,10 @@ namespace
     // — with the label drawn on top (Pigments-style scope reading). A brief
     // top-band diagnostic layout confirmed the pipeline first; this restores
     // the full-pill span the design intends.
-    constexpr int kStripMaxPts = 24;   // downsampled points per strip
+    constexpr int kStripMaxPts = 48;   // downsampled points per strip (2026-08-21: 24 -> 48 —
+                                       // a fast LFO/noise wiggle sampled at 24 aliases into
+                                       // angular kinks; 48 halves the sampling error before
+                                       // the Bézier smoothing below rounds the rest)
 
     // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
@@ -371,19 +374,44 @@ struct CentralModBar::ModPill : public juce::Component,
         // the same kPlotInset clearance.
         const float x0 = sr.getX() + kPlotInset;
         const float x1 = sr.getRight() - kPlotInset;
+        // Point cache (the smoothing pass below re-reads them).
+        float px[kStripMaxPts], py[kStripMaxPts];
         for (int i = 0; i < stripCount_; ++i)
         {
             const float t = (stripCount_ > 1)
                 ? (float) i / (float) (stripCount_ - 1)
                 : 0.5f;
-            const float x = x0 + t * (x1 - x0);
+            px[i] = x0 + t * (x1 - x0);
             const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
             const float y = stripBipolar_
                 ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
                 : sr.getBottom() - kPlotInset - v * usable;
+            py[i] = y;
             singleY = y;
-            if (i == 0)  path.startNewSubPath (x, y);
-            else         path.lineTo (x, y);
+        }
+        // SMOOTH OVER ACCURATE (2026-08-21 user request): high-speed sources
+        // (env, LFO, noise) leave tiny DISCONTINUITIES as a 48-point polyline
+        // — straight segments kink at every sample. Render as a curve through
+        // the points instead: quadratic Béziers between consecutive MIDPOINTS
+        // with the samples as control points (the classic smooth-series
+        // technique — the curve passes exactly through every midpoint and is
+        // C1 everywhere, so fast wiggles read as flowing motion). Ends are
+        // pinned to the first/last samples so the newest value stays exact.
+        if (stripCount_ == 2)
+        {
+            path.startNewSubPath (px[0], py[0]);
+            path.lineTo (px[1], py[1]);
+        }
+        else if (stripCount_ > 2)
+        {
+            path.startNewSubPath (px[0], py[0]);
+            path.quadraticTo (px[0], py[0],
+                              (px[0] + px[1]) * 0.5f, (py[0] + py[1]) * 0.5f);
+            for (int i = 1; i < stripCount_ - 1; ++i)
+                path.quadraticTo (px[i], py[i],
+                                  (px[i] + px[i + 1]) * 0.5f,
+                                  (py[i] + py[i + 1]) * 0.5f);
+            path.lineTo (px[stripCount_ - 1], py[stripCount_ - 1]);
         }
         g.setColour (accent_.withAlpha (active_ ? 0.95f : 0.85f));
         // A single sample has no segment to stroke (startNewSubPath alone

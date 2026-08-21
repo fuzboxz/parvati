@@ -352,7 +352,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         g.setColour (trace.withAlpha (0.28f));
         g.drawVerticalLine (juce::roundToInt (px), plot.getY(), plot.getBottom());
 
-        constexpr float kDotR = 1.75f;   // ~3.5px diameter
+        constexpr float kDotR = 2.6f;   // ~5.2px diameter (2026-08-21: a touch bigger per user request)
         g.setColour (panelBg);
         g.fillEllipse (juce::Rectangle<float> ((kDotR + 1.0f) * 2.0f, (kDotR + 1.0f) * 2.0f)
                            .withCentre ({ px, py }));

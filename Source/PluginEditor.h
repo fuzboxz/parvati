@@ -37,6 +37,69 @@ class ParvatiAudioProcessor;
 // UI is (re)built.
 void refreshFontsIn (juce::Component* root, const ParvatiLookAndFeel& lnf);
 #include "ui/SettingsPanel.h"
+
+//==============================================================================
+// Sizes the SettingsPanel inside the settings drawer's Viewport (2026-08-21):
+// a juce::Viewport never resizes its viewed component, and the SidePanel
+// parents the VIEWPORT, so the panel must be sized from the viewport's live
+// view area — width minus any auto-shown scrollbar, height = the panel's FULL
+// row budget (never shorter than the view, so scrolling reads 1:1). Without
+// this the panel kept its 0×0 birth size and the drawer rendered blank.
+class SettingsScrollTracker : public juce::ComponentListener
+{
+public:
+    SettingsScrollTracker (juce::Viewport& vp, SettingsPanel& panel)
+        : viewport_ (vp), panel_ (panel)
+    {
+        apply();
+    }
+
+    // MUST deregister: juce::ComponentListener does NOT auto-detach, and this
+    // tracker is declared after the viewport (destroyed BEFORE it) — without
+    // the explicit removal the viewport's listener list keeps a dangling
+    // pointer and its own destructor calls into freed memory (the teardown
+    // segfault this class introduced).
+    ~SettingsScrollTracker() override
+    {
+        viewport_.removeComponentListener (this);
+    }
+
+    void componentMovedOrResized (juce::Component&, bool, bool wasResized) override
+    {
+        if (wasResized)
+            apply();
+    }
+
+    // Editor hook (onPanelShowHide): the slide animation may not fire a
+    // component-resize on the viewport, so the show edge re-applies directly.
+    void applyFromEditor() { apply(); }
+
+private:
+    void apply()
+    {
+        // Only size a SHOWING drawer: while closed, the panel must stay 0×0 so
+        // its children are not "placed" (the HIG 44pt audit walks the tree and
+        // zero-sized-bounds buttons at the closed drawer's off-screen position
+        // read as sub-44 violations). The show path re-applies via the
+        // resize listener + the editor's onPanelShowHide hook.
+        if (! viewport_.isShowing() || viewport_.getViewWidth() <= 0)
+        {
+            if (panel_.getWidth() != 0 || panel_.getHeight() != 0)
+                panel_.setSize (0, 0);
+            return;
+        }
+        const int w = viewport_.getViewWidth();
+        const int h = juce::jmax (panel_.computePreferredHeight(), viewport_.getViewHeight());
+        if (panel_.getWidth() != w || panel_.getHeight() != h)
+        {
+            panel_.setTopLeftPosition (0, 0);
+            panel_.setSize (w, h);
+        }
+    }
+
+    juce::Viewport&   viewport_;
+    SettingsPanel&    panel_;
+};
 #include "ui/ThemeManager.h"
 #include "ui/IconButton.h"
 #include "ui/PresetBrowser.h"
@@ -910,6 +973,9 @@ private:
     // construction site). Declared BEFORE the SidePanel so it is destroyed
     // AFTER it (reverse order) — the panel must never outlive its host chain.
     std::unique_ptr<juce::Viewport> settingsScroll_;
+    // Sizes the panel inside the viewport (see the class above); declared
+    // AFTER the viewport (destroyed first — it holds refs to both).
+    std::unique_ptr<SettingsScrollTracker> settingsScrollTracker_;
     // Settings side panel (hosts the scroll viewport; the viewport owns the
     // SettingsPanel itself).
     std::unique_ptr<juce::SidePanel> settingsPanelHost_;
