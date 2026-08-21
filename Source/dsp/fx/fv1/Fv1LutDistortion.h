@@ -82,6 +82,23 @@ private:
     int16_t drive14_ = 4096;    // q14 fractional pre-gain
     int driveShift_  = 0;       // integer 2x stages (1..8x)
     const int16_t* shape_ = tables_[0];   // active (target) wavetable
+    int shapeIdx_ = 0;                     // its index (periodicity lookup below)
+
+    // OUT-OF-DOMAIN policy per shape (2026-08-21 — the "distortion dropouts"
+    // fix): the table spans x in [-4,4); driven peaks past the rails must not
+    // read a ZERO. Wrap (3) and SFold (8) wrap their input by construction —
+    // period 2 in x = 256 entries — so wrapping the INDEX modulo 1024 is the
+    // EXACT continuation of the curve (loud peaks fold over, the intended
+    // weird-shaper character). Every other shape SATURATES at its edge entry
+    // (clip/tube-family clamped tails). The old blanket clamp read the wrap
+    // shapes' edge entries, which are ZERO (sin(±π) = 0): every out-of-domain
+    // peak came out as literal silence — measured RMS collapse to 0.2-1.4% of
+    // the running median mid-note (the "full voice dropouts and horrible
+    // audio quality" report; the chain input is hotter than the main bus, so
+    // even moderate drive trips it).
+    static constexpr bool kShapeIsPeriodic[kShapes] = {
+        false, false, false, true,  false, false, false, false,
+        true,  false, false, false, false, false, false, false };
 
     // One-pole ~10 Hz high-pass DC blocker on the wet output: several shapes
     // (Cheby2/OctUp/Asym) are NOT re-referenced to 0 at x=0 and emit large

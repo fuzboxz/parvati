@@ -269,3 +269,23 @@ The "super digital" wavetable distortion: 16 stepped weird shapes.
 (See the user spec; each worker gets a lane-specific task with the exact
 parameter→param-slot mapping, the FV-1 algorithm, memory budget, and the
 standalone-test contract.)
+
+### Out-of-domain table reads (LutDistortion, fixed 2026-08-21)
+
+The wavetable spans x in [-4,4); driven peaks past the rails must never read
+ZERO. Two stacked bugs made loud passages gate to silence (the "distortion
+dropouts" report — measured windowed RMS collapsing to 0.2–1.4% of the
+running median mid-note):
+
+1. The blanket index CLAMP read the wrap-family shapes' edge entries, which
+   are zero (Wrap #3 / SFold #8 evaluate sin(±π)=0 at ±4). Fix: those shapes
+   are periodic (period 2 in x = 256 entries), so the index WRAPS modulo 1024
+   — the exact continuation of the curve (loud peaks fold over, the intended
+   character); every other shape saturates at its edge entry as before.
+2. The drive gain ladder saturated in Q.23 (f24_addSat(v,v) at the rail),
+   pre-collapsing the domain to x in [-1,1) where SFold's sine is 0 at the
+   rail. Fix: the ladder is unsaturated (|v| <= 8·rail = 2^26, int32-safe);
+   out-of-domain peaks reach the wrap/clamp policy intact.
+
+Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
+rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).

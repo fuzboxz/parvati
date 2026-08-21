@@ -126,6 +126,7 @@ void Fv1LutDistortion::setParams (const float param[5])
         fade14_   = 0;
     }
     shape_ = tables_[s];
+    shapeIdx_ = s;
 
     jitAmt_  = p2 * 12.0f;                                // 0..12 samples
     toneLp_.setCutoff (700.0f * std::pow (15000.0f / 700.0f, p3));
@@ -242,18 +243,30 @@ void Fv1LutDistortion::process (float* L, float* R, int numSamples)
 
 int32_t Fv1LutDistortion::lutShape (int32_t x)
 {
-    // Drive (2^shift stages + fractional) -> wavetable, blended with the
-    // previous table across a shape change (equal-gain Q.14 crossfade).
-    // The Q.23 sample maps 1:1 onto the table domain — v >> 16 = 128*x (the
-    // 1024-entry table spans [-4,4) at 128 entries per unit), so the curve
-    // is read at xT = D*x: the documented 1..8x Drive. (The old >>13 read
-    // 8*D*x — every gain 8x hot; see audit rev_dyn.md.)
-    int32_t v = f24_mulk (x, drive14_);
+    // Drive (2^shift stages + fractional) -> wavetable index. NO saturation
+    // on the gain ladder (2026-08-21 second half of the dropout fix): the old
+    // f24_mulk + f24_addSat(v,v) clamped v at the Q.23 rail (|x| <= 1),
+    // pre-collapsing the table domain to x in [-1,1) BEFORE the index was
+    // computed — at the rail SFold's sine is sin(±π) = 0, so max-drive peaks
+    // read sustained SILENCE even after the index-wrap fix. The unsaturated
+    // ladder reaches at most 8x the rail (2^26) — int32-safe — and the
+    // out-of-domain index is handled exactly by the wrap/clamp policy below.
+    int32_t v = static_cast<int32_t> (
+        (static_cast<int64_t> (x) * static_cast<int64_t> (drive14_)) >> 13);
     for (int s = 0; s < driveShift_; ++s)
-        v = f24_addSat (v, v);
+        v += v;
     int idx = (v >> 16) + 512;
-    if (idx < 0)    idx = 0;
-    if (idx > 1023) idx = 1023;
+    if (idx < 0 || idx > 1023)
+    {
+        // Out of the [-4,4) table domain (driven peaks past the rails). See
+        // kShapeIsPeriodic in the header: the wrap-family shapes continue
+        // EXACTLY by wrapping the index (period 2 in x = 256 entries, so
+        // modulo 1024 is the full-cycle wrap); everything else saturates at
+        // its edge entry. (idx & 1023 is a two's-complement-safe wrap for
+        // negative indices — 1024 is a power of two.)
+        idx = kShapeIsPeriodic[shapeIdx_] ? (idx & 1023)
+                                          : (idx < 0 ? 0 : 1023);
+    }
     const int32_t yn = static_cast<int32_t> (shape_[static_cast<size_t> (idx)])
                        * 512;   // Q.14 -> Q.23
     if (fadeFrom_ == nullptr)

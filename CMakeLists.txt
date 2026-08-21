@@ -1110,6 +1110,51 @@ target_link_libraries(parvati_fx_onset_regression_test PRIVATE
 )
 
 # ------------------------------------------------------------------------------
+# FX dropout/quality probe (diagnostic, 2026-08-21): per-FX parameter sweep
+# measuring dropout runs / railing / DC / RMS collapse / worst impulse through
+# the real processBlock. NOT a pass/fail gate — a dump for investigation.
+add_executable(parvati_fx_dropout_probe EXCLUDE_FROM_ALL
+    tests/parvati_fx_dropout_probe.cpp
+)
+target_include_directories(parvati_fx_dropout_probe PRIVATE Source)
+target_compile_features(parvati_fx_dropout_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_dropout_probe PRIVATE
+    Parvati
+)
+
+# FX realtime-cost probe (diagnostic, 2026-08-21): audio-thread wall time vs
+# realtime for 3 slots of each heavy FX. Usage: parvati_fx_cpu_probe [bufSize]
+add_executable(parvati_fx_cpu_probe EXCLUDE_FROM_ALL
+    tests/parvati_fx_cpu_probe.cpp
+)
+
+add_executable(parvati_fx_glitch_dump EXCLUDE_FROM_ALL
+    tests/parvati_fx_glitch_dump.cpp
+)
+
+# LUT-distortion dropout regression (2026-08-21): the wrap-family wavetable
+# shapes must never gate to silence at high drive (index wrap + unsaturated
+# gain ladder). Built by default.
+add_executable(parvati_fx_lut_dropout_test
+    tests/parvati_fx_lut_dropout_test.cpp
+)
+target_include_directories(parvati_fx_lut_dropout_test PRIVATE Source)
+target_compile_features(parvati_fx_lut_dropout_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_lut_dropout_test PRIVATE
+    Parvati
+)
+target_include_directories(parvati_fx_glitch_dump PRIVATE Source)
+target_compile_features(parvati_fx_glitch_dump PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_glitch_dump PRIVATE
+    Parvati
+)
+target_include_directories(parvati_fx_cpu_probe PRIVATE Source)
+target_compile_features(parvati_fx_cpu_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_cpu_probe PRIVATE
+    Parvati
+)
+
+# ------------------------------------------------------------------------------
 # Full-engine Clouds-FX continuity regression — renders a sustained note through
 # the real processBlock path with each Clouds FX (no mod) and asserts the main
 # bus is click-free. This is the ONLY test that exercises renderPartFx's drift-
