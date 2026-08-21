@@ -116,7 +116,7 @@ int main()
     constexpr int kLfo1 = 3;   // MOD_SRC_LFO_1 (enum order in dsp/patch.h)
 
     // =========================================================================
-    std::printf ("[1] History populates while a note sounds\n");
+    std::printf ("[1] History always scrolls: zero buffer at start, live while held\n");
     {
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
@@ -134,10 +134,26 @@ int main()
         }
         renderBlocks (proc, 2);                          // part service lands
 
+        // ---- ALWAYS-ON CONTRACT (2026-08-21): before any note the history
+        // POPULATES WITH ZEROS (the strips start at a zero buffer and always
+        // scroll; a per-voice modulator that is not running = zero). The
+        // constants keep their literal values (a constant's state is its
+        // value) — the frame is not misindexed.
         parvati::ModTelemetrySnapshot snap;
-        readSnap (proc, snap, "[1] frame valid once a part is tracked");
-        check (snap.part == 0, "[1] frame names the tracked part");
-        check (snap.historyCount == 0, "[1] history empty before any note");
+        renderBlocks (proc, blocksForMs (300.0));        // idle: zero rows append
+        readSnap (proc, snap, "[1] frame valid while idle (pre-note)");
+        check (snap.historyCount > 0, "[1] history populates BEFORE any note (zero buffer start)");
+        {
+            bool allZero = true;
+            for (int i = 0; i < snap.historyCount && allZero; ++i)
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0
+                 || snap.history[(size_t) 0 * kLen + (size_t) i] != 0)   // ENV 1
+                    allZero = false;
+            check (allZero, "[1] idle rows are ZERO (LFO/ENV not running = 0)");
+        }
+        const int kConst256 = 24;   // MOD_SRC_CONSTANT_256
+        check (snap.sources[kConst256] == 255, "[1] constant source reads 255 while idle");
+        check (! snap.voiceActive, "[1] voiceActive truthful (false) while idle");
 
         const auto on = noteOnMsg();
         renderBlocks (proc, blocksForMs (500.0), &on);   // ~0.5 s held
@@ -145,8 +161,8 @@ int main()
         check (snap.voiceActive, "[1] voiceActive true while held");
         {
             char m[96];
-            std::snprintf (m, sizeof (m), "[1] history populated (count=%d > 0)", snap.historyCount);
-            check (snap.historyCount > 0, m);
+            std::snprintf (m, sizeof (m), "[1] history growing while held (count=%d)", snap.historyCount);
+            check (snap.historyCount > 20, m);
         }
 
         renderBlocks (proc, blocksForMs (2200.0));      // well past the 1.57 s window
@@ -166,7 +182,6 @@ int main()
 
         // Sources carry the CURRENT value; constants stay pinned (255 for
         // MOD_SRC_CONSTANT_256 — sanity that the frame is not misindexed).
-        const int kConst256 = 24;   // MOD_SRC_CONSTANT_256
         check (snap.sources[kConst256] == 255, "[1] constant source reads 255");
         // sources[] refresh BOTH per block and per append, so the current LFO
         // value lies within one decimation window (~12 internal ticks ~= 11 ms
@@ -182,17 +197,30 @@ int main()
         }
 
         // ---- [2] rides on the same held note ----
-        std::printf ("[2] Frozen after release\n");
+        std::printf ("[2] Falls to zero after release and keeps scrolling\n");
         const auto off = noteOffMsg();
         renderBlocks (proc, 5, &off);
         renderBlocks (proc, blocksForMs (1200.0));      // > the 0.63 s worst-case tail
         readSnap (proc, snap, "[2] frame valid after the release tail");
         check (! snap.voiceActive, "[2] voiceActive false after the tail");
         check (snap.historyCount == kLen, "[2] history kept (not cleared)");
-        const int frozen = snap.historyCount;
-        renderBlocks (proc, blocksForMs (350.0));       // idle: nothing may append
+        // The NEWEST window must have FALLEN TO ZERO and STAY there while
+        // idle (the actual state: the per-voice LFO is not running).
+        {
+            bool zeros = true;
+            for (int i = snap.historyCount - 16; i < snap.historyCount; ++i)
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0) { zeros = false; break; }
+            check (zeros, "[2] LFO fell to zero after release (not frozen mid-air)");
+        }
+        renderBlocks (proc, blocksForMs (350.0));       // still idle: must KEEP appending
         readSnap (proc, snap, "[2] frame valid while idle");
-        check (snap.historyCount == frozen, "[2] history stops growing while idle");
+        check (snap.historyCount == kLen, "[2] history keeps appending while idle (saturated)");
+        {
+            bool zeros2 = true;
+            for (int i = snap.historyCount - 16; i < snap.historyCount; ++i)
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0) { zeros2 = false; break; }
+            check (zeros2, "[2] LFO STAYS zero while idle (actual state)");
+        }
 
         // ---- [3] reset semantics ----
         std::printf ("[3] resetUiTelemetry\n");
@@ -206,7 +234,18 @@ int main()
         }
         renderBlocks (proc, 5);                          // AT services the wipe (no note)
         readSnap (proc, snap, "[3] valid again once the clear is serviced");
-        check (snap.historyCount == 0, "[3] history cleared by the reset");
+        // ALWAYS-ON: the wipe clears, then the idle zero rows immediately
+        // begin repopulating (a handful of fresh appends in 5 blocks is the
+        // contract, not a leak) — all zero, never stale values.
+        {
+            char m[96];
+            std::snprintf (m, sizeof (m), "[3] history wiped then re-fills with zeros (count=%d < 16)", snap.historyCount);
+            check (snap.historyCount < 16, m);
+            bool zeros = true;
+            for (int i = 0; i < snap.historyCount; ++i)
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0) { zeros = false; break; }
+            check (zeros, "[3] post-reset rows are zeros (stale window gone)");
+        }
         check (! snap.voiceActive, "[3] voiceActive false after the reset");
 
         renderBlocks (proc, 3, &on);
@@ -224,7 +263,9 @@ int main()
         renderBlocks (proc, 2);
         readSnap (proc, snap, "[4] valid once the new part is serviced");
         check (snap.part == 1, "[4] frame follows the tracked part");
-        check (snap.historyCount == 0, "[4] history cleared for the new part");
+        // ALWAYS-ON: the new part's window restarts from (near) zero — a
+        // couple of fresh zero appends may already have landed.
+        check (snap.historyCount < 16, "[4] history (re)starts fresh for the new part");
         eng.setUiTelemetryPart (0);
         renderBlocks (proc, 2);
         readSnap (proc, snap, "[4] valid after switching back");
@@ -449,6 +490,85 @@ int main()
                            "[7] re-strike does not interleave envelopes (sticky telemetry voice)");
                 }
             }
+        }
+    }
+
+    // =========================================================================
+    std::printf ("[8] ALWAYS-ON contract: scroll forever, actual state per source class\n");
+    {
+        // The user-requested semantics end-to-end: (a) zero buffer at start,
+        // (b) LFO animates while held, (c) LFO falls to zero after release and
+        // STAYS zero while idle, (d) a controller (mod wheel, CC1) moved while
+        // IDLE shows on the WHEEL strip while the LFO strip is zero.
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (kRate, kBlock);
+        auto& eng = proc.getEngine();
+        setParam (proc, "env1_lfo_rate", 60);          // free-running LFO 1
+        proc.syncAllParamsToEngine();
+        eng.setUiTelemetryPart (0);
+        renderBlocks (proc, 2);                          // service the tracked part
+
+        parvati::ModTelemetrySnapshot snap;
+        constexpr int kWheel = 17;                       // MOD_SRC_WHEEL
+
+        // (a) zero buffer at start: history grows while idle, all values 0.
+        renderBlocks (proc, blocksForMs (250.0));
+        readSnap (proc, snap, "[8] valid while idle (pre-note)");
+        check (snap.historyCount > 0, "[8a] history populates from a zero buffer (idle)");
+        {
+            bool zeros = true;
+            for (int i = 0; i < snap.historyCount; ++i)
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0
+                 || snap.history[(size_t) kWheel * kLen + (size_t) i] != 0)
+                    { zeros = false; break; }
+            check (zeros, "[8a] all rows zero before any note/wheel");
+        }
+
+        // (b) held note: the LFO row moves (nonzero span within the window).
+        const auto on = noteOnMsg();
+        renderBlocks (proc, blocksForMs (600.0), &on);
+        readSnap (proc, snap, "[8] valid while held");
+        {
+            int lo = 255, hi = 0;
+            for (int i = snap.historyCount - 24; i < snap.historyCount; ++i)
+            {
+                const int v = snap.history[(size_t) kLfo1 * kLen + (size_t) i];
+                lo = std::min (lo, v); hi = std::max (hi, v);
+            }
+            char m[96];
+            std::snprintf (m, sizeof (m), "[8b] LFO animates while held (24-sample span %d..%d)", lo, hi);
+            check (hi - lo > 16, m);
+        }
+
+        // (c) release: LFO decays out and STAYS zero while idle.
+        const auto off = noteOffMsg();
+        renderBlocks (proc, 5, &off);
+        renderBlocks (proc, blocksForMs (1500.0));      // past the tail
+        readSnap (proc, snap, "[8] valid after release");
+        {
+            bool zeros = true;
+            for (int i = snap.historyCount - 24; i < snap.historyCount; ++i)
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0) { zeros = false; break; }
+            check (zeros, "[8c] LFO fell to zero and stays zero while idle");
+        }
+
+        // (d) mod wheel moved WHILE IDLE: the WHEEL strip shows it, others 0.
+        const auto wheel = juce::MidiMessage::controllerEvent (1, 1, 100);   // CC1 -> MOD_SRC_WHEEL
+        renderBlocks (proc, 5, &wheel);
+        renderBlocks (proc, blocksForMs (300.0));       // idle: appends carry the wheel
+        readSnap (proc, snap, "[8] valid after idle wheel move");
+        {
+            bool wheelUp = false, lfoStillZero = true;
+            for (int i = snap.historyCount - 24; i < snap.historyCount; ++i)
+            {
+                if (snap.history[(size_t) kWheel * kLen + (size_t) i] > 64) wheelUp = true;
+                if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0) lfoStillZero = false;
+            }
+            check (wheelUp, "[8d] WHEEL strip shows the held controller value while idle");
+            check (lfoStillZero, "[8d] LFO strip stays zero (per-voice generator idle)");
+            char m[96];
+            std::snprintf (m, sizeof (m), "[8d] sources[WHEEL]=%d (live truth)", (int) snap.sources[kWheel]);
+            check (snap.sources[kWheel] == 200, m);     // CC 100 << 1 = 200
         }
     }
 
