@@ -1676,6 +1676,97 @@ int main (int argc, char** argv)
     else
         check (false, "[23] PatchPage reachable for tab checks");
 
+    // ---- [24] Load/Save default to .parvati; Patch-page Ambika export ----
+    // (a) the top-bar Load/Save buttons exist with the direct .parvati
+    //     semantics — clicking headless completes synchronously (the desktop
+    //     gate means no picker/menu launches; an un-gated menu/picker would
+    //     either hang the pump or create desktop chrome);
+    // (b) the Patch page carries the two export buttons (findable, enabled,
+    //     tooltiped) and the click seams fire the editor's wiring.
+    std::printf ("\n[24] parvati-first Load/Save + Ambika export buttons\n");
+    {
+        juce::TextButton* loadBtn = nullptr;
+        juce::TextButton* saveBtn = nullptr;
+        {
+            juce::Array<juce::Component*> nodes { editor };
+            for (int i = 0; i < nodes.size(); ++i)
+            {
+                auto* c = nodes.getUnchecked (i);
+                if (auto* b = dynamic_cast<juce::TextButton*> (c))
+                {
+                    if (b->getButtonText() == TRANS ("Load")) loadBtn = b;
+                    if (b->getButtonText() == TRANS ("Save")) saveBtn = b;
+                }
+                for (auto* ch : c->getChildren()) nodes.add (ch);
+            }
+        }
+        check (loadBtn != nullptr && saveBtn != nullptr,
+               "[24] Load + Save buttons found");
+        if (loadBtn != nullptr && loadBtn->onClick != nullptr)
+        {
+            loadBtn->onClick();   // headless: desktop-gated -> returns, no picker
+            check (true, "[24] Load click completes headless (desktop-gated picker)");
+        }
+        else check (false, "[24] Load button has an onClick");
+        if (saveBtn != nullptr && saveBtn->onClick != nullptr)
+        {
+            saveBtn->onClick();   // direct .parvati save, desktop-gated
+            check (true, "[24] Save click completes headless (direct .parvati, no menu)");
+        }
+        else check (false, "[24] Save button has an onClick");
+
+        if (patchPage != nullptr)
+        {
+            juce::TextButton* proBtn = nullptr;
+            juce::TextButton* mulBtn = nullptr;
+            juce::Array<juce::Component*> nodes { patchPage };
+            for (int i = 0; i < nodes.size(); ++i)
+            {
+                auto* c = nodes.getUnchecked (i);
+                if (auto* b = dynamic_cast<juce::TextButton*> (c))
+                {
+                    if (b->getButtonText() == TRANS ("Export .PRO")) proBtn = b;
+                    if (b->getButtonText() == TRANS ("Export .MUL")) mulBtn = b;
+                }
+                for (auto* ch : c->getChildren()) nodes.add (ch);
+            }
+            check (proBtn != nullptr && mulBtn != nullptr,
+                   "[24] Export .PRO + Export .MUL buttons on the Patch page");
+            check (proBtn == nullptr || (proBtn->isEnabled() && proBtn->getWidth() >= 44 && proBtn->getHeight() >= 20),
+                   "[24] .PRO button enabled + sized");
+            check (mulBtn == nullptr || (mulBtn->isEnabled() && mulBtn->getWidth() >= 44 && mulBtn->getHeight() >= 20),
+                   "[24] .MUL button enabled + sized");
+            check (patchPage->exportProTooltipForTest().isNotEmpty()
+                   && patchPage->exportMulTooltipForTest().isNotEmpty(),
+                   "[24] export tooltips set (format trade-offs)");
+            check (patchPage->exportMulTooltipForTest().contains ("fallback"),
+                   "[24] .MUL tooltip mentions the fallback dialog");
+
+            // The editor wired the seams: fire them via the test hooks with
+            // SWAPPED callbacks (flag pattern), then restore the editor's.
+            check ((bool) patchPage->onExportPro && (bool) patchPage->onExportMul,
+                   "[24] editor wired the export callbacks");
+            int proFired = 0, mulFired = 0;
+            auto savedPro = patchPage->onExportPro;
+            auto savedMul = patchPage->onExportMul;
+            patchPage->onExportPro = [&proFired] { ++proFired; };
+            patchPage->onExportMul = [&mulFired] { ++mulFired; };
+            patchPage->clickExportProForTest();
+            patchPage->clickExportMulForTest();
+            patchPage->onExportPro = savedPro;
+            patchPage->onExportMul = savedMul;
+            check (proFired == 1 && mulFired == 1,
+                   "[24] export click seams fire exactly once");
+            // The real (restored) wiring is desktop-gated: firing headless is a
+            // no-op pick — proves no un-gated picker path hangs the run.
+            patchPage->clickExportProForTest();
+            patchPage->clickExportMulForTest();
+            check (true, "[24] real export wiring completes headless (gated pickers)");
+        }
+        else
+            check (false, "[24] PatchPage reachable for export checks");
+    }
+
     // ---- teardown ----
     delete editor;
 

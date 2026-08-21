@@ -21,6 +21,7 @@
 #include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel (bar-only NOTE pill)
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
+#include "ui/ChromeRule.h"      // parvati::ChromeRule (the shared separator-rule family)
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
 
 #include <algorithm>   // std::remove for the ParamControl instance registry
@@ -301,67 +302,9 @@ private:
     juce::String text_, tip_;
 };
 
-//==============================================================================
-// ChromeRule — the 1px separator rules delimiting the chrome bands (below the
-// header / above the status strip). A dedicated NON-INTERACTIVE child, not a
-// stroke in ParvatiEditor::paint(): children overdraw the editor's own paint,
-// so a painted rule at the pageSelector_/patchPage_ boundary is invisible
-// however it is coloured. These are added LAST in the constructor's child
-// order, so they stay above the content + overlays (a hair-line over the
-// keyboard overlay's bottom edge reads as its border). Solid theme
-// textSecondary: dark grey on the dark themes, near-black on the light ones —
-// always a visible rule against backgroundBase.
-class ChromeRule : public juce::Component
-{
-public:
-    // @p shadowBelow: the rule's soft depth gradient points DOWN (under the
-    // header rule: the workspace below reads recessed) or UP (above the status
-    // rule: the tooltip bar reads as a raised footer).
-    explicit ChromeRule (bool shadowBelow)
-        : shadowBelow_ (shadowBelow) { setInterceptsMouseClicks (false, false); }
+// (ChromeRule — the chrome separator rules — now lives in ui/ChromeRule.h,
+// shared with the Synth/FxWorkspace mod-bar seams + the keyboard rule.)
 
-    void paint (juce::Graphics& g) override
-    {
-        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-        const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme() : nullptr;
-        const juce::Colour rule (t != nullptr ? t->textSecondary
-                                              : juce::Colours::darkgrey);
-        // DEPTH: a 1px rule + a ~5px soft gradient falloff on the recessed
-        // side, tinted with the rule colour. Reads as a drop shadow on dark
-        // themes and a soft shading band on light ones — the chrome bands
-        // (header / tooltip bar) appear raised over the recessed workspace.
-        constexpr int kShadowH = 5;
-        const int w = getWidth();
-        const int h = getHeight();
-        if (h <= 1 || w <= 0)
-        {
-            g.fillAll (rule);   // degenerate (no shadow room): plain rule
-            return;
-        }
-        juce::ColourGradient grad (rule.withMultipliedAlpha (0.35f), 0.0f, 0.0f,
-                                   rule.withMultipliedAlpha (0.0f),  0.0f, (float) kShadowH,
-                                   false);
-        if (shadowBelow_)
-        {
-            g.fillRect (0, 0, w, 1);                       // the rule
-            grad.point1 = { 0.0f, 1.0f };
-            grad.point2 = { 0.0f, 1.0f + (float) kShadowH };
-            g.setGradientFill (grad);
-            g.fillRect (0, 1, w, kShadowH);                // falloff below
-        }
-        else
-        {
-            g.fillRect (0, h - 1, w, 1);                   // the rule
-            grad.point1 = { 0.0f, (float) (h - 1) };
-            grad.point2 = { 0.0f, (float) (h - 1 - kShadowH) };
-            g.setGradientFill (grad);
-            g.fillRect (0, h - 1 - kShadowH, w, kShadowH); // falloff above
-        }
-    }
-
-private:
-    bool shadowBelow_;
-};
 }  // namespace
 
 //==============================================================================
@@ -2472,27 +2415,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     loadButton_.onClick = [this] { openLoadDialog(); };
     addAndMakeVisible (loadButton_);
 
-    // Save: a single button whose popup menu picks the format. "Ambika Patch
-    // (.PRO)" writes the byte-faithful hardware-shareable patch; "Parvati Patch
-    // (.parvati)" writes the full-fidelity YAML (carries vca_curve / filter_card
-    // / arp that the .PRO byte format drops).
+    // Save: DIRECT .parvati save (2026-08-20 — no format menu). The Ambika
+    // .PRO/.MUL exports moved to dedicated buttons on the Patch page
+    // (openSaveDialog / openSaveMultiDialog are now export-only paths);
+    // drag-drop import of .PRO/.MUL/.parvati is unchanged (filesDropped).
     saveButton_.setButtonText (TRANS ("Save"));
-    saveButton_.onClick = [this] {
-        juce::PopupMenu m;
-        m.addItem (1, TRANS ("Ambika Patch (.PRO)"));
-        m.addItem (2, TRANS ("Parvati Patch (.parvati)"));
-        m.addItem (3, TRANS ("Ambika Multi (.MUL)"));
-        // SafePointer guard: the completion runs after the async menu
-        // dismisses — the host may have torn the editor down while the popup
-        // was open (a raw `this` would dangle into freed memory).
-        juce::Component::SafePointer<ParvatiEditor> safe (this);
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int result) {
-            if (safe == nullptr) return;
-            if (result == 1)      safe->openSaveDialog();
-            else if (result == 2) safe->openSaveParvatiDialog();
-            else if (result == 3) safe->openSaveMultiDialog();
-        });
-    };
+    saveButton_.onClick = [this] { handleSavePresetShortcut(); };   // desktop-gated direct .parvati
     addAndMakeVisible (saveButton_);
 
     // Phase 4c: Undo / Redo are Path-drawn IconButtons (curved arrows) — no
@@ -2518,10 +2446,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // and the keyboard shortcuts drive the same applyZoom() helper) but are
     // NOT placed and NOT visible. F-ios-touch-3 (bug hunt 2026-08-19): they
     // (The three former top-bar zoom buttons were REMOVED 2026-08-20: zoom
-    // lives in the Settings panel now (three buttons + readout replacing the
-    // old zoom slider). The Cmd/Ctrl +/-/0 keyboard shortcuts remain, and the
-    // "..." overflow button below stays — it is the W9 folded-actions host,
-    // not a zoom control.)
+    // lives in the Settings panel now — three buttons + readout replacing the
+    // old zoom slider. The Cmd/Ctrl +/-/0 keyboard shortcuts remain.) The
+    // "..." overflow button below is the W9 folded-actions host: visible ONLY
+    // below the 1024 fold breakpoint, where its popup actually carries the
+    // folded Part/page/mod items (see resized()).)
     zoomOverflowButton_.setTooltip (TRANS ("More"));
     zoomOverflowButton_.onClick = [this]
     {
@@ -2963,6 +2892,17 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     patchPage_->setVisible (false);
     // Relabel the top-bar Part selector when a part name/alias is edited.
     patchPage_->onPartNamesChanged = [this] { refreshPartComboNames(); };
+    // Ambika export seams (desktop-gated: the file pickers + the fallback
+    // dialog need a window server; headless tests fire the seam with no
+    // picker — the handleLoadPresetShortcut idiom).
+    patchPage_->onExportPro = [this] {
+        if (juce::Desktop::getInstance().getNumComponents() > 0)
+            openSaveDialog();          // .PRO export (current part)
+    };
+    patchPage_->onExportMul = [this] {
+        if (juce::Desktop::getInstance().getNumComponents() > 0)
+            openSaveMultiDialog();     // .MUL export (incl. fallback dialog)
+    };
     if (globalPage_ != nullptr)
         patchPage_->hostParamPage (globalPage_);   // reparents the Section::Global ParamPage into the Patch page
 
@@ -3217,8 +3157,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     //      5px below the header (end-to-end) and 5px above the status strip
     //      (~95% width, centred). Positioned in resized() from the bands. See
     //      ChromeRule for why these are components. ----
-    headerRule_ = std::make_unique<ChromeRule> (true);   // shadow falls below
-    statusRule_ = std::make_unique<ChromeRule> (false);  // shadow falls above
+    headerRule_ = std::make_unique<parvati::ChromeRule> (true);   // shadow falls below
+    statusRule_ = std::make_unique<parvati::ChromeRule> (false);  // shadow falls above
+    // Keyboard-overlay top rule: the keyboard strip is chrome raised over the
+    // content it covers, so the 1px rule sits at its TOP edge with the depth
+    // falloff above it (the footer idiom). Shown/hidden with the strip.
+    keyboardRule_ = std::make_unique<parvati::ChromeRule> (false);
     addAndMakeVisible (*headerRule_);
     addAndMakeVisible (*statusRule_);
 
@@ -4381,9 +4325,18 @@ void ParvatiEditor::resized()
         settingsButton_.setBounds (slimCell (bar.removeFromRight (44)));      // gear
         bar.removeFromRight (8);
     }
-    zoomOverflowButton_.setVisible (true);   // the overflow host: never folds (it carries the folded actions)
-    zoomOverflowButton_.setBounds (slimCell (bar.removeFromRight (44)));  // "..." zoom overflow (popup)
-    bar.removeFromRight (8);
+    // The "..." overflow host: visible ONLY when something is actually
+    // folded away (foldPartCluster is the LARGEST breakpoint — below it the
+    // menu carries the Part/page/folded-action items). At >= 1024 nothing is
+    // folded, the menu would open EMPTY (the zoom items moved to Settings in
+    // 6ed8463 — the "still visible but no longer working" report), so the
+    // button hides entirely and its 52pt of header space is reclaimed.
+    zoomOverflowButton_.setVisible (foldPartCluster);
+    if (foldPartCluster)
+    {
+        zoomOverflowButton_.setBounds (slimCell (bar.removeFromRight (44)));  // "..." overflow (popup)
+        bar.removeFromRight (8);
+    }
     redoButton_.setVisible (! foldHistoryBand);
     if (! foldHistoryBand)
     {
@@ -4393,7 +4346,7 @@ void ParvatiEditor::resized()
     undoButton_.setVisible (true);   // primary: never folds
     undoButton_.setBounds (slimCell (bar.removeFromRight (44)));          // undo
     bar.removeFromRight (4);   // separates the history/view icons from the file group
-    saveButton_.setBounds (slimCell (bar.removeFromRight (52)));          // Save (carries the format popup menu)
+    saveButton_.setBounds (slimCell (bar.removeFromRight (52)));          // Save (direct .parvati; .PRO/.MUL export lives on the Patch page)
     bar.removeFromRight (6);
     loadButton_.setBounds (slimCell (bar.removeFromRight (48)));          // Load
 
@@ -4544,6 +4497,17 @@ void ParvatiEditor::resized()
         keyboardView_->setVisible (kbdVisible);
         if (wheels_ != nullptr)
             wheels_->setVisible (kbdVisible);
+        // Keyboard TOP RULE (2026-08-20): a full-width separator at the strip's
+        // top edge so the overlay reads as a raised chrome band over the
+        // content it covers (the same family as the header/status rules; the
+        // depth falloff points UP into the covered content). Added after
+        // keyboardView_ in the child order, so it paints above the strip.
+        if (keyboardRule_ != nullptr)
+        {
+            keyboardRule_->setVisible (kbdVisible);
+            keyboardRule_->setBounds (area.getX(), bottomStrip.getY() - kChromeShadowH,
+                                      area.getWidth(), 1 + kChromeShadowH);
+        }
     }
 
     // ---- Chrome separator rules (components; geometry from the bands):
@@ -4557,10 +4521,13 @@ void ParvatiEditor::resized()
                                 headerBand_.getWidth(), 1 + kChromeShadowH);
     if (statusRule_ != nullptr)
     {
-        const int inset = juce::roundToInt (static_cast<float> (statusBand_.getWidth()) * 0.025f);
-        statusRule_->setBounds (statusBand_.getX() + inset,
+        // FULL WIDTH (2026-08-20 user request): the former 2.5%-of-band inset
+        // stopped the rule short of the window edges; the bottom separator now
+        // spans the band edge-to-edge (which is the editor's full width on
+        // desktop; on iOS the safe-area-trimmed band edge).
+        statusRule_->setBounds (statusBand_.getX(),
                                 statusBand_.getY() - kChromeRuleGap - 1 - kChromeShadowH,
-                                statusBand_.getWidth() - 2 * inset, 1 + kChromeShadowH);
+                                statusBand_.getWidth(), 1 + kChromeShadowH);
     }
 }
 
@@ -4607,13 +4574,15 @@ static void mirrorUserSaveToDocumentsIOS (const juce::File& saved)
 
 void ParvatiEditor::openLoadDialog()
 {
-    // The load picker starts nowhere in particular (empty start file): on iOS
-    // the document picker opens at its browse root, from which the mirrored
-    // Documents/Parvati/USER saves are reachable (On My iPad > Parvati); on
-    // desktop the browser starts at the OS default. The PresetBrowser keeps
-    // reading the SHARED tree either way (one tree for Standalone + AUv3).
-    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Load Patch / Multi (.PRO / .MUL / .parvati)"),
-                                                       juce::File(), "*.PRO;*.MUL;*.parvati");
+    // .parvati-first (2026-08-20): the Load button/shortcut default to the
+    // native format; Ambika .PRO/.MUL remain importable via drag-drop and
+    // the PresetBrowser (both route through applyPatchFile — a separate
+    // seam from this picker). Starts nowhere in particular (empty start
+    // file): on iOS the document picker opens at its browse root, from
+    // which the mirrored Documents/Parvati/USER saves are reachable (On My
+    // iPad > Parvati); on desktop the browser starts at the OS default.
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Load Parvati Patch (.parvati)"),
+                                                       juce::File(), "*.parvati");
     const auto flags = juce::FileBrowserComponent::openMode
                      | juce::FileBrowserComponent::canSelectFiles;
     fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
@@ -4647,9 +4616,10 @@ void showFileOpFailure (const juce::String& title, const juce::String& path)
 
 void ParvatiEditor::openSaveDialog()
 {
-    // Save the CURRENT part as an Ambika .PRO (byte-faithful; shareable with
-    // Ambika hardware). For a full-fidelity Parvati patch (incl. vca_curve /
-    // filter_card), use "Save Parvati". Defaults to the user's preset area.
+    // EXPORT PATH (.PRO — Patch-page button only, 2026-08-20): save the
+    // CURRENT part as an Ambika .PRO (byte-faithful; shareable with Ambika
+    // hardware; drops vca_curve / filter_card / arp). Desktop-gated by the
+    // PatchPage wiring. Defaults to the user's preset area.
     auto defaultName = processorRef_.getLoadedProgramName();
     if (defaultName.isEmpty())
         defaultName = "Parvati";

@@ -334,9 +334,9 @@ void SettingsPanel::resized()
     takeRow (2);
     {
         auto row = takeRow (comboRowH);
-        // [ - ] [ 100% ] [ + ] [ 0 ] — 44pt square buttons, readout centred
-        // between out/in; reset at the right.
-        zoomResetBt_.setBounds (row.removeFromRight (44));
+        // [ - ] [ 100% ] [ + ] [ Reset ] — 44pt square out/in buttons, a
+        // 64pt Reset, readout centred between out/in.
+        zoomResetBt_.setBounds (row.removeFromRight (64));
         row.removeFromRight (8);
         zoomInBt_.setBounds (row.removeFromRight (44));
         row.removeFromRight (8);

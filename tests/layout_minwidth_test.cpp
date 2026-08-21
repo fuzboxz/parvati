@@ -320,9 +320,12 @@ void sweepWidth (ParvatiEditor& editor, int w)
     std::printf ("  audited %zu placed interactive header children\n", header.size());
     // The placed-set size floor is BAND-scoped (W9 folding hides secondary
     // controls below the measured breakpoints 1024 / 810 / 650):
-    //   >= 1024: full desktop set; 810..1023: Part/Synth/FX folded;
-    //   650..809: + MOD/MAP/gear folded; < 650: + Patch/Redo folded.
-    const int floorCount = (w >= 1024) ? 12 : (w >= 810) ? 11 : (w >= 650) ? 8 : 6;
+    //   >= 1024: full desktop set (MINUS the "..." overflow host — hidden
+    //            at >= 1024 by design: nothing is folded, so its popup would
+    //            be empty; 2026-08-20);
+    //   810..1023: Part/Synth/FX folded; 650..809: + MOD/MAP/gear folded;
+    //   < 650: + Patch/Redo folded.
+    const int floorCount = (w >= 1024) ? 11 : (w >= 810) ? 11 : (w >= 650) ? 8 : 6;
     check ((int) header.size() >= floorCount,
            "header set is non-degenerate (placed interactive children >= floor)");
 
@@ -409,14 +412,25 @@ void sweepWidth (ParvatiEditor& editor, int w)
     // AUv3-pane verification (AUM keyboard-open ~570pt, GarageBand ~700pt)
     // needs a host and is out of scope for the headless sweep.
     struct Primary { const char* label; juce::Component* c; };
-    const Primary primaries[] = {
+    // The "..." overflow host is a PRIMARY only below 1024 — the largest
+    // fold breakpoint (something IS folded there, so the popup carries the
+    // Part/page/folded-action items). At >= 1024 nothing is folded and the
+    // menu would be empty (the zoom items moved to Settings), so the button
+    // is hidden by design (2026-08-20: the "still visible but no longer
+    // working" report).
+    std::vector<Primary> primaries {
         { "preset browser",   findPresetBrowser (editor) },
         { "Load button",      findTextButton (editor, "Load") },
         { "Save button",      findTextButton (editor, "Save") },
         { "Undo button",      findNamedButton (editor, "headerUndo") },
         { "[KBD] toggle",     findTextButton (editor, "KBD") },
-        { "... overflow",     findTextButton (editor, "...") },
     };
+    if (w < 1024)
+        primaries.push_back ({ "... overflow", findTextButton (editor, "...") });
+    else
+        check (findTextButton (editor, "...") == nullptr
+               || ! isEffectivelyVisible (findTextButton (editor, "...")),
+               "... overflow hidden at >= 1024 (nothing folded -> empty menu)");
     for (const auto& p : primaries)
     {
         if (p.c == nullptr)

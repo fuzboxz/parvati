@@ -6,6 +6,7 @@
 #include "ModMatrixView.h"
 #include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
 #include "ThemeManager.h"
+#include "ChromeRule.h"      // parvati::ChromeRule (the mod-bar top rule — one family with the editor chrome rules)
 
 //==============================================================================
 SynthWorkspace::SynthWorkspace (ThemeManager& tm)
@@ -14,6 +15,14 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     // The full-width Central Modulation Bar (middle seam).
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
+    // MOD-BAR TOP RULE (2026-08-20): a full-width separator at the bar seam's
+    // top edge so the pill bar reads as a raised chrome band between the top
+    // row and the bottom row (the same ChromeRule family as the editor's
+    // header/status/keyboard rules; the falloff points UP into the top row).
+    // Added AFTER the bar so it paints above it; non-interactive.
+    barRule_ = std::make_unique<parvati::ChromeRule> (false);
+    addAndMakeVisible (*barRule_);
+    barRule_->setVisible (false);   // laid out only while the seam is shown
 
     // TOP row: the three main-row columns (OSC | MIX | FILTER) live in a
     // vertical-scroll Viewport host (R3). At the tuned design size each page
@@ -323,6 +332,16 @@ void SynthWorkspace::resized()
         modBar_->setVisible (modBarVisible_);
         if (modBarVisible_)
             modBar_->setBounds (barRow);
+    }
+    // The seam's top separator: full workspace width at the bar's top edge,
+    // shown only with the bar (2026-08-20 user request — same family as the
+    // editor's chrome rules; the depth falloff points up into the top row).
+    if (barRule_ != nullptr)
+    {
+        barRule_->setVisible (modBarVisible_);
+        if (modBarVisible_)
+            barRule_->setBounds (barRow.getX(), barRow.getY(),
+                                 barRow.getWidth(), 1 + parvati::kRuleShadowH);
     }
 
     // ---- Bottom row: LEFT 50% = active editor, RIGHT 50% = ModMatrixView ----

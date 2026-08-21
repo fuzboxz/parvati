@@ -608,6 +608,17 @@ public:
     // mod-bar pill click drives.
     SynthWorkspace* getSynthWorkspaceForTest() { return synthWorkspace_.get(); }
 
+    // ---- Chrome separator rules (test hooks; 2026-08-20 full-width wave) ----
+    // The status rule's bounds (pinned: FULL editor width) and the keyboard
+    // overlay's top rule (visible iff the keyboard strip is shown; bounds
+    // span the content width at the strip's top edge).
+    juce::Rectangle<int> statusRuleBoundsForTest() const
+    { return statusRule_ != nullptr ? statusRule_->getBounds() : juce::Rectangle<int>(); }
+    bool keyboardRuleVisibleForTest() const
+    { return keyboardRule_ != nullptr && keyboardRule_->isVisible(); }
+    juce::Rectangle<int> keyboardRuleBoundsForTest() const
+    { return keyboardRule_ != nullptr ? keyboardRule_->getBounds() : juce::Rectangle<int>(); }
+
     // TEST-ONLY ([20] top-bar chrome pins): the header brand-block geometry
     // (wordmark + version subtitle), for the version/patch-separation layout
     // assertion in editor_test.
@@ -817,7 +828,11 @@ private:
     // (see ChromeRule — the rules are components, NOT strokes here, because
     // children overdraw the editor's own paint).
     juce::Rectangle<int> headerBand_, statusBand_;
-    std::unique_ptr<juce::Component> headerRule_, statusRule_;   // ChromeRule (file-local)
+    // headerRule_/statusRule_ + the keyboard-overlay top rule (all the shared
+    // parvati::ChromeRule — see ui/ChromeRule.h). Declared as unique_ptr<Component>
+    // to keep the header light (the type lives in ui/ChromeRule.h).
+    std::unique_ptr<juce::Component> headerRule_, statusRule_;
+    std::unique_ptr<juce::Component> keyboardRule_;   // above the on-screen keyboard strip (visible iff it is)
 
     // Brand icon: the embedded parvati_logo.svg (true vector art) parsed once
     // into a juce::Drawable. It carries its OWN brand colours and is drawn as-is

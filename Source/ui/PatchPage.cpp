@@ -1136,10 +1136,18 @@ public:
             auto summary = b.removeFromTop (kSummaryH);
             // Arrangement combo FIRST (leftmost — the user's 2026-08-20
             // follow-up: the Custom/Mono/etc selector leads the row), then
-            // the [Voice|MIDI] tab strip. The former "Voices Y/96" readout
-            // is GONE (redundant with the per-row Voices column; the user
-            // asked for it removed) — the remaining space stays empty so the
-            // row reads as a calm toolbar, not a packed strip.
+            // the [Voice|MIDI] tab strip. The Ambika EXPORT buttons sit at
+            // the RIGHT edge (right-aligned cluster, 8pt gap between) — the
+            // middle stays calm. The buttons fill the full 44pt band (the
+            // same HIG idiom as the arrangement combo).
+            {
+                const int mulW = 108, proW = 104, gap = 8;
+                auto mulBtn = summary.removeFromRight (mulW);
+                summary.removeFromRight (gap);
+                auto proBtn = summary.removeFromRight (proW);
+                owner_.exportMulButton_.setBounds (mulBtn);
+                owner_.exportProButton_.setBounds (proBtn);
+            }
             owner_.arrangementCombo_.setBounds (summary.removeFromLeft (220));
             summary.removeFromLeft (12);
             const int stripW = juce::jmin (150, juce::jmax (0, summary.getWidth() - 12));
@@ -1345,6 +1353,30 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     // the page chrome — the panel reads top-down: arrangement, then the rows.
     tablePanel_->addAndMakeVisible (arrangementCombo_);
 
+    // ---- Ambika export buttons (summary row, right edge). Export ONLY: the
+    // top-bar Load/Save are .parvati (2026-08-20); these are the explicit
+    // hardware-shareable paths (.PRO = current part, byte-faithful;
+    // .MUL = whole 6-Part setup, incl. the voice-slot fallback dialog when a
+    // Part requests more voices than its voicecards). Desktop gating lives in
+    // the EDITOR's wiring (the file pickers need a window server); the
+    // callbacks are null-safe for headless tests.
+    exportProButton_.onClick = [this] { clickExportProForTest(); };
+    exportMulButton_.onClick = [this] { clickExportMulForTest(); };
+    // Text + tooltips at construction (refreshLanguage re-translates them on
+    // a live language switch — the editor calls it after building).
+    exportProButton_.setTooltip (
+        TRANS ("Export the current part as an Ambika .PRO patch ")
+        + TRANS ("(byte-faithful, hardware-shareable). Parvati-only options ")
+        + TRANS ("(VCA curve, filter card, arp) are not carried — use Save ")
+        + TRANS ("(.parvati) for the full patch."));
+    exportMulButton_.setTooltip (
+        TRANS ("Export the whole 6-part setup as an Ambika .MUL multi ")
+        + TRANS ("(hardware-shareable). If a part needs more voices than its ")
+        + TRANS ("voicecards, the export-fallback dialog maps them onto the ")
+        + TRANS ("6 cards."));
+    tablePanel_->addAndMakeVisible (exportProButton_);
+    tablePanel_->addAndMakeVisible (exportMulButton_);
+
     // Pool-budget readout: how many of the 96 pool voices are allocated
     // across all parts (sum of the per-part voiceCount_ snapshots) — the only
     // budget label in the voice-first model (any combination of per-part
@@ -1395,8 +1427,38 @@ void PatchPage::refreshLanguage()
         r->refreshLanguage();
     if (tablePanel_ != nullptr)
         tablePanel_->refreshLanguage();   // the column-header strip
+    // Export buttons (TRANS text + tooltips re-applied on a live switch).
+    exportProButton_.setButtonText (TRANS ("Export .PRO"));
+    exportMulButton_.setButtonText (TRANS ("Export .MUL"));
+    exportProButton_.setTooltip (
+        TRANS ("Export the current part as an Ambika .PRO patch ")
+        + TRANS ("(byte-faithful, hardware-shareable). Parvati-only options ")
+        + TRANS ("(VCA curve, filter card, arp) are not carried — use Save ")
+        + TRANS ("(.parvati) for the full patch."));
+    exportMulButton_.setTooltip (
+        TRANS ("Export the whole 6-part setup as an Ambika .MUL multi ")
+        + TRANS ("(hardware-shareable). If a part needs more voices than its ")
+        + TRANS ("voicecards, the export-fallback dialog maps them onto the ")
+        + TRANS ("6 cards."));
     repaint();
 }
+
+void PatchPage::clickExportProForTest()
+{
+    // The REAL button path (both the button's onClick and tests land here):
+    // fire the editor seam; null-safe for headless construction.
+    if (onExportPro)
+        onExportPro();
+}
+
+void PatchPage::clickExportMulForTest()
+{
+    if (onExportMul)
+        onExportMul();
+}
+
+juce::String PatchPage::exportProTooltipForTest() { return exportProButton_.getTooltip(); }
+juce::String PatchPage::exportMulTooltipForTest() { return exportMulButton_.getTooltip(); }
 
 void PatchPage::setTableTooltipsEnabled (bool)
 {

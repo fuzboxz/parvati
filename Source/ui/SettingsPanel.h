@@ -100,7 +100,7 @@ private:
     // editor's [0.75, 2.0] zoom range (the same applyZoom contract).
     juce::TextButton zoomOutBt_   { "-" };
     juce::TextButton zoomInBt_    { "+" };
-    juce::TextButton zoomResetBt_ { "0" };
+    juce::TextButton zoomResetBt_ { TRANS ("Reset") };   // was "0" (user feedback 2026-08-20)
     juce::Label      zoomValueLabel_;
     juce::Slider    bpmSlider_;                       // manual arp-clock tempo (40..300 BPM)
     juce::ToggleButton tooltipsToggle_ { "Tooltips" };

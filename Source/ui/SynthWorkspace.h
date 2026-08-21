@@ -130,8 +130,16 @@ public:
         resized();
     }
 
+    // MOD-BAR TOP RULE — the separator above the middle seam (see the ctor).
+    // Test hook: its bounds + visibility.
+    juce::Rectangle<int> barRuleBoundsForTest() const
+    { return barRule_ != nullptr ? barRule_->getBounds() : juce::Rectangle<int>(); }
+    bool barRuleVisibleForTest() const { return barRule_ != nullptr && barRule_->isVisible(); }
+
 private:
     ThemeManager& themeManager_;
+    // (member declarations below)
+
 
     // Main-row direct pages (Oscillators / Mixer / Filter) — all shown directly.
     ParamPage* mainOscPage_   = nullptr;    // Oscillators (direct; BOTH osc panels visible)
@@ -140,6 +148,10 @@ private:
 
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
+    // The middle seam's top separator (parvati::ChromeRule; ui/ChromeRule.h).
+    // Held as unique_ptr<Component> to avoid pulling the header into every
+    // consumer — SynthWorkspace.cpp owns the type via its include.
+    std::unique_ptr<juce::Component> barRule_;
     bool modBarVisible_ = true;   // [MOD] header toggle state (bar shown by default)
 
     // BOTTOM-LEFT: the vertical-scroll host that reparents ONE generator page

@@ -7,6 +7,7 @@
 #include "FxRoutingBar.h"
 #include "FxSlotCard.h"
 #include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
+#include "ChromeRule.h"      // parvati::ChromeRule (the mod-bar top rule)
 #include "ThemeManager.h"
 
 //==============================================================================
@@ -19,6 +20,11 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
     // duplicated.
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
+    // MOD-BAR TOP RULE (2026-08-20): the same full-width separator above the
+    // seam as SynthWorkspace — one ChromeRule family with the editor chrome.
+    barRule_ = std::make_unique<parvati::ChromeRule> (false);
+    addAndMakeVisible (*barRule_);
+    barRule_->setVisible (false);   // laid out only while the seam is shown
 
     // TOP row: the routing bar + three FX-slot cards live in a vertical-scroll
     // Viewport host (R3). The host keeps a fixed NATURAL minimum height
@@ -319,6 +325,14 @@ void FxWorkspace::resized()
     modBar_->setVisible (modBarVisible_);
     if (modBarVisible_)
         modBar_->setBounds (barRow);
+    // The seam's top separator (matches SynthWorkspace exactly).
+    if (barRule_ != nullptr)
+    {
+        barRule_->setVisible (modBarVisible_);
+        if (modBarVisible_)
+            barRule_->setBounds (barRow.getX(), barRow.getY(),
+                                 barRow.getWidth(), 1 + parvati::kRuleShadowH);
+    }
 
     // ---- Bottom row: LEFT 50% = active editor, RIGHT 50% = FxMatrixView ----
     auto modLeft  = bottomRow.removeFromLeft (bottomRow.getWidth() / 2);

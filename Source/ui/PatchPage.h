@@ -55,6 +55,21 @@ public:
     // no-op — used by headless tests).
     std::function<void()> onPartNamesChanged;
 
+    // EXPORT seams (2026-08-20): the two Ambika-export buttons on the summary
+    // row fire these. The editor wires them to its .PRO/.MUL save flows
+    // (openSaveDialog / openSaveMultiDialog, the latter including the
+    // voice-slot fallback dialog); a null callback is a no-op (headless).
+    std::function<void()> onExportPro;
+    std::function<void()> onExportMul;
+
+    // Test hooks: invoke the export buttons' click path (the same onClick the
+    // real buttons carry) so tests can assert the seam without owning the
+    // private button members; and locate the buttons' tooltips.
+    void clickExportProForTest();
+    void clickExportMulForTest();
+    juce::String exportProTooltipForTest();
+    juce::String exportMulTooltipForTest();
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -196,6 +211,12 @@ private:
     // (the 44pt summary row above the 6 part rows — see PartTablePanel), so
     // the arrangement sits with the per-part rows it configures.
     juce::ComboBox arrangementCombo_;   // 5 template items (ids 1..5) + separator + a DISABLED infer-only "Custom" item (id 6)
+    // Ambika export buttons (summary row, right edge): "Export .PRO" (current
+    // part, byte-faithful) + "Export .MUL" (whole 6-Part setup; the editor's
+    // flow opens the MulExportDialog when a voice-slot fallback is needed).
+    // Export ONLY — Load/Save on the top bar are .parvati (2026-08-20).
+    juce::TextButton exportProButton_ { TRANS ("Export .PRO") };
+    juce::TextButton exportMulButton_ { TRANS ("Export .MUL") };
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)
 
     // T4 scroll safety net: the hosted patch-wide ParamPage (whose Global

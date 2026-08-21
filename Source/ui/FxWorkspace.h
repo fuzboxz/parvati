@@ -59,6 +59,12 @@ public:
     static constexpr int kRowGap = 8;
     int rowPaddingForTest() const noexcept { return kRowGap; }
 
+    // MOD-BAR TOP RULE — the separator above the middle seam (see the ctor).
+    // Test hook: its bounds + visibility.
+    juce::Rectangle<int> barRuleBoundsForTest() const
+    { return barRule_ != nullptr ? barRule_->getBounds() : juce::Rectangle<int>(); }
+    bool barRuleVisibleForTest() const { return barRule_ != nullptr && barRule_->isVisible(); }
+
     // TOP-row FX-slot cards: one self-contained FxSlotCard per slot (0..2),
     // reparented directly (never regenerated). setFxSlotCard(slot, card).
     void setFxSlotCard (int slot, FxSlotCard* card);
@@ -137,6 +143,8 @@ private:
 
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
+    // The middle seam's top separator (parvati::ChromeRule; ui/ChromeRule.h).
+    std::unique_ptr<juce::Component> barRule_;
     bool modBarVisible_ = true;   // [MOD] header toggle state (bar shown by default)
 
     // BOTTOM-LEFT: the vertical-scroll host that reparents ONE generator page
