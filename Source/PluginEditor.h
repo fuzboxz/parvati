@@ -679,6 +679,24 @@ public:
     // mod-bar pill click drives.
     SynthWorkspace* getSynthWorkspaceForTest() { return synthWorkspace_.get(); }
 
+    // Test-only (settings drawer regression): opens the settings SidePanel
+    // exactly as the gear button does (showOrHide + the toggle-state sync the
+    // button's onClick performs), so a probe can drive the REAL drawer path
+    // (slide animation, tracker, viewport sizing) without private access.
+    void openSettingsForTest()
+    {
+        if (settingsPanelHost_ != nullptr)
+        {
+            settingsPanelHost_->showOrHide (true);
+            settingsButton_.setToggleState (true, juce::dontSendNotification);
+        }
+    }
+
+    // Test-only (settings drawer regression): the drawer's content tree so a
+    // probe can walk SidePanel -> Viewport -> SettingsPanel without private
+    // access (ownership stays with the editor).
+    juce::Component* settingsContentForTest() { return settingsScroll_.get(); }
+
     // ---- Chrome separator rules (test hooks; 2026-08-20 full-width wave) ----
     // The status rule's bounds (pinned: FULL editor width) and the keyboard
     // overlay's top rule (visible iff the keyboard strip is shown; bounds

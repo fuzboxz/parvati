@@ -986,6 +986,13 @@ private:
     int  uiTelDecim_ = 0;                        // AT: internal-block decimation counter (history appends)
     int      uiTelVoiceSlot_ = -1;               // AT: STICKY telemetry voice (see renderPartFx): one voice per note
     uint64_t uiTelVoiceSeq_  = 0;                // AT: its triggerSeq (a recycled slot never masquerades as sticky)
+    // IDLE DRAG-OUT state (2026-08-22): on release the per-voice rows fall to
+    // zero LINEARLY at the strip's scroll pace (2 bytes per append = a
+    // full-scale fall across one 128-append window) instead of snapping.
+    std::array<uint8_t, ambika::dsp::MOD_SRC_LAST> uiTelIdlePrev_ {};
+    bool     uiTelIdleSeeded_  = false;
+    bool     uiTelLiveSeen_    = false;   // a live append happened since the wipe (gates the seed)
+    uint8_t  uiTelNoteSeqLast_ = 0;              // last spare-slot value (melody decay seed)
     int  uiTelWrittenPart_ = -2;                 // AT: the part the frame was last serviced for (-2 => never)
     bool uiTelWasActive_ = false;                // AT: gates the one write on the active->inactive transition
     // History append decimation: the sub-chunk loop ticks at the internal-block
@@ -1001,7 +1008,8 @@ private:
     void uiTelServiceStage (int p);
     // Decimated history append of this internal block's effective sources
     // (also refreshes uiTel_.sources).
-    void uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq);
+    bool uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq,
+                             int noteSeqOverride = -1);
     // Once-per-block observables refresh: envelope stage/progress/level,
     // effective cutoff/resonance/mode, current sources, voiceActive. @p repVoice
     // may be null — that path fires exactly ONCE on the active->inactive

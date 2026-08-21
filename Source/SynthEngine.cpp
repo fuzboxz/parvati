@@ -2358,27 +2358,68 @@ void SynthEngine::renderPartFx (int numSamples)
                         uiTelAppendHistory (
                             sticky->modRingEntry (juce::jmin (ringIdx, telRing - 1)),
                             part.seq);
+                    uiTelLiveSeen_ = true;      // live truth seen; the next idle transition re-seeds
+                    uiTelIdleSeeded_ = false;
                 }
                 else
                 {
-                    // IDLE (no active voice): the actual-state row. Base:
-                    // persisted values from lastModSources_ (PITCH_BEND — the
-                    // task contract; per-voice bend mirrors live only while a
-                    // voice sounds) + literal constants + zeros elsewhere.
-                    // Override: WHEEL/WHEEL_2/EXPRESSION from the PART'S VOICE
-                    // TABLE — handleController (CC1/2/4) writes them to every
-                    // voice, sounding AND idle, so that table is their live
-                    // truth even before the first note.
+                    // IDLE (no active voice): the actual-state row — with a
+                    // DRAG-OUT (2026-08-22 user request): the per-voice
+                    // generators do not SNAP to zero on release (that read as
+                    // the pill suddenly speeding); their row values fall
+                    // linearly at the strip's own scroll pace — 2 bytes per
+                    // append = a full-scale 255->0 fall across exactly one
+                    // 128-append window (~1.57 s), the same speed the trace
+                    // itself progresses. Persisted controllers keep their true
+                    // value: PITCH_BEND from lastModSources_ (per-voice bend
+                    // mirrors live only while a voice sounds); WHEEL/WHEEL_2/
+                    // EXPRESSION from the PART'S VOICE TABLE (handleController
+                    // CC1/2/4 writes them to every voice, sounding AND idle);
+                    // constants literal. uiTelIdlePrev_ seeds from the last
+                    // effective row on the active->idle transition and decays
+                    // only on real appends (the append's own decimation gate).
+                    if (uiTelLiveSeen_ && ! uiTelIdleSeeded_)
+                    {
+                        // Seed ONLY on a genuine active->idle transition: after
+                        // a telemetry wipe (fresh zero buffer) lastModSources_
+                        // still holds the pre-wipe live row — FX-tail state the
+                        // wipe deliberately does not clear — and seeding from
+                        // it would resurrect stale motion into the fresh
+                        // window ([3] reset contract).
+                        std::copy (lastModSources_[(size_t) p].begin(),
+                                   lastModSources_[(size_t) p].end(),
+                                   uiTelIdlePrev_.begin());
+                        uiTelIdleSeeded_ = true;
+                    }
                     uint8_t idleRow[ambika::dsp::MOD_SRC_LAST];
-                    parvati::telemetryIdleRow (idleRow, ambika::dsp::MOD_SRC_LAST,
-                                      lastModSources_[(size_t) p].data());
+                    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                    {
+                        if (src >= 24)   // CONSTANT_*: a constant's state IS its value
+                            idleRow[(size_t) src] = parvati::telemetryConstantByte (src);
+                        else if (parvati::telemetrySourcePersistsWhenIdle (src))
+                            idleRow[(size_t) src] = lastModSources_[(size_t) p][(size_t) src];
+                        else
+                            idleRow[(size_t) src] = uiTelIdlePrev_[(size_t) src];
+                    }
                     if (! part.voiceIndices.empty())
                         if (auto* gv = getAmbikaVoice (part.voiceIndices[0]))
                             for (int src = ambika::dsp::MOD_SRC_WHEEL;
                                  src <= ambika::dsp::MOD_SRC_EXPRESSION; ++src)
                                 idleRow[(size_t) src] = gv->getModulationSource (
                                     static_cast<uint8_t> (src));
-                    uiTelAppendHistory (idleRow, part.seq);
+                    const bool appended = uiTelAppendHistory (idleRow, part.seq,
+                                                              uiTelNoteSeqLast_);
+                    if (appended)
+                    {
+                        constexpr uint8_t kFall = 2;   // 255->0 in 128 appends = one window
+                        for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                            if (! parvati::telemetrySourcePersistsWhenIdle (src))
+                                uiTelIdlePrev_[(size_t) src] = (uiTelIdlePrev_[(size_t) src] > kFall)
+                                    ? static_cast<uint8_t> (uiTelIdlePrev_[(size_t) src] - kFall)
+                                    : uint8_t { 0 };
+                        uiTelNoteSeqLast_ = (uiTelNoteSeqLast_ > kFall)
+                            ? static_cast<uint8_t> (uiTelNoteSeqLast_ - kFall) : uint8_t { 0 };
+                    }
                     uiTelVoiceSlot_ = -1;   // the pick is gone; re-pick on the next note
                 }
             }
@@ -2508,17 +2549,24 @@ void SynthEngine::uiTelServiceStage (int p)
     uiTelWasActive_ = false;
     uiTelVoiceSlot_ = -1;   // sticky pick dies with the wipe: the next append re-picks
     uiTelVoiceSeq_  = 0;
+    uiTelIdlePrev_.fill (0);   // the drag-out restarts from a zero buffer
+    uiTelIdleSeeded_ = false;
+    uiTelLiveSeen_   = false;  // no live append since the wipe: the next idle must NOT seed
+    uiTelNoteSeqLast_ = 0;
     std::atomic_thread_fence (std::memory_order_release);
     uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
     uiTelWrittenPart_ = p;
 }
 
-void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq)
+bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq,
+                                     int noteSeqOverride)
 {
     // Decimate: one append per kUiTelDecimBlocks internal ticks (~81.7 Hz at
-    // the 980.4 Hz control cadence -> 128 samples ~= 1.57 s window).
+    // the 980.4 Hz control cadence -> 128 samples ~= 1.57 s window). Returns
+    // whether an append LANDED (the idle drag-out advances its decay state
+    // only on real appends, keeping the fall pace equal to the scroll pace).
     if (++uiTelDecim_ < kUiTelDecimBlocks)
-        return;
+        return false;
     uiTelDecim_ = 0;
 
     constexpr int kLen = parvati::ModTelemetrySnapshot::kHistoryLen;
@@ -2532,12 +2580,17 @@ void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
     // trace with rests as gaps, driven PURELY by observation of the same
     // Sequencer object the audio path fires from.
     {
-        const uint8_t sounding = noteSeq.liveNote();
+        // The spare-slot value this append (live note*2, or the idle decay
+        // override); remembered in uiTelNoteSeqLast_ so the idle drag-out can
+        // fall from where the melody trace actually was.
+        const uint8_t v = (noteSeqOverride >= 0)
+            ? static_cast<uint8_t> (noteSeqOverride)
+            : ((noteSeq.liveNote() <= 127)
+                   ? static_cast<uint8_t> (noteSeq.liveNote() * 2) : uint8_t { 0 });
+        uiTelNoteSeqLast_ = v;
         uiTel_.history[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot * (size_t) kLen
-                       + (size_t) idx] = (sounding <= 127) ? static_cast<uint8_t> (sounding * 2)
-                                                           : uint8_t { 0 };
-        uiTel_.sources[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot]
-            = (sounding <= 127) ? static_cast<uint8_t> (sounding * 2) : uint8_t { 0 };
+                       + (size_t) idx] = v;
+        uiTel_.sources[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot] = v;
     }
     for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
     {
@@ -2549,6 +2602,7 @@ void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
         ++uiTel_.historyCount;
     std::atomic_thread_fence (std::memory_order_release);
     uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+    return true;
 }
 
 void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* currentSources)

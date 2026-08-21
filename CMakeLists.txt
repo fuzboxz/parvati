@@ -1188,6 +1188,22 @@ target_include_directories(parvati_fx_concurrency_probe PRIVATE Source)
 target_compile_features(parvati_fx_concurrency_probe PRIVATE cxx_std_17)
 target_link_libraries(parvati_fx_concurrency_probe PRIVATE Parvati)
 
+# Synth/other-parameter drag probe (2026-08-21): the FX knob-drag crackle
+# class, tested against synth patch/part params + master EQ/mix. Diagnostic.
+add_executable(parvati_settings_probe EXCLUDE_FROM_ALL
+    tests/parvati_settings_probe.cpp
+)
+target_include_directories(parvati_settings_probe PRIVATE Source)
+target_compile_features(parvati_settings_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_settings_probe PRIVATE Parvati)
+
+add_executable(parvati_synth_drag_probe EXCLUDE_FROM_ALL
+    tests/parvati_synth_drag_probe.cpp
+)
+target_include_directories(parvati_synth_drag_probe PRIVATE Source)
+target_compile_features(parvati_synth_drag_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_synth_drag_probe PRIVATE Parvati)
+
 add_executable(parvati_fx_drag_test
     tests/parvati_fx_drag_test.cpp
 )
