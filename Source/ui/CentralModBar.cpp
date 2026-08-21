@@ -40,7 +40,7 @@ namespace
     // inset — the pills touched the bar's bottom edge). Horizontal paddings
     // stay at their original tight values (no extra whitespace requested).
     constexpr int kSegPad        = 3;    // segment-edge horizontal padding around the pills
-    constexpr int kSegVPad       = 4;    // top inset above the coloured tab
+    constexpr int kSegVPad       = 8;    // top inset above the coloured tab (2026-08-21: separator-vs-tab breathing room)
     constexpr int kSegBottomPad  = 4;    // bottom inset below the pills (symmetric with the top)
     constexpr int kLabelTabH     = 14;   // coloured label-tab header height (above the pills)
     constexpr int kLabelTabGap    = 4;    // gap between the label tab and the pills
@@ -70,6 +70,10 @@ namespace
     constexpr int kStripXInset = 3;    // horizontal inset inside the pill
     constexpr int kStripTopGap = 5;    // clearance below the top accent band
     constexpr int kStripBotGap = 3;    // clearance above the family underline
+    // 2026-08-21 diagnostic reposition (user request): the strip moved to the
+    // TOP band of the pill (below the accent band) to rule out a draw-order /
+    // coverage problem with the centred label — was full-pill BEHIND the text.
+    constexpr int kStripBandH  = 16;   // strip band height at the pill top
     constexpr int kStripMaxPts = 24;   // downsampled points per strip
 
     // Short cluster label drawn at the left of each segment.
@@ -243,16 +247,27 @@ struct CentralModBar::ModPill : public juce::Component,
         sparkline inside THIS rect and the bar's telemetry tick passes it to
         repaint(), so the bounded dirty region always covers exactly what the
         trace can draw — the GPU-cost control for the animating pills
-        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). Full-pill scope rect: clear of the
-        top accent band and the bottom family underline; the label text draws
-        ON TOP of whatever the trace paints here. */
+        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). TOP BAND of the pill (2026-08-21
+        diagnostic layout): below the accent band, label centred below it. */
     juce::Rectangle<int> stripRect() const
     {
         auto r = getLocalBounds();
+        // 2026-08-21 DIAGNOSTIC reposition (user request): the strip is the TOP
+        // band of the pill (below the accent band) with the label centred in
+        // the remaining area BELOW it — to rule out a draw-order/coverage
+        // problem of the old full-pill-behind-the-text scope reading.
         r.removeFromTop (kStripTopGap);
-        r.removeFromBottom (kStripBotGap);
         return { r.getX() + kStripXInset, r.getY(),
-                 r.getWidth() - 2 * kStripXInset, r.getHeight() };
+                 r.getWidth() - 2 * kStripXInset, kStripBandH };
+    }
+
+    /** Rect the label centres in: everything below the strip band. */
+    juce::Rectangle<int> labelRect() const
+    {
+        auto r = getLocalBounds();
+        r.removeFromTop (kStripTopGap + kStripBandH + 2);
+        r.removeFromBottom (kStripBotGap);
+        return r;
     }
 
     /** Downsamples @p count OLDEST->NEWEST history samples into the cached
@@ -405,10 +420,8 @@ struct CentralModBar::ModPill : public juce::Component,
                                  : (hovered_ ? t.textSecondary.brighter (0.20f)
                                              : t.textSecondary));
             g.setFont (f);
-            // The label centres in the FULL pill: the history sparkline spans
-            // the pill BEHIND the text (the Pigments-style scope reading —
-            // 2026-08-21 redesign; was a reserved bottom band).
-            g.drawText (shortLabel_, getLocalBounds(), juce::Justification::centred, true);
+            // Label BELOW the top strip band (2026-08-21 diagnostic layout).
+            g.drawText (shortLabel_, labelRect(), juce::Justification::centred, true);
         }
         else
         {
@@ -445,9 +458,9 @@ struct CentralModBar::ModPill : public juce::Component,
 
             g.setColour (t.textSecondary);
             g.setFont (f);
-            // Label over the full pill (minus the drag-only horizontal inset);
-            // the sparkline spans the pill BEHIND the text like the generators.
-            g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
+            // Label below the top strip band (2026-08-21 diagnostic layout);
+            // drag-only pills keep the horizontal inset for the dotted handle.
+            g.drawText (shortLabel_, labelRect().reduced (5, 0), juce::Justification::centred, true);
         }
     }
 

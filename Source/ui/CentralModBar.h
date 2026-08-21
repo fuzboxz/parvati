@@ -48,7 +48,7 @@ public:
     // HIG 44pt+ touch target while reclaiming vertical space for the content
     // rows (the bar is a fixed seam in both workspaces; see also the [MOD]
     // header toggle, which collapses the seam entirely).
-    static constexpr int kBarHeight = 82;   // label tab (14) + gaps (4+4) + 56pt pills + 4px top/bottom insets (symmetric, 2026-08-21)
+    static constexpr int kBarHeight = 86;   // 8px sep clearance + label tab (14) + gap 4 + 56pt pills + 4px bottom inset (2026-08-21)
     static constexpr int kPillH     = 56;   // compact pills (was 72 — still >= 44pt HIG touch target)
     static constexpr int kPillGap   = 8;    // minimum pill spacing
     static constexpr int kNavHitW   = 44;   // < > nav hit-band width (F-ios-touch-1: the ONLY pill-band scrollers — HIG floor; the visible chevron glyph stays visually small inside it)

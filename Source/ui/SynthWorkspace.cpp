@@ -15,12 +15,16 @@ SynthWorkspace::SynthWorkspace (ThemeManager& tm)
     // The full-width Central Modulation Bar (middle seam).
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
-    // MOD-BAR TOP RULE (2026-08-20): a full-width separator at the bar seam's
-    // top edge so the pill bar reads as a raised chrome band between the top
-    // row and the bottom row (the same ChromeRule family as the editor's
-    // header/status/keyboard rules; the falloff points UP into the top row).
-    // Added AFTER the bar so it paints above it; non-interactive.
-    barRule_ = std::make_unique<parvati::ChromeRule> (false);
+    // MOD-BAR TOP RULE (2026-08-21 fix): the rule component occupies the FIRST
+    // 1+kRuleShadowH px of the bar row and paints with shadowBelow=true — the
+    // LINE sits at the bar's very top edge (the seam) and the falloff shades
+    // DOWN into the bar's 8px empty top pad. (The old shadowBelow=false drew
+    // the line at the rule's BOTTOM — 6px into the bar, straight through the
+    // coloured label tabs: the "separator overlaps the pill top" report. It
+    // cannot live above the seam: the top-row Viewport is added after this
+    // rule and would cover it.) Same ChromeRule family as the editor's
+    // header/status/keyboard rules. Non-interactive.
+    barRule_ = std::make_unique<parvati::ChromeRule> (true);
     addAndMakeVisible (*barRule_);
     barRule_->setVisible (false);   // laid out only while the seam is shown
 

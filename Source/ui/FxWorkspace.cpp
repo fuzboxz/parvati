@@ -20,9 +20,11 @@ FxWorkspace::FxWorkspace (ThemeManager& tm)
     // duplicated.
     modBar_ = std::make_unique<CentralModBar> (themeManager_);
     addAndMakeVisible (*modBar_);
-    // MOD-BAR TOP RULE (2026-08-20): the same full-width separator above the
-    // seam as SynthWorkspace — one ChromeRule family with the editor chrome.
-    barRule_ = std::make_unique<parvati::ChromeRule> (false);
+    // MOD-BAR TOP RULE (2026-08-21 fix — see SynthWorkspace for the full
+    // rationale): line at the bar's top edge, falloff shading the empty 8px
+    // top pad; the old shadowBelow=false drew it 6px into the bar over the
+    // label tabs. One ChromeRule family with the editor chrome.
+    barRule_ = std::make_unique<parvati::ChromeRule> (true);
     addAndMakeVisible (*barRule_);
     barRule_->setVisible (false);   // laid out only while the seam is shown
 
