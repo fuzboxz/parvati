@@ -232,7 +232,6 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
     const auto panelBg  = t ? t->backgroundPanel : juce::Colour (0xff24242e);
     const auto outline  = t ? t->outline         : juce::Colour (0xff3c3c4a);
     const auto accent   = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
-    const auto textDim  = t ? t->textSecondary         : juce::Colour (0xff9a9aa8);
     const auto trace    = hasCategoryColour_ ? categoryColour_ : accent;
     const auto gridCol  = t ? t->divider.withAlpha (0.10f) : accent.withAlpha (0.06f);
 
@@ -372,14 +371,9 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
     g.setColour (accent.withAlpha (0.18f));
     g.drawHorizontalLine (juce::roundToInt (zeroY), plot.getX(), plot.getRight());
 
-    // Tiny mode label (corner).
-    static const char* const kModeName[] = { "LP", "BP", "HP", "NOTCH" };
-    g.setColour (textDim);
-    g.setFont (lnf ? lnf->appFont (10.0f, juce::Font::plain)
-                   : juce::Font (juce::FontOptions (10.0f)));
-    g.drawText (kModeName[mode],
-                plot.withTrimmedRight (2).withTrimmedBottom (1),
-                juce::Justification::bottomRight);
+    // (2026-08-21) The LP/BP/HP/NOTCH corner label was REMOVED per user
+    // request — the curve shape itself communicates the topology, and the
+    // caption competed with the moving live curve.
 }
 
 //==========================================================================
