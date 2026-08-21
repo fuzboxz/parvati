@@ -2,6 +2,7 @@
 // per-part MIDI-channel editing reaches the engine. Headless (bare create /
 // resize / teardown; no real message loop).
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>   // ::setenv (PARVATI_HEADLESS — native-dialog suppression in main)
 #include <cstring>
@@ -30,6 +31,9 @@
 #endif
 #include "TuningTables.h"              // tuningPresetTable (Tune combo assertions)
 #include "ui/ParvatiTheme.h"
+#include "ui/SynthWorkspace.h"          // [25] getSynthWorkspaceForTest()->modBar()
+#include "ui/ModTelemetryTypes.h"       // [25] ModTelemetrySnapshot / LiveEnvStage / LiveFilterValues
+#include "dsp/patch.h"                  // [25] MOD_SRC_* (synthetic telemetry history)
 #include "ui/PatchPage.h"
 #include "ui/PatchArrangement.h"
 #include "ui/SettingsPanel.h"           // language-switch no-op check
@@ -1776,6 +1780,292 @@ int main (int argc, char** argv)
         }
         else
             check (false, "[24] PatchPage reachable for export checks");
+    }
+
+    // ==================================================================
+    // [25] Live mod-feedback UI: mod-pill telemetry strips, preview stage
+    //      markers / live filter overlay, and the Visual Refresh preference
+    //      (docs/LIVE_MOD_FEEDBACK_DESIGN.md, the UI half of the contract).
+    //
+    //      (a) CentralModBar: the editor wired the strip poll (its rate
+    //          follows the persisted pref); the synthetic-provider path feeds
+    //          the per-pill DIFF GATE (moving history -> a bounded strip
+    //          repaint / generation bump; constant history -> ZERO repaints —
+    //          the idle GPU-cost control), an invalid frame clears the strips
+    //          exactly once, and setTelemetryRateHz clamps (0 = disable,
+    //          5..60 otherwise).
+    //      (b) EnvelopeDisplay: the live stage marker appears INSIDE the
+    //          attack span, rests at the SUSTAIN plateau start (the pin), and
+    //          hides on inactive.
+    //      (c) FilterResponseDisplay: the live overlay curve appears only
+    //          when the effective bytes DEPART from the base knob bytes
+    //          (>= 2), and its cutoff tick follows the live frequency.
+    //      (d) The Visual Refresh preference round-trips + clamps, and the
+    //          Settings combo mirrors it and routes a pick through onChange.
+    //
+    //      Timer reality headless: the bar's strip poll is gated on
+    //      isShowing() (the F-ios-perf-3 dual-hook gate), so its data-driven
+    //      path runs on a short-lived OFF-SCREEN desktop peer (created only
+    //      when the environment can; otherwise the check degrades to the
+    //      deterministic seams below). The preview displays' ctor-started
+    //      30 Hz polls keep running for a NEVER-PARENTED component (the gate
+    //      re-evaluates only on visibility/hierarchy CHANGES, and neither
+    //      hook fires without a parent), so (b)/(c) drive them through the
+    //      CFRunLoop pump with no desktop chrome at all.
+    // ==================================================================
+    std::printf ("\n[25] live mod-feedback UI (strips / markers / live curve / refresh pref)\n");
+    {
+        auto* ed25 = dynamic_cast<ParvatiEditor*> (editor);
+        CentralModBar* editorBar = (ed25 != nullptr && ed25->getSynthWorkspaceForTest() != nullptr)
+            ? ed25->getSynthWorkspaceForTest()->modBar() : nullptr;
+        check (editorBar != nullptr, "[25] editor mod bar reachable via the synth workspace");
+        {
+            char msg25[160];
+            std::snprintf (msg25, sizeof (msg25),
+                           "[25] editor bar strip rate follows the persisted pref (got %d, want %d)",
+                           editorBar != nullptr ? editorBar->telemetryRateHz() : -1,
+                           proc.getUiRefreshHz());
+            check (editorBar != nullptr && editorBar->telemetryRateHz() == proc.getUiRefreshHz(), msg25);
+        }
+
+        // -- (a1) deterministic seams: rate clamping + clear idempotence --
+        {
+            ThemeManager themeMgr25;
+            CentralModBar bar (themeMgr25);
+            bar.setBounds (0, 0, 900, CentralModBar::kBarHeight);
+            check (bar.telemetryRateHz() == 30, "[25] standalone bar defaults to a 30 Hz strip poll");
+            bar.setTelemetryRateHz (200);
+            check (bar.telemetryRateHz() == 60, "[25] setTelemetryRateHz(200) clamps to 60");
+            bar.setTelemetryRateHz (1);
+            check (bar.telemetryRateHz() == 5,  "[25] setTelemetryRateHz(1) clamps to 5");
+            bar.setTelemetryRateHz (0);
+            check (bar.telemetryRateHz() == 0,  "[25] setTelemetryRateHz(0) is the disable sentinel");
+            bar.setTelemetryRateHz (30);
+            const int genClear = bar.telemetryGeneration();
+            bar.clearTelemetry();
+            check (bar.telemetryGeneration() == genClear,
+                   "[25] clearTelemetry on an already-clear bar bumps no generation");
+        }
+
+#if defined (__APPLE__)
+        // -- (a2) data-driven strip path: a synthetic provider feeds the diff
+        //    gate through the REAL bar timer on an off-screen peer --
+        struct SyntheticTelemetry
+        {
+            int  call   = 0;
+            bool moving = true;
+            bool valid  = true;
+            parvati::ModTelemetrySnapshot snap {};
+
+            SyntheticTelemetry()
+            {
+                snap.epoch = 1;
+                snap.part  = 0;
+                snap.historyCount = 64;
+                // VELOCITY: a constant pattern — it must NEVER trip the gate.
+                uint8_t* vel = snap.history
+                    + (size_t) ambika::dsp::MOD_SRC_VELOCITY * parvati::ModTelemetrySnapshot::kHistoryLen;
+                for (int i = 0; i < 64; ++i) vel[(size_t) i] = 200;
+            }
+
+            bool operator() (parvati::ModTelemetrySnapshot& out)
+            {
+                if (! valid)
+                    return false;   // a torn read / stale reset epoch
+                // LFO 1: a scrolling ramp — the downsampled first/last/min/max
+                // signature moves on every call while `moving`.
+                uint8_t* lfo = snap.history
+                    + (size_t) ambika::dsp::MOD_SRC_LFO_1 * parvati::ModTelemetrySnapshot::kHistoryLen;
+                for (int i = 0; i < 64; ++i)
+                    lfo[(size_t) i] = static_cast<uint8_t> ((i * 4 + (moving ? call * 8 : 0)) & 0xff);
+                snap.sources[ambika::dsp::MOD_SRC_LFO_1] = lfo[63];
+                ++call;
+                out = snap;
+                return true;
+            }
+        };
+        {
+            ThemeManager themeMgr25;
+            CentralModBar bar (themeMgr25);
+            bar.setBounds (-1400, -1400, 900, CentralModBar::kBarHeight);   // off-screen probe peer
+            bar.setVisible (true);   // a fresh JUCE Component is born HIDDEN — isShowing() needs this
+            SyntheticTelemetry synth;
+            bar.setTelemetryProvider ([&synth] (parvati::ModTelemetrySnapshot& s) { return synth (s); });
+            bar.setTelemetryRateHz (60);
+            bar.addToDesktop (0);   // borderless, taskbar-less — parentHierarchyChanged starts the poll
+            if (bar.isShowing())
+            {
+                // Moving history: the strip data changes each tick, so the
+                // generation counter climbs (bounded strip-rect repaints).
+                const int gen0 = bar.telemetryGeneration();
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.300, false);   // ~18 ticks @ 60 Hz
+                char msg25[160];
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] moving history animates the strips (gen %d -> %d)",
+                               gen0, bar.telemetryGeneration());
+                check (bar.telemetryGeneration() > gen0, msg25);
+
+                // Constant history: after the LAST moving frame's signature
+                // settles, the diff gate must go COMPLETELY silent.
+                synth.moving = false;
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // transition tick
+                const int gen1 = bar.telemetryGeneration();
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.400, false);   // ~24 parked ticks
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] constant history repaints NOTHING (gen %d -> %d)",
+                               gen1, bar.telemetryGeneration());
+                check (bar.telemetryGeneration() == gen1, msg25);
+
+                // An invalid frame (a torn seqlock read / a stale reset epoch)
+                // hides the strips ONCE; further invalid frames stay silent.
+                synth.valid = false;
+                const int gen2 = bar.telemetryGeneration();
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.200, false);
+                check (bar.telemetryGeneration() > gen2,
+                       "[25] invalid frame clears the strips (one generation bump)");
+                const int gen3 = bar.telemetryGeneration();
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.200, false);
+                check (bar.telemetryGeneration() == gen3,
+                       "[25] already-cleared strips stay clear (no repeated bumps)");
+            }
+            else
+            {
+                std::printf ("  skip: [25] no desktop peer available — strip data-driven path not exercised\n");
+            }
+            bar.setVisible (false);   // hide BEFORE removing the peer (a visible off-screen window can steal focus on some hosts)
+            bar.removeFromDesktop();
+        }
+
+        // -- (b) EnvelopeDisplay live stage marker (standalone, never parented:
+        //    the ctor-started 30 Hz poll keeps ticking; the pump delivers it) --
+        {
+            // Knob values a=0.5 d=0.3 s=0.7 r=0.4 -> spans wA=0.5 wD=0.3
+            // wS=0.5 wR=0.4 (total 1.7): attack ends at 0.5/1.7 ~= 0.294, the
+            // sustain plateau starts at (0.5+0.3)/1.7 ~= 0.471.
+            constexpr float kTotal25    = 1.7f;
+            constexpr float kAttackEnd  = 0.5f / kTotal25;
+            constexpr float kPlateau25  = 0.8f / kTotal25;
+
+            parvati::LiveEnvStage stage;   // provider-owned state, mutated between phases
+            EnvelopeDisplay disp ("Env 25",
+                [] { return 0.5f; }, [] { return 0.3f; }, [] { return 0.7f; }, [] { return 0.4f; });
+            disp.setBounds (0, 0, 200, 80);
+            disp.setLiveStageProvider ([&stage] { return stage; });
+
+            stage = { true, 0, 0.25f };   // ATTACK, a quarter through
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // ~4 ticks @ 30 Hz
+            {
+                char msg25[160];
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] env marker visible in ATTACK (visible=%d)",
+                               (int) disp.liveMarkerVisibleForTest());
+                check (disp.liveMarkerVisibleForTest(), msg25);
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] env marker x inside the attack span (x=%.3f, span 0..%.3f)",
+                               disp.liveMarkerXForTest(), kAttackEnd);
+                check (disp.liveMarkerXForTest() > 0.0f && disp.liveMarkerXForTest() < kAttackEnd, msg25);
+            }
+
+            stage = { true, 2, 1.0f };    // SUSTAIN: pinned at the plateau START
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            {
+                char msg25[160];
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] env marker rests at the sustain plateau start (x=%.3f, want %.3f)",
+                               disp.liveMarkerXForTest(), kPlateau25);
+                check (std::fabs (disp.liveMarkerXForTest() - kPlateau25) < 0.01f, msg25);
+            }
+
+            stage = { false, 2, 1.0f };   // inactive (key released): hidden
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            check (! disp.liveMarkerVisibleForTest(), "[25] env marker hides when the provider goes inactive");
+        }
+
+        // -- (c) FilterResponseDisplay live modulation overlay (same
+        //    never-parented poll technique) --
+        {
+            parvati::LiveFilterValues lv;  // provider-owned state
+            FilterResponseDisplay disp ("Filter 25",
+                [] { return 0.5f; },   // base cutoff  -> byte 128
+                [] { return 0.2f; },   // base resonance
+                [] { return 0.0f; });  // LP
+            disp.setBounds (0, 0, 220, 64);
+            disp.setLiveValuesProvider ([&lv] { return lv; });
+
+            // Live bytes DEPART from the base (0.8 -> 204 vs 128, >= 2): the
+            // overlay curve + its cutoff tick appear, and the tick sits right
+            // of the base (cutoffByteToHz is exponential in byte/255, so the
+            // base tick is at ~= 128/255 and the live at ~= 204/255).
+            lv = { true, 0.8f, 0.2f };
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            {
+                char msg25[160];
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] filter live curve visible under modulation (visible=%d)",
+                               (int) disp.liveCurveVisibleForTest());
+                check (disp.liveCurveVisibleForTest(), msg25);
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] live cutoff tick right of the base tick (x=%.3f > %.3f)",
+                               disp.liveCutoffXForTest(), 128.0f / 255.0f);
+                check (disp.liveCutoffXForTest() > 128.0f / 255.0f
+                       && std::fabs (disp.liveCutoffXForTest() - 204.0f / 255.0f) < 0.01f, msg25);
+            }
+
+            // Live bytes EQUAL the base (sub-threshold): no overlay — the
+            // single opaque base curve is exactly what the user sees.
+            lv = { true, 0.5f, 0.2f };
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            check (! disp.liveCurveVisibleForTest(),
+                   "[25] filter overlay hidden when the live bytes match the base (no duplicate strokes)");
+        }
+#endif  // __APPLE__ (pump-driven [25] sub-checks; the seams above ran everywhere)
+
+        // -- (d) Visual Refresh preference: round-trip + clamp + Settings combo --
+        {
+            proc.setUiRefreshHz (60);
+            check (proc.getUiRefreshHz() == 60, "[25] setUiRefreshHz(60) round-trips");
+            proc.setUiRefreshHz (0);
+            check (proc.getUiRefreshHz() == 5,  "[25] setUiRefreshHz(0) clamps to 5");
+            proc.setUiRefreshHz (500);
+            check (proc.getUiRefreshHz() == 60, "[25] setUiRefreshHz(500) clamps to 60");
+            proc.setUiRefreshHz (30);   // restore the default for everything after
+
+            ThemeManager themeMgr25;
+            ParvatiAudioProcessor settingsProc25;
+            settingsProc25.prepareToPlay (48000.0, 256);
+            int refreshCbSum = 0;
+            SettingsPanel panel25 (settingsProc25, themeMgr25,
+                                   [] (double) {}, [] (bool) {}, [] (bool) {}, [] (int) {},
+                                   [] (const juce::String&) {},
+                                   [&] (int hz) { refreshCbSum += hz; });
+            panel25.setBounds (0, 0, 420, 360);
+
+            // Locate the refresh combo by its stable item IDs (10/15/30/60 —
+            // the Hz values themselves; theme/lang/os combos use 1..N).
+            juce::ComboBox* refreshCombo = nullptr;
+            {
+                juce::Array<juce::Component*> nodes { &panel25 };
+                for (int i = 0; i < nodes.size(); ++i)
+                {
+                    auto* c = nodes.getUnchecked (i);
+                    if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+                        if (cb->getNumItems() == 4 && cb->getItemId (0) == 10 && cb->getItemId (3) == 60)
+                            refreshCombo = cb;
+                    for (auto* ch : c->getChildren()) nodes.add (ch);
+                }
+            }
+            check (refreshCombo != nullptr, "[25] Visual Refresh combo found (item ids 10/15/30/60)");
+            if (refreshCombo != nullptr)
+            {
+                check (refreshCombo->getSelectedId() == 30,
+                       "[25] refresh combo mirrors the persisted 30 Hz default");
+                refreshCombo->setSelectedId (15, juce::sendNotificationSync);
+                check (settingsProc25.getUiRefreshHz() == 15,
+                       "[25] picking 15 Hz persists through the processor");
+                check (refreshCbSum == 15,
+                       "[25] picking 15 Hz fires the editor hook exactly once");
+            }
+        }
     }
 
     // ---- teardown ----
