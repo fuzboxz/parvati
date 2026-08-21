@@ -70,10 +70,11 @@ namespace
     constexpr int kStripXInset = 3;    // horizontal inset inside the pill
     constexpr int kStripTopGap = 5;    // clearance below the top accent band
     constexpr int kStripBotGap = 3;    // clearance above the family underline
-    // 2026-08-21 diagnostic reposition (user request): the strip moved to the
-    // TOP band of the pill (below the accent band) to rule out a draw-order /
-    // coverage problem with the centred label — was full-pill BEHIND the text.
-    constexpr int kStripBandH  = 16;   // strip band height at the pill top
+    // 2026-08-21 final scope (user request): the strip spans the ENTIRE pill
+    // inner height — bottom to top, between the accent band and the underline
+    // — with the label drawn on top (Pigments-style scope reading). A brief
+    // top-band diagnostic layout confirmed the pipeline first; this restores
+    // the full-pill span the design intends.
     constexpr int kStripMaxPts = 24;   // downsampled points per strip
 
     // Short cluster label drawn at the left of each segment.
@@ -247,27 +248,17 @@ struct CentralModBar::ModPill : public juce::Component,
         sparkline inside THIS rect and the bar's telemetry tick passes it to
         repaint(), so the bounded dirty region always covers exactly what the
         trace can draw — the GPU-cost control for the animating pills
-        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). TOP BAND of the pill (2026-08-21
-        diagnostic layout): below the accent band, label centred below it. */
+        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). FULL-PILL scope (2026-08-21 final):
+        bottom to top of the pill, clear of the top accent band and the bottom
+        family underline; the label text draws ON TOP of the trace (the
+        Pigments-style scope reading — confirmed visible in the real app). */
     juce::Rectangle<int> stripRect() const
     {
         auto r = getLocalBounds();
-        // 2026-08-21 DIAGNOSTIC reposition (user request): the strip is the TOP
-        // band of the pill (below the accent band) with the label centred in
-        // the remaining area BELOW it — to rule out a draw-order/coverage
-        // problem of the old full-pill-behind-the-text scope reading.
         r.removeFromTop (kStripTopGap);
-        return { r.getX() + kStripXInset, r.getY(),
-                 r.getWidth() - 2 * kStripXInset, kStripBandH };
-    }
-
-    /** Rect the label centres in: everything below the strip band. */
-    juce::Rectangle<int> labelRect() const
-    {
-        auto r = getLocalBounds();
-        r.removeFromTop (kStripTopGap + kStripBandH + 2);
         r.removeFromBottom (kStripBotGap);
-        return r;
+        return { r.getX() + kStripXInset, r.getY(),
+                 r.getWidth() - 2 * kStripXInset, r.getHeight() };
     }
 
     /** Downsamples @p count OLDEST->NEWEST history samples into the cached
@@ -420,8 +411,9 @@ struct CentralModBar::ModPill : public juce::Component,
                                  : (hovered_ ? t.textSecondary.brighter (0.20f)
                                              : t.textSecondary));
             g.setFont (f);
-            // Label BELOW the top strip band (2026-08-21 diagnostic layout).
-            g.drawText (shortLabel_, labelRect(), juce::Justification::centred, true);
+            // Label centred over the FULL pill, on top of the full-height
+            // history strip (the Pigments-style scope reading).
+            g.drawText (shortLabel_, getLocalBounds(), juce::Justification::centred, true);
         }
         else
         {
@@ -458,9 +450,9 @@ struct CentralModBar::ModPill : public juce::Component,
 
             g.setColour (t.textSecondary);
             g.setFont (f);
-            // Label below the top strip band (2026-08-21 diagnostic layout);
-            // drag-only pills keep the horizontal inset for the dotted handle.
-            g.drawText (shortLabel_, labelRect().reduced (5, 0), juce::Justification::centred, true);
+            // Label centred over the full pill (minus the drag-only horizontal
+            // inset), on top of the full-height history strip.
+            g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
         }
     }
 
