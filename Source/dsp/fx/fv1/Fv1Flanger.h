@@ -38,7 +38,8 @@ private:
     float inc_ = 0.0f;
     float phase_ = 0.0f;            // L voice phase; R = +0.5 (180 deg)
     float depthSamp_ = 0.0f;
-    float baseSamp_  = 20.0f;
+    float baseSamp_  = 20.0f;   // TARGET base delay (samples); the read glides
+    int32_t baseQL_  = 0;       // GLIDING base in Q16 (0 = unset sentinel; see .cpp)
     int16_t fb14_ = 0;
 };
 

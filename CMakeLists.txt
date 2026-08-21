@@ -1178,6 +1178,25 @@ target_compile_features(parvati_kbd_drag_repro PRIVATE cxx_std_17)
 target_link_libraries(parvati_kbd_drag_repro PRIVATE Parvati)
 # needs the full GUI module
 
+# FX knob-drag crackle regression (2026-08-21): ANY param drag (incl. the
+# dry/wet knob) on a latency>0 slot clicks while the fxDirty_ service clears
+# the latency-comp rings; built by default.
+add_executable(parvati_fx_concurrency_probe EXCLUDE_FROM_ALL
+    tests/parvati_fx_concurrency_probe.cpp
+)
+target_include_directories(parvati_fx_concurrency_probe PRIVATE Source)
+target_compile_features(parvati_fx_concurrency_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_concurrency_probe PRIVATE Parvati)
+
+add_executable(parvati_fx_drag_test
+    tests/parvati_fx_drag_test.cpp
+)
+target_include_directories(parvati_fx_drag_test PRIVATE Source)
+target_compile_features(parvati_fx_drag_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_fx_drag_test PRIVATE
+    Parvati
+)
+
 add_executable(parvati_phaser_crackle_test
     tests/parvati_phaser_drag_repro.cpp
 )

@@ -294,12 +294,24 @@ void FxChain::setSlotParam (int slot, int idx, float v) noexcept
 
 void FxChain::setTopology (FxTopology t) noexcept
 {
-    topology_ = static_cast<uint8_t> (t);
+    // VALUE-GUARDED (2026-08-21 — the FX knob-drag crackle): the engine's
+    // fxDirty_ service re-pushes topology+order on EVERY param write (any
+    // knob, including Dry/Wet), and the unconditional clearDelayRings() here
+    // zeroed the dry/wet latency-compensation rings at drag rate — the dry
+    // component of every latency>0 slot (the 6x-OS shapers) read zeros for
+    // L samples then jumped back: a click per write. Only a REAL routing
+    // change still clears.
+    const auto v = static_cast<uint8_t> (t);
+    if (topology_ == v) return;
+    topology_ = v;
     clearDelayRings();   // N3: routing changed — stale ring history is meaningless
 }
 
 void FxChain::setOrder (const std::array<int, 3>& ord) noexcept
 {
+    // VALUE-GUARDED (2026-08-21 — see setTopology): re-pushing the SAME order
+    // at drag rate must not clear the latency-compensation rings.
+    if (order_ == ord) return;
     order_ = ord;
     clearDelayRings();   // N3: order changed — stale ring history is meaningless
 }

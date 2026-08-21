@@ -11,6 +11,30 @@
 namespace parvati::fv1
 {
 
+// BASE-DELAY GLIDE (2026-08-21, the Fv1Echo/Fv1ClockedDelay idiom): the
+// Manual knob steps the read position at the sub-chunk cadence; a fast drag
+// jumps it ~2.5 samples per tick. The Q16 one-pole below (k=1/256, capped at
+// ~0.25 sample/internal-sample, sub-1/16 tail snapped, never stalls below one
+// quantum) turns every Manual move into a tape-speed pitch bend — click-free.
+namespace
+{
+constexpr int32_t kFlQOne    = 65536;
+constexpr int32_t kFlGlideCapQ = 16384;
+constexpr int kFlGlideShift = 8;
+
+inline void flGlideTapQ16 (int32_t& cur, int32_t target) noexcept
+{
+    const int32_t deltaQ = target - cur;
+    const int32_t distQ  = (deltaQ < 0) ? -deltaQ : deltaQ;
+    if (distQ <= kFlQOne / 16) { cur = target; return; }
+    int32_t stepQ = deltaQ >> kFlGlideShift;
+    if (stepQ >  kFlGlideCapQ) stepQ =  kFlGlideCapQ;
+    if (stepQ < -kFlGlideCapQ) stepQ = -kFlGlideCapQ;
+    if (stepQ == 0) stepQ = (deltaQ > 0) ? 1 : -1;
+    cur += stepQ;
+}
+} // namespace
+
 static_assert (DelayLine<1024>::capacity <= kMaxMemorySamples,
                "Fv1Flanger within the FV-1 RAM budget");
 
@@ -42,6 +66,7 @@ void Fv1Flanger::setParams (const float param[5])
 void Fv1Flanger::resetInternal()
 {
     fbDc_.clear();
+    baseQL_ = 0;   // glide sentinel: snap on the next first sample
     line_.clear();
     damp_.clear();
     phase_ = 0.0f;
@@ -50,9 +75,18 @@ void Fv1Flanger::resetInternal()
 void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
                                   int32_t& lout, int32_t& rout)
 {
-    // Two sweep phases 180 deg apart over the same line (offset reads).
-    const float dl = baseSamp_ + depthSamp_ * lutSine32 (phase_);
-    const float dr = baseSamp_ + depthSamp_ * lutSine32 (phase_ + 0.5f);
+    // Glide the base toward its target (snap on the first sample after a
+    // reset: baseQL_ == 0 is the "unset" sentinel), then the two sweep
+    // phases 180 deg apart read the GLIDING base.
+    {
+        const int32_t targetQ = static_cast<int32_t> (std::lround (
+            static_cast<double> (baseSamp_) * 65536.0));
+        if (baseQL_ <= 1) baseQL_ = targetQ;
+        else              flGlideTapQ16 (baseQL_, targetQ);
+    }
+    const float baseNow = static_cast<float> (baseQL_) * (1.0f / 65536.0f);
+    const float dl = baseNow + depthSamp_ * lutSine32 (phase_);
+    const float dr = baseNow + depthSamp_ * lutSine32 (phase_ + 0.5f);
     const int32_t rL = line_.readFrac (dl);
     const int32_t rR = line_.readFrac (dr);
 

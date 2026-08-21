@@ -290,6 +290,37 @@ running median mid-note):
 Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
 rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).
 
+### FX knob-drag dezipper (2026-08-21 — "whichever knob I drag crackles")
+
+Subagent investigation (diff-census method: max impulse of render(dragged) −
+render(static) with identical input — the raw census false-positives on
+folded/driven content):
+
+* **Base-param dezipper 3 ms → 15 ms** (SynthEngine.h kBaseDeClickTauSec): a
+  fast drag fires ~8 param ticks per block; the 3 ms one-pole tracked them
+  almost instantly and the ~980 Hz sub-chunk cadence stepped FX coefficients
+  directly. Flanger Manual measured worst 0.1613 → 0.0493. The FX MOD MATRIX
+  still passes RAW (audio-rate parity preserved) and the fix is unconditional
+  (no Settings toggle dependency). Red-validated at 3 ms.
+* **Fv1Flanger base-delay glide** (the Echo/ClockedDelay Q16 idiom, defense
+  in depth): Manual steps the read position ~2.5 smp/tick on fast drags; the
+  one-pole glide (k=1/256, 0.25 smp/sample cap) makes every move a
+  tape-speed pitch bend.
+* **FxChain::setTopology/setOrder value-guarded**: the fxDirty_ service
+  re-pushes both on EVERY param write (including Dry/Wet) and each call
+  cleared the dry/wet latency-compensation rings — the dry component of any
+  latency>0 slot read zeros then jumped: a click per write (the dry/wet
+  crackle). Only a real routing change clears now.
+* **Ruled out (measured)**: the common fxDirty_ service (None-slot writes
+  diff 0.0000); real-time contention under concurrent 120 Hz writes (worst
+  0.93 ms vs an 11.6 ms deadline); the dry/wet per-sample smoother itself
+  (0.0060).
+* **Character, documented**: the Wavefolder fold/bias drag buzz is
+  RATE-INDEPENDENT (0.0992 slow vs 0.0975 fast) and output-continuous — the
+  fold curve's C0 knees sliding, inherent to modulating a folding curve; no
+  dezipper applies. Pinned at a 0.12 bound with a fast==slow equality check
+  in tests/parvati_fx_drag_test.cpp.
+
 ### Subagent audit wave (2026-08-21): the phaser class, family-wide
 
 Three parallel code audits (feedback loops / shapers / rate-bridging) over the

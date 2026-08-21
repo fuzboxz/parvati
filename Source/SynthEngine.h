@@ -906,7 +906,14 @@ private:
     // The de-click one-pole is applied to the BASE ONLY; the mod-matrix offset
     // is added RAW. This gives audio-rate modulation parity with the synth voice
     // path (which applies CV raw at 980 Hz) + de-clicked manual jumps.
-    static constexpr double kBaseDeClickTauSec = 0.003;   // 3 ms: de-clicks a jump over ~5 ms
+    // 15 ms (2026-08-21, was 3 ms): a FAST knob drag fires up to ~8 param
+    // ticks per audio block; the 3 ms tau tracked that almost instantly and
+    // the per-sub-chunk param steps stepped the FX output directly (the
+    // wavefolder fold drag measured 0.05-0.10 diff-impulse zipper at 980 Hz
+    // sub-chunk cadence). 15 ms is the standard dezipper window: knob drags
+    // glide, preset loads land over one smooth ~30 ms transition, and the FX
+    // MOD MATRIX still passes through RAW (audio-rate parity preserved).
+    static constexpr double kBaseDeClickTauSec = 0.015;
     std::array<std::array<std::array<float, kNumFxSlotParams>, kNumFxSlots>, kNumParts>
         smoothedBase_ {};   // per-part per-slot per-param smoothed base value (AT-only)
     std::array<std::array<uint8_t, kNumFxSlots>, kNumParts> prevSlotType_ {};   // type-change detection
