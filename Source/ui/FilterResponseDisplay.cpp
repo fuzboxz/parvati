@@ -124,14 +124,24 @@ void FilterResponseDisplay::timerCallback()
     if (modeChanged) lastM_ = m;
 
     // ---- Live modulated overlay poll (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
-    // ONE provider call per tick (none at all when never wired). The overlay is
-    // only VISIBLE once the effective bytes actually DEPART from the base knob
-    // bytes (>= 2 on either axis): a modulation that moves the filter by less
-    // than a knob step would render a second curve indistinguishable from the
-    // base — duplicate strokes for no information. The x/tick position is
-    // tracked from the live cutoff regardless, so the test seam reads motion
-    // even through sub-threshold wobble. Candidate state defaults to the
-    // previously shown values so an inactive provider only ever flips the flag.
+    // ONE provider call per tick (none at all when never wired). ACTIVITY is
+    // TEMPORAL, not spatial: the overlay shows while the effective bytes are
+    // MOVING (>= 1 byte vs the previous tick on either axis) and holds for a
+    // short window after the last movement, hiding once the values settle.
+    // Why not "departs from the knob base": the engine's effective cutoff
+    // byte includes KEY TRACKING (~2 bytes per semitone), so a spatial
+    // base-vs-live threshold trips for EVERY held note on any patch with
+    // tracking — an always-on second curve for what is a static patch
+    // setting, not live modulation. Temporal gating matches the goal
+    // ("actively being modulated"): an env sweep, an LFO wobble or a wheel
+    // ride moves the bytes every tick; a held note with static key tracking
+    // settles within the hold window and the single opaque base preview
+    // returns. The x/tick position is tracked from the live cutoff whenever
+    // the provider is active, so the test seam reads position through
+    // sub-threshold wobble too.
+    constexpr int kLiveHoldTicks = 8;   // ~270 ms @ 30 Hz: bridges modulation
+                                        // dips below the 1-byte/tick rate without
+                                        // flicker, still hides a settled note fast
     bool  liveActive = false;
     int   liveCut = dispLiveCutByte_;
     int   liveRes = dispLiveResByte_;
@@ -143,9 +153,13 @@ void FilterResponseDisplay::timerCallback()
         {
             liveCut = juce::roundToInt (juce::jlimit (0.0f, 1.0f, lv.cutoff01) * 255.0f);
             liveRes = juce::roundToInt (juce::jlimit (0.0f, 1.0f, lv.reso01)   * 255.0f);
-            const int baseCut = juce::roundToInt (juce::jlimit (0.0f, 1.0f, c) * 255.0f);
-            const int baseRes = juce::roundToInt (juce::jlimit (0.0f, 1.0f, r) * 255.0f);
-            liveActive = std::abs (liveCut - baseCut) >= 2 || std::abs (liveRes - baseRes) >= 2;
+            const bool liveMoved = std::abs (liveCut - dispLiveCutByte_) >= 1
+                                || std::abs (liveRes - dispLiveResByte_) >= 1;
+            if (liveMoved)
+                liveHoldTicks_ = kLiveHoldTicks;   // (re)arm the hold window
+            else if (liveHoldTicks_ > 0)
+                --liveHoldTicks_;
+            liveActive = liveHoldTicks_ > 0;
 
             // Normalized log-frequency column of the live cutoff tick (same
             // mapping paint() uses for the ticks; kMinHz/kMaxHz live in this
@@ -154,6 +168,14 @@ void FilterResponseDisplay::timerCallback()
             liveCutX = juce::jlimit (0.0f, 1.0f,
                         (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f);
         }
+        else
+        {
+            liveHoldTicks_ = 0;   // voice gone (released/killed): hide at once
+        }
+    }
+    else
+    {
+        liveHoldTicks_ = 0;       // no provider wired: nothing to hold
     }
     // >= 1 byte of live motion (while visible) is enough to re-stroke the
     // overlay — sub-byte wobble cannot move the curve a whole pixel anyway.

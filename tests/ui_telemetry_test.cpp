@@ -263,7 +263,16 @@ int main()
         check (snap.envStage[2] == 0, "[5] Env 3 still ATTACK mid-segment");
         check (snap.envProgress[2] > progEarly, "[5] attack progress grows");
 
-        renderBlocks (proc, blocksForMs (2600.0));       // ~3.6 s total: DECAY done
+        // DECAY pin (review follow-up: the walk previously skipped stage 1):
+        // past the 1.81 s attack, ~0.15 s into the 0.41 s DECAY — well clear
+        // of both neighbouring stages.
+        renderBlocks (proc, blocksForMs (950.0));        // ~1.96 s total: inside DECAY
+        readSnap (proc, snap, "[5] valid inside the decay");
+        check (snap.envStage[2] == 1, "[5] Env 3 passes through DECAY (stage 1)");
+        check (snap.envProgress[2] >= 0.0f && snap.envProgress[2] <= 1.0f,
+               "[5] decay progress within 0..1");
+
+        renderBlocks (proc, blocksForMs (1700.0));       // ~3.66 s total: DECAY done
         readSnap (proc, snap, "[5] valid at the plateau");
         check (snap.envStage[2] == 2, "[5] Env 3 reaches SUSTAIN");
         check (snap.envProgress[2] == 1.0f, "[5] SUSTAIN progress pinned at 1.0");
@@ -276,6 +285,11 @@ int main()
 
         renderBlocks (proc, blocksForMs (1100.0));       // > every envelope's release
         readSnap (proc, snap, "[5] valid after the tail");
+        // DEAD is communicated by voiceActive=false (the UI hides its markers
+        // on that flag); envStage is a FROZEN tail value while idle — the last
+        // active sample rests at/after RELEASE and is deliberately not
+        // refreshed (nothing paints from it while !voiceActive). Pin >= RELEASE.
+        check (snap.envStage[2] >= 3, "[5] Env 3 frozen at/after RELEASE once idle");
         check (! snap.voiceActive, "[5] voiceActive false once every envelope is DEAD");
     }
 

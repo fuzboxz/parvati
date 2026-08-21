@@ -2011,12 +2011,28 @@ int main (int argc, char** argv)
                        && std::fabs (disp.liveCutoffXForTest() - 204.0f / 255.0f) < 0.01f, msg25);
             }
 
-            // Live bytes EQUAL the base (sub-threshold): no overlay — the
-            // single opaque base curve is exactly what the user sees.
+            // Settled (TEMPORAL gate): live bytes matching the base is a
+            // MOVEMENT (0.8 -> 0.5) that arms the hold window, so the overlay
+            // stays for ~270 ms and then hides — pump past the hold.
             lv = { true, 0.5f, 0.2f };
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.450, false);
             check (! disp.liveCurveVisibleForTest(),
-                   "[25] filter overlay hidden when the live bytes match the base (no duplicate strokes)");
+                   "[25] filter overlay hides once the live values settle (hold expired)");
+
+            // The KEY-TRACKING regression pin: a live value STATICALLY far from
+            // the knob base (what key tracking does to every held note) never
+            // shows the overlay — only ACTUAL movement does (the old spatial
+            // >= 2-byte threshold tripped on exactly this).
+            const bool visibleAfterStatic = [&]
+            {
+                lv = { true, 0.8f, 0.2f };   // a departure, but ONE step then still
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // the step itself: visible...
+                const bool duringHold = disp.liveCurveVisibleForTest();
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.450, false);   // ...then settled: hidden
+                return duringHold && ! disp.liveCurveVisibleForTest();
+            }();
+            check (visibleAfterStatic,
+                   "[25] static live-vs-base offset (key tracking) shows only during the movement, not while settled");
         }
 #endif  // __APPLE__ (pump-driven [25] sub-checks; the seams above ran everywhere)
 

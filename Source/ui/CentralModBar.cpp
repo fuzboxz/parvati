@@ -258,6 +258,7 @@ struct CentralModBar::ModPill : public juce::Component,
         const int m = juce::jmin (kStripMaxPts, count);
         float v[kStripMaxPts];
         float lo = 1.0f, hi = 0.0f;
+        float moment = 0.0f;   // Σ j·v[j]: POSITION-weighted signature term
         for (int j = 0; j < m; ++j)
         {
             const int idx = (m > 1)
@@ -268,18 +269,24 @@ struct CentralModBar::ModPill : public juce::Component,
             v[j] = val;
             lo = juce::jmin (lo, val);
             hi = juce::jmax (hi, val);
+            moment += static_cast<float> (j) * val;
         }
 
         // DIFF GATE (the idle-cost control): the engine's history ring slides
         // at its append rate, so the OLDEST/NEWEST ends move whenever fresh
-        // data lands, while min/max guard the interior shape. A parked source
-        // (wheel at rest, gate low) reproduces an identical signature every
-        // tick and triggers ZERO repaints.
+        // data lands, while min/max guard the interior shape. The moment Σ j·v[j]
+        // adds a POSITION-sensitive term: a pulse (GATE / VELOCITY hit / ARP
+        // step) sliding through an otherwise-flat window keeps the same
+        // first/last/min/max but shifts the centroid, so the strip follows it
+        // instead of freezing until the pulse reaches an endpoint. A parked
+        // source (wheel at rest, gate low) still reproduces an identical
+        // signature every tick and triggers ZERO repaints.
         if (m == stripCount_
             && std::fabs (v[0] - sigFirst_) <= kEps
             && std::fabs (v[m - 1] - sigLast_) <= kEps
             && std::fabs (lo - sigMin_) <= kEps
-            && std::fabs (hi - sigMax_) <= kEps)
+            && std::fabs (hi - sigMax_) <= kEps
+            && std::fabs (moment - sigMoment_) <= kEps)
             return false;
 
         for (int j = 0; j < m; ++j)
@@ -289,6 +296,7 @@ struct CentralModBar::ModPill : public juce::Component,
         sigLast_  = v[m - 1];
         sigMin_   = lo;
         sigMax_   = hi;
+        sigMoment_ = moment;
         return true;
     }
 
@@ -301,6 +309,7 @@ struct CentralModBar::ModPill : public juce::Component,
         stripCount_ = 0;
         stripVals_.fill (0.0f);
         sigFirst_ = sigLast_ = sigMin_ = sigMax_ = -1.0f;
+        sigMoment_ = -1.0f;
         return true;
     }
 
@@ -320,6 +329,7 @@ struct CentralModBar::ModPill : public juce::Component,
         const float usable = juce::jmax (1.0f, sr.getHeight() - 2.0f);
 
         juce::Path path;
+        float singleY = 0.0f;   // the lone point's y (stripCount_ == 1 dot below)
         for (int i = 0; i < stripCount_; ++i)
         {
             const float t = (stripCount_ > 1)
@@ -330,13 +340,21 @@ struct CentralModBar::ModPill : public juce::Component,
             const float y = stripBipolar_
                 ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
                 : sr.getBottom() - v * usable;
+            singleY = y;
             if (i == 0)  path.startNewSubPath (x, y);
             else         path.lineTo (x, y);
         }
         g.setColour (accent_.withAlpha (active_ ? 0.60f : 0.45f));
-        g.strokePath (path, juce::PathStrokeType (1.25f,
-                          juce::PathStrokeType::JointStyle::curved,
-                          juce::PathStrokeType::EndCapStyle::rounded));
+        // A single sample has no segment to stroke (startNewSubPath alone
+        // draws nothing) — draw a small dot instead so the strip's first
+        // ~12 ms (one append at the 81.7 Hz cadence) still shows a value.
+        if (stripCount_ == 1)
+            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (
+                               juce::Point<float> (sr.getCentreX(), singleY)));
+        else
+            g.strokePath (path, juce::PathStrokeType (1.25f,
+                              juce::PathStrokeType::JointStyle::curved,
+                              juce::PathStrokeType::EndCapStyle::rounded));
     }
 
     void paint (juce::Graphics& g) override
@@ -488,6 +506,7 @@ struct CentralModBar::ModPill : public juce::Component,
     float                 sigLast_      = -1.0f;    // ... newest point
     float                 sigMin_       = -1.0f;    // ... interior minimum
     float                 sigMax_       = -1.0f;    // ... interior maximum
+    float                 sigMoment_    = -1.0f;    // ... Σ j·v[j] centroid (a sliding pulse)
 
 private:
     // A small themed drag chip (mirrors ModSourceDragGrip / DraggableTabButton):
@@ -832,7 +851,6 @@ void CentralModBar::timerCallback()
         clearTelemetry();
         return;
     }
-    telemetrySnap_ = snap;
 
     const int n = juce::jlimit (0, parvati::ModTelemetrySnapshot::kHistoryLen, snap.historyCount);
     bool anyRepainted = false;

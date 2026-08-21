@@ -38,10 +38,20 @@ public:
     ~LiveFeedbackHub() override;
 
     /** Animation cadence for the whole live-feedback system (Hz). Clamped to
-        5..60; the persisted user setting (ui_refresh_hz, default 30) drives
-        this. Takes effect immediately. */
+        5..60; <= 0 STOPS the poll (matching CentralModBar::setTelemetryRateHz's
+        0-disable sentinel — unreachable through the persisted pref, which the
+        processor clamps to 5..60, but kept consistent so a future "off"
+        setting stops every seam, not just the bars). Takes effect
+        immediately. */
     void setRateHz (int hz);
     int  rateHz() const noexcept { return rateHz_; }
+
+    /** Start/stop the poll without touching the configured rate. The editor
+        forwards its own visibility (the dual-hook isShowing() discipline the
+        components use — a host that keeps the editor object alive while its
+        window is closed must not keep the engine seqlock spinning). Stopping
+        is immediate; starting uses the configured rate. Idempotent. */
+    void setRunning (bool running);
 
     /** The cached frame (message thread only). @p out receives the last good
         frame; the RETURN value is its validity (false = stale after a reset or

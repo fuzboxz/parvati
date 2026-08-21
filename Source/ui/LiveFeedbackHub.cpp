@@ -19,13 +19,33 @@ LiveFeedbackHub::~LiveFeedbackHub()
 
 void LiveFeedbackHub::setRateHz (int hz)
 {
+    // <= 0 stops (see header); otherwise clamp to the 5..60 window.
     const int clamped = juce::jlimit (5, 60, hz);
+    if (hz <= 0)
+    {
+        stopTimer();
+        rateHz_ = 0;
+        return;
+    }
     if (clamped == rateHz_)
         return;
     rateHz_ = clamped;
     // Restart the timer at the new cadence (a no-op repaint-wise: the next tick
     // simply re-reads the engine frame).
     startTimerHz (rateHz_);
+}
+
+void LiveFeedbackHub::setRunning (bool running)
+{
+    if (running)
+    {
+        if (! isTimerRunning() && rateHz_ > 0)
+            startTimerHz (rateHz_);
+    }
+    else
+    {
+        stopTimer();
+    }
 }
 
 bool LiveFeedbackHub::snapshot (ModTelemetrySnapshot& out) const

@@ -30,7 +30,9 @@ namespace parvati
 // by a static_assert in SynthEngine.h.
 struct ModTelemetrySnapshot
 {
-    static constexpr int kNumSources = 32;    // == ambika::dsp::MOD_SRC_LAST
+    static constexpr int kNumSources = 32;    // >= ambika::dsp::MOD_SRC_LAST (31): every real
+                                               // source index fits; the spare slot stays zero
+                                               // (see SynthEngine.h's static_assert note)
     static constexpr int kHistoryLen = 128;   // ~1.57 s at the ~81.7 Hz append rate
 
     // MT-authoritative validity epoch: bumped by SynthEngine::resetUiTelemetry
@@ -48,10 +50,15 @@ struct ModTelemetrySnapshot
 
     // Recent history per source, OLDEST -> NEWEST, 0..255. historyCount == 0
     // means "no history yet" (e.g. after a reset); fewer than kHistoryLen
-    // samples are left-aligned from index 0. The engine's internal storage is a
-    // ring; readUiTelemetry linearizes it into this layout.
+    // samples are left-aligned from index 0. The ENGINE's internal storage is
+    // a ring; readUiTelemetry linearizes it into this layout.
+    // historyHead is ENGINE-INTERNAL ring metadata (the next-write position,
+    // written under the same seqlock critical sections as the samples so the
+    // reader's copy is always self-consistent); the LINEARIZED frame handed
+    // to the UI zeroes it — consumers read history[0..historyCount).
     uint8_t history[(size_t) kNumSources * (size_t) kHistoryLen] {};
     int     historyCount = 0;
+    int     historyHead  = 0;   // engine-internal ring next-write index
 
     // Envelopes 1..3 of the representative voice.
     uint8_t envStage[3] {};      // 0..4: ATTACK / DECAY / SUSTAIN / RELEASE / DEAD

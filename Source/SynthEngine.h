@@ -964,11 +964,14 @@ private:
     // marked MT are written by the message thread and read by the audio thread.
     //
     // Frame layout: uiTel_ carries the CURRENT sources + envelope/filter
-    // observables; its history[] is the RING (next-write position = uiTelHead_)
-    // and readUiTelemetry linearizes it OLDEST-FIRST into the caller's frame.
-    // Storage is fixed-size (no allocation anywhere on the audio-thread path).
+    // observables; its history[] is the RING whose next-write position lives
+    // IN THE FRAME (uiTel_.historyHead, written under the same seqlock
+    // critical sections — the head is metadata the reader needs to linearize,
+    // so it is guarded exactly like the samples; a separate plain member was
+    // a torn-read window) and readUiTelemetry linearizes it OLDEST-FIRST into
+    // the caller's frame. Storage is fixed-size (no allocation anywhere on
+    // the audio-thread path).
     parvati::ModTelemetrySnapshot uiTel_ {};   // ring storage + observables (AT writes under the seqlock)
-    int  uiTelHead_ = 0;                        // ring next-write index (0..kHistoryLen-1)
     std::atomic<uint32_t> uiTelSeq_ { 0 };       // seqlock: even = stable, odd = writer mid-update
     std::atomic<uint32_t> uiTelemetryEpoch_ { 0 };   // MT-authoritative validity epoch (resetUiTelemetry bumps)
     std::atomic<int>  uiTelPart_ { -1 };         // MT -> AT: the tracked part (-1 = not tracking)

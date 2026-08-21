@@ -131,14 +131,18 @@ private:
     // ---- Live modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
     // The provider is pulled in the SAME 30 Hz tick as the base getters; the
     // fields below are the DISPLAYED (painted) overlay state, change-gated
-    // exactly like dispC_/dispR_ so a modulation-departed-but-static state
-    // costs no repaints (a visibility flip or a >= 1-byte move triggers one).
-    // The bytes live in the 0..255 effective domain shared with the base curve.
+    // exactly like dispC_/dispR_ (a visibility flip or a >= 1-byte move
+    // triggers one repaint). The bytes live in the 0..255 effective domain
+    // shared with the base curve. ACTIVITY is TEMPORAL (see timerCallback):
+    // liveHoldTicks_ counts down from the hold budget while the bytes sit
+    // still, so a settled note hides the overlay but an LFO/env sweep keeps
+    // it armed (key tracking — a static patch setting — never trips it).
     std::function<parvati::LiveFilterValues()> liveValuesProvider_;
     bool  dispLiveActive_  = false;
     int   dispLiveCutByte_ = -1;    // -1 => never seen an active provider frame
     int   dispLiveResByte_ = -1;
     float dispLiveCutX_    = 0.0f;  // normalized log-f x of the live cutoff tick
+    int   liveHoldTicks_   = 0;     // temporal-gate hold budget (ticks)
 
     // TEST-ONLY (see previewGeneration).
     int generation_ = 0;

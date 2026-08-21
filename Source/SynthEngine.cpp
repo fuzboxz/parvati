@@ -2444,7 +2444,7 @@ void SynthEngine::uiTelServiceStage (int p)
     uiTel_ = parvati::ModTelemetrySnapshot {};
     uiTel_.epoch = uiTelemetryEpoch_.load (std::memory_order_relaxed);
     uiTel_.part  = p;
-    uiTelHead_      = 0;
+    // historyHead / historyCount are already zeroed by the wipe above.
     uiTelDecim_    = 0;
     uiTelWasActive_ = false;
     std::atomic_thread_fence (std::memory_order_release);
@@ -2461,7 +2461,7 @@ void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs)
     uiTelDecim_ = 0;
 
     constexpr int kLen = parvati::ModTelemetrySnapshot::kHistoryLen;
-    const int idx = uiTelHead_;
+    const int idx = uiTel_.historyHead;   // guarded ring metadata (read pre-lock, re-stamped inside)
 
     uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
     std::atomic_thread_fence (std::memory_order_release);
@@ -2473,7 +2473,7 @@ void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs)
         uiTel_.history[(size_t) src * (size_t) kLen + (size_t) idx] = effSrcs[(size_t) src];
         uiTel_.sources[(size_t) src] = effSrcs[(size_t) src];
     }
-    uiTelHead_ = (idx + 1 >= kLen) ? 0 : idx + 1;
+    uiTel_.historyHead = (idx + 1 >= kLen) ? 0 : idx + 1;
     if (uiTel_.historyCount < kLen)
         ++uiTel_.historyCount;
     std::atomic_thread_fence (std::memory_order_release);
@@ -2559,7 +2559,6 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
         if (s1 & 1u)
             continue;                                       // writer mid-update
         parvati::ModTelemetrySnapshot copy = uiTel_;         // guarded by the seq check below
-        const int head = uiTelHead_;
         std::atomic_thread_fence (std::memory_order_acquire);
         if (uiTelSeq_.load (std::memory_order_acquire) != s1)
             continue;                                       // torn: retry
@@ -2577,7 +2576,7 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
         // ring is not yet full the valid samples sit left-aligned at [0,count)
         // and head == count; once full, head wraps to the OLDEST entry.
         const int count  = juce::jmin (copy.historyCount, kLen);
-        const int oldest = (count < kLen) ? 0 : head;
+        const int oldest = (count < kLen) ? 0 : copy.historyHead;
         for (int src = 0; src < kSrcs; ++src)
         {
             const uint8_t* ring = copy.history + (size_t) src * (size_t) kLen;
@@ -2590,6 +2589,7 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
                 dst[(size_t) i] = 0;
         }
         out.historyCount = count;
+        out.historyHead  = 0;   // linearized: no ring semantics in the UI frame
         out.epoch        = copy.epoch;
         out.part         = copy.part;
         for (int s = 0; s < kSrcs; ++s)

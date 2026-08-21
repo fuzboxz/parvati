@@ -552,6 +552,15 @@ public:
     // for handled keys, so typing in combos / text boxes is never swallowed.
     bool keyPressed (const juce::KeyPress& key) override;
 
+    // Live mod-feedback gating (docs/LIVE_MOD_FEEDBACK_DESIGN.md): forwards the
+    // editor's own visibility to the LiveFeedbackHub so a host that keeps the
+    // editor object alive while its window is closed (the AUv3 case the
+    // component timers already guard against) stops the engine-seqlock poll
+    // too — the same dual-hook isShowing() discipline, at the seam that owns
+    // the one shared pump. The component-level gates stay: they also cover
+    // tab/page unparenting INSIDE a visible editor.
+    void visibilityChanged() override;
+
     // User zoom, clamped to [0.75, 2.0] (also reachable via Cmd/Ctrl + +/=/-/0).
     // Applies juce::Desktop::setGlobalScaleFactor(), which is PROCESS-WIDE in
     // JUCE: every JUCE window / plugin instance in the host shares one zoom,

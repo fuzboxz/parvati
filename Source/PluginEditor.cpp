@@ -2922,6 +2922,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Apply the persisted refresh rate once up front (the timerCallback
     // re-checks every tick, so a Settings change lands within one tick).
     applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
+    // Gate the shared pump on the editor's own visibility from the start (the
+    // visibilityChanged override below keeps it in sync; the ctor-time call
+    // covers a host that parents the editor while already hidden).
+    if (liveHub_ != nullptr)
+        liveHub_->setRunning (isShowing());
 
     // ---- Top-level page selector [SYNTH | FX] ----
     // Two NON-owned tab contents (synthWorkspace_ at index 0, fxWorkspace_ at
@@ -4238,6 +4243,16 @@ void ParvatiEditor::loadLogoIcon()
     // parser createFromSVGString; the older createFromSVG(XmlElement) is gone.)
     logoDrawable_ = juce::Drawable::createFromSVGString (
         juce::String (svgData, (size_t) svgBytes));
+}
+
+void ParvatiEditor::visibilityChanged()
+{
+    // Live mod-feedback gating (see the header): the ONE shared pump follows
+    // the editor's own visibility — a host that keeps the editor object alive
+    // with its window closed stops paying the per-tick engine seqlock read.
+    // (The bars' and displays' own gates still cover intra-editor unparenting.)
+    if (liveHub_ != nullptr)
+        liveHub_->setRunning (isShowing());
 }
 
 void ParvatiEditor::paint (juce::Graphics& g)

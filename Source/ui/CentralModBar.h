@@ -173,10 +173,10 @@ private:
 
     // ---- live telemetry state (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
     // The fetcher the editor binds (typically engine.readUiTelemetry through
-    // the LiveFeedbackHub); the snapshot is the last GOOD frame (kept for
-    // future readers; the per-pill caches hold what is actually drawn).
+    // the LiveFeedbackHub). The frame is consumed INSIDE timerCallback only
+    // (the per-pill caches hold what is actually drawn), so no member copy is
+    // retained — a ~4 KB per-tick store nobody read was removed (review nit).
     std::function<bool (parvati::ModTelemetrySnapshot&)> telemetryFetch_;
-    parvati::ModTelemetrySnapshot telemetrySnap_ {};
     int telemetryRateHz_     = 30;   // 5..60, 0 = disabled (setTelemetryRateHz clamps)
     int telemetryGeneration_ = 0;    // TEST-ONLY (see telemetryGeneration())
 

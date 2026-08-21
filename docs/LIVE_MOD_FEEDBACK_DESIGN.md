@@ -1,7 +1,36 @@
 # Live Modulation Feedback (Pigments-style) — Design & Contract
 
-Status: implementing (2026-08-21). This document is the BINDING CONTRACT for the
-implementation tasks. Any deviation must be reflected back here.
+Status: implemented (2026-08-21), reviewed and fix-hardened. This document was
+the BINDING CONTRACT for the implementation; the deviations below are recorded
+per its own rule.
+
+## Recorded deviations (post-review)
+
+- **kNumSources = 32 vs MOD_SRC_LAST = 31.** The header comment originally
+  claimed equality; the enum's sentinel value is 31 (31 named sources), so the
+  engine asserts `kNumSources >= MOD_SRC_LAST` and the spare slot 31 stays
+  zero (the UI only enumerates real enums).
+- **Filter live-overlay activity is TEMPORAL, not spatial** (revised from the
+  original "live vs base >= 2 bytes" gate). The effective cutoff byte includes
+  key tracking (~2 bytes/semitone), so a spatial threshold trips for every
+  held note on any patch with tracking — an always-on second curve for a
+  static patch setting. The overlay now shows while the effective bytes MOVE
+  (>= 1 byte/tick) and holds ~270 ms after the last movement; a settled note
+  returns to the single opaque base preview. The base tick still dims to 0.30
+  while the overlay is visible.
+- **The two preview polls stay at 30 Hz** (the architecture diagram's numbers)
+  while the refresh setting caps the engine→UI data cadence and the bar strip
+  animation. The previews' repaints are change-gated off the hub cache, so
+  their EFFECTIVE animation cadence is capped by the setting end-to-end; only
+  the (cheap, gated) poll wakeups stay at 30 Hz. The hub itself is additionally
+  stopped by the editor's visibilityChanged (a hidden editor polls nothing).
+- **The engine's ring head lives IN the frame** (`historyHead`, written under
+  the same seqlock critical sections) rather than as a separate plain member —
+  the reader's copy is always self-consistent. The linearized UI frame zeroes
+  it.
+- **Strip diff-gate signature includes a position-weighted moment** (Σ j·v[j])
+  on top of count/first/last/min/max, so a pulse sliding through an otherwise
+  static window (GATE / VELOCITY / ARP) still animates.
 
 ## Goal
 
