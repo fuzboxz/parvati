@@ -2628,6 +2628,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     return liveHub_ != nullptr ? liveHub_->envStage (i)
                                                : parvati::LiveEnvStage{};
                 });
+                // Register for the status tick's poll re-assert (the raw
+                // pointer follows the graphCategoryBindings_ lifetime rule).
+                liveEnvDisplays_.push_back (disp.get());
                 // Cyan trace from the Envelopes category token (re-resolved live
                 // on theme change via the binding registered below).
                 disp->setCategoryColour (theme.catEnv);
@@ -2709,6 +2712,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 return liveHub_ != nullptr ? liveHub_->liveFilter()
                                            : parvati::LiveFilterValues{};
             });
+            // Register for the status tick's poll re-assert (same lifetime
+            // rule as liveEnvDisplays_ / graphCategoryBindings_).
+            liveFilterDisplay_ = disp.get();
             disp->setCategoryColour (theme.catAudio);   // amber trace
             bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                        &ParvatiTheme::catAudio);
@@ -2922,11 +2928,6 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Apply the persisted refresh rate once up front (the timerCallback
     // re-checks every tick, so a Settings change lands within one tick).
     applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
-    // Gate the shared pump on the editor's own visibility from the start (the
-    // visibilityChanged override below keeps it in sync; the ctor-time call
-    // covers a host that parents the editor while already hidden).
-    if (liveHub_ != nullptr)
-        liveHub_->setRunning (isShowing());
 
     // ---- Top-level page selector [SYNTH | FX] ----
     // Two NON-owned tab contents (synthWorkspace_ at index 0, fxWorkspace_ at
@@ -3532,6 +3533,22 @@ void ParvatiEditor::timerCallback()
     // the AUTHORITATIVE re-sync — the ctor's setUiTelemetryPart is the startup
     // belt-and-braces copy; nothing further is needed here.
     applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
+
+    // CONSUMER poll re-asserts (every tick, idempotent): the bars' strip polls
+    // start unconditionally now (see updateTelemetryTimer), but re-asserting
+    // costs nothing and covers a provider/rate arriving after construction;
+    // the display polls re-evaluate their own visibility gates (their per-tick
+    // work is change-gated, so a started-but-hidden display is cheap).
+    if (synthWorkspace_ != nullptr)
+        if (auto* b = synthWorkspace_->modBar())
+            b->reassertTelemetryTimer();
+    if (fxWorkspace_ != nullptr)
+        if (auto* b = fxWorkspace_->modBar())
+            b->reassertTelemetryTimer();
+    for (auto* d : liveEnvDisplays_)
+        d->reassertPollTimer();
+    if (liveFilterDisplay_ != nullptr)
+        liveFilterDisplay_->reassertPollTimer();
 
     // Mouse-activity tracking for the adaptive poll rate (see the END of this
     // callback): getMouseXYRelative() is the peer-cached position (cheap), so a
@@ -4243,16 +4260,6 @@ void ParvatiEditor::loadLogoIcon()
     // parser createFromSVGString; the older createFromSVG(XmlElement) is gone.)
     logoDrawable_ = juce::Drawable::createFromSVGString (
         juce::String (svgData, (size_t) svgBytes));
-}
-
-void ParvatiEditor::visibilityChanged()
-{
-    // Live mod-feedback gating (see the header): the ONE shared pump follows
-    // the editor's own visibility — a host that keeps the editor object alive
-    // with its window closed stops paying the per-tick engine seqlock read.
-    // (The bars' and displays' own gates still cover intra-editor unparenting.)
-    if (liveHub_ != nullptr)
-        liveHub_->setRunning (isShowing());
 }
 
 void ParvatiEditor::paint (juce::Graphics& g)

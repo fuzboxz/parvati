@@ -64,6 +64,13 @@ public:
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
 
+    /** Re-evaluate the poll timer's run state NOW (public twin of the private
+        dual-hook gate). The EDITOR's status timer calls this every ~30 Hz tick
+        so a poll that never started (JUCE's window peer sequencing can starve
+        the component's own visibility hooks — the shipped-dead-overlay bug)
+        starts within one tick of the editor becoming visible. Idempotent. */
+    void reassertPollTimer() { updatePollTimer(); }
+
     /** Relabel the unit (e.g. "Env 1"). */
     void setTitle (const juce::String& title) { title_ = title; juce::Component::setTitle (title); repaint(); }
 

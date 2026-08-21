@@ -29,23 +29,21 @@ namespace
     // within CentralModBar's members.
     constexpr int kPillHPad        = 8;    // horizontal padding inside a pill
     constexpr int kPillMinW        = 36;   // minimum pill width (wider floor for the bigger pills)
-    constexpr int kClusterGap      = 26;   // gap between clusters
-    constexpr int kSideGap         = 44;   // larger gap splitting generators (L) from drag-only (R)
+    constexpr int kClusterGap      = 20;   // gap between clusters
+    constexpr int kSideGap         = 40;   // larger gap splitting generators (L) from drag-only (R)
     constexpr int kEdgePad         = 6;    // left/right outer padding
 
     // Category-segment geometry: each cluster is wrapped in a labelled rounded
     // segment background, and the pill row scrolls horizontally so 25+ pills
-    // never widen the editor. 2026-08-21 breathing-room pass: the pills used
-    // to touch the bar's bottom edge (4+14+4+56 == 78 == kBarHeight, ZERO
-    // bottom inset) and sat 3px off the segment edge — everything read as
-    // cramped against the separators. The vertical budget now allocates a
-    // real bottom inset (kBarHeight 78 -> 88) and the horizontal paddings
-    // grew (kSegPad 3 -> 6, kPillGap 8 -> 12, kClusterGap 20 -> 26).
-    constexpr int kSegPad        = 6;    // segment-edge horizontal padding around the pills
-    constexpr int kSegVPad       = 5;    // top inset of the coloured tab
-    constexpr int kSegBottomPad  = 8;    // bottom inset below the pills (whitespace, not pills-touching-edge)
+    // never widen the editor. Vertical budget (2026-08-21, user-specified): a
+    // SYMMETMETRIC 4px above the label tab and below the pills (was zero bottom
+    // inset — the pills touched the bar's bottom edge). Horizontal paddings
+    // stay at their original tight values (no extra whitespace requested).
+    constexpr int kSegPad        = 3;    // segment-edge horizontal padding around the pills
+    constexpr int kSegVPad       = 4;    // top inset above the coloured tab
+    constexpr int kSegBottomPad  = 4;    // bottom inset below the pills (symmetric with the top)
     constexpr int kLabelTabH     = 14;   // coloured label-tab header height (above the pills)
-    constexpr int kLabelTabGap    = 5;    // gap between the label tab and the pills
+    constexpr int kLabelTabGap    = 4;    // gap between the label tab and the pills
     static_assert (kSegVPad + kLabelTabH + kLabelTabGap + CentralModBar::kPillH + kSegBottomPad
                    == CentralModBar::kBarHeight, "mod-bar vertical budget must equal kBarHeight");
 
@@ -845,9 +843,10 @@ void CentralModBar::clearTelemetry()
 
 void CentralModBar::timerCallback()
 {
-    // Defensive: the dual-hook gate should have stopped us, but a host hiding
-    // the editor without a hierarchy change must not burn a fetch either.
-    if (! isShowing() || telemetryFetch_ == nullptr)
+    // Cheap per-tick guard: isVisible() (a STABLE flag, not the peer-derived
+    // isShowing()) + the provider. A hidden/unparented bar costs one no-op
+    // pass; the data-driven repaint gating below stays the real cost control.
+    if (! isVisible() || telemetryFetch_ == nullptr)
         return;
 
     parvati::ModTelemetrySnapshot snap;
@@ -894,14 +893,15 @@ void CentralModBar::parentHierarchyChanged()
 
 void CentralModBar::updateTelemetryTimer()
 {
-    // F-ios-perf-3 dual-hook gate (see EnvelopeDisplay.cpp updatePollTimer for
-    // the full rationale): components are born hidden — visibilityChanged
-    // fires pre-parenting and never again from ancestor changes — while
-    // parentHierarchyChanged recurses on every hierarchy change including the
-    // editor gaining its peer, which is the reliable "became showing" signal.
-    // ONE timer for the whole bar (never per pill), running only while a
-    // provider is set, the rate is enabled and the bar is actually on screen.
-    if (telemetryFetch_ != nullptr && telemetryRateHz_ >= 5 && isShowing())
+    // START gate (2026-08-21 reliability fix): the timer starts whenever a
+    // provider + enabled rate exist — deliberately NOT gated on isShowing().
+    // isShowing() is peer-derived and proved unreliable for STARTING (JUCE's
+    // visible-before-desktop sequencing can starve the visibility hooks, and
+    // a deactivated host process flips the peer state under the tick): a poll
+    // that never started renders the whole live-strip feature dead. The
+    // TICK itself carries the cheap guard (isVisible + fetch) so a genuinely
+    // hidden bar costs one no-op pass, not repaints.
+    if (telemetryFetch_ != nullptr && telemetryRateHz_ >= 5)
         startTimerHz (telemetryRateHz_);
     else
         stopTimer();

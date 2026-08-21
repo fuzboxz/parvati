@@ -1936,6 +1936,81 @@ int main (int argc, char** argv)
             bar.removeFromDesktop();
         }
 
+        // -- (a3) END-TO-END: real processor + real editor in a REAL window,
+        //    engine rendered with a held note — the whole pipeline
+        //    (renderPartFx telemetry -> LiveFeedbackHub -> bar strip diff
+        //    gate) must animate the EDITOR'S OWN bar. This is the Standalone
+        //    scenario verbatim; the earlier synthetic checks fed the bar
+        //    directly and could not catch a dead hub/pump between engine and
+        //    bar (the exact bug class that shipped invisibly: the hub was
+        //    gated on the editor's visibilityChanged alone, which never fires
+        //    again once the window gains its peer). --
+        {
+            ParvatiAudioProcessor e2eProc;
+            e2eProc.prepareToPlay (48000.0, 256);
+            // setParam equivalent (the ui_telemetry_test idiom, file-local).
+            auto setParamE2E = [] (ParvatiAudioProcessor& p, const char* id, int value)
+            {
+                if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p.getApvts().getParameter (id)))
+                    ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
+            };
+            setParamE2E (e2eProc, "env1_lfo_rate", 60);   // free-running LFO 1: the strip data moves
+            e2eProc.syncAllParamsToEngine();
+            auto* e2eEd = dynamic_cast<ParvatiEditor*> (e2eProc.createEditor());
+            check (e2eEd != nullptr, "[25] e2e: editor created");
+            CentralModBar* e2eBar = nullptr;
+            if (e2eEd != nullptr)
+            {
+                e2eEd->setSize (1280, 634);
+                auto win2 = std::make_unique<juce::DocumentWindow> ("E2E",
+                    juce::Colours::black, juce::DocumentWindow::allButtons);
+                win2->setUsingNativeTitleBar (true);
+                win2->setContentNonOwned (e2eEd, false);   // content parented while the window has no peer yet
+                win2->centreWithSize (1280, 700);
+                // The REAL standalone ordering (juce_StandaloneFilterWindow): the
+                // DocumentWindow base ctor desktops the window (peer exists,
+                // still invisible), then initialise() calls setVisible(true) —
+                // which recurses visibilityChanged down through the content with
+                // the peer already present, so isShowing() flips true inside the
+                // hooks. (The REVERSED order — visible-then-desktop — fires the
+                // children's hooks pre-peer and never again: a known JUCE gap,
+                // and exactly why the harness must mirror the real order.)
+                win2->addToDesktop (juce::ComponentPeer::windowAppearsOnTaskbar);
+                win2->setVisible (true);
+                e2eBar = (e2eEd->getSynthWorkspaceForTest() != nullptr)
+                    ? e2eEd->getSynthWorkspaceForTest()->modBar() : nullptr;
+            }
+            check (e2eBar != nullptr, "[25] e2e: editor bar reachable");
+            if (e2eBar != nullptr)
+            {
+                // Render a held note through the REAL audio path (the message
+                // thread calling processBlock is the established test idiom).
+                const auto on2 = juce::MidiMessage::noteOn (1, 60, 0.9f);
+                juce::AudioBuffer<float> e2eBuf (2, 256);
+                const int gen0 = e2eBar->telemetryGeneration();
+                for (int b = 0; b < 160; ++b)   // ~850 ms held
+                {
+                    juce::MidiBuffer m;
+                    if (b == 0) m.addEvent (on2, 0);
+                    e2eBuf.clear();
+                    e2eProc.processBlock (e2eBuf, m);
+                    if (b % 16 == 0)
+                        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.010, false);   // let the timers breathe
+                }
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.500, false);   // hub + bar ticks at 30 Hz
+                char msg25[160];
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] e2e: engine -> hub -> editor bar animates (gen %d -> %d)",
+                               gen0, e2eBar->telemetryGeneration());
+                check (e2eBar->telemetryGeneration() > gen0, msg25);
+            }
+            if (e2eEd != nullptr)
+            {
+                e2eEd->removeFromDesktop();
+                delete e2eEd;
+            }
+        }
+
         // -- (b) EnvelopeDisplay live stage marker (standalone, never parented:
         //    the ctor-started 30 Hz poll keeps ticking; the pump delivers it) --
         {

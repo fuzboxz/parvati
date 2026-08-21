@@ -31,6 +31,20 @@ per its own rule.
 - **Strip diff-gate signature includes a position-weighted moment** (Σ j·v[j])
   on top of count/first/last/min/max, so a pulse sliding through an otherwise
   static window (GATE / VELOCITY / ARP) still animates.
+- **Poll timers START unconditionally (provider + rate), not gated on
+  isShowing()** (2026-08-21 reliability lesson). The hub and the mod-bar strip
+  poll originally required isShowing() to START — but isShowing() is
+  peer-derived and proved unreliable as a start condition: JUCE's
+  visible-before-desktop / content-then-peer sequencing can starve the
+  visibility hooks entirely, and a deactivated host process flips the peer
+  state under a running tick. A starved start left the pump dead forever and
+  every strip cleared (the shipped "no indicators visible" bug, now pinned by
+  the editor_test [25] end-to-end check: real processor + real editor + held
+  note -> the editor's OWN bar must animate). The per-tick guards remain
+  (cheap no-op when not visible / no provider); the data-driven repaint gates
+  stay the real cost control. Vertical geometry also settled per user spec:
+  symmetric 4px above the label tab and below the pills (kBarHeight 82),
+  horizontal paddings at their original tight values.
 
 ## Goal
 

@@ -67,6 +67,12 @@ public:
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
 
+    /** Re-evaluate the poll timer's run state NOW (public twin of the private
+        dual-hook gate; the editor's status timer calls this every ~30 Hz tick
+        so a starved poll starts within one tick of visibility — see
+        EnvelopeDisplay::reassertPollTimer). Idempotent. */
+    void reassertPollTimer() { updatePollTimer(); }
+
     /** Live modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md): @p p
         returns the EFFECTIVE (modulation-applied) filter state, normalized to
         0..1 of the 0..255 byte domain (the same domain as the base curve's

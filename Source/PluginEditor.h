@@ -48,6 +48,7 @@ class FxMatrixView;
 class FxRoutingBar;
 class FxSlotCard;
 class EnvelopeDisplay;
+class FilterResponseDisplay;
 
 // Live-modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the editor-
 // owned poll that reads ONE engine telemetry frame per tick and caches it for
@@ -552,15 +553,6 @@ public:
     // for handled keys, so typing in combos / text boxes is never swallowed.
     bool keyPressed (const juce::KeyPress& key) override;
 
-    // Live mod-feedback gating (docs/LIVE_MOD_FEEDBACK_DESIGN.md): forwards the
-    // editor's own visibility to the LiveFeedbackHub so a host that keeps the
-    // editor object alive while its window is closed (the AUv3 case the
-    // component timers already guard against) stops the engine-seqlock poll
-    // too — the same dual-hook isShowing() discipline, at the seam that owns
-    // the one shared pump. The component-level gates stay: they also cover
-    // tab/page unparenting INSIDE a visible editor.
-    void visibilityChanged() override;
-
     // User zoom, clamped to [0.75, 2.0] (also reachable via Cmd/Ctrl + +/=/-/0).
     // Applies juce::Desktop::setGlobalScaleFactor(), which is PROCESS-WIDE in
     // JUCE: every JUCE window / plugin instance in the host shares one zoom,
@@ -930,6 +922,18 @@ private:
     using GraphTintFn = std::function<void (const juce::Colour&)>;
     std::vector<std::pair<GraphTintFn, ThemeColourField>> graphCategoryBindings_;
     void reapplyGraphCategoryColours();
+
+    // ---- Live mod-feedback: raw pointers to the display components whose
+    // polls carry the live overlays (the 3 ADSR EnvelopeDisplays + the
+    // FilterResponseDisplay; LFO-mode displays have no live overlay). Same
+    // lifetime discipline as graphCategoryBindings_' raw targets: the pages
+    // own the components, the editor owns the pages, and both vectors are
+    // cleared implicitly at editor teardown. timerCallback re-asserts each
+    // poll (reassertPollTimer) every ~30 Hz tick so a starved timer (JUCE's
+    // window peer sequencing can starve the components' own visibility hooks
+    // — the shipped-dead-overlay bug, [25] e2e) starts within one tick. */
+    std::vector<EnvelopeDisplay*>     liveEnvDisplays_;
+    FilterResponseDisplay*            liveFilterDisplay_ = nullptr;
 
     // Re-apply every theme-derived colour across the whole editor tree
     // (sendLookAndFeelChange + per-page/workspace/patch applyThemeColors +

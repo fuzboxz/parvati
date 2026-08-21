@@ -48,9 +48,9 @@ public:
     // HIG 44pt+ touch target while reclaiming vertical space for the content
     // rows (the bar is a fixed seam in both workspaces; see also the [MOD]
     // header toggle, which collapses the seam entirely).
-    static constexpr int kBarHeight = 88;   // label tab (14) + gaps (5+5) + 56pt pills + top/bottom insets (5/8)
+    static constexpr int kBarHeight = 82;   // label tab (14) + gaps (4+4) + 56pt pills + 4px top/bottom insets (symmetric, 2026-08-21)
     static constexpr int kPillH     = 56;   // compact pills (was 72 — still >= 44pt HIG touch target)
-    static constexpr int kPillGap   = 12;   // minimum pill spacing (breathing room between pills/segments)
+    static constexpr int kPillGap   = 8;    // minimum pill spacing
     static constexpr int kNavHitW   = 44;   // < > nav hit-band width (F-ios-touch-1: the ONLY pill-band scrollers — HIG floor; the visible chevron glyph stays visually small inside it)
 
     explicit CentralModBar (ThemeManager& themeManager);
@@ -95,6 +95,16 @@ public:
     // strip data changed (including the change TO "no data" on a clear), so a
     // headless test can observe "the strip reacted" without painting.
     int telemetryGeneration() const noexcept { return telemetryGeneration_; }
+
+    /** Re-evaluate the strip-poll timer's run state NOW (public twin of the
+        private visibility-hook gate). The EDITOR's status timer calls this
+        every ~30 Hz tick: JUCE's visible-before-desktop / content-then-peer
+        sequencing does not guarantee the bar's own visibilityChanged /
+        parentHierarchyChanged hooks fire once the window appears, and a poll
+        that never started renders the whole live-strip feature dead (the
+        shipped-invisible bug the [25] e2e check pins). Idempotent: the
+        gate itself decides start vs stop from the live isShowing() state. */
+    void reassertTelemetryTimer() { updateTelemetryTimer(); }
 
     //==========================================================================
     // Public accessors used by the file-local pill component.
