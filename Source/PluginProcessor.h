@@ -120,6 +120,13 @@ public:
     bool         getUiTooltips() const            { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiTooltips_; }
     bool         getUiSmoothing() const           { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiSmoothing_; }
     int          getUiOversampling() const        { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiOversampling_; }
+    // Live mod-feedback animation cadence (docs/LIVE_MOD_FEEDBACK_DESIGN.md):
+    // the rate at which the CentralModBar history strips, the EnvelopeDisplay
+    // stage markers and the FilterResponseDisplay live curve re-read the
+    // engine telemetry frame. 5..60 Hz, default 30. Lower = fewer repaints /
+    // less GPU load on constrained hosts (iPad AUv3 panes); every poll is
+    // change-gated, so this only caps the cadence — it never adds idle work.
+    int          getUiRefreshHz() const           { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiRefreshHz_; }
     // Editor chrome language code ("auto" / "en" / "fr"). "auto" defers to the
     // OS locale. Persisted so the chosen language survives host save/restore.
     juce::String getUiLanguage() const             { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiLanguage_; }
@@ -148,6 +155,7 @@ public:
     void setUiTooltips (bool b)                   { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiTooltips_ = b; }
     void setUiSmoothing (bool b)                  { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiSmoothing_ = b; }
     void setUiOversampling (int n)                { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiOversampling_ = n; }
+    void setUiRefreshHz (int hz)                  { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiRefreshHz_ = juce::jlimit (5, 60, hz); }   // clamped: an out-of-range restored state never drives an absurd timer
     void setUiLanguage (juce::String code)        { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiLanguage_ = std::move (code); }
 
     // ---- Thermal-state awareness (F-ios-perf-2, iOS hunt 2026-08-19) ----
@@ -503,6 +511,7 @@ private:
     bool         uiTooltips_ { true };
     bool         uiSmoothing_ { false };   // default OFF -> bit-identical audio
     int          uiOversampling_ { 2 };    // 1 / 2 / 4 / 8; default 2x (1 = bit-identical path)
+    int          uiRefreshHz_ { 30 };       // live mod-feedback animation rate, 5..60 Hz (see getUiRefreshHz; docs/LIVE_MOD_FEEDBACK_DESIGN.md)
     int          uiFontMode_ { 0 };        // LEGACY: persisted for old states only (font selector removed; UI is sans-serif)
     juce::String uiLanguage_ { "auto" };   // editor chrome language (auto/en/fr)
     // Arp-clock manual tempo (see the public block): the atomic is the

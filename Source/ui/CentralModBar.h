@@ -8,14 +8,23 @@
 // "parvatiModSrc:<enum>" payload the generator tabs / matrix grip / wheel
 // captions already emit, so the existing drop feedback works unchanged).
 //
+// It additionally renders the LIVE modulation feedback pill strips: a subtle
+// family-coloured sparkline of the RECENT values each source produced (the
+// Pigments-style history indicator), fed by a telemetry provider the editor
+// binds to SynthEngine::readUiTelemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md).
+// With no provider set the strips simply never populate and the bar renders
+// exactly as before.
+//
 // PHASE 1: this component exists and builds, but is NOT yet wired into the
 // editor layout (that is a separate follow-up phase). It owns no APVTS state —
-// it only reads theme colours and emits clicks/drags.
+// it only reads theme colours and emits clicks/drags (plus the optional
+// telemetry strips above).
 
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ModSourceCatalog.h"   // parvati::Cluster (per-segment family colour in paintSegments)
+#include "ModTelemetryTypes.h"  // parvati::ModTelemetrySnapshot (live history-strip telemetry)
 
 #include <functional>
 #include <memory>
@@ -25,7 +34,8 @@
 #include "ThemeManager.h"
 
 //==============================================================================
-class CentralModBar : public juce::Component
+class CentralModBar : public juce::Component,
+                      private juce::Timer   // ONE bar-wide telemetry poll (never per pill)
 {
 public:
     /** Fixed total bar height (host sets the component height to this). */
@@ -61,6 +71,30 @@ public:
     /** The true minimum width to show every pill with no clipping (the host
         uses this as the window minimum width). */
     int preferredWidth() const;
+
+    //==========================================================================
+    // ---- Live modulation telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // The bar polls ONE engine frame per tick through @p fetch (a false return
+    // = torn seqlock read or a stale reset epoch — the strips hide until valid
+    // data returns) and pushes each source's recent history into its pill as
+    // the bottom-strip sparkline. Repaints are per-pill and bounded to the
+    // strip rect only; signature-identical frames cost nothing.
+    void setTelemetryProvider (std::function<bool (parvati::ModTelemetrySnapshot&)> fetch);
+
+    /** Animation cadence for the strips (Hz). Valid rates clamp to 5..60; 0
+        DISABLES the poll entirely. Takes effect immediately (restarts the
+        timer if it is running). */
+    void setTelemetryRateHz (int hz);
+    int  telemetryRateHz() const noexcept { return telemetryRateHz_; }
+
+    /** Hides every pill's history strip (invalid / reset telemetry). Cheap
+        when already clear; the strips return on the next valid frame. */
+    void clearTelemetry();
+
+    // TEST-ONLY: bumped whenever a pill repaints because its telemetry-driven
+    // strip data changed (including the change TO "no data" on a clear), so a
+    // headless test can observe "the strip reacted" without painting.
+    int telemetryGeneration() const noexcept { return telemetryGeneration_; }
 
     //==========================================================================
     // Public accessors used by the file-local pill component.
@@ -116,12 +150,35 @@ private:
     void scrollPills (int deltaPx);   // page-scroll the viewport by deltaPx (clamped)
     void updateNavEnabled();          // enable/disable nav buttons at the scroll ends
 
+    // juce::Timer — the single bar-wide telemetry poll (one timer, never per
+    // pill). See updateTelemetryTimer for the visibility gate.
+    void timerCallback() override;
+
+    // F-ios-perf-3 dual-hook visibility gate (see EnvelopeDisplay.cpp's
+    // updatePollTimer for the canonical form + frozen-preview rationale):
+    // visibilityChanged fires while still unparented and never again from
+    // ancestor changes, while parentHierarchyChanged recurses on every
+    // hierarchy change including the editor gaining its peer. BOTH funnel
+    // into updateTelemetryTimer so a hidden bar never polls.
+    void visibilityChanged() override;
+    void parentHierarchyChanged() override;
+    void updateTelemetryTimer();
+
     // Per-cluster segment background rects + short labels (populated by
     // computeLayout, read by paintSegments). Mutable because
     // computeLayout/preferredWidth are const.
     mutable juce::Array<juce::Rectangle<int>> segmentRects_;
     mutable juce::Array<juce::String>         segmentLabels_;
     mutable juce::Array<parvati::Cluster>     segmentClusters_;   // per-segment cluster (the tab's family colour)
+
+    // ---- live telemetry state (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // The fetcher the editor binds (typically engine.readUiTelemetry through
+    // the LiveFeedbackHub); the snapshot is the last GOOD frame (kept for
+    // future readers; the per-pill caches hold what is actually drawn).
+    std::function<bool (parvati::ModTelemetrySnapshot&)> telemetryFetch_;
+    parvati::ModTelemetrySnapshot telemetrySnap_ {};
+    int telemetryRateHz_     = 30;   // 5..60, 0 = disabled (setTelemetryRateHz clamps)
+    int telemetryGeneration_ = 0;    // TEST-ONLY (see telemetryGeneration())
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CentralModBar)
 };

@@ -92,6 +92,18 @@ float FilterResponseDisplay::magnitudeSq (float f, float fc, float K, int mode)
     return juce::jmax (1e-12f, num / den4);
 }
 
+void FilterResponseDisplay::setLiveValuesProvider (std::function<parvati::LiveFilterValues()> p)
+{
+    liveValuesProvider_ = std::move (p);
+    // An un-set provider must immediately hide any shown overlay (the state is
+    // re-resolved on the next poll tick; a repaint now avoids one stale frame).
+    if (! liveValuesProvider_ && dispLiveActive_)
+    {
+        dispLiveActive_ = false;
+        repaint();
+    }
+}
+
 void FilterResponseDisplay::timerCallback()
 {
     const float c = fetch (getCutoff_);
@@ -111,7 +123,49 @@ void FilterResponseDisplay::timerCallback()
     const bool modeChanged = std::fabs (m - lastM_) > eps;
     if (modeChanged) lastM_ = m;
 
-    if (modeChanged || paramChanged)
+    // ---- Live modulated overlay poll (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // ONE provider call per tick (none at all when never wired). The overlay is
+    // only VISIBLE once the effective bytes actually DEPART from the base knob
+    // bytes (>= 2 on either axis): a modulation that moves the filter by less
+    // than a knob step would render a second curve indistinguishable from the
+    // base — duplicate strokes for no information. The x/tick position is
+    // tracked from the live cutoff regardless, so the test seam reads motion
+    // even through sub-threshold wobble. Candidate state defaults to the
+    // previously shown values so an inactive provider only ever flips the flag.
+    bool  liveActive = false;
+    int   liveCut = dispLiveCutByte_;
+    int   liveRes = dispLiveResByte_;
+    float liveCutX = dispLiveCutX_;
+    if (liveValuesProvider_)
+    {
+        const parvati::LiveFilterValues lv = liveValuesProvider_();
+        if (lv.active)
+        {
+            liveCut = juce::roundToInt (juce::jlimit (0.0f, 1.0f, lv.cutoff01) * 255.0f);
+            liveRes = juce::roundToInt (juce::jlimit (0.0f, 1.0f, lv.reso01)   * 255.0f);
+            const int baseCut = juce::roundToInt (juce::jlimit (0.0f, 1.0f, c) * 255.0f);
+            const int baseRes = juce::roundToInt (juce::jlimit (0.0f, 1.0f, r) * 255.0f);
+            liveActive = std::abs (liveCut - baseCut) >= 2 || std::abs (liveRes - baseRes) >= 2;
+
+            // Normalized log-frequency column of the live cutoff tick (same
+            // mapping paint() uses for the ticks; kMinHz/kMaxHz live in this
+            // file's anonymous namespace).
+            const float fc = cutoffByteToHz (static_cast<uint8_t> (juce::jlimit (0, 255, liveCut)));
+            liveCutX = juce::jlimit (0.0f, 1.0f,
+                        (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f);
+        }
+    }
+    // >= 1 byte of live motion (while visible) is enough to re-stroke the
+    // overlay — sub-byte wobble cannot move the curve a whole pixel anyway.
+    const bool liveChanged = (liveActive != dispLiveActive_)
+        || (liveActive && (  std::abs (liveCut - dispLiveCutByte_) >= 1
+                          || std::abs (liveRes - dispLiveResByte_) >= 1));
+    dispLiveActive_  = liveActive;
+    dispLiveCutByte_ = liveCut;
+    dispLiveResByte_ = liveRes;
+    dispLiveCutX_    = liveCutX;
+
+    if (modeChanged || paramChanged || liveChanged)
     {
         ++generation_;   // TEST-ONLY: a real refresh is observable (see header)
         repaint();
@@ -153,11 +207,11 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
     const float mN = lastM_ >= 0.0f ? lastM_ : fetch (getMode_);
 
     const uint8_t cutoffByte = static_cast<uint8_t> (juce::roundToInt (cN * 255.0f));
-    const float fc = cutoffByteToHz (cutoffByte);
     // Resonance as ladder feedback K: 0 at none, -> ~3.85 (just shy of
     // self-oscillation) at full. A quadratic ease so the resonance peak reads
     // through the knob range (taller peak sooner) while the passband droops.
-    const float K = 3.85f * (1.0f - (1.0f - rN) * (1.0f - rN));
+    // (The K derivation itself lives in drawCurve below — ONE definition
+    // shared by the base curve and the live overlay.)
     const int mode = juce::jlimit (0, 3, juce::roundToInt (mN * 3.0f));
 
     // Map a magnitude in dB to a normalized unipolar level (1 = +kTopDb at top,
@@ -174,28 +228,85 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
         return kMinHz * std::pow (kMaxHz / kMinHz, frac);
     };
 
-    // Magnitude level (0..1 unipolar) at a column fraction.
-    auto magLevel = [&] (float frac) -> float
+    // ONE curve renderer for BOTH the opaque base preview and the live
+    // modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the same ladder
+    // magnitude model evaluated at a (cutoff byte, resonance 0..1) pair, so
+    // the two curves can never disagree on the math. `withFill` picks the base
+    // recipe (gradient area fill + 1.5px stroke); otherwise the LIVE overlay
+    // recipe (stroke-only at a higher weight, full trace alpha, NO second fill
+    // — two stacked gradients would read as a bright smear, and the overlay
+    // must stay a clean "moving" line over the steady preview).
+    auto drawCurve = [&] (uint8_t cutByte, float resoN, bool withFill) -> float
     {
-        const float f  = freqAt (frac);
-        const float h2 = magnitudeSq (f, fc, K, mode);
-        const float db = 10.0f * std::log10 (h2);   // == 20*log10(|H|)
-        return dbToLevel (db);
+        const float fc = cutoffByteToHz (cutByte);
+        const float K  = 3.85f * (1.0f - (1.0f - resoN) * (1.0f - resoN));
+
+        // Magnitude level (0..1 unipolar) at a column fraction.
+        auto magLevel = [&] (float frac) -> float
+        {
+            const float f  = freqAt (frac);
+            const float h2 = magnitudeSq (f, fc, K, mode);
+            const float db = 10.0f * std::log10 (h2);   // == 20*log10(|H|)
+            return dbToLevel (db);
+        };
+
+        const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
+        if (withFill)
+        {
+            // Peak alpha kept ~0.12 so the vertical gradient (accent at the
+            // curve fading to 0% near the baseline) stays subtle and the curve
+            // stays legible at the 42px decoration height.
+            parvati::vectorTrace::render (g, plot, sampleCount, magLevel,
+                                          trace, parvati::vectorTrace::Mode::unipolar,
+                                          false, 1.5f, 0.12f);
+        }
+        else
+        {
+            juce::Path live = parvati::vectorTrace::buildTrace (plot, sampleCount, magLevel,
+                                    parvati::vectorTrace::Mode::unipolar, false);
+            g.setColour (trace);
+            g.strokePath (live, juce::PathStrokeType (1.75f,
+                                juce::PathStrokeType::curved,
+                                juce::PathStrokeType::rounded));
+        }
+        return fc;
     };
 
-    // Smooth vector trace + translucent gradient fill (unipolar; the area fills
-    // below the curve — the pass-band skirt). Peak alpha kept ~0.12 so the
-    // vertical gradient (accent at the curve fading to 0% near the baseline)
-    // stays subtle and the curve stays legible at the 42px decoration height.
-    const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
-    parvati::vectorTrace::render (g, plot, sampleCount, magLevel,
-                                  trace, parvati::vectorTrace::Mode::unipolar,
-                                  false, 1.5f, 0.12f);
+    // Normalized log-frequency column (0..1) of an fc tick x position.
+    auto fcColumn = [] (float fc) -> float
+    {
+        return juce::jlimit (0.0f, 1.0f,
+                (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f);
+    };
 
-    // Cutoff vertical reference line (clean 1px).
-    const float fcT = (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f;
-    const float fcX = plot.getX() + juce::jlimit (0.0f, 1.0f, fcT) * plot.getWidth();
-    g.setColour (accent.withAlpha (0.55f));
+    // ---- BASE curve: exactly as before, always in place ----
+    // Smooth vector trace + translucent gradient fill (unipolar; the area fills
+    // below the curve — the pass-band skirt).
+    const float fc = drawCurve (cutoffByte, rN, true);
+
+    // ---- LIVE modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // Drawn only while the effective bytes depart from the base knob bytes
+    // (the change gate in timerCallback keeps dispLiveActive_ false otherwise).
+    // The BASE curve + fill stay untouched in place; the base fc tick dims so
+    // the bright live tick carries the attention.
+    const bool liveOn = dispLiveActive_ && dispLiveCutByte_ >= 0;
+    if (liveOn)
+    {
+        const uint8_t liveCutByte = static_cast<uint8_t> (juce::jlimit (0, 255, dispLiveCutByte_));
+        const float   liveRN      = juce::jlimit (0.0f, 1.0f,
+                                    static_cast<float> (juce::jlimit (0, 255, dispLiveResByte_)) / 255.0f);
+        const float liveFc = drawCurve (liveCutByte, liveRN, false);
+
+        // Bright live cutoff tick: the moving "what is happening" position.
+        const float liveX = plot.getX() + fcColumn (liveFc) * plot.getWidth();
+        g.setColour (trace.withAlpha (0.85f));
+        g.drawVerticalLine (juce::roundToInt (liveX), plotTop, plot.getBottom());
+    }
+
+    // Cutoff vertical reference line (clean 1px) — dimmed while the live tick
+    // is shown so the pair reads base-vs-modulated, not two equal markers.
+    const float fcX = plot.getX() + fcColumn (fc) * plot.getWidth();
+    g.setColour (accent.withAlpha (liveOn ? 0.30f : 0.55f));
     g.drawVerticalLine (juce::roundToInt (fcX), plotTop, plot.getBottom());
 
     // 0 dB reference line (clean 1px).

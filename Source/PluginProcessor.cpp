@@ -1726,7 +1726,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // autosaves are NOT message-thread), while the setters run on the message
     // thread. juce::String is refcounted — a torn copy is a UAF class.
     juce::String theme, language;
-    double zoom; bool tooltips, smoothing; int oversampling, fontMode, manualBpm;
+    double zoom; bool tooltips, smoothing; int oversampling, refreshHz, fontMode, manualBpm;
     {
         const std::lock_guard<std::mutex> l (uiPrefsLock_);
         theme        = uiThemeName_;
@@ -1734,6 +1734,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         tooltips     = uiTooltips_;
         smoothing    = uiSmoothing_;
         oversampling = uiOversampling_;
+        refreshHz    = uiRefreshHz_;
         fontMode     = uiFontMode_;
         language     = uiLanguage_;
         manualBpm    = manualTempoBpm_.load (std::memory_order_relaxed);
@@ -1743,6 +1744,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_tooltips", tooltips, nullptr);
     tree.setProperty ("ui_smoothing", smoothing, nullptr);
     tree.setProperty ("ui_oversampling", oversampling, nullptr);
+    tree.setProperty ("ui_refresh_hz", refreshHz, nullptr);   // live mod-feedback animation cadence (docs/LIVE_MOD_FEEDBACK_DESIGN.md)
     tree.setProperty ("ui_font_mode", fontMode, nullptr);
     tree.setProperty ("ui_language", language, nullptr);
     tree.setProperty ("manual_bpm", manualBpm, nullptr);   // arp-clock manual tempo (setManualTempoBpm clamps)
@@ -1793,6 +1795,12 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 rOversampling = 2;
 #endif
             const int rFontMode     = static_cast<int> (tree.getProperty ("ui_font_mode", 0));
+            // Live mod-feedback animation rate (docs/LIVE_MOD_FEEDBACK_DESIGN.md):
+            // absent in pre-2026-08 states -> the 30 default. Clamped to the
+            // setting's 5..60 range inline (same lock discipline as the
+            // siblings: restored state is never trusted raw — a hand-edited
+            // XML with 0 or 999 must not drive an absurd poll timer).
+            const int rRefreshHz     = juce::jlimit (5, 60, static_cast<int> (tree.getProperty ("ui_refresh_hz", 30)));
             juce::String rLanguage  = tree.getProperty ("ui_language", "auto").toString();
             // Arp-clock manual tempo: absent in pre-2026-08 states -> the 120
             // default (= the old hard-coded no-host-tempo behaviour).
@@ -1804,6 +1812,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 uiTooltips_    = rTooltips;
                 uiSmoothing_   = rSmoothing;
                 uiOversampling_ = rOversampling;
+                uiRefreshHz_    = rRefreshHz;
                 uiFontMode_    = rFontMode;
                 uiLanguage_    = std::move (rLanguage);
                 // setManualTempoBpm's clamp range, applied inline (same lock):

@@ -2091,11 +2091,26 @@ void SynthEngine::renderPartFx (int numSamples)
 
     bool anyFxDirtied = false;   // tail-cache refresh condition (see below)
 
+    // UI live-modulation telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md): ONE
+    // relaxed load per block names the tracked part; when nothing tracks it
+    // (-1, the pre-wiring default) the per-part cost below is a single compare.
+    const int uiTelPartLoad = uiTelPart_.load (std::memory_order_relaxed);
+
     for (int p = 0; p < kNumParts; ++p)
     {
         auto& part = parts_[(size_t) p];
         auto& chain = fxChains_[(size_t) p];
         auto& cache = fxCached_[(size_t) p];
+        const bool uiTelTrack = (p == uiTelPartLoad);
+
+        // ---- 0. UI telemetry service stage (tracked part only) ----
+        // Clears the frame when the tracked part changed or a reset was
+        // requested (patch load / part switch / init), stamping the CURRENT
+        // epoch + part so the reader sees fresh-but-empty until history
+        // repopulates. Runs regardless of voice activity so a part switch
+        // while silent still lands.
+        if (uiTelTrack)
+            uiTelServiceStage (p);
 
         // ---- 1. Service staged FX state (single-threaded on the AT) ----
         // (a) Install any staged type swaps FIRST (a staged swap is its own
@@ -2302,6 +2317,12 @@ void SynthEngine::renderPartFx (int numSamples)
             // crossfades from here.
             for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
                 lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
+            // UI telemetry: decimated history append of THIS internal block's
+            // effective sources — only while the tracked part has an ACTIVE
+            // representative voice (a released/idle part keeps its window
+            // frozen instead of scrolling held values). PURE OBSERVATION.
+            if (uiTelTrack && repVoice != nullptr)
+                uiTelAppendHistory (effSrcs);
             // Advance the crossfade phase for the next sub-chunk (drift-free:
             // tau in seconds => sample-rate independent).
             if (fade < 1.0f)
@@ -2378,6 +2399,14 @@ void SynthEngine::renderPartFx (int numSamples)
             if (ringIdx < ringCount - 1) ++ringIdx;   // hold last entry for any extra sub-chunks
         }
         fxSubPhase_[(size_t) p] = nextBoundary - (double) numSamples;   // drift-free carry
+
+        // UI telemetry: once-per-block observables refresh (envelope stage /
+        // progress, effective filter bytes, current sources, voiceActive). The
+        // null-repVoice path fires exactly ONCE on the active->inactive
+        // transition — a steady idle part never writes, so the frame keeps its
+        // frozen tail until the next note.
+        if (uiTelTrack)
+            uiTelUpdateObservables (repVoice, lastModSources_[(size_t) p].data());
     }
 
     // FX state (types/enabled/params) changed this block: refresh the tail
@@ -2385,6 +2414,199 @@ void SynthEngine::renderPartFx (int numSamples)
     // longer bounce tail; all-None -> floor).
     if (anyFxDirtied)
         recomputeTailCache();
+}
+
+//==========================================================================
+// UI live-modulation telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md).
+// Thread contract (fixed):
+//   * uiTelServiceStage / uiTelAppendHistory / uiTelUpdateObservables run on
+//     the AUDIO thread, called from renderPartFx for the tracked part only.
+//     All writes are bounded fixed-size stores under the seqlock — no
+//     allocation, no locks, nothing that could block the audio thread.
+//   * readUiTelemetry / resetUiTelemetry / setUiTelemetryPart run on the
+//     message thread (the editor's LiveFeedbackHub + the patch-load reset
+//     hooks). The reader is a bounded 64-retry seqlock read — the exact
+//     Part::readPendingConfig discipline (single writer, single reader).
+void SynthEngine::uiTelServiceStage (int p)
+{
+    // exchange (acq_rel) check-and-clear: a plain load()+store(false) could
+    // drop a reset staged by the message thread between the two ops (a lost
+    // wipe on a rapid patch switch) — same reasoning as the
+    // osFactorDirty_/fxDirty_ services above.
+    const bool resetReq = uiTelResetReq_.exchange (false, std::memory_order_acq_rel);
+    if (uiTelWrittenPart_ == p && ! resetReq)
+        return;   // already servicing this part and no wipe pending
+
+    uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
+    std::atomic_thread_fence (std::memory_order_release);
+    // Fixed-size wipe (the ~4 KB frame is zeroed with stores only; this fires
+    // once per reset / part switch, never per block).
+    uiTel_ = parvati::ModTelemetrySnapshot {};
+    uiTel_.epoch = uiTelemetryEpoch_.load (std::memory_order_relaxed);
+    uiTel_.part  = p;
+    uiTelHead_      = 0;
+    uiTelDecim_    = 0;
+    uiTelWasActive_ = false;
+    std::atomic_thread_fence (std::memory_order_release);
+    uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+    uiTelWrittenPart_ = p;
+}
+
+void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs)
+{
+    // Decimate: one append per kUiTelDecimBlocks internal ticks (~81.7 Hz at
+    // the 980.4 Hz control cadence -> 128 samples ~= 1.57 s window).
+    if (++uiTelDecim_ < kUiTelDecimBlocks)
+        return;
+    uiTelDecim_ = 0;
+
+    constexpr int kLen = parvati::ModTelemetrySnapshot::kHistoryLen;
+    const int idx = uiTelHead_;
+
+    uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
+    std::atomic_thread_fence (std::memory_order_release);
+    // effSrcs holds MOD_SRC_LAST(31) bytes; the frame's one spare slot
+    // (kNumSources == 32, see the header's static_assert note) stays zero —
+    // the UI only enumerates real source enums.
+    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+    {
+        uiTel_.history[(size_t) src * (size_t) kLen + (size_t) idx] = effSrcs[(size_t) src];
+        uiTel_.sources[(size_t) src] = effSrcs[(size_t) src];
+    }
+    uiTelHead_ = (idx + 1 >= kLen) ? 0 : idx + 1;
+    if (uiTel_.historyCount < kLen)
+        ++uiTel_.historyCount;
+    std::atomic_thread_fence (std::memory_order_release);
+    uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+}
+
+void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* currentSources)
+{
+    const bool active = repVoice != nullptr;
+    // Transition gate: write every block while active, exactly ONCE on the
+    // active->inactive fall, never on a steady idle part (the frame then keeps
+    // its frozen tail values — matching the frozen history window).
+    if (! active && ! uiTelWasActive_)
+        return;
+
+    uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
+    std::atomic_thread_fence (std::memory_order_release);
+    if (active)
+    {
+        for (int e = 0; e < 3; ++e)
+        {
+            uiTel_.envStage[(size_t) e] = repVoice->envelopeStage (e);
+            // Progress within the stage: phase/65536 while the segment is
+            // advancing; 1.0 while parked (SUSTAIN/DEAD hold a zero increment
+            // and never wrap — the marker then rests at the segment's end).
+            uiTel_.envProgress[(size_t) e] = repVoice->envelopePhaseIncrement (e) > 0
+                ? static_cast<float> (repVoice->envelopePhase (e)) * (1.0f / 65536.0f)
+                : 1.0f;
+            uiTel_.envLevel[(size_t) e] =
+                static_cast<float> (repVoice->envelopeValueByte (e)) * (1.0f / 255.0f);
+        }
+        // EFFECTIVE filter bytes (modulation-applied — the same bytes the
+        // analog filter consumes this block, not the knob bytes).
+        uiTel_.effCutoff    = repVoice->effectiveCutoff();
+        uiTel_.effResonance = repVoice->effectiveResonance();
+        uiTel_.filterMode   = repVoice->filterMode();
+        // Current sources: the freshest effective bytes for this part (the
+        // final sub-chunk's effSrcs, mirrored into lastModSources_ above).
+        for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+            uiTel_.sources[(size_t) src] = currentSources[(size_t) src];
+    }
+    uiTel_.voiceActive = active;
+    std::atomic_thread_fence (std::memory_order_release);
+    uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+    uiTelWasActive_ = active;
+}
+
+void SynthEngine::resetUiTelemetry()
+{
+    // Message thread. The EPOCH bump is what the reader observes immediately
+    // (readUiTelemetry fails on a stale epoch before the audio thread has
+    // serviced anything, so the UI hides its overlays across the seam); the
+    // request flag then drives the audio-thread wipe at the next renderPartFx.
+    uiTelemetryEpoch_.fetch_add (1, std::memory_order_relaxed);
+    uiTelResetReq_.store (true, std::memory_order_release);
+}
+
+void SynthEngine::setUiTelemetryPart (int part)
+{
+    // Message thread. The audio thread's service stage observes the change on
+    // the next block and clears the frame for the new part (the reader reports
+    // invalid for that window — see readUiTelemetry's part check).
+    uiTelPart_.store (juce::jlimit (0, kNumParts - 1, part), std::memory_order_relaxed);
+}
+
+bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
+{
+    // Message thread (the editor's LiveFeedbackHub poll). Bounded-retry
+    // seqlock read — the Part::readPendingConfig discipline: copy the plain
+    // frame, re-check the sequence, retry on a mismatch. Unlike the pending
+    // config there is no lastGood fallback: a torn read simply reports false
+    // and the caller polls again next tick (the hub keeps its previous cache).
+    const int tracked = uiTelPart_.load (std::memory_order_relaxed);
+    if (tracked < 0)
+        return false;   // no part tracked yet (the editor has not wired the hub)
+
+    constexpr int kLen  = parvati::ModTelemetrySnapshot::kHistoryLen;
+    constexpr int kSrcs = parvati::ModTelemetrySnapshot::kNumSources;
+
+    for (int attempt = 0; attempt < 64; ++attempt)
+    {
+        const uint32_t s1 = uiTelSeq_.load (std::memory_order_acquire);
+        if (s1 & 1u)
+            continue;                                       // writer mid-update
+        parvati::ModTelemetrySnapshot copy = uiTel_;         // guarded by the seq check below
+        const int head = uiTelHead_;
+        std::atomic_thread_fence (std::memory_order_acquire);
+        if (uiTelSeq_.load (std::memory_order_acquire) != s1)
+            continue;                                       // torn: retry
+
+        // Validity (see the public contract in the header): a stale epoch = a
+        // reset landed that the audio thread has not serviced yet; a part
+        // mismatch = the tracked part switched and the service has not run.
+        // Both report false so the UI hides its live overlays for that window.
+        if (copy.epoch != uiTelemetryEpoch_.load (std::memory_order_relaxed))
+            return false;
+        if (copy.part != tracked)
+            return false;
+
+        // Linearize the ring OLDEST-FIRST into the caller's frame. While the
+        // ring is not yet full the valid samples sit left-aligned at [0,count)
+        // and head == count; once full, head wraps to the OLDEST entry.
+        const int count  = juce::jmin (copy.historyCount, kLen);
+        const int oldest = (count < kLen) ? 0 : head;
+        for (int src = 0; src < kSrcs; ++src)
+        {
+            const uint8_t* ring = copy.history + (size_t) src * (size_t) kLen;
+            uint8_t* dst       = out.history  + (size_t) src * (size_t) kLen;
+            for (int i = 0; i < count; ++i)
+                dst[(size_t) i] = ring[(size_t) ((oldest + i) % kLen)];
+            // Zero the unused tail so a caller reusing one snapshot object can
+            // never observe a stale longer window after a reset/clear.
+            for (int i = count; i < kLen; ++i)
+                dst[(size_t) i] = 0;
+        }
+        out.historyCount = count;
+        out.epoch        = copy.epoch;
+        out.part         = copy.part;
+        for (int s = 0; s < kSrcs; ++s)
+            out.sources[(size_t) s] = copy.sources[(size_t) s];
+        for (int e = 0; e < 3; ++e)
+        {
+            out.envStage[(size_t) e]    = copy.envStage[(size_t) e];
+            out.envProgress[(size_t) e] = copy.envProgress[(size_t) e];
+            out.envLevel[(size_t) e]    = copy.envLevel[(size_t) e];
+        }
+        out.effCutoff     = copy.effCutoff;
+        out.effResonance  = copy.effResonance;
+        out.filterMode    = copy.filterMode;
+        out.voiceActive   = copy.voiceActive;
+        return true;
+    }
+    return false;   // retries exhausted (sustained writer churn — poll again)
 }
 // Tail-length cache. Pure math over the staged fxState atomics: max over every
 // part's ENABLED slots of tailSecondsForFx, clamped to [floor, cap]. Called on

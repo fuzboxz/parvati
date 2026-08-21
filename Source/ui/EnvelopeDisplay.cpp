@@ -7,7 +7,10 @@
 #include "VectorTrace.h"
 
 //==============================================================================
-// PURE ADSR curve shape (normalized 0..1 knob values -> level at normalized x).
+// ADSR segment geometry + level — ONE definition shared by the drawn curve and
+// the live stage marker (docs/LIVE_MOD_FEEDBACK_DESIGN.md) so the marker always
+// rides the exact curve the panel paints.
+//
 // Segment widths are proportional to the a/d/r knob values EXCEPT the attack,
 // which has a MINIMUM VISUAL WIDTH (kMinAttackShare of the other segments' sum,
 // 2026-08-20 user request: "display the initial transient going from 0 to 100%",
@@ -16,15 +19,27 @@
 // fast attack renders as a near-vertical ramp at the left edge — always
 // visible — and slower attacks keep their proportional share unchanged.
 // The sustain plateau keeps its fixed minimum so it always reads.
+void EnvelopeDisplay::adsrSegmentSpans (float a, float d, float s, float r,
+                                        float* wA, float* wD, float* wS, float* wR)
+{
+    juce::ignoreUnused (s);                     // the sustain LEVEL shapes the curve, not its width
+    constexpr float kSustainMin    = 0.5f;      // sustain plateau (fixed minimum)
+    constexpr float kMinAttackShare = 0.09f;    // attack floor: >= ~8% of total
+
+    *wS = kSustainMin;
+    *wA = juce::jmax (a, kMinAttackShare * (d + *wS + r));
+    *wD = d;
+    *wR = r;
+}
+
+// PURE ADSR curve shape (normalized 0..1 knob values -> level at normalized x),
+// evaluated over the adsrSegmentSpans geometry. EXPOSED as a pure static
+// (adsrCurveLevelForTest) so the shape is testable without a Graphics context;
+// a test pins it, so the span helper above must keep this exact behaviour.
 float EnvelopeDisplay::adsrCurveLevel (float a, float d, float s, float r, float xf)
 {
-    constexpr float kSustainMin  = 0.5f;   // sustain plateau (fixed minimum)
-    constexpr float kMinAttackShare = 0.09f;   // attack floor: >= ~8% of total
-
-    const float wS = kSustainMin;
-    const float wA = juce::jmax (a, kMinAttackShare * (d + wS + r));
-    const float wD = d;
-    const float wR = r;
+    float wA, wD, wS, wR;
+    adsrSegmentSpans (a, d, s, r, &wA, &wD, &wS, &wR);
     const float total = wA + wD + wS + wR;   // wS keeps total > 0 (no /0)
     const float fracA = wA / total, fracD = wD / total, fracS = wS / total, fracR = wR / total;
     const float xEndA = fracA;
@@ -89,6 +104,49 @@ float EnvelopeDisplay::fetch (const std::function<float()>& f) const
     return juce::jlimit (0.0f, 1.0f, v);
 }
 
+void EnvelopeDisplay::setLiveStageProvider (std::function<parvati::LiveEnvStage()> p)
+{
+    liveStageProvider_ = std::move (p);
+    // An un-set provider must immediately hide any shown marker (the state is
+    // re-resolved on the next poll tick; a repaint now avoids one stale frame).
+    if (! liveStageProvider_ && markerVisible_)
+    {
+        markerVisible_ = false;
+        repaint();
+    }
+}
+
+float EnvelopeDisplay::markerXForStage (const parvati::LiveEnvStage& st) const
+{
+    // DEAD (4) / inactive / out-of-range stages hide the marker. The stage
+    // indices mirror ambika::dsp::EnvelopeStage (ATTACK=0..DEAD=4).
+    if (! st.active || st.stage < 0 || st.stage > 3)
+        return -1.0f;
+
+    // Same segment weights as the drawn curve (ONE definition — see
+    // adsrSegmentSpans), so the marker's x maps onto the curve the panel
+    // painted from these very knob values.
+    float wA, wD, wS, wR;
+    adsrSegmentSpans (dispA_, dispD_, dispS_, dispR_, &wA, &wD, &wS, &wR);
+
+    float before = 0.0f;   // cumulative weight BEFORE this stage
+    float span   = 0.0f;   // this stage's weight
+    switch (st.stage)
+    {
+        case 0:  span = wA; break;                        // ATTACK
+        case 1:  before = wA;      span = wD; break;      // DECAY
+        case 2:  before = wA + wD; span = wS; break;      // SUSTAIN
+        default: before = wA + wD + wS; span = wR; break; // RELEASE
+    }
+    // SUSTAIN pins the marker at the plateau START: the engine reports no
+    // time-of-hold for the sustain segment (its visual span is a fixed
+    // minimum, not a proportional one), so the dot rests where the plateau
+    // begins instead of crawling across a width that carries no meaning.
+    const float progress = st.stage == 2 ? 0.0f : juce::jlimit (0.0f, 1.0f, st.progress);
+    const float total = wA + wD + wS + wR;
+    return juce::jlimit (0.0f, 1.0f, (before + progress * span) / total);
+}
+
 void EnvelopeDisplay::timerCallback()
 {
     const float a  = fetch (getAttack_);
@@ -115,10 +173,33 @@ void EnvelopeDisplay::timerCallback()
     const bool shapeChanged = std::fabs (sh - lastShape_) > eps;
     if (shapeChanged) lastShape_ = sh;   // discrete LFO shape snaps
 
-    // Repaint only when the target moved since the last tick or on a shape
-    // switch (eps gate: no constant repaint when idle).
-    if (shapeChanged || paramChanged)
+    // ---- Live stage marker poll (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // ONE provider call per tick, only in ADSR mode. An absent provider, an
+    // inactive/DEAD stage or LFO preview mode leaves the marker hidden at zero
+    // overhead. The marker state is computed AFTER the disp* fields update so
+    // its segment math uses the values the curve is drawn from this tick.
+    bool  markerVisible = false;
+    float markerX = 0.0f;
+    if (previewMode_ == 0 && liveStageProvider_)
     {
+        const float x = markerXForStage (liveStageProvider_());
+        if (x >= 0.0f)
+        {
+            markerVisible = true;
+            markerX = x;
+        }
+    }
+    constexpr float kMarkerEps = 1.0f / 256.0f;   // ~1/4 knob-step of plot width
+    const bool markerChanged = (markerVisible != markerVisible_)
+        || (markerVisible && std::fabs (markerX - markerX_) > kMarkerEps);
+
+    // Repaint only when the target moved since the last tick, on a shape
+    // switch, or when the live marker crossed its own eps gate (eps gates:
+    // no constant repaint when idle).
+    if (shapeChanged || paramChanged || markerChanged)
+    {
+        markerVisible_ = markerVisible;
+        markerX_ = markerX;
         ++generation_;   // TEST-ONLY: a real refresh is observable (see header)
         repaint();
     }
@@ -254,6 +335,31 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     parvati::vectorTrace::render (g, plot, sampleCount, envLevel,
                                   trace, parvati::vectorTrace::Mode::unipolar,
                                   false, 1.5f, 0.12f);
+
+    // ---- Live stage marker (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // A dot riding the DRAWN curve (same segment geometry, same level function)
+    // plus a 1px hairline through the plot: quiet position feedback while the
+    // key is held, in the trace colour so it inherits the category hue. Flat —
+    // no glow, no bevel; the 1px panelBg rim just separates the dot from the
+    // curve where they overlap.
+    if (markerVisible_)
+    {
+        const float px = plot.getX() + markerX_ * plot.getWidth();
+        const float py = parvati::vectorTrace::levelToY (plot,
+                               parvati::vectorTrace::Mode::unipolar,
+                               adsrCurveLevel (a, d, s, r, markerX_));
+
+        g.setColour (trace.withAlpha (0.28f));
+        g.drawVerticalLine (juce::roundToInt (px), plot.getY(), plot.getBottom());
+
+        constexpr float kDotR = 1.75f;   // ~3.5px diameter
+        g.setColour (panelBg);
+        g.fillEllipse (juce::Rectangle<float> ((kDotR + 1.0f) * 2.0f, (kDotR + 1.0f) * 2.0f)
+                           .withCentre ({ px, py }));
+        g.setColour (trace);
+        g.fillEllipse (juce::Rectangle<float> (kDotR * 2.0f, kDotR * 2.0f)
+                           .withCentre ({ px, py }));
+    }
 }
 
 //==========================================================================

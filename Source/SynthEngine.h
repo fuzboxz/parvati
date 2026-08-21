@@ -54,6 +54,23 @@ static constexpr int kNumVoices = kNumParts * kMaxVoicesPerPart;   // 96
 // FxProcessor.h).
 #include "dsp/fx/FxTypes.h"
 
+// ===== UI live-modulation telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md) =====
+// The shared snapshot contract is a dependency-light shard under ui/ (only
+// <cstddef>/<cstdint>) so this engine header and every UI component agree on
+// ONE frame layout without dragging JUCE module headers into the DSP shard.
+// The engine is the seqlock WRITER (audio thread, renderPartFx); the editor's
+// LiveFeedbackHub is the bounded-retry reader (message thread).
+#include "ui/ModTelemetryTypes.h"
+static_assert (parvati::ModTelemetrySnapshot::kNumSources >= ambika::dsp::MOD_SRC_LAST,
+               "the telemetry frame must hold every MOD_SRC_* source without "
+               "misindexing sources[]/history[]");
+// NOTE (contract deviation, reported to the parent): the frozen shared header
+// pins kNumSources = 32 while the enum's MOD_SRC_LAST sentinel is 31 (there
+// are 31 named sources), so a == assert can never hold. The >= form above is
+// the true invariant: every real source index (0..MOD_SRC_LAST-1) fits and the
+// one spare slot (index 31) stays zero — the UI only enumerates the
+// ModSourceCatalog's real enum values, so nothing reads it.
+
 // One multitimbral Part. The Arpeggiator/Sesequencer objects ARE the per-part
 // storage for those settings (edits route to the current Part's objects).
 //
@@ -778,6 +795,47 @@ public:
     // install clears the processor), same as setSlotType.
     void stagePartFxSlotType (int part, int slot, int type);
 
+    // ---- UI live-modulation telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // The engine side of the Pigments-style live feedback system: the audio
+    // thread maintains ONE seqlock-guarded frame (this part's mod-source
+    // history + envelope/filter observables of its representative voice) and
+    // the editor polls it at the user's refresh rate. The frame is PURE
+    // OBSERVATION — renderPartFx samples state it already computed for the FX
+    // mod matrix, so the audio path stays bit-identical.
+    //
+    // Reader (message thread — the editor's LiveFeedbackHub): copies out ONE
+    // consistent frame, linearizing the internal history ring OLDEST-FIRST.
+    // Returns false (and leaves @p out untouched) when no part is tracked, the
+    // retries were exhausted (a torn read: the writer is mid-update — the
+    // caller simply polls again), the frame's epoch is stale (a
+    // resetUiTelemetry landed and the audio thread has not serviced the clear
+    // yet — the UI must hide its live overlays for that window), or the
+    // serviced part no longer matches the tracked part (a part switch).
+    bool readUiTelemetry (parvati::ModTelemetrySnapshot& out) const;
+
+    // Reset the telemetry (message thread): invalidates the current frame via
+    // an epoch bump (visible to the reader IMMEDIATELY, before the audio
+    // thread services the clear) and requests the audio thread to wipe the
+    // history/sources. Called on patch load / patch switch / init so the pill
+    // histories never carry the previous patch's motion across the seam.
+    void resetUiTelemetry();
+
+    // The authoritative validity epoch (starts 0; bumped by every
+    // resetUiTelemetry). readUiTelemetry fails whenever the frame carries an
+    // older value than this.
+    uint32_t uiTelemetryEpoch() const noexcept
+    {
+        return uiTelemetryEpoch_.load (std::memory_order_relaxed);
+    }
+
+    // Select which multitimbral part the telemetry tracks (message thread;
+    // clamped to 0..kNumParts-1). The audio thread observes the change at the
+    // top of the next renderPartFx and clears the frame for the new part —
+    // the reader reports invalid until that service lands. NOTE: the audio
+    // thread NEVER dereferences the plain currentPart_ int; this atomic is the
+    // only cross-thread part selector.
+    void setUiTelemetryPart (int part);
+
     // Message-thread reaper for the staged audio-object swaps: frees the FX
     // processors displaced by a type change (FxChain retirement parking) and
     // the per-voice Oversampling objects displaced by a filter-oversampling
@@ -895,6 +953,50 @@ private:
     bool partsSeeded_ = false;   // seed Part storage from the init patch once
     std::atomic<bool> allocationDirty_ { false };   // set by message thread; serviced on the audio thread
     std::atomic<bool> resetAllVoicesPending_ { false };   // message thread -> audio thread: kill every voice on a patch switch
+
+    // ---- UI live-modulation telemetry state (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // Thread roles are FIXED: the AUDIO thread is the sole writer of the plain
+    // members below (renderPartFx); the MESSAGE thread is the sole reader
+    // (readUiTelemetry via the editor's poll). uiTelSeq_ is the seqlock
+    // separating them — the exact Part::readPendingConfig discipline (single
+    // writer, single reader, bounded 64-retry reader, odd-begin /
+    // release-fence / write / release-fence / even-end writer). The atomics
+    // marked MT are written by the message thread and read by the audio thread.
+    //
+    // Frame layout: uiTel_ carries the CURRENT sources + envelope/filter
+    // observables; its history[] is the RING (next-write position = uiTelHead_)
+    // and readUiTelemetry linearizes it OLDEST-FIRST into the caller's frame.
+    // Storage is fixed-size (no allocation anywhere on the audio-thread path).
+    parvati::ModTelemetrySnapshot uiTel_ {};   // ring storage + observables (AT writes under the seqlock)
+    int  uiTelHead_ = 0;                        // ring next-write index (0..kHistoryLen-1)
+    std::atomic<uint32_t> uiTelSeq_ { 0 };       // seqlock: even = stable, odd = writer mid-update
+    std::atomic<uint32_t> uiTelemetryEpoch_ { 0 };   // MT-authoritative validity epoch (resetUiTelemetry bumps)
+    std::atomic<int>  uiTelPart_ { -1 };         // MT -> AT: the tracked part (-1 = not tracking)
+    std::atomic<bool> uiTelResetReq_ { false };  // MT -> AT: wipe request (paired with the epoch bump)
+    int  uiTelDecim_ = 0;                        // AT: internal-block decimation counter (history appends)
+    int  uiTelWrittenPart_ = -2;                 // AT: the part the frame was last serviced for (-2 => never)
+    bool uiTelWasActive_ = false;                // AT: gates the one write on the active->inactive transition
+    // History append decimation: the sub-chunk loop ticks at the internal-block
+    // cadence (kInternalSampleRate/40 = 980.4 Hz); appending every 12th tick
+    // gives 980.4/12 ~= 81.7 appends/s, so kHistoryLen(128) spans ~1.57 s of
+    // recent motion — the Pigments-style window the pill sparklines draw.
+    static constexpr int kUiTelDecimBlocks = 12;
+
+    // AT helpers (called only from renderPartFx for the tracked part).
+    // Service stage: clear the frame when the tracked part changed or a reset
+    // was requested (stamps the CURRENT epoch + part so the reader sees the
+    // frame as fresh-but-empty until history repopulates).
+    void uiTelServiceStage (int p);
+    // Decimated history append of this internal block's effective sources
+    // (also refreshes uiTel_.sources).
+    void uiTelAppendHistory (const uint8_t* effSrcs);
+    // Once-per-block observables refresh: envelope stage/progress/level,
+    // effective cutoff/resonance/mode, current sources, voiceActive. @p repVoice
+    // may be null — that path fires exactly ONCE on the active->inactive
+    // transition (setting voiceActive=false) and never on a steady idle part.
+    // @p currentSources = the freshest effective mod-source bytes for the
+    // tracked part this block (renderPartFx's lastModSources_[p]).
+    void uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* currentSources);
 
     // UI-mirror invalidation version (see getDisplayVersion). Bumped by the
     // message-thread mutators of Patch-page-mirrored state; relaxed — it is a

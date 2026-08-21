@@ -122,6 +122,15 @@ class Voice {
     const Patch& patch() const { return patch_; }
 
     Envelope* mutable_envelope(uint8_t i) { return &envelope_[i]; }
+    // Const twin of mutable_envelope for the UI telemetry readouts
+    // (docs/LIVE_MOD_FEEDBACK_DESIGN.md): SynthEngine::renderPartFx samples
+    // the representative voice's live envelope stage / phase / output once
+    // per host block via the const wrappers on AmbikaVoice. Clamped like
+    // every other index into the fixed 3-slot array.
+    const Envelope& envelope(uint8_t i) const
+    {
+        return envelope_[i < kNumEnvelopes ? i : kNumEnvelopes - 1];
+    }
     void TriggerEnvelope(uint8_t stage);
     void TriggerEnvelope(uint8_t index, uint8_t stage);
 

@@ -14,14 +14,16 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
                               std::function<void (bool)> onTooltipsChanged,
                               std::function<void (bool)> onSmoothingChanged,
                               std::function<void (int)> onOversamplingChanged,
-                              std::function<void (const juce::String&)> onLanguageChanged)
+                              std::function<void (const juce::String&)> onLanguageChanged,
+                              std::function<void (int)> onRefreshChanged)
     : proc_ (proc),
       themeManager_ (themeManager),
       onZoomChanged_ (std::move (onZoomChanged)),
       onTooltipsChanged_ (std::move (onTooltipsChanged)),
       onSmoothingChanged_ (std::move (onSmoothingChanged)),
       onOversamplingChanged_ (std::move (onOversamplingChanged)),
-      onLanguageChanged_ (std::move (onLanguageChanged))
+      onLanguageChanged_ (std::move (onLanguageChanged)),
+      onRefreshChanged_ (std::move (onRefreshChanged))
 {
     // ---- Theme ----
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
@@ -151,7 +153,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // get a 44pt tap band centred on their row (see resized — the extra band is
     // transparent padding into the row gaps, no sibling moves). The L&F reads
     // the "parvatiComboVisualH" property (drawComboBox / positionComboBoxText).
-    for (auto* c : { &themeCombo_, &osCombo_, &langCombo_ })
+    for (auto* c : { &themeCombo_, &osCombo_, &langCombo_, &refreshCombo_ })
         c->getProperties().set ("parvatiComboVisualH", 28);
 
     // ---- Arp Clock (manual tempo fallback) ----
@@ -182,6 +184,33 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     bpmSlider_.onValueChange = [this]
         { proc_.setManualTempoBpm (juce::roundToInt (bpmSlider_.getValue())); };
     addAndMakeVisible (bpmSlider_);
+
+    // ---- Visual Refresh (live mod-feedback animation cadence) ----
+    // Caps how often the live modulation feedback repaints (CentralModBar
+    // history strips, EnvelopeDisplay stage markers, FilterResponseDisplay
+    // live curve — docs/LIVE_MOD_FEEDBACK_DESIGN.md). Every poll is
+    // change-gated, so a higher rate only smooths animation; a LOWER rate is
+    // the knob to turn on GPU-constrained hosts (short AUv3 panes). The item
+    // ID is the Hz value itself (persisted exactly via setUiRefreshHz); a
+    // persisted value between the offered steps snaps the combo's DISPLAY to
+    // the nearest step while the processor keeps its exact value until the
+    // user actually changes the combo.
+    refreshLabel_.setText (TRANS ("Visual Refresh"), juce::dontSendNotification);
+    refreshLabel_.setFont (juce::FontOptions (14.0f));
+    refreshLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (refreshLabel_);
+
+    populateRefreshCombo();
+    refreshCombo_.setSelectedId (snapRefreshChoice (proc_.getUiRefreshHz()),
+                                 juce::dontSendNotification);
+    refreshCombo_.setTooltip (TRANS ("Animation rate of the live modulation indicators"));
+    refreshCombo_.onChange = [this] {
+        const int hz = refreshCombo_.getSelectedId();
+        proc_.setUiRefreshHz (hz);
+        if (onRefreshChanged_)
+            onRefreshChanged_ (hz);
+    };
+    addAndMakeVisible (refreshCombo_);
 
     refreshClockStatus();
     startTimerHz (2);   // clock-status line only (gated by isShowing())
@@ -246,6 +275,33 @@ void SettingsPanel::populateOversamplingCombo()
 #endif
 }
 
+void SettingsPanel::populateRefreshCombo()
+{
+    refreshCombo_.clear (juce::dontSendNotification);
+    // Item IDs == the Hz values (stable across languages; persisted exactly).
+    // "30 Hz (Default)" names the shipped default so a fresh install reads as
+    // a choice, not a mystery number.
+    refreshCombo_.addItem (TRANS ("10 Hz"),             10);
+    refreshCombo_.addItem (TRANS ("15 Hz"),             15);
+    refreshCombo_.addItem (TRANS ("30 Hz (Default)"),   30);
+    refreshCombo_.addItem (TRANS ("60 Hz"),             60);
+}
+
+int SettingsPanel::snapRefreshChoice (int hz) const
+{
+    // Nearest offered step (10/15/30/60). The combo can only display the
+    // offered steps; the processor keeps the exact persisted value until the
+    // user changes the combo (so a restored 45 Hz still animates at 45 Hz
+    // while the combo honestly shows the nearest available choice).
+    int best = 30, bestDist = 1 << 30;
+    for (int step : { 10, 15, 30, 60 })
+    {
+        const int d = hz > step ? hz - step : step - hz;   // |hz - step| without an include
+        if (d < bestDist) { bestDist = d; best = step; }
+    }
+    return best;
+}
+
 int SettingsPanel::languageIndexFromCode (const juce::String& code) const
 {
     const auto& langs = getAvailableLanguages();
@@ -275,6 +331,7 @@ void SettingsPanel::refreshLanguage()
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
     clockLabel_.setText (TRANS ("Arp Clock"), juce::dontSendNotification);
+    refreshLabel_.setText (TRANS ("Visual Refresh"), juce::dontSendNotification);
     // (The BPM text lambdas evaluate TRANS() at invocation time, so a live
     // language switch re-resolves them with no re-assignment needed.)
     refreshClockStatus();
@@ -282,6 +339,12 @@ void SettingsPanel::refreshLanguage()
     const int osId = osCombo_.getSelectedId();
     populateOversamplingCombo();
     osCombo_.setSelectedId (osId, juce::dontSendNotification);
+
+    // Same rebuild for the refresh combo: TRANS() item text, stable Hz item
+    // IDs, selection preserved across the rebuild.
+    const int refreshId = refreshCombo_.getSelectedId();
+    populateRefreshCombo();
+    refreshCombo_.setSelectedId (refreshId != 0 ? refreshId : 30, juce::dontSendNotification);
 
     repaint();
 }
@@ -367,6 +430,17 @@ void SettingsPanel::resized()
     rowOrHide (&clockStatusLabel_, takeRow (18));
     takeRow (gap);
     rowOrHide (&bpmSlider_, takeRow (comboRowH));
+    takeRow (gap + 8);
+
+    // Visual Refresh row (live mod-feedback animation cadence,
+    // docs/LIVE_MOD_FEEDBACK_DESIGN.md). PLACED WITH the perf-relevant block
+    // (above Filter Quality / Language) for the same R3 reason as Arp Clock:
+    // the drawer degrades bottom-first, and this is exactly the control a
+    // constrained host (a short AUv3 pane burning GPU on animations) needs to
+    // reach. At the desktop default size every row below stays visible too.
+    rowOrHide (&refreshLabel_, takeRow (18));
+    takeRow (2);
+    rowOrHide (&refreshCombo_, takeRow (comboRowH));
     takeRow (gap + 8);
 
     // Filter Quality (oversampling) row.

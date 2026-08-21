@@ -33,14 +33,22 @@ public:
                                  it, this is an editor-side hook.
         @param onLanguageChanged    fired when the language combo changes; the editor
                                  persists the pref, installs the LocalisedStrings,
-                                 and re-applies every chrome string live. */
+                                 and re-applies every chrome string live.
+        @param onRefreshChanged     fired when the visual-refresh combo changes
+                                 (10/15/30/60 Hz); the processor already applies +
+                                 persists it, this is an editor-side hook (the
+                                 editor re-times its live-feedback timers).
+                                 Defaulted: the pre-wiring call site (no callback
+                                 yet) still compiles; the processor is always
+                                 updated regardless. */
     SettingsPanel (ParvatiAudioProcessor& proc,
                    ThemeManager& themeManager,
                    std::function<void (double)> onZoomChanged,
                    std::function<void (bool)>   onTooltipsChanged,
                    std::function<void (bool)>   onSmoothingChanged,
                    std::function<void (int)>    onOversamplingChanged,
-                   std::function<void (const juce::String&)> onLanguageChanged);
+                   std::function<void (const juce::String&)> onLanguageChanged,
+                   std::function<void (int)>    onRefreshChanged = {});
 
     ~SettingsPanel() override = default;
 
@@ -78,6 +86,15 @@ private:
     // (Re)build the Filter Quality combo from TRANS() labels. The item IDs
     // (1/2/4/8) are stable across languages, so the selection survives a rebuild.
     void populateOversamplingCombo();
+    // (Re)build the Visual Refresh combo from TRANS() labels. Like the
+    // oversampling combo, the item IDs (10/15/30/60 Hz) are stable across
+    // languages so the selection survives a rebuild.
+    void populateRefreshCombo();
+    // The nearest offered refresh rate (10/15/30/60) to a persisted Hz value.
+    // The combo can only show the offered steps; a restored mid-range value
+    // (e.g. 45) snaps the DISPLAY to the nearest step while the processor
+    // keeps its exact value until the user actually changes the combo.
+    int snapRefreshChoice (int hz) const;
     // Index <-> persisted-code helpers for the Language combo (which uses
     // index+1 as its item ID). An unknown code maps to index 0 ("auto").
     int          languageIndexFromCode (const juce::String& code) const;
@@ -90,10 +107,15 @@ private:
     std::function<void (bool)>   onSmoothingChanged_;
     std::function<void (int)>    onOversamplingChanged_;
     std::function<void (const juce::String&)> onLanguageChanged_;
+    std::function<void (int)>    onRefreshChanged_;
 
     juce::Label     themeLabel_, zoomLabel_, osLabel_, langLabel_;
     juce::Label     clockLabel_, clockStatusLabel_;   // Arp Clock caption + live source line
     juce::ComboBox  themeCombo_, osCombo_, langCombo_;
+    // Visual Refresh row (live mod-feedback animation cadence,
+    // docs/LIVE_MOD_FEEDBACK_DESIGN.md): item IDs ARE the Hz values.
+    juce::Label     refreshLabel_;
+    juce::ComboBox  refreshCombo_;
     // Zoom row (2026-08-20): the slider was REPLACED by the three header zoom
     // buttons (in / out / reset) + a percentage readout — the user asked for
     // the top-bar buttons to live here instead. Steps of 0.1, clamped to the

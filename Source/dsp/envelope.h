@@ -63,6 +63,22 @@ class Envelope {
 
     uint8_t stage() const { return stage_; }
 
+    // ---- Const readouts for the UI live-modulation telemetry
+    // (docs/LIVE_MOD_FEEDBACK_DESIGN.md). PURE OBSERVERS: the audio thread
+    // samples the live segment position / output of each envelope (once per
+    // host block, from SynthEngine::renderPartFx) so the editor's ADSR preview
+    // can draw its stage marker from the REAL envelope state. No state is
+    // touched — the audio path stays bit-identical.
+    //   * phase()            — 16-bit segment position (0..65535).
+    //   * phase_increment()  — the live segment's increment (0 while parked in
+    //                          SUSTAIN/DEAD; a caller derives "progress" as
+    //                          phase/65536 when the increment is non-zero).
+    //   * value_byte()       — the current 8-bit output (value_ >> 8, 0..254;
+    //                          the same truncation Render() returns).
+    uint16_t phase() const { return phase_; }
+    uint16_t phase_increment() const { return phase_increment_; }
+    uint8_t value_byte() const { return static_cast<uint8_t>(value_ >> 8); }
+
     // Begin a segment. DEAD forces the accumulator to 0 (silent). `a_` is
     // seeded from the current output value so segments chain seamlessly.
     void Trigger(uint8_t stage) {

@@ -181,6 +181,29 @@ public:
     }
     void clearModRing() noexcept { modRingCount_ = 0; }
 
+    // ---- UI live-modulation telemetry readouts (const, audio-thread reads) ----
+    // Thin const wrappers over the integer Voice's envelope + EFFECTIVE filter
+    // destinations, sampled ONCE per host block by SynthEngine::renderPartFx for
+    // the tracked part's representative voice (docs/LIVE_MOD_FEEDBACK_DESIGN.md).
+    // PURE OBSERVATION — no state is touched, so the audio path stays
+    // bit-identical. Index clamped like the mod-ring accessor above.
+    //   * envelopeStage()          — 0..4 (ATTACK/DECAY/SUSTAIN/RELEASE/DEAD).
+    //   * envelopePhase()          — 16-bit position within the stage.
+    //   * envelopePhaseIncrement() — the live segment increment (0 in SUSTAIN/
+    //                                DEAD; the caller derives progress from
+    //                                phase/65536 only when it is non-zero).
+    //   * envelopeValueByte()      — current 8-bit output (0..254).
+    //   * effectiveCutoff()/effectiveResonance()/filterMode() — the
+    //     modulation-applied filter bytes the analog filter consumes this
+    //     block (NOT the knob bytes; env-2/lfo-2/matrix offsets included).
+    uint8_t  envelopeStage          (int i) const { return voice_.envelope (envIdx (i)).stage(); }
+    uint16_t envelopePhase          (int i) const { return voice_.envelope (envIdx (i)).phase(); }
+    uint16_t envelopePhaseIncrement (int i) const { return voice_.envelope (envIdx (i)).phase_increment(); }
+    uint8_t  envelopeValueByte      (int i) const { return voice_.envelope (envIdx (i)).value_byte(); }
+    uint8_t  effectiveCutoff    () const { return voice_.cutoff(); }
+    uint8_t  effectiveResonance () const { return voice_.resonance(); }
+    uint8_t  filterMode         () const { return voice_.mode(); }
+
     // VCA response curve: false = linearized (gain=vca/255), true = exponential OTA taper.
     void setVcaExponential (bool e) { vcaExponential_ = e; }
 
@@ -264,6 +287,14 @@ public:
     void setVoiceCard (int vc) noexcept { voiceCard_.store (vc, std::memory_order_relaxed); }
 
 private:
+    // Index clamp for the 3-slot envelope wrappers above (mirrors the
+    // mod-ring accessor's juce::jlimit discipline — defensive against a
+    // future caller passing an out-of-range slot).
+    static uint8_t envIdx (int i) noexcept
+    {
+        return static_cast<uint8_t> (juce::jlimit (0, ambika::dsp::kNumEnvelopes - 1, i));
+    }
+
     // One-time engine init (loads the faithful init patch). The audible
     // program is then driven entirely by the APVTS parameter bridge (see
     // PluginProcessor), which writes the patch bytes after Init(). Idempotent.

@@ -4,6 +4,14 @@
 // for the Filter 1 section (cutoff / resonance / mode). Intended as a decoration
 // under the "Filter 1" group so the filter shape is visible while editing.
 //
+// LIVE MODULATED OVERLAY (docs/LIVE_MOD_FEEDBACK_DESIGN.md): an optional
+// LiveFilterValues provider (wired to the engine telemetry through the editor's
+// LiveFeedbackHub) reports the EFFECTIVE (modulation-applied) cutoff /
+// resonance while a voice sounds. When the effective bytes depart from the
+// base knob bytes, a SECOND curve + a bright live cutoff tick show the
+// modulated state while the opaque base preview stays exactly in place — the
+// static shape reads as "what is set", the moving one as "what is happening".
+//
 // Decoupled contract: constructed with NORMALIZED (0..1) getters for cutoff,
 // resonance, and the mode choice index (0..3 = LP/BP/HP/Notch). Self-contained:
 // owns a 30 Hz refresh timer with an eps-diff gate. Read-only on the APVTS.
@@ -29,6 +37,7 @@
 
 #include <functional>
 
+#include "ModTelemetryTypes.h"   // parvati::LiveFilterValues (live modulated overlay)
 #include "ParvatiLookAndFeel.h"
 
 //==============================================================================
@@ -57,6 +66,26 @@ public:
 
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
+
+    /** Live modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md): @p p
+        returns the EFFECTIVE (modulation-applied) filter state, normalized to
+        0..1 of the 0..255 byte domain (the same domain as the base curve's
+        bytes). While active AND the effective bytes differ from the base knob
+        bytes (>= 2 on either axis), a second curve + a bright live cutoff tick
+        render over the unchanged opaque base preview. An empty or inactive
+        provider (or a near-base state) hides the overlay at zero overhead
+        beyond one std::function call per poll tick. */
+    void setLiveValuesProvider (std::function<parvati::LiveFilterValues()> p);
+
+    // TEST-ONLY: is the live modulated curve currently SHOWN (the painted
+    // state, i.e. after the change gate — lets a headless test observe the
+    // overlay without a Graphics context)?
+    bool  liveCurveVisibleForTest() const noexcept { return dispLiveActive_; }
+
+    // TEST-ONLY: the live cutoff's normalized plot x (0..1, the log-frequency
+    // column of the live fc tick). Only meaningful while
+    // liveCurveVisibleForTest() is true.
+    float liveCutoffXForTest() const noexcept { return dispLiveCutX_; }
 
     void paint (juce::Graphics&) override;
 
@@ -98,6 +127,18 @@ private:
     // (lastM_ is the eps-change gate for it).
     float dispC_ = -1.0f, dispR_ = -1.0f;   // -1 => first tick
     float lastM_ = -1.0f;
+
+    // ---- Live modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+    // The provider is pulled in the SAME 30 Hz tick as the base getters; the
+    // fields below are the DISPLAYED (painted) overlay state, change-gated
+    // exactly like dispC_/dispR_ so a modulation-departed-but-static state
+    // costs no repaints (a visibility flip or a >= 1-byte move triggers one).
+    // The bytes live in the 0..255 effective domain shared with the base curve.
+    std::function<parvati::LiveFilterValues()> liveValuesProvider_;
+    bool  dispLiveActive_  = false;
+    int   dispLiveCutByte_ = -1;    // -1 => never seen an active provider frame
+    int   dispLiveResByte_ = -1;
+    float dispLiveCutX_    = 0.0f;  // normalized log-f x of the live cutoff tick
 
     // TEST-ONLY (see previewGeneration).
     int generation_ = 0;

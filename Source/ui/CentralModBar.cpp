@@ -13,7 +13,11 @@
 
 #include "CentralModBar.h"
 
+#include <array>
+#include <cmath>
+
 #include "ModSourceCatalog.h"
+#include "ModTelemetryTypes.h"   // parvati::isBipolarModSource (strip polarity)
 #include "ParvatiLookAndFeel.h"   // appFont() when the bar is reparented
 #include "ParvatiTheme.h"
 
@@ -47,6 +51,17 @@ namespace
     // the rendered chrome stays identical in weight.
     constexpr int kNavW   = CentralModBar::kNavHitW;   // public for the HIG contract test
     constexpr int kNavGap = 4;    // gap between a nav hit band and the viewport
+
+    // ---- History-strip geometry (the live telemetry sparklines, ----
+    // docs/LIVE_MOD_FEEDBACK_DESIGN.md). The strip is a quiet 13px band at the
+    // bottom of each pill, sitting just above the family underline; the label
+    // centres in the remaining top area. kStripMaxPts caps the downsampled
+    // polyline so both the per-tick diff gate and the stroke stay O(24) per
+    // pill — the bar repaints at most a 13px-tall rect per ANIMATING pill.
+    constexpr int kStripH       = 13;    // strip band height
+    constexpr int kStripXInset  = 2;     // horizontal inset inside the pill
+    constexpr int kStripFootGap = 3;     // clearance above the family underline
+    constexpr int kStripMaxPts  = 24;    // downsampled points per strip
 
     // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
@@ -134,6 +149,14 @@ namespace
 // ModPill is a PRIVATE nested struct of CentralModBar, so its public data
 // members are only reachable from CentralModBar (which needs them for layout,
 // theme resolution and active-state).
+//
+// LIVE HISTORY STRIP (docs/LIVE_MOD_FEEDBACK_DESIGN.md): when the bar's
+// telemetry tick feeds it data, the pill additionally draws a thin
+// family-coloured sparkline of the source's recent values in a bottom band
+// (just above the underline), and the label centres in the remaining top area.
+// Flat and quiet — no fill, no glow, no grid; low alpha keeps the strip an
+// indicator, not a focus. Const-cluster pills and the bar-only sentinel never
+// carry one. With no telemetry the band simply stays empty.
 struct CentralModBar::ModPill : public juce::Component,
                                 public juce::SettableTooltipClient
 {
@@ -143,7 +166,8 @@ struct CentralModBar::ModPill : public juce::Component,
           shortLabel_ (e.shortLabel),
           fullName_ (e.fullName),
           cluster_ (e.cluster),
-          isGenerator_ (e.isGenerator)
+          isGenerator_ (e.isGenerator),
+          stripBipolar_ (parvati::isBipolarModSource (e.enumValue))   // display polarity (mirrors the voice mod-matrix AC coupling)
     {
         setTooltip (fullName_);
         // Accessibility-only: name the pill after its full source name (the
@@ -206,6 +230,115 @@ struct CentralModBar::ModPill : public juce::Component,
         }
     }
 
+    /** Bounding rect of the history strip band (pill-local). paint() draws the
+        sparkline inside THIS rect and the bar's telemetry tick passes it to
+        repaint(), so the bounded dirty region always covers exactly what the
+        strip can draw — the GPU-cost control for the animating pills
+        (docs/LIVE_MOD_FEEDBACK_DESIGN.md). */
+    juce::Rectangle<int> stripRect() const
+    {
+        auto r = getLocalBounds();
+        r.removeFromBottom (kStripFootGap);   // stay clear of the family underline
+        return { r.getX() + kStripXInset, r.getBottom() - kStripH,
+                 r.getWidth() - 2 * kStripXInset, kStripH };
+    }
+
+    /** Downsamples @p count OLDEST->NEWEST history samples into the cached
+        strip points (at most kStripMaxPts, spread evenly and pinned at both
+        ends so the newest sample is always the LAST plotted point). Returns
+        true when the drawn data changed (the caller repaints the strip rect);
+        a signature-identical frame returns false and costs nothing. */
+    bool updateStripFromHistory (const uint8_t* samples, int count)
+    {
+        if (count <= 0)
+            return clearStrip();   // no history yet (fresh reset / no voice): hide
+
+        constexpr float kEps = 1.0f / 255.0f;   // one value quantum
+
+        const int m = juce::jmin (kStripMaxPts, count);
+        float v[kStripMaxPts];
+        float lo = 1.0f, hi = 0.0f;
+        for (int j = 0; j < m; ++j)
+        {
+            const int idx = (m > 1)
+                ? juce::roundToInt ((float) j * (float) (count - 1) / (float) (m - 1))
+                : (count - 1);
+            const float val = (float) samples[(size_t) juce::jlimit (0, count - 1, idx)]
+                            * (1.0f / 255.0f);
+            v[j] = val;
+            lo = juce::jmin (lo, val);
+            hi = juce::jmax (hi, val);
+        }
+
+        // DIFF GATE (the idle-cost control): the engine's history ring slides
+        // at its append rate, so the OLDEST/NEWEST ends move whenever fresh
+        // data lands, while min/max guard the interior shape. A parked source
+        // (wheel at rest, gate low) reproduces an identical signature every
+        // tick and triggers ZERO repaints.
+        if (m == stripCount_
+            && std::fabs (v[0] - sigFirst_) <= kEps
+            && std::fabs (v[m - 1] - sigLast_) <= kEps
+            && std::fabs (lo - sigMin_) <= kEps
+            && std::fabs (hi - sigMax_) <= kEps)
+            return false;
+
+        for (int j = 0; j < m; ++j)
+            stripVals_[(size_t) j] = v[j];
+        stripCount_ = m;
+        sigFirst_ = v[0];
+        sigLast_  = v[m - 1];
+        sigMin_   = lo;
+        sigMax_   = hi;
+        return true;
+    }
+
+    /** Clears the cached strip. Returns true when something was actually
+        drawn (i.e. a repaint is needed to erase it). */
+    bool clearStrip()
+    {
+        if (stripCount_ == 0 && sigFirst_ < 0.0f)
+            return false;   // already hidden
+        stripCount_ = 0;
+        stripVals_.fill (0.0f);
+        sigFirst_ = sigLast_ = sigMin_ = sigMax_ = -1.0f;
+        return true;
+    }
+
+    /** The history sparkline: a thin family-coloured polyline inside the strip
+        band, just above the underline. Bipolar sources (LFO / bend / note)
+        swing around the band's vertical midline (value 128 = centre);
+        unipolar ones rise from the band's bottom. */
+    void drawHistoryStrip (juce::Graphics& g)
+    {
+        if (enumValue_ < 0 || cluster_ == parvati::Cluster::Const)
+            return;   // the sentinel has no MOD_SRC_* enum; Const pills carry no history
+        if (stripCount_ <= 0)
+            return;   // no history yet (e.g. after a reset): the band stays empty
+
+        const auto sr = stripRect().toFloat();
+        // Keep the round-capped 1.25px stroke inside the band.
+        const float usable = juce::jmax (1.0f, sr.getHeight() - 2.0f);
+
+        juce::Path path;
+        for (int i = 0; i < stripCount_; ++i)
+        {
+            const float t = (stripCount_ > 1)
+                ? (float) i / (float) (stripCount_ - 1)
+                : 0.5f;
+            const float x = sr.getX() + t * sr.getWidth();
+            const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
+            const float y = stripBipolar_
+                ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
+                : sr.getBottom() - v * usable;
+            if (i == 0)  path.startNewSubPath (x, y);
+            else         path.lineTo (x, y);
+        }
+        g.setColour (accent_.withAlpha (active_ ? 0.60f : 0.45f));
+        g.strokePath (path, juce::PathStrokeType (1.25f,
+                          juce::PathStrokeType::JointStyle::curved,
+                          juce::PathStrokeType::EndCapStyle::rounded));
+    }
+
     void paint (juce::Graphics& g) override
     {
         const auto&      t = owner_.theme();
@@ -236,12 +369,17 @@ struct CentralModBar::ModPill : public juce::Component,
             g.fillRect (r.withHeight (3.5f));
             g.restoreState();
             drawFamilyUnderline (g, r);
+            drawHistoryStrip (g);
 
             g.setColour (active_ ? t.textPrimary
                                  : (hovered_ ? t.textSecondary.brighter (0.20f)
                                              : t.textSecondary));
             g.setFont (f);
-            g.drawText (shortLabel_, getLocalBounds(), juce::Justification::centred, true);
+            // The label centres in the pill MINUS the reserved strip band (the
+            // history sparkline area at the bottom), so it sits above the strip.
+            auto labelArea = getLocalBounds();
+            labelArea.removeFromBottom (kStripH + kStripFootGap);
+            g.drawText (shortLabel_, labelArea, juce::Justification::centred, true);
         }
         else
         {
@@ -262,7 +400,10 @@ struct CentralModBar::ModPill : public juce::Component,
 
             const float hx  = r.getX() + 2.0f;
             const float hy0 = r.getY() + 7.0f;
-            const float hy1 = r.getBottom() - 7.0f;
+            // The dotted handle now stops ABOVE the reserved strip band (it
+            // used to run to bottom-7), so the drag cue never collides with
+            // the history sparkline that occupies that band on Perf/Util pills.
+            const float hy1 = r.getBottom() - static_cast<float> (kStripH + kStripFootGap) - 2.0f;
             const float step = 3.0f;
             g.setColour (t.textSecondary);
             for (int i = 0;; ++i)
@@ -274,10 +415,16 @@ struct CentralModBar::ModPill : public juce::Component,
             }
 
             drawFamilyUnderline (g, r);
+            drawHistoryStrip (g);
 
             g.setColour (t.textSecondary);
             g.setFont (f);
-            g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
+            // Same reserved strip band as the generator pills (labels align on
+            // one line across the bar); the drag-only reduced(5,0) label inset
+            // is kept.
+            auto labelArea = getLocalBounds().reduced (5, 0);
+            labelArea.removeFromBottom (kStripH + kStripFootGap);
+            g.drawText (shortLabel_, labelArea, juce::Justification::centred, true);
         }
     }
 
@@ -328,6 +475,19 @@ struct CentralModBar::ModPill : public juce::Component,
     bool              active_      = false;
     bool              hovered_     = false;
     juce::Colour      accent_;          // family colour (ModSourceCatalog cluster -> cat* token)
+
+    // ---- history strip cache (live telemetry; docs/LIVE_MOD_FEEDBACK_DESIGN.md).
+    // Public like the members above: only CentralModBar's telemetry tick writes
+    // them; paint() reads them. stripVals_ holds the DOWNSAMPLED normalized
+    // 0..1 values (oldest -> newest); the sig* fields are the last-drawn diff
+    // gate (see updateStripFromHistory; -1 = never drawn). ----
+    bool                  stripBipolar_ = false;    // display polarity (ctor: isBipolarModSource)
+    int                   stripCount_   = 0;        // cached point count (0 = strip hidden)
+    std::array<float, kStripMaxPts> stripVals_ {};  // downsampled normalized values
+    float                 sigFirst_     = -1.0f;    // signature: oldest point
+    float                 sigLast_      = -1.0f;    // ... newest point
+    float                 sigMin_       = -1.0f;    // ... interior minimum
+    float                 sigMax_       = -1.0f;    // ... interior maximum
 
 private:
     // A small themed drag chip (mirrors ModSourceDragGrip / DraggableTabButton):
@@ -428,7 +588,10 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     applyThemeColors();
 }
 
-CentralModBar::~CentralModBar() = default;
+CentralModBar::~CentralModBar()
+{
+    stopTimer();   // the telemetry poll (harmless when never started)
+}
 
 void CentralModBar::setOnPillClicked (std::function<void (int)> cb)
 {
@@ -612,6 +775,111 @@ void CentralModBar::updateNavEnabled()
     const int max = juce::jmax (0, pillContent_->getWidth() - viewport_->getViewWidth());
     if (navPrev_) navPrev_->setEnabled (cur > 0);
     if (navNext_) navNext_->setEnabled (cur < max - 1);
+}
+
+//==============================================================================
+// ---- Live telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
+
+void CentralModBar::setTelemetryProvider (std::function<bool (parvati::ModTelemetrySnapshot&)> fetch)
+{
+    telemetryFetch_ = std::move (fetch);
+    // A provider arriving (or being cleared) re-evaluates the poll: with none
+    // set the timer stays off and the bar renders exactly as it did before the
+    // telemetry feature existed.
+    updateTelemetryTimer();
+}
+
+void CentralModBar::setTelemetryRateHz (int hz)
+{
+    // Valid rates are 5..60; 0 is the explicit "disable" sentinel. Anything
+    // else clamps into that set, and the (re)started timer picks the new
+    // cadence up immediately.
+    const int clamped = (hz <= 0) ? 0 : juce::jlimit (5, 60, hz);
+    if (clamped == telemetryRateHz_)
+        return;
+    telemetryRateHz_ = clamped;
+    updateTelemetryTimer();
+}
+
+void CentralModBar::clearTelemetry()
+{
+    // Hide every strip (an invalid frame / a reset). Only pills that actually
+    // had data painted repaint — bounded to the strip rect again, never the
+    // whole pill — and the hide counts as a data change for the test seam.
+    bool anyRepainted = false;
+    for (auto& p : pills_)
+        if (p->clearStrip())
+        {
+            p->repaint (p->stripRect());
+            anyRepainted = true;
+        }
+    if (anyRepainted)
+        ++telemetryGeneration_;
+}
+
+void CentralModBar::timerCallback()
+{
+    // Defensive: the dual-hook gate should have stopped us, but a host hiding
+    // the editor without a hierarchy change must not burn a fetch either.
+    if (! isShowing() || telemetryFetch_ == nullptr)
+        return;
+
+    parvati::ModTelemetrySnapshot snap;
+    if (! telemetryFetch_ (snap))
+    {
+        // Torn seqlock read OR a stale epoch (patch load / part switch reset):
+        // hide the strips until a valid frame returns.
+        clearTelemetry();
+        return;
+    }
+    telemetrySnap_ = snap;
+
+    const int n = juce::jlimit (0, parvati::ModTelemetrySnapshot::kHistoryLen, snap.historyCount);
+    bool anyRepainted = false;
+    for (auto& p : pills_)
+    {
+        // Const pills are static amounts (no history) and the bar-only Note
+        // Sequencer sentinel has no MOD_SRC_* enum at all.
+        if (p->enumValue_ < 0 || p->cluster_ == parvati::Cluster::Const)
+            continue;
+        const uint8_t* hist = snap.history
+            + (size_t) p->enumValue_ * (size_t) parvati::ModTelemetrySnapshot::kHistoryLen;
+        if (p->updateStripFromHistory (hist, n))
+        {
+            // THE GPU-COST CONTROL: repaint ONLY the strip's bounding rect, so
+            // an animating source never re-rasters the pill tile / label, and
+            // an idle source (signature unchanged) repaints nothing at all.
+            p->repaint (p->stripRect());
+            anyRepainted = true;
+        }
+    }
+    if (anyRepainted)
+        ++telemetryGeneration_;
+}
+
+void CentralModBar::visibilityChanged()
+{
+    updateTelemetryTimer();
+}
+
+void CentralModBar::parentHierarchyChanged()
+{
+    updateTelemetryTimer();
+}
+
+void CentralModBar::updateTelemetryTimer()
+{
+    // F-ios-perf-3 dual-hook gate (see EnvelopeDisplay.cpp updatePollTimer for
+    // the full rationale): components are born hidden — visibilityChanged
+    // fires pre-parenting and never again from ancestor changes — while
+    // parentHierarchyChanged recurses on every hierarchy change including the
+    // editor gaining its peer, which is the reliable "became showing" signal.
+    // ONE timer for the whole bar (never per pill), running only while a
+    // provider is set, the rate is enabled and the bar is actually on screen.
+    if (telemetryFetch_ != nullptr && telemetryRateHz_ >= 5 && isShowing())
+        startTimerHz (telemetryRateHz_);
+    else
+        stopTimer();
 }
 
 void CentralModBar::paintSegments (juce::Graphics& g) const
