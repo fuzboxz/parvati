@@ -42,10 +42,10 @@ void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
 // Metrics: min windowed RMS / median + longest near-zero run + NaN count.
 struct Health { double rmsMin; int zeroRun; long nanCount; };
 
-Health analyze (const std::vector<float>& out, int from)
+Health analyze (const std::vector<float>& out, int from, int to)
 {
     Health h { 1.0, 0, 0 };
-    const int n = (int) out.size();
+    const int n = juce::jmin (to, (int) out.size());
     std::vector<double> wr;
     int run = 0;
     for (int i = from; i < n; ++i)
@@ -207,7 +207,7 @@ TEST(parvati_fx_live_repro)
         if (! e.on) continue;
         const int from = e.pos + (int) (0.05 * sr);
         const int to   = e.pos + (int) (0.55 * sr);
-        const Health h = analyze (capL, from);
+        const Health h = analyze (capL, from, to);
         ++checked;
         if (h.rmsMin < 0.15 || h.zeroRun > 16)
         {
