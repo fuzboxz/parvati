@@ -290,6 +290,21 @@ running median mid-note):
 Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
 rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).
 
+### Phaser regen HF damp (2026-08-21 — the "100% params crackle")
+
+User repro: all phaser params at 100% — crackle with NO modulation (dragging
+Center was incidental). Mechanism: six cascaded 1st-order allpasses give ~pi
+phase each at HF (6*pi == 0 mod 2*pi) = POSITIVE feedback near Nyquist, so at
+fb 0.9 the RateBridge's linear-resampler artifact floor (~0.025 worst impulse,
+present in the no-FX engine too) amplified ~4x into 0.096 ticks pulsing with
+the 8 Hz sweep. Fix: FOUR cascaded one-pole LPs at 5 kHz in the regen return
+(measured ladder: 1 pole 0.063, 2 poles 0.034-0.046 — the artifacts are
+broadband; 4 poles = -24 dB/oct pins every above-damp resonance at net-
+negative gain). Musical notch band (<= 3.5 kHz at max Center+Depth) untouched
+— analog regen stages are band-limited too. Pinned by
+parvati_phaser_crackle_test (red 0.096 pre-damp; passes at the 0.025 baseline
+floor = parity with the engine's own lo-fi character).
+
 ### Math-invariant tests (2026-08-21): catching the memory-safety-blind class
 
 `tests/parvati_fx_invariants_test.cpp` encodes the LAWS each effect class must

@@ -47,6 +47,10 @@ void Fv1Phaser::setParams (const float param[5])
     // Block-constant derived values (precompute once, not per sample).
     inc_  = rateHz_ / static_cast<float> (kInternalRate);
     fb14_ = q14 (fb_);
+    fbDamp1_.setCutoff (5000.0f);   // regen HF damp, 4-pole (see header)
+    fbDamp2_.setCutoff (5000.0f);
+    fbDamp3_.setCutoff (5000.0f);
+    fbDamp4_.setCutoff (5000.0f);
 }
 
 void Fv1Phaser::prepareInternal (double /*sampleRate*/, int /*maxBlock*/)
@@ -56,6 +60,10 @@ void Fv1Phaser::prepareInternal (double /*sampleRate*/, int /*maxBlock*/)
     phase_   = 0.0f;
     prevOut_ = 0;
     fbDc_.clear();
+    fbDamp1_.clear();
+    fbDamp2_.clear();
+    fbDamp3_.clear();
+    fbDamp4_.clear();
 }
 
 void Fv1Phaser::resetInternal()
@@ -65,6 +73,10 @@ void Fv1Phaser::resetInternal()
     phase_   = 0.0f;
     prevOut_ = 0;
     fbDc_.clear();
+    fbDamp1_.clear();
+    fbDamp2_.clear();
+    fbDamp3_.clear();
+    fbDamp4_.clear();
 }
 
 void
@@ -91,12 +103,17 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
     // |mean|/rms 0.136 at max feedback — the same class that DC-poisoned the
     // delay->reverb->shaper chains. Transparent knee to +/-0.6, tanh to the
     // rail (the Fv1Flanger regen idiom).
-    // Soft knee (the Fv1Flanger regen idiom) + the LOOP DC KILLER in the
-    // return path (see the header): the knee removes the hard-clip edge; the
-    // killer closes the DC path so rectification cannot accumulate.
+    // Regen return path (2026-08-21): HF-DAMPED (the crackle fix — see the
+    // header: near-Nyquist positive-feedback phase of the 6-stage cascade
+    // amplified the resampler artifacts), SOFT-KNEE saturating (the Fv1Flanger
+    // idiom — no hard-clip edge), and DC-KILLED (the [I2] invariant).
     int32_t fbIn;
     {
-        float f = f24_toFloat (prevOut_);
+        int32_t fd = fbDamp1_.process (prevOut_);
+        fd = fbDamp2_.process (fd);
+        fd = fbDamp3_.process (fd);
+        fd = fbDamp4_.process (fd);
+        float f = f24_toFloat (fd);
         if (f > 0.6f)        f =  0.6f + 0.4f * std::tanh (( f - 0.6f) * 2.5f);
         else if (f < -0.6f)  f = -0.6f - 0.4f * std::tanh ((-f - 0.6f) * 2.5f);
         fbIn = f24_addSat (lin, f24_mulk (fbDc_.process (f24_fromFloat (f)), fb14_));

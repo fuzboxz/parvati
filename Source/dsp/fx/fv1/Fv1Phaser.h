@@ -51,6 +51,22 @@ private:
     // the delays (see Fv1Echo.h). In the feedback return path.
     LoopDcKiller fbDc_ {};
 
+    // FEEDBACK HF DAMP (2026-08-21 — the "100% params crackle" fix): six
+    // cascaded 1st-order allpasses give ~pi phase each at high frequency
+    // (6*pi == 0 mod 2*pi) = POSITIVE feedback near Nyquist, so at fb 0.9
+    // the RateBridge's linear-resampler artifacts (~0.025 floor) amplify
+    // ~4x into audible ticks (measured worst 0.096 on a pure sine, no
+    // modulation) that pulse with the LFO sweep. A one-pole LP at 8 kHz in
+    // the regen return (the Fv1Flanger idiom — analog regen stages are
+    // band-limited too) kills the near-Nyquist amplification while leaving
+    // the musical notch band (<= 3.5 kHz at max Center+Depth) untouched.
+    // FOUR cascaded poles at 5 kHz (measured ladder: 1 pole -> 0.063 worst,
+    // 2 poles -> 0.034-0.046: the fb-0.9 resonance is up to +20 dB and the
+    // resampler artifacts are broadband, so 10-13 kHz energy still gained;
+    // 4 poles = -24 dB/oct keeps every resonance-above-damp at net-negative
+    // gain — measured at the no-FX engine baseline 0.025-0.027).
+    OnePoleLpFx fbDamp1_ {}, fbDamp2_ {}, fbDamp3_ {}, fbDamp4_ {};
+
     // Cached control parameters (each param clamped to [0,1] then mapped).
     float rateHz_   = 0.5f;  // 0.1..8 Hz
     float depthHz_  = 0.0f;  // 0..1500 Hz sweep amplitude

@@ -1164,6 +1164,17 @@ target_link_libraries(parvati_fx_foldback_probe PRIVATE Parvati)
 # FX MATH-INVARIANT tests (2026-08-21): the memory-safety-blind bug class —
 # curve audits, loop DC-freeness at max regen, param fuzz at extremes.
 # JUCE-free direct effect compile (the fv1-family pattern).
+# Phaser 100%-params crackle regression (2026-08-21): the 6-stage allpass
+# cascade's near-Nyquist positive-feedback phase amplified the bridge's
+# resampler artifacts ~4x; the 4-pole regen HF damp pins it to the no-FX
+# floor. Built by default.
+add_executable(parvati_phaser_crackle_test
+    tests/parvati_phaser_drag_repro.cpp
+)
+target_include_directories(parvati_phaser_crackle_test PRIVATE Source)
+target_compile_features(parvati_phaser_crackle_test PRIVATE cxx_std_17)
+target_link_libraries(parvati_phaser_crackle_test PRIVATE Parvati)
+
 add_executable(parvati_fx_invariants_test
     tests/parvati_fx_invariants_test.cpp
 )
