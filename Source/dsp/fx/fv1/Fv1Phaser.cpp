@@ -55,6 +55,7 @@ void Fv1Phaser::prepareInternal (double /*sampleRate*/, int /*maxBlock*/)
         s.clear();
     phase_   = 0.0f;
     prevOut_ = 0;
+    fbDc_.clear();
 }
 
 void Fv1Phaser::resetInternal()
@@ -63,6 +64,7 @@ void Fv1Phaser::resetInternal()
         s.clear();
     phase_   = 0.0f;
     prevOut_ = 0;
+    fbDc_.clear();
 }
 
 void
@@ -83,9 +85,22 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
     for (auto& s : stages_)                    // setCoef clamps + q14-quantizes internally
         s.setCoef (c);
 
-    // --- Feedback with hard-clip saturation ---
-    const int32_t fbVal = f24_sat (prevOut_);
-    const int32_t fbIn  = f24_addSat (lin, f24_mulk (fbVal, fb14_));
+    // Feedback with SOFT saturation (2026-08-21, caught by the fx-invariants
+    // [I2] loop-DC test): the old f24_sat HARD clip on the feedback source
+    // rectified asymmetric input (a chord wash) into loop DC — measured
+    // |mean|/rms 0.136 at max feedback — the same class that DC-poisoned the
+    // delay->reverb->shaper chains. Transparent knee to +/-0.6, tanh to the
+    // rail (the Fv1Flanger regen idiom).
+    // Soft knee (the Fv1Flanger regen idiom) + the LOOP DC KILLER in the
+    // return path (see the header): the knee removes the hard-clip edge; the
+    // killer closes the DC path so rectification cannot accumulate.
+    int32_t fbIn;
+    {
+        float f = f24_toFloat (prevOut_);
+        if (f > 0.6f)        f =  0.6f + 0.4f * std::tanh (( f - 0.6f) * 2.5f);
+        else if (f < -0.6f)  f = -0.6f - 0.4f * std::tanh ((-f - 0.6f) * 2.5f);
+        fbIn = f24_addSat (lin, f24_mulk (fbDc_.process (f24_fromFloat (f)), fb14_));
+    }
 
     // --- Cascade through the six stages ---
     int32_t s = fbIn;

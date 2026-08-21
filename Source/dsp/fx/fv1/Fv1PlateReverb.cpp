@@ -69,6 +69,7 @@ void Fv1PlateReverb::setParams (const float param[5])
 
 void Fv1PlateReverb::resetInternal()
 {
+    for (auto& k : dck_) k.clear();
     predelay_.clear();
     comb0_.clear();
     comb1_.clear();
@@ -101,10 +102,10 @@ void Fv1PlateReverb::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lou
     const int32_t d2 = lp2_.process (o2);
     const int32_t d3 = lp3_.process (o3);
 
-    comb0_.write (f24_addSat (pd, f24_mulk (d0, g14_[0])));
-    comb1_.write (f24_addSat (pd, f24_mulk (d1, g14_[1])));
-    comb2_.write (f24_addSat (pd, f24_mulk (d2, g14_[2])));
-    comb3_.write (f24_addSat (pd, f24_mulk (d3, g14_[3])));
+    comb0_.write (f24_addSat (pd, f24_mulk (dck_[0].process (d0), g14_[0])));
+    comb1_.write (f24_addSat (pd, f24_mulk (dck_[1].process (d1), g14_[1])));
+    comb2_.write (f24_addSat (pd, f24_mulk (dck_[2].process (d2), g14_[2])));
+    comb3_.write (f24_addSat (pd, f24_mulk (dck_[3].process (d3), g14_[3])));
 
     // Sum the raw comb outputs (pre-damping) and average by 0.25. Sum the four
     // Q.23 values in a plain int32 FIRST (4x <= 2^25 fits comfortably, no wrap)

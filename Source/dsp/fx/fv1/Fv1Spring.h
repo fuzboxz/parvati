@@ -46,6 +46,7 @@ private:
     OnePoleLpFx damp_[2];
 
     int16_t fb14_[2]    = {};   // q14(per-spring loop gain — see setParams)
+    LoopDcKiller dck_[2] {};    // loop DC killers (see Fv1Engine.h)
     int16_t chirp14_  = 0;
     int16_t width14_  = 0;      // q14(Width): crossfades R from spring A (mono) to spring B
     int16_t invWidth14_ = 8191; // q14(1-Width)  (precomputed — no per-sample q14)

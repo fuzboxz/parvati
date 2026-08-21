@@ -68,6 +68,10 @@ void Fv1ClockedDelay::prepareInternal (double, int)
 
 void Fv1ClockedDelay::resetInternal()
 {
+    dcX1_ = 0.0f;
+    dcY1_ = 0.0f;
+    dcOX1_ = 0.0f;
+    dcOY1_ = 0.0f;
     delay_.clear();
     tapeLp_.clear();
     lfoPhase_ = 0.0f;
@@ -183,17 +187,40 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     // Modulated fractional read (the delayed, grit+aged signal).
     const int32_t readSamp = delay_.readFrac (modDelay);
 
-    // Feedback write (saturating; feedback gain quantized to 14-bit).
-    delay_.write (f24_addSat (lpOut, f24_mulk (readSamp, fbK14_)));
+    // Feedback write (saturating; feedback gain quantized to 14-bit) through
+    // the LOOP DC KILLER (~10 Hz one-pole HP — see the header note): kills the
+    // near-unity regen's DC accumulation without touching audio-band feedback.
+    {
+        const float x = f24_toFloat (readSamp);
+        constexpr float kDcPole = 1.0f - 6.28318530718f * 10.0f
+                                        / static_cast<float> (kInternalRate);
+        const float y  = x - dcX1_ + kDcPole * dcY1_;
+        dcX1_ = x;
+        dcY1_ = y;
+        delay_.write (f24_addSat (lpOut, f24_mulk (f24_fromFloat (y), fbK14_)));
+    }
 
     // Advance the LFO phase (~0.6 Hz at 32.768 kHz).
     lfoPhase_ += 0.6f / 32768.0f;
     if (lfoPhase_ >= 1.0f) lfoPhase_ -= 1.0f;
 
-    // Wet output: the delayed read, duplicated to both channels (stereo from mono).
-    const int32_t out = readSamp;
-    lout = out;
-    rout = out;
+    // Wet output: the delayed read, duplicated to both channels (stereo from
+    // mono). OUTPUT DC BLOCKER (~10 Hz HP — caught by the fx-invariants [I2]
+    // loop-DC test, 2026-08-21): the Grit stage is authentic TRUNCATION
+    // quantization (the FV-1 AND-MASK), whose systematic truncation error is
+    // a DC source (measured |mean|/rms 0.17 at 100% Grit) — blocked here so
+    // the lo-fi character survives without DC-poisoning downstream shapers.
+    {
+        constexpr float kPole = 1.0f - 6.28318530718f * 10.0f
+                                    / static_cast<float> (kInternalRate);
+        const float x  = f24_toFloat (readSamp);
+        const float y  = x - dcOX1_ + kPole * dcOY1_;
+        dcOX1_ = x;
+        dcOY1_ = y;
+        const int32_t out = f24_fromFloat (y);
+        lout = out;
+        rout = out;
+    }
 }
 
 } // namespace parvati::fv1

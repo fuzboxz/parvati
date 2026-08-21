@@ -290,6 +290,30 @@ running median mid-note):
 Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
 rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).
 
+### Math-invariant tests (2026-08-21): catching the memory-safety-blind class
+
+`tests/parvati_fx_invariants_test.cpp` encodes the LAWS each effect class must
+obey, at parameter EXTREMES (every bug below lived there — the existing suites
+probe typical settings). It caught two real bugs on its first run:
+
+* **[I1] Curve audit**: wavetable edge entries ~0 ⟺ the shape is periodic
+  (the LUT gating invariant); the healed Fuzz knee must taper to ~0; Sparse
+  must pass exactly through 0 (odd symmetry).
+* **[I2] Loop DC-freeness**: every feedback effect at MAX regen, fed a
+  SATURATING-HOT ASYMMETRIC (DC-free) input, must emit |mean| <= 0.1*rms.
+  A pure sine clips symmetrically and passes even pre-fix — the rectification
+  DC source is asymmetric program material through the loop rail (the user's
+  chord wash). First run caught: ClockedDelay's Grit TRUNCATION quantization
+  (systematic DC; now blocked at the wet output — the AND-MASK character
+  stays) and Phaser's feedback rectification at max fb (|mean|/rms 0.136 ->
+  soft-knee + LoopDcKiller in the return path -> 0.048).
+* **[I3] Param fuzz**: random extreme param vectors -> finite, bounded,
+  non-degenerate output (attack silence of delays/reverbs is exempted by
+  analyzing the final 30%).
+
+Red-validated: the USER REPRO rows in parvati_fx_lut_dropout_test fail 0.002-
+0.03 on the pre-killer tree; I2 phaser fails 0.136 pre-fb-killer.
+
 ### Native-shape quality pass (2026-08-21, second wave)
 
 * **Overdrive**: the drive gain ladder is UNSATURATED (64-bit intermediate,

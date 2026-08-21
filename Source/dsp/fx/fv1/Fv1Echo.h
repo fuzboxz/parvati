@@ -63,6 +63,18 @@ private:
     int32_t timeQR_ = 0;
 
     int16_t fb14_ = 0;
+
+    // LOOP DC KILLER (2026-08-21 — the delay->reverb->shaper "complete voice
+    // dropout" root cause): at max Feedback (0.995 loop gain) the ping-pong
+    // loop is a DC integrator with DC gain 1/(1-0.995) = 200x — any residual
+    // input DC / saturation asymmetry accumulates until the loop parks near a
+    // rail (measured dc -0.28 on a held chord through Echo->Plate, peak >1.0),
+    // and the DC-heavy wash makes any following shaper pin constant -> its own
+    // DC blocker strips it -> gated silence. A 10 Hz one-pole high-pass in the
+    // R->L hop kills the recirculation (loop DC gain ~0) while leaving the
+    // audio-band regen untouched. Float-domain, matching the family's control
+    // math (kDcPole idiom from Fv1Overdrive/LutDistortion).
+    float dcX1_ = 0.0f, dcY1_ = 0.0f;
 };
 
 } // namespace parvati::fv1

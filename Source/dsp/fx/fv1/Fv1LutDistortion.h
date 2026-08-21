@@ -45,6 +45,11 @@ class Fv1LutDistortion : public Fv1FxProcessor
 public:
     Fv1LutDistortion();
 
+    // TEST HOOKS (parvati_fx_invariants_test): the curve audits need read
+    // access to the built tables + the periodicity policy. No audio-path use.
+    const int16_t* debugTable (int s) const { return tables_[s]; }
+    static bool debugShapeIsPeriodic (int s) { return kShapeIsPeriodic[s]; }
+
     void setParams (const float param[5]) override;
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;

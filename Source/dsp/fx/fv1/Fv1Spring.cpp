@@ -64,13 +64,14 @@ void Fv1Spring::resetInternal()
         delay_[s].clear();
         for (auto& ap : aps_[s]) ap.clear();
         damp_[s].clear();
+        dck_[s].clear();
     }
 }
 
 // One spring loop iteration: returns the pickup (post-AP-cascade) sample.
 static inline int32_t springLoop (DelayLine<2048>& delay, int delayLen,
                                   DelayLine<64> (&aps) [6], const int (&apLen) [6],
-                                  OnePoleLpFx& damp, int32_t driver,
+                                  OnePoleLpFx& damp, LoopDcKiller& dck, int32_t driver,
                                   int16_t fb14, int16_t chirp14)
 {
     const int32_t read = delay.readFrac (static_cast<float> (delayLen));
@@ -85,7 +86,7 @@ static inline int32_t springLoop (DelayLine<2048>& delay, int delayLen,
         aps[i].write (f24_addSat (y, f24_mulk (o, chirp14)));
         y = o;
     }
-    const int32_t d = damp.process (y);
+    const int32_t d = dck.process (damp.process (y));   // loop DC killer
     delay.write (f24_addSat (driver, f24_mulk (d, fb14)));
     return y;
 }
@@ -105,9 +106,9 @@ void Fv1Spring::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t drv = driver (lin);
 
     const int32_t a = springLoop (delay_[0], kSpringDelay[0], aps_[0], kApLen[0],
-                                  damp_[0], drv, fb14_[0], chirp14_);
+                                  damp_[0], dck_[0], drv, fb14_[0], chirp14_);
     const int32_t b = springLoop (delay_[1], kSpringDelay[1], aps_[1], kApLen[1],
-                                  damp_[1], drv, fb14_[1], chirp14_);
+                                  damp_[1], dck_[1], drv, fb14_[1], chirp14_);
 
     // Width: L is always spring A. R crossfades from the L signal (TRUE mono
     // at 0) to spring B (fully decorrelated at 1) — mirrors Fv1Room's

@@ -196,6 +196,32 @@ struct Allpass1Fx
 };
 
 // ---------------------------------------------------------------------------
+// LOOP DC KILLER (2026-08-21): a one-pole ~10 Hz high-pass at the internal
+// rate, placed in a feedback loop's return path. Any near-unity regen loop
+// (delay/echo/combs) is a DC integrator with DC gain 1/(1-g) — up to 200x
+// (echo fb 0.995) or ~1000x (plate decay 0.999). Residual input DC or
+// saturation asymmetry accumulates until the loop parks near a rail; the
+// DC-heavy wash then makes any following shaper pin constant (its own DC
+// blocker strips it -> gated silence: the delay->reverb->shaper "complete
+// voice dropout" chain, measured dc -0.22..-0.28 at the shaper input). The
+// killer drops loop DC gain to ~0 while leaving audio-band regen untouched.
+struct LoopDcKiller
+{
+    float x1 = 0.0f, y1 = 0.0f;
+    void clear() noexcept { x1 = y1 = 0.0f; }
+    int32_t process (int32_t x) noexcept
+    {
+        constexpr float kPole = 1.0f - 6.28318530718f * 10.0f
+                                    / static_cast<float> (kInternalRate);
+        const float xf = f24_toFloat (x);
+        const float y  = xf - x1 + kPole * y1;
+        x1 = xf;
+        y1 = y;
+        return f24_fromFloat (y);
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Fixed-point delay line (power-of-two capacity). Integer + fractional reads.
 // ---------------------------------------------------------------------------
 

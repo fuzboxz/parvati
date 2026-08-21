@@ -45,6 +45,12 @@ private:
     float phase_   = 0.0f;   // triangle LFO phase in [0,1)
     int32_t prevOut_ = 0;    // Q.23 previous wet output (feedback source)
 
+    // LOOP DC KILLER (2026-08-21, caught by fx-invariants [I2]): at max
+    // feedback (loop gain 0.9) a hard-driven asymmetric input rectifies on
+    // the loop rail into |mean|/rms ~0.13 DC — the same poisoning class as
+    // the delays (see Fv1Echo.h). In the feedback return path.
+    LoopDcKiller fbDc_ {};
+
     // Cached control parameters (each param clamped to [0,1] then mapped).
     float rateHz_   = 0.5f;  // 0.1..8 Hz
     float depthHz_  = 0.0f;  // 0..1500 Hz sweep amplitude

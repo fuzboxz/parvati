@@ -64,6 +64,13 @@ private:
     int16_t fbK14_       = 0;     // q14(pFb_*0.95) — feedback gain (14-bit)
     int     gritBits_    = 24;    // 24..8 effective bits for the delay-input grit
     float   ageLfoDepth_ = 0.0f;  // pAge_*6.0 — read-pointer LFO depth (samples)
+    // LOOP DC KILLER state (2026-08-21 — see Fv1Echo.h's note; same integrator
+    // class: near-unity regen accumulates input/saturation DC until the loop
+    // parks near a rail, DC-poisoning everything downstream).
+    float dcX1_ = 0.0f, dcY1_ = 0.0f;
+    // OUTPUT DC blocker state (the Grit truncation-DC removal — see the
+    // output comment in the .cpp).
+    float dcOX1_ = 0.0f, dcOY1_ = 0.0f;
 
     // Tempo-sync state (BPM persists across reset; it is transport, not DSP).
     double bpm_      = 120.0;  // host BPM from setTransport()

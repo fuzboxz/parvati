@@ -75,6 +75,7 @@ private:
     // ---- Cached control settings (14-bit quantized; set in setParams) ----
     int predelayLen_ = 0;      // predelay samples [0, kPredelayCap-1]
     int16_t g14_[4]  = {};     // q14(per-comb feedback g_i — see setParams)
+    LoopDcKiller dck_[4] {};   // loop DC killers (see Fv1Engine.h; comb loops)
     float modDepth_  = 0.0f;   // allpass LFO amplitude [0,15] samples
     int16_t quarter14_ = 0;    // q14(0.25)  (set once in the ctor)
     int16_t apGain14_  = 0;    // q14(0.7)   (set once in the ctor)

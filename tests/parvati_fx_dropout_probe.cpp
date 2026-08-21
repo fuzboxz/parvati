@@ -18,6 +18,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PluginProcessor.h"
+#include "dsp/fx/fv1/Fv1Overdrive.h"
 #include "dsp/fx/FxTypes.h"
 
 namespace
@@ -172,7 +173,8 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     const double sr = (argc > 1) ? std::atof (argv[1]) : 48000.0;
-    const int bufSize = (argc > 2) ? std::atoi (argv[2]) : 512;
+    int bufSize = 512;
+    if (argc > 2) { const int v = std::atoi (argv[2]); if (v >= 16) bufSize = v; }
     const double dur = 3.0;
 
     // Phaser: p0 rate, p1 depth, p2 feedback, p3 center (p4 unused)
@@ -200,6 +202,200 @@ int main (int argc, char** argv)
         const int base[5] = { 64, 64, 64, 64, 64 };
         probeFx ("Wavefolder", (int) FxType::Wavefolder, base, 0, { 0, 32, 64, 96, 127 }, sr, bufSize, dur);
     }
+    // USER REPRO (2026-08-21): delay -> reverb -> shaper, shaper params
+    // 100% everything (drive/fold/bias/tone + 100% wet).
+    {
+        struct R { const char* name; int fx1; int fx2; int fx3; };
+        const R repro[] = {
+            { "Echo->Plate->Wavefolder", 22, 13, 7 },
+            { "Echo->Plate->Overdrive",  22, 13, 16 },
+            { "Echo->Plate->LutDist",    22, 13, 17 },
+            { "CDelay->CVerb->Wavefolder", 11, 3, 7 },
+            { "CDelay->CVerb (no shaper)", 11, 3, 0 },
+            { "CVerb alone",               0,  3, 0 },
+        };
+        for (const auto& r : repro)
+        {
+            ParvatiAudioProcessor proc;
+            proc.prepareToPlay (sr, bufSize);
+            setChoice (proc, "fx1_type", r.fx1);
+            setChoice (proc, "fx2_type", r.fx2);
+            setChoice (proc, "fx3_type", r.fx3);
+            setInt (proc, "osc1_shape", 1);
+            for (int slot = 1; slot <= 3; ++slot)
+            {
+                setInt (proc, ("fx" + std::to_string (slot) + "_enabled").c_str(), 1);
+                setInt (proc, ("fx" + std::to_string (slot) + "_drywet").c_str(), 127);
+                for (int k = 1; k <= 5; ++k)
+                    setInt (proc, ("fx" + std::to_string (slot) + "_param" + std::to_string (k)).c_str(), 127);
+            }
+            const int total2 = (int) (dur * sr);
+            std::vector<float> capL ((size_t) total2, 0.0f), capR ((size_t) total2, 0.0f);
+            if (std::string (r.name).find ("Overdrive") != std::string::npos)
+                ::setenv ("PARVATI_TAP_ON", "1", 1);
+            render (proc, sr, bufSize, capL, capR);
+            ::unsetenv ("PARVATI_TAP_ON");
+            const Metrics a = analyze (capL, (int) (0.3 * sr));
+            std::printf ("REPRO %-26s: zeroRun=%4d rail=%5.2f%% dc=%+.3f rmsMin=%.4f imp=%.3f\n",
+                         r.name, a.zeroRun, 100.0 * a.railFrac, a.dc, a.rmsMin, a.worstImp);
+            // Dump min-RMS window position + the peak level AT the shaper
+            // input: render once more with fx3 DISABLED to see what level the
+            // delay+reverb pair actually delivers.
+            {
+                ParvatiAudioProcessor p2;
+                p2.prepareToPlay (sr, bufSize);
+                setChoice (p2, "fx1_type", r.fx1);
+                setChoice (p2, "fx2_type", r.fx2);
+                setChoice (p2, "fx3_type", 0);
+                setInt (p2, "osc1_shape", 1);
+                for (int slot = 1; slot <= 2; ++slot)
+                {
+                    setInt (p2, ("fx" + std::to_string (slot) + "_enabled").c_str(), 1);
+                    setInt (p2, ("fx" + std::to_string (slot) + "_drywet").c_str(), 127);
+                    for (int k = 1; k <= 5; ++k)
+                        setInt (p2, ("fx" + std::to_string (slot) + "_param" + std::to_string (k)).c_str(), 127);
+                }
+                const int total2 = (int) (dur * sr);
+                std::vector<float> pre ((size_t) total2, 0.0f), preR ((size_t) total2, 0.0f);
+                render (p2, sr, bufSize, pre, preR);
+                double peak = 0, rms = 0; int cnt = 0;
+                for (int i = (int) (0.3 * sr); i < total2; ++i)
+                { const double v = std::fabs (pre[(size_t) i]); if (v > peak) peak = v; rms += v * v; ++cnt; }
+                std::printf ("    shaper INPUT (delay+rev only): peak=%.3f rms=%.4f\n",
+                             peak, std::sqrt (rms / cnt));
+                // time structure of the input too (is IT pulsed?)
+                std::vector<double> wr2;
+                for (int i = (int) (0.3 * sr); i + 64 <= (int) pre.size(); i += 64)
+                {
+                    double s2 = 0;
+                    for (int k = 0; k < 64; ++k) { const double v2 = pre[(size_t) (i + k)]; s2 += v2 * v2; }
+                    wr2.push_back (std::sqrt (s2 / 64.0));
+                }
+                double mx2 = 0; for (double w : wr2) mx2 = std::max (mx2, w);
+                {   // DC + zero-crossing census of the shaper input
+                    double mean = 0; int zc = 0, cnt2 = 0;
+                    for (int i = (int) (0.3 * sr) + 1; i < (int) pre.size(); ++i)
+                    {
+                        mean += pre[(size_t) i]; ++cnt2;
+                        if ((pre[(size_t) i] < 0) != (pre[(size_t) (i - 1)] < 0)) ++zc;
+                    }
+                    std::printf ("    INPUT dc=%+.4f  zeroCrossings/sec=%.1f\n",
+                                 mean / cnt2, zc / (cnt2 / sr));
+                }
+                std::printf ("    INPUT windows (0.3s..3s, one per 64smp): ");
+                for (size_t i = 0; i < wr2.size(); i += 40)
+                    std::printf ("%.3f ", wr2[i]);
+                std::printf ("(max %.3f)\n", mx2);
+            if (r.fx3 == 16)
+            {
+                std::vector<double> wr;
+                for (int i = (int) (0.3 * sr); i + 64 <= (int) capL.size(); i += 64)
+                {
+                    double s2 = 0;
+                    for (int k = 0; k < 64; ++k) { const double v2 = capL[(size_t) (i + k)]; s2 += v2 * v2; }
+                    wr.push_back (std::sqrt (s2 / 64.0));
+                }
+                int minIdx = 0;
+                for (size_t i = 1; i < wr.size(); ++i) if (wr[i] < wr[(size_t) minIdx]) minIdx = (int) i;
+                const int f0 = std::max (0, minIdx - 20), t0 = std::min ((int) wr.size(), minIdx + 20);
+                std::printf ("    collapse @t=%.3fs  rms windows:\n",
+                             (0.3 * sr + 64.0 * minIdx) / sr);
+                // waveform dump at the collapse
+                {
+                    const int c0 = (int) (0.3 * sr) + 64 * minIdx;
+                    for (int i = c0 - 16; i < c0 + 48; i += 8)
+                    {
+                        std::printf ("      %7d : ", i);
+                        for (int k = 0; k < 8; ++k) std::printf ("%+.4f ", capL[(size_t) (i + k)]);
+                        std::printf ("\n");
+                    }
+                }
+                for (int i = f0; i < t0; ++i)
+                    std::printf ("%.4f ", wr[(size_t) i]);
+                std::printf ("\n");
+            }
+            }
+        }
+    }
+
+    // DIRECT ISOLATION: capture the Echo->Plate output, run it through a
+    // standalone Fv1Overdrive at the repro params, and analyze.
+    if (argc > 2)
+    {
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (sr, bufSize);
+        setChoice (proc, "fx1_type", 22);
+        setChoice (proc, "fx2_type", 13);
+        setInt (proc, "osc1_shape", 1);
+        for (int slot = 1; slot <= 2; ++slot)
+        {
+            setInt (proc, ("fx" + std::to_string (slot) + "_enabled").c_str(), 1);
+            setInt (proc, ("fx" + std::to_string (slot) + "_drywet").c_str(), 127);
+            for (int k = 1; k <= 5; ++k)
+                setInt (proc, ("fx" + std::to_string (slot) + "_param" + std::to_string (k)).c_str(), 127);
+        }
+        const int total2 = (int) (dur * sr);
+        std::vector<float> pre ((size_t) total2, 0.0f), preR ((size_t) total2, 0.0f);
+        render (proc, sr, bufSize, pre, preR);
+        // ISO on the TRUE chain input (the tap): if this gates, the input is
+        // the trigger; if not, the chain's OD instance itself differs.
+        {
+            FILE* tf = std::fopen ("/tmp/chain_tap.f32", "rb");
+            if (tf != nullptr)
+            {
+                std::vector<float> tap;
+                float v;
+                while (std::fread (&v, sizeof (float), 1, tf) == 1) tap.push_back (v);
+                std::fclose (tf);
+                const int n = (int) tap.size();
+                std::printf ("TAP: %d samples\n", n);
+                // input stats
+                double pk = 0, rms = 0, dc = 0;
+                for (int i = 0; i < n; ++i)
+                { const double a = std::fabs (tap[(size_t) i]); if (a > pk) pk = a; rms += a * a; dc += tap[(size_t) i]; }
+                std::printf ("TAP input: peak=%.4f rms=%.4f dc=%+.5f\n", pk, std::sqrt (rms / n), dc / n);
+                parvati::fv1::Fv1Overdrive od;
+                od.prepare (sr, 512);
+                float p5[5] = { 1, 1, 1, 1, 1 };
+                od.setParams (p5);
+                std::vector<float> out = tap, outR (tap.size(), 0.0f);
+                for (int off = 0; off < n; off += 45)
+                    od.process (out.data() + off, outR.data() + off, std::min (45, n - off));
+                const Metrics a = analyze (out, (int) (0.05 * sr));
+                std::printf ("ISO OD on TAP: zeroRun=%4d rail=%.2f%% rmsMin=%.4f imp=%.3f\n",
+                             a.zeroRun, 100.0 * a.railFrac, a.rmsMin, a.worstImp);
+            }
+        }
+        // standalone Overdrive at repro params (drive/bias/tone/level ALL 1.0)
+        // — called ONE-GIANT-BLOCK vs CHAIN-CADENCE SUB-CHUNKS (~45 smp).
+        {
+            parvati::fv1::Fv1Overdrive od;
+            od.prepare (sr, total2);
+            float p5[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+            od.setParams (p5);
+            std::vector<float> out = pre, outR = preR;
+            od.process (out.data(), outR.data(), total2);
+            const Metrics a = analyze (out, (int) (0.3 * sr));
+            std::printf ("ISO OD one-call    : zeroRun=%4d rail=%.2f%% rmsMin=%.4f imp=%.3f\n",
+                         a.zeroRun, 100.0 * a.railFrac, a.rmsMin, a.worstImp);
+        }
+        {
+            parvati::fv1::Fv1Overdrive od;
+            od.prepare (sr, 512);   // chain-prep maxBlock
+            float p5[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+            od.setParams (p5);
+            std::vector<float> out = pre, outR = preR;
+            for (int off = 0; off < total2; off += 45)   // the ~980 Hz sub-chunk cadence
+            {
+                const int n = std::min (45, total2 - off);
+                od.process (out.data() + off, outR.data() + off, n);
+            }
+            const Metrics a = analyze (out, (int) (0.3 * sr));
+            std::printf ("ISO OD 45-smp chunks: zeroRun=%4d rail=%.2f%% rmsMin=%.4f imp=%.3f\n",
+                         a.zeroRun, 100.0 * a.railFrac, a.rmsMin, a.worstImp);
+        }
+    }
+
     // EXTREME matrix (user report): every LUT shape at MAX drive, and a hot
     // 3-slot chain (LutDist max -> Phaser max fb -> Overdrive max).
     if (argc > 3)

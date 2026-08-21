@@ -1117,6 +1117,8 @@ add_executable(parvati_fx_dropout_probe EXCLUDE_FROM_ALL
     tests/parvati_fx_dropout_probe.cpp
 )
 target_include_directories(parvati_fx_dropout_probe PRIVATE Source)
+target_include_directories(parvati_fx_dropout_probe SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
 target_compile_features(parvati_fx_dropout_probe PRIVATE cxx_std_17)
 target_link_libraries(parvati_fx_dropout_probe PRIVATE
     Parvati
@@ -1158,6 +1160,27 @@ add_executable(parvati_fx_foldback_probe EXCLUDE_FROM_ALL
 target_include_directories(parvati_fx_foldback_probe PRIVATE Source)
 target_compile_features(parvati_fx_foldback_probe PRIVATE cxx_std_17)
 target_link_libraries(parvati_fx_foldback_probe PRIVATE Parvati)
+
+# FX MATH-INVARIANT tests (2026-08-21): the memory-safety-blind bug class —
+# curve audits, loop DC-freeness at max regen, param fuzz at extremes.
+# JUCE-free direct effect compile (the fv1-family pattern).
+add_executable(parvati_fx_invariants_test
+    tests/parvati_fx_invariants_test.cpp
+)
+target_include_directories(parvati_fx_invariants_test PRIVATE Source)
+target_include_directories(parvati_fx_invariants_test SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/clouds)
+target_compile_features(parvati_fx_invariants_test PRIVATE cxx_std_17)
+target_sources(parvati_fx_invariants_test PRIVATE
+    Source/dsp/fx/fv1/Fv1Echo.cpp
+    Source/dsp/fx/fv1/Fv1ClockedDelay.cpp
+    Source/dsp/fx/fv1/Fv1Flanger.cpp
+    Source/dsp/fx/fv1/Fv1Phaser.cpp
+    Source/dsp/fx/fv1/Fv1PlateReverb.cpp
+    Source/dsp/fx/fv1/Fv1Room.cpp
+    Source/dsp/fx/fv1/Fv1Spring.cpp
+    Source/dsp/fx/fv1/Fv1LutDistortion.cpp
+    Source/dsp/fx/fv1/Fv1Overdrive.cpp)
 
 add_executable(parvati_fx_lut_dropout_test
     tests/parvati_fx_lut_dropout_test.cpp

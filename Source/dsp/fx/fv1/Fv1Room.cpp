@@ -56,6 +56,7 @@ void Fv1Room::setParams (const float param[5])
 
 void Fv1Room::resetInternal()
 {
+    for (auto& k : dck_) k.clear();
     comb0_.clear(); comb1_.clear(); comb2_.clear(); comb3_.clear();
     apL0_.clear(); apL1_.clear(); apR0_.clear(); apR1_.clear();
     for (auto& lp : lp_) lp.clear();
@@ -80,10 +81,10 @@ void Fv1Room::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t o2 = comb2_.read (kCombD[2]);
     const int32_t o3 = comb3_.read (kCombD[3]);
 
-    comb0_.write (f24_addSat (lin, f24_mulk (lp_[0].process (o0), g14_[0])));
-    comb1_.write (f24_addSat (lin, f24_mulk (lp_[1].process (o1), g14_[1])));
-    comb2_.write (f24_addSat (lin, f24_mulk (lp_[2].process (o2), g14_[2])));
-    comb3_.write (f24_addSat (lin, f24_mulk (lp_[3].process (o3), g14_[3])));
+    comb0_.write (f24_addSat (lin, f24_mulk (dck_[0].process (lp_[0].process (o0)), g14_[0])));
+    comb1_.write (f24_addSat (lin, f24_mulk (dck_[1].process (lp_[1].process (o1)), g14_[1])));
+    comb2_.write (f24_addSat (lin, f24_mulk (dck_[2].process (lp_[2].process (o2)), g14_[2])));
+    comb3_.write (f24_addSat (lin, f24_mulk (dck_[3].process (lp_[3].process (o3)), g14_[3])));
 
     const int32_t sum = o0 + o1 + o2 + o3;              // plain int32: 4x Q.23 fits
     const int32_t in  = f24_mulk (sum, quarter14_);

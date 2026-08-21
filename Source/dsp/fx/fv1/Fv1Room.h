@@ -48,6 +48,7 @@ private:
     OnePoleLpFx lp_[4];
     OnePoleLpFx toneLpL_, toneLpR_;   // one per channel (a shared one would run 2x rate)
 
+    LoopDcKiller dck_[4] {};   // loop DC killers (see Fv1Engine.h)
     int16_t g14_[4] = {};   // q14(per-comb feedback g_i — see setParams)
     int16_t quarter14_ = 0;
     int16_t apGain14_ = 0;

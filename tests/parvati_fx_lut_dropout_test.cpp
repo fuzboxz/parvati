@@ -29,6 +29,7 @@
 // ≥ 2x after the fix (rmsMin 0.28–0.77).
 
 #include <algorithm>
+#include <memory>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -169,28 +170,95 @@ int main()
         // constant DC -> the DC blocker removed it -> rms 5e-6 SILENCE on a
         // held chord. The unsaturated ladder reads the table's real tail:
         // loud driven tube fold (measured rms 0.25 vs the dry 0.19).
-        ParvatiAudioProcessor proc;
-        proc.prepareToPlay (kSr, kBuf);
-        setChoice (proc, "fx1_type", 16);   // Overdrive
-        setInt (proc, "fx1_enabled", 1);
-        setInt (proc, "fx1_drywet", 127);
-        setInt (proc, "osc1_shape", 1);
+        auto proc = std::make_unique<ParvatiAudioProcessor>();
+        proc->prepareToPlay (kSr, kBuf);
+        setChoice (*proc, "fx1_type", 16);   // Overdrive
+        setInt (*proc, "fx1_enabled", 1);
+        setInt (*proc, "fx1_drywet", 127);
+        setInt (*proc, "osc1_shape", 1);
         const int pv[5] = { 127, 64, 64, 64, 64 };   // MAX drive
         for (int k = 0; k < 5; ++k)
-            setInt (proc, ("fx1_param" + std::to_string (k + 1)).c_str(), pv[k]);
+            setInt (*proc, ("fx1_param" + std::to_string (k + 1)).c_str(), pv[k]);
         std::vector<float> capL ((size_t) (kDur * kSr), 0.0f);
-        renderChord (proc, capL);
+        renderChord (*proc, capL);
         // absolute RMS floor: the silence bug measured ~5e-6; healthy loud
         // drive measures 0.15+. (Windowed-relative checks are meaningless on
         // a constant; absolute is the pin.)
         double rms = 0.0;
         const int from = (int) (0.3 * kSr), to = (int) (kDur * kSr);
         for (int i = from; i < to; ++i) rms += (double) capL[(size_t) i] * capL[(size_t) i];
+        (void) proc;
         rms = std::sqrt (rms / (to - from));
         char msg[128];
         std::snprintf (msg, sizeof (msg),
                        "Overdrive max-drive output level rms=%.4f (>= 0.10; the silence bug measured 0.000005)", rms);
         check (rms >= 0.10, msg);
+    }
+
+    std::printf ("[lut-dropout] USER REPRO: delay->reverb->shaper at 100%% never gates\n");
+    {
+        // The EXACT user repro (2026-08-21): Digital Echo -> Plate -> shaper,
+        // EVERY param at 100% (the shaper's drive/fold/bias/tone + 100% wet).
+        // ROOT CAUSE: every FV-1 feedback loop (echo ping-pong, the plate's 4
+        // combs) was a DC integrator at near-unity regen (DC gain 1/(1-g): up
+        // to 200x echo / ~1000x plate) — residual DC parked the loops at a
+        // rail (measured dc -0.22..-0.28 into the shaper), the driven shaper
+        // pinned constant, and its DC blocker stripped it to gated SILENCE
+        // (rmsMin 0.002-0.03 pre-fix). The LoopDcKiller (~10 Hz HP) in every
+        // loop closes the DC path; measured post-fix 0.34-0.38 (> 2x floor).
+        struct Chain { const char* name; int shaper; };
+        const Chain chains[] = {
+            { "Echo->Plate->Wavefolder", 7 },
+            { "Echo->Plate->Overdrive", 16 },
+            { "Echo->Plate->LutDist",   17 },
+        };
+        for (const auto& c : chains)
+        {
+            auto proc = std::make_unique<ParvatiAudioProcessor>();
+            proc->prepareToPlay (kSr, kBuf);
+            setChoice (*proc, "fx1_type", 22);   // Digital Echo
+            setChoice (*proc, "fx2_type", 13);   // Plate
+            setChoice (*proc, "fx3_type", c.shaper);
+            setInt (*proc, "osc1_shape", 1);
+            for (int slot = 1; slot <= 3; ++slot)
+            {
+                setInt (*proc, ("fx" + std::to_string (slot) + "_enabled").c_str(), 1);
+                setInt (*proc, ("fx" + std::to_string (slot) + "_drywet").c_str(), 127);
+                for (int k = 1; k <= 5; ++k)
+                    setInt (*proc, ("fx" + std::to_string (slot) + "_param" + std::to_string (k)).c_str(), 127);
+            }
+            std::vector<float> capL ((size_t) (kDur * kSr), 0.0f), capR ((size_t) (kDur * kSr), 0.0f);
+            {   // chord render (same as renderChord but local: capR needed)
+                bool on = false;
+                const int total = (int) (kDur * kSr);
+                for (int w = 0; w < total; )
+                {
+                    juce::AudioBuffer<float> b (2, kBuf);
+                    b.clear();
+                    juce::MidiBuffer m;
+                    if (! on)
+                    {
+                        for (int ch = 0; ch < 4; ++ch)
+                            m.addEvent (juce::MidiMessage::noteOn (1, (uint8_t) (57 + 5 * ch), (uint8_t) 110), 0);
+                        on = true;
+                    }
+                    proc->processBlock (b, m);
+                    const int n = std::min (kBuf, total - w);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        capL[(size_t) (w + i)] = b.getSample (0, i);
+                        capR[(size_t) (w + i)] = b.getSample (1, i);
+                    }
+                    w += n;
+                }
+            }
+            const Health h = analyze (capL, (int) (0.3 * kSr));
+            char msg[128];
+            std::snprintf (msg, sizeof (msg),
+                           "%s @100%%: rmsMin=%.3f (>= 0.15), zeroRun=%d",
+                           c.name, h.rmsMin, h.zeroRun);
+            check (h.rmsMin >= 0.15 && h.zeroRun <= 16, msg);
+        }
     }
 
     std::printf ("[lut-dropout] max-drive hot chain stays loud (no gating)\n");

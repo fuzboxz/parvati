@@ -70,6 +70,8 @@ void Fv1Echo::resetInternal()
     lineL_.clear();
     lineR_.clear();
     damp_.clear();
+    dcX1_ = 0.0f;
+    dcY1_ = 0.0f;
     // "unset" glide sentinel: the next block snaps both taps to target
     // (a fresh instance must not glide in from zero for a tenth of a second).
     timeQL_ = 0;
@@ -95,10 +97,19 @@ void Fv1Echo::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t tapR = lineR_.readFrac (timeR);
 
     // Ping-pong: the L tap walks into the R line; the damped R tap walks back
-    // into the L line together with the input.
+    // into the L line together with the input. The R->L hop carries the LOOP
+    // DC KILLER (see the header): ~10 Hz one-pole HP so near-unity regen can
+    // never integrate DC into the runaway offset.
     lineR_.write (tapL);
-    const int32_t fb = damp_.process (tapR);
-    lineL_.write (f24_addSat (lin, f24_mulk (fb, fb14_)));
+    {
+        const float x = f24_toFloat (damp_.process (tapR));
+        constexpr float kDcPole = 1.0f - 6.28318530718f * 10.0f
+                                        / static_cast<float> (kInternalRate);
+        const float y  = x - dcX1_ + kDcPole * dcY1_;
+        dcX1_ = x;
+        dcY1_ = y;
+        lineL_.write (f24_addSat (lin, f24_mulk (f24_fromFloat (y), fb14_)));
+    }
 
     lout = tapL;
     rout = tapR;
