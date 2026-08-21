@@ -351,7 +351,15 @@ struct CentralModBar::ModPill : public juce::Component,
 
         const auto sr = stripRect().toFloat();
         // Keep the round-capped 1.25px stroke inside the band.
-        const float usable = juce::jmax (1.0f, sr.getHeight() - 2.0f);
+        // JITTER FIX (2026-08-21): the round-capped 2.2px stroke extends ~1.1px
+        // beyond each path point, and the tick's repaint dirty region is
+        // exactly stripRect() — plotting to the rect's edges let the stroke's
+        // extremes get CLIPPED on animated repaints (the reported top/bottom
+        // jitter). Inset the plotted range by the stroke radius + an AA hair so
+        // the whole stroke always lands inside the dirty region.
+        constexpr float kStrokeW   = 2.2f;
+        constexpr float kPlotInset  = kStrokeW * 0.5f + 0.6f;
+        const float usable = juce::jmax (1.0f, sr.getHeight() - 2.0f * kPlotInset);
 
         juce::Path path;
         float singleY = 0.0f;   // the lone point's y (stripCount_ == 1 dot below)
@@ -364,7 +372,7 @@ struct CentralModBar::ModPill : public juce::Component,
             const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
             const float y = stripBipolar_
                 ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
-                : sr.getBottom() - v * usable;
+                : sr.getBottom() - kPlotInset - v * usable;
             singleY = y;
             if (i == 0)  path.startNewSubPath (x, y);
             else         path.lineTo (x, y);
@@ -377,7 +385,7 @@ struct CentralModBar::ModPill : public juce::Component,
             g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (
                                juce::Point<float> (sr.getCentreX(), singleY)));
         else
-            g.strokePath (path, juce::PathStrokeType (2.2f,
+            g.strokePath (path, juce::PathStrokeType (kStrokeW,
                               juce::PathStrokeType::JointStyle::curved,
                               juce::PathStrokeType::EndCapStyle::rounded));
     }

@@ -684,6 +684,12 @@ private:
     // ThemeManager selection moves.
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
+    // Musical-typing focus discipline (see the .cpp): disables keyboard focus
+    // on every descendant except the KeyboardView and TextEditors, so control
+    // tweaks mid-performance never stop the QWERTY keys. Idempotent; run at
+    // ctor end and on each [KBD] show.
+    void makeTreeKeyboardTransparentExceptKeyboardView();
+
     void openLoadDialog();
     void openSaveDialog();
     void openSaveParvatiDialog();
@@ -820,6 +826,9 @@ private:
     // the flat patchCombo_); undo/redo are Path-drawn IconButtons (no font glyph).
     juce::Label      patchCaption_;
     std::unique_ptr<PresetBrowser> presetBrowser_;
+        // Header text buttons never take keyboard focus (2026-08-21 musical-
+    // typing rule — see ParamControl's slider note): toggling KBD/MOD/patch
+    // pages mid-performance must not stop the QWERTY keys playing.
     juce::TextButton loadButton_  { "Load" };
     juce::TextButton saveButton_  { "Save" };
     IconButton       undoButton_  { IconButton::Icon::Undo };   // top-bar Undo (Cmd/Ctrl+Z)

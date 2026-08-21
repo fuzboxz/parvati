@@ -301,35 +301,38 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
                 (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f);
     };
 
-    // ---- BASE curve: exactly as before, always in place ----
-    // Smooth vector trace + translucent gradient fill (unipolar; the area fills
-    // below the curve — the pass-band skirt).
-    const float fc = drawCurve (cutoffByte, rN, true);
-
-    // ---- LIVE modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
-    // Drawn only while the effective bytes depart from the base knob bytes
-    // (the change gate in timerCallback keeps dispLiveActive_ false otherwise).
-    // The BASE curve + fill stay untouched in place; the base fc tick dims so
-    // the bright live tick carries the attention.
+    // ---- ONE curve at a time (2026-08-21 user request) ----
+    // While the filter is being modulated the STATIC base curve is hidden —
+    // the live overlay renders with the base recipe (gradient fill + stroke)
+    // so the preview stays visually continuous: one curve that MOVES while
+    // the modulation runs and settles back to the knob state at rest (the
+    // activity gate is temporal, so the handoff is seamless).
     const bool liveOn = dispLiveActive_ && dispLiveCutByte_ >= 0;
     if (liveOn)
     {
         const uint8_t liveCutByte = static_cast<uint8_t> (juce::jlimit (0, 255, dispLiveCutByte_));
         const float   liveRN      = juce::jlimit (0.0f, 1.0f,
                                     static_cast<float> (juce::jlimit (0, 255, dispLiveResByte_)) / 255.0f);
-        const float liveFc = drawCurve (liveCutByte, liveRN, false);
-
-        // Bright live cutoff tick: the moving "what is happening" position.
-        const float liveX = plot.getX() + fcColumn (liveFc) * plot.getWidth();
-        g.setColour (trace.withAlpha (0.85f));
-        g.drawVerticalLine (juce::roundToInt (liveX), plotTop, plot.getBottom());
+        drawCurve (liveCutByte, liveRN, true);
+    }
+    else
+    {
+        // ---- BASE curve (at rest): exactly as before ----
+        // Smooth vector trace + translucent gradient fill (unipolar; the area
+        // fills below the curve — the pass-band skirt).
+        drawCurve (cutoffByte, rN, true);
     }
 
-    // Cutoff vertical reference line (clean 1px) — dimmed while the live tick
-    // is shown so the pair reads base-vs-modulated, not two equal markers.
-    const float fcX = plot.getX() + fcColumn (fc) * plot.getWidth();
-    g.setColour (accent.withAlpha (liveOn ? 0.30f : 0.55f));
-    g.drawVerticalLine (juce::roundToInt (fcX), plotTop, plot.getBottom());
+    // Cutoff vertical reference line (clean 1px): only while AT REST — under
+    // modulation the moving curve alone carries the state (the static filter
+    // state is intentionally not shown).
+    if (! liveOn)
+    {
+        const float fc = cutoffByteToHz (cutoffByte);
+        const float fcX = plot.getX() + fcColumn (fc) * plot.getWidth();
+        g.setColour (accent.withAlpha (0.55f));
+        g.drawVerticalLine (juce::roundToInt (fcX), plotTop, plot.getBottom());
+    }
 
     // 0 dB reference line (clean 1px).
     const float zeroLevel = dbToLevel (0.0f);

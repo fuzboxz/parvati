@@ -36,6 +36,15 @@ per its own rule.
   output is note events), so the engine appends the tracked part's
   currently-sounding sequencer note (0..127 -> 0..254, 0 = rest) into the one
   spare history slot — a unipolar melody trace with rests as gaps.
+- **Filter preview shows ONE curve (2026-08-21 user request)**: while the
+  live overlay is active the STATIC base curve + its dim fc tick are HIDDEN;
+  the live curve renders with the base recipe (gradient fill) so the preview
+  reads as one curve that moves under modulation and settles back at rest
+  (the temporal gate hands off seamlessly).
+- **Musical typing survives control tweaks (2026-08-21)**: every control in
+  the editor tree has wantsKeyboardFocus OFF (except the KeyboardView itself
+  and TextEditors) via a ctor-end + [KBD]-show pass — clicking knobs, wheels,
+  combos or pills mid-performance no longer steals QWERTY-note focus.
 - **Strip contrast/stroke (2026-08-21 user feedback)**: alpha 0.85/0.95
   (inactive/active) + a 2.2px stroke — the early low-alpha thin trace was
   illegible against the dark pill fill. The drag-only pills' dotted

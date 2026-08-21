@@ -354,6 +354,10 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     if (d.choices != nullptr)
     {
         comboBox_ = std::make_unique<juce::ComboBox> (d.paramID);
+        // Combos never take keyboard focus either (same musical-typing rule as
+        // the knobs — see the slider note above): pick with the MOUSE, keep
+        // playing with the keys.
+        comboBox_->setWantsKeyboardFocus (false);
         comboBox_->addItemList (*d.choices, 1);
         // HIG touch target: the combo's BOUNDS are laid out 44pt tall (see
         // resized) but the DRAWN dropdown stays a compact 28pt strip centred
@@ -386,6 +390,12 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     {
         slider_ = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                    juce::Slider::NoTextBox);
+        // Knobs adjust by DRAG ONLY and never take keyboard focus (2026-08-21,
+        // user report): with the virtual-keyboard strip up, a clicked knob
+        // grabbing focus killed musical typing mid-performance (the KeyboardView
+        // stopped receiving keys). Mouse drag needs no focus, so the focus (and
+        // the QWERTY notes) stay with the keyboard.
+        slider_->setWantsKeyboardFocus (false);
         // Knobs adjust by DRAG only: disable the mouse wheel so an accidental
         // scroll over a knob never changes its value (the wheel is reserved for
         // scrolling lists / the Mod Matrix viewport). Drag + the right-click
@@ -2532,6 +2542,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
         partCombo_.addItem (TRANS ("Part") + " " + juce::String (i), i);
+    // Musical-typing rule (see ParamControl's combo note): picking a part
+    // must not stop the QWERTY keys playing.
+    partCombo_.setWantsKeyboardFocus (false);
     // Combo colours from the L&F.
     addAndMakeVisible (partCombo_);
     partComboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
@@ -3012,8 +3025,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     kbdToggleButton_.setTooltip (TRANS ("Toggle virtual keyboard"));
     kbdToggleButton_.setClickingTogglesState (true);
     kbdToggleButton_.setToggleState (false, juce::dontSendNotification);   // hidden by default: the workspace keeps its full height with the keyboard hidden; toggling [KBD] floats the TALL two-octave strip over the bottom row (it covers the generator editor + matrix; the content never moves)
-    kbdToggleButton_.onClick = [this] {
+        kbdToggleButton_.onClick = [this] {
         const bool on = kbdToggleButton_.getToggleState();
+        // Musical typing while tweaking (2026-08-21): re-run the tree-wide
+        // focus pass when the strip appears, then hand focus to it — clicking
+        // ANY control (knob, wheel, combo, pill) mid-performance must never
+        // stop the QWERTY keys playing.
+        if (on)
+        {
+            makeTreeKeyboardTransparentExceptKeyboardView();
+            if (keyboardView_ != nullptr)
+                keyboardView_->grabKeyboardFocus();
+        }
         // Turning [KBD] ON while the Patch page is showing also needs toFront:
         // the Patch overlay was lifted above the keyboard when the page was
         // entered, so a newly shown keyboard must re-lift itself (and the
@@ -3319,6 +3342,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // + parented, so every control resolves its category colour from the active
     // theme on the very first paint.
     applyAllColoursFromTheme();
+
+    // Musical-typing focus discipline (see the helper): the tree is fully
+    // built + parented here — make every control click-transparent to keyboard
+    // focus so the QWERTY keys keep playing through knob/wheel tweaks.
+    makeTreeKeyboardTransparentExceptKeyboardView();
 }
 
 ParvatiEditor::~ParvatiEditor()
@@ -4023,6 +4051,37 @@ void ParvatiEditor::applyHeaderButtonChrome()
     // patchCaption_ is hidden in the current layout but stays wired — keep it
     // on the bright tier so it is correct if it ever returns.
     patchCaption_.setColour (juce::Label::textColourId, t.textPrimary);
+}
+
+void ParvatiEditor::makeTreeKeyboardTransparentExceptKeyboardView()
+{
+    // Musical-typing focus discipline (2026-08-21 user report): the virtual
+    // keyboard receives QWERTY notes only while IT holds keyboard focus, but
+    // JUCE widgets (Slider / ComboBox / Button — and by flag default, plain
+    // Components) GRAB focus on click, so tweaking any control mid-performance
+    // silently stopped the notes. This pass turns OFF wantsKeyboardFocus for
+    // every descendant EXCEPT the KeyboardView (the typing surface) and
+    // TextEditors (typing a patch name must capture the keys). The editor
+    // ITSELF stays focusable (empty-background clicks focus it, keeping
+    // Cmd-shortcuts alive when the strip is hidden). Run at ctor end and each
+    // time the [KBD] strip is shown; idempotent, so late-added children are
+    // covered by the re-run.
+    struct Pass
+    {
+        static void run (juce::Component& c)
+        {
+            for (auto* child : c.getChildren())
+            {
+                if (dynamic_cast<juce::TextEditor*> (child) == nullptr
+                    && dynamic_cast<KeyboardView*> (child) == nullptr)
+                {
+                    child->setWantsKeyboardFocus (false);
+                }
+                run (*child);
+            }
+        }
+    };
+    Pass::run (*this);
 }
 
 void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
