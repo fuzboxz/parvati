@@ -3,6 +3,7 @@
 // resize / teardown; no real message loop).
 
 #include <cstdio>
+#include <cstdlib>   // ::setenv (PARVATI_HEADLESS — native-dialog suppression in main)
 #include <cstring>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -47,6 +48,16 @@ static int runPreviewRegression (bool windowed);
 
 int main (int argc, char** argv)
 {
+    // NATIVE-DIALOG SUPPRESSION (PluginEditor.cpp nativeDialogsSuppressed):
+    // this harness puts the editor ON the desktop (addToDesktop is required
+    // for the JUCE timers to run), which makes the editor's desktop-gated
+    // file-picker seams think a human is present — every export/load seam
+    // would pop a REAL NSOpenPanel/NSSavePanel on the developer's screen while
+    // the pump runs. Setting the override keeps the seam semantics (handlers
+    // still fire) with zero native chrome. A developer can export the same
+    // variable to suppress pickers in ANY manual binary run.
+    ::setenv ("PARVATI_HEADLESS", "1", 1);
+
     juce::ScopedJuceInitialiser_GUI gui;
 
     ParvatiAudioProcessor proc;

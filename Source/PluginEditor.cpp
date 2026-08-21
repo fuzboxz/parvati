@@ -47,6 +47,24 @@ namespace ParvatiLogo {
     const char* getNamedResource (const char* resourceNameUTF8, int& dataSizeInBytes);
 }
 
+namespace
+{
+// NATIVE-DIALOG SUPPRESSION (2026-08-21): the editor's "desktop-gated" file
+// seams launch REAL NSOpenPanel/NSSavePanel panels whenever desktop components
+// exist — correct for a user's plugin window, WRONG for the GUI test binaries,
+// whose harness puts the editor ON the desktop (addToDesktop is the only way
+// the JUCE timers run for the timer-driven sections) and then pumps the run
+// loop. With components on the desktop the old getNumComponents() > 0 gate is
+// true, so every export/load seam popped a native picker on the developer's
+// screen mid-test. The test binaries set PARVATI_HEADLESS=1 in their main()
+// (and a developer can export it for any manual run); every gate below then
+// behaves exactly like the console case: the seam fires, no picker launches.
+bool nativeDialogsSuppressed()
+{
+    return juce::SystemStats::getEnvironmentVariable ("PARVATI_HEADLESS", {}) == "1";
+}
+}  // namespace
+
 // ---- Header logo: [brand icon] + white "Parvati" wordmark -----------------
 // The embedded parvati_logo.svg is true vector art (outlined <path>/<g>, no
 // raster); it is parsed once into logoDrawable_ via JUCE's SVG renderer and
@@ -2947,11 +2965,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // dialog need a window server; headless tests fire the seam with no
     // picker — the handleLoadPresetShortcut idiom).
     patchPage_->onExportPro = [this] {
-        if (juce::Desktop::getInstance().getNumComponents() > 0)
+        if (! nativeDialogsSuppressed() && juce::Desktop::getInstance().getNumComponents() > 0)
             openSaveDialog();          // .PRO export (current part)
     };
     patchPage_->onExportMul = [this] {
-        if (juce::Desktop::getInstance().getNumComponents() > 0)
+        if (! nativeDialogsSuppressed() && juce::Desktop::getInstance().getNumComponents() > 0)
             openSaveMultiDialog();     // .MUL export (incl. fallback dialog)
     };
     if (globalPage_ != nullptr)
@@ -4134,15 +4152,18 @@ bool ParvatiEditor::handleLoadPresetShortcut()
 {
     // Desktop-gated: a native file picker needs a window-server session. The
     // headless tests assert the SEAM fired via this true — no picker opens.
-    if (juce::Desktop::getInstance().getNumComponents() > 0)
+    // PARVATI_HEADLESS=1 suppresses the picker even when the test harness has
+    // components on the desktop (see nativeDialogsSuppressed above).
+    if (! nativeDialogsSuppressed() && juce::Desktop::getInstance().getNumComponents() > 0)
         openLoadDialog();
     return true;
 }
 
 bool ParvatiEditor::handleSavePresetShortcut()
 {
-    // Parvati format (see keyPressed's choice note). Desktop-gated as above.
-    if (juce::Desktop::getInstance().getNumComponents() > 0)
+    // Parvati format (see keyPressed's choice note). Desktop-gated as above
+    // (incl. the PARVATI_HEADLESS suppression for the GUI test binaries).
+    if (! nativeDialogsSuppressed() && juce::Desktop::getInstance().getNumComponents() > 0)
         openSaveParvatiDialog();
     return true;
 }
@@ -4697,8 +4718,12 @@ void showFileOpFailure (const juce::String& title, const juce::String& path)
     // headless test/editor-coverage binaries (console, no desktop windows)
     // would block forever inside the OS alert once the message loop is
     // pumped — silently hanging the run. Skip when no desktop windows exist
-    // (tests never rely on the dialog; they assert the return codes).
-    if (juce::Desktop::getInstance().getNumComponents() == 0)
+    // OR the PARVATI_HEADLESS override is set (the GUI test binaries: their
+    // editor IS on the desktop, but no human is present to dismiss a native
+    // alert — the same hazard the file-picker gates solve). Tests never rely
+    // on the dialog; they assert the return codes.
+    if (nativeDialogsSuppressed()
+        || juce::Desktop::getInstance().getNumComponents() == 0)
         return;
     juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
                                                  title, path);
