@@ -31,9 +31,15 @@ namespace parvati
 struct ModTelemetrySnapshot
 {
     static constexpr int kNumSources = 32;    // >= ambika::dsp::MOD_SRC_LAST (31): every real
-                                               // source index fits; the spare slot stays zero
-                                               // (see SynthEngine.h's static_assert note)
+                                               // source index fits; the spare slot carries the
+                                               // NOTE-SEQ preview (kNoteSeqSlot below)
     static constexpr int kHistoryLen = 128;   // ~1.57 s at the ~81.7 Hz append rate
+
+    // The bar-only Note Sequencer pill has NO MOD_SRC_* enum (its output is
+    // note events, not a modulation bus value), so its live preview rides the
+    // one spare slot: the tracked part's currently-sounding sequencer note
+    // (0..127 -> 0..254, 0 = rest/gap) — a melody trace with rests as gaps.
+    static constexpr int kNoteSeqSlot = kNumSources - 1;
 
     // MT-authoritative validity epoch: bumped by SynthEngine::resetUiTelemetry
     // on patch load / part switch / init. A snapshot whose epoch does not match

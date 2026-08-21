@@ -87,6 +87,11 @@ public:
     // Test/debug: the currently-sounding (last generated) note, or 0xff if none.
     uint8_t debugPreviousNote() const noexcept { return previousNote_; }
 
+    // LIVE observation of the same value (0xff = none): used by the UI
+    // telemetry append for the Note-Sequencer pill preview. A pure reader —
+    // no audio-path state is touched.
+    uint8_t liveNote() const noexcept { return previousNote_; }
+
     // Advance one (prescaled) clock step. `heldNote`/`keyHeld` feed the note
     // sequence transpose (most-recently-played key).
     void clockTick (uint8_t heldNote, bool keyHeld);

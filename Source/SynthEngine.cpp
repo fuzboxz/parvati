@@ -2322,7 +2322,7 @@ void SynthEngine::renderPartFx (int numSamples)
             // representative voice (a released/idle part keeps its window
             // frozen instead of scrolling held values). PURE OBSERVATION.
             if (uiTelTrack && repVoice != nullptr)
-                uiTelAppendHistory (effSrcs);
+                uiTelAppendHistory (effSrcs, part.seq);
             // Advance the crossfade phase for the next sub-chunk (drift-free:
             // tau in seconds => sample-rate independent).
             if (fade < 1.0f)
@@ -2452,7 +2452,7 @@ void SynthEngine::uiTelServiceStage (int p)
     uiTelWrittenPart_ = p;
 }
 
-void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs)
+void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq)
 {
     // Decimate: one append per kUiTelDecimBlocks internal ticks (~81.7 Hz at
     // the 980.4 Hz control cadence -> 128 samples ~= 1.57 s window).
@@ -2465,9 +2465,19 @@ void SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs)
 
     uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
     std::atomic_thread_fence (std::memory_order_release);
-    // effSrcs holds MOD_SRC_LAST(31) bytes; the frame's one spare slot
-    // (kNumSources == 32, see the header's static_assert note) stays zero —
-    // the UI only enumerates real source enums.
+    // effSrcs holds MOD_SRC_LAST(31) bytes; the frame's spare slot carries
+    // the NOTE-SEQ preview (kNoteSeqSlot): the tracked part's currently-
+    // sounding sequencer note (0..127 -> 0..254, 0 = rest/gap) — a melody
+    // trace with rests as gaps, driven PURELY by observation of the same
+    // Sequencer object the audio path fires from.
+    {
+        const uint8_t sounding = noteSeq.liveNote();
+        uiTel_.history[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot * (size_t) kLen
+                       + (size_t) idx] = (sounding <= 127) ? static_cast<uint8_t> (sounding * 2)
+                                                           : uint8_t { 0 };
+        uiTel_.sources[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot]
+            = (sounding <= 127) ? static_cast<uint8_t> (sounding * 2) : uint8_t { 0 };
+    }
     for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
     {
         uiTel_.history[(size_t) src * (size_t) kLen + (size_t) idx] = effSrcs[(size_t) src];

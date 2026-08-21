@@ -357,8 +357,37 @@ void SettingsPanel::paint (juce::Graphics& g)
     g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
+int SettingsPanel::computePreferredHeight() const
+{
+    // The FULL no-scroll height of every row + margins — kept in lockstep
+    // with resized()'s row budget (a static self-check below pins the sum so
+    // the two can never drift apart silently).
+    //   margins(16+16) + Theme(18+2+44) + 16 + Zoom(18+2+44) + 16
+    // + Tooltips(44) + 8 + Smoothing(44) + 16 + Clock(18+2+18+8+44) + 16
+    // + Refresh(18+2+44) + 16 + Filter(18+2+44) + 16 + Language(18+2+44)
+    return 32 + 64 + 16 + 64 + 16 + 44 + 8 + 44 + 16 + 90 + 16 + 64 + 16 + 64 + 16 + 64;
+}
+
 void SettingsPanel::resized()
 {
+    // 2026-08-21: the settings drawer hosts this panel in a scrolling Viewport
+    // (the editor's settingsScroll_), so EVERY row is reachable — the drawer
+    // SCROLLS instead of degrading (the R3 hide-rows fallback only applies to
+    // a no-viewport host, e.g. an embedder that sizes us directly). When a
+    // Viewport parents us and we are shorter than the full row budget, size
+    // ourselves once to it (pinned at the viewport origin); setSize re-enters
+    // resized() at the full height and the layout below consumes it exactly.
+    if (auto* vp = dynamic_cast<juce::Viewport*> (getParentComponent()))
+    {
+        const int prefH = juce::jmax (computePreferredHeight(), vp->getViewHeight());
+        if (getHeight() != prefH || getWidth() != vp->getViewWidth())
+        {
+            setTopLeftPosition (0, 0);
+            setSize (vp->getViewWidth(), prefH);
+            return;
+        }
+    }
+
     auto area = getLocalBounds().reduced (16, 16);
 
     // Rows that no longer fit (a compacted drawer) are HIDDEN rather than

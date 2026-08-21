@@ -3225,7 +3225,17 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // (timerCallback's shadow check would otherwise pick it up within one
         // ~30 Hz tick — that poll covers restores / out-of-band writes).
         [this] (int hz) { applyLiveFeedbackRefreshRate (hz); });
-    settingsPanelHost_->setContent (settingsPanel_, true);
+    // 2026-08-21: the drawer SCROLLS. The panel's full row budget (theme,
+    // zoom, toggles, arp clock, refresh, filter, language) exceeds many host
+    // panes (a compact AUv3 drawer / short desktop window) — the old R3
+    // behaviour HID rows that did not fit, making bottom settings unreachable.
+    // A vertical-only Viewport between the SidePanel and the panel keeps every
+    // row reachable; the scrollbar appears only when the pane is shorter than
+    // the full budget.
+    settingsScroll_ = std::make_unique<juce::Viewport>();
+    settingsScroll_->setScrollBarsShown (false, true);   // vertical only, auto
+    settingsScroll_->setViewedComponent (settingsPanel_, true);   // viewport owns + deletes
+    settingsPanelHost_->setContent (settingsScroll_.get(), false);   // SidePanel does NOT delete
     // Keep the Settings button's toggle state in sync when the panel is
     // dismissed by other means (the dismiss glyph / clicking outside / ESC) —
     // onPanelShowHide fires after the slide animation on any show/hide.
@@ -3934,6 +3944,16 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // (crucially) makes each ParamControl::lookAndFeelChanged() re-push its
     // category arc / mod tint once the editor's ParvatiLookAndFeel is attached.
     sendLookAndFeelChange();
+    // Settings drawer scrollbar (2026-08-21): themed like the mod bar's
+    // (quiet thumb on a base track) — the Viewport's scrollbar is NOT a
+    // lookAndFeelChanged participant, so it is re-themed explicitly here.
+    if (settingsScroll_ != nullptr)
+    {
+        const auto& t = themeManager_.getCurrentTheme();
+        auto& vsb = settingsScroll_->getVerticalScrollBar();
+        vsb.setColour (juce::ScrollBar::thumbColourId, t.backgroundInput);
+        vsb.setColour (juce::ScrollBar::trackColourId, t.backgroundBase);
+    }
     for (auto& page : generatedPages_)
         page->applyThemeColors();
     if (synthWorkspace_ != nullptr)

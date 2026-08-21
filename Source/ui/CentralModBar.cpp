@@ -150,8 +150,9 @@ namespace
 // cluster text captions were removed. The active generator pill keeps its solid
 // lighter background + bright text and STRENGTHENS the underline (thicker / full
 // alpha); inactive pills use a dark fill + dim text + the subtle family underline.
-// Drag-only sources (Perf/Util/Const) additionally show a subtle dotted left-handle.
 // All flat (no outline / glow / bevel). Geometry is unchanged from the bar layout.
+// Drag-only sources (Perf/Util/Const) are identified by their family colour
+// alone (the dotted left-handle was removed 2026-08-21 — it read as noise).
 //
 // Mouse handling mirrors the existing drag sources (DraggableTabButton /
 // ModSourceDragGrip / WheelDragLabel): a drag past ~5px starts an INTERNAL
@@ -165,12 +166,14 @@ namespace
 // theme resolution and active-state).
 //
 // LIVE HISTORY STRIP (docs/LIVE_MOD_FEEDBACK_DESIGN.md): when the bar's
-// telemetry tick feeds it data, the pill additionally draws a thin
-// family-coloured sparkline of the source's recent values in a bottom band
-// (just above the underline), and the label centres in the remaining top area.
-// Flat and quiet — no fill, no glow, no grid; low alpha keeps the strip an
-// indicator, not a focus. Const-cluster pills and the bar-only sentinel never
-// carry one. With no telemetry the band simply stays empty.
+// telemetry tick feeds it data, the pill additionally draws a family-coloured
+// sparkline of the source's recent values spanning the pill's inner height
+// (label on top — the Pigments-style scope reading). Flat and quiet — no
+// fill, no glow, no grid; the accent-on-dark contrast keeps the strip an
+// indicator, not a focus. Const-cluster pills never carry one; the bar-only
+// Note Sequencer sentinel DOES — its melody trace rides the spare
+// kNoteSeqSlot (see the telemetry tick). With no telemetry the strip simply
+// stays empty.
 struct CentralModBar::ModPill : public juce::Component,
                                 public juce::SettableTooltipClient
 {
@@ -337,8 +340,12 @@ struct CentralModBar::ModPill : public juce::Component,
         unipolar ones rise from the band's bottom. */
     void drawHistoryStrip (juce::Graphics& g)
     {
-        if (enumValue_ < 0 || cluster_ == parvati::Cluster::Const)
-            return;   // the sentinel has no MOD_SRC_* enum; Const pills carry no history
+        // Const pills are static amounts (no history); every OTHER pill has a
+        // telemetry slot — including the bar-only Note Sequencer sentinel
+        // (enumValue_ < 0), whose melody trace rides the spare kNoteSeqSlot
+        // (see the bar's telemetry tick).
+        if (cluster_ == parvati::Cluster::Const)
+            return;   // Const pills carry no history
         if (stripCount_ <= 0)
             return;   // no history yet (e.g. after a reset): the band stays empty
 
@@ -362,15 +369,15 @@ struct CentralModBar::ModPill : public juce::Component,
             if (i == 0)  path.startNewSubPath (x, y);
             else         path.lineTo (x, y);
         }
-        g.setColour (accent_.withAlpha (active_ ? 0.70f : 0.55f));
+        g.setColour (accent_.withAlpha (active_ ? 0.95f : 0.85f));
         // A single sample has no segment to stroke (startNewSubPath alone
         // draws nothing) — draw a small dot instead so the strip's first
         // ~12 ms (one append at the 81.7 Hz cadence) still shows a value.
         if (stripCount_ == 1)
-            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (
+            g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (
                                juce::Point<float> (sr.getCentreX(), singleY)));
         else
-            g.strokePath (path, juce::PathStrokeType (1.4f,
+            g.strokePath (path, juce::PathStrokeType (2.2f,
                               juce::PathStrokeType::JointStyle::curved,
                               juce::PathStrokeType::EndCapStyle::rounded));
     }
@@ -417,10 +424,11 @@ struct CentralModBar::ModPill : public juce::Component,
         }
         else
         {
-            // drag-only: flat dark-gray fill + a subtle dotted left-handle (the
-            // drag-source cue) + faint label. A persistent family-coloured
-            // underline (subtle) identifies the cluster (replaces the removed
-            // caption). No border / glow. Geometry unchanged.
+            // drag-only: flat dark-gray fill + faint label + the persistent
+            // family-coloured underline (the drag-source cue is the FAMILY
+            // COLOUR band + underline; the old dotted left-handle was removed
+            // 2026-08-21 — the tiny specks read as noise). No border / glow.
+            // Geometry unchanged.
             const juce::Colour inactiveFill = t.tabUnselectedBg;
             const juce::Colour fill = hovered_ ? inactiveFill.brighter (0.20f) : inactiveFill;
             g.setColour (fill);
@@ -431,19 +439,6 @@ struct CentralModBar::ModPill : public juce::Component,
             g.setColour (accent_.withAlpha (0.85f));
             g.fillRect (r.withHeight (3.5f));
             g.restoreState();
-
-            const float hx  = r.getX() + 2.0f;
-            const float hy0 = r.getY() + 7.0f;
-            const float hy1 = r.getBottom() - 7.0f;
-            const float step = 3.0f;
-            g.setColour (t.textSecondary);
-            for (int i = 0;; ++i)
-            {
-                const float y = hy0 + static_cast<float> (i) * step;
-                if (y > hy1)
-                    break;
-                g.fillEllipse (juce::Rectangle<float> (1.6f, 1.6f).withCentre ({ hx, y }));
-            }
 
             drawFamilyUnderline (g, r);
             drawHistoryStrip (g);
@@ -867,12 +862,17 @@ void CentralModBar::timerCallback()
     bool anyRepainted = false;
     for (auto& p : pills_)
     {
-        // Const pills are static amounts (no history) and the bar-only Note
-        // Sequencer sentinel has no MOD_SRC_* enum at all.
-        if (p->enumValue_ < 0 || p->cluster_ == parvati::Cluster::Const)
+        // Const pills are static amounts (no history). Real sources index the
+        // frame by their MOD_SRC_* enum; the bar-only Note Sequencer sentinel
+        // (enumValue_ < 0) reads the spare kNoteSeqSlot — the tracked part's
+        // sounding sequencer note, a melody trace with rests as gaps.
+        if (p->cluster_ == parvati::Cluster::Const)
             continue;
+        const int slot = (p->enumValue_ >= 0)
+            ? p->enumValue_
+            : parvati::ModTelemetrySnapshot::kNoteSeqSlot;
         const uint8_t* hist = snap.history
-            + (size_t) p->enumValue_ * (size_t) parvati::ModTelemetrySnapshot::kHistoryLen;
+            + (size_t) slot * (size_t) parvati::ModTelemetrySnapshot::kHistoryLen;
         if (p->updateStripFromHistory (hist, n))
         {
             // THE GPU-COST CONTROL: repaint ONLY the strip's bounding rect, so

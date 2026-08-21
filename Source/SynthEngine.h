@@ -992,7 +992,7 @@ private:
     void uiTelServiceStage (int p);
     // Decimated history append of this internal block's effective sources
     // (also refreshes uiTel_.sources).
-    void uiTelAppendHistory (const uint8_t* effSrcs);
+    void uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq);
     // Once-per-block observables refresh: envelope stage/progress/level,
     // effective cutoff/resonance/mode, current sources, voiceActive. @p repVoice
     // may be null — that path fires exactly ONCE on the active->inactive

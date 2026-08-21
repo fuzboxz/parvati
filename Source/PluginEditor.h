@@ -896,7 +896,13 @@ private:
     static constexpr int kVoiceStripH = 22;   // compact status strip at the very bottom
 
     // ---- Phase 4a: visualization + settings integration ----
-    // Settings side panel (owned here; content owned by the SidePanel).
+    // The settings drawer's vertical scroll host (2026-08-21): owns + hosts
+    // the SettingsPanel so every row stays reachable in short panes (see the
+    // construction site). Declared BEFORE the SidePanel so it is destroyed
+    // AFTER it (reverse order) — the panel must never outlive its host chain.
+    std::unique_ptr<juce::Viewport> settingsScroll_;
+    // Settings side panel (hosts the scroll viewport; the viewport owns the
+    // SettingsPanel itself).
     std::unique_ptr<juce::SidePanel> settingsPanelHost_;
     SettingsPanel* settingsPanel_ { nullptr };
     IconButton       settingsButton_ { IconButton::Icon::Gear };   // gear icon, top-right

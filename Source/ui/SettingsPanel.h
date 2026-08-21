@@ -55,6 +55,11 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Full no-scroll height of every settings row + margins — the height the
+    // scrolling drawer (the editor's settingsScroll_ Viewport) sizes this
+    // panel to; pinned to resized()'s row budget (see its comment).
+    int computePreferredHeight() const;
+
     // Programmatic zoom update (e.g. from the editor's zoom keyboard
     // shortcuts): moves the slider without re-firing onValueChange (which would
     // loop back into the editor's setZoom). Phase 4b.

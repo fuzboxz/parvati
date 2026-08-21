@@ -31,6 +31,15 @@ per its own rule.
 - **Strip diff-gate signature includes a position-weighted moment** (Σ j·v[j])
   on top of count/first/last/min/max, so a pulse sliding through an otherwise
   static window (GATE / VELOCITY / ARP) still animates.
+- **Note-Sequencer pill preview rides the spare telemetry slot
+  (kNoteSeqSlot)**: the bar-only NOTE sentinel has no MOD_SRC_* enum (its
+  output is note events), so the engine appends the tracked part's
+  currently-sounding sequencer note (0..127 -> 0..254, 0 = rest) into the one
+  spare history slot — a unipolar melody trace with rests as gaps.
+- **Strip contrast/stroke (2026-08-21 user feedback)**: alpha 0.85/0.95
+  (inactive/active) + a 2.2px stroke — the early low-alpha thin trace was
+  illegible against the dark pill fill. The drag-only pills' dotted
+  left-handle specks were removed (family band + underline carry the cue).
 - **Poll timers START unconditionally (provider + rate), not gated on
   isShowing()** (2026-08-21 reliability lesson). The hub and the mod-bar strip
   poll originally required isShowing() to START — but isShowing() is

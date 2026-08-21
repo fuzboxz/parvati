@@ -1855,6 +1855,7 @@ int main (int argc, char** argv)
             int  call   = 0;
             bool moving = true;
             bool valid  = true;
+            bool noteMoving = false;   // the NOTE-sentinel melody (slot 31) scrolls
             parvati::ModTelemetrySnapshot snap {};
 
             SyntheticTelemetry()
@@ -1879,6 +1880,13 @@ int main (int argc, char** argv)
                 for (int i = 0; i < 64; ++i)
                     lfo[(size_t) i] = static_cast<uint8_t> ((i * 4 + (moving ? call * 8 : 0)) & 0xff);
                 snap.sources[ambika::dsp::MOD_SRC_LFO_1] = lfo[63];
+                // NOTE-SEQ (spare slot): a scrolling melody while noteMoving —
+                // proves the bar-only sentinel pill consumes kNoteSeqSlot.
+                uint8_t* nseq = snap.history
+                    + (size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot * parvati::ModTelemetrySnapshot::kHistoryLen;
+                for (int i = 0; i < 64; ++i)
+                    nseq[(size_t) i] = static_cast<uint8_t> ((i * 4 + (noteMoving ? call * 8 : 0)) & 0xff);
+                snap.sources[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot] = nseq[63];
                 ++call;
                 out = snap;
                 return true;
@@ -1915,6 +1923,19 @@ int main (int argc, char** argv)
                                "[25] constant history repaints NOTHING (gen %d -> %d)",
                                gen1, bar.telemetryGeneration());
                 check (bar.telemetryGeneration() == gen1, msg25);
+
+                // Note-Sequencer sentinel: with EVERY real source parked, only
+                // the spare kNoteSeqSlot scrolls (a melody trace). A climbing
+                // generation proves the bar-only NOTE pill consumes the slot.
+                synth.noteMoving = true;
+                const int genN0 = bar.telemetryGeneration();
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.250, false);
+                std::snprintf (msg25, sizeof (msg25),
+                               "[25] note-seq melody on the spare slot animates the NOTE pill (gen %d -> %d)",
+                               genN0, bar.telemetryGeneration());
+                check (bar.telemetryGeneration() > genN0, msg25);
+                synth.noteMoving = false;   // park again for the invalid-frame stage
+                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.150, false);   // settle
 
                 // An invalid frame (a torn seqlock read / a stale reset epoch)
                 // hides the strips ONCE; further invalid frames stay silent.
