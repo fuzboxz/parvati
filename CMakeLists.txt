@@ -44,6 +44,35 @@ if(PARVATI_IOS)
         "Build the CLAP plugin format (desktop only)" FORCE)
 endif()
 
+# ------------------------------------------------------------------------------
+# Vendored firmware reference (firmware_parity_test's oracle). ambika_reference/
+# is the original Mutable Instruments Ambika AVR firmware/controller tree
+# (GPL3, deliberately UNTRACKED in this repo — see NOTICES.md for licensing and
+# provenance). parvati_unified_tests compiles five of its controller sources
+# directly, so a fresh clone without the tree cannot even CONFIGURE. Fail fast
+# with instructions instead of a cryptic "Cannot find source file" deep in the
+# test section. Obtain the tree from the Ambika firmware release (see
+# NOTICES.md) and place it at the repo root as ambika_reference/.
+set(PARVATI_AMBIKA_FIRMWARE_SOURCES
+    ambika_reference/controller/multi.cc
+    ambika_reference/controller/part.cc
+    ambika_reference/controller/resources.cc
+    ambika_reference/controller/voice_allocator.cc
+    ambika_reference/avrlib/random.cc
+)
+foreach(_ambika_src IN LISTS PARVATI_AMBIKA_FIRMWARE_SOURCES)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_ambika_src}")
+        message(FATAL_ERROR
+            "Missing vendored firmware reference: ${_ambika_src}\n"
+            "ambika_reference/ is the original Mutable Instruments Ambika AVR "
+            "firmware/controller tree (GPL3, untracked by design — see "
+            "NOTICES.md). The unified test target compiles five of its "
+            "sources for firmware_parity_test. Clone/obtain the Ambika "
+            "firmware tree and place it at the repo root as "
+            "ambika_reference/ so the listed files exist.")
+    endif()
+endforeach()
+
 # iOS-only Info.plist keys passed NATIVELY through juce_add_plugin (see the
 # call below). juceaide generates the plist with these keys at CONFIGURE time
 # inside juce_add_plugin itself, so they flow into every downstream copy
@@ -804,11 +833,7 @@ add_executable(parvati_unified_tests
     # tests/firmware_shim headers shadow the AVR firmware headers; see the
     # include dirs / flags added below the target).
     tests/firmware_shim/shims.cc
-    ambika_reference/controller/multi.cc
-    ambika_reference/controller/part.cc
-    ambika_reference/controller/resources.cc
-    ambika_reference/controller/voice_allocator.cc
-    ambika_reference/avrlib/random.cc
+    ${PARVATI_AMBIKA_FIRMWARE_SOURCES}
 )
 target_include_directories(parvati_unified_tests PRIVATE Source)
 target_include_directories(parvati_unified_tests PRIVATE tests)
@@ -818,8 +843,8 @@ target_compile_features(parvati_unified_tests PRIVATE cxx_std_17)
 target_compile_definitions(parvati_unified_tests PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 # firmware_parity_test support: the shim dir must come FIRST so its headers
-# shadow the AVR-dependent firmware headers (same contract the standalone
-# parvati_firmware_parity_test target had). -dead_strip drops the firmware's
+# shadow the AVR-dependent firmware headers (the same contract the
+# pre-unification standalone parity harness had). -dead_strip drops the firmware's
 # never-called MonoModeOn/PolyModeOn (they reference TouchVoiceAllocation,
 # which the firmware tree never defines).
 target_include_directories(parvati_unified_tests PRIVATE
@@ -830,51 +855,44 @@ target_compile_options(parvati_unified_tests PRIVATE -Wno-c++11-narrowing)
 target_link_options(parvati_unified_tests PRIVATE -Wl,-dead_strip)
 if(PARVATI_TEST_EXAMPLES)
     target_compile_definitions(parvati_unified_tests PRIVATE PARVATI_TEST_EXAMPLES=1)
-    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 tests migrated + 8 example_* demos: PARVATI_TEST_EXAMPLES=ON, example_failing_test is expected to fail)")
+    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 test harnesses, 122 sources; example_* demos ON: PARVATI_TEST_EXAMPLES, example_failing_test is expected to fail)")
 else()
-    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 tests migrated, example_* demos off)")
+    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 test harnesses, 122 sources; example_* demos off, enable with PARVATI_TEST_EXAMPLES=ON)")
 endif()
+
+# ------------------------------------------------------------------------------
+# parvati_add_tool(<name> <source>): one-line registration for the dev/verify
+# tools below — EXCLUDE_FROM_ALL (never in a default build), Source include
+# dir, uniform C++17, linked against the Parvati static lib. Collapses what
+# used to be 7 hand-rolled 6-line blocks that had drifted apart
+# (parvati_headless_test was missing its cxx_std_17).
+function(parvati_add_tool name source)
+    add_executable(${name} EXCLUDE_FROM_ALL ${source})
+    target_include_directories(${name} PRIVATE Source)
+    target_compile_features(${name} PRIVATE cxx_std_17)
+    target_link_libraries(${name} PRIVATE Parvati)
+endfunction()
 
 # ------------------------------------------------------------------------------
 # Headless Layer-3a verification (not shipped): instantiate the processor,
 # push a NoteOn, assert non-silent audio. Build with:
 #   cmake --build build --target parvati_headless_test && ./build/parvati_headless_test
-add_executable(parvati_headless_test EXCLUDE_FROM_ALL
-    tools/headless_test.cpp
-)
-target_include_directories(parvati_headless_test PRIVATE Source)
-target_link_libraries(parvati_headless_test PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_headless_test tools/headless_test.cpp)
 
 # ------------------------------------------------------------------------------
 # Settings round-trip check: loads a crafted Parvati.settings exactly like the
 # standalone does and verifies the filterState restore. EXCLUDE_FROM_ALL.
-add_executable(parvati_settings_roundtrip EXCLUDE_FROM_ALL
-    tools/settings_roundtrip.cpp
-)
-target_include_directories(parvati_settings_roundtrip PRIVATE Source)
-target_compile_features(parvati_settings_roundtrip PRIVATE cxx_std_17)
-target_link_libraries(parvati_settings_roundtrip PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_settings_roundtrip tools/settings_roundtrip.cpp)
 
 # ------------------------------------------------------------------------------
 # State donor: writes a Parvati processor state blob with FX1 = <type> enabled
 # (for feeding the real Standalone's settings filterState). EXCLUDE_FROM_ALL.
-add_executable(parvati_state_donor EXCLUDE_FROM_ALL
-    tools/state_donor.cpp
-)
-target_include_directories(parvati_state_donor PRIVATE Source)
-target_compile_features(parvati_state_donor PRIVATE cxx_std_17)
-target_link_libraries(parvati_state_donor PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_state_donor tools/state_donor.cpp)
 
 # ------------------------------------------------------------------------------
 # Dev tool: render the full Parvati editor screen for each page to a PNG
 # (offscreen, via paintEntireComponent — no screen-recording permission needed)
-# so they can be fed to a UI-redesign agent. Mirrors parvati_multigui_test's link set.
+# so they can be fed to a UI-redesign agent. Same link set as the other tools (Parvati static lib).
 # Build: cmake --build build_release --target parvati_screen_shots
 # Run:   ./build_release/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
 #
@@ -882,14 +900,7 @@ target_link_libraries(parvati_state_donor PRIVATE
 #   cmake --build build_release --target screens
 # Do NOT run ./build_release/parvati_screen_shots by hand after editing UI code
 # unless you rebuilt that target first — a stale binary renders stale screens.
-add_executable(parvati_screen_shots EXCLUDE_FROM_ALL
-    tools/screen_shots.cpp
-)
-target_include_directories(parvati_screen_shots PRIVATE Source)
-target_compile_features(parvati_screen_shots PRIVATE cxx_std_17)
-target_link_libraries(parvati_screen_shots PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_screen_shots tools/screen_shots.cpp)
 
 # `screens`: the foolproof way to regenerate ./screens. DEPENDS forces a Parvati
 # recompile + parvati_screen_shots relink from the latest source whenever any UI
@@ -909,14 +920,7 @@ add_custom_target(screens
 # an LLM. Mirrors parvati_screen_shots's link set.
 # Build: cmake --build build_release --target parvati_menu_shots
 # Run:   ./build_release/parvati_menu_shots [outputDir] [scale]   (defaults: ./screens/menus, 2)
-add_executable(parvati_menu_shots EXCLUDE_FROM_ALL
-    tools/menu_shots.cpp
-)
-target_include_directories(parvati_menu_shots PRIVATE Source)
-target_compile_features(parvati_menu_shots PRIVATE cxx_std_17)
-target_link_libraries(parvati_menu_shots PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_menu_shots tools/menu_shots.cpp)
 
 # ------------------------------------------------------------------------------
 # Phase-4 verification (not shipped): headless editor instantiation + coverage.
@@ -927,28 +931,14 @@ target_link_libraries(parvati_menu_shots PRIVATE
 # overlay), the default size is 1280x634, and the editor deletes cleanly
 # (leak-detector validated).
 #   cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
-add_executable(parvati_editor_test EXCLUDE_FROM_ALL
-    tools/editor_test.cpp
-)
-target_include_directories(parvati_editor_test PRIVATE Source)
-target_compile_features(parvati_editor_test PRIVATE cxx_std_17)
-target_link_libraries(parvati_editor_test PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_editor_test tools/editor_test.cpp)
 
 # ------------------------------------------------------------------------------
 # Template-bank generator (dev tool, EXCLUDE_FROM_ALL). Produces the 5 stock init
 # templates as full-fidelity .parvati multis into presets/TEMPLATES/, which are
 # then embedded into the plugin binary. Run from the repo root:
 #   cmake --build build --target parvati_gen_templates && ./build/parvati_gen_templates
-add_executable(parvati_gen_templates EXCLUDE_FROM_ALL
-    tools/gen_templates.cpp
-)
-target_include_directories(parvati_gen_templates PRIVATE Source)
-target_compile_features(parvati_gen_templates PRIVATE cxx_std_17)
-target_link_libraries(parvati_gen_templates PRIVATE
-    Parvati
-)
+parvati_add_tool(parvati_gen_templates tools/gen_templates.cpp)
 
 # ------------------------------------------------------------------------------
 # `deploy` — one-command release workflow: build ALL plugin formats (VST3, AU,
