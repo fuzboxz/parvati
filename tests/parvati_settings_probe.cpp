@@ -94,6 +94,24 @@ TEST(parvati_settings_probe)
         if (scenario == 3) { label = "reopen500";  ed->openSettingsForTest(); ed->openSettingsForTest(); pump (0.20); }
         // (re)open the drawer for every scenario through the REAL path
         ed->openSettingsForTest();
+
+        // OPEN-LATENCY REGRESSION (2026-08-22): the panel must be sized
+        // SYNCHRONOUSLY at the open call — before the slide animation's proxy
+        // snapshot — or the drawer slides in blank and the content pops at the
+        // end (the reported first-open latency). No pumping before this check.
+        if (auto* content = ed->settingsContentForTest())
+            if (auto* vp = dynamic_cast<juce::Viewport*> (content))
+                if (auto* panel = vp->getViewedComponent())
+                {
+                    char m[96];
+                    std::snprintf (m, sizeof (m),
+                                   "panel sized at open call, pre-animation (%dx%d)",
+                                   panel->getWidth(), panel->getHeight());
+                    const bool ok = panel->getWidth() > 0 && panel->getHeight() > 0;
+                    if (! ok) { win->setVisible (false); delete ed; return false; }
+                    // (checked silently — printed only via the census below)
+                }
+
         pump (0.60);   // let the slide animation + tracker settle
 
         juce::String dump;

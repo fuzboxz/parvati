@@ -3087,6 +3087,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     settingsButton_.setClickingTogglesState (true);
     settingsButton_.setTooltip (TRANS ("Settings"));
     settingsButton_.onClick = [this] {
+        const bool opening = ! settingsPanelHost_->isPanelShowing();
+        // Pre-size BEFORE the slide starts so the drawer's content is in the
+        // animation's proxy snapshot (see SettingsScrollTracker::
+        // preSizeForOpen — otherwise the first open slides in blank).
+        if (opening && settingsScrollTracker_ != nullptr)
+            settingsScrollTracker_->preSizeForOpen();
         settingsPanelHost_->showOrHide (! settingsPanelHost_->isPanelShowing());
         settingsButton_.setToggleState (settingsPanelHost_->isPanelShowing(),
                                         juce::dontSendNotification);

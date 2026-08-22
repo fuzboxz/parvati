@@ -2411,8 +2411,8 @@ void SynthEngine::renderPartFx (int numSamples)
                     // the pill suddenly speeding); their row values fall
                     // linearly at the strip's own scroll pace — 2 bytes per
                     // append = a full-scale 255->0 fall across exactly one
-                    // 128-append window (~1.57 s), the same speed the trace
-                    // itself progresses. Persisted controllers keep their true
+                    // history window (256 appends ~ 3.1 s), the same speed the
+                    // trace itself progresses. Persisted controllers keep their true
                     // value: PITCH_BEND from lastModSources_ (per-voice bend
                     // mirrors live only while a voice sounds); WHEEL/WHEEL_2/
                     // EXPRESSION from the PART'S VOICE TABLE (handleController
@@ -2453,7 +2453,7 @@ void SynthEngine::renderPartFx (int numSamples)
                                                               uiTelNoteSeqLast_);
                     if (appended)
                     {
-                        constexpr uint8_t kFall = 2;   // 255->0 in 128 appends = one window
+                        constexpr uint8_t kFall = 1;   // 255->0 in ~256 appends = one window
                         for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
                             if (! parvati::telemetrySourcePersistsWhenIdle (src))
                                 uiTelIdlePrev_[(size_t) src] = (uiTelIdlePrev_[(size_t) src] > kFall)

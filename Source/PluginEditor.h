@@ -74,8 +74,20 @@ public:
     // component-resize on the viewport, so the show edge re-applies directly.
     void applyFromEditor() { apply(); }
 
+    // OPEN-PATH PRE-SIZE (2026-08-22 open-latency fix): call immediately
+    // BEFORE SidePanel::showOrHide(true). JUCE's slide animation runs through
+    // a PROXY COMPONENT that snapshots the drawer at animation start, and
+    // onPanelShowHide (the normal apply site) fires only AFTER the ~250 ms
+    // slide — so the drawer slid in BLANK and the content popped at the end
+    // (the visible first-open latency). Sizing here (while still hidden) puts
+    // the laid-out rows into the proxy snapshot: the drawer slides in already
+    // drawn. Bypasses the isShowing() gate on purpose; every other invariant
+    // (closed drawer stays 0x0 — the close edge re-collapses via apply())
+    // holds.
+    void preSizeForOpen() { apply (true); }
+
 private:
-    void apply()
+    void apply (bool bypassShowingGate = false)
     {
         // Only size a SHOWING drawer: while closed, the panel must stay 0×0 so
         // its children are not "placed" (the HIG 44pt audit walks the tree and
@@ -92,7 +104,7 @@ private:
         // drawer rendered blank (all 18 rows 0×0) because viewW stayed 0
         // until the panel was sized, and the panel was never sized because
         // viewW was 0.
-        if (! viewport_.isShowing() || viewport_.getWidth() <= 0)
+        if (! bypassShowingGate && (! viewport_.isShowing() || viewport_.getWidth() <= 0))
         {
             if (panel_.getWidth() != 0 || panel_.getHeight() != 0)
                 panel_.setSize (0, 0);
@@ -712,6 +724,8 @@ public:
     {
         if (settingsPanelHost_ != nullptr)
         {
+            if (settingsScrollTracker_ != nullptr)
+                settingsScrollTracker_->preSizeForOpen();   // content in the slide snapshot
             settingsPanelHost_->showOrHide (true);
             settingsButton_.setToggleState (true, juce::dontSendNotification);
         }

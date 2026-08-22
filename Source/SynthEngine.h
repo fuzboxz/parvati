@@ -987,8 +987,8 @@ private:
     int      uiTelVoiceSlot_ = -1;               // AT: STICKY telemetry voice (see renderPartFx): one voice per note
     uint64_t uiTelVoiceSeq_  = 0;                // AT: its triggerSeq (a recycled slot never masquerades as sticky)
     // IDLE DRAG-OUT state (2026-08-22): on release the per-voice rows fall to
-    // zero LINEARLY at the strip's scroll pace (2 bytes per append = a
-    // full-scale fall across one 128-append window) instead of snapping.
+    // zero LINEARLY at the strip's scroll pace (1 byte per append = a
+    // full-scale fall across one 256-append window) instead of snapping.
     std::array<uint8_t, ambika::dsp::MOD_SRC_LAST> uiTelIdlePrev_ {};
     bool     uiTelIdleSeeded_  = false;
     bool     uiTelLiveSeen_    = false;   // a live append happened since the wipe (gates the seed)
@@ -997,7 +997,7 @@ private:
     bool uiTelWasActive_ = false;                // AT: gates the one write on the active->inactive transition
     // History append decimation: the sub-chunk loop ticks at the internal-block
     // cadence (kInternalSampleRate/40 = 980.4 Hz); appending every 12th tick
-    // gives 980.4/12 ~= 81.7 appends/s, so kHistoryLen(128) spans ~1.57 s of
+    // gives 980.4/12 ~= 81.7 appends/s, so kHistoryLen(256) spans ~3.13 s of
     // recent motion — the Pigments-style window the pill sparklines draw.
     static constexpr int kUiTelDecimBlocks = 12;
 

@@ -23,6 +23,26 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Settings drawer first-open latency (2026-08-22).** The drawer slid in
+  blank and the content popped at the END of the ~250 ms slide: JUCE's
+  SidePanel animation runs through a proxy component that snapshots the
+  drawer when the slide STARTS, but the panel was sized from
+  onPanelShowHide, which fires only AFTER the animation. The open path
+  (gear button + the test seam) now pre-sizes the panel via
+  SettingsScrollTracker::preSizeForOpen() BEFORE showOrHide(true), so the
+  proxy snapshot already contains the laid-out rows and the drawer slides
+  in fully drawn. parvati_settings_probe pins the new contract: the viewed
+  panel must be non-zero SYNCHRONOUSLY at the open call, before any
+  animation pumping.
+- **Mod-pill strips scrolled visibly faster than the previews/indicators
+  (2026-08-22).** The pill sparkline window spanned 1.57 s — much shorter
+  than the envelope/LFO preview axes — so identical motion crossed the
+  pills ~2x faster and read as "speeding off". kHistoryLen 128 -> 256
+  (~3.13 s window): the strips now scroll at half the apparent speed with
+  identical time fidelity (the append rate is unchanged; only how much
+  history one strip spans). The idle drag-out pace follows (1 byte/append
+  = a full-scale fall across exactly one window), ui_telemetry_test's
+  window/saturation timing updated to the new contract.
 - **Settings drawer rendered blank (2026-08-22).** The drawer's
   SettingsScrollTracker gated panel sizing on Viewport::getViewWidth(), but
   that returns jmin(viewedComponentSize, viewportSize) — and the viewed

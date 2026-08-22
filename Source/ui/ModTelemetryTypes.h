@@ -33,7 +33,11 @@ struct ModTelemetrySnapshot
     static constexpr int kNumSources = 32;    // >= ambika::dsp::MOD_SRC_LAST (31): every real
                                                // source index fits; the spare slot carries the
                                                // NOTE-SEQ preview (kNoteSeqSlot below)
-    static constexpr int kHistoryLen = 128;   // ~1.57 s at the ~81.7 Hz append rate
+    static constexpr int kHistoryLen = 256;   // ~3.13 s at the ~81.7 Hz append rate
+    // (2026-08-22: 128 -> 256, user feedback — the strips scrolled visibly
+    // faster than the previews/indicators; doubling the window halves the
+    // apparent scroll speed. Append rate is unchanged — time fidelity of the
+    // samples themselves is exact — only how much history one strip spans.)
 
     // The bar-only Note Sequencer pill has NO MOD_SRC_* enum (its output is
     // note events, not a modulation bus value), so its live preview rides the

@@ -3,8 +3,9 @@
 //
 // The engine maintains, on the audio thread, ONE seqlock-guarded frame with:
 //   * the tracked part's effective mod-source values + a decimated recent
-//     history ring (one append per 12 internal ticks ~= 81.7 Hz -> a 128-sample
-//     window spans ~1.57 s),
+//     history ring (one append per 12 internal ticks ~= 81.7 Hz -> a 256-sample
+//     window spans ~3.13 s; doubled from 128/1.57 s on 2026-08-22 user
+//     feedback — the strips scrolled visibly faster than the previews),
 //   * the representative (most-recently-triggered active) voice's envelope
 //     stage / progress / level,
 //   * the representative voice's EFFECTIVE (modulation-applied) cutoff /
@@ -166,7 +167,7 @@ TEST(ui_telemetry_test)
             check (snap.historyCount > 20, m);
         }
 
-        renderBlocks (proc, blocksForMs (2200.0));      // well past the 1.57 s window
+        renderBlocks (proc, blocksForMs (3600.0));      // well past the ~3.13 s window
         readSnap (proc, snap, "[1] frame valid at full window");
         check (snap.historyCount == kLen, "[1] history saturates at kHistoryLen");
 
@@ -201,7 +202,7 @@ TEST(ui_telemetry_test)
         std::printf ("[2] Falls to zero after release and keeps scrolling\n");
         const auto off = noteOffMsg();
         renderBlocks (proc, 5, &off);
-        renderBlocks (proc, blocksForMs (1200.0));      // > the 0.63 s worst-case tail
+        renderBlocks (proc, blocksForMs (3800.0));      // > tail (~0.63 s) + the full-scale idle drag-out (<= 256 appends ~ 3.13 s)
         readSnap (proc, snap, "[2] frame valid after the release tail");
         check (! snap.voiceActive, "[2] voiceActive false after the tail");
         check (snap.historyCount == kLen, "[2] history kept (not cleared)");

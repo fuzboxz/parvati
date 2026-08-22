@@ -122,13 +122,13 @@ renderPartFx (per part,            LiveFeedbackHub (editor-owned juce::Timer
 
 `parvati::ModTelemetrySnapshot` (trivially copyable, dependency-light):
 
-- `kNumSources = 32`, `kHistoryLen = 128` (engine static_asserts
+- `kNumSources = 32`, `kHistoryLen = 256` (doubled from 128 on 2026-08-22 user feedback — strips scrolled visibly faster than the previews; the window is now ~3.13 s) (engine static_asserts
   `kNumSources == ambika::dsp::MOD_SRC_LAST`).
 - `epoch` (uint32) — bumped by the message thread on every reset; a snapshot
   whose `epoch` != the engine's authoritative epoch is INVALID.
 - `part` (int) — the part this telemetry describes.
 - `sources[32]` — CURRENT effective mod-source values, 0..255.
-- `history[32][128]` + `historyCount` — OLDEST→NEWEST per-source ring,
+- `history[32][256]` + `historyCount` — OLDEST→NEWEST per-source ring,
   linearized by `readUiTelemetry` (storage uses `historyHead` internally).
 - `envStage[3]` (0..4 ATTACK/DECAY/SUSTAIN/RELEASE/DEAD), `envProgress[3]`
   (0..1 within stage), `envLevel[3]` (0..1 current output) — the representative
@@ -158,7 +158,7 @@ Write path (audio thread, inside `renderPartFx`):
     snapshot, reset the decimator.
   - Append history ONLY while the tracked part has an active representative
     voice, decimated every 12th internal block (~81.7 Hz at the 980 Hz internal
-    cadence) → 128 samples ≈ 1.57 s window.
+    cadence) → 256 samples ≈ 3.13 s window (was 128/1.57 s; see the kHistoryLen note).
   - Once per `renderPartFx` for the tracked part (with an active rep voice, or
     on the active→inactive transition — never a steady idle write): update
     `sources[]`, envelope stage/progress/level, effective cutoff/resonance/
