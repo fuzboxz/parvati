@@ -21,8 +21,12 @@ Hard rules first; agents skim, so this file stays short on purpose.
 
 ## Build & test commands
 
+**ALL build dirs were purged 2026-08-22** (7 trees / ~20 GB → gone; don't
+recreate the sprawl). The canonical dir is **`build_unified`** — one dir,
+Debug, full plugin formats + the unified test binary:
+
 ```bash
-cmake -B build_unified -DCMAKE_BUILD_TYPE=Debug   # canonical test build dir
+cmake -B build_unified -DCMAKE_BUILD_TYPE=Debug   # canonical (only) build dir
 cmake --build build_unified --target parvati_unified_tests -j8
 
 ./build_unified/parvati_unified_tests             # all 114 tests (~15-20 min)
@@ -32,6 +36,21 @@ PARVATI_UNIFIED_INPROCESS=1 ./build_unified/parvati_unified_tests <name>
 
 tools/run_sanitizers.sh                           # ASan+UBSan / TSan sweeps
 ```
+
+- **Do NOT create ad-hoc `build_*` dirs.** Reuse `build_unified`; sanitizer
+  dirs (`build_san_asan`/`build_san_tsan`) are created ON DEMAND by
+  `tools/run_sanitizers.sh` as **tests-only** trees (`-DPARVATI_FORMATS=` —
+  no plugin bundles, ~1.4 GB vs the old 9.6 GB full-instrument dirs).
+- **`PARVATI_FORMATS`** (cache option): plugin formats to build. Default =
+  the platform set (macOS: `Standalone;VST3;AU`, + CLAP via
+  `PARVATI_BUILD_CLAP`). **Empty** = tests-only configure (no plugin
+  targets) — use for sanitizer/CI test trees.
+- **iOS** (dir was purged; regenerates from source): the documented
+  invocation lives in `CMakeLists.txt` (~line 361) —
+  `cmake -S . -B build_ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DPARVATI_IOS_DEVELOPMENT_TEAM=<team>`
+  (simulator builds need no team id; with the Xcode generator pass
+  `--config Release` BEFORE the `--` separator).
 
 - `PARVATI_TEST_EXAMPLES=ON` (CMake option, default OFF) registers the 8
   example demo tests; `example_failing_test` deliberately fails — keep demos

@@ -4,6 +4,14 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Build
+- **`PARVATI_FORMATS` cache option + tests-only sanitizer trees (2026-08-22).**
+  New cache option selects the plugin formats to build; default is unchanged
+  (macOS: Standalone;VST3;AU, CLAP via `PARVATI_BUILD_CLAP`). An EMPTY value
+  configures tests-only (no plugin targets), and `tools/run_sanitizers.sh`
+  now uses it: fresh sanitizer dirs are 1.4 GB vs 9.6 GB before (they had
+  built full instrumented AU/VST3/CLAP/Standalone bundles that never ran).
+
 ### Removed
 - **FX-slot graphic visualizers (2026-08-20).** The per-slot FxSlotVisualizer
   canvas (the dimmed-grid + per-algorithm illustration band in each FX card)
