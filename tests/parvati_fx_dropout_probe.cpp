@@ -332,35 +332,6 @@ TEST(parvati_fx_dropout_probe)
         const int total2 = (int) (dur * sr);
         std::vector<float> pre ((size_t) total2, 0.0f), preR ((size_t) total2, 0.0f);
         render (proc, sr, bufSize, pre, preR);
-        // ISO on the TRUE chain input (the tap): if this gates, the input is
-        // the trigger; if not, the chain's OD instance itself differs.
-        {
-            FILE* tf = std::fopen ("/tmp/chain_tap.f32", "rb");
-            if (tf != nullptr)
-            {
-                std::vector<float> tap;
-                float v;
-                while (std::fread (&v, sizeof (float), 1, tf) == 1) tap.push_back (v);
-                std::fclose (tf);
-                const int n = (int) tap.size();
-                std::printf ("TAP: %d samples\n", n);
-                // input stats
-                double pk = 0, rms = 0, dc = 0;
-                for (int i = 0; i < n; ++i)
-                { const double a = std::fabs (tap[(size_t) i]); if (a > pk) pk = a; rms += a * a; dc += tap[(size_t) i]; }
-                std::printf ("TAP input: peak=%.4f rms=%.4f dc=%+.5f\n", pk, std::sqrt (rms / n), dc / n);
-                parvati::fv1::Fv1Overdrive od;
-                od.prepare (sr, 512);
-                float p5[5] = { 1, 1, 1, 1, 1 };
-                od.setParams (p5);
-                std::vector<float> out = tap, outR (tap.size(), 0.0f);
-                for (int off = 0; off < n; off += 45)
-                    od.process (out.data() + off, outR.data() + off, std::min (45, n - off));
-                const Metrics a = analyze (out, (int) (0.05 * sr));
-                std::printf ("ISO OD on TAP: zeroRun=%4d rail=%.2f%% rmsMin=%.4f imp=%.3f\n",
-                             a.zeroRun, 100.0 * a.railFrac, a.rmsMin, a.worstImp);
-            }
-        }
         // standalone Overdrive at repro params (drive/bias/tone/level ALL 1.0)
         // — called ONE-GIANT-BLOCK vs CHAIN-CADENCE SUB-CHUNKS (~45 smp).
         {

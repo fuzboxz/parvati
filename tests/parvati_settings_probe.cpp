@@ -1,7 +1,8 @@
 // Settings drawer visual probe (2026-08-22, third-attempt fix): opens the
 // REAL drawer on a desktop-attached editor, dumps the content-tree bounds
-// (SidePanel -> Viewport -> SettingsPanel -> every row child), and saves PNG
-// snapshots to /tmp/settings_shots/ for inspection. Scenarios: default
+// (SidePanel -> Viewport -> SettingsPanel -> every row child), and (with
+// PARVATI_TEST_SHOTS=1, mirroring PARVATI_TEST_HOLD) saves PNG snapshots to
+// /tmp/settings_shots/ for inspection. Scenarios: default
 // 1280x634, short 1280x500, after theme switch, after close+reopen.
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -52,6 +53,10 @@ void dumpTree (juce::Component* c, int depth, juce::String& out)
 
 void snapshot (juce::Component& c, const juce::String& name)
 {
+    // Opt-in only: writing /tmp/settings_shots on every suite run pollutes
+    // the machine and makes this probe's footprint machine-state dependent.
+    if (juce::SystemStats::getEnvironmentVariable ("PARVATI_TEST_SHOTS", "0") != "1")
+        return;
     std::filesystem::create_directories ("/tmp/settings_shots");
     auto img = c.createComponentSnapshot (c.getLocalBounds());
     juce::File f ("/tmp/settings_shots/" + name + ".png");
@@ -119,6 +124,6 @@ TEST(parvati_settings_probe)
     }
     win->setVisible (false);
     delete ed;
-    std::printf ("PROBE DONE (shots in /tmp/settings_shots)\n");
+    std::printf ("PROBE DONE (PNG shots in /tmp/settings_shots only when PARVATI_TEST_SHOTS=1)\n");
     return true;
 }
