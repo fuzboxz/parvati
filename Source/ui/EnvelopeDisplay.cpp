@@ -33,7 +33,15 @@ void EnvelopeDisplay::adsrSegmentSpans (float a, float d, float s, float r,
                                         float* wA, float* wD, float* wS, float* wR)
 {
     juce::ignoreUnused (s);                     // the sustain LEVEL shapes the curve, not its width
+    // Minimal theoretical HOLD (2026-08-22 user request): the sustain plateau
+    // gets an ABSOLUTE floor in engine-tick terms (~0.6 s hold) so a patch like
+    // attack 1 ms / decay 1 ms / sustain 100% / release 1 ms renders as an
+    // instant jump, a long plateau, an instant drop — instead of three ~1/3-
+    // width fades (the share-only formula made equal-duration A/D/R crowd the
+    // plateau). Longer patches keep the representative share (the floor only
+    // binds when every timed segment is short).
     constexpr float kSustainHoldShare = 0.35f;  // representative sustain hold (not a parameter)
+    constexpr float kSustainMinTicks  = 600.0f; // ≈ 0.6 s hold — the minimal theoretical width
 
     const auto dur = [] (float knob) -> float   // knob 0..1 -> duration in control ticks
     {
@@ -44,7 +52,7 @@ void EnvelopeDisplay::adsrSegmentSpans (float a, float d, float s, float r,
     *wA = dur (a);
     *wD = dur (d);
     *wR = dur (r);
-    *wS = kSustainHoldShare * (*wA + *wD + *wR);
+    *wS = juce::jmax (kSustainHoldShare * (*wA + *wD + *wR), kSustainMinTicks);
 }
 
 // PURE ADSR curve shape (normalized 0..1 knob values -> level at normalized x),

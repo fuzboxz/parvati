@@ -23,6 +23,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Envelope preview: minimal theoretical sustain width (2026-08-22).**
+  With time-honest spans, attack 1 ms / decay 1 ms / sustain 100% / release
+  1 ms rendered as three ~1/3-width fades — the sustain plateau now has an
+  ABSOLUTE floor (~0.6 s hold in engine ticks) so that patch reads as an
+  instant jump, a long plateau, an instant drop. The floor only binds when
+  every timed segment is short; longer patches keep the representative
+  share. Pinned by editor_test [19](d).
+- **Mod-pill strips: min-max (oscilloscope-style) rendering (2026-08-22).**
+  Each plotted point now carries the min/max of the RAW ring samples its age
+  range covers, rendered as a filled band with a stroked outline — the TRUE
+  amplitude envelope. Fast LFO/env/arp sources (more than ~1 cycle in the
+  window) previously point-sampled into mush regardless of point count; the
+  band cannot alias. Slow sources degrade gracefully: min ≈ max everywhere
+  and the outline edges coincide, reading exactly as the previous trace
+  line. Replaces the Bézier-smoothed centerline (no smoothing needed — the
+  band's edges ARE the data).
 - **Settings scrollbar now theme-coloured (2026-08-22).** A 2026-08-21
   override muted the drawer scrollbar's thumb to backgroundInput ("quiet
   thumb"), which read as an unthemed gray bar. The override is removed — the

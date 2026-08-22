@@ -2460,6 +2460,23 @@ static int runPreviewRegression (bool windowed)
             const float midRamp = ED::adsrCurveLevelForTest (0.45f, d, s, r, 0.20f);
             check (midRamp > 0.1f && midRamp < 0.99f,
                    "[19] a=0.45 (moderate): the attack ramp is still gradual");
+
+            // (d) MINIMAL THEORETICAL SUSTAIN WIDTH (2026-08-22 user request):
+            // attack/decay/release all ~1 ms with sustain 100% renders as an
+            // instant jump, a LONG plateau, an instant drop — NOT three ~1/3-
+            // width fades. The plateau must dominate >= 90% of the curve.
+            {
+                float wA = 0, wD = 0, wS = 0, wR = 0;
+                ED::adsrSegmentSpansForTest (0.0f, 0.0f, 1.0f, 0.0f, &wA, &wD, &wS, &wR);
+                const float sustainShare = wS / (wA + wD + wS + wR);
+                char m19[128];
+                std::snprintf (m19, sizeof (m19),
+                               "[19] 1ms/1ms/sust/1ms: plateau dominates (share=%.3f >= 0.9)", sustainShare);
+                check (sustainShare >= 0.9f, m19);
+                // and the curve is at the sustain level through the middle.
+                check (std::fabs (ED::adsrCurveLevelForTest (0.0f, 0.0f, 1.0f, 0.0f, 0.5f) - 1.0f) < 0.02f,
+                       "[19] 1ms/1ms/sust/1ms: curve sits at the plateau mid-plot");
+            }
         }
 
         if (filtPrev != nullptr)

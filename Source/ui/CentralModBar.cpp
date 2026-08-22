@@ -269,18 +269,17 @@ struct CentralModBar::ModPill : public juce::Component,
     }
 
     /** Renders the FULL history window (kHistoryLen slots, OLDEST→NEWEST)
-        into the cached strip points — a fixed-length circular-buffer view:
-        the window length NEVER changes, new values simply overwrite the
-        oldest, and slots older than @p count (never written yet — fresh
-        open/reset, or a source that has never produced data) read as ZERO
-        (2026-08-22 user spec: an unmodulated source shows a full-width zero
-        line from the very first tick, exactly like a modulated one; no
-        growing/stretched partial window, no phase change when the ring
-        saturates — the scroll speed is constant end to end). Downsamples to
-        kStripMaxPts points evenly across the window, pinned at both ends.
-        Returns true when the drawn data changed (the caller repaints the
-        strip rect); a signature-identical frame returns false and costs
-        nothing. */
+        into the cached MIN-MAX band — a fixed-length circular-buffer view
+        (the window length NEVER changes; new values overwrite the oldest;
+        never-written slots read as ZERO, so an unmodulated source shows a
+        full-width zero line from the very first tick exactly like a
+        modulated one, and the scroll speed is constant end to end).
+        Each of the kStripMaxPts plotted points covers an AGE RANGE of raw
+        samples; its cached min/max is the true amplitude envelope over that
+        range (oscilloscope-style band — fast modulators alias into mush when
+        point-sampled no matter the point count). Returns true when the drawn
+        data changed (the caller repaints the strip rect); a signature-
+        identical frame returns false and costs nothing. */
     bool updateStripFromHistory (const uint8_t* samples, int count)
     {
         constexpr int kWindow = parvati::ModTelemetrySnapshot::kHistoryLen;
@@ -289,54 +288,65 @@ struct CentralModBar::ModPill : public juce::Component,
 
         if (count > kWindow)
             count = kWindow;
-        float v[m];
+        float mn[m], mx[m];
         float lo = 1.0f, hi = 0.0f;
-        float moment = 0.0f;   // Σ j·v[j]: POSITION-weighted signature term
+        float moment = 0.0f;   // Σ j·v[j] on the max series: POSITION-weighted signature term
+        const float step = (m > 1) ? (float) (kWindow - 1) / (float) (m - 1) : (float) kWindow;
+        const auto ageVal = [&] (int age) -> float   // age behind newest -> value (0 if pre-zeroed)
+        {
+            return (age < count)
+                ? (float) samples[(size_t) (count - 1 - age)] * (1.0f / 255.0f)
+                : 0.0f;
+        };
         for (int j = 0; j < m; ++j)
         {
             // Plotted slot j ↔ absolute AGE behind the newest sample,
             // spread evenly over the whole window and pinned at both ends
-            // (j == m-1 is the newest sample, age 0).
-            const int age = (m > 1)
-                ? juce::roundToInt ((float) ((m - 1) - j) * (float) (kWindow - 1)
-                                    / (float) (m - 1))
-                : 0;
-            // Age beyond the written history = the pre-zeroed part of the
-            // buffer (samples[] is OLDEST→NEWEST over `count` entries; the
-            // newest is count-1, age a is count-1-a).
-            const float val = (age < count)
-                ? (float) samples[(size_t) (count - 1 - age)] * (1.0f / 255.0f)
+            // (j == m-1 is the newest sample, age 0). The point COVERS the
+            // half-step of ages around it — that range's min/max is the band.
+            const float ageF = (m > 1)
+                ? (float) ((m - 1) - j) * (float) (kWindow - 1) / (float) (m - 1)
                 : 0.0f;
-            v[j] = val;
-            lo = juce::jmin (lo, val);
-            hi = juce::jmax (hi, val);
-            moment += static_cast<float> (j) * val;
+            const int ageLo = juce::jmax (0, (int) std::floor (ageF - step * 0.5f));
+            const int ageHi = juce::jmin (kWindow - 1, (int) std::ceil (ageF + step * 0.5f));
+            float vmin = 1.0f, vmax = 0.0f;
+            for (int age = ageLo; age <= ageHi; ++age)
+            {
+                const float val = ageVal (age);
+                vmin = juce::jmin (vmin, val);
+                vmax = juce::jmax (vmax, val);
+            }
+            if (ageLo > ageHi)   // degenerate guard (cannot happen with m>1)
+                vmin = vmax = ageVal ((int) ageF);
+            mn[j] = vmin;
+            mx[j] = vmax;
+            lo = juce::jmin (lo, vmax);
+            hi = juce::jmax (hi, vmax);
+            moment += static_cast<float> (j) * vmax;
         }
 
-        // DIFF GATE (the idle-cost control): the engine's history ring slides
-        // at its append rate, so the OLDEST/NEWEST ends move whenever fresh
-        // data lands, while min/max guard the interior shape. The moment Σ j·v[j]
-        // adds a POSITION-sensitive term: a pulse (GATE / VELOCITY hit / ARP
-        // step) sliding through an otherwise-flat window keeps the same
-        // first/last/min/max but shifts the centroid, so the strip follows it
-        // instead of freezing until the pulse reaches an endpoint. A parked
-        // source (wheel at rest, gate low, never-modulated zeros) still
-        // reproduces an identical signature every tick and triggers ZERO
-        // repaints.
+        // DIFF GATE (the idle-cost control): first/last/min/max/moment on the
+        // max series — a pulse sliding through an otherwise-flat window keeps
+        // the same first/last/min/max but shifts the centroid, so the strip
+        // follows it; a parked source (never-modulated zeros included)
+        // reproduces an identical signature every tick and repaints NOTHING.
         if (m == stripCount_
-            && std::fabs (v[0] - sigFirst_) <= kEps
-            && std::fabs (v[m - 1] - sigLast_) <= kEps
+            && std::fabs (mx[0] - sigFirst_) <= kEps
+            && std::fabs (mx[m - 1] - sigLast_) <= kEps
             && std::fabs (lo - sigMin_) <= kEps
             && std::fabs (hi - sigMax_) <= kEps
             && std::fabs (moment - sigMoment_) <= kEps)
             return false;
 
         for (int j = 0; j < m; ++j)
-            stripVals_[(size_t) j] = v[j];
+        {
+            stripMin_[(size_t) j] = mn[j];
+            stripMax_[(size_t) j] = mx[j];
+        }
         stripCount_ = m;
         stripRawCount_ = count;
-        sigFirst_ = v[0];
-        sigLast_  = v[m - 1];
+        sigFirst_ = mx[0];
+        sigLast_  = mx[m - 1];
         sigMin_   = lo;
         sigMax_   = hi;
         sigMoment_ = moment;
@@ -351,7 +361,8 @@ struct CentralModBar::ModPill : public juce::Component,
             return false;   // already hidden
         stripCount_ = 0;
         stripRawCount_ = 0;
-        stripVals_.fill (0.0f);
+        stripMin_.fill (0.0f);
+        stripMax_.fill (0.0f);
         sigFirst_ = sigLast_ = sigMin_ = sigMax_ = -1.0f;
         sigMoment_ = -1.0f;
         return true;
@@ -373,82 +384,69 @@ struct CentralModBar::ModPill : public juce::Component,
             return;   // no history yet (e.g. after a reset): the band stays empty
 
         const auto sr = stripRect().toFloat();
-        // Keep the round-capped 1.25px stroke inside the band.
-        // JITTER FIX (2026-08-21): the round-capped 2.2px stroke extends ~1.1px
-        // beyond each path point, and the tick's repaint dirty region is
-        // exactly stripRect() — plotting to the rect's edges let the stroke's
-        // extremes get CLIPPED on animated repaints (the reported top/bottom
-        // jitter). Inset the plotted range by the stroke radius + an AA hair so
-        // the whole stroke always lands inside the dirty region.
-        constexpr float kStrokeW   = 2.2f;
-        constexpr float kPlotInset  = kStrokeW * 0.5f + 0.6f;
+        // Keep the stroke inside the band (see the 2026-08-21 jitter note:
+        // the tick's repaint dirty region is exactly stripRect(); inset the
+        // plotted range by the stroke radius + an AA hair — vertically AND
+        // horizontally, so nothing clips or pokes past the dirty region).
+        constexpr float kStrokeW  = 1.4f;
+        constexpr float kPlotInset = kStrokeW * 0.5f + 0.6f;
         const float usable = juce::jmax (1.0f, sr.getHeight() - 2.0f * kPlotInset);
 
-        juce::Path path;
-        float singleY = 0.0f;   // the lone point's y (stripCount_ == 1 dot below)
-        // Horizontal inset TOO (same class as the vertical jitter fix): the
-        // round caps would otherwise poke ~1.1px past the strip rect's
-        // left/right edges — past the animated repaint's dirty region AND
-        // into the pill's rounded-corner curve, leaving one-cap-width specks
-        // at both ends (the reported tiny artifacts). The x span now shares
-        // the same kPlotInset clearance.
         const float x0 = sr.getX() + kPlotInset;
         const float x1 = sr.getRight() - kPlotInset;
-        // Point cache (the smoothing pass below re-reads them).
-        float px[kStripMaxPts], py[kStripMaxPts];
-        // The window is CONSTANT (the full pre-zeroed ring — see
-        // updateStripFromHistory), so points spread proportionally across
-        // the strip: the newest sample is always the RIGHT-most point, the
-        // scroll speed is constant end to end, and a never-modulated source
-        // renders a full-width zero line from the very first frame.
+        // Point caches for the MIN-MAX band (see updateStripFromHistory):
+        // pyMax/pyMin are the per-point amplitude envelope edges. The window
+        // is CONSTANT (the full pre-zeroed ring), so points spread
+        // proportionally: newest at the right, constant scroll speed, and a
+        // never-modulated source renders a full-width zero line.
+        float px[kStripMaxPts], pyMax[kStripMaxPts], pyMin[kStripMaxPts];
+        float singleY = 0.0f;   // the lone point's y (stripCount_ == 1 dot below)
+        const auto yFor = [&] (float v)
+        {
+            v = juce::jlimit (0.0f, 1.0f, v);
+            return stripBipolar_
+                ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
+                : sr.getBottom() - kPlotInset - v * usable;
+        };
         for (int i = 0; i < stripCount_; ++i)
         {
             const float t = (stripCount_ > 1)
                 ? (float) i / (float) (stripCount_ - 1)
                 : 0.5f;
             px[i] = x0 + t * (x1 - x0);
-            const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
-            const float y = stripBipolar_
-                ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
-                : sr.getBottom() - kPlotInset - v * usable;
-            py[i] = y;
-            singleY = y;
+            pyMax[i] = yFor (stripMax_[(size_t) i]);
+            pyMin[i] = yFor (stripMin_[(size_t) i]);
+            singleY = pyMax[i];
         }
-        // SMOOTH OVER ACCURATE (2026-08-21 user request): high-speed sources
-        // (env, LFO, noise) leave tiny DISCONTINUITIES as a 48-point polyline
-        // — straight segments kink at every sample. Render as a curve through
-        // the points instead: quadratic Béziers between consecutive MIDPOINTS
-        // with the samples as control points (the classic smooth-series
-        // technique — the curve passes exactly through every midpoint and is
-        // C1 everywhere, so fast wiggles read as flowing motion). Ends are
-        // pinned to the first/last samples so the newest value stays exact.
-        if (stripCount_ == 2)
-        {
-            path.startNewSubPath (px[0], py[0]);
-            path.lineTo (px[1], py[1]);
-        }
-        else if (stripCount_ > 2)
-        {
-            path.startNewSubPath (px[0], py[0]);
-            path.quadraticTo (px[0], py[0],
-                              (px[0] + px[1]) * 0.5f, (py[0] + py[1]) * 0.5f);
-            for (int i = 1; i < stripCount_ - 1; ++i)
-                path.quadraticTo (px[i], py[i],
-                                  (px[i] + px[i + 1]) * 0.5f,
-                                  (py[i] + py[i + 1]) * 0.5f);
-            path.lineTo (px[stripCount_ - 1], py[stripCount_ - 1]);
-        }
-        g.setColour (accent_.withAlpha (active_ ? 0.95f : 0.85f));
-        // A single sample has no segment to stroke (startNewSubPath alone
-        // draws nothing) — draw a small dot instead so the strip's first
-        // ~12 ms (one append at the 81.7 Hz cadence) still shows a value.
+
+        // MIN-MAX ENVELOPE RENDERING (2026-08-22, supersedes the Bézier-
+        // smoothed centerline): a closed band — forward along the max edge,
+        // back along the min edge — FILLED at low alpha, with the outline
+        // stroked at full strength. A fast LFO/env/arp (more than ~1 cycle in
+        // the window) renders as its TRUE amplitude envelope band instead of
+        // aliasing into mush; a slow source has min ≈ max everywhere and the
+        // two outline edges coincide — reading exactly as the plain trace
+        // line at the same visual weight as before.
         if (stripCount_ == 1)
+        {
+            g.setColour (accent_.withAlpha (active_ ? 0.95f : 0.85f));
             g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (
                                juce::Point<float> (x1, singleY)));
-        else
-            g.strokePath (path, juce::PathStrokeType (kStrokeW,
-                              juce::PathStrokeType::JointStyle::curved,
-                              juce::PathStrokeType::EndCapStyle::rounded));
+            return;
+        }
+        juce::Path band;
+        band.startNewSubPath (px[0], pyMax[0]);
+        for (int i = 1; i < stripCount_; ++i)
+            band.lineTo (px[i], pyMax[i]);
+        for (int i = stripCount_ - 1; i >= 0; --i)
+            band.lineTo (px[i], pyMin[i]);
+        band.closeSubPath();
+        g.setColour (accent_.withAlpha (active_ ? 0.30f : 0.24f));
+        g.fillPath (band);
+        g.setColour (accent_.withAlpha (active_ ? 0.95f : 0.85f));
+        g.strokePath (band, juce::PathStrokeType (kStrokeW,
+                          juce::PathStrokeType::JointStyle::curved,
+                          juce::PathStrokeType::EndCapStyle::rounded));
     }
 
     void paint (juce::Graphics& g) override
@@ -570,9 +568,10 @@ struct CentralModBar::ModPill : public juce::Component,
 
     // ---- history strip cache (live telemetry; docs/LIVE_MOD_FEEDBACK_DESIGN.md).
     // Public like the members above: only CentralModBar's telemetry tick writes
-    // them; paint() reads them. stripVals_ holds the DOWNSAMPLED normalized
-    // 0..1 values (oldest -> newest); the sig* fields are the last-drawn diff
-    // gate (see updateStripFromHistory; -1 = never drawn). ----
+    // them; paint() reads them. stripMin_/stripMax_ hold the per-point
+    // min/max of the RAW ring samples each plotted point covers (the
+    // amplitude-envelope band); the sig* fields are the last-drawn diff gate
+    // (see updateStripFromHistory; -1 = never drawn). ----
     bool                  stripBipolar_ = false;    // display polarity (ctor: isBipolarModSource)
     int                   stripCount_   = 0;        // cached point count (0 = strip hidden)
     // Raw ring count behind the last downsample (2026-08-22): positions each
@@ -582,7 +581,15 @@ struct CentralModBar::ModPill : public juce::Component,
     // of stretching across the full width and "speeding off" for the first
     // few seconds after every open/reset.
     int                   stripRawCount_ = 0;       // history ring count when the strip was drawn
-    std::array<float, kStripMaxPts> stripVals_ {};  // downsampled normalized values
+    // MIN-MAX band cache (2026-08-22): per plotted point, the min/max of the
+    // RAW ring samples whose age falls in the point's coverage — an
+    // oscilloscope-style envelope. A fast LFO/env/arp (more than ~1 cycle in
+    // the window) point-sampled as mush regardless of point count; the
+    // min-max band renders its TRUE amplitude envelope with zero aliasing.
+    // Slow sources degrade gracefully: min ≈ max everywhere and the band's
+    // outline reads as the plain trace line.
+    std::array<float, kStripMaxPts> stripMin_ {};
+    std::array<float, kStripMaxPts> stripMax_ {};
     float                 sigFirst_     = -1.0f;    // signature: oldest point
     float                 sigLast_      = -1.0f;    // ... newest point
     float                 sigMin_       = -1.0f;    // ... interior minimum
