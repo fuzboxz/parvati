@@ -221,17 +221,43 @@ void EnvelopeDisplay::timerCallback()
             markerX = x;
         }
     }
+    // EASED marker position (2026-08-22 smooth-motion fix): the raw target
+    // arrives in 30 Hz quantized steps; the displayed x follows through a
+    // critically-damped ease (tau ~ 70 ms; alpha from the REAL elapsed tick
+    // time so the motion is rate-independent). A re-appearing marker snaps
+    // (no glide in from an old stage), and a hidden marker resets the ease.
     constexpr float kMarkerEps = 1.0f / 256.0f;   // ~1/4 knob-step of plot width
+    const double nowMono = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    const float dt = (lastTickMono_ > 0.0) ? (float) juce::jlimit (0.001, 0.2, nowMono - lastTickMono_)
+                                           : (1.0f / 30.0f);
+    lastTickMono_ = nowMono;
+    if (markerVisible)
+    {
+        if (smoothMarkerX_ < 0.0f || ! markerVisible_)
+            smoothMarkerX_ = markerX;   // first show / re-show: snap
+        else
+        {
+            constexpr float kMarkerTau = 0.07f;   // ~70 ms critically-damped glide
+            const float alpha = 1.0f - std::exp (-dt / kMarkerTau);
+            smoothMarkerX_ += (markerX - smoothMarkerX_) * alpha;
+        }
+    }
+    else
+    {
+        smoothMarkerX_ = -1.0f;
+    }
+    const float shownMarkerX = markerVisible ? smoothMarkerX_ : markerX;
     const bool markerChanged = (markerVisible != markerVisible_)
-        || (markerVisible && std::fabs (markerX - markerX_) > kMarkerEps);
+        || (markerVisible && std::fabs (shownMarkerX - markerX_) > kMarkerEps);
 
     // Repaint only when the target moved since the last tick, on a shape
-    // switch, or when the live marker crossed its own eps gate (eps gates:
-    // no constant repaint when idle).
+    // switch, or when the eased marker crossed its own eps gate (eps gates:
+    // no constant repaint when idle; convergence beyond eps keeps a glide
+    // going to its end exactly like the filter preview's ease).
     if (shapeChanged || paramChanged || markerChanged)
     {
         markerVisible_ = markerVisible;
-        markerX_ = markerX;
+        markerX_ = shownMarkerX;
         ++generation_;   // TEST-ONLY: a real refresh is observable (see header)
         repaint();
     }

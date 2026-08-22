@@ -23,6 +23,24 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Live-feedback motion is now time-driven and uniform (2026-08-22, the
+  "chug-chug" fix).** All three animated indicators were quantized to their
+  30 Hz poll ticks — the strips' content jumped a jittery 1–4 appends per
+  tick, the envelope marker stepped, and the filter curve's 55 ms ease
+  barely blended its byte-quantized target steps. (1) Mod-pill strips: the
+  bar's timer now runs at 60 Hz (animation) while the FETCH stays at the
+  user's refresh setting (decimated), strips repaint every animation tick
+  while in motion, and the drawn band carries a wall-clock-extrapolated
+  SUB-BIN offset ((now − fetchTime) × the 81.7 Hz append rate, from the
+  unwrapped ring head) — the rendered scroll position is a pure function
+  of time, immune to tick/fetch jitter; the newest bin extends flat into
+  the ≤ 1-fetch gap and everything clips to the strip rect. A pill static
+  for 0.5 s drops out of the animation set (idle-cost guarantee intact),
+  and the offset freezes when the engine ring stops moving (audio parked).
+  (2) Envelope stage marker: critically-damped ease (τ ≈ 70 ms, alpha from
+  the real elapsed tick time) — the dot glides instead of jumping; snaps on
+  (re)appear. (3) Filter live curve: ease τ 55 ms → 130 ms — modulation
+  steps blend into liquid motion.
 - **Envelope preview: minimal theoretical sustain width (2026-08-22).**
   With time-honest spans, attack 1 ms / decay 1 ms / sustain 100% / release
   1 ms rendered as three ~1/3-width fades — the sustain plateau now has an

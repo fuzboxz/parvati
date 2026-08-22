@@ -91,6 +91,14 @@ public:
         when already clear; the strips return on the next valid frame. */
     void clearTelemetry();
 
+    /** Appends elapsed since the freshest fetched telemetry sample, in
+        FRACTIONAL append units ((now - fetchTime) * kAppendHz, clamped).
+        Pills multiply by their own px/append to draw the sub-bin scroll
+        offset — the rendered position becomes a pure function of wall time,
+        immune to fetch/tick jitter (2026-08-22 uniform-scroll fix). Returns 0
+        when the engine ring has not moved for 250 ms (audio stopped). */
+    double telemetryAppendsSinceFetch() const;
+
     // TEST-ONLY: bumped whenever a pill repaints because its telemetry-driven
     // strip data changed (including the change TO "no data" on a clear), so a
     // headless test can observe "the strip reacted" without painting.
@@ -187,8 +195,19 @@ private:
     // (the per-pill caches hold what is actually drawn), so no member copy is
     // retained — a ~4 KB per-tick store nobody read was removed (review nit).
     std::function<bool (parvati::ModTelemetrySnapshot&)> telemetryFetch_;
-    int telemetryRateHz_     = 30;   // 5..60, 0 = disabled (setTelemetryRateHz clamps)
+    int telemetryRateHz_     = 30;   // 5..60, 0 = disabled (setTelemetryRateHz clamps) — the FETCH rate; the timer itself runs at 60 Hz (animation) and decimates fetches to this
     int telemetryGeneration_ = 0;    // TEST-ONLY (see telemetryGeneration())
+    int tickCounter_         = 0;   // fetch decimation (60 Hz / telemetryRateHz_)
+
+    // ---- wall-clock scroll anchors (2026-08-22 uniform-scroll fix; see
+    // timerCallback + telemetryAppendsSinceFetch): the ring head unwrapped
+    // into a monotonic append count + the fetch/motion timestamps that turn
+    // the paint-time sub-bin offset into a pure function of TIME. ----
+    double telUnwrappedAppends_ = 0.0;
+    int    telPrevHead_         = 0;
+    bool   telHaveHead_         = false;
+    double telLastFetchMono_    = 0.0;   // seconds (mono clock)
+    double telLastMotionMono_   = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CentralModBar)
 };

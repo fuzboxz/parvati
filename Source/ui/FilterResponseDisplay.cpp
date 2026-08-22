@@ -207,7 +207,12 @@ void FilterResponseDisplay::timerCallback()
         {
             const int intervalMs = getTimerInterval();
             const float dt = intervalMs > 0 ? (float) intervalMs * 0.001f : 1.0f / 30.0f;
-            const float alpha = 1.0f - std::exp (-dt / 0.055f);
+            // tau 130 ms (2026-08-22, was 55): the live curve's byte-quantized
+            // target steps (~1-4 bytes/tick during a sweep) were still visible
+            // through a 55 ms ease at 30 Hz — choppiness under modulation. The
+            // longer constant blends successive steps into liquid motion while
+            // onset/release still read as prompt (~2 tau to settle).
+            const float alpha = 1.0f - std::exp (-dt / 0.130f);
             smoothCut01_ += (tgtC - smoothCut01_) * alpha;
             smoothRes01_ += (tgtR - smoothRes01_) * alpha;
         }

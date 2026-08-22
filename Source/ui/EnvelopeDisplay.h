@@ -182,6 +182,13 @@ private:
     std::function<parvati::LiveEnvStage()> liveStageProvider_;
     bool  markerVisible_ = false;
     float markerX_ = 0.0f;   // normalized plot x of the marker (see markerXForStage)
+    // Eased marker (2026-08-22 smooth-motion fix): the RAW target x comes
+    // from 30 Hz telemetry ticks — a fast attack crosses the plot in a few
+    // quantized jumps. The displayed position follows through a critically-
+    // damped ease (tau ~ 70 ms, alpha from the REAL elapsed tick time), so
+    // the dot glides; the [25] pump-until tests absorb the convergence.
+    float smoothMarkerX_ = -1.0f;   // < 0 = snap on first show
+    double lastTickMono_ = 0.0;     // seconds; dt for the ease
 
     // TEST-ONLY (see previewGeneration).
     int generation_ = 0;

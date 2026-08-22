@@ -394,6 +394,17 @@ struct CentralModBar::ModPill : public juce::Component,
 
         const float x0 = sr.getX() + kPlotInset;
         const float x1 = sr.getRight() - kPlotInset;
+        // SUB-BIN SCROLL SHIFT (2026-08-22 uniform-scroll fix): the snapshot
+        // the bins were built from is up to one fetch period old at paint
+        // time; shift the whole band LEFT by the wall-clock-extrapolated
+        // appends elapsed since that fetch (fraction of a bin) so the rendered
+        // position advances LINEARLY IN TIME between fetches instead of
+        // lurching once per tick. The newest bin extends flat to the right
+        // edge (its data is the freshest we have; the <= 1-fetch lag is
+        // invisible), and everything clips to the strip rect.
+        constexpr int kWindowAppends = parvati::ModTelemetrySnapshot::kHistoryLen;
+        const float pxPerAppend = (x1 - x0) / (float) kWindowAppends;
+        const float shiftPx = owner_.telemetryAppendsSinceFetch() * pxPerAppend;
         // Point caches for the MIN-MAX band (see updateStripFromHistory):
         // pyMax/pyMin are the per-point amplitude envelope edges. The window
         // is CONSTANT (the full pre-zeroed ring), so points spread
@@ -413,7 +424,7 @@ struct CentralModBar::ModPill : public juce::Component,
             const float t = (stripCount_ > 1)
                 ? (float) i / (float) (stripCount_ - 1)
                 : 0.5f;
-            px[i] = x0 + t * (x1 - x0);
+            px[i] = x0 + t * (x1 - x0) - shiftPx;
             pyMax[i] = yFor (stripMax_[(size_t) i]);
             pyMin[i] = yFor (stripMin_[(size_t) i]);
             singleY = pyMax[i];
@@ -434,19 +445,28 @@ struct CentralModBar::ModPill : public juce::Component,
                                juce::Point<float> (x1, singleY)));
             return;
         }
+        // The band polygon: forward along the max edge, back along the min
+        // edge, EXTENDING the newest bin flat to the un-shifted right edge
+        // (fills the <= 1-fetch gap the sub-bin shift opens), then clipped to
+        // the strip rect so the shifted left edge cannot paint outside it.
         juce::Path band;
         band.startNewSubPath (px[0], pyMax[0]);
         for (int i = 1; i < stripCount_; ++i)
             band.lineTo (px[i], pyMax[i]);
+        band.lineTo (x1, pyMax[stripCount_ - 1]);   // extend newest flat
+        band.lineTo (x1, pyMin[stripCount_ - 1]);
         for (int i = stripCount_ - 1; i >= 0; --i)
             band.lineTo (px[i], pyMin[i]);
         band.closeSubPath();
+        g.saveState();
+        g.reduceClipRegion (sr.toNearestInt());
         g.setColour (accent_.withAlpha (active_ ? 0.30f : 0.24f));
         g.fillPath (band);
         g.setColour (accent_.withAlpha (active_ ? 0.95f : 0.85f));
         g.strokePath (band, juce::PathStrokeType (kStrokeW,
                           juce::PathStrokeType::JointStyle::curved,
                           juce::PathStrokeType::EndCapStyle::rounded));
+        g.restoreState();
     }
 
     void paint (juce::Graphics& g) override
@@ -590,6 +610,13 @@ struct CentralModBar::ModPill : public juce::Component,
     // outline reads as the plain trace line.
     std::array<float, kStripMaxPts> stripMin_ {};
     std::array<float, kStripMaxPts> stripMax_ {};
+    // Animation bookkeeping (2026-08-22 uniform-scroll fix): the bar repaints
+    // the strip EVERY 60 Hz tick while it is in motion (not only when the bin
+    // data changed) so the wall-clock sub-bin offset renders; a pill whose
+    // content has been static for 0.5 s drops out of the animation set (the
+    // idle-cost guarantee).
+    bool                  stripAnimating_    = false;
+    double                stripLastChangeMono_ = 0.0;
     float                 sigFirst_     = -1.0f;    // signature: oldest point
     float                 sigLast_      = -1.0f;    // ... newest point
     float                 sigMin_       = -1.0f;    // ... interior minimum
@@ -932,6 +959,28 @@ void CentralModBar::timerCallback()
     if (! isVisible() || telemetryFetch_ == nullptr)
         return;
 
+    // 2026-08-22 (uniform-scroll fix): the timer runs at 60 Hz (animation
+    // cadence) while the FETCH stays at the user's refresh setting — fetch on
+    // every ceil(60/rate)-th tick, and on the in-between ticks repaint the
+    // animating strips with the wall-clock-extrapolated sub-bin offset, so the
+    // scroll position advances linearly in TIME regardless of fetch/tick jitter
+    // (the pre-fix per-tick content jumps of a varying 1-4 appends read as
+    // "chug-chug").
+    const int fetchDivisor = juce::jmax (1, juce::roundToInt (60.0 / (double) juce::jmax (5, telemetryRateHz_)));
+    if (++tickCounter_ % fetchDivisor != 0)
+    {
+        // Animation-only tick: repaint pills whose content is still in motion
+        // (a bin update landed recently; a pill static for >0.5 s has nothing
+        // visible to animate and drops out — the idle-cost guarantee holds).
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        for (auto& p : pills_)
+            if (p->stripAnimating_ && now - p->stripLastChangeMono_ < 0.5)
+                p->repaint (p->stripRect());
+            else
+                p->stripAnimating_ = false;
+        return;
+    }
+
     parvati::ModTelemetrySnapshot snap;
     if (! telemetryFetch_ (snap))
     {
@@ -939,6 +988,29 @@ void CentralModBar::timerCallback()
         // hide the strips until a valid frame returns.
         clearTelemetry();
         return;
+    }
+
+    // Wall-clock anchors for the paint-time extrapolation: unwrap the ring
+    // head into a monotonic append count (the fractional position between
+    // fetches is (now - fetchTime) * kAppendHz appends — see the pill paint),
+    // and remember when the ring last MOVED (audio flowing) so a stopped
+    // engine freezes the strips instead of sliding them out from stale data.
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        if (telHaveHead_)
+        {
+            int delta = (snap.historyHead - telPrevHead_) % parvati::ModTelemetrySnapshot::kHistoryLen;
+            if (delta < 0)
+                delta += parvati::ModTelemetrySnapshot::kHistoryLen;
+            if (delta > 0 && delta < 32)   // sane single-interval advance
+            {
+                telUnwrappedAppends_ += delta;
+                telLastMotionMono_ = now;
+            }
+        }
+        telPrevHead_ = snap.historyHead;
+        telHaveHead_ = true;
+        telLastFetchMono_ = now;
     }
 
     const int n = juce::jlimit (0, parvati::ModTelemetrySnapshot::kHistoryLen, snap.historyCount);
@@ -958,15 +1030,35 @@ void CentralModBar::timerCallback()
             + (size_t) slot * (size_t) parvati::ModTelemetrySnapshot::kHistoryLen;
         if (p->updateStripFromHistory (hist, n))
         {
-            // THE GPU-COST CONTROL: repaint ONLY the strip's bounding rect, so
-            // an animating source never re-rasters the pill tile / label, and
-            // an idle source (signature unchanged) repaints nothing at all.
-            p->repaint (p->stripRect());
+            p->stripLastChangeMono_ = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            p->stripAnimating_ = true;
             anyRepainted = true;
+        }
+        if (p->stripAnimating_)
+        {
+            // THE GPU-COST CONTROL stays: repaint ONLY the strip's bounding
+            // rect (an animating source never re-rasters the pill tile /
+            // label), every animation tick while in motion; a pill static for
+            // 0.5 s drops out of the animation set entirely.
+            p->repaint (p->stripRect());
         }
     }
     if (anyRepainted)
         ++telemetryGeneration_;
+}
+
+double CentralModBar::telemetryAppendsSinceFetch() const
+{
+    // Appends elapsed since the freshest fetched sample, in APPEND units
+    // (fractional): (now - fetchTime) * kAppendHz, clamped sane. Frozen at 0
+    // when the ring has not moved for 250 ms (audio stopped — the engine only
+    // appends from renderPartFx), so strips park instead of sliding on stale
+    // data. Pills multiply this by their own px/append for the sub-bin shift.
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    if (now - telLastMotionMono_ > 0.25 || telLastFetchMono_ <= 0.0)
+        return 0.0;
+    const double since = juce::jlimit (0.0, 0.25, now - telLastFetchMono_);
+    return since * parvati::ModTelemetrySnapshot::kAppendHz;
 }
 
 void CentralModBar::visibilityChanged()
@@ -989,8 +1081,14 @@ void CentralModBar::updateTelemetryTimer()
     // that never started renders the whole live-strip feature dead. The
     // TICK itself carries the cheap guard (isVisible + fetch) so a genuinely
     // hidden bar costs one no-op pass, not repaints.
+    // 2026-08-22 (uniform-scroll fix): the ANIMATION cadence is 60 Hz while
+    // the DATA cadence stays at the user's refresh setting — timerCallback
+    // decimates its fetches to telemetryRateHz_ and repaints the animating
+    // strips every tick with a wall-clock-extrapolated sub-bin offset
+    // (telemetryAppendsSinceFetch), so the rendered scroll position is a pure
+    // function of TIME instead of lurchy per-tick append jumps.
     if (telemetryFetch_ != nullptr && telemetryRateHz_ >= 5)
-        startTimerHz (telemetryRateHz_);
+        startTimerHz (60);
     else
         stopTimer();
 }

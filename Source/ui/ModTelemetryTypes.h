@@ -39,6 +39,13 @@ struct ModTelemetrySnapshot
     // apparent scroll speed. Append rate is unchanged — time fidelity of the
     // samples themselves is exact — only how much history one strip spans.)
 
+    // The append cadence the engine runs (kInternalSampleRate / kAudioBlockSize
+    // / kUiTelDecimBlocks == 39216 / 40 / 12 ~= 81.7 appends/s; SynthEngine.h's
+    // kUiTelDecimBlocks is the other side of this pair — keep them in sync).
+    // The UI uses it to render the strips' scroll position as a pure function
+    // of WALL TIME (smooth, tick-jitter-free motion).
+    static constexpr double kAppendHz = 39216.0 / (40.0 * 12.0);
+
     // The bar-only Note Sequencer pill has NO MOD_SRC_* enum (its output is
     // note events, not a modulation bus value), so its live preview rides the
     // one spare slot: the tracked part's currently-sounding sequencer note
