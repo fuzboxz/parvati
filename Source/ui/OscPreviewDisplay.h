@@ -84,6 +84,13 @@ public:
     // gate semantics: stopped while not showing, running once shown.
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
 
+    /** Re-evaluate the poll timer's run state NOW (public twin of the private
+        dual-hook gate — the same backstop EnvelopeDisplay has). The EDITOR's
+        status timer calls this every ~30 Hz tick for every registered osc
+        preview (liveOscDisplays_), so a poll whose own hooks were starved
+        (page built off-screen, then swapped in) starts within one tick. */
+    void reassertPollTimer() { updatePollTimer(); }
+
     void paint (juce::Graphics&) override;
 
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
@@ -111,6 +118,7 @@ private:
     // showing?" hook. Both funnel into updatePollTimer().
     void visibilityChanged() override;
     void parentHierarchyChanged() override;
+
     void updatePollTimer();
     float fetch (const std::function<float()>& f) const;
 

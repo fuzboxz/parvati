@@ -722,6 +722,14 @@ public:
     // mod-bar pill click drives.
     SynthWorkspace* getSynthWorkspaceForTest() { return synthWorkspace_.get(); }
 
+    // Test-only (theme regression pins): switch the theme through the REAL
+    // path (ThemeManager selection -> change broadcast -> the editor's
+    // changeListenerCallback -> applyAllColoursFromTheme) — exactly what the
+    // SettingsPanel theme combo drives — so tests can pin behaviour across a
+    // theme switch. Returns false for an unknown theme name.
+    bool selectThemeForTest (const juce::String& name)
+    { return themeManager_.selectByName (name); }
+
     // Test-only (settings drawer regression): opens the settings SidePanel
     // exactly as the gear button does (showOrHide + the toggle-state sync the
     // button's onClick performs), so a probe can drive the REAL drawer path
@@ -1067,7 +1075,8 @@ private:
     // poll (reassertPollTimer) every ~30 Hz tick so a starved timer (JUCE's
     // window peer sequencing can starve the components' own visibility hooks
     // — the shipped-dead-overlay bug, [25] e2e) starts within one tick. */
-    std::vector<EnvelopeDisplay*>     liveEnvDisplays_;
+    std::vector<EnvelopeDisplay*>     liveEnvDisplays_;   // env + LFO waveform displays
+    std::vector<class OscPreviewDisplay*> liveOscDisplays_;   // osc waveform displays (same re-assert)
     FilterResponseDisplay*            liveFilterDisplay_ = nullptr;
 
     // Re-apply every theme-derived colour across the whole editor tree

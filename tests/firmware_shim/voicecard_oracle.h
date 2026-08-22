@@ -38,6 +38,15 @@ void SeedRandom (uint16_t seed);
 // composable with the controller + port headers in the parity test).
 int Osc1ShapeOffset();
 int MixBalanceOffset();
+// The filter-cutoff CV byte (MOD_DST_FILTER_CUTOFF destination readout — the
+// byte the hardware drives the analog VCF with; @p i is the port-side enum
+// value, identical in the firmware).
+uint8_t ModulationDestination (int i);
+// Env-slot offsets (env_lfo[i]: attack/decay/sustain/release) + filter_env.
+int EnvAttackOffset (int slot);
+int EnvSustainOffset (int slot);
+int FilterCutoffOffset();
+int FilterEnvAmountOffset();
 uint8_t WaveformSaw();
 
 }  // namespace fw_voicecard

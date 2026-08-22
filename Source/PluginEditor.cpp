@@ -2697,6 +2697,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 disp->setCategoryColour (theme.catAudio);   // amber trace
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                            &ParvatiTheme::catAudio);
+                // Register for the status tick's poll re-assert (same starve
+                // class as the env/LFO displays: a page built while not on
+                // screen can starve the component's own visibility hooks and
+                // the 30 Hz poll never starts — the preview freezes on its
+                // first painted waveform, e.g. after theme/drawer cycles).
+                liveOscDisplays_.push_back (disp.get());
                 page->setGroupInlinePreview (labels[i], std::move (disp));
             }
         }
@@ -3635,6 +3641,8 @@ void ParvatiEditor::timerCallback()
         if (auto* b = fxWorkspace_->modBar())
             b->reassertTelemetryTimer();
     for (auto* d : liveEnvDisplays_)
+        d->reassertPollTimer();
+    for (auto* d : liveOscDisplays_)
         d->reassertPollTimer();
     if (liveFilterDisplay_ != nullptr)
         liveFilterDisplay_->reassertPollTimer();

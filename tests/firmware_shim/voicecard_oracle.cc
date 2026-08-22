@@ -50,6 +50,27 @@ void SeedRandom (uint16_t seed) { fwvc::avrlib::Random::Seed (seed); }
 
 int Osc1ShapeOffset()  { return static_cast<int> (offsetof (fwvc::ambika::Patch, osc[0].shape)); }
 int MixBalanceOffset() { return static_cast<int> (offsetof (fwvc::ambika::Patch, mix_balance)); }
+
+uint8_t ModulationDestination (int i)
+{
+    return fwvc::ambika::Voice::modulation_destination (static_cast<uint8_t> (i));
+}
+int EnvAttackOffset (int slot)
+{
+    return static_cast<int> (offsetof (fwvc::ambika::Patch, env_lfo[(size_t) slot].attack));
+}
+int EnvSustainOffset (int slot)
+{
+    return static_cast<int> (offsetof (fwvc::ambika::Patch, env_lfo[(size_t) slot].sustain));
+}
+int FilterCutoffOffset()
+{
+    return static_cast<int> (offsetof (fwvc::ambika::Patch, filter[0].cutoff));
+}
+int FilterEnvAmountOffset()
+{
+    return static_cast<int> (offsetof (fwvc::ambika::Patch, filter_env));
+}
 uint8_t WaveformSaw()  { return fwvc::ambika::WAVEFORM_SAW; }
 
 }  // namespace fw_voicecard

@@ -1001,6 +1001,89 @@ void scenarioMixGainGlideAudio()
 }
 
 //===========================================================================
+// [11] VOICECARD ORACLE — live parameter changes on a SOUNDING voice.
+// The reported behaviour: "with a note playing, raising the FILTER ENVELOPE
+// sustain does not raise the cutoff". Both sides are driven identically
+// (note held; env2 = the filter envelope with a nonzero filter_env amount so
+// the cutoff CV tracks env2; env2 parked in SUSTAIN; the sustain patch byte
+// raised mid-hold) and the cutoff CV is compared BYTE-FOR-BYTE at each step.
+// Byte-parity here PROVES the behaviour is firmware-faithful (the envelope is
+// a segment interpolator: Trigger() captures each segment's a_/b_ endpoints,
+// and the SUSTAIN segment's increment is 0, so its value never re-reads the
+// target — a sustain change lands only on the next retrigger). If the port
+// ever "fixes" this into a live slew without a sanctioned divergence, the
+// parity check fails here.
+void scenarioLivePatchChanges()
+{
+    std::printf ("\n--- [11] voicecard oracle: live sustain change on a sounding voice ---\n");
+    fw_voicecard::SeedRandom (0x21);
+    ambika::dsp::random().Seed (0x21);
+
+    const int offSaw    = fw_voicecard::Osc1ShapeOffset();
+    const int offAtk    = fw_voicecard::EnvAttackOffset (1);    // env_lfo[1] = Env 2
+    const int offSus    = fw_voicecard::EnvSustainOffset (1);
+    const int offCut    = fw_voicecard::FilterCutoffOffset();
+    const int offFEnv   = fw_voicecard::FilterEnvAmountOffset();
+    const int cutoffDst = ambika::dsp::MOD_DST_FILTER_CUTOFF;
+
+    fw_voicecard::Init();
+    fw_voicecard::SetPatchByte (offSaw, fw_voicecard::WaveformSaw());
+    fw_voicecard::SetPatchByte (offCut, 20);   // LOW base cutoff: the CV sits mid-range
+    fw_voicecard::SetPatchByte (offAtk, 4);    // fast attack
+    fw_voicecard::SetPatchByte (offSus, 60);   // mid sustain
+    fw_voicecard::SetPatchByte (offFEnv, 40);  // env2 drives the cutoff CV
+    fw_voicecard::Trigger (60 << 7, 100, 0);
+
+    ambika::dsp::Voice pv;
+    pv.Init();
+    pv.set_patch_data (static_cast<uint8_t> (offSaw), fw_voicecard::WaveformSaw());
+    pv.set_patch_data (static_cast<uint8_t> (offCut), 20);
+    pv.set_patch_data (static_cast<uint8_t> (offAtk), 4);
+    pv.set_patch_data (static_cast<uint8_t> (offSus), 60);
+    pv.set_patch_data (static_cast<uint8_t> (offFEnv), 40);
+    pv.Trigger (60 << 7, 100, 0);
+
+    uint8_t fwBlock[fw_voicecard::kAudioBlockSize];
+    const auto step = [&] (int blocks)
+    {
+        for (int b = 0; b < blocks; ++b)
+        {
+            fw_voicecard::ProcessBlock (fwBlock);
+            pv.ProcessBlock();
+        }
+    };
+
+    step (200);   // >> attack+decay: env2 parked deep in SUSTAIN
+    const uint8_t cut0 = pv.modulation_destination (static_cast<uint8_t> (cutoffDst));
+    checkEquals (std::to_string (fw_voicecard::ModulationDestination (cutoffDst)),
+                 std::to_string (cut0),
+                 "cutoff CV byte-equal while sustaining (pre-change)");
+
+    // THE REPORTED CASE: raise env2's sustain mid-hold on BOTH sides.
+    fw_voicecard::SetPatchByte (offSus, 110);
+    pv.set_patch_data (static_cast<uint8_t> (offSus), 110);
+    step (100);
+
+    const uint8_t cut1 = pv.modulation_destination (static_cast<uint8_t> (cutoffDst));
+    checkEquals (std::to_string (fw_voicecard::ModulationDestination (cutoffDst)),
+                 std::to_string (cut1),
+                 "cutoff CV byte-equal AFTER the live sustain raise (same behaviour as firmware)");
+    std::printf ("     cutoff CV: sustained=%d after-raise=%d (unchanged == firmware-faithful)\n",
+                 (int) cut0, (int) cut1);
+
+    // And the change DOES land on retrigger (the new segment reads the new
+    // target) — both sides identically.
+    fw_voicecard::Trigger (60 << 7, 100, 0);
+    pv.Trigger (60 << 7, 100, 0);
+    step (200);
+    const uint8_t cut2 = pv.modulation_destination (static_cast<uint8_t> (cutoffDst));
+    checkEquals (std::to_string (fw_voicecard::ModulationDestination (cutoffDst)),
+                 std::to_string (cut2),
+                 "cutoff CV byte-equal after retrigger picks up the new sustain");
+    std::printf ("     cutoff CV after retrigger=%d (new sustain applied)\n", (int) cut2);
+}
+
+//===========================================================================
 // Allowlist loading / validation.
 bool loadAllowlist (const std::string& path, std::set<std::string>& out)
 {
@@ -1049,6 +1132,7 @@ TEST(firmware_parity_test)
     scenarioArpPhraseRestart();       // [8]
     scenarioVelocityZeroDivergence(); // [9]
     scenarioMixGainGlideAudio();      // [10] voicecard audio oracle
+    scenarioLivePatchChanges();       // [11] live patch-change parity
 
     // Allowlist <-> harness completeness (both directions).
     const std::set<std::string> exercised = {
