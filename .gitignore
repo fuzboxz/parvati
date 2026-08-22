@@ -66,9 +66,10 @@ __pycache__/
 # --- Root-level hygiene -------------------------------------------------------
 # Working/analysis markdown belongs in audit/ (dated reports) or docs/ (curated
 # design docs), never loose at the repo root. Ignore any root-level *.md that is
-# not one of the four canonical files, so WIP notes cannot be committed there.
+# not one of the canonical files, so WIP notes cannot be committed there.
 /*.md
 !/README.md
 !/CHANGELOG.md
 !/CONTRIBUTING.md
 !/NOTICES.md
+!/CLAUDE.md
