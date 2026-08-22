@@ -55,6 +55,15 @@ int runTestIsolated (const std::string& name)
         const pid_t pid = fork();
         if (pid == 0)
         {
+            // Child: allow AppKit/CoreFoundation use after fork. macOS aborts
+            // a forked child (SIGABRT, report goes to the SYSTEM log, not
+            // stderr) the moment it touches ObjC state initialized pre-fork —
+            // the ASan runtime makes the parent look fork-unsafe, which killed
+            // every desktop-window test (lifecycle_test et al.) under the
+            // sanitizer builds while the native fork runner stayed unaffected.
+            // Opt out of the runtime's fork-safety gate the standard way.
+            ::setenv ("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES", 1);
+
             // Child: run the test, flush stdio, leave WITHOUT running static
             // destructors (per-test leak noise / aborts are not part of the
             // pass-fail contract).
