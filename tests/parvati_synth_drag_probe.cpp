@@ -3,6 +3,26 @@
 // identical input/MIDI) across: synth patch params (filter cutoff, env attack,
 // osc shape/param, mix), part params (volume/tuning), master EQ, master
 // volume, and the mod-matrix amount. Exit 0 = all clean; non-zero rows printed.
+//
+// KNOWN-RED ROW (2026-08-22 root-cause, kept red deliberately): Mix Balance
+// fails 0.0597 vs the 0.05 gate — deterministic (3/3 identical) and PRODUCT-
+// CHARACTERIZED, not a port bug. The mix crossfade gains are applied once per
+// 40-sample block by ambika::dsp::Voice::ProcessBlock — a line-for-line copy
+// of ambika_reference/voicecard/voice.cc:441-442 (firmware does the same), so
+// one mix_balance tick steps osc_1/osc_2 gains by exactly 256>>4 = 16/255
+// (6.27%) of the instantaneous waveform: 0.0627 x 0.95 saw peak = the measured
+// 0.0597 spike. The passing neighbours (filter cutoff 0.027, detune 0.047) are
+// NOT smoothed either — they pass by transfer-function continuity (filter
+// state / phase-accumulator carry across the step; a coefficient or increment
+// change never jumps the output). Balance is the one param class that
+// multiplies the signal directly, so it exposes the engine's inherent block-
+// rate CV floor (~0.06), which sits 1.19x under-tolerance of this gate and
+// 2.7x below the FX bug class (0.16) this probe hunted.
+// The only non-weakening fixes are product decisions: glide the gains inside
+// the 8-bit core (new firmware divergence — hard parity failure unless
+// sanctioned in firmware_parity_known_divergences.txt) or extend the opt-in
+// Parameter Smoothing to mixer gains (default path still zippers, so this row
+// stays red either way until that call is made).
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
