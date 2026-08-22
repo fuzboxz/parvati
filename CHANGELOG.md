@@ -4,6 +4,68 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **Voicecard audio oracle in `firmware_parity_test` (2026-08-22).** The REAL
+  firmware voicecard (ambika_reference/voicecard — Voice::ProcessBlock,
+  oscillator, resources, audio ring) now compiles into the unified test binary
+  wrapped in namespace `fwvc` (the controller and voicecard resources.cc share
+  table symbol names with DIFFERENT generated contents, so both trees cannot
+  link under their own names). New scenario [10] drives firmware Voice and the
+  port's dsp::Voice block-by-block with identical patch bytes, note, and
+  re-seeded RNG: static mix CVs must render BYTE-EQUAL, a mix_balance tick
+  must diverge exactly on the tick block (the sanctioned mix-gain-glide
+  divergence, now allowlisted and exercised per the known-divergences
+  contract), and the renders must re-converge. Shim surface added:
+  avr/io.h (E2END/_BV), avrlib/gpio.h shadow, and op.h additions (U8MixU16,
+  the U24 family, S8S8MulShift8, U8U4Mix*) decoded from the real header's
+  asm comments. Fixing the shim's U8Mix to the asm's single-shift form
+  (it double-truncated, ±1 LSB/sample vs firmware) is what made the
+  byte-level equality possible at all.
+
+### Fixed
+- **Mix Balance / Mix Param zipper on knob drags (2026-08-22).** The mix
+  crossfade gains were latched once per 40-sample block (line-for-line
+  firmware port of voice.cc:441-442); in hardware the analog mixer smooths
+  the DAC steps, but the digital port had no analog domain, so each balance
+  tick stepped the gains by up to 16/255 of the waveform — audible zipper.
+  The gains now glide linearly across each block (~0.9 ms slew, 8.8
+  fixed-point, exact target landing — no residual), emulating the analog
+  smoothing. Registered as the sanctioned "mix-gain-glide" firmware
+  divergence and pinned BOTH ways by the new voicecard audio oracle
+  (static CVs byte-equal; reverting the glide fails parity loudly —
+  verified). The synth drag probe's mix_balance row was removed: the
+  diff-census metric measures legitimate shape-change artifacts on any
+  balance sweep (~0.06 regardless of the glide — verified by direct
+  accumulator instrumentation) and cannot police this param; the probe's
+  osc1_shape setInt also silently no-opped (choice param) and now uses
+  setChoice. Full suite: 117/117 (first fully green run).
+
+- **Untrusted-input boundary normalization (2026-08-22, memory-safety
+  wave).** New `Source/dsp/patch_sanitizer.h` normalizes raw Patch (112 B)
+  and PartData (84 B) bytes to their firmware-valid domains at INGESTION —
+  wired at the two paths that previously pushed file/host bytes into the
+  engine with no validation: `.MUL` multi loads
+  (`ParvatiAudioProcessor::loadMultiFile`) and host-state blob restores
+  (`SynthEngine::restoreState`). The `.PRO`/`.parvati` paths already clamp
+  via their APVTS/descriptor decodes. All bounds derive from the patch.h
+  enums (plus a static_assert against `kNumTuningPresets`), so they cannot
+  drift from the DSP definitions; the sanitizer is the IDENTITY for
+  legitimate firmware files (round-trips stay byte-exact — pinned by
+  roundtrip/golden/multi_load/host_state/loader_fuzz) and deterministically
+  narrows hostile blobs at every sink at once. The 2026-08-18 DSP-side sink
+  clamps stay (defense in depth). Regression cover:
+  tests/patch_sanitizer_test.cpp (unit domains + identity + END-TO-END
+  wiring proofs through a real written `.MUL` and a real captured/restored
+  state blob).
+- **GitHub Actions CI (2026-08-22).** `.github/workflows/ci.yml` — two
+  lanes: a PR gate (tests-only Debug build + the full unified suite minus
+  loader_fuzz/perf_smoke, ~15 min) and a nightly (full 117-test native
+  suite + Release Standalone/VST3/CLAP build proving the format wrappers
+  and the Release-only libc++ hardening configure + full ASan/UBSan sweep
+  via tools/run_sanitizers.sh + TSan on the concurrency-critical subset).
+  External deps cloned per run (ambika firmware reference — untracked per
+  NOTICES.md — and JUCE 9.0.1).
+
 ### Tools
 - **`tools/run_tests_parallel.sh` (2026-08-22).** Parallel driver for the
   unified suite: greedy work queue across N lanes (default: performance

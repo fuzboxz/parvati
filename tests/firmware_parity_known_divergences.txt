@@ -18,3 +18,19 @@
 # Parvati's Sequencer::noteStep substitutes 100 for a 0 velocity so an
 # untouched default step is audible. Deliberate UX deviation.
 velocity-zero-substitution
+
+# The firmware latches the mix-section gains (osc_1/osc_2 crossfade + the
+# mix-op wet/dry pair) once per 40-sample block (voicecard/voice.cc:441-442)
+# and relies on the analog mixer stage to smooth the DAC steps in hardware.
+# The digital port has no analog domain, so a mix_balance / mix_parameter
+# tick steps the gains by up to 16/255 of the instantaneous waveform — the
+# audible zipper parvati_synth_drag_probe measured at 0.0597 vs its 0.05
+# gate. Parvati glides the gains linearly across each block (~0.9 ms slew,
+# 8.8 fixed-point accumulators in dsp::Voice), emulating the analog
+# smoothing. STATIC CVs render byte-identically to the firmware (first
+# block snaps; a steady CV has a zero increment; the glide converges to the
+# exact firmware targets within one block of a change) — pinned block-by-
+# block by the voicecard audio oracle in firmware_parity_test (scenario
+# [10]), which asserts both the equality phases and THIS divergence on the
+# balance-tick block. Audio-path divergence, sanctioned 2026-08-22.
+mix-gain-glide

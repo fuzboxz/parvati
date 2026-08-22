@@ -10,6 +10,11 @@
 #include <cstring>
 #include <cstdint>
 
+// Compose desktop shims: pull in the avr/io.h shim (E2END / _BV) so every TU
+// that reaches progmem also sees the io constants — on device both come via
+// the toolchain's implicit avr headers.
+#include <avr/io.h>
+
 // On AVR, PROGMEM places an object in program memory. On the host build all
 // data is plain (the tables are small; the firmware semantics we compare are
 // unchanged by the storage class).

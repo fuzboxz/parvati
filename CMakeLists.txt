@@ -67,8 +67,9 @@ endif()
 # Vendored firmware reference (firmware_parity_test's oracle). ambika_reference/
 # is the original Mutable Instruments Ambika AVR firmware/controller tree
 # (GPL3, deliberately UNTRACKED in this repo — see NOTICES.md for licensing and
-# provenance). parvati_unified_tests compiles five of its controller sources
-# directly, so a fresh clone without the tree cannot even CONFIGURE. Fail fast
+# provenance). parvati_unified_tests compiles nine of its sources (controller
+# + voicecard audio oracle) directly, so a fresh clone without the tree cannot
+# even CONFIGURE. Fail fast
 # with instructions instead of a cryptic "Cannot find source file" deep in the
 # test section. Obtain the tree from the Ambika firmware release (see
 # NOTICES.md) and place it at the repo root as ambika_reference/.
@@ -78,6 +79,10 @@ set(PARVATI_AMBIKA_FIRMWARE_SOURCES
     ambika_reference/controller/resources.cc
     ambika_reference/controller/voice_allocator.cc
     ambika_reference/avrlib/random.cc
+    # (The voicecard audio-oracle closure is NOT listed here: the controller
+    # and voicecard resources.cc share table symbol names with DIFFERENT
+    # contents, so the voicecard tree is compiled wrapped in namespace fwvc
+    # by tests/firmware_shim/voicecard_oracle_closure.cc instead.)
 )
 foreach(_ambika_src IN LISTS PARVATI_AMBIKA_FIRMWARE_SOURCES)
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_ambika_src}")
@@ -85,7 +90,7 @@ foreach(_ambika_src IN LISTS PARVATI_AMBIKA_FIRMWARE_SOURCES)
             "Missing vendored firmware reference: ${_ambika_src}\n"
             "ambika_reference/ is the original Mutable Instruments Ambika AVR "
             "firmware/controller tree (GPL3, untracked by design — see "
-            "NOTICES.md). The unified test target compiles five of its "
+            "NOTICES.md). The unified test target compiles nine of its "
             "sources for firmware_parity_test. Clone/obtain the Ambika "
             "firmware tree and place it at the repo root as "
             "ambika_reference/ so the listed files exist.")
@@ -881,6 +886,8 @@ add_executable(parvati_unified_tests
     # tests/firmware_shim headers shadow the AVR firmware headers; see the
     # include dirs / flags added below the target).
     tests/firmware_shim/shims.cc
+    tests/firmware_shim/voicecard_oracle.cc
+    tests/firmware_shim/voicecard_oracle_closure.cc
     ${PARVATI_AMBIKA_FIRMWARE_SOURCES}
 )
 target_link_libraries(parvati_unified_tests PRIVATE Parvati parvati_factory_presets)

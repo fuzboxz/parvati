@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include "unified_test_runner.h"
+#include <cstddef>   // offsetof (voicecard audio oracle patch-byte addressing)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -55,12 +56,19 @@
 #include "controller/multi.h"
 #include "controller/midi_dispatcher.h"
 #include "controller/voicecard_tx.h"
+// Voicecard audio oracle facade (mix-gain-glide scenario): the REAL firmware
+// Voice::ProcessBlock, driven through a narrow firmware-only TU — the
+// voicecard headers themselves collide with both the controller headers and
+// the port's DSP headers, so they never appear in this TU.
+#include "firmware_shim/voicecard_oracle.h"
 
 // ---------------------------------------------------------------------------
 // PARVATI SIDE.
 // ---------------------------------------------------------------------------
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
+#include "dsp/voice.h"    // bare dsp::Voice for the byte-level audio oracle
+#include "dsp/random.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
@@ -888,6 +896,111 @@ void scenarioVelocityZeroDivergence()
 }
 
 //===========================================================================
+// [10] VOICECARD AUDIO ORACLE — "mix-gain-glide" (sanctioned audio-path
+// divergence). Drives the REAL firmware Voice::ProcessBlock (static class;
+// output drained from the ambika::audio_buffer ring) block-by-block against
+// the port's ambika::dsp::Voice with identical patch bytes, note and RNG
+// state:
+//   * static mix CVs → every rendered block BYTE-EQUAL (the glide is
+//     transparent when nothing changes — this pins the whole line-for-line
+//     port fidelity story at the byte level, silence blocks included),
+//   * a mid-render mix_balance tick → the tick block DIFFERS (firmware
+//     latches the crossfade gains once per 40-sample block, voice.cc:441-
+//     442; Parvati glides them across the block — the zipper fix measured
+//     at 0.0597-vs-0.05 by parvati_synth_drag_probe),
+//   * after settling (the sub-LSB snap closes the ramp within one extra
+//     block) → BYTE-EQUAL again: the glide converges to the firmware
+//     targets exactly, it does not permanently offset the mix.
+void scenarioMixGainGlideAudio()
+{
+    std::printf ("\n--- [10] voicecard audio oracle: mix-gain-glide ---\n");
+    constexpr int kBlockBytes = fw_voicecard::kAudioBlockSize;
+    static_assert (ambika::dsp::kAudioBlockSize == kBlockBytes, "port block size");
+    static_assert ((int) ambika::dsp::WAVEFORM_SAW == 1, "port saw id (NONE=0, SAW=1)");
+
+    // RNG lockstep: both sides run the same 16-bit LFSR (boot seed 0x21,
+    // advanced exactly once per block by the MOD_SRC_NOISE source). The
+    // Parvati-side scenarios above rendered 6-voice audio and advanced only
+    // the port's global — re-seed both so the voices tick in lockstep.
+    fw_voicecard::SeedRandom (0x21);
+    ambika::dsp::random().Seed (0x21);
+
+    // Patch-byte addresses (identical layouts: the port's Patch is a copy;
+    // sizeof==112 is pinned by static_assert in dsp/constants.h, and any
+    // address mismatch would trip the byte-equality checks below loudly).
+    const int offOsc1Shape = fw_voicecard::Osc1ShapeOffset();
+    const int offBalance   = fw_voicecard::MixBalanceOffset();
+    const uint8_t sawId    = fw_voicecard::WaveformSaw();
+
+    // --- firmware side (statics; Init() loads the same all-zeros-osc init
+    //     patch as the port's kInitPatch — set a saw on osc 1 so the mix
+    //     crossfade actually carries signal) ---
+    fw_voicecard::Init();
+    fw_voicecard::SetPatchByte (offOsc1Shape, sawId);
+    fw_voicecard::SetPatchByte (offBalance, 24);   // gain 96 (bal domain 0..63)
+    fw_voicecard::Trigger (60 << 7, 100, 0);
+
+    // --- Parvati side: a bare dsp::Voice — no engine, no JUCE in the path ---
+    ambika::dsp::Voice pv;
+    pv.Init();
+    pv.set_patch_data (static_cast<uint8_t> (offOsc1Shape), sawId);
+    pv.set_patch_data (static_cast<uint8_t> (offBalance), 24);
+    pv.Trigger (60 << 7, 100, 0);
+
+    const auto hex = [kBlockBytes] (const uint8_t* p) {
+        std::string s;
+        s.reserve (static_cast<size_t> (kBlockBytes) * 3);
+        char b[4];
+        for (int i = 0; i < kBlockBytes; ++i)
+        {
+            std::snprintf (b, sizeof (b), "%02X ", p[i]);
+            s += b;
+        }
+        return s;
+    };
+
+    // One block per side (the firmware facade drains its 40 bytes from the
+    // audio ring — the vca()<2 silence path writes 40 too, so the drains
+    // always match the writes).
+    bool anySignal = false;
+    uint8_t fwBlock[kBlockBytes];
+    const auto fwRender = [&fwBlock, &hex]() {
+        fw_voicecard::ProcessBlock (fwBlock);
+        return hex (fwBlock);
+    };
+    const auto pvRender = [&pv, &hex, &anySignal, kBlockBytes]() {
+        pv.ProcessBlock();
+        const auto& out = pv.output();   // raw pointer (HEAD) or std::array —
+        for (int i = 0; i < kBlockBytes; ++i)   // indexable either way
+            if (out[i] != 128) { anySignal = true; break; }
+        return hex (&out[0]);
+    };
+
+    // Phase 1 — static CV: 12 blocks, every one byte-equal (env attack is 0,
+    // so the VCA is open from the first blocks; the equality is over real
+    // signal, pinned by the audibility tripwire below).
+    for (int b = 0; b < 12; ++b)
+        checkEquals (fwRender(), pvRender(),
+                     "static mix_balance=24, osc1 saw: block " + std::to_string (b) + " byte-equal");
+    check (anySignal, "voice audible (equality compared real signal, not silence)");
+
+    // Phase 2 — balance tick 24 -> 32 (gain 96 -> 128: a 32/255 gain step,
+    // twice the drag probe's 16/255 UI tick): firmware steps, Parvati glides.
+    fw_voicecard::SetPatchByte (offBalance, 32);
+    pv.set_patch_data (static_cast<uint8_t> (offBalance), 32);
+    const std::string fwTick = fwRender();
+    const std::string pvTick = pvRender();
+    checkDiverges ("mix-gain-glide", fwTick, pvTick,
+                   "balance tick 24->32: firmware latches gains per block, Parvati glides across it");
+
+    // Phase 3 — settle: the sub-LSB snap closes the ramp tail within one
+    // block, after which the renders are byte-equal again.
+    (void) fwRender();
+    (void) pvRender();   // settle block (ramp tail; not compared)
+    checkEquals (fwRender(), pvRender(), "post-glide settled block byte-equal (converged exactly)");
+}
+
+//===========================================================================
 // Allowlist loading / validation.
 bool loadAllowlist (const std::string& path, std::set<std::string>& out)
 {
@@ -935,10 +1048,12 @@ TEST(firmware_parity_test)
     scenarioPolyAftertouch();         // [7]
     scenarioArpPhraseRestart();       // [8]
     scenarioVelocityZeroDivergence(); // [9]
+    scenarioMixGainGlideAudio();      // [10] voicecard audio oracle
 
     // Allowlist <-> harness completeness (both directions).
     const std::set<std::string> exercised = {
         "velocity-zero-substitution",
+        "mix-gain-glide",
     };
     for (const auto& id : g_divergences)
         if (exercised.count (id) == 0)

@@ -190,6 +190,24 @@ class Voice {
     int8_t  modulation_destinations_[kNumModulationDestinations] {};
     int16_t dst_[kNumModulationDestinations] {};
 
+    // Mix-section gain glide (8.8 fixed-point position state) — DELIBERATE
+    // firmware divergence "mix-gain-glide" (tests/firmware_parity_known_
+    // divergences.txt; exercised by firmware_parity_test's voicecard audio
+    // oracle). Firmware latches the mix gains once per 40-sample block
+    // (voice.cc:441-442) and the ANALOG mixer stage smooths the DAC steps in
+    // hardware; the digital port has no analog domain, so a mix_balance /
+    // mix_parameter tick steps the osc crossfade gains by up to 16/255 of
+    // the waveform — the zipper measured at 0.0597 by parvati_synth_drag_
+    // probe (gate 0.05). Parvati glides each gain linearly across the block
+    // (~0.9 ms slew), emulating the analog smoothing. Static CVs render
+    // byte-identically to the firmware: the first block after Init() snaps
+    // to the CV, and a steady CV has a zero glide diff (pinned by the parity
+    // oracle's pre-tick equality blocks).
+    bool    mix_glide_ready_ { false };
+    int32_t mix_balance_acc_ {};   // 8.8 position: applied osc_2 gain
+    int32_t mix_param_acc_ {};     // 8.8 position: applied wet (mix param) gain
+
+
     // Per-block render buffers (all kAudioBlockSize).
     uint8_t buffer_[kAudioBlockSize] {};
     uint8_t osc2_buffer_[kAudioBlockSize] {};

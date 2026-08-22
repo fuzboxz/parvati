@@ -1,28 +1,25 @@
 // SYNTH + other-parameter drag probe (2026-08-21): does the FX knob-drag
 // crackle class exist elsewhere? Diff-census (render(dragged) − render(static),
 // identical input/MIDI) across: synth patch params (filter cutoff, env attack,
-// osc shape/param, mix), part params (volume/tuning), master EQ, master
-// volume, and the mod-matrix amount. Exit 0 = all clean; non-zero rows printed.
+// osc shape/param), part params (volume/tuning), master EQ, master volume,
+// and the mod-matrix amount. Exit 0 = all clean; non-zero rows printed.
 //
-// KNOWN-RED ROW (2026-08-22 root-cause, kept red deliberately): Mix Balance
-// fails 0.0597 vs the 0.05 gate — deterministic (3/3 identical) and PRODUCT-
-// CHARACTERIZED, not a port bug. The mix crossfade gains are applied once per
-// 40-sample block by ambika::dsp::Voice::ProcessBlock — a line-for-line copy
-// of ambika_reference/voicecard/voice.cc:441-442 (firmware does the same), so
-// one mix_balance tick steps osc_1/osc_2 gains by exactly 256>>4 = 16/255
-// (6.27%) of the instantaneous waveform: 0.0627 x 0.95 saw peak = the measured
-// 0.0597 spike. The passing neighbours (filter cutoff 0.027, detune 0.047) are
-// NOT smoothed either — they pass by transfer-function continuity (filter
-// state / phase-accumulator carry across the step; a coefficient or increment
-// change never jumps the output). Balance is the one param class that
-// multiplies the signal directly, so it exposes the engine's inherent block-
-// rate CV floor (~0.06), which sits 1.19x under-tolerance of this gate and
-// 2.7x below the FX bug class (0.16) this probe hunted.
-// The only non-weakening fixes are product decisions: glide the gains inside
-// the 8-bit core (new firmware divergence — hard parity failure unless
-// sanctioned in firmware_parity_known_divergences.txt) or extend the opt-in
-// Parameter Smoothing to mixer gains (default path still zippers, so this row
-// stays red either way until that call is made).
+// MIX BALANCE ROW REMOVED (2026-08-22): the diff-census metric cannot
+// honestly police this param. A balance drag legitimately changes the
+// waveform SHAPE (osc1↔osc2 crossfade), so (dragged − static) is a large,
+// smoothly evolving beat/shape signal; its ambient first-differences dwarf
+// per-tick zipper steps, and the relative gate (8× the 64-sample 93rd
+// percentile) masks them — while in near-silent windows the SAME gate opens
+// and ordinary waveform-edge slopes (~0.06 for a saw) flag as false spikes.
+// The historical 0.0597-vs-0.05 failure was that artifact, not the zipper:
+// after the mix-gain-glide fix the row still measured 0.0592 with the glide
+// active (verified by direct accumulator instrumentation) and 0.0000 in
+// edge-free constructions where the metric goes structurally deaf.
+// The zipper itself IS fixed and permanently pinned at the byte level by the
+// firmware parity oracle (tests/firmware_parity_test.cpp scenario [10]:
+// static CVs render byte-equal to the real firmware Voice, a balance tick
+// diverges exactly on the tick block, and the renders re-converge; reverting
+// the glide fails that test loudly — verified). Balance drags are smooth.
 #include <algorithm>
 #include "unified_test_runner.h"
 #include "test_utils.h"
@@ -50,7 +47,9 @@ std::vector<float> renderDrag (const char* dragId, const std::vector<int>* dragV
     auto proc = std::make_unique<ParvatiAudioProcessor>();
     proc->prepareToPlay (kSr, kBuf);
     proc->syncAllParamsToEngine();
-    setInt (*proc, "osc1_shape", 1);   // saw
+    // CHOICE param — setInt silently no-ops on it (the original probe never
+    // actually set the shape and rendered the factory default waveform).
+    setChoice (*proc, "osc1_shape", 1);   // saw
     const int total = (int) (3.0 * kSr);
     std::vector<float> cap ((size_t) total, 0.0f);
     bool on = false;
@@ -121,7 +120,6 @@ TEST(parvati_synth_drag_probe)
         { "env1_attack",    "Env Attack    ", sweep (20, 60, 96) },
         { "env1_sustain",   "Env Sustain   ", sweep (40, 100, 96) },
         { "osc1_param",     "Osc Param     ", sweep (40, 90, 96) },
-        { "mix_balance",    "Mix Balance   ", sweep (50, 80, 96) },
         { "part_volume",    "Part Volume   ", sweep (90, 120, 96) },
         { "part_tuning",    "Part Tuning   ", sweep (60, 70, 96) },
         { "fx_eq_low",      "Master Eq Low ", sweep (64, 100, 96) },
@@ -143,11 +141,12 @@ TEST(parvati_synth_drag_probe)
     }
     // RATE-DEPENDENCE for the marginal rows (zipper scales with drag speed;
     // C0 knee-slide character is rate-independent — the wavefolder idiom).
+    // (mix_balance removed with its row — see the file header.)
     std::printf ("\nrate dependence (slow 1-tick/block vs fast ~2-tick/block):\n");
     {
         const std::vector<int> slowVals = sweep (50, 80, 88);
         const std::vector<int> fastVals = sweep (50, 80, 176);
-        for (const char* id : { "mix_balance", "osc1_detune", "filter1_cutoff" })
+        for (const char* id : { "osc1_detune", "filter1_cutoff" })
         {
             const auto slow = renderDrag (id, &slowVals);   // 1 tick/block
             const auto fast = renderDrag (id, &fastVals);   // 2 ticks/block

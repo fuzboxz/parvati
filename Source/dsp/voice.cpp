@@ -128,6 +128,9 @@ static inline uint16_t LfoRateToIncrement(uint8_t rate, double bpm) {
 
 void Voice::Init() {
     pitch_value_ = 0;
+    // Mix glide resets: the first audible block snaps to the current CVs
+    // (exactly the firmware's behaviour), after which CV changes glide.
+    mix_glide_ready_ = false;
     for (uint8_t i = 0; i < kNumEnvelopes; ++i) {
         envelope_[i].Init();
     }
@@ -522,49 +525,107 @@ void Voice::ProcessBlock() {
     RenderOscillators();
     uint8_t op = patch_.mix_op;
     uint8_t osc_2_gain = U14ShiftRight6(static_cast<uint16_t>(dst_[MOD_DST_MIX_BALANCE]));
-    uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_gain);
     uint8_t wet_gain = U14ShiftRight6(static_cast<uint16_t>(dst_[MOD_DST_MIX_PARAM]));
-    uint8_t dry_gain = static_cast<uint8_t>(~wet_gain);
 
-    // Mix oscillators.
+    // Gain glide ("mix-gain-glide" divergence — see voice.h): the two
+    // values above are the firmware's per-block gain latches (voice.cc:
+    // 441-442). Interpolate each gain LINEARLY (8.8 fixed point) from its
+    // previously APPLIED value to this block's target — pos(i) = start +
+    // (target - start) * i / blockSize — and use the glided values inside
+    // the mix loops below, so a CV tick slews over the whole block instead
+    // of stepping the waveform once: the analog mixer stage does this
+    // smoothing in hardware. The interpolation lands EXACTLY on the target
+    // (no accumulator residual — an earlier increment-based version
+    // oscillated ±1 sub-LSB around targets and cast acc=-1 to gain 255,
+    // flipping the crossfade hard over at the extremes; caught by
+    // synth_param_coverage_test's balance=0 pitch check). A steady CV has
+    // diff == 0, so every sample equals the firmware latch and static
+    // patches stay byte-identical to the oracle (the complement gains
+    // ~osc_2 / ~wet are derived per sample, preserving the exact pairing).
+    const int32_t balance_target = static_cast<int32_t>(osc_2_gain) << 8;
+    const int32_t param_target = static_cast<int32_t>(wet_gain) << 8;
+    if (mix_glide_ready_) {
+        // Ramp from the previously applied gains (recomputed each block, so
+        // the glide converges to the target after ONE block of change).
+        ;
+    } else {
+        // First audible block after Init(): snap (firmware behaviour).
+        mix_glide_ready_ = true;
+        mix_balance_acc_ = balance_target;
+        mix_param_acc_ = param_target;
+    }
+    const int32_t balance_start = mix_balance_acc_;
+    const int32_t param_start = mix_param_acc_;
+    const int32_t balance_diff = balance_target - balance_start;
+    const int32_t param_diff = param_target - param_start;
+
+    // Mix oscillators. (The glide position per sample i: start + diff*i/N;
+    // both bounds hold — pos stays within [min(start,target), max(start,target)]
+    // ⊂ [0, 255<<8] — so the >>8 gain is always a valid uint8_t.)
+    #define PARVATI_MIX_GLIDE(field, i) \
+        static_cast<uint8_t> (((field##_start + (field##_diff * static_cast<int32_t> (i)) \
+                               / static_cast<int32_t> (kAudioBlockSize)) >> 8))
     switch (op) {
         case OP_RING_MOD:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_gain);
+                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
+                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t dry_gain = static_cast<uint8_t>(~wet_glide);
+                uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
                 uint8_t ring = static_cast<uint8_t>(S8S8MulShift8(
                     static_cast<int8_t>(buffer_[i] + 128),
                     static_cast<int8_t>(osc2_buffer_[i] + 128)) + 128);
-                buffer_[i] = U8Mix(mix, ring, dry_gain, wet_gain);
+                buffer_[i] = U8Mix(mix, ring, dry_gain, wet_glide);
             }
             break;
         case OP_XOR:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_gain);
+                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
+                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t dry_gain = static_cast<uint8_t>(~wet_glide);
+                uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
                 uint8_t xord = static_cast<uint8_t>(buffer_[i] ^ osc2_buffer_[i]);
-                buffer_[i] = U8Mix(mix, xord, dry_gain, wet_gain);
+                buffer_[i] = U8Mix(mix, xord, dry_gain, wet_glide);
             }
             break;
         case OP_FOLD:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_gain);
-                buffer_[i] = U8Mix(mix, static_cast<uint8_t>(mix + 128), dry_gain, wet_gain);
+                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
+                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t dry_gain = static_cast<uint8_t>(~wet_glide);
+                uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
+                buffer_[i] = U8Mix(mix, static_cast<uint8_t>(mix + 128), dry_gain, wet_glide);
             }
             break;
-        case OP_BITS: {
-            wet_gain >>= 5;
-            wet_gain = static_cast<uint8_t>(255 - ((1 << wet_gain) - 1));
+        case OP_BITS:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
+                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
+                // Same crush transform as the firmware, derived per sample
+                // from the glided wet CV (the >>5 quantization is unchanged).
+                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t crush_mask = static_cast<uint8_t>(255 - ((1 << (wet_glide >> 5)) - 1));
                 buffer_[i] = static_cast<uint8_t>(U8Mix(
-                    buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_gain) & wet_gain);
+                    buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide) & crush_mask);
             }
             break;
-        }
         default:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                buffer_[i] = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_gain);
+                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
+                buffer_[i] = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
             }
             break;
     }
+    #undef PARVATI_MIX_GLIDE
+
+    // The block has been rendered on the exact ramp; the glide position now
+    // IS the target (converged in one block of change — no residual).
+    mix_balance_acc_ = balance_target;
+    mix_param_acc_ = param_target;
 
     // Mix-in sub oscillator or transient generator.
     uint8_t sub_gain = U15ShiftRight7(static_cast<uint16_t>(dst_[MOD_DST_MIX_SUB_OSC]));
@@ -578,8 +639,11 @@ void Voice::ProcessBlock() {
     uint8_t noise = random().state_msb();
     uint8_t noise_gain = U15ShiftRight7(static_cast<uint16_t>(dst_[MOD_DST_MIX_NOISE]));
     uint8_t signal_gain = static_cast<uint8_t>(~noise_gain);
-    wet_gain = U14ShiftRight6(static_cast<uint16_t>(dst_[MOD_DST_MIX_FUZZ]));
-    dry_gain = static_cast<uint8_t>(~wet_gain);
+    // Fuzz wet/dry — a separate CV from the mix-op pair above (and a
+    // wavetable blend rather than a plain gain multiply; not part of the
+    // mix-gain-glide divergence — stays firmware block-latched).
+    const uint8_t fuzz_wet_gain = U14ShiftRight6(static_cast<uint16_t>(dst_[MOD_DST_MIX_FUZZ]));
+    const uint8_t fuzz_dry_gain = static_cast<uint8_t>(~fuzz_wet_gain);
 
     // Mix with noise and apply distortion (fuzz). Per-block local LCG
     // `noise = noise*73 + 1` (NOT the global Random), matching the firmware.
@@ -591,14 +655,14 @@ void Voice::ProcessBlock() {
         uint8_t a = U8Mix(
             signal_noise_a,
             ResourcesManager::Lookup<uint8_t, uint8_t>(wav_res_distortion, signal_noise_a),
-            dry_gain, wet_gain);
+            fuzz_dry_gain, fuzz_wet_gain);
 
         noise = static_cast<uint8_t>((noise * 73) + 1);
         signal_noise_b = U8Mix(buffer_[i++], noise, signal_gain, noise_gain);
         uint8_t b = U8Mix(
             signal_noise_b,
             ResourcesManager::Lookup<uint8_t, uint8_t>(wav_res_distortion, signal_noise_b),
-            dry_gain, wet_gain);
+            fuzz_dry_gain, fuzz_wet_gain);
         Overwrite2(a, b);
     }
 }

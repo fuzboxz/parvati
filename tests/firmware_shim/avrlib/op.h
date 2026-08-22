@@ -79,6 +79,11 @@ static inline uint16_t U8U8Mul (uint8_t a, uint8_t b)
     return static_cast<uint16_t> (a) * b;
 }
 
+static inline int8_t S8S8MulShift8 (int8_t a, int8_t b)
+{
+    return static_cast<int8_t> ((static_cast<int32_t> (a) * b) >> 8);
+}
+
 static inline int16_t S16U8MulShift8 (int16_t a, uint8_t b)
 {
     return static_cast<int16_t> ((static_cast<int32_t> (a) * b) >> 8);
@@ -96,13 +101,22 @@ static inline int16_t S16S8MulShift8 (int16_t a, int8_t b)
 
 static inline uint8_t U8Mix (uint8_t a, uint8_t b, uint8_t balance)
 {
-    return static_cast<uint8_t> (U8U8MulShift8 (a, static_cast<uint8_t> (255 - balance))
-                               + U8U8MulShift8 (b, balance));
+    // Real asm: full 16-bit sum a*(255-balance) + b*balance, result = sum >> 8
+    // (single shift — NOT two >>8 multiplies summed; that double truncation
+    // was off-by-one vs the firmware and surfaced as ±1 LSB per sample in the
+    // voicecard audio oracle's block compares). Bits 8..15 of the (possibly
+    // 17-bit) sum are what bytes[1] returns; the int arithmetic reproduces
+    // them exactly.
+    return static_cast<uint8_t> ((static_cast<int> (a) * static_cast<uint8_t> (255 - balance)
+                                  + static_cast<int> (b) * balance) >> 8);
 }
 
 static inline uint8_t U8Mix (uint8_t a, uint8_t b, uint8_t gain_a, uint8_t gain_b)
 {
-    return static_cast<uint8_t> (U8U8MulShift8 (a, gain_a) + U8U8MulShift8 (b, gain_b));
+    // Real asm: full sum a*gain_a + b*gain_b (can reach 17 bits), result =
+    // sum >> 8 — single shift, same reasoning as the balance overload above.
+    return static_cast<uint8_t> ((static_cast<int> (a) * gain_a
+                                  + static_cast<int> (b) * gain_b) >> 8);
 }
 
 // 14-bit value >> 6 (portable form of the real header's C++ branch).
@@ -114,6 +128,84 @@ static inline uint8_t U14ShiftRight6 (uint16_t value)
 static inline uint8_t U15ShiftRight7 (uint16_t value)
 {
     return static_cast<uint8_t> (value >> 7);
+}
+
+static inline uint16_t U8MixU16 (uint8_t a, uint8_t b, uint8_t balance)
+{
+    // The real header has only the AVR-asm form; per its multiply comments the
+    // value is the FULL 16-bit sum a*(255-balance) + b*balance (no >>8) —
+    // identical to Parvati's fixed_math.h U8MixU16 (used by voicecard/
+    // envelope.h in the audio oracle).
+    return static_cast<uint16_t> (a) * static_cast<uint8_t> (255 - balance)
+           + static_cast<uint16_t> (b) * balance;
+}
+
+// --- 24-bit fixed-point helpers -------------------------------------------
+// uint24_t / uint24c_t (integral:16 + fractional:8 [+ carry]) come from the
+// REAL avrlib/base.h included above. The real op.h has AVR-asm-only forms;
+// these portable equivalents use a 32-bit intermediate — semantics identical
+// to the asm (documented shifts/adds), and matching how Parvati's port
+// translated the same asm (Source/dsp/fixed_math.h — independently written,
+// cross-validating the translation).
+static inline uint32_t U24To32 (uint24_t a)
+{
+    return (static_cast<uint32_t> (a.integral) << 8) | a.fractional;
+}
+
+static inline uint24_t U24From32 (uint32_t v)
+{
+    uint24_t r;
+    v &= 0xFFFFFF;
+    r.integral = static_cast<uint16_t> (v >> 8);
+    r.fractional = static_cast<uint8_t> (v);
+    return r;
+}
+
+static inline uint24c_t U24AddC (uint24c_t a, uint24_t b)
+{
+    const uint32_t lhs = (static_cast<uint32_t> (a.integral) << 8) | a.fractional;
+    const uint32_t rhs = (static_cast<uint32_t> (b.integral) << 8) | b.fractional;
+    const uint32_t sum = lhs + rhs;
+    uint24c_t r;
+    r.integral = static_cast<uint16_t> ((sum >> 8) & 0xFFFF);
+    r.fractional = static_cast<uint8_t> (sum & 0xFF);
+    r.carry = static_cast<uint8_t> ((sum >> 24) & 1);   // 24-bit overflow flag
+    return r;
+}
+
+static inline uint24_t U24Add (uint24_t a, uint24_t b)
+{
+    return U24From32 (U24To32 (a) + U24To32 (b));
+}
+
+static inline uint24_t U24Sub (uint24_t a, uint24_t b)
+{
+    return U24From32 (U24To32 (a) - U24To32 (b));
+}
+
+static inline uint24_t U24ShiftRight (uint24_t a)
+{
+    return U24From32 (U24To32 (a) >> 1);   // integral bit 0 → fractional bit 7
+}
+
+static inline uint24_t U24ShiftLeft (uint24_t a)
+{
+    return U24From32 (U24To32 (a) << 1);  // fractional bit 7 → integral bit 0
+}
+
+// 4-bit-balance blends (waveform mip level crossfades in oscillator.cc).
+// Decoded from the real header's asm comments/final masks (and matching
+// Parvati's independent translation in Source/dsp/fixed_math.h).
+static inline uint8_t U8U4MixU8 (uint8_t a, uint8_t b, uint8_t balance)
+{
+    return static_cast<uint8_t> (
+        (static_cast<int> (a) * (15 - balance) + static_cast<int> (b) * balance) >> 4);
+}
+
+static inline uint16_t U8U4MixU12 (uint8_t a, uint8_t b, uint8_t balance)
+{
+    return static_cast<uint16_t> (
+        static_cast<int> (a) * (15 - balance) + static_cast<int> (b) * balance);
 }
 
 static inline uint8_t U8ShiftRight4 (uint8_t a) { return static_cast<uint8_t> (a >> 4); }
