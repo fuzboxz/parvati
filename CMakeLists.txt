@@ -689,8 +689,9 @@ endif()
 
 # ------------------------------------------------------------------------------
 # Unified Test Runner - Single binary containing all migrated tests
-# This consolidates ~100+ separate test executables (~3.5GB) into a single ~44MB binary
-# achieving 98.7% disk space savings and 82% faster build times.
+# This consolidates ~100+ separate test executables (~3.5GB) into a single
+# ~31MB binary, with a configure-time orphan guard (see below) that makes
+# the one-binary policy self-enforcing.
 # Run with: ./build/parvati_unified_tests
 # Options:
 #   ./build/parvati_unified_tests list       - List all available tests
@@ -835,29 +836,76 @@ add_executable(parvati_unified_tests
     tests/firmware_shim/shims.cc
     ${PARVATI_AMBIKA_FIRMWARE_SOURCES}
 )
-target_include_directories(parvati_unified_tests PRIVATE Source)
-target_include_directories(parvati_unified_tests PRIVATE tests)
-target_include_directories(parvati_unified_tests SYSTEM PRIVATE Source/dsp/clouds)
 target_link_libraries(parvati_unified_tests PRIVATE Parvati parvati_factory_presets)
 target_compile_features(parvati_unified_tests PRIVATE cxx_std_17)
 target_compile_definitions(parvati_unified_tests PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_include_directories(parvati_unified_tests SYSTEM PRIVATE Source/dsp/clouds)
 
-# firmware_parity_test support: the shim dir must come FIRST so its headers
-# shadow the AVR-dependent firmware headers (the same contract the
-# pre-unification standalone parity harness had). -dead_strip drops the firmware's
-# never-called MonoModeOn/PolyModeOn (they reference TouchVoiceAllocation,
-# which the firmware tree never defines).
+# firmware_parity_test support: within this one call, tests/firmware_shim
+# precedes ambika_reference so its headers shadow the AVR-dependent firmware
+# headers (the contract the pre-unification standalone parity harness had);
+# Source/tests stay AHEAD of the shim so the rest of the suite keeps resolving
+# same-named headers (parameter.h, op.h, midi_dispatcher.h, ...) from Source.
+# -dead_strip drops the firmware's never-called MonoModeOn/PolyModeOn (they
+# reference TouchVoiceAllocation, which the firmware tree never defines).
 target_include_directories(parvati_unified_tests PRIVATE
+    Source
+    tests
     tests/firmware_shim
     ambika_reference
 )
 target_compile_options(parvati_unified_tests PRIVATE -Wno-c++11-narrowing)
 target_link_options(parvati_unified_tests PRIVATE -Wl,-dead_strip)
+# --- Single-binary test policy: configure-time orphan guard -----------------
+# Every tests/*.cpp must be part of parvati_unified_tests — there are no
+# per-test targets. This makes "add a test file but forget the source list"
+# (the parvati_retrig_probe orphan class of bug, audit P1-1) a CONFIGURE
+# FAILURE instead of a test that silently never compiles or runs. Headers and
+# the shim dir are not globbed; the runner main and the gated demos are
+# whitelisted because they are support files, not test harnesses.
+set(PARVATI_UNIFIED_TEST_WHITELIST
+    unified_test_runner_main.cpp   # runner main() (the only one in the binary)
+    unified_test_examples.cpp      # gated demos (PARVATI_TEST_EXAMPLES, default OFF)
+)
+file(GLOB PARVATI_TESTS_GLOB CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
+get_target_property(PARVATI_UNIFIED_TEST_SOURCES parvati_unified_tests SOURCES)
+set(PARVATI_UNIFIED_TEST_SOURCES_ABS "")
+foreach(_src IN LISTS PARVATI_UNIFIED_TEST_SOURCES)
+    cmake_path(ABSOLUTE_PATH _src BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    list(APPEND PARVATI_UNIFIED_TEST_SOURCES_ABS "${_src}")
+endforeach()
+set(PARVATI_UNIFIED_ORPHANS "")
+foreach(_f IN LISTS PARVATI_TESTS_GLOB)
+    get_filename_component(_fname "${_f}" NAME)
+    if("${_fname}" IN_LIST PARVATI_UNIFIED_TEST_WHITELIST)
+        continue()
+    endif()
+    if(NOT "${_f}" IN_LIST PARVATI_UNIFIED_TEST_SOURCES_ABS)
+        list(APPEND PARVATI_UNIFIED_ORPHANS "${_fname}")
+    endif()
+endforeach()
+if(PARVATI_UNIFIED_ORPHANS)
+    list(SORT PARVATI_UNIFIED_ORPHANS)
+    string(REPLACE ";" ", " _parvati_orphan_names "${PARVATI_UNIFIED_ORPHANS}")
+    message(FATAL_ERROR
+        "Single-binary test policy violated: ${_parvati_orphan_names} are on "
+        "disk in tests/ but NOT in the parvati_unified_tests source list, so "
+        "they would never be compiled or run. Add them to the "
+        "add_executable(parvati_unified_tests ...) source list — per-test "
+        "add_executable() targets are forbidden (the suite is ONE binary).")
+endif()
+# Dynamic counts for the status message below (no more hand-maintained
+# "N tests" strings drifting stale).
+list(LENGTH PARVATI_TESTS_GLOB _parvati_glob_count)
+list(LENGTH PARVATI_UNIFIED_TEST_WHITELIST _parvati_whitelist_count)
+math(EXPR PARVATI_UNIFIED_HARNESS_COUNT "${_parvati_glob_count} - ${_parvati_whitelist_count}")
+list(LENGTH PARVATI_UNIFIED_TEST_SOURCES PARVATI_UNIFIED_SOURCE_COUNT)
+
 if(PARVATI_TEST_EXAMPLES)
     target_compile_definitions(parvati_unified_tests PRIVATE PARVATI_TEST_EXAMPLES=1)
-    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 test harnesses, 122 sources; example_* demos ON: PARVATI_TEST_EXAMPLES, example_failing_test is expected to fail)")
+    message(STATUS "Unified test runner enabled: parvati_unified_tests (${PARVATI_UNIFIED_HARNESS_COUNT} test harnesses, ${PARVATI_UNIFIED_SOURCE_COUNT} sources; example_* demos ON: PARVATI_TEST_EXAMPLES, example_failing_test is expected to fail)")
 else()
-    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 test harnesses, 122 sources; example_* demos off, enable with PARVATI_TEST_EXAMPLES=ON)")
+    message(STATUS "Unified test runner enabled: parvati_unified_tests (${PARVATI_UNIFIED_HARNESS_COUNT} test harnesses, ${PARVATI_UNIFIED_SOURCE_COUNT} sources; example_* demos off, enable with PARVATI_TEST_EXAMPLES=ON)")
 endif()
 
 # ------------------------------------------------------------------------------
