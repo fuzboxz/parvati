@@ -1166,7 +1166,18 @@ void SynthEngine::retriggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound
                                   int channel, int note, float velocity)
 {
     if (av == nullptr) return;
-    av->retriggerNote (sound, note, velocity);
+    // 2026-08-22: route through startVoice itself (the engine IS the
+    // Synthesiser; startVoice is protected-to-us) for FULL truthful JUCE
+    // bookkeeping — note, channel, noteOnTime, sound, pedal states — after
+    // armRetriggerContinuation() disarms its only harmful step: the
+    // pre-emptive stopNote(0,false) -> Voice::Kill that fires when
+    // currentlyPlayingSound != nullptr (it zeroes the envelope: the "fast
+    // mono note changes cut out" bug). The voice's audio state (dsp voice,
+    // resampler FIFO, gains) is untouched by the disarm — startNote then
+    // continues the live audio via continuityNext_ and performs the
+    // firmware-faithful Trigger (envelope ATTACK from the CURRENT value).
+    av->armRetriggerContinuation();
+    startVoice (av, sound, channel, note, velocity);
     applyStandingBend (av, channel);   // same pickup as triggerVoice (legato path)
     av->setTriggerSeq (nextTriggerSeq());
 }
@@ -1210,12 +1221,24 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
             {
                 av->setLegatoNext (legato);
                 av->setSpreadDrift (drift);
-                // Overlap on a sounding voice: re-trigger WITHOUT the kill that
-                // startVoice does (stopNote(0,false) -> Voice::Kill zeroes the
-                // envelope, so the legato Trigger -- which skips the re-attack --
-                // would then render silence). The first note (voice idle) still
-                // uses startVoice for a fresh attack.
-                if (legato && av->isVoiceActive())
+                // Overlap on a SOUNDING voice — legato slide OR a mono
+                // retrigger of the previous note's RELEASE TAIL (monoStack
+                // back to size 1 while the tail still sounds) — re-triggers
+                // WITHOUT the kill that startVoice does. juce startVoice's
+                // stopNote(0,false) -> Voice::Kill ZEROES the envelope, so
+                // the new attack would start from silence (with a 495 ms
+                // attack, every fast note change audibly cut out — the
+                // 2026-08-22 mono fix). The firmware simply re-Triggers the
+                // same voicecard: Envelope::Trigger(ATTACK) seeds its start
+                // from the CURRENT value, so the attack rises from the
+                // release level, continuously. retriggerNote's
+                // continuityNext_ also keeps the resampler FIFO and the
+                // output gain flowing (no time-skip click, no de-click
+                // hole); legatoNext_ (false in the tail case) selects the
+                // full non-legato DSP retrigger — firmware semantics.
+                // The first note (voice idle) still uses startVoice for a
+                // fresh attack.
+                if (av->isVoiceActive())
                     retriggerVoice (av, sound, channel, note, velocity);
                 else
                     triggerVoice (av, sound, channel, note, velocity);

@@ -223,15 +223,21 @@ public:
     // legato = mono_stack.size() > 1). Consumed (reset) by startNote().
     void setLegatoNext (bool l) { legatoNext_ = l; }
 
-    // Legato re-trigger on an ALREADY-SOUNDING voice WITHOUT the kill that
-    // juce::Synthesiser::startVoice does (stopNote(0,false) -> Voice::Kill zeroes
-    // the envelope; the firmware Voice::Trigger(legato) then skips the re-attack,
-    // so a killed-then-legato voice goes silent). The voice must already be active
-    // (its currentlyPlayingSound was set by the first note's startVoice), so this
-    // only updates the dsp pitch via startNote. (JUCE's note/channel fields are
-    // private + set only by the Synthesiser friend, but MONO note routing is
-    // monoStack-based, so leaving them is fine.)
-    void retriggerNote (juce::SynthesiserSound* sound, int midiNoteNumber, float velocity);
+    // No-kill re-trigger of an ALREADY-SOUNDING voice (legato overlap OR a
+    // mono retrigger of a release tail), 2026-08-22 redesign:
+    // through the engine's startVoice (full truthful JUCE bookkeeping: note,
+    // channel, noteOnTime, sound, pedals) with the kill guard neutralized —
+    // clearCurrentNote() (bookkeeping-only; the DSP voice / FIFO / gain are
+    // NOT touched) drops the currentlyPlayingSound pointer that arms
+    // startVoice's pre-emptive stopNote(0,false) -> Kill. continuityNext_
+    // then makes startNote CONTINUE the live audio. Replaces the old
+    // retriggerNote() shortcut, which left currentlyPlayingNote stale
+    // (benign for pure legato; wrong once release-tail retriggers used it).
+    void armRetriggerContinuation()
+    {
+        continuityNext_ = true;
+        clearCurrentNote();   // public, bookkeeping-only — disarms startVoice's kill
+    }
 
     // One-shot per-voice pitch-drift hint (14-bit units, 1/128 semitone each):
 // firmware PartData.spread applied as `tuned_note + drift` at Trigger. Consumed
@@ -357,6 +363,20 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedResonance_;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedVcaGain_;
     bool                       legatoNext_ { false };
+    // One-shot continuity hint (2026-08-22 mono-retrigger fix): set by
+    // retriggerNote when the voice is ALREADY SOUNDING (legato overlap OR
+    // mid-release tail). startNote then CONTINUES the live audio — no
+    // resampler FIFO clear (that discards ~0.4-1.3 ms of unconsumed internal
+    // samples and cold-restarts the Lagrange interpolator: a time-skip
+    // click) and no de-click ramp (that would punch a ~1 ms gain hole in
+    // audio that is already running). The DSP retrigger semantics are set
+    // INDEPENDENTLY by legatoNext_: a release-tail retrigger still does the
+    // full firmware Voice::Trigger(legato=0) — envelope ATTACK from the
+    // CURRENT value (Envelope::Trigger seeds a_ from value_), gate, osc2
+    // reset, LFO retrigger — exactly what the firmware does when the same
+    // voice is retriggered in mono mode. Only the plumbing (kill/fifo/ramp)
+    // differs from a fresh voice.
+    bool                       continuityNext_ { false };
     // std::atomic (non-copyable) is fine: juce::SynthesiserVoice is held by
     // pointer in the engine's Synthesiser voice list and never copied.
     std::atomic<int>          partIndex_ { 0 };
@@ -473,6 +493,17 @@ private:
     static constexpr float kDeClickInc  = 1.0f / kDeClickRamp;
     float startupGain_          { 1.0f };
     int   startupRampRemaining_ { 0 };
+
+    // VCA gain glide (2026-08-22 release-noise fix, default path): the
+    // firmware VCA is ANALOG post-DSP and smooths the block-rate CV steps; a
+    // per-block ZOH gain staircase in the port AM-modulates the signal at
+    // ~980 Hz (control rate), which reads as aliasing-like noise while the
+    // envelope moves — most audible in the decaying release tail. The last
+    // APPLIED gain; each block linearly glides from it to the new target
+    // across the 40 internal samples (same sanctioned-divergence class as
+    // the dsp::Voice mix-gain glide). A static CV (sustain / parked env)
+    // has a zero diff, so static output is bit-identical.
+    float vcaGlideGain_         { 0.0f };
 
     // Crush (sample-and-hold / decimator): mirrors the firmware voicecard DAC
     // which only updates its output every `crush()` internal samples (voice.h).

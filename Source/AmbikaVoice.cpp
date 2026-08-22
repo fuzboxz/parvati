@@ -272,17 +272,22 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     // Capture the legato hint BEFORE it is consumed below: a legato retrigger
     // continues the sounding voice (firmware legato = no oscillator/envelope
     // restart), so it must NOT get the de-click ramp (that would punch a gap).
+    // continuityNext_ extends the SAME audio-continuity treatment to a
+    // retrigger of a MID-RELEASE voice (2026-08-22 mono fix): the voice is
+    // still sounding, so its resampler FIFO and gain must continue too — only
+    // the envelope re-attack (from the CURRENT value, firmware-faithful)
+    // differs from the legato slide.
     const bool legato = legatoNext_;
+    const bool continueAudio = legato || continuityNext_;
 
     // Drop any tail from a previous note so it doesn't bleed into this attack
-    // — EXCEPT on a legato retrigger: the legato path deliberately continues
-    // the sustaining voice (no de-click ramp below; firmware legato = no
-    // envelope/oscillator restart), and clearing the resampler FIFO here would
-    // discard ~0.4-1.3 ms of unconsumed internal samples and restart the
-    // Lagrange interpolator cold — a time-skip discontinuity (click) at EVERY
-    // legato step. The fresh-note and hard-stop paths still clear (hard stop:
-    // stopNote below).
-    if (! legato)
+    // — EXCEPT when continuing a sounding voice (legato overlap or a mono
+    // retrigger of a release tail): those paths deliberately continue the
+    // live audio; clearing the resampler FIFO here would discard ~0.4-1.3 ms
+    // of unconsumed internal samples and restart the Lagrange interpolator
+    // cold — a time-skip discontinuity (click) at EVERY retrigger. The
+    // fresh-note and hard-stop paths still clear (hard stop: stopNote below).
+    if (! continueAudio)
     {
         fifo_.clear();
         interp_.reset();
@@ -290,8 +295,10 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     isReleasing_ = false;
 
     // De-click: arm the one-shot startup gain ramp ONLY on a fresh trigger.
-    if (legato) { startupGain_ = 1.0f; startupRampRemaining_ = 0; }
-    else        { startupGain_ = 0.0f; startupRampRemaining_ = kDeClickRamp; }
+    // (A continuing voice is already sounding — ramping its gain 1→0→…→1
+    // would CREATE the click the ramp exists to prevent.)
+    if (continueAudio) { startupGain_ = 1.0f; startupRampRemaining_ = 0; }
+    else               { startupGain_ = 0.0f; startupRampRemaining_ = kDeClickRamp; }
 
     // Part volume is NOT set here: it is applied once via the APVTS
     // `part_volume` parameter through SynthEngine::applyPartByte ->
@@ -317,6 +324,7 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     const int velInt = juce::jlimit (0, 255, static_cast<int> (velocity * 255.0f));
     voice_.Trigger (static_cast<uint16_t> (note14), static_cast<uint8_t> (velInt & 0xFF), legato ? 1 : 0);
     legatoNext_ = false;   // one-shot hint, consumed
+    continuityNext_ = false;   // one-shot hint, consumed
     spreadDrift14_ = 0;    // one-shot hint, consumed (default trigger => no drift)
 
     // SF-1: stage the active note for the lock-free message-thread snapshot
@@ -325,15 +333,6 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     displayedActive_.store (true, std::memory_order_relaxed);
 }
 
-void AmbikaVoice::retriggerNote (juce::SynthesiserSound* sound, int midiNoteNumber, float velocity)
-{
-    // Already-active voice: just update the dsp pitch via startNote -> Trigger.
-    // No kill (unlike juce::Synthesiser::startVoice's stopNote(0,false) -> Kill),
-    // so the envelope keeps sustaining and the firmware Voice::Trigger(legato)
-    // (which skips the re-attack) slides the pitch instead of going silent.
-    setKeyDown (true);
-    startNote (midiNoteNumber, velocity, sound, /*currentPitchWheelPosition*/ 0);
-}
 
 void AmbikaVoice::stopNote (float /*velocity*/, bool allowTailOff)
 {
@@ -347,6 +346,9 @@ void AmbikaVoice::stopNote (float /*velocity*/, bool allowTailOff)
         voice_.Kill();
         isReleasing_ = false;
         clearCurrentNote();
+        // Hard stop: the next voice starts from silence — snap the VCA glide
+        // to 0 so it does not ramp from a stale loud gain into the new note.
+        vcaGlideGain_ = 0.0f;
         // SF-1: voice is fully freed — clear the staged snapshot (mirrors the
         // base currentlyPlayingNote = -1 set by clearCurrentNote).
         displayedNote_.store (-1, std::memory_order_relaxed);
@@ -487,25 +489,36 @@ void AmbikaVoice::fillInternalBlock()
         //  - Linearized: gain = vca/255 (the lut_res_vca_linearization mode, where
         //    the table pre-warps the OTA so the output is linear).
         //  - Exponential: ~60 dB OTA taper (the raw VCA response, linear-CV mode).
-        float vcaGain;
+        float vcaGainTarget;
         if (vcaExponential_)
         {
             const float n = static_cast<float> (voice_.vca()) / 255.0f;
-            vcaGain = exponentialVcaGain (n);  // 60 dB OTA taper, makeup-compensated
+            vcaGainTarget = exponentialVcaGain (n);  // 60 dB OTA taper, makeup-compensated
         }
         else
         {
-            vcaGain = static_cast<float> (voice_.vca()) / 255.0f;
+            vcaGainTarget = static_cast<float> (voice_.vca()) / 255.0f;
         }
+
+        // VCA glide (2026-08-22 release-noise fix): linearly ramp the gain
+        // from the LAST APPLIED gain to this block's target across the 40
+        // internal samples. The analog VCA smooths the block-rate CV steps in
+        // hardware; a per-block ZOH staircase AM-modulates the signal at the
+        // ~980 Hz control rate — audible as aliasing-like noise while the
+        // envelope moves (worst in the release tail). Static CV → zero diff →
+        // bit-identical to the staircase.
+        const float g0 = vcaGlideGain_;
+        const float gStep = (vcaGainTarget - g0) / static_cast<float> (ambika::dsp::kAudioBlockSize);
 
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
         {
             // 8-bit (centred 128) -> float. Keep the (128 vs 127) asymmetry exact.
             float s = static_cast<float> (static_cast<int> (out[i]) - 128) / 128.0f;
             s = filter_.processSample (s);
-            s *= vcaGain;
+            s *= g0 + gStep * static_cast<float> (i);
             fifo_.push_back (s);
         }
+        vcaGlideGain_ = vcaGainTarget;
         return;
     }
 
@@ -644,14 +657,19 @@ void AmbikaVoice::fillInternalBlock()
         filterOS_->processSamplesDown (downBlock);
 
         // VCA at the internal rate (linear gain -> no aliasing) + push to FIFO.
+        // Same VCA glide as the 1x default path: ramp from the last applied
+        // gain to the target across the block (see the note there).
         if (! smoothingEnabled_)
         {
             const float vcaNorm = static_cast<float> (voice_.vca()) / 255.0f;
-            const float vcaGain = vcaExponential_
+            const float vcaGainTarget = vcaExponential_
                 ? exponentialVcaGain (vcaNorm)
                 : vcaNorm;
+            const float g0 = vcaGlideGain_;
+            const float gStep = (vcaGainTarget - g0) / static_cast<float> (ambika::dsp::kAudioBlockSize);
             for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
-                fifo_.push_back (raw[i] * vcaGain);
+                fifo_.push_back (raw[i] * (g0 + gStep * static_cast<float> (i)));
+            vcaGlideGain_ = vcaGainTarget;
         }
         else
         {

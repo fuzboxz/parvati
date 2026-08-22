@@ -82,14 +82,31 @@ private:
         // zero-sized-bounds buttons at the closed drawer's off-screen position
         // read as sub-44 violations). The show path re-applies via the
         // resize listener + the editor's onPanelShowHide hook.
-        if (! viewport_.isShowing() || viewport_.getViewWidth() <= 0)
+        //
+        // WIDTH SOURCE (the 2026-08-22 blank-drawer fix): use the VIEWPORT's
+        // own bounds, NOT getViewWidth()/getViewHeight(). Those return
+        // lastVisibleArea, which Viewport::updateVisibleArea computes as
+        // jmin(viewedComponentExtent, viewportExtent) — and the viewed
+        // component is exactly the panel this tracker sizes (0×0 while
+        // collapsed). That was a circular gate that could never open: the
+        // drawer rendered blank (all 18 rows 0×0) because viewW stayed 0
+        // until the panel was sized, and the panel was never sized because
+        // viewW was 0.
+        if (! viewport_.isShowing() || viewport_.getWidth() <= 0)
         {
             if (panel_.getWidth() != 0 || panel_.getHeight() != 0)
                 panel_.setSize (0, 0);
             return;
         }
-        const int w = viewport_.getViewWidth();
-        const int h = juce::jmax (panel_.computePreferredHeight(), viewport_.getViewHeight());
+        const int preferredH = panel_.computePreferredHeight();
+        const int viewH = viewport_.getHeight();
+        // Budget for the auto vertical scrollbar: when the full row budget
+        // exceeds the view, the viewport narrows its content area by the
+        // scrollbar thickness — size the panel for that so rows are not
+        // clipped under the bar.
+        const int scrollbarW = (preferredH > viewH) ? viewport_.getScrollBarThickness() : 0;
+        const int w = viewport_.getWidth() - scrollbarW;
+        const int h = juce::jmax (preferredH, viewH);
         if (panel_.getWidth() != w || panel_.getHeight() != h)
         {
             panel_.setTopLeftPosition (0, 0);

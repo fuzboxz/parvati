@@ -112,6 +112,32 @@ TEST(parvati_settings_probe)
                 { if (c->isVisible() && c->getWidth() > 0) ++vis; else ++hid; }
             dump += juce::String ("content census: visible=") + juce::String (vis)
                   + " hidden/zero=" + juce::String (hid) + "\n";
+            // 2026-08-22: the REGRESSION GATE. This probe used to return true
+            // unconditionally — while the drawer rendered BLANK (every row
+            // 0×0; the tracker's getViewWidth() gate was circularly starved
+            // by the 0×0 panel it was supposed to size). Two invariants now
+            // FAIL the probe: (1) the VIEWED PANEL itself must be sized
+            // (non-zero bounds) once the drawer shows, and (2) no NAMED
+            // child may sit at 0×0 (a collapsed/mis-laid-out row). Most rows
+            // are unnamed Labels/ComboBoxes, so vis counts only the named
+            // buttons/toggles (>= 5 when laid out).
+            const bool panelSized = [&]
+            {
+                if (auto* vp = dynamic_cast<juce::Viewport*> (content))
+                    if (auto* panel = vp->getViewedComponent())
+                        return panel->getWidth() > 0 && panel->getHeight() > 0;
+                return false;
+            }();
+            if (! panelSized || hid != 0 || vis < 5)
+            {
+                dump += "FAIL: settings drawer content not displayed (panelSized="
+                      + juce::String (panelSized ? 1 : 0) + " visible=" + juce::String (vis)
+                      + " collapsed=" + juce::String (hid) + ") — panel sizing broken\n";
+                std::printf ("%s\n", dump.toRawUTF8 ());
+                win->setVisible (false);
+                delete ed;
+                return false;
+            }
         }
         std::printf ("%s\n", dump.toRawUTF8 ());
         snapshot (*ed, label);

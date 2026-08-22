@@ -870,6 +870,8 @@ add_executable(parvati_unified_tests
     # Final stragglers - migrated from standalone targets
     tests/concurrency_test.cpp
     tests/firmware_parity_test.cpp
+    tests/mono_retrigger_continuity_test.cpp
+    tests/release_vca_glide_test.cpp
     tests/roundtrip_golden_test.cpp
     tests/parvati_fv1_alias_probe.cpp
     tests/parvati_fx_cpu_probe.cpp

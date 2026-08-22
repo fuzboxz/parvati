@@ -23,6 +23,50 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Settings drawer rendered blank (2026-08-22).** The drawer's
+  SettingsScrollTracker gated panel sizing on Viewport::getViewWidth(), but
+  that returns jmin(viewedComponentSize, viewportSize) — and the viewed
+  component IS the panel being sized (0x0 while collapsed). A circular gate
+  that could never open: every settings row stayed 0x0 (all four probe
+  scenarios, theme switch and close+reopen included). The tracker now sizes
+  from the viewport's own bounds (budgeting the auto vertical scrollbar);
+  parvati_settings_probe also gained the regression gate it was missing — it
+  used to return PASS unconditionally — and now FAILs unless the viewed
+  panel is sized, no named row is collapsed, and the named-row census
+  survives (>= 5).
+- **Fast mono note changes cut out / clicked (2026-08-22).** A mono
+  retrigger while the previous note's release tail still sounds routed
+  through juce::Synthesiser::startVoice, whose pre-emptive stopNote(0,false)
+  -> Voice::Kill ZEROED the envelope — every fast note change re-attacked
+  from silence (with a ~0.5 s attack that is an audible chop). The firmware
+  re-Triggers the SAME voicecard: Envelope::Trigger(ATTACK) seeds its start
+  from the CURRENT value. Fix: the engine's retriggerVoice now goes through
+  startVoice with the kill guard neutralized (armRetriggerContinuation drops
+  exactly the currentlyPlayingSound pointer that arms the guard — full
+  truthful JUCE bookkeeping: note, channel, noteOnTime, pedals), and the
+  MONO path uses it for ANY active voice (release tail included), not just
+  legato overlaps. continuityNext_ also keeps the sounding voice's
+  resampler FIFO and gain flowing through startNote (no ~1 ms de-click hole,
+  no interpolator cold-restart click). New regression test
+  mono_retrigger_continuity_test pins the envelope continuity directly
+  (tail=182 -> 183 continuing vs 9 killed) — verified to fail on the old
+  routing. (Note: the firmware's osc_2 phase Reset blip on retriggers is
+  real Ambika behavior and stays.)
+- **VCA gain now glides across internal blocks (2026-08-22).** The default
+  output path applied the VCA gain once per 40-sample internal block — a
+  zero-order-hold staircase whenever the envelope moves (the analog VCA
+  hardware smooths these CV steps). The gain now ramps linearly across each
+  block in both the 1x and oversampled paths (static CV -> zero diff ->
+  bit-identical). Honest caveat, pinned by a synthetic-validated matched
+  filter: the staircase measures at/below the engine's 8-bit quantization
+  noise floor (~1%) even before the glide, so an output-domain regression
+  test cannot separate the two — the user-audible "tiny noise in the
+  release tail" is dominated by the 8-bit engine's own quantization noise,
+  which is hardware-faithful Ambika character (same DAC, same tail noise on
+  the real synth). release_vca_glide_test instead guards the class: no
+  block-rate CV leakage above 2.5x the quantization floor at either the
+  internal rate (980.4 Hz) or the host block rate (172 Hz — a CV applied at
+  the wrong rate entirely).
 - **Mix Balance / Mix Param zipper on knob drags (2026-08-22).** The mix
   crossfade gains were latched once per 40-sample block (line-for-line
   firmware port of voice.cc:441-442); in hardware the analog mixer smooths
