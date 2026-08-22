@@ -354,16 +354,10 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
         drawCurve (cutoffByte, rN, true);
     }
 
-    // Cutoff vertical reference line (clean 1px): only while AT REST — under
-    // modulation the moving curve alone carries the state (the static filter
-    // state is intentionally not shown).
-    if (! liveOn)
-    {
-        const float fc = cutoffByteToHz (cutoffByte);
-        const float fcX = plot.getX() + fcColumn (fc) * plot.getWidth();
-        g.setColour (accent.withAlpha (0.55f));
-        g.drawVerticalLine (juce::roundToInt (fcX), plotTop, plot.getBottom());
-    }
+    // (The static cutoff vertical reference line was REMOVED 2026-08-22 per
+    // user request — the curve's knee already carries the cutoff position and
+    // the line read as noise; same cleanup class as the LP/BP/HP/NOTCH corner
+    // label removal below.)
 
     // 0 dB reference line (clean 1px).
     const float zeroLevel = dbToLevel (0.0f);
