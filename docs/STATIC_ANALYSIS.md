@@ -95,5 +95,5 @@ following confirmed-dead code (each verified to have zero callers across
 
 Every public engine/processor method, every APVTS parameter, and every GUI
 control is now reachable (the latter two are enforced structurally — the GUI is
-generated from the descriptor table, and `parvati_editor_test` asserts every
+generated from the descriptor table, and `parvati_editor_coverage_check` asserts every
 descriptor has a control + attachment).

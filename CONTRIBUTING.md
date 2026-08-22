@@ -56,7 +56,7 @@ If you add a feature, add `tests/<name>_test.cpp` registering a
 which doubles as harness documentation when built with
 `-DPARVATI_TEST_EXAMPLES=ON`), and add the file to the
 `parvati_unified_tests` source list in `CMakeLists.txt`. The editor coverage
-check (`tools/editor_test.cpp`, target `parvati_editor_test`) and the layout
+check (`tools/editor_coverage_check.cpp`, target `parvati_editor_coverage_check`) and the layout
 sanity check are especially good guards for UI work.
 
 ## Performance regression testing

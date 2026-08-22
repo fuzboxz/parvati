@@ -509,7 +509,7 @@ public:
     juce::Component* getGroupDecorationForTest (const juce::String& groupName) const;
     juce::Component* getGroupInlinePreviewForTest (const juce::String& groupName) const;
 
-    // Headless layout sanity check (called by parvati_editor_test): every group
+    // Headless layout sanity check (called by parvati_editor_coverage_check): every group
     // panel has positive size, no two panels overlap, every (active) control
     // sits inside its group, and at least one non-dense row fills the page width.
     // Returns true when the flexible-width grid is well-formed.

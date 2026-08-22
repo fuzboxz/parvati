@@ -1,4 +1,4 @@
-// tools/editor_test.cpp
+// tools/editor_coverage_check.cpp
 // Headless GUI coverage check for the Parvati editor (integrated, Serum-style
 // layout).
 //
@@ -46,7 +46,7 @@
 //     (labels + active/allocated counts) lives on the Patch page
 //   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
 //
-// Build: cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
+// Build: cmake --build build --target parvati_editor_coverage_check && ./build/parvati_editor_coverage_check
 
 #include <algorithm>
 #include <cctype>

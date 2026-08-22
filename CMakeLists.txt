@@ -930,8 +930,19 @@ parvati_add_tool(parvati_menu_shots tools/menu_shots.cpp)
 # cells), exactly 2 top-level page tabs ([SYNTH][FX]; Global is a header-button
 # overlay), the default size is 1280x634, and the editor deletes cleanly
 # (leak-detector validated).
-#   cmake --build build --target parvati_editor_test && ./build/parvati_editor_test
-parvati_add_tool(parvati_editor_test tools/editor_test.cpp)
+#   cmake --build build --target parvati_editor_coverage_check && ./build/parvati_editor_coverage_check
+parvati_add_tool(parvati_editor_coverage_check tools/editor_coverage_check.cpp)
+
+# ------------------------------------------------------------------------------
+# Virtual MIDI source probe for the real Standalone app (manual testing):
+# creates a CoreMIDI virtual source "ParvatiProbe" and sends held notes to
+# whatever connects to it. Zero Parvati/JUCE dependencies — deliberately NOT
+# registered via parvati_add_tool (that would link the whole Parvati lib);
+# a plain target with the two macOS frameworks it actually needs.
+#   cmake --build build --target parvati_vmidi_probe && ./build/parvati_vmidi_probe <delay> <hold> [note] [vel]
+add_executable(parvati_vmidi_probe EXCLUDE_FROM_ALL tools/vmidi_probe.cpp)
+target_compile_features(parvati_vmidi_probe PRIVATE cxx_std_17)
+target_link_libraries(parvati_vmidi_probe PRIVATE "-framework CoreMIDI" "-framework CoreFoundation")
 
 # ------------------------------------------------------------------------------
 # Template-bank generator (dev tool, EXCLUDE_FROM_ALL). Produces the 5 stock init
