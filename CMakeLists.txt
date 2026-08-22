@@ -830,6 +830,7 @@ add_executable(parvati_unified_tests
     # Diagnostic probe — note-retrigger crackle scenarios (audit P1-1: was
     # tracked but never compiled/registered; now part of the unified target)
     tests/parvati_retrig_probe.cpp
+# Unified test sources (keep alphabetical-ish; new_test.sh appends here)
     # Vendored firmware sources for firmware_parity_test (the parity oracle:
     # tests/firmware_shim headers shadow the AVR firmware headers; see the
     # include dirs / flags added below the target).
