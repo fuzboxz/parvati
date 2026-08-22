@@ -68,15 +68,28 @@ if [[ $# -gt 0 ]]; then
         [[ " ${ALL_TESTS[*]} " == *" $t "* ]] || { echo "error: unknown test: $t" >&2; exit 2; }
     done
 else
+    # loader_fuzz_test is SKIPPED by default (2026-08-22, user call): it is a
+    # ~9-minute fuzz soak that gates the wall time of the whole suite while
+    # rarely being the thing under test. Run it explicitly when the DSP
+    # changes:
+    #   ./build_unified/parvati_unified_tests loader_fuzz_test
+    #   tools/run_tests_parallel.sh loader_fuzz_test
+    # (Passing it as an explicit arg still works — the exclusion below only
+    # applies to the no-args default roster.)
+    SKIP=(loader_fuzz_test)
     # Long poles first so the greedy queue starts them immediately.
-    SLOW=(loader_fuzz_test perf_smoke_test lifecycle_test render_quality_test parvati_clouds_fx_test)
+    SLOW=(perf_smoke_test lifecycle_test render_quality_test parvati_clouds_fx_test)
     TESTS=()
     for s in "${SLOW[@]}"; do
         [[ " ${ALL_TESTS[*]} " == *" $s "* ]] && TESTS+=("$s")
     done
     for t in "${ALL_TESTS[@]}"; do
+        do_skip=0
+        for x in "${SKIP[@]}"; do [[ $t == "$x" ]] && do_skip=1; done
+        [[ $do_skip -eq 1 ]] && continue
         [[ " ${TESTS[*]} " == *" $t "* ]] || TESTS+=("$t")
     done
+    echo "skipped (run explicitly when the DSP changes): ${SKIP[*]}"
 fi
 
 echo "parvati parallel test runner"
