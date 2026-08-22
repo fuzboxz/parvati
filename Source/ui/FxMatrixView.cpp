@@ -7,6 +7,7 @@
 
 #include "PluginProcessor.h"   // ParvatiAudioProcessor (complete type)
 #include "IconButton.h"           // IconButton (row delete X)
+#include "FormatHelpers.h"        // signedAmountPercent (amount labels)
 #include "ThemeManager.h"
 #include "ParvatiTheme.h"
 #include "ParvatiLookAndFeel.h"   // appFont() via the inherited editor L&F
@@ -59,13 +60,9 @@ juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourc
     return cat.isTransparent() ? t.accentPrimary : cat;
 }
 
-// A signed amount (-63..+63) -> "+100%" / "0%" / "-50%". The slider/engine use
-// ±63 as full-scale, so 63 maps to 100%. (Verbatim from ModMatrixView.)
-juce::String formatPercent (int amount)
-{
-    const int pct = juce::roundToInt (static_cast<double> (amount) * 100.0 / 63.0);
-    return (pct > 0 ? "+" : juce::String()) + juce::String (pct) + "%";
-}
+// A signed amount (-63..+63) -> "+100%" / "0%" / "-50%": the shared
+// ui/FormatHelpers.h formatter (same function as ModMatrixView's label and
+// the host fxmod amount strings).
 
 // Resolve the app font through the inherited editor L&F when present, else the
 // JUCE default (keeps the view usable before it is reparented into the editor).
@@ -351,7 +348,7 @@ struct FxMatrixRow : public juce::Component,
     {
         const int amt = owner_.isSlotMuted (slot_) ? owner_.stashedAmount (slot_)
                                                     : owner_.amountForSlot (slot_);
-        valueLabel_.setText (formatPercent (amt), juce::dontSendNotification);
+        valueLabel_.setText (signedAmountPercent (static_cast<double> (amt)), juce::dontSendNotification);
     }
 
     // (Re)build the dest combo's items from the three slots' current FX types so

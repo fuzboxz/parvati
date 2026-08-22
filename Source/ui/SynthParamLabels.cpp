@@ -12,6 +12,7 @@
 #include <cmath>
 
 #include "TuningTables.h"              // tuningPresetName (part_raga readout)
+#include "ui/FormatHelpers.h"   // hzReadoutSynth / signedAmountPercent
 #include "ui/NoteName.h"
 
 #include "dsp/analog_filter.h"            // AnalogFilter::cutoffByteToHz
@@ -36,20 +37,12 @@ const char* const kSyncedDivisions[15] = {
     "1/1", "1/2.", "1/1T", "1/2", "1/4.", "1/2T", "1/4", "1/4T",
     "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64T" };
 
-// Frequency -> "0.XXHz" / "NHz" / electronic-component "NkN" (e.g. 15.6kHz ->
-// "15k6"). In the kHz range the multiplier letter replaces the decimal point
-// and the "Hz" suffix is elided, so the longest readout ("16k0") fits a 36px
-// dial above the painter's 9px floor. The filter cutoff is the only synth knob
-// that reaches kHz; LFO rates top out ~980 Hz -> "NHz".
-juce::String hzToString (double hz)
-{
-    if (hz < 1.0)    return juce::String (hz, 2) + "Hz";
-    if (hz < 1000.0) return juce::String (juce::roundToInt (hz)) + "Hz";
-    // 15.6kHz -> "15k6": round to the nearest 100 Hz (15589 Hz -> 156), then
-    // split into the integer kHz (15) and the single decimal digit (6) joined by 'k'.
-    const int tens = juce::roundToInt (hz / 100.0);
-    return juce::String (tens / 10) + "k" + juce::String (tens % 10);
-}
+// Frequency readout: ui/FormatHelpers.h hzReadoutSynth (single source, shared
+// with the FX-page Hz readout): "0.XXHz" / "NHz" / electronic-component
+// "NkN" (15.6kHz -> "15k6"). In the kHz range the multiplier letter replaces
+// the decimal point and the "Hz" suffix is elided, so the longest readout
+// ("16k0") fits a 36px dial above the painter's 9px floor. The filter cutoff
+// is the only synth knob that reaches kHz; LFO rates top out ~980 Hz -> "NHz".
 
 // LFO 16-bit phase advanced once per internal block (kAudioBlockSize samples @
 // kInternalSampleRate) -> Hz = inc * sr / (block * 65536).
@@ -73,12 +66,9 @@ juce::String envTimeToString (uint16_t inc)
     return juce::String (t, 1) + "s";
 }
 
-// Signed amount -63..+63 -> "+100%" / "0%" / "-50%" (mirrors ModMatrixView::formatPercent).
-juce::String amountPercent (double v)
-{
-    const int pct = juce::roundToInt (v * 100.0 / 63.0);
-    return (pct > 0 ? "+" : juce::String()) + juce::String (pct) + "%";
-}
+// Signed amount -63..+63 -> "+100%" / "0%" / "-50%": the shared
+// ui/FormatHelpers.h formatter (ModMatrixView / FxMatrixView readouts + host
+// value strings use the same function).
 
 // Unsigned 0..max -> "NN%".
 juce::String pct (double v, double max)
@@ -142,7 +132,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
             // Knob 0..127 -> cutoff byte 0..254 -> Hz. Approximate (the real cutoff
             // is key-tracked + mod-matrix shifted); this is the BASE cutoff position.
             const int byte = juce::jlimit (0, 255, juce::roundToInt (value * 2.0));
-            return hzToString (ambika::dsp::AnalogFilter::cutoffByteToHz (static_cast<uint8_t> (byte)));
+            return hzReadoutSynth (ambika::dsp::AnalogFilter::cutoffByteToHz (static_cast<uint8_t> (byte)));
         }
         // filter1_reso / filter_env / filter_lfo are 0..63 depth amounts -> %.
         // (filter_drive is a choice param, gated out before the formatter runs.)
@@ -160,7 +150,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
                 return kSyncedDivisions[iv];
             const uint16_t inc = ResourcesManager::Lookup<uint16_t, uint8_t> (
                 lut_res_lfo_increments, static_cast<uint8_t> (iv - ambika::dsp::kNumSyncedLfoRates));
-            return hzToString (lfoIncrementToHz (inc));
+            return hzReadoutSynth (lfoIncrementToHz (inc));
         }
         if (id.endsWith ("_sustain")) return pct (value, 127.0);
         if (id.endsWith ("_attack") || id.endsWith ("_decay") || id.endsWith ("_release"))
@@ -178,12 +168,12 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
     {
         const uint16_t inc = ResourcesManager::Lookup<uint16_t, uint8_t> (
             lut_res_lfo_increments, static_cast<uint8_t> (iv));
-        return hzToString (lfoIncrementToHz (inc));
+        return hzReadoutSynth (lfoIncrementToHz (inc));
     }
 
     // ---- Mod matrix amount (mod{N}_amount; source/dest are choices -> gated) ----
     if (id.startsWith ("mod") && id.endsWith ("_amount"))
-        return amountPercent (value);
+        return signedAmountPercent (value);
 
     // ---- Sequencer ----
     if (id.startsWith ("seq"))

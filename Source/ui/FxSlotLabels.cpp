@@ -9,6 +9,8 @@
 
 #include "FxSlotLabels.h"
 
+#include "FormatHelpers.h"   // hzReadoutFx (single source with the synth Hz readout)
+
 #include <cmath>
 
 //==============================================================================
@@ -218,20 +220,13 @@ static juce::String formatSemis (double semis, double range) noexcept
     return juce::String (semis >= 0.0 ? "+" : "") + juce::String (semis, 1);
 }
 
-// Compact FX-page Hz readout, mirroring the synth filter's electronic-component
-// style: below 1 kHz -> integer + "Hz" ("820Hz"); 1..10 kHz -> one-decimal
-// k-notation with 'k' replacing the decimal point ("1k2", "2k6", "6k7"); at
-// or above 10 kHz -> integer kHz ("12k", "15k"). Rounding that carries into
-// the next integer kHz (9950 Hz -> "10k") lands in the hundreds >= 100 branch.
-static juce::String formatHz (double hz) noexcept
-{
-    if (hz < 1000.0)
-        return juce::String (juce::roundToInt (hz)) + "Hz";
-    const int hundreds = juce::roundToInt (hz / 100.0);   // nearest 100 Hz
-    if (hundreds >= 100)
-        return juce::String (hundreds / 10) + "k";        // 10k, 12k, 15k...
-    return juce::String (hundreds / 10) + "k" + juce::String (hundreds % 10);   // 1k2..9k9
-}
+// Compact FX-page Hz readout: ui/FormatHelpers.h hzReadoutFx (single source
+// with the synth filter's electronic-component style — only the documented
+// edge policies differ): below 1 kHz -> integer + "Hz" ("820Hz"); 1..10 kHz
+// -> one-decimal k-notation with 'k' replacing the decimal point ("1k2",
+// "2k6", "6k7"); at or above 10 kHz -> integer kHz ("12k", "15k"). Rounding
+// that carries into the next integer kHz (9950 Hz -> "10k") lands in the
+// hundreds >= 100 branch of the shared core.
 
 // Compact FX-page milliseconds readout: integer-rounded with NO decimals once
 // the value reaches 10 ms ("10ms", "250ms", "470ms"); sub-10 ms values keep
@@ -255,7 +250,7 @@ static juce::String formatSecs (double s) noexcept
 // Per-param meaningful-unit value readout (DISPLAY-ONLY; stored value unchanged).
 // p = value0to127/127.0 mirrors the DSP normalization (SynthEngine / ParamControl).
 // HARD RULE: every string this returns is <= 6 characters — the FX-slot knob
-// cell is narrow. Hz use the compact "820Hz"/"2k6" style (formatHz), times are
+// cell is narrow. Hz use the compact "820Hz"/"2k6" style (hzReadoutFx), times are
 // space-free ms (formatMs), rates are space-free "0.87Hz", decays one-decimal
 // "1.6s". tests/fx_param_coverage_test.cpp sweeps every (type, idx, value)
 // triple and asserts the budget.
@@ -317,7 +312,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
                 const double hz = f * dir;
                 // Compact + signed, no spaces: "+230Hz" small, "+1k2" large.
                 return juce::String (hz > 0.0 ? "+" : (hz < 0.0 ? "-" : ""))
-                       + formatHz (std::fabs (hz));
+                       + hzReadoutFx (std::fabs (hz));
             }
             break;
 
@@ -325,7 +320,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 0)   // Carrier -> Hz (20..4000, log)
             {
                 const double hz = 20.0 * std::pow (200.0, p);
-                return formatHz (hz);   // "20Hz".."999Hz" / "1k0".."4k0"
+                return hzReadoutFx (hz);   // "20Hz".."999Hz" / "1k0".."4k0"
             }
             break;
 
@@ -359,12 +354,12 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 1)   // Decay -> 0.1..4.0 s
                 return formatSecs (0.1 + p * 3.9);
             if (idx == 2)   // Damping -> 500..12000 Hz (log)
-                return formatHz (500.0 * std::pow (24.0, p));
+                return hzReadoutFx (500.0 * std::pow (24.0, p));
             break;
 
         case FxType::VinylCompressor:
             if (idx == 3)   // Age -> 700..15000 Hz (log)
-                return formatHz (700.0 * std::pow (15000.0 / 700.0, p));
+                return hzReadoutFx (700.0 * std::pow (15000.0 / 700.0, p));
             break;
 
         case FxType::Phaser:
@@ -373,7 +368,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 2)   // Feedback -> -90..+90 %
                 return juce::String (juce::roundToInt ((-0.9 + p * 1.8) * 100.0)) + "%";
             if (idx == 3)   // Center -> 200..2000 Hz (log)
-                return formatHz (200.0 * std::pow (10.0, p));   // "200Hz".."2k0"
+                return hzReadoutFx (200.0 * std::pow (10.0, p));   // "200Hz".."2k0"
             break;
 
         // ---- FV-1 second wave readouts ----
@@ -383,7 +378,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 1)   // Bias -> -0.3..+0.3
                 return juce::String ((p - 0.5) * 0.6, 2);
             if (idx == 2)   // Tone -> 700..15000 Hz (log)
-                return formatHz (700.0 * std::pow (15000.0 / 700.0, p));
+                return hzReadoutFx (700.0 * std::pow (15000.0 / 700.0, p));
             if (idx == 3)   // Level -> 0..2
                 return juce::String (p * 2.0, 2);
             break;
@@ -400,7 +395,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
                 return kShapes[juce::jlimit (0, 15, juce::roundToInt (p * 16.0))];
             }
             if (idx == 3)   // Tone -> 700..15000 Hz (log)
-                return formatHz (700.0 * std::pow (15000.0 / 700.0, p));
+                return hzReadoutFx (700.0 * std::pow (15000.0 / 700.0, p));
             break;
 
         case FxType::Compressor:
@@ -445,7 +440,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 0)   // Time -> 10..470 ms (log)
                 return formatMs (10.0 * std::pow (47.0, p), 1);
             if (idx == 2)   // Tone -> 700..12000 Hz (log)
-                return formatHz (700.0 * std::pow (12000.0 / 700.0, p));
+                return hzReadoutFx (700.0 * std::pow (12000.0 / 700.0, p));
             if (idx == 3)   // Spread -> R time 1..2x
                 return juce::String (1.0 + p, 2) + "x";
             break;
@@ -455,7 +450,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 0)   // Decay
                 return formatSecs (0.1 + p * (t == FxType::Spring ? 3.9 : 2.9));
             if (idx == 1)   // Damp
-                return formatHz (500.0 * std::pow (t == FxType::Spring ? 16.0 : 24.0, p));
+                return hzReadoutFx (500.0 * std::pow (t == FxType::Spring ? 16.0 : 24.0, p));
             break;
 
         default:

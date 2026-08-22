@@ -19,9 +19,10 @@
 //           increment = lut_res_lfo_increments[rate - 15]
 //       (This covers the common/default case — the init patch and goldencard
 //        factory patches all use free-running rates, e.g. rate = 15+24..48.)
-//     * rate < 15                          -> MIDI-CLOCK SYNCED (controller-side).
-//       Proper tempo-sync is a deferred follow-up; for now a slow free-running
-//       increment is used as a non-frozen placeholder so the LFO still moves.
+//     * rate < 15                          -> MIDI-CLOCK SYNCED: the host BPM
+//       drives a 24-PPQN clock; the cycle length is
+//       midi_clock_tick_per_step[rate] ticks (LfoRateToIncrement below —
+//       the port of controller/part.cc:264-269).
 //
 //   Shape mapping: shapes TRIANGLE/SQUARE/S&H/RAMP (0..3) are rendered by the
 //   ported Lfo (which, like the voicecard firmware, compiles out the 16

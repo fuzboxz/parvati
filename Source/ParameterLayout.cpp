@@ -13,6 +13,7 @@
 // readouts (fxEqLowToString/fxEqDbToString) were hoisted here from
 // FxRoutingBar.cpp so the host text and the UI knob text are ONE implementation.
 #include "ui/FxSlotLabels.h"
+#include "ui/FormatHelpers.h"   // signedAmountPercent (fxmod amount host strings)
 #include "ui/SynthParamLabels.h"
 
 #include <array>
@@ -679,13 +680,9 @@ juce::String unsignedPctOf (double v, double max)
     return juce::String (juce::roundToInt (juce::jlimit (0.0, 100.0, v / max * 100.0))) + "%";
 }
 
-// Signed mod amount -63..+63 -> "+100%" / "0%" / "-50%" (mirrors the UI's
-// mod-matrix / FX-mod amount readouts).
-juce::String signedAmountPct (double v)
-{
-    const int pct = juce::roundToInt (v * 100.0 / 63.0);
-    return (pct > 0 ? "+" : juce::String()) + juce::String (pct) + "%";
-}
+// Signed mod amount -63..+63 -> "+100%" / "0%" / "-50%": the shared
+// ui/FormatHelpers.h formatter (same math the UI's mod-matrix / FX-mod amount
+// readouts use — pinned equal by paramhelp_parity_test).
 
 // "fx{1..3}_param{1..5}" -> true + slot/paramIdx (1-based). @p paramIdx is the
 // UI's generic param index (paramLabel/paramValueText idx 0..4 = paramIdx-1).
@@ -809,7 +806,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout
             else if (id.startsWith ("fxmod") && id.endsWith ("_amount"))
             {
                 attrs = attrs.withStringFromValueFunction (
-                    [] (int v, int) { return signedAmountPct (static_cast<double> (v)); });
+                    [] (int v, int) { return signedAmountPercent (static_cast<double> (v)); });
                 parse = [] (const juce::String& t) { return juce::roundToInt (t.getIntValue() * 0.63); };
             }
             // fx_order: an internal chain-permutation index with no meaningful

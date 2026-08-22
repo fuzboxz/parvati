@@ -16,6 +16,7 @@
 #include <functional>
 
 #include "NoteStack.h"
+#include "dsp/constants.h"   // midi_clock_tick_per_step (single-source tick table)
 #include "dsp/random.h"
 
 namespace parvati
@@ -40,10 +41,15 @@ enum class ArpMode : uint8_t
     Sequencer
 };
 
-// Exact firmware data: MIDI-clock ticks per step, indexed by arp divider.
-static constexpr uint8_t kMidiClockTickPerStep[15] = {
-    96, 72, 64, 48, 36, 32, 24, 16, 12, 8, 6, 4, 3, 2, 1
-};
+// Exact firmware data (controller/part.cc:30-32): MIDI-clock ticks per step,
+// indexed by arp divider. SINGLE SOURCE: the identical table
+// ambika::dsp::midi_clock_tick_per_step (dsp/constants.h) — also indexed by
+// the tempo-synced LFO rate — aliased here under its historical name so the
+// arp prescaler and the synced-LFO rate can never silently diverge.
+static constexpr const uint8_t (&kMidiClockTickPerStep)[15] =
+    ambika::dsp::midi_clock_tick_per_step;
+static_assert (ambika::dsp::kNumSyncedLfoRates == 15,
+               "kMidiClockTickPerStep historically had 15 entries (dividers 0..14)");
 
 // 16-bit step-gate patterns (lut_res_arpeggiator_patterns[22] from firmware).
 static constexpr uint16_t kArpPatterns[22] = {
