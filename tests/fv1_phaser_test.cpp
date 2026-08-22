@@ -8,6 +8,7 @@
 // NOTE: prepare(48000.0, 256) sizes the RateBridge internal buffers to 256, so
 // every process() call uses a block of exactly 256 host samples (== maxBlock).
 
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <cstdio>
@@ -70,7 +71,7 @@ TEST(fv1_phaser_test)
     constexpr int kN = 8 * kBlock;   // 2048 samples total
 
     // Several settings including the param extremes (0 and 1 where valid).
-    const float settings[5][5] = {
+    const std::array<float, kNumFxSlotParams> settings[5] = {
         { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },   // all min: rate 0.1 Hz, depth 0, fb -0.9, center 200
         { 0.5f, 0.5f, 0.5f, 0.5f, 0.0f },   // mid
         { 1.0f, 1.0f, 1.0f, 1.0f, 0.0f },   // all max: rate 8 Hz, depth 1500, fb 0.9, center 2000
@@ -132,7 +133,7 @@ TEST(fv1_phaser_test)
     //      peak no larger than the early-block peak (no runaway growth).
     {
         fx.reset();
-        const float p[5] = { 0.5f, 1.0f, 1.0f, 0.0f, 0.0f }; // fb = +0.9 (max)
+        const std::array<float, kNumFxSlotParams> p = { 0.5f, 1.0f, 1.0f, 0.0f, 0.0f }; // fb = +0.9 (max)
         fx.setParams (p);
         bool finite = true;
         constexpr int kBlks = 8;
@@ -169,7 +170,7 @@ TEST(fv1_phaser_test)
     //      output must be deterministic across identical runs AND still differ
     //      from the dry signal (the allpass cascade still shapes the spectrum).
     {
-        const float p[5] = { 0.0f, 0.0f, 0.0f, 0.5f, 0.0f }; // depth=0, fb=0, center ~632 Hz
+        const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.0f, 0.0f, 0.5f, 0.0f }; // depth=0, fb=0, center ~632 Hz
 
         auto dry330 = [] (int idx)
         {

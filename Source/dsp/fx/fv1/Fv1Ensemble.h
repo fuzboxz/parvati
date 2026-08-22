@@ -30,7 +30,7 @@ class Fv1Ensemble : public Fv1FxProcessor
 public:
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 protected:

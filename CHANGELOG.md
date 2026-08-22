@@ -109,6 +109,48 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   via tools/run_sanitizers.sh + TSan on the concurrency-critical subset).
   External deps cloned per run (ambika firmware reference — untracked per
   NOTICES.md — and JUCE 9.0.1).
+- **Mix Balance / Mix Param zipper on knob drags (2026-08-22).** The mix
+  crossfade gains were latched once per 40-sample block (line-for-line
+  firmware port of voice.cc:441-442); in hardware the analog mixer smooths
+  the DAC steps, but the digital port had no analog domain, so each balance
+  tick stepped the gains by up to 16/255 of the waveform — audible zipper.
+  The gains now glide linearly across each block (~0.9 ms slew, 8.8
+  fixed-point, exact target landing — no residual), emulating the analog
+  smoothing. Registered as the sanctioned "mix-gain-glide" firmware
+  divergence and pinned BOTH ways by the new voicecard audio oracle
+  (static CVs byte-equal; reverting the glide fails parity loudly —
+  verified). The synth drag probe's mix_balance row was removed: the
+  diff-census metric measures legitimate shape-change artifacts on any
+  balance sweep (~0.06 regardless of the glide — verified by direct
+  accumulator instrumentation) and cannot police this param; the probe's
+  osc1_shape setInt also silently no-opped (choice param) and now uses
+  setChoice. Full suite: 117/117 (first fully green run).
+
+- **Untrusted-input boundary normalization (2026-08-22, memory-safety
+  wave).** New `Source/dsp/patch_sanitizer.h` normalizes raw Patch (112 B)
+  and PartData (84 B) bytes to their firmware-valid domains at INGESTION —
+  wired at the two paths that previously pushed file/host bytes into the
+  engine with no validation: `.MUL` multi loads
+  (`ParvatiAudioProcessor::loadMultiFile`) and host-state blob restores
+  (`SynthEngine::restoreState`). The `.PRO`/`.parvati` paths already clamp
+  via their APVTS/descriptor decodes. All bounds derive from the patch.h
+  enums (plus a static_assert against `kNumTuningPresets`), so they cannot
+  drift from the DSP definitions; the sanitizer is the IDENTITY for
+  legitimate firmware files (round-trips stay byte-exact — pinned by
+  roundtrip/golden/multi_load/host_state/loader_fuzz) and deterministically
+  narrows hostile blobs at every sink at once. The 2026-08-18 DSP-side sink
+  clamps stay (defense in depth). Regression cover:
+  tests/patch_sanitizer_test.cpp (unit domains + identity + END-TO-END
+  wiring proofs through a real written `.MUL` and a real captured/restored
+  state blob).
+- **GitHub Actions CI (2026-08-22).** `.github/workflows/ci.yml` — two
+  lanes: a PR gate (tests-only Debug build + the full unified suite minus
+  loader_fuzz/perf_smoke, ~15 min) and a nightly (full 117-test native
+  suite + Release Standalone/VST3/CLAP build proving the format wrappers
+  and the Release-only libc++ hardening configure + full ASan/UBSan sweep
+  via tools/run_sanitizers.sh + TSan on the concurrency-critical subset).
+  External deps cloned per run (ambika firmware reference — untracked per
+  NOTICES.md — and JUCE 9.0.1).
 
 ### Tools
 - **`tools/run_tests_parallel.sh` (2026-08-22).** Parallel driver for the
@@ -122,6 +164,55 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   (bounded by loader_fuzz_test) vs ~15-20 min sequential; same exit-code
   contract (number of failures), per-test logs under the run dir. The
   sequential runner stays canonical.
+
+### Build
+- **libc++ hardened mode FAST in optimized builds (2026-08-22).**
+  `_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST` for Clang/
+  RelWithDebInfo/Release configs (skipped under sanitizers/Debug): the
+  std::array/std::vector bounds checks the memory-safety migration leans
+  on stay ACTIVE in shipped artifacts instead of Debug-only. Near-zero
+  overhead; inert macro on older toolchains.
+
+### Changed
+- **Memory-safe C++ migration of the DSP layer (2026-08-22).** The
+  first-party DSP code now makes its buffer/index contracts un-breakable by
+  construction, with zero runtime cost and bit-identical audio (validated by
+  firmware_parity / roundtrip_golden and the full 116-test suite; the only
+  red row is the documented known-red Mix Balance probe):
+  - Oscillator / SubOscillator / TransientGenerator render APIs take
+    `uint8_t (&)[kAudioBlockSize]` sized references instead of `uint8_t*` —
+    a mis-sized buffer is now a compile error, not a silent overflow — and
+    the oscillator dispatch table is a size-checked `std::array`.
+  - `Voice::set_patch_data` rejects addresses past the 112-byte Patch
+    struct (a malformed preset / stray host write previously walked into
+    Part / tempo / envelope memory); the unused raw-alias
+    `mutable_patch_data()` is removed; modulation-source/destination
+    accessors guard the fixed 31/19-slot arrays; `mutable_envelope` and
+    `TriggerEnvelope` clamp; a hostile envelope stage sinks to DEAD instead
+    of indexing past the 5-slot stage arrays.
+  - `Voice::output()` returns a sized `std::array` reference instead of
+    `const uint8_t*`, closing the last raw-buffer seam in the voice render
+    path — `AmbikaVoice`'s crush (sample-and-hold) shadow now carries the
+    same sized-array contract (pointer-to-sized-array, not `uint8_t*`),
+    pinned end-to-end by patch_load_test [B5] (crush=28 alters the
+    waveform) under ASan+UBSan.
+  - `FxProcessor::setParams` (all 25+ effects) takes a bounded
+    `std::array<float, kNumFxSlotParams>` instead of a decaying
+    `const float[5]`; `ResourcesManager::Lookup(resource, i)` rejects
+    out-of-range resource ids; the FxChain retired-processor parking is
+    encapsulated in a `RetiredLot` type that owns every delete (RT-safe
+    atomic slots unchanged — TSan-clean x4).
+  - Regression cover in tests/dsp_memory_safety_test.cpp (all guards pinned);
+    ASan+UBSan sweep clean on the DSP/concurrency/FX-clouds subsets.
+
+### Fixed
+- **Vendored-Clouds UB under UBSan (2026-08-22).** Found by the sanitizer
+  sweep during the migration: the WSOLA correlator's `>> (32 - offset_bits)`
+  shifts a 32-bit word by 32 when offset_bits == 0 (UB; the firmware's ARM
+  `lsr` maps it to 0 — now reproduced via a 64-bit intermediate), and the
+  phase vocoder's scaled phase delta could leave the uint16 range (direct
+  float->uint16_t conversion is UB — now wraps mod 2^16 through int32, the
+  arithmetic upstream intended). Audio is unchanged for in-range values.
 
 ### Build
 - **`PARVATI_FORMATS` cache option + tests-only sanitizer trees (2026-08-22).**

@@ -21,6 +21,7 @@
 // Build: linked as parvati_fx_engine_continuity_test (see CMakeLists).
 
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -176,7 +177,7 @@ void wsolaStartupRegression()
         return;
     fx->prepare (sr, 256);
 
-    const float params[5] = { 0.5f, 0.5f, 0.5f, 0.0f, 1.0f };   // unison, tone LP bypassed
+    const std::array<float, kNumFxSlotParams> params = { 0.5f, 0.5f, 0.5f, 0.0f, 1.0f };   // unison, tone LP bypassed
 
     // Whole-run maxima AND post-startup maxima. The startup window: the first
     // correlator-placed window crossfades against the head-anchored one at a

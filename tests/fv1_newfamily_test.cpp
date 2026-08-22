@@ -13,6 +13,7 @@
 //
 // Build: linked as parvati_fv1_newfamily_test (built by default).
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -47,7 +48,7 @@ void runFx (parvati::fv1::Fv1FxProcessor& fx, const float p0, const float p1,
             const float p2, const float p3, const float* inL, const float* inR,
             int n, float* outL, float* outR)
 {
-    float prm[5] = { p0, p1, p2, p3, 0.0f };
+    std::array<float, kNumFxSlotParams> prm = { p0, p1, p2, p3, 0.0f };
     fx.setParams (prm);
     std::memcpy (outL, inL, sizeof (float) * static_cast<size_t> (n));
     std::memcpy (outR, inR, sizeof (float) * static_cast<size_t> (n));
@@ -177,7 +178,7 @@ TEST(fv1_newfamily_test)
             // No-switch references: shape 0 and shape 8 held for the whole render.
             for (int shape : { 0, 8 })
             {
-                float prm[5] = { 0.5f, (shape + 0.5f) / 16.0f, 0.0f, 0.7f, 0.0f };
+                std::array<float, kNumFxSlotParams> prm = { 0.5f, (shape + 0.5f) / 16.0f, 0.0f, 0.7f, 0.0f };
                 fx.reset();
                 fx.setParams (prm);
                 std::vector<float>& dst = shape == 0 ? r0 : r8;
@@ -190,7 +191,7 @@ TEST(fv1_newfamily_test)
             std::vector<int> at (static_cast<size_t> (nSw), -1);
             {
                 int shape = 0, fired = 0;
-                float prm[5] = { 0.5f, 0.5f / 16.0f, 0.0f, 0.7f, 0.0f };
+                std::array<float, kNumFxSlotParams> prm = { 0.5f, 0.5f / 16.0f, 0.0f, 0.7f, 0.0f };
                 fx.reset();
                 fx.setParams (prm);
                 std::memcpy (sw.data(), src.data(), sizeof (float) * static_cast<size_t> (nTot));
@@ -339,7 +340,7 @@ TEST(fv1_newfamily_test)
                     0.5f * std::sin (6.28318530718f * 440.0f * t);
             }
             // Time ~100 ms: 10 * 47^p = 100  ->  p = ln(10)/ln(47).
-            float prm[5] = { std::log (10.0f) / std::log (47.0f), 1.0f, 1.0f, 0.0f, 0.0f };
+            std::array<float, kNumFxSlotParams> prm = { std::log (10.0f) / std::log (47.0f), 1.0f, 1.0f, 0.0f, 0.0f };
             fx.setParams (prm);
             for (int i = 0; i < nTot; i += kBlock)
                 fx.process (tL.data() + i, tR.data() + i, std::min (kBlock, nTot - i));

@@ -27,6 +27,7 @@
 // JUCE-free: compiles the FV-1 effect sources directly (the fv1-family test
 // pattern). Fast: each check renders <= 2 s of 32.768 kHz audio.
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -72,7 +73,7 @@ constexpr int    kBuf = 256;
 
 // Render @p dur seconds of a loud sine through @p fx at @p params; returns L.
 template <typename Fx>
-std::vector<float> render (Fx& fx, const float params[5], double dur, double amp = 0.5)
+std::vector<float> render (Fx& fx, const std::array<float, kNumFxSlotParams> params, double dur, double amp = 0.5)
 {
     fx.prepare (kSr, kBuf);
     fx.setParams (params);
@@ -106,7 +107,7 @@ double dcRatio (const std::vector<float>& x, double fromSec)
 
 TEST(parvati_fx_invariants_test)
 {
-    const float all[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };   // 100% everything
+    const std::array<float, kNumFxSlotParams> all = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };   // 100% everything
 
     // ============================================================ [I1] curve
     std::printf ("[I1] wavetable curve audit\n");
@@ -165,7 +166,7 @@ TEST(parvati_fx_invariants_test)
                 case 0: { Fv1Echo f;         out = render (f, all, 2.0, 0.95f); break; }
                 case 1: { Fv1ClockedDelay f; out = render (f, all, 2.0); break; }
                 case 2: { Fv1Flanger f;      out = render (f, all, 2.0); break; }
-                case 3: { float p[5] = { 0.0f, 1, 1, 1, 1 };   // min Rate: the DC
+                case 3: { std::array<float, kNumFxSlotParams> p = { 0.0f, 1, 1, 1, 1 };   // min Rate: the DC
                                                           // mechanism is the loop,
                                                           // not the 8 Hz sweep AM.
                          Fv1Phaser f;       out = render (f, p, 2.0); break; }
@@ -197,7 +198,7 @@ TEST(parvati_fx_invariants_test)
         {
             for (int trial = 0; trial < 3; ++trial)
             {
-                float p[5];
+                std::array<float, kNumFxSlotParams> p;
                 for (int k = 0; k < 5; ++k)
                     p[k] = (trial == 0) ? 1.0f : next01() * 0.5f + 0.5f;   // extreme half
                 std::vector<float> out;
@@ -313,7 +314,7 @@ TEST(parvati_fx_invariants_test)
         auto rmsAt = [] (float p0) -> double
         {
             Fv1LutDistortion f;
-            const float prm[5] = { p0, 0.0f, 0.0f, 0.6f, 0.0f };   // shape Clip, tone mid
+            const std::array<float, kNumFxSlotParams> prm = { p0, 0.0f, 0.0f, 0.6f, 0.0f };   // shape Clip, tone mid
             const auto out = render (f, prm, 0.6, 0.45);
             double s = 0; int n = 0;
             for (int i = (int) (0.25 * kSr); i < (int) out.size(); ++i)

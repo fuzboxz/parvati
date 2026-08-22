@@ -6,6 +6,7 @@
 //     && /tmp/fv1_vinyl_compressor_test
 // No JUCE link needed (the framework is <array>/<cmath>/<cstdint>/<vector> only).
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -33,7 +34,7 @@ constexpr int kBlock = 256;
 void runSetting (fv1::Fv1VinylCompressor& fx, float c, float p, float k, float age,
                  const float* inL, const float* inR, int n, float* outL, float* outR)
 {
-    float prm[5] = { c, p, k, age, 0.0f };   // param[4] unused (chain dry/wet)
+    std::array<float, kNumFxSlotParams> prm = { c, p, k, age, 0.0f };   // param[4] unused (chain dry/wet)
     fx.setParams (prm);
     std::memcpy (outL, inL, sizeof (float) * static_cast<size_t> (n));
     std::memcpy (outR, inR, sizeof (float) * static_cast<size_t> (n));

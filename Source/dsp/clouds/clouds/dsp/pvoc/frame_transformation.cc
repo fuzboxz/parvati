@@ -123,8 +123,13 @@ void FrameTransformation::SetPhases(
   uint32_t* synthesis_phase = (uint32_t*) &destination[fft_size_ >> 1];
   for (int32_t i = 0; i < size_; ++i) {
     synthesis_phase[i] = phases_[i];
+    // Parvati memory-safety fix: the scaled delta can leave the uint16 range
+    // (a direct float->uint16_t conversion of e.g. 99081.2 is UB). Route
+    // through int32_t (defined for every finite value in range) then wrap on
+    // the uint16_t accumulation — the mod-2^16 phase arithmetic upstream
+    // intended. In-range deltas are bit-identical to upstream.
     phases_[i] += static_cast<uint16_t>(
-        static_cast<float>(phases_delta_[i]) * pitch_ratio);
+        static_cast<int32_t>(static_cast<float>(phases_delta_[i]) * pitch_ratio));
   }
   float r = phase_randomization;
   r = (r - 0.05f) * 1.06f;

@@ -22,7 +22,7 @@ namespace parvati::fv1
 static_assert (DelayLine<2048>::capacity <= kMaxMemorySamples,
                "Fv1VinylCompressor total delay memory within the FV-1 budget");
 
-void Fv1VinylCompressor::setParams (const float param[5])
+void Fv1VinylCompressor::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     pCompress_ = std::clamp (param[0], 0.0f, 1.0f);
     pWow_      = std::clamp (param[1], 0.0f, 1.0f);

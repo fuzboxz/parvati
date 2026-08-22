@@ -1,6 +1,10 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SynthEngine.h.
 
+#include <array>
+#include <cstring>   // memcpy (blob -> Patch view for sanitization)
 #include "SynthEngine.h"
+
+#include "dsp/patch_sanitizer.h"   // sanitizePatch/sanitizePartData (blob ingestion)
 
 #include "stmlib/dsp/dsp.h"    // stmlib::SoftLimit (FX chain-input safety knee)
 #include "MulExport.h"        // mul_export::deriveMasks (derived voicecard masks)
@@ -677,8 +681,23 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     {
         auto& part = parts_[(size_t) p];
         const auto& s = snap[(size_t) p];
-        part.patchBytes.loadFrom (s.patch.data());
-        part.partBytes.loadFrom (s.pb.data());
+        // SANITIZE AT INGESTION (memory-safety wave 2026-08-22): the host blob
+        // is untrusted — normalize every patch/part byte to its firmware domain
+        // BEFORE it lands in the engine arrays, so all sinks (known AND
+        // undiscovered) receive in-domain values. Identity for legit states
+        // (our own saves are in-domain by construction); the DSP-side sink
+        // clamps stay as defense in depth.
+        {
+            ambika::dsp::Patch patchView;
+            std::memcpy (&patchView, s.patch.data(), sizeof (ambika::dsp::Patch));
+            ambika::dsp::sanitizePatch (patchView);
+            part.patchBytes.loadFrom (reinterpret_cast<const uint8_t*> (&patchView));
+        }
+        {
+            std::array<uint8_t, 84> pb = s.pb;
+            ambika::dsp::sanitizePartData (pb);
+            part.partBytes.loadFrom (pb.data());
+        }
         stageArpSeqFromPartBytes (p);   // re-stage arp/seq from the restored PartData
         part.midiChannel.store (s.channel);
         part.keyrangeLow.store  (s.krLo);
@@ -2773,7 +2792,7 @@ void SynthEngine::recomputeTailCache() noexcept
             if (fx.slotEnabled[(size_t) s].load (std::memory_order_relaxed) == 0)
                 continue;
             const auto t = static_cast<FxType> (fx.slotType[(size_t) s].load (std::memory_order_relaxed));
-            float param[kNumFxSlotParams] {};
+            std::array<float, kNumFxSlotParams> param {};
             for (int k = 0; k < kNumFxSlotParams; ++k)
                 param[k] = (float) fx.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
             const double t60 = tailSecondsForFx (t, param, bpm);

@@ -16,6 +16,7 @@
 //
 // Built by default. Run with: ./build/parvati_render_quality_test
 
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <cstdio>
@@ -348,17 +349,17 @@ TEST(render_quality_test)
 
     std::printf ("\n[3a] Pure tail table (reverbs)\n");
     {
-        const float zero[5] = { 0.f, 0.f, 0.f, 0.f, 0.f };
+        const std::array<float, kNumFxSlotParams> zero = { 0.f, 0.f, 0.f, 0.f, 0.f };
         checkNear (tailSecondsForFx (FxType::None, zero, 120.0), 0.0, 1e-9, "None -> 0");
         checkNear (tailSecondsForFx (FxType::PlateReverb, zero, 120.0), 0.1, 1e-9,
                    "Plate min (decay 0.1 s, no predelay)");
         {
-            const float pmax[5] = { 1.f, 1.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> pmax = { 1.f, 1.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::PlateReverb, pmax, 120.0), 4.1, 1e-6,
                        "Plate max (4 s decay + 100 ms predelay)");
         }
         {
-            const float pmax[5] = { 1.f, 0.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> pmax = { 1.f, 0.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Spring, pmax, 120.0), 4.0, 1e-6, "Spring max (4 s)");
             checkNear (tailSecondsForFx (FxType::Room, pmax, 120.0), 3.0, 1e-6, "Room max (3 s)");
         }
@@ -366,13 +367,13 @@ TEST(render_quality_test)
             // CVerb: tank fb 0.95, cross-coupled loop 15353/32000 s
             // (4680+1652+2037+3410+1912+1662 samples, BOTH tank loops) ->
             // t60 = T*ln(1e-3)/ln(0.95)
-            const float tmax[5] = { 0.f, 0.f, 1.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> tmax = { 0.f, 0.f, 1.f, 0.f, 0.f };
             const double want = (15353.0 / 32000.0) * (std::log (1.0e-3) / std::log (0.95));
             checkNear (tailSecondsForFx (FxType::Reverb, tmax, 120.0), want, 1e-3,
                        "CVerb max-time t60 (feedback-decay law)");
             check (tailSecondsForFx (FxType::Reverb, tmax, 120.0) > 10.0,
                    "CVerb max-time tail exceeds 10 s (matches measured behaviour)");
-            const float pd[5] = { 1.f, 0.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> pd = { 1.f, 0.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Reverb, pd, 120.0),
                        (15353.0 / 32000.0) * (std::log (1.0e-3) / std::log (0.30)) + 0.20,
                        1e-3, "CVerb min-time = short decay + 200 ms predelay");
@@ -406,30 +407,30 @@ TEST(render_quality_test)
         // ring-outs (Ensemble worst: ~8x under-reported).
         {
             // Ensemble: Center max (25 ms loop) + |fb| max (0.9).
-            const float ens[5] = { 0.f, 0.f, 1.f, 1.f, 0.f };
+            const std::array<float, kNumFxSlotParams> ens = { 0.f, 0.f, 1.f, 1.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Ensemble, ens, 120.0),
                        0.025 * (std::log (1.0e-3) / std::log (0.9)), 1e-3,
                        "Ensemble max center + max fb follows the law (~1.64 s)");
             // Negative feedback rings identically (decay depends on |fb|).
-            const float ensNeg[5] = { 0.f, 0.f, 1.f, 0.f, 0.f };   // p3=0 -> fb=-0.9
+            const std::array<float, kNumFxSlotParams> ensNeg = { 0.f, 0.f, 1.f, 0.f, 0.f };   // p3=0 -> fb=-0.9
             checkNear (tailSecondsForFx (FxType::Ensemble, ensNeg, 120.0),
                        tailSecondsForFx (FxType::Ensemble, ens, 120.0), 1e-9,
                        "Ensemble negative fb == positive |fb|");
             // fb=0 (p3=0.5) -> single pass = the loop time itself.
-            const float ensOff[5] = { 0.f, 0.f, 1.f, 0.5f, 0.f };
+            const std::array<float, kNumFxSlotParams> ensOff = { 0.f, 0.f, 1.f, 0.5f, 0.f };
             checkNear (tailSecondsForFx (FxType::Ensemble, ensOff, 120.0), 0.025, 1e-9,
                        "Ensemble fb=0 -> single pass (25 ms loop)");
         }
         {
             // Chorus: Center max (25 ms loop) + fb 0.5 -> ~0.25 s.
-            const float ch[5] = { 0.f, 0.f, 1.f, 1.f, 0.f };
+            const std::array<float, kNumFxSlotParams> ch = { 0.f, 0.f, 1.f, 1.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Chorus, ch, 120.0),
                        0.025 * (std::log (1.0e-3) / std::log (0.5)), 1e-3,
                        "Chorus max center + max fb follows the law (~0.25 s)");
         }
         {
             // Flanger: Manual max (6 ms base loop) + fb 0.92 -> ~0.50 s.
-            const float fl[5] = { 0.f, 0.f, 1.f, 1.f, 0.f };
+            const std::array<float, kNumFxSlotParams> fl = { 0.f, 0.f, 1.f, 1.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Flanger, fl, 120.0),
                        0.006 * (std::log (1.0e-3) / std::log (0.92)), 1e-3,
                        "Flanger max base + max fb follows the law (~0.50 s)");
@@ -437,15 +438,15 @@ TEST(render_quality_test)
         {
             // Resonator: t60 = 1099*10^(4*damping)/48000 (rate-normalized at
             // 48 kHz), capped at kTailCapSeconds for the formally-minutes top.
-            const float res03[5] = { 0.f, 0.3f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> res03 = { 0.f, 0.3f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Resonator, res03, 120.0),
                        1099.0 * std::pow (10.0, 1.2) / 48000.0, 1e-3,
                        "Resonator damping 0.3 -> ~0.36 s modal ring");
-            const float res06[5] = { 0.f, 0.6f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> res06 = { 0.f, 0.6f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Resonator, res06, 120.0),
                        1099.0 * std::pow (10.0, 2.4) / 48000.0, 1e-3,
                        "Resonator damping 0.6 -> ~5.75 s modal ring");
-            const float res1[5] = { 0.f, 1.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> res1 = { 0.f, 1.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Resonator, res1, 120.0), kTailCapSeconds, 1e-9,
                        "Resonator damping 1.0 -> capped at 12 s (formally minutes)");
         }
@@ -455,15 +456,15 @@ TEST(render_quality_test)
             // Echo: fb=0 -> single pass, but the PING-PONG loop is
             // timeL+timeR = 2T even at Spread 0 (tapR->damp->fb->lineL->
             // tapL->lineR->tapR).
-            const float emin[5] = { 0.f, 0.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> emin = { 0.f, 0.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Echo, emin, 120.0), 0.020, 1e-6,
                        "Echo min (2x 10 ms ping-pong loop, no feedback)");
             // fb=1.0 -> g=0.995 -> the >=0.995 infinite sentinel (cap).
-            const float emax[5] = { 1.f, 1.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> emax = { 1.f, 1.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Echo, emax, 120.0), kTailCapSeconds, 1e-9,
                        "Echo max feedback (g=0.995) = infinite sentinel");
             // Mid feedback, Spread 0: exact law over the 2T ping-pong loop.
-            const float emid[5] = { 1.f, 0.5f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> emid = { 1.f, 0.5f, 0.f, 0.f, 0.f };
             const double T = 0.010 * std::pow (47.0, 1.0);
             const double g = 0.5 * 0.995;
             checkNear (tailSecondsForFx (FxType::Echo, emid, 120.0),
@@ -471,7 +472,7 @@ TEST(render_quality_test)
                        "Echo 50% fb, spread 0 -> t60 = 2T*ln(1e-3)/ln(g)");
             // Max time + max spread: timeR clamps to the 16383-sample ring
             // guard, so the loop is T + 16383/32768 (NOT 3T).
-            const float espread[5] = { 1.f, 0.5f, 0.f, 1.f, 0.f };
+            const std::array<float, kNumFxSlotParams> espread = { 1.f, 0.5f, 0.f, 1.f, 0.f };
             checkNear (tailSecondsForFx (FxType::Echo, espread, 120.0),
                        (T + 16383.0 / 32768.0) * (std::log (1.0e-3) / std::log (g)), 1e-3,
                        "Echo spread max honours the 16383-sample ring guard");
@@ -479,11 +480,11 @@ TEST(render_quality_test)
         {
             // ClockedDelay @120 BPM, sync=0 -> div 1 -> T = (4/1)*(60/120) = 2 s
             // clamped to the 1.0 s line; fb=0 -> single pass.
-            const float cd[5] = { 0.f, 0.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> cd = { 0.f, 0.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::ClockedDelay, cd, 120.0), 1.0, 1e-9,
                        "ClockedDelay whole-note @120 clamps to the 1 s line (no fb)");
             // Same with max feedback: 1 s * 134.7 passes.
-            const float cdfb[5] = { 0.f, 1.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> cdfb = { 0.f, 1.f, 0.f, 0.f, 0.f };
             checkNear (tailSecondsForFx (FxType::ClockedDelay, cdfb, 120.0),
                        1.0 * (std::log (1.0e-3) / std::log (0.95)), 1e-3,
                        "ClockedDelay max feedback follows the law");
@@ -497,13 +498,13 @@ TEST(render_quality_test)
         }
         {
             // Granular/looping family: 4 s buffer, freeze -> the cap.
-            const float noFreeze[5] = { 0.f, 0.f, 0.f, 0.f, 0.f };
-            const float freeze[5] = { 0.f, 0.f, 0.f, 1.f, 0.f };
+            const std::array<float, kNumFxSlotParams> noFreeze = { 0.f, 0.f, 0.f, 0.f, 0.f };
+            const std::array<float, kNumFxSlotParams> freeze = { 0.f, 0.f, 0.f, 1.f, 0.f };
             checkNear (tailSecondsForFx (FxType::LoopingDelay, noFreeze, 120.0), 4.0, 1e-9,
                        "LoopingDelay = 4 s capture buffer");
             checkNear (tailSecondsForFx (FxType::LoopingDelay, freeze, 120.0), kTailCapSeconds,
                        1e-9, "LoopingDelay freeze = infinite sentinel");
-            const float spectralFreeze[5] = { 0.f, 0.f, 0.f, 0.f, 1.f };   // freeze is param[4]
+            const std::array<float, kNumFxSlotParams> spectralFreeze = { 0.f, 0.f, 0.f, 0.f, 1.f };   // freeze is param[4]
             checkNear (tailSecondsForFx (FxType::Spectral, spectralFreeze, 120.0),
                        kTailCapSeconds, 1e-9, "Spectral freeze = infinite sentinel");
             // WSOLAStretch: freeze is param[3] like LoopingDelay (the granular

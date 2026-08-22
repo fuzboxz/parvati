@@ -13,7 +13,7 @@ namespace parvati::fv1
 static_assert (2 * DelayLine<2048>::capacity <= kMaxMemorySamples,
                "Fv1Chorus within the FV-1 RAM budget");
 
-void Fv1Chorus::setParams (const float param[5])
+void Fv1Chorus::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = std::clamp (param[0], 0.0f, 1.0f);
     const float p1 = std::clamp (param[1], 0.0f, 1.0f);

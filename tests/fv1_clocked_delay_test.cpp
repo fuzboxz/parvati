@@ -5,6 +5,7 @@
 //     Source/dsp/fx/fv1/Fv1ClockedDelay.cpp -o /tmp/fv1_clocked_delay_test \
 //   && /tmp/fv1_clocked_delay_test
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -26,7 +27,7 @@ void check (bool ok, const char* m)
 
 void setAll (fv1::Fv1ClockedDelay& fx, float sync, float fb, float age, float grit)
 {
-    float p[5] = { sync, fb, age, grit, 0.0f };   // param[4] unused
+    std::array<float, kNumFxSlotParams> p = { sync, fb, age, grit, 0.0f };   // param[4] unused
     fx.setParams (p);
 }
 

@@ -12,7 +12,7 @@ namespace parvati::fv1
 
 static_assert (0 <= kMaxMemorySamples, "Fv1Gate within the FV-1 RAM budget");
 
-void Fv1Gate::setParams (const float param[5])
+void Fv1Gate::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = std::clamp (param[0], 0.0f, 1.0f);
     const float p1 = std::clamp (param[1], 0.0f, 1.0f);

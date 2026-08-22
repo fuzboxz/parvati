@@ -16,11 +16,13 @@
 #ifndef AMBIKA_DSP_OSCILLATOR_H_
 #define AMBIKA_DSP_OSCILLATOR_H_
 
+#include <array>
 #include <cstdint>
 
+#include "dsp/constants.h"    // kAudioBlockSize (render-buffer bound)
 #include "dsp/fixed_types.h"
-#include "dsp/patch.h"    // OscillatorAlgorithm enum (WAVEFORM_*).
-#include "dsp/random.h"   // Reset() draws from the global LFSR.
+#include "dsp/patch.h"         // OscillatorAlgorithm enum (WAVEFORM_*).
+#include "dsp/random.h"        // Reset() draws from the global LFSR.
 
 namespace ambika::dsp {
 
@@ -58,8 +60,15 @@ union OscillatorState {
 
 class Oscillator {
  public:
+    // Render-buffer type: a reference to the fixed 40-sample block. Passing the
+    // buffer as a sized reference (not uint8_t*) makes the kAudioBlockSize
+    // contract un-checkable-by-accident: callers cannot hand a mis-sized or
+    // heap buffer without a compile error, and the render loops cannot walk
+    // past the end (memory-safety migration; zero runtime cost).
+    using RenderBuffer = uint8_t (&)[kAudioBlockSize];
+
     // Pointer-to-member-function type for the render dispatch table.
-    typedef void (Oscillator::*RenderFn)(uint8_t* buffer);
+    typedef void (Oscillator::*RenderFn)(RenderBuffer buffer);
 
     Oscillator() = default;
 
@@ -73,12 +82,17 @@ class Oscillator {
     // increment; `sync_input`/`sync_output` are per-sample sync arrays of
     // length kAudioBlockSize (a non-zero sync input sample resets the phase to
     // 0 before the increment; the sync output records phase wraps / carries).
+    // Render one kAudioBlockSize buffer. `increment` is the 24-bit phase
+    // increment; `sync_input`/`sync_output` are per-sample sync arrays of
+    // length kAudioBlockSize (a non-zero sync input sample resets the phase
+    // to 0 before the increment; the sync output records phase wraps / carries).
+    // All three arrays are passed as sized references — see RenderBuffer.
     inline void Render(uint8_t shape,
                        uint8_t note,
                        uint24_t increment,
-                       uint8_t* sync_input,
-                       uint8_t* sync_output,
-                       uint8_t* buffer) {
+                       RenderBuffer sync_input,
+                       RenderBuffer sync_output,
+                       RenderBuffer buffer) {
         shape_ = shape;
         note_ = note;
         phase_increment_ = increment;
@@ -109,21 +123,21 @@ class Oscillator {
     inline void set_fm_parameter(uint8_t fm_parameter) { fm_parameter_ = fm_parameter; }
 
  private:
-    void RenderSilence(uint8_t* buffer);
-    void RenderBandlimitedPwm(uint8_t* buffer);
-    void RenderSimpleWavetable(uint8_t* buffer);
-    void RenderCzSaw(uint8_t* buffer);
-    void RenderCzResoSaw(uint8_t* buffer);
-    void RenderCzResoPulse(uint8_t* buffer);
-    void RenderCzResoTri(uint8_t* buffer);
-    void RenderFm(uint8_t* buffer);
-    void Render8BitLand(uint8_t* buffer);
-    void RenderVowel(uint8_t* buffer);
-    void RenderDirtyPwm(uint8_t* buffer);
-    void RenderQuadSawPad(uint8_t* buffer);
-    void RenderFilteredNoise(uint8_t* buffer);
-    void RenderInterpolatedWavetable(uint8_t* buffer);
-    void RenderWavequence(uint8_t* buffer);
+    void RenderSilence(RenderBuffer buffer);
+    void RenderBandlimitedPwm(RenderBuffer buffer);
+    void RenderSimpleWavetable(RenderBuffer buffer);
+    void RenderCzSaw(RenderBuffer buffer);
+    void RenderCzResoSaw(RenderBuffer buffer);
+    void RenderCzResoPulse(RenderBuffer buffer);
+    void RenderCzResoTri(RenderBuffer buffer);
+    void RenderFm(RenderBuffer buffer);
+    void Render8BitLand(RenderBuffer buffer);
+    void RenderVowel(RenderBuffer buffer);
+    void RenderDirtyPwm(RenderBuffer buffer);
+    void RenderQuadSawPad(RenderBuffer buffer);
+    void RenderFilteredNoise(RenderBuffer buffer);
+    void RenderInterpolatedWavetable(RenderBuffer buffer);
+    void RenderWavequence(RenderBuffer buffer);
 
     // Current phase (24-bit fixed {integral:16, fractional:8}).
     uint24_t phase_ {};
@@ -140,7 +154,11 @@ class Oscillator {
     OscillatorState data_ {};
 
     // Render dispatch table (indexed by WAVEFORM_*; see oscillator.cpp).
-    static const RenderFn fn_table_[];
+    // std::array gives a compile-checked size (static_assert below) and a
+    // bounds-checked operator[] in debug builds.
+    static const std::array<RenderFn, WAVEFORM_WAVETABLE_1 + 1> fn_table_;
+    static_assert(sizeof (fn_table_) / sizeof (RenderFn) == WAVEFORM_WAVETABLE_1 + 1,
+                  "dispatch table must cover every WAVEFORM_* below WAVEFORM_WAVETABLE_1");
 
     // Per-sample sync arrays. A non-zero byte at sync_input_[i] resets the
     // phase to 0; sync_output_[i] records the 24-bit overflow (carry).

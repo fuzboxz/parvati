@@ -38,7 +38,7 @@ inline void flGlideTapQ16 (int32_t& cur, int32_t target) noexcept
 static_assert (DelayLine<1024>::capacity <= kMaxMemorySamples,
                "Fv1Flanger within the FV-1 RAM budget");
 
-void Fv1Flanger::setParams (const float param[5])
+void Fv1Flanger::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = std::clamp (param[0], 0.0f, 1.0f);
     const float p1 = std::clamp (param[1], 0.0f, 1.0f);

@@ -25,6 +25,7 @@
 #include "ui/PresetBrowser.h"     // syncTreeNewestWins (the iOS launch mirror)
 #include "ui/SharedContainer.h"
 #include "dsp/constants.h"   // ambika::dsp::kInternalSampleRate (resampler latency)
+#include "dsp/patch_sanitizer.h"   // sanitizePatch/sanitizePartData (.MUL ingestion)
 
 namespace
 {
@@ -1307,8 +1308,25 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
         auto& part = engine_.getPart (i);
-        if (multi.parts[(size_t) i].hasPatch) part.patchBytes = multi.parts[(size_t) i].patch;
-        if (multi.parts[(size_t) i].hasPart)  part.partBytes  = multi.parts[(size_t) i].part;
+        // SANITIZE AT INGESTION (memory-safety wave 2026-08-22): .MUL bytes are
+        // raw file data (no APVTS round-trip) — normalize to firmware domains
+        // before they land in the engine, exactly like restoreState does for
+        // host blobs. Identity for firmware-written files.
+        if (multi.parts[(size_t) i].hasPatch)
+        {
+            ambika::dsp::Patch patchView;
+            std::memcpy (&patchView, multi.parts[(size_t) i].patch.data(), sizeof (ambika::dsp::Patch));
+            ambika::dsp::sanitizePatch (patchView);
+            std::array<uint8_t, 112> sanitized {};
+            std::memcpy (sanitized.data(), &patchView, sizeof (ambika::dsp::Patch));
+            part.patchBytes = sanitized;   // AtomicByteArray::operator=(std::array)
+        }
+        if (multi.parts[(size_t) i].hasPart)
+        {
+            auto pb = multi.parts[(size_t) i].part;
+            ambika::dsp::sanitizePartData (pb);
+            part.partBytes = pb;
+        }
 
         // An Ambika multi carries NO FX information -> reset every Part's FX to
         // a clean slate so the previously-loaded multi's FX does not survive the

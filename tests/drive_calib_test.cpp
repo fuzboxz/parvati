@@ -26,6 +26,7 @@
 //
 // Built by default. Run with: ./build/parvati_drive_calib_test
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -57,7 +58,7 @@ constexpr double kRate = 48000.0;
 
 // Run one param set over a fresh copy of src -> dst (blocks of kBlock).
 template <typename Fx>
-void runFx (Fx& fx, const float prm[5], const float* inL, const float* inR,
+void runFx (Fx& fx, const std::array<float, kNumFxSlotParams> prm, const float* inL, const float* inR,
             int n, float* outL, float* outR)
 {
     fx.setParams (prm);
@@ -105,7 +106,7 @@ float rms (const float* d, int from, int to)
 // generous: the pin's job is to catch the pre-fix 8x (7.78 measured), not
 // to re-derive the table slope to 3 digits.
 template <typename Fx>
-float smallSignalGain (Fx& fx, const float prm[5], float amp, float freqHz, int nSamples, float* phaseOut = nullptr)
+float smallSignalGain (Fx& fx, const std::array<float, kNumFxSlotParams> prm, float amp, float freqHz, int nSamples, float* phaseOut = nullptr)
 {
     std::vector<float> in (static_cast<size_t> (nSamples)), out (static_cast<size_t> (nSamples));
     for (int i = 0; i < nSamples; ++i)
@@ -145,7 +146,7 @@ static void testDriveCalibration()
         // Drive=1 (p0=0), Bias center, Tone max (LP ~15 kHz, no droop at
         // 440 Hz), Level=1 (p3=0.5 with the ki/kf split). Probe amp 0.1 —
         // see the smallSignalGain note about the table staircase.
-        const float prm[5] = { 0.0f, 0.5f, 1.0f, 0.5f, 0.0f };
+        const std::array<float, kNumFxSlotParams> prm = { 0.0f, 0.5f, 1.0f, 0.5f, 0.0f };
         float phase = 0.0f;
         const float g = smallSignalGain (fx, prm, 0.1f, 440.0f, 16384, &phase);
         std::printf ("  Drive=1 small-signal |H| = %.3f (expect ~0.97..1.04; pre-fix 7.78) phase=%.2f rad\n", g, phase);
@@ -157,7 +158,7 @@ static void testDriveCalibration()
         // slope*D*x) — the calibration invariant xT = D*x. Pre-fix the table
         // read 8*D*x and the pairing broke by 8x.
         const float g1 = smallSignalGain (fx, prm, 0.1f, 440.0f, 16384);
-        const float prmD4[5] = { std::log (4.0f) / std::log (16.0f), 0.5f, 1.0f, 0.5f, 0.0f };
+        const std::array<float, kNumFxSlotParams> prmD4 = { std::log (4.0f) / std::log (16.0f), 0.5f, 1.0f, 0.5f, 0.0f };
         const float g4 = smallSignalGain (fx, prmD4, 0.025f, 440.0f, 16384);
         std::printf ("  excursion-split invariance: D1 out-amp = %.4f vs D4 out-amp = %.4f\n",
                      g1 * 0.1f, g4 * 0.025f);
@@ -171,7 +172,7 @@ static void testDriveCalibration()
         fx.prepare (kRate, kBlock);
         fx.reset();
         // Shape 1 (Soft: x/(1+|x|) * 1.5): slope 0.75*1.5 = 1.125 at 0.
-        const float prm[5] = { 0.0f, 1.5f / 16.0f, 0.0f, 1.0f, 0.0f };
+        const std::array<float, kNumFxSlotParams> prm = { 0.0f, 1.5f / 16.0f, 0.0f, 1.0f, 0.0f };
         const float g = smallSignalGain (fx, prm, 0.1f, 440.0f, 16384);
         std::printf ("  Drive=1 (Soft) small-signal |H| = %.3f (expect ~1.03..1.13; pre-fix 9.0)\n", g);
         check (g > 0.9f && g < 1.35f,
@@ -187,7 +188,7 @@ static void testDriveCalibration()
             const double t = static_cast<double> (i) / kRate;
             in[static_cast<size_t> (i)] = 0.9f * static_cast<float> (std::sin (6.28318530718 * 220.0 * t));
         }
-        const float prmMono[5] = { 0.0f, 0.5f / 16.0f, 0.0f, 1.0f, 0.0f };
+        const std::array<float, kNumFxSlotParams> prmMono = { 0.0f, 0.5f / 16.0f, 0.0f, 1.0f, 0.0f };
         runFx (fx, prmMono, in.data(), in.data(), n, out.data(), out.data());
         const float pk = maxAbs (out.data() + n / 4, n - n / 4);
         std::printf ("  mono L==R full-scale peak = %.3f (expect ~0.75; pre-fix 0.5)\n", pk);
@@ -218,7 +219,7 @@ static void testLevelMonotonic()
         for (float p3 : { 0.25f, 0.5f, 0.75f, 1.0f })
         {
             fx.reset();
-            const float prm[5] = { 0.0f, 0.5f, 1.0f, p3, 0.0f };
+            const std::array<float, kNumFxSlotParams> prm = { 0.0f, 0.5f, 1.0f, p3, 0.0f };
             runFx (fx, prm, in.data(), in.data(), n, out.data(), out.data());
             const float r = rms (out.data(), n / 4, n);
             std::printf ("  Overdrive  Level p3=%.2f (x%.2f) rms=%.4f\n", p3, p3 * 2.0f, r);
@@ -242,7 +243,7 @@ static void testLevelMonotonic()
         for (float p3 : { 0.25f, 0.5f, 0.75f, 1.0f })
         {
             fx.reset();
-            const float prm[5] = { 0.5f, 0.5f, 0.5f, p3, 0.0f };
+            const std::array<float, kNumFxSlotParams> prm = { 0.5f, 0.5f, 0.5f, p3, 0.0f };
             runFx (fx, prm, in.data(), in.data(), n, out.data(), out.data());
             const float r = rms (out.data(), n / 4, n);
             std::printf ("  Compressor Level p3=%.2f (x%.2f) rms=%.4f\n", p3, p3 * 2.0f, r);
@@ -268,7 +269,7 @@ static void testDcBlockers()
         for (int shape : { 9, 4, 11 })   // Cheby2 / OctUp / Asym
         {
             fx.reset();
-            const float prm[5] = { 0.0f, (static_cast<float> (shape) + 0.5f) / 16.0f, 0.0f, 1.0f, 0.0f };
+            const std::array<float, kNumFxSlotParams> prm = { 0.0f, (static_cast<float> (shape) + 0.5f) / 16.0f, 0.0f, 1.0f, 0.0f };
             runFx (fx, prm, sil.data(), sil.data(), n, out.data(), out.data());
             const float dc = meanAbs (out.data(), n / 4, n);
             std::printf ("  LutDist shape %2d silence DC = %+.4f\n", shape, dc);
@@ -282,7 +283,7 @@ static void testDcBlockers()
         parvati::fv1::Fv1Overdrive fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
-        const float prm[5] = { 0.0f, 1.0f, 0.5f, 0.5f, 0.0f };   // full Bias
+        const std::array<float, kNumFxSlotParams> prm = { 0.0f, 1.0f, 0.5f, 0.5f, 0.0f };   // full Bias
         runFx (fx, prm, sil.data(), sil.data(), n, out.data(), out.data());
         const float dc = meanAbs (out.data(), n / 4, n);
         std::printf ("  Overdrive full-Bias silence DC = %+.4f\n", dc);
@@ -346,7 +347,7 @@ static void testEchoGlide()
     const float p0a = std::log (3.0f) / std::log (47.0f);
     const float p0b = std::log (9.0f) / std::log (47.0f);
     const int stepAt = static_cast<int> (1.0 * kRate);
-    float prm[5] = { p0a, 0.0f, 0.5f, 0.0f, 0.0f };   // fb 0, spread 0
+    std::array<float, kNumFxSlotParams> prm = { p0a, 0.0f, 0.5f, 0.0f, 0.0f };   // fb 0, spread 0
     fx.setParams (prm);
     bool stepped = false;
     std::memcpy (outL.data(), inL.data(), sizeof (float) * static_cast<size_t> (n));
@@ -405,7 +406,7 @@ static void testEchoGlide()
 // Fraction of samples where |out[i] - in[i]| < eps (a near-zero-delay copy —
 // what a sweep pinned at the read floor produces). Probe 35 Hz so a moving
 // tap of even ~2 samples is already distinguishable from a copy.
-static float nearCopyFraction (parvati::fv1::Fv1FxProcessor& fx, const float prm[5],
+static float nearCopyFraction (parvati::fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> prm,
                                float amp, float eps)
 {
     const int n = 65536;   // 2+ LFO cycles at 8 Hz
@@ -425,7 +426,7 @@ static float nearCopyFraction (parvati::fv1::Fv1FxProcessor& fx, const float prm
 
 // Max best-correlation lag of out vs in (host samples): the largest delay the
 // sweep actually reaches. Window 4096 Hann, step 512, lags 0..300.
-static float maxReachableLag (parvati::fv1::Fv1FxProcessor& fx, const float prm[5], float amp)
+static float maxReachableLag (parvati::fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> prm, float amp)
 {
     const int n = 65536;
     std::vector<float> in (static_cast<size_t> (n)), out (static_cast<size_t> (n));
@@ -467,14 +468,14 @@ static void testModDelayClamps()
         // Pre-fix: ~49% of every cycle pinned at the floor (max reachable
         // delay ~152 internal ~ 223 host). Post-fix: depth clamped to
         // base-1 = 3.9 -> sweep 1..8.8 internal (max ~13 host).
-        const float prm[5] = { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f };   // rate 3 Hz
+        const std::array<float, kNumFxSlotParams> prm = { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f };   // rate 3 Hz
         const float lag = maxReachableLag (fx, prm, 0.5f);
         std::printf ("  Flanger corner max reachable lag = %.0f host samples (was ~223)\n", lag);
         check (lag < 20.0f, "Flanger: corner sweep range collapsed to base-1 (was 152 samples deep)");
         check (lag > 3.0f, "Flanger: corner sweep still moves (not dead)");
         // Sane combination: Manual mid (base 100.7) + Depth max (clamped to
         // 99.7): sweep 1..200 internal -> max ~293 host (vs 248+pin pre-fix).
-        const float prmMid[5] = { 1.0f, 1.0f, 0.5f, 0.0f, 0.0f };
+        const std::array<float, kNumFxSlotParams> prmMid = { 1.0f, 1.0f, 0.5f, 0.0f, 0.0f };
         const float lagMid = maxReachableLag (fx, prmMid, 0.5f);
         std::printf ("  Flanger mid max reachable lag = %.0f host samples (~293 expected)\n", lagMid);
         check (lagMid > 200.0f && lagMid < 340.0f, "Flanger: mid-setting sweep unaffected by the clamp");
@@ -483,7 +484,7 @@ static void testModDelayClamps()
         parvati::fv1::Fv1Chorus fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
-        const float prm[5] = { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f };   // 8 Hz, corner
+        const std::array<float, kNumFxSlotParams> prm = { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f };   // 8 Hz, corner
         const float f = nearCopyFraction (fx, prm, 0.5f, 4.0e-3f);
         std::printf ("  Chorus corner near-copy fraction = %.3f (pre-fix ~0.19)\n", f);
         check (f < 0.10f, "Chorus: corner sweep no longer dwells at the floor (was 18.9%)");
@@ -492,7 +493,7 @@ static void testModDelayClamps()
         parvati::fv1::Fv1Ensemble fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
-        const float prm[5] = { 1.0f, 1.0f, 0.0f, 0.5f, 0.0f };   // 8 Hz, corner
+        const std::array<float, kNumFxSlotParams> prm = { 1.0f, 1.0f, 0.0f, 0.5f, 0.0f };   // 8 Hz, corner
         const float f = nearCopyFraction (fx, prm, 0.5f, 4.0e-3f);
         std::printf ("  Ensemble corner near-copy fraction = %.3f (pre-fix ~0.46)\n", f);
         check (f < 0.15f, "Ensemble: corner sweep no longer dwells at the floor (was 45.8%)");
@@ -503,7 +504,7 @@ static void testModDelayClamps()
             const double t = static_cast<double> (i) / kRate;
             in[static_cast<size_t> (i)] = 0.5f * static_cast<float> (std::sin (6.28318530718 * 220.0 * t));
         }
-        const float prmSane[5] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.0f };
+        const std::array<float, kNumFxSlotParams> prmSane = { 0.5f, 0.5f, 0.5f, 0.5f, 0.0f };
         runFx (fx, prmSane, in.data(), in.data(), 8192, out.data(), out.data());
         check (allFinite (out.data(), 8192) && rms (out.data(), 1024, 8192) > 1e-3f,
                "Ensemble: sane setting finite + wet");

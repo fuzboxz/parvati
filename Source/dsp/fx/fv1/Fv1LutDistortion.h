@@ -50,7 +50,7 @@ public:
     const int16_t* debugTable (int s) const { return tables_[s]; }
     static bool debugShapeIsPeriodic (int s) { return kShapeIsPeriodic[s]; }
 
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;
     // 6x-oversampled table path (see the file header): 1x jitter pre-pass,

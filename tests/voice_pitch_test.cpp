@@ -47,7 +47,7 @@ static void configureDeterministicVoice (Voice& v)
 
 static bool blocksEqual (const Voice& a, const Voice& b)
 {
-    return std::memcmp (a.output(), b.output(), kAudioBlockSize) == 0;
+    return std::memcmp (a.output().data(), b.output().data(), kAudioBlockSize) == 0;
 }
 
 static bool blockSilent (const Voice& v)
@@ -127,11 +127,11 @@ TEST(voice_pitch_test)
         uint8_t lowStream[2 * kAudioBlockSize];
         uint8_t highStream[kAudioBlockSize];
         low.ProcessBlock();
-        std::memcpy (lowStream, low.output(), kAudioBlockSize);
+        std::memcpy (lowStream, low.output().data(), kAudioBlockSize);
         low.ProcessBlock();
-        std::memcpy (lowStream + kAudioBlockSize, low.output(), kAudioBlockSize);
+        std::memcpy (lowStream + kAudioBlockSize, low.output().data(), kAudioBlockSize);
         high.ProcessBlock();
-        std::memcpy (highStream, high.output(), kAudioBlockSize);
+        std::memcpy (highStream, high.output().data(), kAudioBlockSize);
         CHECK (! blockSilent (high), "high (note 81) renders audibly");
         CHECK (! blockSilent (low), "low (note 69) renders audibly");
         bool stride = true;

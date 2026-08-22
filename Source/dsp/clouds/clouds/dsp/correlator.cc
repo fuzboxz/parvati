@@ -57,7 +57,13 @@ void Correlator::EvaluateNextCandidate() {
     uint32_t source_bits = source[i];
     uint32_t destination_bits = 0;
     destination_bits |= destination[i] << offset_bits;
-    destination_bits |= destination[i + 1] >> (32 - offset_bits);
+    // Parvati memory-safety fix: upstream shifts a 32-bit word right by
+    // (32 - offset_bits), which is >> 32 (UB) when offset_bits == 0. On the
+    // firmware's ARM the lsr instruction maps that to 0; widen to 64-bit so
+    // the portable build reproduces exactly that result. In-bounds shifts
+    // are bit-identical to upstream.
+    destination_bits |= static_cast<uint32_t>(
+        static_cast<uint64_t>(destination[i + 1]) >> (32 - offset_bits));
     uint32_t count = ~(source_bits ^ destination_bits);
     count = count - ((count >> 1) & 0x55555555);
     count = (count & 0x33333333) + ((count >> 2) & 0x33333333);

@@ -46,7 +46,7 @@ class Fv1VinylCompressor : public Fv1FxProcessor
 public:
     Fv1VinylCompressor() = default;
 
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;
     FxType type() const noexcept override;

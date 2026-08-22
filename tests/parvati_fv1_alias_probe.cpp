@@ -4,6 +4,7 @@
 // the first few folded harmonic frequencies) vs the input fundamental.
 // Build: parvati_fv1_alias_probe (EXCLUDE_FROM_ALL). Run: ./p
 
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <cstdio>
@@ -56,7 +57,7 @@ void run (bool saw, double freq, double driveParam, bool print)
     Fv1Overdrive fx;                       // type 16
     const double sr = 48000.0;
     fx.prepare (sr, 512);
-    float p[5] = { (float) driveParam, 0.5f, 0.5f, 0.5f, 0.0f };
+    std::array<float, kNumFxSlotParams> p = { (float) driveParam, 0.5f, 0.5f, 0.5f, 0.0f };
     fx.setParams (p);
     fx.reset();
 

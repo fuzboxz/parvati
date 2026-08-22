@@ -25,19 +25,58 @@ FxChain::FxChain()
         pl.store (-1, std::memory_order_relaxed);
     for (auto& st : stageState_)
         st.store (kStageEmpty, std::memory_order_relaxed);
-    for (auto& r : retired_)
-        r.store (nullptr, std::memory_order_relaxed);
-    retiredDirty_.store (false, std::memory_order_relaxed);
 }
 
-FxChain::~FxChain()
+FxChain::RetiredLot::RetiredLot() noexcept
+{
+    for (auto& r : slots_)
+        r.store (nullptr, std::memory_order_relaxed);
+    dirty_.store (false, std::memory_order_relaxed);
+}
+
+FxChain::RetiredLot::~RetiredLot()
 {
     // The engine (and thus every chain) is destroyed with the audio callback
     // stopped, so claiming any parked processors with a plain exchange is
-    // race-free here. pending_ releases via its own destructor on this thread.
-    for (auto& r : retired_)
+    // race-free here. THE delete site: everything that ever entered the lot
+    // dies here or in reap() -- nowhere else.
+    for (auto& r : slots_)
         delete r.exchange (nullptr, std::memory_order_acq_rel);
 }
+
+void FxChain::RetiredLot::park (FxProcessor* old) noexcept
+{
+    if (old == nullptr)
+        return;
+    for (auto& r : slots_)
+    {
+        FxProcessor* expected = nullptr;
+        if (r.compare_exchange_strong (expected, old, std::memory_order_release,
+                                       std::memory_order_relaxed))
+        {
+            dirty_.store (true, std::memory_order_release);
+            return;
+        }
+    }
+    // Parking full (4 swaps inside one 60 Hz reaper interval -- practically
+    // unreachable; even the concurrency chaos test changes at most ~3 slot
+    // types per tick). Free here as the documented fallback.
+    delete old;
+}
+
+void FxChain::RetiredLot::reap() noexcept
+{
+    // MT: free everything the AT parked. The exchange claims each pointer
+    // atomically, so a concurrent park on the same slot resolves ownership to
+    // exactly one side (we either get the pointer and delete it here, or the
+    // AT parks it again for the next pass).
+    if (! dirty_.exchange (false, std::memory_order_acq_rel))
+        return;
+    for (auto& r : slots_)
+        delete r.exchange (nullptr, std::memory_order_acq_rel);
+}
+
+FxChain::~FxChain() = default;   // retired_ + pending_ + slots_ clean up via their own destructors
 
 void FxChain::prepare (double rate, int maxBlock)
 {
@@ -221,7 +260,7 @@ void FxChain::consumePendingSwap (int slot) noexcept
         return;
 
     // Park the displaced processor (ownership passes to the MT reaper).
-    parkRetiredProcessor (slots_[(size_t) slot].release());
+    retired_.park (slots_[(size_t) slot].release());
     slots_[(size_t) slot] = std::move (pending_[(size_t) slot]);   // may be null (None)
 
     auto tv = pendingType_[(size_t) slot];
@@ -242,36 +281,9 @@ void FxChain::consumePendingSwap (int slot) noexcept
     stageState_[(size_t) slot].store (kStageEmpty, std::memory_order_release);
 }
 
-void FxChain::parkRetiredProcessor (FxProcessor* old) noexcept
-{
-    if (old == nullptr)
-        return;
-    for (auto& r : retired_)
-    {
-        FxProcessor* expected = nullptr;
-        if (r.compare_exchange_strong (expected, old, std::memory_order_release,
-                                       std::memory_order_relaxed))
-        {
-            retiredDirty_.store (true, std::memory_order_release);
-            return;
-        }
-    }
-    // Parking full (4 swaps inside one 60 Hz reaper interval -- practically
-    // unreachable; even the concurrency chaos test changes at most ~3 slot
-    // types per tick). Free here as the documented fallback.
-    delete old;
-}
-
 void FxChain::reapRetired() noexcept
 {
-    // MT: free everything the AT parked. The exchange claims each pointer
-    // atomically, so a concurrent park on the same slot resolves ownership to
-    // exactly one side (we either get the pointer and delete it here, or the
-    // AT parks it again for the next pass).
-    if (! retiredDirty_.exchange (false, std::memory_order_acq_rel))
-        return;
-    for (auto& r : retired_)
-        delete r.exchange (nullptr, std::memory_order_acq_rel);
+    retired_.reap();
 }
 
 void FxChain::setSlotEnabled (int slot, bool e) noexcept
@@ -380,7 +392,21 @@ void FxChain::blendSlotWetFade (float* outL, float* outR, int numSamples, int s)
     // The dry is delayed by L through a small per-slot ring so dry and wet are
     // sample-aligned -> kills the fs/16 comb at dw=0.5. L==0 is the direct
     // (bit-identical) path.
-    const int L = (slots_[(size_t) s] != nullptr) ? slots_[(size_t) s]->latency() : 0;
+    // L==0 (every non-OS effect) takes the direct path — these rings are
+    // untouched and the blend is bit-identical.
+    //
+    // CAPACITY CLAMP (bug found by the UBSan full sweep 2026-08-22): the OS
+    // effects' latency is rate-scaled in HOST samples — Fv1Overdrive/
+    // Fv1LutDistortion report lround(8 * rate/32768), which is 23 at 96 kHz
+    // and 47 at 192 kHz, OVERFLOWING the fixed 16-deep ring. An unclamped L
+    // made rp = pos - L dip below -kDelayCap, so ridx = rp + 16 wrapped to a
+    // huge size_t (OOB read/write on the audio thread). Every ring index is
+    // now computed against the clamped value: dry/wet alignment degrades
+    // gracefully (a few samples of comb) above the cap instead of corrupting
+    // memory. At 44.1/48 kHz (L <= 12) the clamp is a no-op — bit-identical.
+    const int ringCap = kDelayCap;
+    const int L = juce::jlimit (0, ringCap,
+        (slots_[(size_t) s] != nullptr) ? slots_[(size_t) s]->latency() : 0);
     const float dwTarget = dryWet_[(size_t) s];
     float dwCur = dryWetCur_[(size_t) s];
     const float target = enabled_[(size_t) s] ? 1.0f : 0.0f;
@@ -422,12 +448,14 @@ void FxChain::blendSlotWetFade (float* outL, float* outR, int numSamples, int s)
 
 void FxChain::delayPassthrough (float* outL, float* outR, int numSamples, int s) noexcept
 {
-    // N2: impose the slot's latency on its bypass/passthrough output by delaying
-    // the running signal through the per-slot dryDelay ring (same read-before-
+    // N2: impose the slot's latency on its bypass/passthrough output (delay the
+    // running signal by L through the per-slot dryDelay ring (same read-before-
     // write pattern as blendSlotWetFade). This makes the slot's output latency
     // constant = latency() whether active or bypassed, so toggling enable does
     // NOT snap the dry from dry[i-L] to dry[i] when the tail fades out.
-    const int L = slots_[(size_t) s] ? slots_[(size_t) s]->latency() : 0;
+    // Ring-capacity clamp as in blendSlotWetFade (see the note there).
+    const int L = juce::jlimit (0, kDelayCap,
+        slots_[(size_t) s] ? slots_[(size_t) s]->latency() : 0);
     if (L <= 0) return;   // L==0: true passthrough, no delay
     int pos = dryDelayPos_[(size_t) s];
     for (int i = 0; i < numSamples; ++i)
@@ -676,7 +704,7 @@ void FxChain::process (const float* inL, const float* inR,
             juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
             juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
 
-            proc->setParams (params_[(size_t) s].data());
+            proc->setParams (params_[(size_t) s]);
             proc->process (outL, outR, numSamples);   // outL/outR now hold WET
 
             // Per-sample dry/wet blend + one-pole fade advance for this slot.
@@ -703,7 +731,7 @@ void FxChain::process (const float* inL, const float* inR,
             juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
             juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
 
-            procC->setParams (params_[(size_t) C].data());
+            procC->setParams (params_[(size_t) C]);
             procC->process (outL, outR, numSamples);   // outL/outR now hold WET
 
             // Per-sample dry/wet blend + one-pole fade advance for slot C.
@@ -731,7 +759,7 @@ void FxChain::process (const float* inL, const float* inR,
             juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
             juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
 
-            procA->setParams (params_[(size_t) A].data());
+            procA->setParams (params_[(size_t) A]);
             procA->process (outL, outR, numSamples);   // outL/outR now hold WET
 
             // Per-sample dry/wet blend + one-pole fade advance for slot A.
@@ -758,6 +786,11 @@ void FxChain::process (const float* inL, const float* inR,
     {
         // N1: delay the master dry (chain input) by Lc so it aligns with the
         // (latency-delayed) chain output -> no fs/16 comb at masterMix<1.
+        // RING-CAPACITY CLAMP (see blendSlotWetFade): the chain latency can be
+        // 3 rate-scaled OS slots in series (69 at 96 kHz), overflowing the
+        // fixed 32-deep master ring — clamp for the ring math only (the
+        // fast-bypass check above still uses the truthful Lc).
+        const int Ld = juce::jlimit (0, kChainDelayCap, Lc);
         const float target = masterMix_;
         float g = masterMixCur_;
         int mpos = masterDryPos_;
@@ -765,9 +798,9 @@ void FxChain::process (const float* inL, const float* inR,
         {
             const float dry = 1.0f - g;
             float mdL, mdR;
-            if (Lc > 0)
+            if (Ld > 0)
             {
-                const int rp = mpos - Lc;
+                const int rp = mpos - Ld;
                 const size_t ridx = (size_t) (rp >= 0 ? rp : rp + kChainDelayCap);
                 mdL = masterDryL_[ridx];
                 mdR = masterDryR_[ridx];
@@ -825,13 +858,17 @@ void FxChain::renderParallel (const float* inL, const float* inR,
     float actFade[2]     = { 0.0f, 0.0f };
 
     // N2: Lmax from BOTH slots (constant, not active-dependent) so the parallel
-    // stage output latency is invariant across enable/bypass.
+    // stage output latency is invariant across enable/bypass. Ring-capacity
+    // clamp as in blendSlotWetFade (see the note there) — each slot's latency
+    // is clamped BEFORE the jmax so the per-branch extra delay below stays
+    // within [0, kDelayCap].
     int Lmax = 0;
     for (int p = 0; p < 2; ++p)
     {
         const int s = pair[p];
         if (slots_[(size_t) s] && slotType_[(size_t) s] != static_cast<uint8_t> (FxType::None))
-            Lmax = juce::jmax (Lmax, slots_[(size_t) s]->latency());
+            Lmax = juce::jmax (Lmax, juce::jlimit (0, kDelayCap,
+                                                   slots_[(size_t) s]->latency()));
     }
 
     for (int p = 0; p < 2; ++p)
@@ -843,7 +880,7 @@ void FxChain::renderParallel (const float* inL, const float* inR,
 
         juce::FloatVectorOperations::copy (wetL_[(size_t) s].data(), inL, numSamples);
         juce::FloatVectorOperations::copy (wetR_[(size_t) s].data(), inR, numSamples);
-        proc->setParams (params_[(size_t) s].data());
+        proc->setParams (params_[(size_t) s]);
         proc->process (wetL_[(size_t) s].data(), wetR_[(size_t) s].data(), numSamples);
 
         actSlot[activeCount]      = s;

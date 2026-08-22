@@ -17,6 +17,7 @@
 #include "dsp/oscillator.h"
 
 #include <algorithm>  // std::min (raw-byte wavetable index clamp)
+#include <array>      // fn_table_ (bounds-checked dispatch)
 
 #include "dsp/constants.h"               // kAudioBlockSize
 #include "dsp/fixed_math.h"              // U8Mix, U24AddC, InterpolateSample, ...
@@ -88,17 +89,19 @@ inline uint8_t InterpolateTwoTables(const uint8_t* table_a, const uint8_t* table
 // ---------------------------------------------------------------------------
 // Silence
 // ---------------------------------------------------------------------------
-void Oscillator::RenderSilence(uint8_t* buffer) {
+void Oscillator::RenderSilence(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint8_t size = kAudioBlockSize;
     while (size--) {
-        *buffer++ = 128;
+        *buf++ = 128;
     }
 }
 
 // ---------------------------------------------------------------------------
 // Band-limited PWM (writes 2 samples per iteration + manual size--)
 // ---------------------------------------------------------------------------
-void Oscillator::RenderBandlimitedPwm(uint8_t* buffer) {
+void Oscillator::RenderBandlimitedPwm(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint8_t balance_index = U8Swap4(note_ /* - 12 play safe with Aliasing */);
     uint8_t gain_2 = balance_index & 0xf0;
     uint8_t gain_1 = static_cast<uint8_t>(~gain_2);
@@ -131,8 +134,8 @@ void Oscillator::RenderBandlimitedPwm(uint8_t* buffer) {
         uint8_t b = InterpolateTwoTables(wave_1, wave_2, phase.integral + shift, gain_1, gain_2);
         b = U8U8MulShift8(b, scale);
         a = a - b + 128;
-        *buffer++ = a;
-        *buffer++ = a;
+        *buf++ = a;
+        *buf++ = a;
         size--;
     END_SAMPLE_LOOP
 }
@@ -140,7 +143,8 @@ void Oscillator::RenderBandlimitedPwm(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // Interpolation between two bandlimited waveforms (position from pitch)
 // ---------------------------------------------------------------------------
-void Oscillator::RenderSimpleWavetable(uint8_t* buffer) {
+void Oscillator::RenderSimpleWavetable(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint8_t balance_index = U8Swap4(note_);
     uint8_t gain_2 = balance_index & 0xf0;
     uint8_t gain_1 = static_cast<uint8_t>(~gain_2);
@@ -168,7 +172,7 @@ void Oscillator::RenderSimpleWavetable(uint8_t* buffer) {
             if (sample < parameter_) {
                 sample += parameter_ >> 1;
             }
-            *buffer++ = sample;
+            *buf++ = sample;
         END_SAMPLE_LOOP
     } else {
         // The waveshaper for the triangle is different.
@@ -178,7 +182,7 @@ void Oscillator::RenderSimpleWavetable(uint8_t* buffer) {
             if (sample < parameter_) {
                 sample = parameter_;
             }
-            *buffer++ = sample;
+            *buf++ = sample;
         END_SAMPLE_LOOP
     }
 }
@@ -186,17 +190,19 @@ void Oscillator::RenderSimpleWavetable(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // Casio CZ-like synthesis
 // ---------------------------------------------------------------------------
-void Oscillator::RenderCzSaw(uint8_t* buffer) {
+void Oscillator::RenderCzSaw(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     BEGIN_SAMPLE_LOOP
         UPDATE_PHASE
         uint8_t phi = phase.integral >> 8;
         uint8_t clipped_phi = phi < 0x20 ? static_cast<uint8_t>(phi << 3) : 0xff;
         // Interpolation causes more aliasing here.
-        *buffer++ = ReadSample(wav_res_sine, U8MixU16(phi, clipped_phi, static_cast<uint8_t>(parameter_ << 1)));
+        *buf++ = ReadSample(wav_res_sine, U8MixU16(phi, clipped_phi, static_cast<uint8_t>(parameter_ << 1)));
     END_SAMPLE_LOOP
 }
 
-void Oscillator::RenderCzResoSaw(uint8_t* buffer) {
+void Oscillator::RenderCzResoSaw(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint16_t increment = static_cast<uint16_t>(phase_increment_.integral +
         ((phase_increment_.integral * static_cast<uint32_t>(parameter_)) >> 2));
     uint8_t type = shape_ - WAVEFORM_CZ_SAW_LP;
@@ -210,15 +216,16 @@ void Oscillator::RenderCzResoSaw(uint8_t* buffer) {
         uint8_t carrier = ReadSample(wav_res_sine, phase_2);
         uint8_t window = static_cast<uint8_t>(~static_cast<uint8_t>(phase.integral >> 8));
         if (type & 2) {
-            *buffer++ = static_cast<uint8_t>(S8U8MulShift8(static_cast<int8_t>(carrier + 128), window) + 128);
+            *buf++ = static_cast<uint8_t>(S8U8MulShift8(static_cast<int8_t>(carrier + 128), window) + 128);
         } else {
-            *buffer++ = U8U8MulShift8(carrier, window);
+            *buf++ = U8U8MulShift8(carrier, window);
         }
     END_SAMPLE_LOOP
     data_.secondary_phase = phase_2;
 }
 
-void Oscillator::RenderCzResoPulse(uint8_t* buffer) {
+void Oscillator::RenderCzResoPulse(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint16_t increment = static_cast<uint16_t>(phase_increment_.integral +
         ((phase_increment_.integral * static_cast<uint32_t>(parameter_)) >> 2));
     uint8_t type = shape_ - WAVEFORM_CZ_SAW_LP;
@@ -245,15 +252,16 @@ void Oscillator::RenderCzResoPulse(uint8_t* buffer) {
             carrier += 128;
         }
         if (type & 2) {
-            *buffer++ = static_cast<uint8_t>(S8U8MulShift8(static_cast<int8_t>(carrier + 128), window) + 128);
+            *buf++ = static_cast<uint8_t>(S8U8MulShift8(static_cast<int8_t>(carrier + 128), window) + 128);
         } else {
-            *buffer++ = U8U8MulShift8(carrier, window);
+            *buf++ = U8U8MulShift8(carrier, window);
         }
     END_SAMPLE_LOOP
     data_.secondary_phase = phase_2;
 }
 
-void Oscillator::RenderCzResoTri(uint8_t* buffer) {
+void Oscillator::RenderCzResoTri(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint16_t increment = static_cast<uint16_t>(phase_increment_.integral +
         ((phase_increment_.integral * static_cast<uint32_t>(parameter_)) >> 2));
     uint8_t type = shape_ - WAVEFORM_CZ_SAW_LP;
@@ -269,9 +277,9 @@ void Oscillator::RenderCzResoTri(uint8_t* buffer) {
             ? static_cast<uint8_t>(~static_cast<uint8_t>(phase.integral >> 7))
             : static_cast<uint8_t>(phase.integral >> 7);
         if (type & 2) {
-            *buffer++ = static_cast<uint8_t>(S8U8MulShift8(static_cast<int8_t>(carrier + 128), window) + 128);
+            *buf++ = static_cast<uint8_t>(S8U8MulShift8(static_cast<int8_t>(carrier + 128), window) + 128);
         } else {
-            *buffer++ = U8U8MulShift8(carrier, window);
+            *buf++ = U8U8MulShift8(carrier, window);
         }
     END_SAMPLE_LOOP
     data_.secondary_phase = phase_2;
@@ -280,7 +288,8 @@ void Oscillator::RenderCzResoTri(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // FM
 // ---------------------------------------------------------------------------
-void Oscillator::RenderFm(uint8_t* buffer) {
+void Oscillator::RenderFm(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint8_t offset = fm_parameter_;
     if (offset < 24) {
         offset = 0;
@@ -300,7 +309,7 @@ void Oscillator::RenderFm(uint8_t* buffer) {
         phase_2 += increment;
         uint8_t modulator = InterpolateSample(wav_res_sine, phase_2);
         uint16_t modulation = static_cast<uint16_t>(modulator * parameter_);
-        *buffer++ = InterpolateSample(wav_res_sine, phase.integral + modulation);
+        *buf++ = InterpolateSample(wav_res_sine, phase.integral + modulation);
     END_SAMPLE_LOOP
     data_.secondary_phase = phase_2;
 }
@@ -308,11 +317,12 @@ void Oscillator::RenderFm(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // 8-bit land
 // ---------------------------------------------------------------------------
-void Oscillator::Render8BitLand(uint8_t* buffer) {
+void Oscillator::Render8BitLand(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     BEGIN_SAMPLE_LOOP
         UPDATE_PHASE
         uint8_t x = parameter_;
-        *buffer++ = static_cast<uint8_t>(
+        *buf++ = static_cast<uint8_t>(
             (((phase.integral >> 8) ^ (x << 1)) & (~x)) + (x >> 1));
     END_SAMPLE_LOOP
 }
@@ -320,7 +330,8 @@ void Oscillator::Render8BitLand(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // Vowel (Cantarino formant synth) — writes 2 samples per iter + size--
 // ---------------------------------------------------------------------------
-void Oscillator::RenderVowel(uint8_t* buffer) {
+void Oscillator::RenderVowel(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     data_.vw.update = (data_.vw.update + 1) & 3;
     if (!data_.vw.update) {
         uint8_t offset_1 = U8ShiftRight4(parameter_);
@@ -381,8 +392,8 @@ void Oscillator::RenderVowel(uint8_t* buffer) {
             data_.vw.formant_phase[2] = 0;
         }
         uint8_t x = static_cast<uint8_t>(S16ClipS8(4 * result) + 128);
-        *buffer++ = x;
-        *buffer++ = x;
+        *buf++ = x;
+        *buf++ = x;
         size--;
     END_SAMPLE_LOOP
 }
@@ -390,17 +401,19 @@ void Oscillator::RenderVowel(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // Dirty PWM
 // ---------------------------------------------------------------------------
-void Oscillator::RenderDirtyPwm(uint8_t* buffer) {
+void Oscillator::RenderDirtyPwm(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     BEGIN_SAMPLE_LOOP
         UPDATE_PHASE
-        *buffer++ = (phase.integral >> 8) < 127 + parameter_ ? 0 : 255;
+        *buf++ = (phase.integral >> 8) < 127 + parameter_ ? 0 : 255;
     END_SAMPLE_LOOP
 }
 
 // ---------------------------------------------------------------------------
 // Quad saw pad (with aliasing)
 // ---------------------------------------------------------------------------
-void Oscillator::RenderQuadSawPad(uint8_t* buffer) {
+void Oscillator::RenderQuadSawPad(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint16_t phase_spread =
         static_cast<uint16_t>((static_cast<uint32_t>(phase_increment_.integral) * parameter_) >> 13);
     ++phase_spread;
@@ -420,14 +433,15 @@ void Oscillator::RenderQuadSawPad(uint8_t* buffer) {
         value = static_cast<uint8_t>(value + (data_.qs.phase[0] >> 10));
         value = static_cast<uint8_t>(value + (data_.qs.phase[1] >> 10));
         value = static_cast<uint8_t>(value + (data_.qs.phase[2] >> 10));
-        *buffer++ = value;
+        *buf++ = value;
     END_SAMPLE_LOOP
 }
 
 // ---------------------------------------------------------------------------
 // Low-passed then high-passed white noise (own LFSR)
 // ---------------------------------------------------------------------------
-void Oscillator::RenderFilteredNoise(uint8_t* buffer) {
+void Oscillator::RenderFilteredNoise(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     uint16_t rng_state = data_.no.rng_state;
     if (rng_state == 0) {
         ++rng_state;
@@ -445,9 +459,9 @@ void Oscillator::RenderFilteredNoise(uint8_t* buffer) {
         // Avoid a DC component at the parameter extremes.
         data_.no.lp_noise_sample = U8Mix(data_.no.lp_noise_sample, noise_sample, filter_coefficient);
         if (parameter_ >= 64) {
-            *buffer++ = static_cast<uint8_t>(noise_sample - data_.no.lp_noise_sample - 128);
+            *buf++ = static_cast<uint8_t>(noise_sample - data_.no.lp_noise_sample - 128);
         } else {
-            *buffer++ = data_.no.lp_noise_sample;
+            *buf++ = data_.no.lp_noise_sample;
         }
     END_SAMPLE_LOOP
     data_.no.rng_state = rng_state;
@@ -456,7 +470,8 @@ void Oscillator::RenderFilteredNoise(uint8_t* buffer) {
 // ---------------------------------------------------------------------------
 // Interpolated wavetable (position from parameter)
 // ---------------------------------------------------------------------------
-void Oscillator::RenderInterpolatedWavetable(uint8_t* buffer) {
+void Oscillator::RenderInterpolatedWavetable(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     // Which wavetable should we play?
     // Raw-file bytes are unvalidated (bug hunt 2026-08-18, F-eng-1): shape_
     // comes straight from a patch byte on the .MUL / host-state paths; the
@@ -478,14 +493,15 @@ void Oscillator::RenderInterpolatedWavetable(uint8_t* buffer) {
     const uint8_t* wave_2 = wav_res_waves + U8U8Mul(static_cast<uint8_t>(wave_index_2), 129);
     BEGIN_SAMPLE_LOOP
         UPDATE_PHASE_MORE_REGISTERS
-        *buffer++ = InterpolateTwoTables(wave_1, wave_2, phase.integral >> 1, static_cast<uint8_t>(~gain), gain);
+        *buf++ = InterpolateTwoTables(wave_1, wave_2, phase.integral >> 1, static_cast<uint8_t>(~gain), gain);
     END_SAMPLE_LOOP
 }
 
 // ---------------------------------------------------------------------------
 // Wavequence (single wave, position from parameter)
 // ---------------------------------------------------------------------------
-void Oscillator::RenderWavequence(uint8_t* buffer) {
+void Oscillator::RenderWavequence(Oscillator::RenderBuffer buffer) {
+    uint8_t* buf = buffer;   // sized-array param -> local write cursor
     // wav_res_waves holds 80 single-cycle waves (WAV_RES_WAVES_SIZE = 80*129).
     // The firmware indexes it directly with parameter_ (0..127) and reads
     // adjacent PROGMEM past wave 79; in C++ that is an out-of-bounds read, so
@@ -497,16 +513,19 @@ void Oscillator::RenderWavequence(uint8_t* buffer) {
     const uint8_t* wave = wav_res_waves + U8U8Mul(wave_index, 129);
     BEGIN_SAMPLE_LOOP
         UPDATE_PHASE
-        *buffer++ = InterpolateSample(wave, phase.integral >> 1);
+        *buf++ = InterpolateSample(wave, phase.integral >> 1);
     END_SAMPLE_LOOP
 }
 
 // ---------------------------------------------------------------------------
 // Render dispatch table — faithful copy of oscillator.cc:481-504.
 // Indexed by WAVEFORM_* (shapes >= WAVEFORM_WAVETABLE_1 all map to entry 21;
-// WAVEFORM_WAVEQUENCE is special-cased in Render()).
+// WAVEFORM_WAVEQUENCE is special-cased in Render()). A std::array of exactly
+// WAVEFORM_WAVETABLE_1 + 1 entries: the size is enforced against the enum by
+// the declaration in oscillator.h, so adding a waveform without a dispatch
+// entry is a compile error instead of an OOB table read.
 // ---------------------------------------------------------------------------
-const Oscillator::RenderFn Oscillator::fn_table_[] = {
+const std::array<Oscillator::RenderFn, WAVEFORM_WAVETABLE_1 + 1> Oscillator::fn_table_ = {
     &Oscillator::RenderSilence,
 
     &Oscillator::RenderSimpleWavetable,

@@ -212,11 +212,11 @@ static void testPerEffectFinite()
     makeTone (inL, inR, kBlock);
     float outL[kBlock], outR[kBlock];
 
-    const float paramSets[3][5] = {
+    const std::array<std::array<float, kNumFxSlotParams>, 3> paramSets = {{
         { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
         { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f },
         { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
-    };
+    }};
 
     for (const auto& e : kEffects)
     {
@@ -261,7 +261,7 @@ static void testPerEffectWetDiffers()
     // Each effect's neutral-but-responsive param set (uses a mid value for every
     // active param; freeze off, tone bright, shift away from 0 Hz so the effect
     // is unambiguously engaged).
-    auto neutral = [] (FxType t, float p[5])
+    auto neutral = [] (FxType t, std::array<float, kNumFxSlotParams> p)
     {
         for (int i = 0; i < 5; ++i) p[i] = 0.5f;
         switch (t)
@@ -280,7 +280,7 @@ static void testPerEffectWetDiffers()
         auto fx = createFxProcessor (e.type);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        float p[5];
+        std::array<float, kNumFxSlotParams> p;
         neutral (e.type, p);
         fx->setParams (p);
         if (e.type == FxType::ClockedDelay)
@@ -358,7 +358,7 @@ static void testPerEffectParamSweep()
     }
 
     // Per-effect config: which input, the baseline param vector, and warmup.
-    struct EffCfg { const float* inL; const float* inR; float base[5]; int warmup; };
+    struct EffCfg { const float* inL; const float* inR; std::array<float, kNumFxSlotParams> base; int warmup; };
     auto cfgFor = [&] (FxType t) -> EffCfg
     {
         EffCfg c { toneL, toneR, { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f }, 16 };
@@ -408,7 +408,7 @@ static void testPerEffectParamSweep()
     // identical setup yields an identical waveform, so an INACTIVE param's
     // deviation is exactly 0.0, and an ACTIVE param's deviation is non-zero).
     // L+R together so R-only controls (FrequencyShifter Spread) are caught.
-    auto measureWaveform = [&] (FxType t, const float pv[5],
+    auto measureWaveform = [&] (FxType t, const std::array<float, kNumFxSlotParams> pv,
                                 const float* inL, const float* inR, int warm,
                                 std::vector<float>& wave) -> void
     {
@@ -452,8 +452,8 @@ static void testPerEffectParamSweep()
             double maxDev = 0.0;
             for (float v : { 0.0f, 1.0f })
             {
-                float pv[5];
-                std::memcpy (pv, cfg.base, sizeof (pv));
+                std::array<float, kNumFxSlotParams> pv;
+                pv = cfg.base;   // std::array copy (was memcpy into a raw array)
                 pv[k] = v;
                 measureWaveform (e.type, pv, cfg.inL, cfg.inR, cfg.warmup, trialWave);
                 for (size_t i = 0; i < baseWave.size(); ++i)
@@ -983,7 +983,7 @@ static void testConditionDependentParams()
 
         // Record phase: freeze OFF, position 0.1 (reads ~0.4 s into the buffer,
         // well inside the recorded region). Feed a fresh chirp each block.
-        float recBase[5] = { 0.1f, 0.5f, 0.5f, 0.0f /*freeze off*/, 0.0f };
+        std::array<float, kNumFxSlotParams> recBase = { 0.1f, 0.5f, 0.5f, 0.0f /*freeze off*/, 0.0f };
         fx->setParams (recBase);
         for (int b = 0; b < 320; ++b)        // ~1.7 s @ 48k -> fills the read region
         {
@@ -994,8 +994,8 @@ static void testConditionDependentParams()
 
         // Measure phase: freeze ON, sweep the target param. Keep feeding the
         // same chirp (irrelevant once frozen, but keeps the input non-zero).
-        float meas[5];
-        std::memcpy (meas, recBase, sizeof (meas));
+        std::array<float, kNumFxSlotParams> meas;
+        meas = recBase;   // std::array copy (was memcpy into a raw array)
         meas[3] = 1.0f;                       // freeze ON
         meas[sweepIdx] = sweepVal;
         fx->setParams (meas);
@@ -1053,7 +1053,7 @@ static void testConditionDependentParams()
         fx->reset();
         float outL[kBlock], outR[kBlock];
         // Phase 1: freeze OFF at pos 0.0, write textures_[0] with evolving content.
-        float writePv[5] = { 0.5f, 0.5f, 0.0f, 0.5f, 0.0f /*freeze off*/ };
+        std::array<float, kNumFxSlotParams> writePv = { 0.5f, 0.5f, 0.0f, 0.5f, 0.0f /*freeze off*/ };
         fx->setParams (writePv);
         for (int b = 0; b < 160; ++b)
         {
@@ -1069,7 +1069,7 @@ static void testConditionDependentParams()
             fx->process (outL, outR, kBlock);
         }
         // Phase 2: freeze ON, read at the requested position.
-        float readPv[5] = { 0.5f, 0.5f, readPos, 0.5f, 1.0f /*freeze on*/ };
+        std::array<float, kNumFxSlotParams> readPv = { 0.5f, 0.5f, readPos, 0.5f, 1.0f /*freeze on*/ };
         fx->setParams (readPv);
         std::vector<float> wave;
         wave.assign (static_cast<size_t> (2 * kBlock * 8), 0.0f);

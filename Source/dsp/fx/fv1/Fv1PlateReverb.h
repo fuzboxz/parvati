@@ -33,7 +33,7 @@ class Fv1PlateReverb : public Fv1FxProcessor
 public:
     Fv1PlateReverb();
 
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     void resetInternal() override;
     FxType type() const override { return FxType::PlateReverb; }
 

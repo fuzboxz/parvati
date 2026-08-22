@@ -3,6 +3,7 @@
 // input (peak ~2.0 — legal through the chain's unity-per-voice ceiling) and
 // measures inharmonic foldback energy (Goertzel at non-harmonic bins) plus
 // the harmonic energy, at the effect's OUTPUT. Diagnostic dump.
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <cstdio>
@@ -57,7 +58,7 @@ void runPhaser (const char* label, float inPeak, float fb)
 {
     Fv1Phaser fx;
     fx.prepare (kInternal, 32768);
-    float p[5] = { 0.5f, 0.5f, fb, 0.5f, 0.0f };
+    std::array<float, kNumFxSlotParams> p = { 0.5f, 0.5f, fb, 0.5f, 0.0f };
     fx.setParams (p);
     const int N = 32768;
     std::vector<float> x ((size_t) N);
@@ -75,7 +76,7 @@ void runFlanger (const char* label, float inPeak, float fb,
 {
     Fv1Flanger fx;
     fx.prepare (kInternal, 32768);
-    float p[5] = { rateP, depthP, 0.5f, fb, 0.0f };
+    std::array<float, kNumFxSlotParams> p = { rateP, depthP, 0.5f, fb, 0.0f };
     fx.setParams (p);
     const int N = 32768;
     std::vector<float> x ((size_t) N);
@@ -241,7 +242,7 @@ TEST(parvati_fx_foldback_probe)
     // impulse (the dropout-probe detector) + consecutive-sample jump census.
     {
         Fv1Flanger fx; fx.prepare (kInternal, 32768);
-        float p[5] = { 0.5f, 0.6f, 0.5f, 0.92f, 0.0f }; fx.setParams (p);
+        std::array<float, kNumFxSlotParams> p = { 0.5f, 0.6f, 0.5f, 0.92f, 0.0f }; fx.setParams (p);
         const int N = 32768;
         std::vector<float> x ((size_t) N), r ((size_t) N);
         for (int i = 0; i < N; ++i)

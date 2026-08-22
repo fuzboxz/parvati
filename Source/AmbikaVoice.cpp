@@ -2,6 +2,7 @@
 
 #include "AmbikaVoice.h"
 
+#include <array>
 #include <cmath>
 
 #include "AmbikaSound.h"
@@ -437,7 +438,10 @@ void AmbikaVoice::fillInternalBlock()
         ++modRingCount_;
     }
 
-    const uint8_t* out = voice_.output();
+    // Sized-array pointer: either the voice's rendered block or the local
+    // crush-held copy — the kAudioBlockSize contract survives the shadow
+    // reassignment (a mis-sized buffer cannot enter this path).
+    const std::array<uint8_t, ambika::dsp::kAudioBlockSize>* out = &voice_.output();
 
     // Crush (sample-and-hold decimator): the firmware voicecard DAC updates its
     // output only every voice_.crush() internal samples (voicecard.cc:74). Apply
@@ -448,7 +452,7 @@ void AmbikaVoice::fillInternalBlock()
     // shadow stays valid for every downstream read (1x default + smoothing paths,
     // and the oversampled raw fill). Previously block-scoped, `out` dangled after
     // the `if` closed -> stack-use-after-scope (ASAN abort at the read below).
-    uint8_t crushed[ambika::dsp::kAudioBlockSize];
+    std::array<uint8_t, ambika::dsp::kAudioBlockSize> crushed {};
     if (crush > 1)
     {
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
@@ -456,11 +460,11 @@ void AmbikaVoice::fillInternalBlock()
             if (++crushSampleCounter_ >= static_cast<int> (crush))
             {
                 crushSampleCounter_ = 0;
-                crushHeldSample_ = out[i];
+                crushHeldSample_ = (*out)[i];
             }
             crushed[i] = crushHeldSample_;
         }
-        out = crushed;   // shadow: all downstream paths read the held samples
+        out = &crushed;   // shadow: all downstream paths read the held samples
     }
 
     // ---- 1x path (default): bit-identical to the un-oversampled engine ----
@@ -513,7 +517,7 @@ void AmbikaVoice::fillInternalBlock()
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
         {
             // 8-bit (centred 128) -> float. Keep the (128 vs 127) asymmetry exact.
-            float s = static_cast<float> (static_cast<int> (out[i]) - 128) / 128.0f;
+            float s = static_cast<float> (static_cast<int> ((*out)[i]) - 128) / 128.0f;
             s = filter_.processSample (s);
             s *= g0 + gStep * static_cast<float> (i);
             fifo_.push_back (s);
@@ -561,7 +565,7 @@ void AmbikaVoice::fillInternalBlock()
     for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
     {
         // 8-bit (centred 128) -> float. Keep the (128 vs 127) asymmetry exact.
-        float s = static_cast<float> (static_cast<int> (out[i]) - 128) / 128.0f;
+        float s = static_cast<float> (static_cast<int> ((*out)[i]) - 128) / 128.0f;
         filter_.setCutoffHz (smoothedCutoffHz_.getNextValue());
         filter_.setResonance (smoothedResonance_.getNextValue());
         filter_.commit();
@@ -580,7 +584,7 @@ void AmbikaVoice::fillInternalBlock()
         // linear so no aliasing) -> FIFO.
         float raw[ambika::dsp::kAudioBlockSize];
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
-            raw[i] = static_cast<float> (static_cast<int> (out[i]) - 128) / 128.0f;
+            raw[i] = static_cast<float> (static_cast<int> ((*out)[i]) - 128) / 128.0f;
 
         // Upsample 40 -> 40*N into the Oversampling internal buffer.
         const float* inChannels[1] = { raw };

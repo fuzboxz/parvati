@@ -15,6 +15,7 @@
 // law fixed in this change makes t60 == the Decay knob by construction (at
 // Chirp 0 for Spring), so each endpoint is asserted within +/-35%.
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -44,7 +45,7 @@ constexpr double kFs = 32768.0;   // host rate == internal rate (1:1 bridge)
 // Render one impulse (sample 64, 0.8 FS) through the effect and measure the
 // L-channel t60 via Schroeder EDC + regression over the -5..-45 dB span.
 // @p expected  the t60 the Decay knob claims (sizes the render: 4x + margin).
-double measureT60 (fv1::Fv1FxProcessor& fx, const float p[5], double expected)
+double measureT60 (fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> p, double expected)
 {
     const int n = static_cast<int> (std::ceil ((expected * 4.0 + 0.5) * kFs)) + 4096;
     std::vector<float> L (static_cast<size_t> (n)), R (static_cast<size_t> (n));
@@ -112,7 +113,7 @@ bool within35 (double measured, double target)
     return measured > target * 0.65 && measured < target * 1.35;
 }
 
-void setP5 (float (&p) [5], float a, float b, float c, float d)
+void setP5 (std::array<float, kNumFxSlotParams>& p, float a, float b, float c, float d)
 {
     p[0] = a; p[1] = b; p[2] = c; p[3] = d; p[4] = 0.0f;
 }
@@ -128,7 +129,7 @@ TEST(reverb_decay_test)
     {
         fv1::Fv1PlateReverb fx;
         fx.prepare (kFs, 256);
-        float p[5];
+        std::array<float, kNumFxSlotParams> p;
         setP5 (p, 0.0f, 0.0f, 1.0f, 0.0f);
         const double tLow = measureT60 (fx, p, 0.1);
         setP5 (p, 0.0f, 0.5f, 1.0f, 0.0f);
@@ -155,7 +156,7 @@ TEST(reverb_decay_test)
     {
         fv1::Fv1Room fx;
         fx.prepare (kFs, 256);
-        float p[5];
+        std::array<float, kNumFxSlotParams> p;
         setP5 (p, 0.0f, 1.0f, 0.0f, 1.0f);
         const double tLow = measureT60 (fx, p, 0.1);
         setP5 (p, 0.5f, 1.0f, 0.0f, 1.0f);
@@ -179,7 +180,7 @@ TEST(reverb_decay_test)
     {
         fv1::Fv1Spring fx;
         fx.prepare (kFs, 256);
-        float p[5];
+        std::array<float, kNumFxSlotParams> p;
         setP5 (p, 0.0f, 1.0f, 0.0f, 0.0f);   // decay 0.2, damp open, chirp 0
         const double tLow = measureT60 (fx, p, 0.2);
         setP5 (p, 1.0f, 1.0f, 0.0f, 0.0f);   // decay 4.0, chirp 0
@@ -214,7 +215,7 @@ TEST(reverb_decay_test)
             const bool click = (i < 2048) && ((i % 97) == 0);
             in[static_cast<size_t> (i)] = click ? 0.7f : 0.0f;
         }
-        float p[5];
+        std::array<float, kNumFxSlotParams> p;
         setP5 (p, 0.5f, 0.5f, 0.5f, 0.0f);   // width 0
         fx.reset();
         fx.setParams (p);
@@ -261,7 +262,7 @@ TEST(reverb_decay_test)
             in[static_cast<size_t> (i)] = click ? 0.6f : 0.0f;
         }
         std::vector<float> L0, R0, L1, R1;
-        float p[5];
+        std::array<float, kNumFxSlotParams> p;
         setP5 (p, 0.0f, 0.6f, 0.5f, 0.0f);   // Mod 0
         fx.reset();
         fx.setParams (p);

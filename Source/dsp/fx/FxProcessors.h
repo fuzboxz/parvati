@@ -52,7 +52,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -71,7 +71,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -97,7 +97,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -142,7 +142,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -181,7 +181,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -227,7 +227,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -269,7 +269,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     int latency() const noexcept override;
     FxType type() const override;
 
@@ -307,7 +307,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:
@@ -344,7 +344,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     int latency() const noexcept override;
     FxType type() const override;
 
@@ -393,7 +393,7 @@ public:
     void prepare (double sampleRate, int maxBlock) override;
     void reset() override;
     void process (float* L, float* R, int numSamples) override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     FxType type() const override;
 
 private:

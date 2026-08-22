@@ -6,6 +6,7 @@
 //   - worst curvature-immune impulse (same detector family as the onset test)
 // over a 3 s held loud chord at 48k/512, for Phaser / Overdrive / LUT Dist /
 // Wavefolder. NOT a pass/fail gate — a diagnostic dump.
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include "test_utils.h"
@@ -337,7 +338,7 @@ TEST(parvati_fx_dropout_probe)
         {
             parvati::fv1::Fv1Overdrive od;
             od.prepare (sr, total2);
-            float p5[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+            std::array<float, kNumFxSlotParams> p5 = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
             od.setParams (p5);
             std::vector<float> out = pre, outR = preR;
             od.process (out.data(), outR.data(), total2);
@@ -348,7 +349,7 @@ TEST(parvati_fx_dropout_probe)
         {
             parvati::fv1::Fv1Overdrive od;
             od.prepare (sr, 512);   // chain-prep maxBlock
-            float p5[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+            std::array<float, kNumFxSlotParams> p5 = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
             od.setParams (p5);
             std::vector<float> out = pre, outR = preR;
             for (int off = 0; off < total2; off += 45)   // the ~980 Hz sub-chunk cadence

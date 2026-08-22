@@ -240,6 +240,25 @@ if(PARVATI_WARNINGS_AS_ERRORS)
     endif()
 endif()
 
+# ------------------------------------------------------------------------------
+# libc++ hardened mode (memory-safety wave 2026-08-22): makes libc++'s own
+# bounds/validity checks (std::array/std::vector operator[], iterator
+# derefs, etc.) ACTIVE IN OPTIMIZED BUILDS. Debug builds already get full
+# _LIBCPP_DEBUG-style checks via JUCE's assert paths; Release shipped the
+# checks OFF — the sized-array migration leans on exactly these checks, so
+# they should not vanish in the artifacts users run. FAST mode: checks that
+# are O(1) and branch-predictable only (near-zero overhead; no iterator
+# unwrapping). AppleClang/Clang + libc++ 16+ (Xcode 15+); the define is an
+# inert unused macro on older toolchains or libstdc++, so no version gate is
+# needed. NOT applied under sanitizers (redundant double instrumentation) or
+# in Debug (already checked).
+if(NOT MSVC AND NOT _parvati_sanitizers
+   AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND CMAKE_BUILD_TYPE MATCHES "Rel")
+    add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
+    message(STATUS "Parvati: libc++ hardened mode FAST (${CMAKE_BUILD_TYPE})")
+endif()
+
 # JUCE is a global checkout at ~/JUCE (no installed JUCEConfig.cmake), so we
 # consume it via add_subdirectory. Override with -DJUCE_GLOBAL_PATH=/path if
 # JUCE lives elsewhere. JUCE requires the C language to be enabled.
@@ -870,8 +889,6 @@ add_executable(parvati_unified_tests
     # Final stragglers - migrated from standalone targets
     tests/concurrency_test.cpp
     tests/firmware_parity_test.cpp
-    tests/mono_retrigger_continuity_test.cpp
-    tests/release_vca_glide_test.cpp
     tests/roundtrip_golden_test.cpp
     tests/parvati_fv1_alias_probe.cpp
     tests/parvati_fx_cpu_probe.cpp
@@ -883,6 +900,10 @@ add_executable(parvati_unified_tests
     # tracked but never compiled/registered; now part of the unified target)
     tests/parvati_retrig_probe.cpp
 # Unified test sources (keep alphabetical-ish; new_test.sh appends here)
+    tests/release_vca_glide_test.cpp
+    tests/mono_retrigger_continuity_test.cpp
+    tests/patch_sanitizer_test.cpp
+    tests/dsp_memory_safety_test.cpp
     tests/build_policy_test.cpp
     # Vendored firmware sources for firmware_parity_test (the parity oracle:
     # tests/firmware_shim headers shadow the AVR firmware headers; see the

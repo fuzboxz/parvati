@@ -32,6 +32,7 @@
 #ifndef PARVATI_DSP_VOICE_H_
 #define PARVATI_DSP_VOICE_H_
 
+#include <array>
 #include <cstdint>
 
 #include "dsp/constants.h"
@@ -92,15 +93,27 @@ class Voice {
             && envelope_[2].stage() == DEAD;
     }
 
-    // The last rendered 40-sample 8-bit block (centred at 128).
-    const uint8_t* output() const { return output_; }
+    // The last rendered 40-sample 8-bit block (centred at 128), as a sized
+    // array reference (not const uint8_t*) so callers cannot mis-slice the
+    // block (memory-safety migration; bounds-checked operator[] in debug).
+    const std::array<uint8_t, kAudioBlockSize>& output() const { return output_; }
 
-    inline uint8_t modulation_source(uint8_t i) const { return modulation_sources_[i]; }
+    // Mod-matrix byte accessors — BOUNDS-GUARDED (memory-safety migration):
+    // the arrays are fixed 31/19 slots; an out-of-range source index reads 0 /
+    // an out-of-range write is dropped instead of indexing past the arrays.
+    // (SynthEngine feeds these from LFO/ENV telemetry; the clamp mirrors the
+    // envelope(i) clamp below.)
+    inline uint8_t modulation_source(uint8_t i) const {
+        return i < kNumModulationSources ? modulation_sources_[i] : 0;
+    }
     inline uint8_t modulation_destination(uint8_t i) const {
-        return static_cast<uint8_t>(modulation_destinations_[i]);
+        return (i < kNumModulationDestinations)
+                   ? static_cast<uint8_t>(modulation_destinations_[i])
+                   : 0;
     }
     inline void set_modulation_source(uint8_t i, uint8_t value) {
-        modulation_sources_[i] = value;
+        if (i < kNumModulationSources)
+            modulation_sources_[i] = value;
     }
 
     // Per-voice pitch-bend offset, in the same 1/128-semitone units as the
@@ -111,17 +124,28 @@ class Voice {
     void set_pitch_bend_offset(int16_t offset) { pitch_bend_offset_ = offset; }
 
     // ---- patch / part byte access (the firmware indexes Patch as uint8_t*) ----
+    // BOUNDS-GUARDED (memory-safety migration): a malformed preset / stray host
+    // write can deliver any uint8_t address; both accessors now reject
+    // out-of-struct offsets instead of writing OOB into adjacent Voice members
+    // (the firmware had hardware-bounded SPI writes; this port gets a guard).
     void set_patch_data(uint8_t address, uint8_t value) {
-        reinterpret_cast<uint8_t*>(&patch_)[address] = value;
+        if (address < sizeof(patch_))   // Patch is 112 bytes; see constants.h static_assert.
+            reinterpret_cast<uint8_t*>(&patch_)[address] = value;
     }
     void set_part_data(uint8_t address, uint8_t value) {
         if (address < sizeof(part_))   // Part is 7 bytes; reject controller-side offsets (arp/seq/polyphony) that would write OOB.
             reinterpret_cast<uint8_t*>(&part_)[address] = value;
     }
-    uint8_t* mutable_patch_data() { return reinterpret_cast<uint8_t*>(&patch_); }
+    // BOUNDS-GUARDED flat-byte alias removed (memory-safety migration): the
+    // firmware handed out `uint8_t*` over SPI writes; here every patch byte
+    // goes through set_patch_data (which range-checks the address).
     const Patch& patch() const { return patch_; }
 
-    Envelope* mutable_envelope(uint8_t i) { return &envelope_[i]; }
+    // Clamped like every other index into the fixed 3-slot array (memory-
+    // safety migration; the const twin below already clamped).
+    Envelope* mutable_envelope(uint8_t i) {
+        return &envelope_[i < kNumEnvelopes ? i : kNumEnvelopes - 1];
+    }
     // Const twin of mutable_envelope for the UI telemetry readouts
     // (docs/LIVE_MOD_FEEDBACK_DESIGN.md): SynthEngine::renderPartFx samples
     // the representative voice's live envelope stage / phase / output once
@@ -216,7 +240,7 @@ class Voice {
     uint8_t dummy_sync_state_[kAudioBlockSize] {};
 
     // Final 8-bit output block + write cursor.
-    uint8_t output_[kAudioBlockSize] {};
+    std::array<uint8_t, kAudioBlockSize> output_ {};
     uint8_t write_index_ {};
 
     // (No copy: a Voice owns oscillator/envelope state.)

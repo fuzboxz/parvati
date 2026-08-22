@@ -25,16 +25,27 @@ static int g_failures = 0;
 // Render `calls` successive block-slices of a Trigger()'d generator into a
 // 280-byte arena (fresh TransientGenerator per call to keep cases isolated),
 // returning the number of samples that differ from the prefill sentinel.
+// (Renders through a fixed kAudioBlockSize staging block — the sized-reference
+// API forbids interior arena slices — then copies the block into the arena,
+// which is byte-for-byte what the old pointer arithmetic produced.)
 static int renderAndCountChanged (uint8_t shape, uint8_t amount, uint8_t prefill, int calls)
 {
-    uint8_t arena[280];
+    // 8 blocks max (the "8th call adds nothing" case); count only the first
+    // 40*calls samples so a finished decay contributes nothing, exactly like
+    // the old interior-slice pointer arithmetic.
+    uint8_t arena[8 * kAudioBlockSize];
+    uint8_t block[kAudioBlockSize];
     std::memset (arena, prefill, sizeof (arena));
     TransientGenerator tg;
     tg.Trigger();
     for (int c = 0; c < calls; ++c)
-        tg.Render (shape, arena + 40 * c, amount);
+    {
+        std::memset (block, prefill, sizeof (block));
+        tg.Render (shape, block, amount);
+        std::memcpy (arena + 40 * c, block, sizeof (block));
+    }
     int changed = 0;
-    for (int i = 0; i < 280; ++i)
+    for (int i = 0; i < 40 * calls; ++i)
         if (arena[i] != prefill) ++changed;
     return changed;
 }
@@ -77,11 +88,16 @@ TEST(transient_generator_test)
     printf("[3] CLICK: 255-valued burst over the LAST 32 samples, gain ramp 255->0\n");
     {
         uint8_t arena[280];
+        uint8_t block[kAudioBlockSize];
         std::memset (arena, 0, sizeof (arena));
         TransientGenerator tg;
         tg.Trigger();
         for (int c = 0; c < 7; ++c)
-            tg.Render (WAVEFORM_SUB_OSC_CLICK, arena + 40 * c, 255);
+        {
+            std::memset (block, 0, sizeof (block));
+            tg.Render (WAVEFORM_SUB_OSC_CLICK, block, 255);
+            std::memcpy (arena + 40 * c, block, sizeof (block));
+        }
         // value == 255 only while the post-decrement counter < 32 (samples 223..254);
         // before that the generator returns 0, which keeps a zero prefill at 0.
         CHECK (arena[0] == 0 && arena[222] == 0, "samples 0..222 are value 0 (pre-dec counter >= 32)");
@@ -98,18 +114,23 @@ TEST(transient_generator_test)
     printf("[4] CLICK amount scaling (amplitude = (gain*amount)>>8)\n");
     {
         uint8_t arena[280];
+        uint8_t block[kAudioBlockSize];
         std::memset (arena, 0, sizeof (arena));
         TransientGenerator tg;
         tg.Trigger();
         for (int c = 0; c < 7; ++c)
-            tg.Render (WAVEFORM_SUB_OSC_CLICK, arena + 40 * c, 128);
+        {
+            std::memset (block, 0, sizeof (block));
+            tg.Render (WAVEFORM_SUB_OSC_CLICK, block, 128);
+            std::memcpy (arena + 40 * c, block, sizeof (block));
+        }
         // sample 223: gain 32, amount 128 -> amplitude (32*128)>>8 == 16
         CHECK (arena[223] == (uint8_t) ((255 * 16) >> 8), "amount 128 halves the amplitude (16 -> 15)");
     }
 
     printf("[5] GLITCH: deterministic private 8-bit LCG (rng = rng*73 + counter)\n");
     {
-        uint8_t arena[280];
+        uint8_t arena[kAudioBlockSize];   // sized to one block (the API's exact bound)
         std::memset (arena, 0, sizeof (arena));
         TransientGenerator tg;   // rng_state_ == 0 at birth
         tg.Trigger();

@@ -180,7 +180,9 @@ void Voice::TriggerEnvelope(uint8_t stage) {
 }
 
 void Voice::TriggerEnvelope(uint8_t index, uint8_t stage) {
-    envelope_[index].Trigger(stage);
+    // Clamped like every other fixed-array index (memory-safety migration);
+    // Envelope::Trigger itself sinks an invalid stage to DEAD.
+    envelope_[index < kNumEnvelopes ? index : kNumEnvelopes - 1].Trigger(stage);
 }
 
 void Voice::Trigger(uint16_t note, uint8_t velocity, uint8_t legato) {

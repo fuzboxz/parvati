@@ -196,9 +196,23 @@ private:
     // reaper claims it with an exchange + delete). Atomic slots -- not the
     // obvious unique_ptr array -- because a park and a reap can race: the
     // atomic exchange resolves ownership of the pointer to exactly one side.
-    static constexpr int kRetiredCap = 4;
-    std::array<std::atomic<FxProcessor*>, (size_t) kRetiredCap> retired_ {};   // nullptr
-    std::atomic<bool> retiredDirty_ { false };
+    //
+    // Encapsulated in RetiredLot (memory-safety migration): C++17 has no
+    // atomic<unique_ptr>, so the atomic raw-pointer slots stay -- but every
+    // delete now lives inside this one type (park / reap / destructor), making
+    // the "exactly one side owns the pointer" contract local instead of
+    // spread across three FxChain functions.
+    struct RetiredLot
+    {
+        static constexpr int kCap = 4;   // > max swaps per 60 Hz reaper interval
+        RetiredLot() noexcept;
+        ~RetiredLot();                   // audio stopped: claim + delete everything
+        void park (FxProcessor* old) noexcept;   // AT: park a displaced processor
+        void reap() noexcept;                     // MT: delete everything parked
+        std::array<std::atomic<FxProcessor*>, (size_t) kCap> slots_ {};   // nullptr
+        std::atomic<bool> dirty_ { false };
+    };
+    RetiredLot retired_;
 
     // Per-block scratch buffers (sized once in prepare; never on the AT):
     //  - wetL_/wetR_: one per slot — each parallel contributor processes a copy
@@ -337,6 +351,4 @@ private:
     // Staged->Consuming, move pending_ into slots_ parking the old processor,
     // then store Empty (pending_ is AT-owned until that final store).
     void consumePendingSwap (int slot) noexcept;
-    // Park a displaced processor for the MT reaper (first empty atomic slot).
-    void parkRetiredProcessor (FxProcessor* old) noexcept;
 };

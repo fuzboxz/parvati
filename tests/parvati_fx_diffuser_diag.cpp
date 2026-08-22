@@ -6,6 +6,7 @@
 //
 // Build: linked as parvati_fx_diffuser_diag_test (see CMakeLists).
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -165,7 +166,7 @@ std::vector<float> renderDirect (Input in, int chunk, int blocks)
 
     auto fx = createFxProcessor (FxType::Diffuser);
     fx->prepare (kSr, 256);
-    float p[4] = { 0.5f, 0.0f, 0.0f, 0.0f };
+    std::array<float, kNumFxSlotParams> p = { 0.5f, 0.0f, 0.0f, 0.0f };   // 5th zero-filled
     fx->setParams (p);
 
     for (int s = 0; s < blocks; ++s)

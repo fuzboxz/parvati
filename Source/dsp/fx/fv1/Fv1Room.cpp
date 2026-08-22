@@ -20,7 +20,7 @@ Fv1Room::Fv1Room()
 {
 }
 
-void Fv1Room::setParams (const float param[5])
+void Fv1Room::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = std::clamp (param[0], 0.0f, 1.0f);
     const float p1 = std::clamp (param[1], 0.0f, 1.0f);

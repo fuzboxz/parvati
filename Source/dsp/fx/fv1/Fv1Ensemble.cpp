@@ -36,7 +36,7 @@ void Fv1Ensemble::resetInternal()
     phaseB_ = 0.25f;
 }
 
-void Fv1Ensemble::setParams (const float param[5])
+void Fv1Ensemble::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = std::clamp (param[0], 0.0f, 1.0f);   // Rate
     const float p1 = std::clamp (param[1], 0.0f, 1.0f);   // Depth

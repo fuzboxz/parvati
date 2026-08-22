@@ -38,9 +38,14 @@ struct ResourcesManager {
 
   // --- Resource-ID lookup (parity; rarely used by the voice DSP) ------------
   // Firmware: lookup_table_table()[resource], then read word i.
+  // BOUNDS-GUARDED (memory-safety migration): `resource` is a runtime int; an
+  // id outside 0..kNumLookupTables-1 now reads 0 instead of walking past the
+  // indirection table. In-range ids are byte-for-byte firmware parity.
   template <typename ResultType, typename IndexType>
   static inline ResultType Lookup(int resource, IndexType i) {
-    const uint16_t* table = lookup_table_table[resource];
+    if (resource < 0 || static_cast<std::size_t>(resource) >= kNumLookupTables)
+      return static_cast<ResultType>(0);
+    const uint16_t* table = lookup_table_table[static_cast<std::size_t>(resource)];
     return static_cast<ResultType>(table[static_cast<std::size_t>(i)]);
   }
 

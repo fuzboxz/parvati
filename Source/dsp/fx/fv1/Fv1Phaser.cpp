@@ -32,7 +32,7 @@ inline float clamp01 (float x) noexcept
 }
 } // namespace
 
-void Fv1Phaser::setParams (const float param[5])
+void Fv1Phaser::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = clamp01 (param[0]);
     const float p1 = clamp01 (param[1]);

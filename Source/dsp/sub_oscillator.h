@@ -33,8 +33,10 @@ class SubOscillator {
     void set_increment(uint24_t increment) { phase_increment_ = increment; }
 
     // Renders a kAudioBlockSize-sample block of sub-oscillator into `buffer`,
-    // mixing it over the existing content with `amount` (0..255).
-    void Render(uint8_t shape, uint8_t* buffer, uint8_t amount) {
+    // mixing it over the existing content with `amount` (0..255). The buffer
+    // is a sized reference (not uint8_t*) so a mis-sized buffer cannot be
+    // passed (memory-safety migration; zero runtime cost).
+    void Render(uint8_t shape, uint8_t (&buffer)[kAudioBlockSize], uint8_t amount) {
         uint24_t increment = phase_increment_;
         if (shape >= 3) {
             // Shapes 3..5 are one octave below shapes 0..2.
@@ -45,6 +47,7 @@ class SubOscillator {
         uint8_t pulse_width = shape == 0 ? 0x80 : 0x40;
         uint8_t sub_gain = amount;
         uint8_t mix_gain = static_cast<uint8_t>(~sub_gain);  // 255 - sub_gain
+        uint8_t* out = buffer;   // sized-array param -> local write cursor
         while (size--) {
             phase_ = U24Add(phase_, increment);
             uint8_t v;
@@ -60,8 +63,8 @@ class SubOscillator {
                 v = (phase_.integral & 0x8000u) ? tri
                                                 : static_cast<uint8_t>(~tri);
             }
-            *buffer = U8Mix(*buffer, v, mix_gain, sub_gain);
-            ++buffer;
+            *out = U8Mix(*out, v, mix_gain, sub_gain);
+            ++out;
         }
     }
 

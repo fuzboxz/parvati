@@ -43,7 +43,7 @@ public:
     // Map the five generic 0..1 slot params (param[0..4]) to this effect's
     // controls. Called single-threaded on the audio thread when the FX state is
     // serviced (fxDirty_), before process().
-    virtual void setParams (const float param[5]) = 0;
+    virtual void setParams (const std::array<float, kNumFxSlotParams>& param) = 0;
 
     // Transport (host BPM + play state). Polled once per block by the chain (fed
     // by the engine from the AudioPlayHead). Default no-op; tempo-aware effects

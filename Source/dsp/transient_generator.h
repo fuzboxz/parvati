@@ -43,7 +43,9 @@ class TransientGenerator {
     // Renders into `buffer` (mixing over existing content) for the transient
     // shapes CLICK/GLITCH/BLOW/METALLIC/POP (`shape >= WAVEFORM_SUB_OSC_CLICK`).
     // Other shapes are left untouched (the sub-oscillator handles them).
-    void Render(uint8_t shape, uint8_t* buffer, uint8_t amount) {
+    // The buffer is a sized reference (not uint8_t*) so a mis-sized buffer
+    // cannot be passed (memory-safety migration; zero runtime cost).
+    void Render(uint8_t shape, uint8_t (&buffer)[kAudioBlockSize], uint8_t amount) {
         if (shape < WAVEFORM_SUB_OSC_CLICK) {
             return;  // Not my business -- handled by the sub oscillator.
         }
@@ -51,11 +53,12 @@ class TransientGenerator {
             shape = WAVEFORM_SUB_OSC_POP;
         }
         uint8_t size = kAudioBlockSize;
+        uint8_t* out = buffer;   // sized-array param -> local write cursor
         while (counter_ && size--) {
             uint8_t value = RenderGenerator(shape);
             uint8_t amplitude = U8U8MulShift8(gain_, amount);
-            *buffer = U8Mix(*buffer, value, amplitude);
-            ++buffer;
+            *out = U8Mix(*out, value, amplitude);
+            ++out;
         }
     }
 

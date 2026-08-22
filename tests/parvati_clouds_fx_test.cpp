@@ -12,6 +12,7 @@
 //
 // Built by default. Run with: ./build/parvati_clouds_fx_test
 
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <string>
@@ -121,7 +122,7 @@ TEST(parvati_clouds_fx_test)
         fx->prepare (kRate, kBlock);
         fx->reset();
         check (fx->latency() == 0, "Diffuser: latency()==0 (no oversampling)");
-        const float p[4] = { 0.0f, 0.0f, 0.0f, 0.0f };   // amount fixed 1.0; params unused
+        const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.0f, 0.0f, 0.0f };   // amount fixed 1.0; params unused
         fx->setParams (p);
         const auto r = runFx (*fx, inL, inR, outL, outR, kBlock);
 
@@ -138,7 +139,7 @@ TEST(parvati_clouds_fx_test)
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[4] = { 0.7f, 0.5f, 0.0f, 0.0f };   // +~4.8 st, mid size
+        const std::array<float, kNumFxSlotParams> p = { 0.7f, 0.5f, 0.0f, 0.0f };   // +~4.8 st, mid size
         fx->setParams (p);
         // The pitch shifter reads from a ~368-sample internal delay window, so it
         // needs several blocks to charge before it emits non-silent output.
@@ -157,7 +158,7 @@ TEST(parvati_clouds_fx_test)
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[5] = { 0.0f, 0.6f, 0.6f, 0.7f, 0.0f };   // predelay 0 / diffusion / time / tone / low-cut off (amount fixed 1.0)
+        const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.6f, 0.6f, 0.7f, 0.0f };   // predelay 0 / diffusion / time / tone / low-cut off (amount fixed 1.0)
         fx->setParams (p);
         // Render several blocks so the reverb tank charges and the wet tail is
         // unmistakably present (the first block alone is mostly pre-delay).
@@ -191,7 +192,7 @@ TEST(parvati_clouds_fx_test)
         // blocks (a non-zero position targets position*maxDelay seconds of
         // delay and, like any delay, is silent until that much audio has been
         // recorded). Pitch at unison, freeze off.
-        const float p[4] = { 0.0f, 0.5f, 0.5f, 0.0f };
+        const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.5f, 0.5f, 0.0f };
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 10);
 
@@ -221,7 +222,7 @@ TEST(parvati_clouds_fx_test)
         // window then plays ~2048 samples -> non-silent output only emerges around
         // block ~40-50. So render plenty of blocks (runFx flags nonSilent if ANY
         // block exceeds the threshold).
-        const float p[5] = { 0.5f, 0.0f, 0.5f, 0.0f, 1.0f };   // pitch unison / position 0 / size mid / freeze off / tone bright
+        const std::array<float, kNumFxSlotParams> p = { 0.5f, 0.0f, 0.5f, 0.0f, 1.0f };   // pitch unison / position 0 / size mid / freeze off / tone bright
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 120);
 
@@ -247,7 +248,7 @@ TEST(parvati_clouds_fx_test)
         fx->reset();
         // pitch ~unison, warp/position/blur mid -> the resynthesis alters the
         // signal (windowing + overlap-add + spectral warp), so it differs from dry.
-        const float p[5] = { 0.5f, 0.6f, 0.5f, 0.5f, 0.0f };   // pitch/warp/position/blur mid, freeze off
+        const std::array<float, kNumFxSlotParams> p = { 0.5f, 0.6f, 0.5f, 0.5f, 0.0f };   // pitch/warp/position/blur mid, freeze off
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 120);
 
@@ -265,7 +266,7 @@ TEST(parvati_clouds_fx_test)
         fx->prepare (kRate, kBlock);
         fx->reset();
         check (fx->latency() == 8, "Wavefolder: latency()==8 (6x OS group delay)");
-        const float p[5] = { 0.0f, 0.8f, 0.5f, 1.0f, 0.0f };   // drive unity / fold 0.8 / bias centred / tone bright
+        const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.8f, 0.5f, 1.0f, 0.0f };   // drive unity / fold 0.8 / bias centred / tone bright
         fx->setParams (p);
         const auto r = runFx (*fx, inL, inR, outL, outR, kBlock);
 
@@ -285,7 +286,7 @@ TEST(parvati_clouds_fx_test)
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[5] = { 0.65f, 0.0f, 0.3f, 1.0f, 0.0f };   // +shift, sine shape, low feedback, full spread
+        const std::array<float, kNumFxSlotParams> p = { 0.65f, 0.0f, 0.3f, 1.0f, 0.0f };   // +shift, sine shape, low feedback, full spread
         fx->setParams (p);
         const auto r = runFx (*fx, loopL, loopR, outL, outR, kBlock, 6);
 
@@ -304,7 +305,7 @@ TEST(parvati_clouds_fx_test)
         fx->prepare (kRate, kBlock);
         fx->reset();
         check (fx->latency() == 8, "RingModulator: latency()==8 (6x OS group delay)");
-        const float p[4] = { 0.4f, 0.8f, 0.5f, 0.0f };   // mid carrier, buzzy shape, mid amount
+        const std::array<float, kNumFxSlotParams> p = { 0.4f, 0.8f, 0.5f, 0.0f };   // mid carrier, buzzy shape, mid amount
         fx->setParams (p);
         const auto r = runFx (*fx, inL, inR, outL, outR, kBlock);
 
@@ -323,7 +324,7 @@ TEST(parvati_clouds_fx_test)
         // already reaches (~2.95), so the clamp is provably the only thing
         // standing between 4x-hot input and the 16x explosion.
         {
-            const float hotP[5] = { 0.5f, 1.0f, 1.0f, 0.f, 0.f };   // mid carrier, buzzy, MAX amount
+            const std::array<float, kNumFxSlotParams> hotP = { 0.5f, 1.0f, 1.0f, 0.f, 0.f };   // mid carrier, buzzy, MAX amount
             fx->setParams (hotP);
             float peak = 0.0f;
             bool finite = true;
@@ -356,7 +357,7 @@ TEST(parvati_clouds_fx_test)
 
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[5] = { 0.5f, 0.3f, 0.5f, 0.25f, 0.25f };   // C4 / decay / bright / position(0.25) / structure(Rings default)
+        const std::array<float, kNumFxSlotParams> p = { 0.5f, 0.3f, 0.5f, 0.25f, 0.25f };   // C4 / decay / bright / position(0.25) / structure(Rings default)
         fx->setParams (p);
 
         // Feed several blocks so the resonator modes build up.
@@ -381,7 +382,7 @@ TEST(parvati_clouds_fx_test)
             auto fx = createFxProcessor (FxType::Resonator);
             fx->prepare (sr, kBlock);
             fx->reset();
-            const float p[5] = { 0.3f, 0.5f, 0.7f, 0.4f, 0.25f };
+            const std::array<float, kNumFxSlotParams> p = { 0.3f, 0.5f, 0.7f, 0.4f, 0.25f };
             fx->setParams (p);
             float sL[kBlock], sR[kBlock];
             for (int i = 0; i < kBlock; ++i) { sL[i] = inL[i]; sR[i] = inR[i]; }
@@ -400,7 +401,7 @@ TEST(parvati_clouds_fx_test)
         auto fx = createFxProcessor (FxType::Resonator);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[5] = { 0.6f, 0.4f, 0.5f, 0.25f, 0.25f };   // position=0.25 (both odd+even modes active), structure default
+        const std::array<float, kNumFxSlotParams> p = { 0.6f, 0.4f, 0.5f, 0.25f, 0.25f };   // position=0.25 (both odd+even modes active), structure default
         fx->setParams (p);
         // Feed identical mono input on both channels (the harness input).
         float sL[kBlock], sR[kBlock];
@@ -425,7 +426,7 @@ TEST(parvati_clouds_fx_test)
             auto fx = createFxProcessor (FxType::Resonator);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[5] = { 0.5f, 0.3f, 0.5f, pos, 0.25f };
+            const std::array<float, kNumFxSlotParams> p = { 0.5f, 0.3f, 0.5f, pos, 0.25f };
             fx->setParams (p);
             float sL[kBlock], sR[kBlock];
             for (int b = 0; b < 8; ++b)
@@ -452,7 +453,7 @@ TEST(parvati_clouds_fx_test)
         auto fx = createFxProcessor (FxType::Wavefolder);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[5] = { 0.0f, 0.1f, 0.5f, 1.0f, 0.0f };   // drive unity, mild fold, centred bias, tone bright (no LP smear)
+        const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.1f, 0.5f, 1.0f, 0.0f };   // drive unity, mild fold, centred bias, tone bright (no LP smear)
         fx->setParams (p);
 
         float impL[kBlock] = {}, impR[kBlock] = {};
@@ -604,7 +605,7 @@ TEST(parvati_clouds_fx_test)
         auto fx = createFxProcessor (FxType::Resonator);
         fx->prepare (kRate, kBlock);
         fx->reset();
-        const float p[5] = { 0.5f, 1.0f, 1.0f, 0.25f, 0.25f };   // C4, max decay/bright, pos 0.25, structure default
+        const std::array<float, kNumFxSlotParams> p = { 0.5f, 1.0f, 1.0f, 0.25f, 0.25f };   // C4, max decay/bright, pos 0.25, structure default
         fx->setParams (p);
 
         float mxOverall = 0.0f;
@@ -727,7 +728,7 @@ TEST(parvati_clouds_fx_test)
             auto fx = createFxProcessor (FxType::Resonator);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[5] = { 0.5f, 0.5f, 0.5f, pos, 0.25f };
+            const std::array<float, kNumFxSlotParams> p = { 0.5f, 0.5f, 0.5f, pos, 0.25f };
             fx->setParams (p);
             float sL[kBlock], sR[kBlock];
             for (int b = 0; b < 8; ++b)
@@ -770,7 +771,7 @@ TEST(parvati_clouds_fx_test)
             auto fx = createFxProcessor (FxType::Diffuser);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            const std::array<float, kNumFxSlotParams> p = { 0.0f, 0.0f, 0.0f, 0.0f };
             fx->setParams (p);
             float tmpR[kBlock];
             for (int i = 0; i < kBlock; ++i) { outA[i] = inL[i]; tmpR[i] = inR[i]; }
@@ -780,7 +781,7 @@ TEST(parvati_clouds_fx_test)
             auto fx = createFxProcessor (FxType::Diffuser);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+            const std::array<float, kNumFxSlotParams> p = { 1.0f, 1.0f, 1.0f, 1.0f };
             fx->setParams (p);
             float tmpR[kBlock];
             for (int i = 0; i < kBlock; ++i) { outB[i] = inL[i]; tmpR[i] = inR[i]; }
@@ -912,7 +913,7 @@ TEST(parvati_clouds_fx_test)
 
             fx->prepare (kRate, kBlock);
             fx->reset();
-            const float p[5] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+            const std::array<float, kNumFxSlotParams> p = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
             fx->setParams (p);
             if (e.t == FxType::ClockedDelay)
                 fx->setTransport (120.0, true);   // clocked delay needs host BPM
@@ -947,7 +948,7 @@ TEST(parvati_clouds_fx_test)
             fx->reset();
             // Max Drive (param1=1 -> 4x) + max Fold (param2=1 -> gain 1.02),
             // centred bias, bright tone: the most over-range-prone setting.
-            const float hot[5] = { 1.0f, 1.0f, 0.5f, 1.0f, 0.0f };
+            const std::array<float, kNumFxSlotParams> hot = { 1.0f, 1.0f, 0.5f, 1.0f, 0.0f };
             fx->setParams (hot);
 
             // Hot +/-8.0 square-ish input (a loud summed chord, both signs,
@@ -1013,7 +1014,7 @@ TEST(parvati_clouds_fx_test)
             // In-range behaviour unchanged: drive=1x (param1=0), |in|<=0.5 ->
             // |sl| <= 0.5*1.02*(1+0.2*1.25) ~= 0.64 < 2.29, clamp inactive.
             fx->reset();
-            const float mild[5] = { 0.0f, 0.8f, 0.5f, 1.0f, 0.0f };   // same as the classic pass above
+            const std::array<float, kNumFxSlotParams> mild = { 0.0f, 0.8f, 0.5f, 1.0f, 0.0f };   // same as the classic pass above
             fx->setParams (mild);
             const auto r = runFx (*fx, inL, inR, outL, outR, kBlock, 4);
             check (r.finite, "Wavefolder LUT-domain: in-range path still finite (clamp inactive below |sl| 2.29)");
@@ -1090,7 +1091,7 @@ TEST(parvati_clouds_fx_test)
             // prone setting. Enough blocks to charge the ~368-sample window
             // AND cross several R wrap points (wrap period ~= size_/|1-ratio|
             // samples; at ratio ~1.33 and size ~1919 this is ~a few k samples).
-            const float p[5] = { 0.7f, 0.5f, 1.0f, 0.0f, 0.0f };
+            const std::array<float, kNumFxSlotParams> p = { 0.7f, 0.5f, 1.0f, 0.0f, 0.0f };
             fx->setParams (p);
 
             float psInL[kBlock], psInR[kBlock], psOutL[kBlock], psOutR[kBlock];
@@ -1162,7 +1163,7 @@ TEST(parvati_clouds_fx_test)
             {
                 fxMono->prepare (kRate, kBlock);
                 fxMono->reset();
-                const float mono[5] = { 0.7f, 0.5f, 0.0f, 0.0f, 0.0f };
+                const std::array<float, kNumFxSlotParams> mono = { 0.7f, 0.5f, 0.0f, 0.0f, 0.0f };
                 fxMono->setParams (mono);
                 bool monoLocked = true;
                 for (int b = 0; b < 8 && monoLocked; ++b)
@@ -1197,7 +1198,7 @@ TEST(parvati_clouds_fx_test)
             const char* name;
             const float* inL;
             const float* inR;
-            float p[5];
+            std::array<float, kNumFxSlotParams> p;
             int blocks;
         };
         const CloudsProbe probes[] = {

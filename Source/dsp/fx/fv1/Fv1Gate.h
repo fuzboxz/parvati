@@ -26,7 +26,7 @@ namespace parvati::fv1
 class Fv1Gate : public Fv1FxProcessor
 {
 public:
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     void resetInternal() override;
     FxType type() const noexcept override { return FxType::Gate; }
 

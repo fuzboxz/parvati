@@ -4,6 +4,7 @@
 //     -I Source tests/fv1_engine_test.cpp -o /tmp/fv1_engine_test && /tmp/fv1_engine_test
 // No JUCE link needed (the framework is <array>/<cmath>/<cstdint>/<vector> only).
 
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <cstdio>
@@ -33,7 +34,7 @@ public:
         lout = fv1::f24_mulk (lin, 4096); // *0.5 (14-bit: q14(0.5)=4096)
         rout = fv1::f24_mulk (rin, 4096);
     }
-    void setParams (const float[5]) override {}
+    void setParams (const std::array<float, kNumFxSlotParams>&) override {}
     FxType type() const override { return FxType::None; }
 };
 

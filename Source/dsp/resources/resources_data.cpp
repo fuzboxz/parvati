@@ -1395,7 +1395,9 @@ static_assert(sizeof(wav_res_lfo_waveforms) == 2 * sizeof(uint8_t), "size mismat
 static_assert(sizeof(wav_res_env_expo) == 257 * sizeof(uint8_t), "size mismatch: wav_res_env_expo");
 static_assert(sizeof(wav_res_waves) == 10320 * sizeof(uint8_t), "size mismatch: wav_res_waves");
 static_assert(sizeof(wav_res_wavetables) == 288 * sizeof(uint8_t), "size mismatch: wav_res_wavetables");
-static_assert(sizeof(lookup_table_table) / sizeof(lookup_table_table[0]) == 6, "lookup_table_table must have 6 entries");
-static_assert(sizeof(waveform_table) / sizeof(waveform_table[0]) == 30, "waveform_table must have 30 entries");
+static_assert(sizeof(lookup_table_table) / sizeof(lookup_table_table[0]) == kNumLookupTables,
+              "lookup_table_table entry count drifted from kNumLookupTables (resources.h)");
+static_assert(sizeof(waveform_table) / sizeof(waveform_table[0]) == kNumWaveformTables,
+              "waveform_table entry count drifted from kNumWaveformTables (resources.h)");
 
 }  // namespace ambika::dsp

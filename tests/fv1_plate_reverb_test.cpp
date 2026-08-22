@@ -6,6 +6,7 @@
 //   && /tmp/fv1_plate_reverb_test
 // No JUCE link needed (the framework is <array>/<cmath>/<cstdint>/<vector> only).
 
+#include <array>
 #include <algorithm>
 #include "unified_test_runner.h"
 #include <cmath>
@@ -52,7 +53,7 @@ float maxAbsDiff (const float* a, const float* b, int n)
 
 void setP (fv1::Fv1PlateReverb& fx, float p0, float p1, float p2, float p3)
 {
-    float p[5] = { p0, p1, p2, p3, 0.0f };   // param[4] unused (chain Dry/Wet)
+    std::array<float, kNumFxSlotParams> p = { p0, p1, p2, p3, 0.0f };   // param[4] unused (chain Dry/Wet)
     fx.setParams (p);
 }
 

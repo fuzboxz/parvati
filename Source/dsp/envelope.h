@@ -81,7 +81,13 @@ class Envelope {
 
     // Begin a segment. DEAD forces the accumulator to 0 (silent). `a_` is
     // seeded from the current output value so segments chain seamlessly.
+    // BOUNDS-GUARDED (memory-safety migration): a stage >= NUM_SEGMENTS
+    // (possible via TriggerEnvelope's uint8_t from host paths) maps to DEAD —
+    // the well-defined silent sink — instead of indexing past the 5-slot
+    // stage arrays.
     void Trigger(uint8_t stage) {
+        if (stage >= NUM_SEGMENTS)
+            stage = DEAD;
         if (stage == DEAD) {
             value_ = 0;
         }

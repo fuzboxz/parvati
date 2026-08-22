@@ -232,7 +232,7 @@ namespace tail_detail
     }
 }
 
-inline double tailSecondsForFx (FxType type, const float param[5], double bpm) noexcept
+inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotParams>& param, double bpm) noexcept
 {
     const double b = (bpm > 0.0 && std::isfinite (bpm)) ? bpm : 120.0;
     const float p0 = param[0], p1 = param[1], p2 = param[2], p3 = param[3];

@@ -43,7 +43,7 @@ class Fv1Overdrive : public Fv1FxProcessor
 public:
     Fv1Overdrive();
 
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;
     // 6x-oversampled table path (see the file header): upsample the internal

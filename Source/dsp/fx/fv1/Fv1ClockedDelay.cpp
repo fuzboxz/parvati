@@ -84,7 +84,7 @@ void Fv1ClockedDelay::resetInternal()
     delayLen_ = 0;
 }
 
-void Fv1ClockedDelay::setParams (const float param[5])
+void Fv1ClockedDelay::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     pSync_ = clamp01 (param[0]);
     pFb_   = clamp01 (param[1]);

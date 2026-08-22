@@ -33,7 +33,7 @@ class Fv1ClockedDelay : public Fv1FxProcessor
 public:
     void prepareInternal (double sampleRate, int maxBlock) override;
     void resetInternal() override;
-    void setParams (const float param[5]) override;
+    void setParams (const std::array<float, kNumFxSlotParams>& param) override;
     void setTransport (double bpm, bool isPlaying) override;
     // Recompute the tempo-synced delay length at block start, then run the
     // BW-limited host<->internal fixed-point core.

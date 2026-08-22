@@ -29,6 +29,12 @@ inline constexpr int LUT_RES_FM_FREQUENCY_RATIOS            = 3;
 inline constexpr int LUT_RES_VCA_LINEARIZATION              = 4;
 inline constexpr int LUT_RES_CZ_PHASE_RESET                 = 5;
 
+// Table COUNTS (memory-safety migration): bounds for the indirection tables
+// in resources_data.cpp, enforced by static_assert there and used by
+// ResourcesManager::Lookup to reject out-of-range resource ids.
+// (kNumWaveformTables is defined below the WAV_RES_* ids that bound it.)
+inline constexpr std::size_t kNumLookupTables = LUT_RES_CZ_PHASE_RESET + 1;        // 6
+
 inline constexpr std::size_t LUT_RES_LFO_INCREMENTS_SIZE                = 128;
 inline constexpr std::size_t LUT_RES_ENV_PORTAMENTO_INCREMENTS_SIZE     = 128;
 inline constexpr std::size_t LUT_RES_OSCILLATOR_INCREMENTS_SIZE         = 768;
@@ -110,6 +116,9 @@ inline constexpr std::size_t WAV_RES_LFO_WAVEFORMS_SIZE          = 2;
 inline constexpr std::size_t WAV_RES_ENV_EXPO_SIZE               = 257;  // 256 + 1 guard
 inline constexpr std::size_t WAV_RES_WAVES_SIZE                  = 10320; // 80 single-cycle waves x 129 bytes
 inline constexpr std::size_t WAV_RES_WAVETABLES_SIZE             = 288;  // 16 definitions x 18 bytes
+
+// (See kNumLookupTables above.) Bounds for the waveform indirection table.
+inline constexpr std::size_t kNumWaveformTables = static_cast<std::size_t>(WAV_RES_WAVETABLES) + 1; // 30
 
 // ---------------------------------------------------------------------------
 // Extern declarations (defined in resources_data.cpp). Arrays use plain

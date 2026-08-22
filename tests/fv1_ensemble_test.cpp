@@ -4,6 +4,7 @@
 //     -I Source tests/fv1_ensemble_test.cpp Source/dsp/fx/fv1/Fv1Ensemble.cpp \
 //     -o /tmp/fv1_ensemble_test && /tmp/fv1_ensemble_test
 
+#include <array>
 #include <cmath>
 #include "unified_test_runner.h"
 #include <cstdio>
@@ -56,7 +57,7 @@ TEST(fv1_ensemble_test)
                                         * static_cast<float> (i) / 48000.0f);
 
         // Mid chorus: rate ~2.15 Hz, depth ~5 ms, center ~5 ms, feedback +0.18.
-        float p[5] = { 0.5f, 0.33f, 0.13f, 0.6f, 0.0f };
+        std::array<float, kNumFxSlotParams> p = { 0.5f, 0.33f, 0.13f, 0.6f, 0.0f };
         fx.setParams (p);
         run (fx, inBuf, n, L, R);
 
@@ -79,10 +80,10 @@ TEST(fv1_ensemble_test)
         for (int i = 0; i < n; ++i)
             inBuf[i] = (i % 64 == 0) ? 0.9f : 0.0f;
 
-        float extremes[2][5] = {
+        std::array<std::array<float, kNumFxSlotParams>, 2> extremes = {{
             { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },  // rate 0.1 Hz, depth 0, center 2 ms, fb -0.9
             { 1.0f, 1.0f, 1.0f, 1.0f, 0.0f }   // rate 8 Hz, depth 15 ms, center 25 ms, fb +0.9
-        };
+        }};
         for (int e = 0; e < 2; ++e)
         {
             fx.reset();
@@ -104,7 +105,7 @@ TEST(fv1_ensemble_test)
                                         * static_cast<float> (i) / 48000.0f);
 
         // Depth = 0: both lines read the identical center delay, so L tracks R.
-        float pMono[5] = { 0.7f, 0.0f, 0.3f, 0.5f, 0.0f };
+        std::array<float, kNumFxSlotParams> pMono = { 0.7f, 0.0f, 0.3f, 0.5f, 0.0f };
         fx.reset();
         fx.setParams (pMono);
         run (fx, inBuf, n, L, R);
@@ -114,7 +115,7 @@ TEST(fv1_ensemble_test)
         check (maxDiff < 1e-2f, "depth=0: L and R track (mono)");
 
         // Depth > 0: the 90-deg offset makes the two reads diverge (stereo).
-        float pStereo[5] = { 0.7f, 0.7f, 0.3f, 0.5f, 0.0f };
+        std::array<float, kNumFxSlotParams> pStereo = { 0.7f, 0.7f, 0.3f, 0.5f, 0.0f };
         fx.reset();
         fx.setParams (pStereo);
         run (fx, inBuf, n, L, R);

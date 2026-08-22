@@ -47,7 +47,7 @@ inline void glideTapQ16 (int32_t& cur, int32_t target) noexcept
 }
 } // namespace
 
-void Fv1Echo::setParams (const float param[5])
+void Fv1Echo::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
     const float p0 = std::clamp (param[0], 0.0f, 1.0f);
     const float p1 = std::clamp (param[1], 0.0f, 1.0f);

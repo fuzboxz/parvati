@@ -118,7 +118,7 @@ std::vector<float> renderVoice (Voice& v, int midi, uint8_t velocity, int numBlo
     for (int b = 0; b < numBlocks; ++b)
     {
         v.ProcessBlock();
-        const uint8_t* buf = v.output();
+        const uint8_t* buf = v.output().data();
         for (int i = 0; i < kAudioBlockSize; ++i)
             out.push_back ((static_cast<int> (buf[i]) - 128) / 128.0f);
     }
@@ -316,7 +316,7 @@ TEST(parvati_tests)
             for (int b = 0; b < 3; ++b) v2.ProcessBlock();
             v2.Kill();
             for (int b = 0; b < 5; ++b) v2.ProcessBlock();
-            const uint8_t* out = v2.output();
+            const uint8_t* out = v2.output().data();
             int maxDev = 0;
             for (int i = 0; i < kAudioBlockSize; ++i)
                 maxDev = std::max (maxDev, std::abs ((int) out[i] - 128));
