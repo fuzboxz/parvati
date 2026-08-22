@@ -16,6 +16,7 @@
 
 #include <cstdio>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -33,14 +34,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-// Sets an APVTS parameter by raw (denormalized) value and fires the engine
-// bridge synchronously (works for AudioParameterInt and AudioParameterChoice).
-void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* p = proc.getApvts().getParameter (id))
-        p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (value)));
 }
 
 // Reference Ambika factory multi (GPL-3.0), discovered via PARVATI_SOURCE_DIR.

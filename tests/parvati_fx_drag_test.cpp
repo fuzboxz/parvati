@@ -17,6 +17,7 @@
 // A fast drag fires several param ticks per audio block (kWritesPerBlock).
 #include <algorithm>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -36,19 +37,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (param))
-            cp->setValueNotifyingHost (cp->convertTo0to1 (static_cast<float> (value)));
 }
 
 constexpr double kSr  = 44100.0;

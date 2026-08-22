@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -27,14 +28,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-// Sets an APVTS parameter by raw (denormalized) value via the host notification
-// path (works for AudioParameterInt and AudioParameterChoice).
-void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* p = proc.getApvts().getParameter (id))
-        p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (value)));
 }
 
 // Select part @p partIndex (0-based) by driving the part_select param (1-based).

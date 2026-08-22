@@ -5,6 +5,7 @@
 // detector) on the main bus L, plus a no-retrigger baseline for reference.
 #include <algorithm>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -21,19 +22,6 @@ namespace
 {
 constexpr double kSr  = 44100.0;
 constexpr int    kBuf = 256;
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (param))
-            cp->setValueNotifyingHost (cp->convertTo0to1 (static_cast<float> (value)));
-}
 
 // One MIDI event at a host-sample position.
 struct Ev { int pos; bool on; int note; };

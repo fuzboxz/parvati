@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -67,13 +68,6 @@ size_t capturePartStride (const juce::MemoryBlock& engineBlob) noexcept
     if (version == 7)
         stride += 4 + 25;           // v7-only tuning block
     return stride;
-}
-
-// Set an APVTS param by raw value via the host notification path.
-void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* p = proc.getApvts().getParameter (id))
-        p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (value)));
 }
 
 // Select part @p partIndex (0-based) via the 1-based part_select param.

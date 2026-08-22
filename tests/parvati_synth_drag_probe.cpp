@@ -25,6 +25,7 @@
 // stays red either way until that call is made).
 #include <algorithm>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -41,13 +42,6 @@ namespace
 {
 constexpr double kSr  = 44100.0;
 constexpr int    kBuf = 512;
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
 
 // Render durSec with a held chord; if drag != nullptr, write it (values swept
 // over the middle second at ~2 ticks/block — a fast drag) during [1s, 2s).

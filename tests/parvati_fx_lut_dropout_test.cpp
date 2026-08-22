@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <memory>
 #include <cmath>
 #include <cstdio>
@@ -49,19 +50,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (param))
-            cp->setValueNotifyingHost (cp->convertTo0to1 (static_cast<float> (value)));
 }
 
 // min windowed-RMS / median windowed-RMS over the analysis span, plus the

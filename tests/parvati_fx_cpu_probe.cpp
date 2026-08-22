@@ -5,6 +5,7 @@
 // and horrible audio quality" signature.
 #include <chrono>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <cstdlib>
 #include <cstdio>
 
@@ -16,18 +17,6 @@
 
 namespace
 {
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (param))
-            cp->setValueNotifyingHost (cp->convertTo0to1 (static_cast<float> (value)));
-}
 } // namespace
 
 TEST(parvati_fx_cpu_probe)

@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include "unified_test_runner.h"
+#include "test_utils.h"
 #include <cstdio>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -24,15 +25,6 @@
 
 namespace
 {
-// Canonical "host changed this parameter" path (mirrors apvats_test.cpp):
-// setValueNotifyingHost fires APVTS parameterChanged synchronously, which
-// writes the patch byte into every voice.
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
 }  // namespace
 
 TEST(idle_silence_test)
