@@ -156,7 +156,18 @@ const juce::StringArray kPolyModes { "Mono", "Poly", "Unison 2x", "Cyclic", "Cha
 // ---- Arpeggiator choice lists ----
 juce::StringArray makeArpModes()       { return { "Off", "Arp", "Sequencer" }; }
 juce::StringArray makeArpDirections()  { return { "Up", "Down", "Up-Down", "As-Played", "Random", "Chord" }; }
-juce::StringArray makeArpResolutions() { return { "1/1", "1/2.", "1/2", "1/4.", "1/4T", "1/4", "1/8.", "1/8T", "1/8", "1/16.", "1/16T", "1/16", "1/32.", "1/32", "1/64" }; }
+// Tick-indexed for kMidiClockTickPerStep = {96,72,64,48,36,32,24,16,12,8,6,4,3,2,1}
+// (Arpeggiator.h): 96=1/1 72=1/2. 64=1/1T 48=1/2 36=1/4. 32=1/2T 24=1/4 16=1/4T
+// 12=1/8 8=1/8T 6=1/16 4=1/16T 3=1/32 2=1/32T 1=1/64T. Firmware display strings
+// (resources.cc STR_RES_*) carry the same values as fractions of a whole note
+// (72="3/4", 64="2/3", 36="3/8"...); we use dotted/triplet notation, matching
+// ui/SynthParamLabels.cpp kSyncedDivisions. The factory default index 10 =
+// 6 ticks = straight 1/16 (part.cc init arp bytes {0,1,0,10}).
+juce::StringArray makeArpResolutions()
+{
+    return { "1/1", "1/2.", "1/1T", "1/2", "1/4.", "1/2T", "1/4", "1/4T",
+             "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64T" };
+}
 juce::StringArray makeArpPatterns()
 {
     juce::StringArray a;

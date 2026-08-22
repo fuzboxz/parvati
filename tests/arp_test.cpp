@@ -80,12 +80,12 @@ TEST(arp_test)
     processor.prepareToPlay (48000.0, 256);
     processor.syncAllParamsToEngine();
 
-    // Configure the arpeggiator: mode=Arp (index 1), direction=Up, octave=2, resolution=1/16.
+    // Configure the arpeggiator: mode=Arp (index 1), direction=Up, octave=2, resolution=1/4.
     processor.getApvts().getParameterAsValue ("arp_mode") = 1.0f;       // Arp (index 1 of Off/Arp/Sequencer)
     processor.getApvts().getParameter ("arp_direction")->setValueNotifyingHost (0.0f);  // Up
     processor.getApvts().getParameter ("arp_octave")->setValueNotifyingHost (          // 2 octaves
         juce::jmap (2.0f, 1.0f, 4.0f, 0.0f, 1.0f));
-    processor.getApvts().getParameter ("arp_resolution")->setValueNotifyingHost (       // 1/16
+    processor.getApvts().getParameter ("arp_resolution")->setValueNotifyingHost (       // 1/4 (index 6 = 24 ticks)
         juce::jmap (6.0f, 0.0f, 14.0f, 0.0f, 1.0f));
     processor.getApvts().getParameter ("arp_pattern")->setValueNotifyingHost (0.0f);    // pattern 0
 
@@ -99,7 +99,7 @@ TEST(arp_test)
     }
 
     // Render ~3 seconds (at 48kHz, 256-sample blocks => ~562 blocks).
-    // At 120 BPM with 1/16 resolution: 24 ticks per step, 1000 samples/tick
+    // At 120 BPM with 1/4 resolution: 24 ticks per step, 1000 samples/tick
     // => 24000 samples per step => ~0.5s/step => ~6 arp steps in 3 seconds.
     // With octave=2 the arp cycles C3..C4 across octaves.
     constexpr int kBlock = 256;

@@ -28,10 +28,10 @@ namespace
 // x1.5 duration), triplet (x2/3 ticks). Sorted by tick descending:
 //   96=1/1  72=1/2.  64=1/1T  48=1/2  36=1/4.  32=1/2T  24=1/4  16=1/4T
 //   12=1/8   8=1/8T   6=1/16   4=1/16T  3=1/32   2=1/32T  1=1/64T
-// NOTE: this is the CORRECT tick-indexed order; ParameterLayout's
-// makeArpResolutions() (the arp-resolution dropdown labels) is in a DIFFERENT
-// order and is partly mislabeled vs the ticks. Reusing it would show index 10
-// (tick 6 = 1/16) as "1/16T". Do NOT reuse makeArpResolutions here.
+// NOTE: this table and ParameterLayout's makeArpResolutions() must both stay
+// index-aligned with the tick order above (they now carry identical labels;
+// makeArpResolutions() was historically mislabeled — 8 of 15 entries, fixed
+// 2026-08-22). If either table is reordered, this invariant breaks silently.
 const char* const kSyncedDivisions[15] = {
     "1/1", "1/2.", "1/1T", "1/2", "1/4.", "1/2T", "1/4", "1/4T",
     "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64T" };

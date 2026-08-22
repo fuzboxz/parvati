@@ -185,8 +185,8 @@ private:
     uint8_t direction_  = static_cast<uint8_t> (ArpDirection::Up);  // ArpDirection enum
     uint8_t octaveRange_ = 1;
     uint8_t pattern_    = 0;
-    uint8_t divider_    = 6;   // default 1/16 (24 ticks)
-    uint8_t prescaler_  = 24;
+    uint8_t divider_    = 10;  // factory default (part.cc init arp bytes {0,1,0,10}): index 10 = 6 ticks = 1/16
+    uint8_t prescaler_  = 6;   // kMidiClockTickPerStep[10]
 
     // Arp sequencer state.
     int8_t   arpDirection_   = 1;    // +1 or -1

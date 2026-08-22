@@ -189,7 +189,7 @@ parts:
       arp_direction: 0            # Up
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
-      arp_resolution: 10            # 1/16T
+      arp_resolution: 10            # 1/16
       fx1_type: 0            # None
       fx1_enabled: 0
       fx1_drywet: 0
@@ -452,7 +452,7 @@ parts:
       arp_direction: 0            # Up
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
-      arp_resolution: 10            # 1/16T
+      arp_resolution: 10            # 1/16
       fx1_type: 0            # None
       fx1_enabled: 0
       fx1_drywet: 0
@@ -715,7 +715,7 @@ parts:
       arp_direction: 0            # Up
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
-      arp_resolution: 10            # 1/16T
+      arp_resolution: 10            # 1/16
       fx1_type: 0            # None
       fx1_enabled: 0
       fx1_drywet: 0
@@ -978,7 +978,7 @@ parts:
       arp_direction: 0            # Up
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
-      arp_resolution: 10            # 1/16T
+      arp_resolution: 10            # 1/16
       fx1_type: 0            # None
       fx1_enabled: 0
       fx1_drywet: 0
@@ -1241,7 +1241,7 @@ parts:
       arp_direction: 0            # Up
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
-      arp_resolution: 10            # 1/16T
+      arp_resolution: 10            # 1/16
       fx1_type: 0            # None
       fx1_enabled: 0
       fx1_drywet: 0
@@ -1504,7 +1504,7 @@ parts:
       arp_direction: 0            # Up
       arp_octave: 1
       arp_pattern: 0            # Pattern 0
-      arp_resolution: 10            # 1/16T
+      arp_resolution: 10            # 1/16
       fx1_type: 0            # None
       fx1_enabled: 0
       fx1_drywet: 0

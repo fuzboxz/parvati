@@ -152,7 +152,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["arp_direction"]  = "Arp note order: Up, Down, Up-Down, As-Played, Random, Chord.";
     m["arp_octave"]     = "Arp octave span (1..4).";
     m["arp_pattern"]    = "Arp note-selection gate pattern (22 stored patterns).";
-    m["arp_resolution"] = "Arp rhythmic value vs host tempo (1/1 .. 1/64).";
+    m["arp_resolution"] = "Arp rhythmic value vs host tempo (1/1 .. 1/64T).";
 
     // ---- Options (3) ----
     m["vca_curve"]   = "VCA response curve: Linearized or Exponential.";
