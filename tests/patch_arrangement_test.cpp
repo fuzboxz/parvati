@@ -11,6 +11,8 @@
 //
 // Dependency-light: includes SynthEngine via the Parvati lib only (no GUI).
 
+#include <cstring>
+
 #include "ui/PatchArrangement.h"
 #include "unified_test_runner.h"
 #include "SynthEngine.h"
@@ -109,7 +111,11 @@ TEST(patch_arrangement_test)
         {
             char msg[64];
             std::snprintf (msg, sizeof (msg), "label(%s) == \"%s\"", l.want, l.want);
-            CHECK (arrangementLabel (l.id) == l.want, msg);
+            // Content compare, NOT pointer compare: identical literals are
+            // NOT guaranteed to be merged by the linker (ASan's instrumented
+            // globals carry redzones and defeat constant pooling, which made
+            // every label() check fail under the sanitized build).
+            CHECK (std::strcmp (arrangementLabel (l.id), l.want) == 0, msg);
         }
     }
 
