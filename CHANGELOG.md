@@ -4,6 +4,19 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Tools
+- **`tools/run_tests_parallel.sh` (2026-08-22).** Parallel driver for the
+  unified suite: greedy work queue across N lanes (default: performance
+  cores, capped at 8; `PARVATI_TEST_JOBS` overrides; positional args select a
+  subset), long-pole tests (loader_fuzz/perf_smoke/lifecycle/...) scheduled
+  first. Safe because tests are self-contained and every shared mutable path
+  goes through JUCE `File::tempDirectory` = `$TMPDIR/<exe>/` on macOS — each
+  lane gets its own TMPDIR, so fixed-name temp fixtures ("b.PRO",
+  "a.parvati", ...) stay lane-private. Full 117-test suite: ~9 min wall
+  (bounded by loader_fuzz_test) vs ~15-20 min sequential; same exit-code
+  contract (number of failures), per-test logs under the run dir. The
+  sequential runner stays canonical.
+
 ### Build
 - **`PARVATI_FORMATS` cache option + tests-only sanitizer trees (2026-08-22).**
   New cache option selects the plugin formats to build; default is unchanged

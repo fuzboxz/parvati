@@ -34,6 +34,10 @@ cmake --build build_unified --target parvati_unified_tests -j8
 ./build_unified/parvati_unified_tests <name>      # one test
 PARVATI_UNIFIED_INPROCESS=1 ./build_unified/parvati_unified_tests <name>
 
+tools/run_tests_parallel.sh                       # same suite, N lanes (~9 min;
+                                                   # per-lane TMPDIR isolation)
+PARVATI_TEST_JOBS=4 tools/run_tests_parallel.sh [test ...]   # subset/lanes
+
 tools/run_sanitizers.sh                           # ASan+UBSan / TSan sweeps
 ```
 
