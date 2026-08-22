@@ -148,6 +148,7 @@ option(PARVATI_ENABLE_ASAN            "Enable AddressSanitizer"            OFF)
 option(PARVATI_ENABLE_UBSAN           "Enable UndefinedBehaviorSanitizer"  OFF)
 option(PARVATI_ENABLE_TSAN            "Enable ThreadSanitizer"             OFF)
 option(PARVATI_WARNINGS_AS_ERRORS     "Treat compiler warnings as errors"  OFF)
+option(PARVATI_TEST_EXAMPLES          "Register the 8 example_* demo tests in parvati_unified_tests (example_failing_test deliberately fails; default run stays green without them)" OFF)
 
 # AddressSanitizer and ThreadSanitizer cannot be combined (both hijack the
 # memory allocator). Fail fast at configure time rather than at link/run.
@@ -666,6 +667,9 @@ endif()
 #   ./build/parvati_unified_tests list       - List all available tests
 #   ./build/parvati_unified_tests <test>     - Run specific test
 #   ./build/parvati_unified_tests            - Run all tests
+# The 8 example_* harness demos are compiled in only with
+# -DPARVATI_TEST_EXAMPLES=ON (default OFF; example_failing_test deliberately
+# fails, so the option must stay off for a meaningful green run).
 add_executable(parvati_unified_tests
     tests/unified_test_runner_main.cpp
     tests/unified_test_examples.cpp
@@ -824,7 +828,12 @@ target_include_directories(parvati_unified_tests PRIVATE
 )
 target_compile_options(parvati_unified_tests PRIVATE -Wno-c++11-narrowing)
 target_link_options(parvati_unified_tests PRIVATE -Wl,-dead_strip)
-message(STATUS "Unified test runner enabled: parvati_unified_tests (114 tests migrated)")
+if(PARVATI_TEST_EXAMPLES)
+    target_compile_definitions(parvati_unified_tests PRIVATE PARVATI_TEST_EXAMPLES=1)
+    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 tests migrated + 8 example_* demos: PARVATI_TEST_EXAMPLES=ON, example_failing_test is expected to fail)")
+else()
+    message(STATUS "Unified test runner enabled: parvati_unified_tests (114 tests migrated, example_* demos off)")
+endif()
 
 # ------------------------------------------------------------------------------
 # Headless Layer-3a verification (not shipped): instantiate the processor,

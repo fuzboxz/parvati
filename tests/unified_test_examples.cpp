@@ -1,6 +1,14 @@
 /*
- * Example tests demonstrating the unified test runner pattern
+ * Example tests demonstrating the unified test runner pattern.
+ *
+ * Compiled ONLY when PARVATI_TEST_EXAMPLES=ON (CMake option, default OFF):
+ * example_failing_test deliberately fails, which would make every default
+ * full-suite run exit non-zero and mask real regressions; the other demos
+ * assert nothing about Parvati. They remain here as harness documentation
+ * and as a self-test of the runner (build with the option to see them).
  */
+
+#ifdef PARVATI_TEST_EXAMPLES
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -91,3 +99,5 @@ TEST(example_isolation_2) {
     CHECK(state == 2, "state incremented to 2");
     return true;
 }
+
+#endif  // PARVATI_TEST_EXAMPLES
