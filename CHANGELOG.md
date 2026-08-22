@@ -23,6 +23,31 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Settings drawer: language row unreachable / scrollbar never appeared
+  (2026-08-22).** Two stacked defects. (1) JUCE's Viewport auto-scrollbar was
+  effectively dead in this drawer: updateVisibleArea has an early-return
+  path (content repositioning) that skips the bar's setVisible — observed as
+  a content area narrowed for a bar that never appears — and with
+  allowVerticalScrollingWithoutScrollbar (the default) false, wheel
+  scrolling was disabled whenever the bar was hidden: NO way to reach the
+  rows below the fold (the language row). Fix: the viewport now sets
+  allowVerticalScrollingWithoutScrollbar (wheel/trackpad scrolling always
+  works), the tracker asserts the bar's visibility explicitly, and the
+  editor's 30 Hz tick re-asserts it while the drawer shows (JUCE can re-hide
+  it on view-position changes). parvati_settings_probe pins the contract:
+  overflow => bar visible after one tick AND scrolling to the bottom brings
+  the last row fully into view.
+- **Mod-pill strips: non-constant scroll speed + fast-LFO aliasing
+  (2026-08-22, the "still looks weird" follow-up). (1) A partial history
+  buffer was stretched across the full strip width, so right after every
+  open/reset the trace RACED (apparent speed = width/count — up to ~3x) and
+  decelerated as the buffer filled. Strips now render right-anchored by
+  absolute age behind the newest sample: every append moves the trace
+  exactly one slot — constant speed from the first append, partial history
+  fills toward the left. (2) kStripMaxPts 48 -> 96: at the 256-append
+  window, 48 points sampled every ~5 appends aliased fast LFOs (~14
+  appends/cycle) into mush; 96 ≈ 1px spacing on the pill restores the
+  waveform reading.
 - **Settings drawer first-open latency (2026-08-22).** The drawer slid in
   blank and the content popped at the END of the ~250 ms slide: JUCE's
   SidePanel animation runs through a proxy component that snapshots the

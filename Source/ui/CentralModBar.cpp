@@ -75,10 +75,11 @@ namespace
     // — with the label drawn on top (Pigments-style scope reading). A brief
     // top-band diagnostic layout confirmed the pipeline first; this restores
     // the full-pill span the design intends.
-    constexpr int kStripMaxPts = 48;   // downsampled points per strip (2026-08-21: 24 -> 48 —
-                                       // a fast LFO/noise wiggle sampled at 24 aliases into
-                                       // angular kinks; 48 halves the sampling error before
-                                       // the Bézier smoothing below rounds the rest)
+    constexpr int kStripMaxPts = 96;   // downsampled points per strip (2026-08-22: 48 -> 96
+                                       // with kHistoryLen 256 — a fast LFO (~14 appends/cycle)
+                                       // sampled every ~5 appends aliases into mush; 96 ≈ 1px
+                                       // spacing on the pill width, the useful ceiling, and the
+                                       // Bézier smoothing below rounds the rest)
 
     // Short cluster label drawn at the left of each segment.
     juce::String clusterShortLabel (parvati::Cluster c)
@@ -316,6 +317,7 @@ struct CentralModBar::ModPill : public juce::Component,
         for (int j = 0; j < m; ++j)
             stripVals_[(size_t) j] = v[j];
         stripCount_ = m;
+        stripRawCount_ = count;
         sigFirst_ = v[0];
         sigLast_  = v[m - 1];
         sigMin_   = lo;
@@ -331,6 +333,7 @@ struct CentralModBar::ModPill : public juce::Component,
         if (stripCount_ == 0 && sigFirst_ < 0.0f)
             return false;   // already hidden
         stripCount_ = 0;
+        stripRawCount_ = 0;
         stripVals_.fill (0.0f);
         sigFirst_ = sigLast_ = sigMin_ = sigMax_ = -1.0f;
         sigMoment_ = -1.0f;
@@ -376,12 +379,28 @@ struct CentralModBar::ModPill : public juce::Component,
         const float x1 = sr.getRight() - kPlotInset;
         // Point cache (the smoothing pass below re-reads them).
         float px[kStripMaxPts], py[kStripMaxPts];
+        // CONSTANT-SPEED LAYOUT (2026-08-22): each plotted sample is placed by
+        // its ABSOLUTE AGE behind the newest — x = x1 − age·(x1−x0)/(window−1)
+        // — with the window = the FULL ring (kHistoryLen), not the current
+        // count. A partial buffer therefore renders right-anchored and grows
+        // toward the left: every append moves every sample by exactly one
+        // slot-width, from the very first append. (The old proportional
+        // spread stretched count samples across the whole width, so right
+        // after an open/reset the trace visibly RACED and decelerated as the
+        // buffer filled — the "pills speed off" reading.)
+        constexpr int kWindow = parvati::ModTelemetrySnapshot::kHistoryLen;
+        const float perAppend = (x1 - x0) / (float) (kWindow - 1);
+        const int rawCount = juce::jmax (stripCount_, stripRawCount_);
         for (int i = 0; i < stripCount_; ++i)
         {
-            const float t = (stripCount_ > 1)
-                ? (float) i / (float) (stripCount_ - 1)
-                : 0.5f;
-            px[i] = x0 + t * (x1 - x0);
+            // Plotted index i ↔ ring index idx_i = i·(count−1)/(m−1); age
+            // behind newest = (count−1) − idx_i (0 for the newest sample).
+            const int idx = (stripCount_ > 1)
+                ? juce::roundToInt ((float) i * (float) (rawCount - 1)
+                                    / (float) (stripCount_ - 1))
+                : (rawCount - 1);
+            const int age = juce::jlimit (0, kWindow - 1, (rawCount - 1) - idx);
+            px[i] = x1 - (float) age * perAppend;
             const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
             const float y = stripBipolar_
                 ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)
@@ -419,7 +438,7 @@ struct CentralModBar::ModPill : public juce::Component,
         // ~12 ms (one append at the 81.7 Hz cadence) still shows a value.
         if (stripCount_ == 1)
             g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (
-                               juce::Point<float> (sr.getCentreX(), singleY)));
+                               juce::Point<float> (x1, singleY)));
         else
             g.strokePath (path, juce::PathStrokeType (kStrokeW,
                               juce::PathStrokeType::JointStyle::curved,
@@ -550,6 +569,13 @@ struct CentralModBar::ModPill : public juce::Component,
     // gate (see updateStripFromHistory; -1 = never drawn). ----
     bool                  stripBipolar_ = false;    // display polarity (ctor: isBipolarModSource)
     int                   stripCount_   = 0;        // cached point count (0 = strip hidden)
+    // Raw ring count behind the last downsample (2026-08-22): positions each
+    // plotted point by ABSOLUTE AGE from the newest sample so the strip
+    // scrolls at a CONSTANT apparent speed — a partial buffer (count <
+    // kHistoryLen) renders right-anchored and fills toward the left, instead
+    // of stretching across the full width and "speeding off" for the first
+    // few seconds after every open/reset.
+    int                   stripRawCount_ = 0;       // history ring count when the strip was drawn
     std::array<float, kStripMaxPts> stripVals_ {};  // downsampled normalized values
     float                 sigFirst_     = -1.0f;    // signature: oldest point
     float                 sigLast_      = -1.0f;    // ... newest point

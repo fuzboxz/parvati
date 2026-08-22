@@ -124,6 +124,12 @@ private:
             panel_.setTopLeftPosition (0, 0);
             panel_.setSize (w, h);
         }
+        // Bar visibility, set EXPLICITLY: JUCE's updateVisibleArea has an
+        // early-return path (content repositioning) that skips the bar's
+        // setVisible — observed as content-area narrowed for a bar that never
+        // appeared. Mirroring the intended state here keeps the affordance
+        // real; idempotent with the viewport's own management.
+        viewport_.getVerticalScrollBar().setVisible (h > viewH);
     }
 
     juce::Viewport&   viewport_;

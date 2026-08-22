@@ -3246,7 +3246,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // row reachable; the scrollbar appears only when the pane is shorter than
     // the full budget.
     settingsScroll_ = std::make_unique<juce::Viewport>();
-    settingsScroll_->setScrollBarsShown (false, true);   // vertical only, auto
+    // Vertical-only, auto-shown — PLUS allowVerticalScrollingWithoutScrollbar:
+    // wheel/trackpad scrolling must work even in the window where the
+    // auto-bar has not (yet) been made visible. (2026-08-22 "language row
+    // unreachable" fix: JUCE's updateVisibleArea has an early-return path —
+    // content-position moves return BEFORE the bar's setVisible — so the
+    // narrowed content area coexisted with an invisible bar, and with
+    // allow-without-bar false the Viewport refused wheel scrolling entirely.
+    // The tracker now also sets the bar's visibility explicitly; this flag is
+    // the guarantee that scrolling never depends on it.)
+    settingsScroll_->setScrollBarsShown (false, true, /*allowVerticalScrollingWithoutScrollbar=*/ true);
     settingsScroll_->setViewedComponent (settingsPanel_, true);   // viewport owns + deletes
     settingsPanelHost_->setContent (settingsScroll_.get(), false);   // SidePanel does NOT delete
     // SIZE THE CONTENT (the bug fix): a juce::Viewport NEVER sizes its viewed
@@ -3546,6 +3555,20 @@ static int sLastThermalHint = 0;
 
 void ParvatiEditor::timerCallback()
 {
+    // ---- Settings drawer scrollbar determinism (~30 Hz, ~one compare) ----
+    // JUCE's Viewport::updateVisibleArea has an early-return path (content
+    // repositioning) that can leave the auto scrollbar HIDDEN while the
+    // content area stays narrowed for it — and it re-hides the bar on some
+    // view-position changes even after our tracker set it visible. Wheel
+    // scrolling no longer depends on the bar (allowVerticalScrollingWithout
+    // scrollbar), but the affordance should not flap: re-assert the intended
+    // state every tick while the drawer shows (idempotent; dirt cheap).
+    if (settingsPanelHost_ != nullptr && settingsPanelHost_->isPanelShowing()
+        && settingsScroll_ != nullptr && settingsPanel_ != nullptr
+        && settingsScroll_->isShowing())
+        settingsScroll_->getVerticalScrollBar().setVisible (
+            settingsPanel_->getHeight() > settingsScroll_->getHeight());
+
     // ---- Tooltip bleed-through fix (~30 Hz) ----
     // ROOT CAUSE: the editor's TooltipWindow is parented to the editor (so it
     // inherits the ParvatiLookAndFeel and scales with the editor / DAW), but a

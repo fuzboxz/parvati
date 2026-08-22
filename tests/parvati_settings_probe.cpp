@@ -159,6 +159,40 @@ TEST(parvati_settings_probe)
         }
         std::printf ("%s\n", dump.toRawUTF8 ());
         snapshot (*ed, label);
+        // SCROLL GATE (2026-08-22 "language row unreachable" regression): the
+        // drawer's content is taller than the view at this window size, so
+        // (a) the vertical scrollbar must be VISIBLE after settling (JUCE's
+        // auto-bar early-return path can leave it hidden; the editor's 30 Hz
+        // tick re-asserts it — wheel scrolling also works unconditionally via
+        // allowScrollingWithoutScrollbar), and (b) scrolling to the bottom
+        // must bring the LAST row fully into view.
+        if (auto* content = ed->settingsContentForTest())
+            if (auto* vp = dynamic_cast<juce::Viewport*> (content))
+                if (auto* panel = vp->getViewedComponent())
+                {
+                    const int over = panel->getHeight() - vp->getViewHeight();
+                    vp->setViewPosition (juce::Point<int> (0, 1 << 20));   // scroll to bottom
+                    pump (0.10);   // one editor tick: the 30 Hz bar re-assert settles
+                    const int maxY = vp->getViewPositionY();
+                    const bool barOk = vp->getVerticalScrollBar().isVisible();
+                    std::printf ("[scroll] panelH=%d viewH=%d overflow=%d vbarVisible=%d maxScrollY=%d\n",
+                                 panel->getHeight(), vp->getViewHeight(), over, (int) barOk, maxY);
+                    juce::Component* last = nullptr;
+                    for (auto* c : panel->getChildren())
+                        if (c->getBottom() > 0 && (last == nullptr || c->getBottom() > last->getBottom()))
+                            last = c;
+                    const bool reachable = last != nullptr
+                        && (last->getBottom() - vp->getViewPositionY()) <= vp->getViewHeight() + 1;
+                    if (! (over > 0 && maxY == over && barOk && reachable))
+                    {
+                        std::printf ("FAIL: drawer scroll broken (over=%d maxY=%d bar=%d reachable=%d lastBottom=%d)\n",
+                                     over, maxY, (int) barOk, (int) reachable,
+                                     last != nullptr ? last->getBottom() : -1);
+                        win->setVisible (false);
+                        delete ed;
+                        return false;
+                    }
+                }
     }
 
     if (interactive)
