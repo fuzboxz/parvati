@@ -57,9 +57,21 @@ public:
 
     // TEST-ONLY: the pure ADSR curve shape (the exact function paint() traces):
     // normalized a/d/s/r knob values -> the level at normalized x (0..1).
-    // Pins the always-visible initial 0 -> peak transient (attack floor).
+    // Pins the time-honest geometry (LUT-duration spans + edge padding).
     static float adsrCurveLevelForTest (float a, float d, float s, float r, float xf)
     { return adsrCurveLevel (a, d, s, r, xf); }
+
+    // TEST-ONLY: raw ADSR segment weights (the single span definition the
+    // curve + marker share) so tests derive exact marker boundaries instead
+    // of hard-coding constants that drift with the geometry.
+    static void adsrSegmentSpansForTest (float a, float d, float s, float r,
+                                         float* wA, float* wD, float* wS, float* wR)
+    { adsrSegmentSpans (a, d, s, r, wA, wD, wS, wR); }
+
+    // The edge padding the curve and marker are both remapped through
+    // (a few pixels of silence before the attack / after the release —
+    // see EnvelopeDisplay.cpp). Public so tests share the exact value.
+    static constexpr float kEdgePad = 0.04f;
 
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }
@@ -105,16 +117,16 @@ public:
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
 private:
-    // The pure ADSR curve (segment math incl. the attack visual floor). Static
+    // The pure ADSR curve (segment math incl. the edge padding). Static
     // + file-scope so paint() and the test hook share ONE definition.
     static float adsrCurveLevel (float a, float d, float s, float r, float xf);
 
     // Raw (UN-normalized) ADSR segment weights for the given knob values:
-    // sustain keeps its fixed minimum, attack is floored at kMinAttackShare of
-    // the other segments' sum. THE single definition of the segment geometry —
-    // adsrCurveLevel (the curve) and the live stage marker both consume it, so
-    // the dot always rides the exact curve the panel paints
-    // (docs/LIVE_MOD_FEEDBACK_DESIGN.md, EnvelopeDisplay contract).
+    // timed segments proportional to their ACTUAL engine durations (the env
+    // LUT), sustain a representative share. THE single definition of the
+    // segment geometry — adsrCurveLevel (the curve) and the live stage marker
+    // both consume it, so the dot always rides the exact curve the panel
+    // paints (docs/LIVE_MOD_FEEDBACK_DESIGN.md, EnvelopeDisplay contract).
     static void adsrSegmentSpans (float a, float d, float s, float r,
                                   float* wA, float* wD, float* wS, float* wR);
 

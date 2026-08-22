@@ -5,31 +5,46 @@
 #include <cmath>
 
 #include "VectorTrace.h"
+#include "dsp/resources/resources.h"   // lut_res_env_portamento_increments (time-honest ADSR spans)
+
+//==============================================================================
+// Edge padding (2026-08-22 user request): a few empty pixels of silence
+// before the attack begins and after the release ends, so a near-vertical
+// 1 ms attack/release ramp is readable AGAINST the flat padding — steepness
+// made visible by contrast instead of hiding against the plot edge.
+// (the value lives on the class as EnvelopeDisplay::kEdgePad so tests share it)
 
 //==============================================================================
 // ADSR segment geometry + level — ONE definition shared by the drawn curve and
 // the live stage marker (docs/LIVE_MOD_FEEDBACK_DESIGN.md) so the marker always
 // rides the exact curve the panel paints.
 //
-// Segment widths are proportional to the a/d/r knob values EXCEPT the attack,
-// which has a MINIMUM VISUAL WIDTH (kMinAttackShare of the other segments' sum,
-// 2026-08-20 user request: "display the initial transient going from 0 to 100%",
-// previously a sub-4 ms attack collapsed to an invisible 1-2% sliver — or to
-// nothing at a == 0, where the trace started AT the peak). With the floor, a
-// fast attack renders as a near-vertical ramp at the left edge — always
-// visible — and slower attacks keep their proportional share unchanged.
-// The sustain plateau keeps its fixed minimum so it always reads.
+// TIME-HONEST spans (2026-08-22, supersedes the 2026-08-20 attack floor):
+// each timed segment's width is proportional to its ACTUAL ENGINE DURATION —
+// 65536 / lut_res_env_portamento_increments[byte] control ticks, the exact
+// table the envelopes run on — so a 1 ms attack beside a 300 ms release
+// renders at its true sub-pixel share: a near-vertical ramp ("steep must
+// look steep"). The old kMinAttackShare floor (~8%) made every fast attack
+// read as "plenty of attack"; the transient is instead kept readable via the
+// EDGE PADDING (see kEdgePad). The sustain hold is untimed — a
+// representative share of the timed segments so the plateau always reads
+// but never dominates.
 void EnvelopeDisplay::adsrSegmentSpans (float a, float d, float s, float r,
                                         float* wA, float* wD, float* wS, float* wR)
 {
     juce::ignoreUnused (s);                     // the sustain LEVEL shapes the curve, not its width
-    constexpr float kSustainMin    = 0.5f;      // sustain plateau (fixed minimum)
-    constexpr float kMinAttackShare = 0.09f;    // attack floor: >= ~8% of total
+    constexpr float kSustainHoldShare = 0.35f;  // representative sustain hold (not a parameter)
 
-    *wS = kSustainMin;
-    *wA = juce::jmax (a, kMinAttackShare * (d + *wS + r));
-    *wD = d;
-    *wR = r;
+    const auto dur = [] (float knob) -> float   // knob 0..1 -> duration in control ticks
+    {
+        const int byte = juce::jlimit (0, 127, juce::roundToInt (knob * 127.0f));
+        const uint16_t inc = ambika::dsp::lut_res_env_portamento_increments[(size_t) byte];
+        return 65536.0f / (float) juce::jmax (1, (int) inc);
+    };
+    *wA = dur (a);
+    *wD = dur (d);
+    *wR = dur (r);
+    *wS = kSustainHoldShare * (*wA + *wD + *wR);
 }
 
 // PURE ADSR curve shape (normalized 0..1 knob values -> level at normalized x),
@@ -38,6 +53,11 @@ void EnvelopeDisplay::adsrSegmentSpans (float a, float d, float s, float r,
 // a test pins it, so the span helper above must keep this exact behaviour.
 float EnvelopeDisplay::adsrCurveLevel (float a, float d, float s, float r, float xf)
 {
+    // Edge padding: pre-attack / post-release silence (see kEdgePad).
+    if (xf <= kEdgePad || xf >= 1.0f - kEdgePad)
+        return 0.0f;
+    const float x = (xf - kEdgePad) / (1.0f - 2.0f * kEdgePad);   // 0..1 across the curve
+
     float wA, wD, wS, wR;
     adsrSegmentSpans (a, d, s, r, &wA, &wD, &wS, &wR);
     const float total = wA + wD + wS + wR;   // wS keeps total > 0 (no /0)
@@ -46,19 +66,19 @@ float EnvelopeDisplay::adsrCurveLevel (float a, float d, float s, float r, float
     const float xEndD = fracA + fracD;
     const float xEndS = fracA + fracD + fracS;
 
-    if (xf <= xEndA)
+    if (x <= xEndA)
     {
-        const float tt = fracA > 0.0f ? xf / fracA : 1.0f;
+        const float tt = fracA > 0.0f ? x / fracA : 1.0f;
         return 1.0f - std::pow (1.0f - tt, 2.0f);                 // attack ease-out (0 -> 1)
     }
-    if (xf <= xEndD)
+    if (x <= xEndD)
     {
-        const float tt = fracD > 0.0f ? (xf - xEndA) / fracD : 1.0f;
+        const float tt = fracD > 0.0f ? (x - xEndA) / fracD : 1.0f;
         return s + (1.0f - s) * std::pow (1.0f - tt, 2.0f);        // decay settle
     }
-    if (xf <= xEndS)
+    if (x <= xEndS)
         return s;                                                  // sustain plateau
-    const float tt = fracR > 0.0f ? (xf - xEndS) / fracR : 1.0f;
+    const float tt = fracR > 0.0f ? (x - xEndS) / fracR : 1.0f;
     return s * std::pow (1.0f - tt, 2.0f);                         // release decay
 }
 
@@ -140,11 +160,15 @@ float EnvelopeDisplay::markerXForStage (const parvati::LiveEnvStage& st) const
     }
     // SUSTAIN pins the marker at the plateau START: the engine reports no
     // time-of-hold for the sustain segment (its visual span is a fixed
-    // minimum, not a proportional one), so the dot rests where the plateau
-    // begins instead of crawling across a width that carries no meaning.
+    // representative share, not a timed one), so the dot rests where the
+    // plateau begins instead of crawling across a width that carries no
+    // meaning. The in-curve position is remapped through the SAME edge
+    // padding the curve renders with (kEdgePad) so the dot rides the
+    // painted curve exactly.
     const float progress = st.stage == 2 ? 0.0f : juce::jlimit (0.0f, 1.0f, st.progress);
     const float total = wA + wD + wS + wR;
-    return juce::jlimit (0.0f, 1.0f, (before + progress * span) / total);
+    const float inCurve = juce::jlimit (0.0f, 1.0f, (before + progress * span) / total);
+    return kEdgePad + inCurve * (1.0f - 2.0f * kEdgePad);
 }
 
 void EnvelopeDisplay::timerCallback()

@@ -4013,16 +4013,13 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // (crucially) makes each ParamControl::lookAndFeelChanged() re-push its
     // category arc / mod tint once the editor's ParvatiLookAndFeel is attached.
     sendLookAndFeelChange();
-    // Settings drawer scrollbar (2026-08-21): themed like the mod bar's
-    // (quiet thumb on a base track) — the Viewport's scrollbar is NOT a
-    // lookAndFeelChanged participant, so it is re-themed explicitly here.
-    if (settingsScroll_ != nullptr)
-    {
-        const auto& t = themeManager_.getCurrentTheme();
-        auto& vsb = settingsScroll_->getVerticalScrollBar();
-        vsb.setColour (juce::ScrollBar::thumbColourId, t.backgroundInput);
-        vsb.setColour (juce::ScrollBar::trackColourId, t.backgroundBase);
-    }
+    // (2026-08-22) The settings-drawer scrollbar override is REMOVED: it
+    // muted the thumb to backgroundInput — which read as an unthemed gray
+    // bar (the reported "give the scrollbar a theme-appropriate color").
+    // The ParvatiLookAndFeel already themes ScrollBar correctly for every
+    // theme (accent thumb, base track, hover brighten, rounded — see
+    // drawScrollbar) and re-setColour's on every theme switch, so the drawer
+    // scrollbar now simply inherits it.
     for (auto& page : generatedPages_)
         page->applyThemeColors();
     if (synthWorkspace_ != nullptr)

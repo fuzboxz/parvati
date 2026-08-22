@@ -268,29 +268,45 @@ struct CentralModBar::ModPill : public juce::Component,
                  r.getWidth() - 2 * kStripXInset, r.getHeight() };
     }
 
-    /** Downsamples @p count OLDEST->NEWEST history samples into the cached
-        strip points (at most kStripMaxPts, spread evenly and pinned at both
-        ends so the newest sample is always the LAST plotted point). Returns
-        true when the drawn data changed (the caller repaints the strip rect);
-        a signature-identical frame returns false and costs nothing. */
+    /** Renders the FULL history window (kHistoryLen slots, OLDEST→NEWEST)
+        into the cached strip points — a fixed-length circular-buffer view:
+        the window length NEVER changes, new values simply overwrite the
+        oldest, and slots older than @p count (never written yet — fresh
+        open/reset, or a source that has never produced data) read as ZERO
+        (2026-08-22 user spec: an unmodulated source shows a full-width zero
+        line from the very first tick, exactly like a modulated one; no
+        growing/stretched partial window, no phase change when the ring
+        saturates — the scroll speed is constant end to end). Downsamples to
+        kStripMaxPts points evenly across the window, pinned at both ends.
+        Returns true when the drawn data changed (the caller repaints the
+        strip rect); a signature-identical frame returns false and costs
+        nothing. */
     bool updateStripFromHistory (const uint8_t* samples, int count)
     {
-        if (count <= 0)
-            return clearStrip();   // no history yet (fresh reset / no voice): hide
-
+        constexpr int kWindow = parvati::ModTelemetrySnapshot::kHistoryLen;
         constexpr float kEps = 1.0f / 255.0f;   // one value quantum
+        constexpr int m = kStripMaxPts;         // the window is ALWAYS full-width
 
-        const int m = juce::jmin (kStripMaxPts, count);
-        float v[kStripMaxPts];
+        if (count > kWindow)
+            count = kWindow;
+        float v[m];
         float lo = 1.0f, hi = 0.0f;
         float moment = 0.0f;   // Σ j·v[j]: POSITION-weighted signature term
         for (int j = 0; j < m; ++j)
         {
-            const int idx = (m > 1)
-                ? juce::roundToInt ((float) j * (float) (count - 1) / (float) (m - 1))
-                : (count - 1);
-            const float val = (float) samples[(size_t) juce::jlimit (0, count - 1, idx)]
-                            * (1.0f / 255.0f);
+            // Plotted slot j ↔ absolute AGE behind the newest sample,
+            // spread evenly over the whole window and pinned at both ends
+            // (j == m-1 is the newest sample, age 0).
+            const int age = (m > 1)
+                ? juce::roundToInt ((float) ((m - 1) - j) * (float) (kWindow - 1)
+                                    / (float) (m - 1))
+                : 0;
+            // Age beyond the written history = the pre-zeroed part of the
+            // buffer (samples[] is OLDEST→NEWEST over `count` entries; the
+            // newest is count-1, age a is count-1-a).
+            const float val = (age < count)
+                ? (float) samples[(size_t) (count - 1 - age)] * (1.0f / 255.0f)
+                : 0.0f;
             v[j] = val;
             lo = juce::jmin (lo, val);
             hi = juce::jmax (hi, val);
@@ -304,8 +320,9 @@ struct CentralModBar::ModPill : public juce::Component,
         // step) sliding through an otherwise-flat window keeps the same
         // first/last/min/max but shifts the centroid, so the strip follows it
         // instead of freezing until the pulse reaches an endpoint. A parked
-        // source (wheel at rest, gate low) still reproduces an identical
-        // signature every tick and triggers ZERO repaints.
+        // source (wheel at rest, gate low, never-modulated zeros) still
+        // reproduces an identical signature every tick and triggers ZERO
+        // repaints.
         if (m == stripCount_
             && std::fabs (v[0] - sigFirst_) <= kEps
             && std::fabs (v[m - 1] - sigLast_) <= kEps
@@ -379,28 +396,17 @@ struct CentralModBar::ModPill : public juce::Component,
         const float x1 = sr.getRight() - kPlotInset;
         // Point cache (the smoothing pass below re-reads them).
         float px[kStripMaxPts], py[kStripMaxPts];
-        // CONSTANT-SPEED LAYOUT (2026-08-22): each plotted sample is placed by
-        // its ABSOLUTE AGE behind the newest — x = x1 − age·(x1−x0)/(window−1)
-        // — with the window = the FULL ring (kHistoryLen), not the current
-        // count. A partial buffer therefore renders right-anchored and grows
-        // toward the left: every append moves every sample by exactly one
-        // slot-width, from the very first append. (The old proportional
-        // spread stretched count samples across the whole width, so right
-        // after an open/reset the trace visibly RACED and decelerated as the
-        // buffer filled — the "pills speed off" reading.)
-        constexpr int kWindow = parvati::ModTelemetrySnapshot::kHistoryLen;
-        const float perAppend = (x1 - x0) / (float) (kWindow - 1);
-        const int rawCount = juce::jmax (stripCount_, stripRawCount_);
+        // The window is CONSTANT (the full pre-zeroed ring — see
+        // updateStripFromHistory), so points spread proportionally across
+        // the strip: the newest sample is always the RIGHT-most point, the
+        // scroll speed is constant end to end, and a never-modulated source
+        // renders a full-width zero line from the very first frame.
         for (int i = 0; i < stripCount_; ++i)
         {
-            // Plotted index i ↔ ring index idx_i = i·(count−1)/(m−1); age
-            // behind newest = (count−1) − idx_i (0 for the newest sample).
-            const int idx = (stripCount_ > 1)
-                ? juce::roundToInt ((float) i * (float) (rawCount - 1)
-                                    / (float) (stripCount_ - 1))
-                : (rawCount - 1);
-            const int age = juce::jlimit (0, kWindow - 1, (rawCount - 1) - idx);
-            px[i] = x1 - (float) age * perAppend;
+            const float t = (stripCount_ > 1)
+                ? (float) i / (float) (stripCount_ - 1)
+                : 0.5f;
+            px[i] = x0 + t * (x1 - x0);
             const float v = juce::jlimit (0.0f, 1.0f, stripVals_[(size_t) i]);
             const float y = stripBipolar_
                 ? sr.getCentreY() - (v - 0.5f) * 2.0f * (usable * 0.5f)

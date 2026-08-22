@@ -2065,12 +2065,18 @@ TEST(editor_test)
         // -- (b) EnvelopeDisplay live stage marker (standalone, never parented:
         //    the ctor-started 30 Hz poll keeps ticking; the pump delivers it) --
         {
-            // Knob values a=0.5 d=0.3 s=0.7 r=0.4 -> spans wA=0.5 wD=0.3
-            // wS=0.5 wR=0.4 (total 1.7): attack ends at 0.5/1.7 ~= 0.294, the
-            // sustain plateau starts at (0.5+0.3)/1.7 ~= 0.471.
-            constexpr float kTotal25    = 1.7f;
-            constexpr float kAttackEnd  = 0.5f / kTotal25;
-            constexpr float kPlateau25  = 0.8f / kTotal25;
+            // Boundaries DERIVED from the display's own span definition (the
+            // 2026-08-22 time-honest geometry: LUT-duration spans + sustain
+            // share, remapped through the edge padding) so this pin cannot
+            // drift when the geometry changes.
+            float wA25 = 0.0f, wD25 = 0.0f, wS25 = 0.0f, wR25 = 0.0f;
+            EnvelopeDisplay::adsrSegmentSpansForTest (0.5f, 0.3f, 0.7f, 0.4f,
+                                                      &wA25, &wD25, &wS25, &wR25);
+            const float kTotal25   = wA25 + wD25 + wS25 + wR25;
+            const float kPad25     = EnvelopeDisplay::kEdgePad;
+            const float kSpan25    = 1.0f - 2.0f * kPad25;
+            const float kAttackEnd = kPad25 + (wA25 / kTotal25) * kSpan25;
+            const float kPlateau25 = kPad25 + ((wA25 + wD25) / kTotal25) * kSpan25;
 
             parvati::LiveEnvStage stage;   // provider-owned state, mutated between phases
             EnvelopeDisplay disp ("Env 25",
@@ -2423,32 +2429,34 @@ static int runPreviewRegression (bool windowed)
             check (envPrev->previewGeneration() > gen0, msg);
         }
 
-        // ---- Envelope SHAPE pin: the initial 0 -> peak transient is ALWAYS
-        // drawn (2026-08-20 user report: a sub-4 ms attack collapsed to an
-        // invisible sliver / nothing at attack == 0). The pure curve function
-        // paint() traces: with the attack floor, even a == 0 starts at 0.0 and
-        // climbs to the peak over a visible left-edge ramp; a slower attack
-        // keeps its proportional share (unchanged behaviour).
+        // ---- Envelope SHAPE pin (2026-08-22 revision): TIME-HONEST spans +
+        // EDGE PADDING. Segment widths are proportional to the ACTUAL engine
+        // durations (the same LUT the envelopes run on), so a ~1 ms attack
+        // renders as a near-vertical ramp — and a few pixels of silence pad
+        // the plot before the attack / after the release so the steepness is
+        // readable (supersedes the 2026-08-20 attack floor, which made fast
+        // attacks read as "plenty of attack").
         if (envPrev != nullptr)
         {
             using ED = EnvelopeDisplay;
             const float d = 0.4f, s = 0.6f, r = 0.3f;   // typical A/D/S/R backdrop
 
-            // (a) instant attack (a == 0, ~1 ms): the curve STARTS AT ZERO and
-            // reaches >= 90% within the first 12% of the plot width.
-            check (ED::adsrCurveLevelForTest (0.0f, d, s, r, 0.0f) < 0.05f,
-                   "[19] a=0: curve starts at ~0 (the transient is drawn)");
-            check (ED::adsrCurveLevelForTest (0.0f, d, s, r, 0.12f) > 0.9f,
-                   "[19] a=0: reaches ~peak within the first 12% of width");
+            // (a) instant attack (a == 0, ~1 tick ~ 1 ms): silence pads the
+            // left edge, then the curve jumps to ~peak within ~1.5% of width
+            // — a near-vertical ramp (steep must look steep).
+            check (ED::adsrCurveLevelForTest (0.0f, d, s, r, 0.02f) < 0.05f,
+                   "[19] a=0: pre-attack padding is silence");
+            check (ED::adsrCurveLevelForTest (0.0f, d, s, r, 0.05f) > 0.9f,
+                   "[19] a=0: peak reached within ~1.5% of width (near-vertical)");
 
-            // (b) a very fast but non-zero attack (~1-2 ms knob position).
-            check (ED::adsrCurveLevelForTest (0.02f, d, s, r, 0.0f) < 0.05f
-                   && ED::adsrCurveLevelForTest (0.02f, d, s, r, 0.12f) > 0.9f,
-                   "[19] a=0.02 (fast): 0 -> peak transient visible at the left edge");
+            // (b) a very fast but non-zero attack (~1-2 ms knob position):
+            // same near-vertical read.
+            check (ED::adsrCurveLevelForTest (0.02f, d, s, r, 0.02f) < 0.05f
+                   && ED::adsrCurveLevelForTest (0.02f, d, s, r, 0.05f) > 0.9f,
+                   "[19] a=0.02 (fast): near-vertical attack after the padding");
 
-            // (c) a moderate attack keeps its proportional look: the midpoint
-            // of the attack segment sits below the peak (the ramp is not
-            // instant) and beyond the floor region.
+            // (c) a moderate attack keeps a gradual ramp: the midpoint of the
+            // attack segment sits below the peak (not instant).
             const float midRamp = ED::adsrCurveLevelForTest (0.45f, d, s, r, 0.20f);
             check (midRamp > 0.1f && midRamp < 0.99f,
                    "[19] a=0.45 (moderate): the attack ramp is still gradual");

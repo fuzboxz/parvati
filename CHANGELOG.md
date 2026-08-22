@@ -23,6 +23,29 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Settings scrollbar now theme-coloured (2026-08-22).** A 2026-08-21
+  override muted the drawer scrollbar's thumb to backgroundInput ("quiet
+  thumb"), which read as an unthemed gray bar. The override is removed — the
+  drawer scrollbar inherits the ParvatiLookAndFeel's themed rendering
+  (accent-coloured thumb, base track, hover brighten), correct for every
+  theme and re-applied on theme switches.
+- **Envelope preview: time-honest ADSR spans + edge padding (2026-08-22,
+  supersedes the 2026-08-20 attack floor).** Segment widths are now
+  proportional to the segments' ACTUAL engine durations (the same env-LUT
+  the envelopes run on), so a 1 ms attack/release renders as the true
+  near-vertical ramp — the old ~8% attack floor made fast attacks read as
+  "plenty of attack". A few pixels of silence pad the plot before the attack
+  and after the release (kEdgePad) so the steepness is readable against the
+  flat padding. The live stage marker is remapped through the same padding;
+  editor_test [19]/[25] pins re-derived from the display's own span
+  definition (no drifting hard-coded constants).
+- **Mod-pill strips: fixed-length pre-zeroed window (2026-08-22 user spec).**
+  The strip now renders the FULL ring as a circular buffer of constant
+  length: slots never written yet (fresh open, or a source that has never
+  produced data) read as ZERO, so an unmodulated source shows a full-width
+  zero line from the first tick exactly like a modulated one — no growing
+  window, and the scroll speed is constant end to end (the end-of-buffer
+  phase change is gone). Supersedes the right-anchored partial-fill layout.
 - **Settings drawer: language row unreachable / scrollbar never appeared
   (2026-08-22).** Two stacked defects. (1) JUCE's Viewport auto-scrollbar was
   effectively dead in this drawer: updateVisibleArea has an early-return
