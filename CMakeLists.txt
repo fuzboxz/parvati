@@ -26,12 +26,31 @@ endif()
 # juce_add_plugin FATAL_ERROR), so Linux/Windows build VST3 + Standalone. The
 # CLAP format is NOT listed here: JUCE 9.0.0 has no native CLAP FORMATS value,
 # so it is added separately via clap-juce-extensions (PARVATI_BUILD_CLAP).
+#
+# PARVATI_FORMATS (cache) overrides the platform set. EMPTY = TESTS-ONLY
+# configure: NO plugin format targets at all (only Parvati_SharedCode + the
+# tools/tests) — for CI and sanitizer dirs, where nothing but
+# parvati_unified_tests ever runs; pair with -DPARVATI_BUILD_CLAP=OFF to also
+# drop the CLAP wrapper. Default = the platform set below, so a plain
+# `cmake -B build` is unchanged. Format-target references later in this file
+# (codesign, deploy, iOS plist patching) are all if(TARGET ...)-guarded so a
+# reduced format set (or none) configures cleanly.
 if(PARVATI_IOS)
-    set(PARVATI_PLUGIN_FORMATS Standalone AUv3)
+    set(_parvati_formats_default Standalone AUv3)
 elseif(APPLE)
-    set(PARVATI_PLUGIN_FORMATS Standalone VST3 AU)
+    set(_parvati_formats_default Standalone VST3 AU)
 else()
-    set(PARVATI_PLUGIN_FORMATS Standalone VST3)
+    set(_parvati_formats_default Standalone VST3)
+endif()
+string(JOIN ";" _parvati_formats_default_joined ${_parvati_formats_default})
+set(PARVATI_FORMATS "${_parvati_formats_default_joined}" CACHE STRING
+    "Plugin formats to build, ;-separated (e.g. 'Standalone;VST3;AU'). EMPTY = tests-only: no plugin format targets (pair with -DPARVATI_BUILD_CLAP=OFF). Default: platform set (${_parvati_formats_default_joined}).")
+if(PARVATI_FORMATS STREQUAL "")
+    # Tests-only configure: JUCE handles an empty FORMATS list by creating no
+    # wrapper targets (active_formats stays empty in _juce_configure_plugin_targets).
+    set(PARVATI_PLUGIN_FORMATS "")
+else()
+    set(PARVATI_PLUGIN_FORMATS ${PARVATI_FORMATS})
 endif()
 
 # CLAP plugin format via clap-juce-extensions (see the fetch block below).
@@ -362,20 +381,34 @@ if(PARVATI_IOS)
     # Standalone app bundle: com.805labs.parvati
     # (NOTE: ENABLE_BITCODE was removed — bitcode is dead since Xcode 14 and
     # Xcode 26 ignores the flag entirely; iOS hunt 2026-08-19 F-ios-build-5.)
+    # TARGET guards: a PARVATI_FORMATS override (e.g. the tests-only empty
+    # set) must never reference format targets that do not exist.
+    if(TARGET Parvati_Standalone)
     set_target_properties(Parvati_Standalone PROPERTIES
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati"
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati.entitlements")
+    endif()
     # AUv3 app-extension bundle: com.805labs.parvati.AUv3 (child of the app id,
     # as iOS App-Store validation requires).
+    if(TARGET Parvati_AUv3)
     set_target_properties(Parvati_AUv3 PROPERTIES
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.805labs.parvati.AUv3"
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/parvati-auv3.entitlements")
+    endif()
 
     if(PARVATI_IOS_DEVELOPMENT_TEAM)
-        set_target_properties(Parvati_Standalone Parvati_AUv3 PROPERTIES
-            XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${PARVATI_IOS_DEVELOPMENT_TEAM}")
+        set(_parvati_ios_sign_targets "")
+        foreach(_t Parvati_Standalone Parvati_AUv3)
+            if(TARGET ${_t})
+                list(APPEND _parvati_ios_sign_targets ${_t})
+            endif()
+        endforeach()
+        if(_parvati_ios_sign_targets)
+            set_target_properties(${_parvati_ios_sign_targets} PROPERTIES
+                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${PARVATI_IOS_DEVELOPMENT_TEAM}")
+        endif()
     endif()
 
     # ----------------------------------------------------------------------------
@@ -407,19 +440,26 @@ if(PARVATI_IOS)
     # fresh on every configure, so Delete/Add is idempotent across re-runs; a
     # final Print + hard FATAL_ERROR replaces the old silent ERROR_QUIET skip —
     # a missing key must FAIL the configure, not silently ship without it.
+    # Per-format guards: PARVATI_FORMATS may legitimately omit either format
+    # (juceaide then produces no plist for it); every patch below is skipped
+    # for absent formats instead of failing the configure.
     set(_parvati_standalone_plist
         "${CMAKE_BINARY_DIR}/Parvati_artefacts/JuceLibraryCode/Parvati_Standalone/Info.plist")
     set(_parvati_auv3_plist
         "${CMAKE_BINARY_DIR}/Parvati_artefacts/JuceLibraryCode/Parvati_AUv3/Info.plist")
-    foreach(_plist IN LISTS _parvati_standalone_plist _parvati_auv3_plist)
-        if(NOT EXISTS "${_plist}")
-            message(FATAL_ERROR
-                "juceaide did not generate '${_plist}' during this configure — "
-                "the Parvati plist patch step must move after juce_add_plugin.")
-        endif()
-    endforeach()
+    if(TARGET Parvati_Standalone AND NOT EXISTS "${_parvati_standalone_plist}")
+        message(FATAL_ERROR
+            "juceaide did not generate '${_parvati_standalone_plist}' during this configure — "
+            "the Parvati plist patch step must move after juce_add_plugin.")
+    endif()
+    if(TARGET Parvati_AUv3 AND NOT EXISTS "${_parvati_auv3_plist}")
+        message(FATAL_ERROR
+            "juceaide did not generate '${_parvati_auv3_plist}' during this configure — "
+            "the Parvati plist patch step must move after juce_add_plugin.")
+    endif()
 
     # Standalone: LSSupportsOpeningDocumentsInPlace (see rationale above).
+    if(TARGET Parvati_Standalone)
     execute_process(
         COMMAND /usr/libexec/PlistBuddy
             -c "Delete :LSSupportsOpeningDocumentsInPlace"
@@ -436,11 +476,13 @@ if(PARVATI_IOS)
             "'${_parvati_standalone_plist}' (PlistBuddy rc=${_parvati_lssupports_rc}, "
             "value='${_parvati_lssupports_val}').")
     endif()
+    endif()  # TARGET Parvati_Standalone (LSSupports patch)
 
     # AUv3: rewrite the juceaide-hard-coded CFBundleIdentifier to the intended
     # com.805labs.parvati.AUv3 so it matches PRODUCT_BUNDLE_IDENTIFIER and the
     # entitlements application-identifier (see rationale above). Set (not Add)
     # overwrites the always-present juceaide value.
+    if(TARGET Parvati_AUv3)
     execute_process(
         COMMAND /usr/libexec/PlistBuddy
             -c "Set :CFBundleIdentifier com.805labs.parvati.AUv3"
@@ -455,6 +497,7 @@ if(PARVATI_IOS)
             "Failed to set the AUv3 CFBundleIdentifier to com.805labs.parvati.AUv3 "
             "(PlistBuddy rc=${_parvati_auv3_id_rc}, value='${_parvati_auv3_id_val}').")
     endif()
+    endif()  # TARGET Parvati_AUv3 (bundle-id patch)
 
     # ----------------------------------------------------------------------------
     # Document types + exported UTIs (iOS hunt 2026-08-19, F-ios-build-1 /
@@ -470,6 +513,7 @@ if(PARVATI_IOS)
     # Import SETS the (previously absent) top-level keys wholesale, and the
     # Print verify makes a silent drop a configure FAILURE, not a shipping
     # gap. (Re-runs are idempotent: Delete before Import.)
+    if(TARGET Parvati_Standalone)
     set(_parvati_filetypes_fragment "${CMAKE_CURRENT_SOURCE_DIR}/ios/parvati_filetypes.plist")
     execute_process(
         COMMAND /usr/libexec/PlistBuddy
@@ -497,6 +541,7 @@ if(PARVATI_IOS)
             "'${_parvati_standalone_plist}' (rc=${_parvati_doctypes_rc}, "
             "docType0='${_parvati_doctypes_val}', uti2='${_parvati_utis_val}').")
     endif()
+    endif()  # TARGET Parvati_Standalone (document types / UTIs)
 
     # SharedContainer.mm is the Obj-C++ resolver for the App-Group container
     # (NSFileManager containerURLForSecurityApplicationGroupIdentifier). It is
@@ -680,8 +725,8 @@ target_link_libraries(Parvati
 # cache the failure. Re-sign AFTER JUCE's own post-build steps so moduleinfo.json
 # is sealed. (The AU has no such file and loads fine without this.) macOS-only
 # (VST3 does not exist on iOS — guard so an iOS configure never references the
-# VST3 target).
-if(APPLE AND NOT PARVATI_IOS)
+# VST3 target; TARGET guard so a PARVATI_FORMATS set without VST3 stays clean).
+if(APPLE AND NOT PARVATI_IOS AND TARGET Parvati_VST3)
     add_custom_command(TARGET Parvati_VST3 POST_BUILD
         COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:Parvati_VST3>"
         COMMENT "Re-sign Parvati.vst3 (seal moduleinfo.json)")
@@ -1013,21 +1058,42 @@ parvati_add_tool(parvati_gen_templates tools/gen_templates.cpp)
 #   cmake --build build_release --target deploy
 if(APPLE AND NOT PARVATI_IOS)
 set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
-# CLAP install steps are composed separately so `deploy` stays generatable
-# when PARVATI_BUILD_CLAP=OFF (Parvati_CLAP then simply does not exist).
-set(_parvati_deploy_depends Parvati_VST3 Parvati_AU Parvati_Standalone screens)
+# Per-format composition (TARGET-guarded) so `deploy` stays generatable under
+# ANY PARVATI_FORMATS set; with no plugin format targets at all (tests-only
+# configure) no deploy target is created. Command order matches the historical
+# VST3 -> AU -> Standalone -> CLAP sequence when all formats are present.
+set(_parvati_deploy_depends screens)
 set(_parvati_deploy_commands "")
+if(TARGET Parvati_VST3)
+    list(APPEND _parvati_deploy_depends Parvati_VST3)
+    list(APPEND _parvati_deploy_commands
+        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
+        COMMAND rm -rf "${_parvati_plugins_dir}/VST3/Parvati.vst3"
+        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3" "${_parvati_plugins_dir}/VST3/Parvati.vst3")
+endif()
+if(TARGET Parvati_AU)
+    list(APPEND _parvati_deploy_depends Parvati_AU)
+    list(APPEND _parvati_deploy_commands
+        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install AU"
+        COMMAND rm -rf "${_parvati_plugins_dir}/Components/Parvati.component"
+        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component" "${_parvati_plugins_dir}/Components/Parvati.component")
+endif()
 # The Standalone is BUILT above (Parvati_Standalone dep) and additionally
 # INSTALLED into /Applications — without this the .app the user actually
 # runs stays stale while the plug-in formats update (the 2026-08-17
 # "standalone still crackles after deploy" miss). Ad-hoc re-sign after the
 # copy (JUCE's built bundle signature references resources the plain cp
 # invalidates; `codesign -v` complains and Gatekeeper can refuse it).
-list(APPEND _parvati_deploy_commands
-    COMMAND ${CMAKE_COMMAND} -E echo "deploy: install Standalone -> /Applications"
-    COMMAND rm -rf "/Applications/Parvati.app"
-    COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app" "/Applications/Parvati.app"
-    COMMAND codesign --force --sign - "/Applications/Parvati.app")
+if(TARGET Parvati_Standalone)
+    list(APPEND _parvati_deploy_depends Parvati_Standalone)
+    list(APPEND _parvati_deploy_commands
+        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install Standalone -> /Applications"
+        COMMAND rm -rf "/Applications/Parvati.app"
+        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app" "/Applications/Parvati.app"
+        COMMAND codesign --force --sign - "/Applications/Parvati.app")
+endif()
+# CLAP install steps are composed separately so `deploy` stays generatable
+# when PARVATI_BUILD_CLAP=OFF (Parvati_CLAP then simply does not exist).
 if(PARVATI_BUILD_CLAP)
     list(APPEND _parvati_deploy_depends Parvati_CLAP)
     list(APPEND _parvati_deploy_commands
@@ -1044,19 +1110,15 @@ if(PARVATI_BUILD_CLAP)
         # guard against — W7).
         COMMAND codesign --force --sign - "${_parvati_plugins_dir}/CLAP/Parvati.clap")
 endif()
-add_custom_target(deploy
-    COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
-    COMMAND rm -rf "${_parvati_plugins_dir}/VST3/Parvati.vst3"
-    COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3" "${_parvati_plugins_dir}/VST3/Parvati.vst3"
-    COMMAND ${CMAKE_COMMAND} -E echo "deploy: install AU"
-    COMMAND rm -rf "${_parvati_plugins_dir}/Components/Parvati.component"
-    COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component" "${_parvati_plugins_dir}/Components/Parvati.component"
-    ${_parvati_deploy_commands}
-    COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed plug-in bundles + standalone"
-    DEPENDS ${_parvati_deploy_depends}
-    COMMENT "Build all formats + render screens + install VST3/AU/CLAP + Standalone"
-    VERBATIM
-)
+if(_parvati_deploy_commands)
+    add_custom_target(deploy
+        ${_parvati_deploy_commands}
+        COMMAND ${CMAKE_COMMAND} -E echo "deploy complete: built all formats, rendered screens, installed plug-in bundles + standalone"
+        DEPENDS ${_parvati_deploy_depends}
+        COMMENT "Build all formats + render screens + install VST3/AU/CLAP + Standalone"
+        VERBATIM
+    )
+endif()
 endif()
 
 # ------------------------------------------------------------------------------

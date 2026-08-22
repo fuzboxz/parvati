@@ -16,6 +16,12 @@
 # several times slower under sanitizers) — expect the better part of an hour
 # per config. Pass exact test names to iterate on a subset.
 #
+# Sanitizer build dirs are TESTS-ONLY (-DPARVATI_FORMATS= -DPARVATI_BUILD_CLAP=OFF):
+# no AU/VST3/CLAP/Standalone bundles are built — only the unified test binary
+# ever runs under sanitizers, so the dirs stay a fraction of the size (the
+# 2026-08-22 pre-rework dirs were 9.6G + 4.7G building full instrumented
+# plugin bundles that nothing ever executed).
+#
 # Data races are timing-dependent, so concurrency_test is additionally re-run
 # REPEAT times under TSan (env, default 3).
 #
@@ -67,13 +73,16 @@ validate_names () {
 }
 
 # Configure + build the unified test target in $1=build dir with $2=label and
-# the remaining sanitizer flags.
+# the remaining sanitizer flags. Tests-only configure (-DPARVATI_FORMATS=):
+# sanitizer dirs build no plugin-format bundles (see header note).
 build_config () {
     local dir="$1" label="$2"; shift 2
     echo "--- configuring + building $label ($dir) ---"
     cmake -S "$SRC" -B "$dir" -G "Unix Makefiles" \
         -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
-        -DCMAKE_OSX_ARCHITECTURES=arm64 "$@" \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DPARVATI_FORMATS= -DPARVATI_BUILD_CLAP=OFF \
+        "$@" \
         > "/tmp/parvati_cmake_$(basename "$dir").log" 2>&1 \
         || { tail -20 "/tmp/parvati_cmake_$(basename "$dir").log"; exit 2; }
     cmake --build "$dir" --target "$UNIFIED" -j "$JOBS" \
