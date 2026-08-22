@@ -23,6 +23,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **LFO waveform preview froze on its first-frame shape (2026-08-22).** The
+  LFO previews (LFO 1/2/3 + Voice LFO) are EnvelopeDisplays in previewMode 1
+  whose 30 Hz poll timer relies on the component's visibility hooks — but a
+  page built while not yet on screen (the Viewport-swap architecture: pages
+  are constructed once, shown on demand) starves both hooks, the poll never
+  starts, and the preview keeps its first painted waveform forever while the
+  mod pill (driven by the always-on bar timer) tracks every change — the
+  reported "LFO stuck on S&H while the pill updated". Fix: all four LFO
+  displays now register in liveEnvDisplays_ so the editor's 30 Hz status
+  tick re-asserts the poll gate (the same backstop the three envelope
+  displays and the filter display already had; this registration was simply
+  missing for LFOs). The gate itself stays peer-based (the headless
+  no-battery-burn contract pinned by editor_test [19] is unchanged). Pinned
+  by the new lfo_shape_preview_test: real APVTS choice parameter, shape
+  switches while hidden + after show — the polled value AND the preview
+  repaint must follow every switch.
 - **Live-feedback animation is now VSYNC-DRIVEN (2026-08-22, the proper
   "chug-chug" fix, superseding the same day's Timer-based attempt).** The
   strip animation now runs on juce::VBlankAttachment — a callback at every

@@ -2652,6 +2652,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     std::function<float()> {}, std::function<float()> {},
                     [norm, e] { return norm (e + "_lfo_shape"); });
                 disp->setPreviewMode (1);   // LFO waveform
+                // Register for the status tick's poll re-assert: LFO previews
+                // are EnvelopeDisplays in previewMode 1 — a page built while not
+                // yet on screen (the Viewport-swap architecture: pages are built
+                // once, shown on demand) starves the component's own visibility
+                // hooks, the poll never starts, and the preview freezes on its
+                // first-frame waveform while the mod pill (always-on bar timer)
+                // tracks every change — the reported "LFO stuck on S&H" bug.
+                liveEnvDisplays_.push_back (disp.get());
                 disp->setCategoryColour (theme.catLfo);   // magenta trace
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                            &ParvatiTheme::catLfo);
@@ -2665,6 +2673,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 [norm] { return norm ("voice_lfo_shape"); });
             vdisp->setPreviewMode (1);
             vdisp->setCategoryColour (theme.catLfo);   // magenta trace
+            // Same status-tick poll re-assert as the LFO displays above.
+            liveEnvDisplays_.push_back (vdisp.get());
             bindGraph ([gp = vdisp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                        &ParvatiTheme::catLfo);
             page->setGroupDecoration ("Voice LFO", std::move (vdisp));

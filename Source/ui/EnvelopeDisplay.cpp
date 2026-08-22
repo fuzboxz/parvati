@@ -448,6 +448,16 @@ void EnvelopeDisplay::updatePollTimer()
     // ancestors change; parentHierarchyChanged fires on every hierarchy change
     // including the editor gaining its peer, which is the reliable
     // "became showing" signal. Fixed the frozen-preview regression.
+    //
+    // 2026-08-22 (the "LFO preview stuck on its first-frame waveform" fix):
+    // the starve class is covered by REGISTRATION, not by loosening this gate
+    // (a parented-but-peerless display must keep its poll stopped — the
+    // headless no-battery-burn contract pinned by editor_test [19]). Every
+    // EnvelopeDisplay — env, LFO (previewMode 1) and Voice LFO — now registers
+    // in liveEnvDisplays_ so the EDITOR's 30 Hz status tick re-asserts this
+    // exact gate on every tick: a page re-attached on screen (the Viewport
+    // swap) has its displays' polls running within one editor tick, even when
+    // the component's own hooks never fired for the new ancestry.
     if (isShowing())
         startTimerHz (30);
     else
