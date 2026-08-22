@@ -23,6 +23,21 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **Live-feedback animation is now VSYNC-DRIVEN (2026-08-22, the proper
+  "chug-chug" fix, superseding the same day's Timer-based attempt).** The
+  strip animation now runs on juce::VBlankAttachment — a callback at every
+  display refresh of the bar's peer, display-locked and compositor-aligned,
+  with no JUCE Timer jitter or ms quantization. The data FETCH stays at the
+  user's refresh setting (decimated from the display rate), strips repaint
+  at display cadence while in motion, and the drawn band carries the
+  wall-clock sub-bin scroll offset — the rendered position is continuous in
+  time AND frame-aligned. A 4 Hz Timer WATCHDOG supervises the attachment:
+  if vsync callbacks stall (off-screen window, sleeping display, a harness
+  without vsync delivery), the Timer promotes itself to a 60 Hz fallback
+  driver, so the strips can never silently freeze. Idle-cost guarantees
+  intact (0.5 s static pill = zero repaints; engine stopped = offset
+  frozen). The envelope marker ease and the filter-curve ease (raised
+  55 -> 130 ms) ride the same time-driven design.
 - **Live-feedback motion is now time-driven and uniform (2026-08-22, the
   "chug-chug" fix).** All three animated indicators were quantized to their
   30 Hz poll ticks — the strips' content jumped a jittery 1–4 appends per

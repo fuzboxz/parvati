@@ -953,25 +953,30 @@ void CentralModBar::clearTelemetry()
 
 void CentralModBar::timerCallback()
 {
-    // Cheap per-tick guard: isVisible() (a STABLE flag, not the peer-derived
-    // isShowing()) + the provider. A hidden/unparented bar costs one no-op
-    // pass; the data-driven repaint gating below stays the real cost control.
     if (! isVisible() || telemetryFetch_ == nullptr)
         return;
 
-    // 2026-08-22 (uniform-scroll fix): the timer runs at 60 Hz (animation
-    // cadence) while the FETCH stays at the user's refresh setting — fetch on
-    // every ceil(60/rate)-th tick, and on the in-between ticks repaint the
-    // animating strips with the wall-clock-extrapolated sub-bin offset, so the
-    // scroll position advances linearly in TIME regardless of fetch/tick jitter
-    // (the pre-fix per-tick content jumps of a varying 1-4 appends read as
-    // "chug-chug").
+    // WATCHDOG role while the vblank attachment is alive: verify vsync
+    // callbacks are actually arriving; healthy (< 250 ms stale) -> stand down
+    // and let the display-locked driver run. Stalled -> promote this Timer to
+    // the fallback driver (resets the animation cadence to 60 Hz).
+    if (usingVBlank_)
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        if (now - lastVblankMono_ < 0.250)
+            return;   // vsync is delivering: watchdog no-op
+        // VBlank stalled (off-screen window / display asleep / no vsync in
+        // this harness): detach it and take over at 60 Hz.
+        vblank_ = nullptr;
+        usingVBlank_ = false;
+        startTimerHz (60);
+    }
+
+    // Timer FALLBACK driver: a fixed 60 Hz stand-in for the VBlankAttachment,
+    // with the same fetch decimation.
     const int fetchDivisor = juce::jmax (1, juce::roundToInt (60.0 / (double) juce::jmax (5, telemetryRateHz_)));
     if (++tickCounter_ % fetchDivisor != 0)
     {
-        // Animation-only tick: repaint pills whose content is still in motion
-        // (a bin update landed recently; a pill static for >0.5 s has nothing
-        // visible to animate and drops out — the idle-cost guarantee holds).
         const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
         for (auto& p : pills_)
             if (p->stripAnimating_ && now - p->stripLastChangeMono_ < 0.5)
@@ -980,6 +985,17 @@ void CentralModBar::timerCallback()
                 p->stripAnimating_ = false;
         return;
     }
+    telemetryTick();
+}
+
+void CentralModBar::telemetryTick()
+{
+    // SHARED tick (fetch cadence) — called by the vsync driver or the fallback
+    // Timer. Cheap guard: isVisible() (a STABLE flag, not the peer-derived
+    // isShowing()) + the provider; the data-driven repaint gating below stays
+    // the real cost control.
+    if (! isVisible() || telemetryFetch_ == nullptr)
+        return;
 
     parvati::ModTelemetrySnapshot snap;
     if (! telemetryFetch_ (snap))
@@ -1081,16 +1097,77 @@ void CentralModBar::updateTelemetryTimer()
     // that never started renders the whole live-strip feature dead. The
     // TICK itself carries the cheap guard (isVisible + fetch) so a genuinely
     // hidden bar costs one no-op pass, not repaints.
-    // 2026-08-22 (uniform-scroll fix): the ANIMATION cadence is 60 Hz while
-    // the DATA cadence stays at the user's refresh setting — timerCallback
-    // decimates its fetches to telemetryRateHz_ and repaints the animating
-    // strips every tick with a wall-clock-extrapolated sub-bin offset
-    // (telemetryAppendsSinceFetch), so the rendered scroll position is a pure
-    // function of TIME instead of lurchy per-tick append jumps.
-    if (telemetryFetch_ != nullptr && telemetryRateHz_ >= 5)
-        startTimerHz (60);
+    // 2026-08-22 (uniform-scroll fix, JUCE-NATIVE): the ANIMATION is driven
+    // by juce::VBlankAttachment — a callback at every display refresh of the
+    // bar's peer WITH the vsync timestamp: display-locked, no Timer jitter,
+    // no ms quantization, aligned with the compositor. The FETCH still runs
+    // at telemetryRateHz_ (decimated from the vblank cadence) and the sub-bin
+    // scroll offset extrapolates from the wall clock, so the rendered
+    // position is continuous in time AND frame-aligned. A 60 Hz Timer
+    // fallback covers headless/pre-peer contexts; both drivers route into
+    // telemetryTick().
+    const bool want = telemetryFetch_ != nullptr && telemetryRateHz_ >= 5;
+    if (want)
+    {
+        if (getPeer() != nullptr)
+        {
+            // Decimate fetches from the display rate (~60; ProMotion higher).
+            // ~60 Hz typical; ProMotion displays report higher — decimate the
+            // FETCH to telemetryRateHz_ from whatever the display runs.
+            double displayHz = 60.0;
+            if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+                if (d->verticalFrequencyHz.has_value())
+                    displayHz = juce::jmax (30.0, *d->verticalFrequencyHz);
+            vblankFetchDiv_ = juce::jmax (1, juce::roundToInt (
+                displayHz / (double) juce::jmax (5, telemetryRateHz_)));
+            if (vblank_ == nullptr)
+            {
+                vblank_ = std::make_unique<juce::VBlankAttachment> (this,
+                    [this] (double) { vblankTick(); });
+                usingVBlank_ = true;
+                // WATCHDOG, not the driver: a slow 4 Hz Timer supervises the
+                // vblank attachment — an off-screen window, a sleeping display
+                // or a harness without vsync delivery stalls it silently, and
+                // the strips must never freeze. A healthy vblank (< 250 ms
+                // since the last callback) makes the watchdog a no-op.
+                startTimerHz (4);
+            }
+        }
+        else if (vblank_ == nullptr)
+        {
+            startTimerHz (60);   // fallback until a peer exists
+            usingVBlank_ = false;
+        }
+    }
     else
+    {
+        vblank_ = nullptr;
+        usingVBlank_ = false;
         stopTimer();
+    }
+}
+
+void CentralModBar::vblankTick()
+{
+    // Animation tick at DISPLAY cadence (message thread, per the JUCE
+    // contract). Fetch every vblankFetchDiv_-th callback; the in-between
+    // ticks repaint the animating strips so the sub-bin scroll offset
+    // renders at full display smoothness. (lastVblankMono_ feeds the Timer
+    // watchdog: if these stop arriving, the Timer promotes itself.)
+    lastVblankMono_ = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    if (! isVisible() || telemetryFetch_ == nullptr)
+        return;
+    if (++tickCounter_ % vblankFetchDiv_ != 0)
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        for (auto& p : pills_)
+            if (p->stripAnimating_ && now - p->stripLastChangeMono_ < 0.5)
+                p->repaint (p->stripRect());
+            else
+                p->stripAnimating_ = false;
+        return;
+    }
+    telemetryTick();
 }
 
 void CentralModBar::paintSegments (juce::Graphics& g) const

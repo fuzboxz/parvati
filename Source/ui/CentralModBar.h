@@ -99,6 +99,12 @@ public:
         when the engine ring has not moved for 250 ms (audio stopped). */
     double telemetryAppendsSinceFetch() const;
 
+    // VBlank driver (see updateTelemetryTimer): the display-synced animation
+    // tick. Private; declared here beside its fallback (timerCallback).
+    // TEST-ONLY: which animation driver is live (true = the vsync
+    // VBlankAttachment; false = the 60 Hz Timer fallback / none).
+    bool usingVBlankDriver() const noexcept { return usingVBlank_; }
+
     // TEST-ONLY: bumped whenever a pill repaints because its telemetry-driven
     // strip data changed (including the change TO "no data" on a clear), so a
     // headless test can observe "the strip reacted" without painting.
@@ -123,6 +129,10 @@ public:
     void resized() override;
 
 private:
+    // The two animation drivers (see updateTelemetryTimer): vsync primary,
+    // Timer fallback. Both funnel into the shared fetch-cadence tick.
+    void vblankTick();
+    void telemetryTick();
     /** File-local pill component (defined in the .cpp). */
     struct ModPill;
     friend struct ModPill;
@@ -195,12 +205,24 @@ private:
     // (the per-pill caches hold what is actually drawn), so no member copy is
     // retained — a ~4 KB per-tick store nobody read was removed (review nit).
     std::function<bool (parvati::ModTelemetrySnapshot&)> telemetryFetch_;
-    int telemetryRateHz_     = 30;   // 5..60, 0 = disabled (setTelemetryRateHz clamps) — the FETCH rate; the timer itself runs at 60 Hz (animation) and decimates fetches to this
+    int telemetryRateHz_     = 30;   // 5..60, 0 = disabled — the FETCH rate
     int telemetryGeneration_ = 0;    // TEST-ONLY (see telemetryGeneration())
-    int tickCounter_         = 0;   // fetch decimation (60 Hz / telemetryRateHz_)
+    int tickCounter_         = 0;   // fetch decimation vs the display rate
 
-    // ---- wall-clock scroll anchors (2026-08-22 uniform-scroll fix; see
-    // timerCallback + telemetryAppendsSinceFetch): the ring head unwrapped
+    // ---- VSYNC-DRIVEN ANIMATION (2026-08-22, the proper fix for chuggy
+    // strips): a juce::VBlankAttachment fires on every display refresh of the
+    // bar's peer WITH the vsync timestamp — the animation tick runs there
+    // (display-locked, no Timer jitter, no ms quantization). The FETCH still
+    // runs at telemetryRateHz_ (decimated from the vblank cadence), and the
+    // sub-bin scroll offset is extrapolated from the SAME vsync timestamp,
+    // so the rendered position is continuous in TIME and aligned with the
+    // compositor. The fallback Timer (headless tests / pre-peer) stays. ----
+    std::unique_ptr<juce::VBlankAttachment> vblank_;
+    bool  usingVBlank_     = false;   // TEST-ONLY: which driver is live
+    int   vblankFetchDiv_  = 2;       // vblanks per fetch (displayHz/telemetryHz)
+    double lastVblankMono_ = 0.0;     // watchdog: last vsync callback (seconds)
+
+    // ---- wall-clock scroll anchors (see timerCallback + telemetryAppendsSinceFetch): the ring head unwrapped
     // into a monotonic append count + the fetch/motion timestamps that turn
     // the paint-time sub-bin offset into a pure function of TIME. ----
     double telUnwrappedAppends_ = 0.0;
