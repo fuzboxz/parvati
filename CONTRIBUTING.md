@@ -35,18 +35,28 @@ build for verification.
 
 ## Running the tests
 
-All tests are built by default:
+All tests live in **one** binary, `parvati_unified_tests` (built by default).
+Each test runs in a `fork()`ed child, so a crash, OOM or leak in one test
+cannot take down the suite:
 
 ```bash
-cmake --build build -j 8
-for t in build/parvati_tests build/parvati_*_test; do [ -e "$t" ] && "$t"; done
+cmake -S . -B build_unified -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_unified --target parvati_unified_tests -j 8
+
+./build_unified/parvati_unified_tests                 # run all (~15-20 min)
+./build_unified/parvati_unified_tests list            # list every test name
+./build_unified/parvati_unified_tests envelope_test   # run one (or several) by name
 ```
 
-(`parvati_tests` does not match the `parvati_*_test` glob — list it explicitly
-or it is silently skipped.)
+(`PARVATI_UNIFIED_INPROCESS=1` disables the fork isolation when debugging a
+single test under a debugger or to see JUCE's exit-time leak report.)
 
-If you add a feature, add or extend a test under `tests/` and mirror an existing
-CMake target. The editor coverage test (`tools/editor_test.cpp`) and the layout
+If you add a feature, add `tests/<name>_test.cpp` registering a
+`TEST(<name>_test)` (see any existing file or `tests/unified_test_examples.cpp`,
+which doubles as harness documentation when built with
+`-DPARVATI_TEST_EXAMPLES=ON`), and add the file to the
+`parvati_unified_tests` source list in `CMakeLists.txt`. The editor coverage
+check (`tools/editor_test.cpp`, target `parvati_editor_test`) and the layout
 sanity check are especially good guards for UI work.
 
 ## Performance regression testing
@@ -59,7 +69,7 @@ Two layers guard the UI against perf regressions:
    budgets. It catches the timer/message-storm class of regression (e.g. a
    ComboBox `clear()` arming a deferred `onChange` that re-enters its own
    rebuild — that one cost a full core at idle). Run it with
-   `./build/parvati_perf_smoke_test`. Budgets live at the top of
+   `./build_unified/parvati_unified_tests perf_smoke_test`. Budgets live at the top of
    `tests/perf_smoke_test.cpp`; if a legitimate feature raises the floor,
    re-measure and update the constant together with the measurement comment.
 
@@ -90,22 +100,31 @@ coverage to other tests.
 **Always run it under ThreadSanitizer** — that is how these races are caught:
 
 ```bash
-cmake -S . -B build_tsan -DPARVATI_ENABLE_TSAN=ON
-cmake --build build_tsan -j 8 --target parvati_concurrency_test
-for i in $(seq 5); do ./build_tsan/parvati_concurrency_test || echo RACE; done   # races are timing-dependent
+cmake -S . -B build_san_tsan -DPARVATI_ENABLE_TSAN=ON
+cmake --build build_san_tsan -j 8 --target parvati_unified_tests
+for i in $(seq 5); do ./build_san_tsan/parvati_unified_tests concurrency_test || echo RACE; done   # races are timing-dependent
 ```
 
-`PARVATI_MT_MASK` (argv[1], hex) selects which message-thread op classes run, for
-bisection (`./build_tsan/parvati_concurrency_test 0x2` = arp/seq only, etc.).
+`tools/run_sanitizers.sh` does the full sweep (both configs, concurrency
+repeats) in one command, and accepts exact test names to iterate on a subset:
+`tools/run_sanitizers.sh concurrency_test`.
+
+`PARVATI_MT_MASK` (hex env var) selects which message-thread op classes run,
+for bisection (`PARVATI_MT_MASK=0x2 ./build_unified/parvati_unified_tests
+concurrency_test` = arp/seq only, etc.).
 
 ## Memory safety & static analysis
 
 Before a non-trivial change, run the sanitizer suite and a clang-tidy pass:
 
 ```bash
-cmake -S . -B build_asan -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
-cmake --build build_asan -j 8 && (cd build_asan && for t in parvati_*_test; do "$t"; done)
-/opt/homebrew/opt/llvm/bin/run-clang-tidy -p build Source/*.cpp
+cmake -S . -B build_san_asan -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
+cmake --build build_san_asan -j 8 --target parvati_unified_tests
+./build_san_asan/parvati_unified_tests            # full sweep under ASan+UBSan
+# ...or both configs in one command (see the script header for options):
+tools/run_sanitizers.sh
+tools/run_sanitizers.sh envelope_test arp_test    # subset by exact test name
+/opt/homebrew/opt/llvm/bin/run-clang-tidy -p build_unified Source/*.cpp
 ```
 
 `compile_commands.json` is generated automatically (CMAKE_EXPORT_COMPILE_COMMANDS).
@@ -143,7 +162,9 @@ for the UI paths).
 
 1. Open an issue describing the change for non-trivial work.
 2. Keep diffs focused and minimal; don't reformat unrelated code.
-3. Ensure `cmake --build build` and the full test suite pass (ideally also ASan).
+3. Ensure `cmake --build build_unified` and the unified test suite
+   (`./build_unified/parvati_unified_tests`) pass (ideally also
+   `tools/run_sanitizers.sh`).
 4. Document user-visible changes in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Licensing

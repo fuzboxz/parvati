@@ -18,6 +18,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   has-an-FxSlotVisualizer assertions removed with it.
 
 ### Fixed
+- **Keyboard focus traversal + musical typing (2026-08-22).** An earlier
+  musical-typing fix (kept QWERTY notes playing through knob/combo tweaks)
+  had turned OFF `wantsKeyboardFocus` tree-wide, which emptied the editor's
+  focus traversal — `KeyboardFocusTraverser().getAllComponents()` went from
+  49 real focusables to 0, so Tab/focus navigation was dead app-wide (pinned
+  by lifecycle_test [2] "focus traversal is non-empty"). Restored by
+  forwarding unhandled plain keys from the editor down to the visible
+  KeyboardView: controls keep focus (Tab works again) AND notes still play
+  through control tweaks.
+- **Arp-resolution labels (2026-08-22).** 8 of the 15 `arp_resolution`
+  dropdown labels disagreed with the engine's tick table
+  (`kMidiClockTickPerStep`, faithful to the Ambika firmware) — the factory
+  default (6 ticks = straight 1/16) displayed "1/16T", and picking "1/16"
+  played the triplet. The dropdown now uses the tick-aligned table (same
+  values the LFO sync readout already used); `Arpeggiator` defaults match
+  the factory part bytes (divider 10).
 - **Mod-matrix index label, unified disable widget, header colour parity
   (2026-08-20).** (1) The row slot number showed "..." instead of "16":
   JUCE Label's default 5px-per-side border left the 18pt-wide index label an
@@ -89,6 +105,32 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   every width (overlap-test pinned).
 
 ### Changed
+- **Test suite unification — one binary, fork-isolated (2026-08-22).** All
+  ~115 standalone per-test executables were replaced by a single
+  `parvati_unified_tests` binary (was ~3.5GB of per-test binaries + ~45 min
+  builds; now one ~31MB binary, ~8 min). Tests register via `TEST(name)` and
+  each runs in a `fork()`ed child that `_exit()`s — per-test memory is fully
+  reclaimed between tests and a crash/OOM/leak cannot take down the suite
+  (the first in-process design died to monotonic RSS growth under the GUI
+  harnesses plus cross-test JUCE static pollution that produced ~94 false
+  FAILs). Usage: `./build_unified/parvati_unified_tests [list|<names>...]`;
+  `PARVATI_UNIFIED_INPROCESS=1` disables the fork for debugging. The 8
+  `example_*` demo tests are now opt-in (`-DPARVATI_TEST_EXAMPLES=ON`;
+  `example_failing_test` deliberately fails and was keeping the default
+  suite exit non-zero). Harness follow-ups: FX live-repro held-chord health
+  now scans its intended per-chord window (the old scan ran to buffer end
+  and swallowed the next chord's release-gap silence — 0/6 false-fails;
+  product exonerated), and the synth drag-probe Mix Balance row is red
+  deliberately (hardware-faithful block-rate CV zipper, root-caused).
+- **Sanitizer sweep + contributor docs truth-up (2026-08-22).**
+  `tools/run_sanitizers.sh` had been silently broken by the unification — it
+  globbed the removed per-test binaries, running 0 tests and exiting 0
+  (false green). It now configures/builds the unified target per sanitizer
+  config and drives it directly, validates requested test names against the
+  runner registry (typos fail fast instead of "passing"), and accepts exact
+  test names for quick subset iteration (`tools/run_sanitizers.sh
+  envelope_test`). `CONTRIBUTING.md` build/test instructions updated to the
+  unified flow (the per-target/per-binary commands were stale).
 - **Synth-page header padding parity (2026-08-20).** The synth top row now
   takes the FX page's uniform 8pt gap on all four sides + between the
   OSC/MIX/FILTER columns (kRowGap hoisted to a class constant on both

@@ -2,8 +2,9 @@
 # ---------------------------------------------------------------------------
 # tools/run_sanitizers.sh — Parvati dynamic memory-safety + concurrency checker.
 # ---------------------------------------------------------------------------
-# Builds the full test suite under AddressSanitizer+UBSan and ThreadSanitizer and
-# runs every test, surfacing:
+# Builds the unified test binary (parvati_unified_tests; one binary, every test
+# fork-isolated — see tests/unified_test_runner.h) under AddressSanitizer+UBSan
+# and ThreadSanitizer and runs the requested tests (default: all), surfacing:
 #   * ASan  — heap/stack/global buffer overflows, use-after-free, double-free.
 #   * UBSan — signed-integer overflow, out-of-bounds array indexing, null
 #             deref, misaligned access (the class of bug that bit the wavequence
@@ -11,22 +12,35 @@
 #             bare-metal AVR's flat PROGMEM).
 #   * TSan  — message<->audio-thread data races (the plugin's real threading).
 #
-# Data races are timing-dependent, so the concurrency test is run REPEAT times.
-# (ASan and TSan are mutually exclusive -> two separate build dirs.)
+# A full sweep runs every test (loader_fuzz_test alone is ~10 min native and
+# several times slower under sanitizers) — expect the better part of an hour
+# per config. Pass exact test names to iterate on a subset.
+#
+# Data races are timing-dependent, so concurrency_test is additionally re-run
+# REPEAT times under TSan (env, default 3).
 #
 # Usage:
-#   tools/run_sanitizers.sh [REPEAT]      # REPEAT defaults to 3
-#   JUCE=~/JUCE tools/run_sanitizers.sh   # override the JUCE checkout
-#   SKIP_TSAN=1 tools/run_sanitizers.sh   # ASan+UBSan only
+#   tools/run_sanitizers.sh                        # full sweep, both configs
+#   tools/run_sanitizers.sh envelope_test          # only these tests, both
+#   tools/run_sanitizers.sh envelope_test arp_test # configs (exact names;
+#                                                  # see '<binary> list')
+#   REPEAT=5 tools/run_sanitizers.sh               # extra concurrency repeats
+#   JUCE=~/JUCE tools/run_sanitizers.sh            # override JUCE checkout
+#   SKIP_TSAN=1 tools/run_sanitizers.sh            # ASan+UBSan only
+#
+# History note: before the 2026-08-22 test unification this script globbed the
+# per-test parvati_*_test binaries; those targets no longer exist, which had
+# silently turned the sweep into a 0/0-runs "pass" (or stale-binary runs).
 #
 # Exits non-zero if any sanitizer reports a finding or any test fails.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
-REPEAT="${1:-3}"
 JUCE="${JUCE:-$HOME/JUCE}"
+REPEAT="${REPEAT:-3}"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+UNIFIED=parvati_unified_tests
 fail=0
 
 if [ ! -f "$JUCE/CMakeLists.txt" ]; then
@@ -34,71 +48,94 @@ if [ ! -f "$JUCE/CMakeLists.txt" ]; then
     exit 2
 fi
 
-# Run every test binary in a build dir. $1=build dir, $2=label, $3=repeats(1).
-run_suite () {
-    local dir="$1" label="$2" reps="${3:-1}"
-    local pass=0 ran=0
-    for t in "$dir"/parvati_*_test "$dir"/parvati_tests "$dir"/parvati_tests.exe "$dir"/parvati_*_test.exe; do
-        [ -e "$t" ] || continue
-        local name; name="$(basename "$t")"
-        local r
-        for ((r=0; r<reps; ++r)); do
-            ran=$((ran+1))
-            if "$t" > "/tmp/parvati_san_${name}_${r}.log" 2>&1; then
-                pass=$((pass+1))
-            else
-                echo "    FAIL: $name (run $((r+1))/$reps) — see /tmp/parvati_san_${name}_${r}.log"
-                # Surface the sanitizer summary / first finding.
-                grep -m3 -iE "runtime error|ERROR: AddressSanitizer|WARNING: ThreadSanitizer|SUMMARY:" "/tmp/parvati_san_${name}_${r}.log" 2>/dev/null | sed 's/^/        /'
-                fail=1
-            fi
-        done
+# Reject unknown test names up front against the runner registry, so a typo
+# cannot silently fall through to a "0 tests" success. $1=binary, rest=names.
+validate_names () {
+    local bin="$1"; shift
+    local known unknown=""
+    known="$("$bin" list 2>/dev/null | awk 'NR > 1 { print $1 }')" || true
+    for name in "$@"; do
+        if ! printf '%s\n' "$known" | grep -qx -- "$name"; then
+            unknown="$unknown $name"
+        fi
     done
-    echo "  [$label] $pass/$ran test runs passed"
+    if [ -n "$unknown" ]; then
+        echo "Unknown test name(s):$unknown" >&2
+        echo "Run '$bin list' for the registered tests." >&2
+        exit 2
+    fi
 }
 
-echo "=== Parvati sanitizer sweep (concurrency x${REPEAT}) ==="
-echo "  JUCE=$JUCE  jobs=$JOBS"
+# Configure + build the unified test target in $1=build dir with $2=label and
+# the remaining sanitizer flags.
+build_config () {
+    local dir="$1" label="$2"; shift 2
+    echo "--- configuring + building $label ($dir) ---"
+    cmake -S "$SRC" -B "$dir" -G "Unix Makefiles" \
+        -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 "$@" \
+        > "/tmp/parvati_cmake_$(basename "$dir").log" 2>&1 \
+        || { tail -20 "/tmp/parvati_cmake_$(basename "$dir").log"; exit 2; }
+    cmake --build "$dir" --target "$UNIFIED" -j "$JOBS" \
+        > "/tmp/parvati_build_$(basename "$dir").log" 2>&1 \
+        || { tail -30 "/tmp/parvati_build_$(basename "$dir").log"; exit 2; }
+}
+
+# Run the unified binary in $1=build dir under $2=label. Any remaining args are
+# exact test names (default: the whole suite). Sanitizer env must be set by the
+# caller so both configs share this path.
+run_suite () {
+    local dir="$1" label="$2"; shift 2
+    local log="/tmp/parvati_san_${label}.log"
+    local what="all tests"
+    if [ $# -gt 0 ]; then what="test(s): $*"; fi
+    echo "  running $what under $label..."
+    if "$dir/$UNIFIED" "$@" > "$log" 2>&1; then
+        echo "  [$label] PASS ($what) — log: $log"
+    else
+        echo "  [$label] FAIL ($what) — log: $log"
+        # Surface the sanitizer summary / first findings / failing tests.
+        grep -m6 -iE "runtime error|ERROR: AddressSanitizer|WARNING: ThreadSanitizer|SUMMARY:|^FAIL:" \
+            "$log" 2>/dev/null | sed 's/^/        /'
+        fail=1
+    fi
+}
+
+echo "=== Parvati sanitizer sweep (concurrency_test x${REPEAT} under TSan) ==="
+echo "  JUCE=$JUCE  jobs=$JOBS  tests=${*:-all}"
 
 # --- ASan + UBSan ----------------------------------------------------------
-echo ""
-echo "--- configuring + building ASan+UBSan (build_san_asan) ---"
-cmake -S "$SRC" -B "$SRC/build_san_asan" -G "Unix Makefiles" \
-    -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
-    -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON > /tmp/parvati_cmake_asan.log 2>&1 || { tail -20 /tmp/parvati_cmake_asan.log; exit 2; }
-cmake --build "$SRC/build_san_asan" -j "$JOBS" > /tmp/parvati_build_asan.log 2>&1 || { tail -30 /tmp/parvati_build_asan.log; exit 2; }
-echo "  running suite under ASan+UBSan..."
+build_config "$SRC/build_san_asan" "ASan+UBSan" \
+    -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
+if [ $# -gt 0 ]; then
+    validate_names "$SRC/build_san_asan/$UNIFIED" "$@"
+fi
 ASAN_OPTIONS="detect_leaks=0:abort_on_error=1:halt_on_error=1" \
 UBSAN_OPTIONS="abort_on_error=1:halt_on_error=1:print_stacktrace=1" \
-    run_suite "$SRC/build_san_asan" "ASan+UBSan"
+    run_suite "$SRC/build_san_asan" "ASan+UBSan" "$@"
 
 # --- TSan (races; concurrency test repeated) -------------------------------
 if [ "${SKIP_TSAN:-0}" != "1" ]; then
-    echo ""
-    echo "--- configuring + building TSan (build_san_tsan) ---"
-    cmake -S "$SRC" -B "$SRC/build_san_tsan" -G "Unix Makefiles" \
-        -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
-        -DCMAKE_OSX_ARCHITECTURES=arm64 \
-        -DPARVATI_ENABLE_TSAN=ON > /tmp/parvati_cmake_tsan.log 2>&1 || { tail -20 /tmp/parvati_cmake_tsan.log; exit 2; }
-    cmake --build "$SRC/build_san_tsan" -j "$JOBS" > /tmp/parvati_build_tsan.log 2>&1 || { tail -30 /tmp/parvati_build_tsan.log; exit 2; }
-
-    echo "  running suite under TSan (concurrency_test x${REPEAT})..."
-    # Non-concurrency tests: once each.
+    build_config "$SRC/build_san_tsan" "TSan" -DPARVATI_ENABLE_TSAN=ON
     TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1" \
-        run_suite "$SRC/build_san_tsan" "TSan" 1
+        run_suite "$SRC/build_san_tsan" "TSan" "$@"
 
-    # The concurrency test specifically: repeated (races are timing-dependent).
-    echo "  repeating parvati_concurrency_test under TSan x${REPEAT}..."
-    for ((i=1; i<=REPEAT; ++i)); do
-        if TSAN_OPTIONS="halt_on_error=1" "$SRC/build_san_tsan/parvati_concurrency_test" > "/tmp/parvati_san_conc_${i}.log" 2>&1; then
-            echo "    concurrency_test TSan run $i/$REPEAT: PASS"
-        else
-            echo "    concurrency_test TSan run $i/$REPEAT: FAIL"
-            grep -m3 -iE "WARNING: ThreadSanitizer|SUMMARY:" "/tmp/parvati_san_conc_${i}.log" | sed 's/^/        /'
-            fail=1
-        fi
-    done
+    # Races are timing-dependent: hammer the concurrency test specifically.
+    if [ $# -eq 0 ] || printf '%s\n' "$@" | grep -qx -- "concurrency_test"; then
+        echo "  repeating concurrency_test under TSan x${REPEAT}..."
+        for ((i = 1; i <= REPEAT; ++i)); do
+            if TSAN_OPTIONS="halt_on_error=1" \
+                "$SRC/build_san_tsan/$UNIFIED" concurrency_test \
+                > "/tmp/parvati_san_conc_${i}.log" 2>&1; then
+                echo "    concurrency_test TSan run $i/$REPEAT: PASS"
+            else
+                echo "    concurrency_test TSan run $i/$REPEAT: FAIL"
+                grep -m3 -iE "WARNING: ThreadSanitizer|SUMMARY:" \
+                    "/tmp/parvati_san_conc_${i}.log" | sed 's/^/        /'
+                fail=1
+            fi
+        done
+    fi
 fi
 
 echo ""
