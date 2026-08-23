@@ -29,3 +29,13 @@ machine can test, and every item left open.
 - AU or AUv3 in a `PARVATI_FORMATS` override on a non-Apple host relies on
   the JUCE configure-time `FATAL_ERROR`. `CMakeLists.txt` documents this as
   intended behavior.
+- Vendored stmlib headers use GNU attributes and block an MSVC compile.
+  `Source/dsp/clouds/stmlib/utils/dsp.h` puts `__attribute__((always_inline))`
+  on twelve declarations, and `stmlib.h` keeps the `IN_RAM` section macro.
+  Almost every FX translation unit reaches these headers. The repo rule
+  forbids edits under `Source/dsp/clouds/**`, so this stays open. Wrap the
+  attributes in a compiler guard at the next vendored-patch pass.
+- The C++ tree passes include hygiene. Every quoted include matches the file
+  tree with exact case. `Source/` calls no printf-family function and includes
+  no platform header. `MulExport.h` now includes `<string>` directly; it
+  declares `std::string` in its API.
