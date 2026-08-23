@@ -381,6 +381,23 @@ private:
     // per-sample-smoothed dryWetCur_[s] AND the wet fade are each read +
     // advanced one sample per iteration (both persisted back).
     void blendSlotWetFade (float* outL, float* outR, int numSamples, int s) noexcept;
+    // Shared series-slot block (pure code motion out of the three topology
+    // branches): snapshot the dry signal into dryL_/dryR_, run slot @p s in
+    // place via setParams + process, then blend its wet fade. The caller has
+    // checked that slot @p s holds a live processor and is slotActive.
+    // Allocation-free; runs on the audio thread.
+    void renderSeriesSlot (int s, float* outL, float* outR, int numSamples);
+    // Topology renderers (pure code motion out of process(): each branch
+    // keeps its statements and their order). Series walks order_[0..2] in
+    // place; Parallel12to3 renders {A,B} in parallel then C in series over
+    // the sum; Parallel1to23 renders A in series then {B,C} in parallel over
+    // stage1. Allocation-free; run on the audio thread.
+    void renderTopologySeries (const float* inL, const float* inR,
+                               float* outL, float* outR, int numSamples);
+    void renderTopologyParallel12to3 (const float* inL, const float* inR,
+                                      float* outL, float* outR, int numSamples);
+    void renderTopologyParallel1to23 (const float* inL, const float* inR,
+                                      float* outL, float* outR, int numSamples);
     // True if slot @p s should render this block (enabled OR still tailing out).
     bool slotActive (int s) const noexcept { return enabled_[(size_t) s] || wetFade_[(size_t) s] > 5.0e-4f; }
     // Recompute the EQ biquad coeffs from eqLowV_/eqMidV_/eqHighV_ (call on change).

@@ -773,100 +773,11 @@ void FxChain::process (const float* inL, const float* inR,
     // bypassed slot imposes its latency via delayPassthrough, so the output is
     // Lc behind the input regardless of which slots are active (N2).
     if (topology_ == static_cast<uint8_t> (FxTopology::Series))
-    {
-        // ---- Series ----
-        // Walk the order permutation. The running signal starts as the dry
-        // input; each enabled slot processes it in place (writing WET), then we
-        // blend dry*(1-dw) + wet*dw. A disabled slot is a passthrough. The dry
-        // snapshot is captured before the in-place process() overwrites it.
-        juce::FloatVectorOperations::copy (outL, inL, numSamples);
-        juce::FloatVectorOperations::copy (outR, inR, numSamples);
-
-        for (int oi = 0; oi < kNumFxSlots; ++oi)
-        {
-            const int s = order_[(size_t) oi];
-            auto& proc = slots_[(size_t) s];
-            if (! proc)
-                continue;   // None type: true passthrough (L=0)
-            if (! slotActive (s))
-            {
-                delayPassthrough (outL, outR, numSamples, s);   // N2: impose L on bypass
-                continue;
-            }
-
-            // Snapshot the pre-process (dry) signal.
-            juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
-            juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
-
-            proc->setParams (params_[(size_t) s]);
-            proc->process (outL, outR, numSamples);   // outL/outR now hold WET
-
-            // Per-sample dry/wet blend + one-pole fade advance for this slot.
-            blendSlotWetFade (outL, outR, numSamples, s);
-        }
-    }
+        renderTopologySeries (inL, inR, outL, outR, numSamples);
     else if (topology_ == static_cast<uint8_t> (FxTopology::Parallel12to3))
-    {
-        // ---- Parallel12to3:  (A || B) -> C ----
-        // A and B each process a COPY of the dry input (equal-gain sum into
-        // parallelOut), then C processes parallelOut in series. A disabled slot
-        // is a passthrough. order_[0..2] = A,B,C.
-        const int A = order_[0];
-        const int B = order_[1];
-        const int C = order_[2];
-
-        // parallelOut into outL/outR: equal-gain blend of {A,B} over the input.
-        renderParallel (inL, inR, outL, outR, numSamples, A, B);
-
-        // Series C over parallelOut: snapshot, process in place, dry/wet blend.
-        auto& procC = slots_[(size_t) C];
-        if (procC && slotActive (C))
-        {
-            juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
-            juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
-
-            procC->setParams (params_[(size_t) C]);
-            procC->process (outL, outR, numSamples);   // outL/outR now hold WET
-
-            // Per-sample dry/wet blend + one-pole fade advance for slot C.
-            blendSlotWetFade (outL, outR, numSamples, C);
-        }
-        // C disabled => passthrough: outL/outR keep parallelOut unchanged.
-    }
+        renderTopologyParallel12to3 (inL, inR, outL, outR, numSamples);
     else
-    {
-        // ---- Parallel1to23:  A -> (B || C) ----
-        // A processes the dry input in series (stage1), then B and C each process
-        // a COPY of stage1 (equal-gain sum). A disabled => stage1 = dry
-        // passthrough. order_[0..2] = A,B,C.
-        const int A = order_[0];
-        const int B = order_[1];
-        const int C = order_[2];
-
-        // Stage 1 (series A) into outL/outR, starting from the dry input.
-        juce::FloatVectorOperations::copy (outL, inL, numSamples);
-        juce::FloatVectorOperations::copy (outR, inR, numSamples);
-
-        auto& procA = slots_[(size_t) A];
-        if (procA && slotActive (A))
-        {
-            juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
-            juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
-
-            procA->setParams (params_[(size_t) A]);
-            procA->process (outL, outR, numSamples);   // outL/outR now hold WET
-
-            // Per-sample dry/wet blend + one-pole fade advance for slot A.
-            blendSlotWetFade (outL, outR, numSamples, A);
-        }
-
-        // Stage 2 (parallel {B,C} over stage1). Snapshot stage1 into dryL_/dryR_
-        // (the parallel input reference), then blend into outL/outR.
-        juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
-        juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
-
-        renderParallel (dryL_.data(), dryR_.data(), outL, outR, numSamples, B, C);
-    }
+        renderTopologyParallel1to23 (inL, inR, outL, outR, numSamples);
 
     // ---- Global wet/dry mix (per-sample one-pole toward masterMix_; B6) ----
     // Runs whenever the target is below unity OR the smoothed current has not
@@ -964,6 +875,105 @@ void FxChain::process (const float* inL, const float* inR,
             silentRunBlocks_ = 0;
         }
     }
+}
+
+// ---- Shared series-slot block ----
+// Pure code motion out of the three topology branches: snapshot the dry
+// signal, run slot @p s in place, then blend its wet fade. The caller has
+// checked that slot @p s holds a live processor and is slotActive.
+// Allocation-free; runs on the audio thread.
+void FxChain::renderSeriesSlot (int s, float* outL, float* outR, int numSamples)
+{
+    auto& proc = slots_[(size_t) s];
+
+    // Snapshot the pre-process (dry) signal.
+    juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
+    juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
+
+    proc->setParams (params_[(size_t) s]);
+    proc->process (outL, outR, numSamples);   // outL/outR now hold WET
+
+    // Per-sample dry/wet blend + one-pole fade advance for this slot.
+    blendSlotWetFade (outL, outR, numSamples, s);
+}
+
+// ---- Topology renderers ----
+// Pure code motion out of process(): each branch keeps its statements and
+// their order. The shared series-slot block rides renderSeriesSlot.
+
+void FxChain::renderTopologySeries (const float* inL, const float* inR,
+                                    float* outL, float* outR, int numSamples)
+{
+    // ---- Series ----
+    // Walk the order permutation. The running signal starts as the dry
+    // input; each enabled slot processes it in place (writing WET), then we
+    // blend dry*(1-dw) + wet*dw. A disabled slot is a passthrough. The dry
+    // snapshot is captured before the in-place process() overwrites it.
+    juce::FloatVectorOperations::copy (outL, inL, numSamples);
+    juce::FloatVectorOperations::copy (outR, inR, numSamples);
+
+    for (int oi = 0; oi < kNumFxSlots; ++oi)
+    {
+        const int s = order_[(size_t) oi];
+        auto& proc = slots_[(size_t) s];
+        if (! proc)
+            continue;   // None type: true passthrough (L=0)
+        if (! slotActive (s))
+        {
+            delayPassthrough (outL, outR, numSamples, s);   // N2: impose L on bypass
+            continue;
+        }
+
+        renderSeriesSlot (s, outL, outR, numSamples);
+    }
+}
+
+void FxChain::renderTopologyParallel12to3 (const float* inL, const float* inR,
+                                           float* outL, float* outR, int numSamples)
+{
+    // ---- Parallel12to3:  (A || B) -> C ----
+    // A and B each process a COPY of the dry input (equal-gain sum into
+    // parallelOut), then C processes parallelOut in series. A disabled slot
+    // is a passthrough. order_[0..2] = A,B,C.
+    const int A = order_[0];
+    const int B = order_[1];
+    const int C = order_[2];
+
+    // parallelOut into outL/outR: equal-gain blend of {A,B} over the input.
+    renderParallel (inL, inR, outL, outR, numSamples, A, B);
+
+    // Series C over parallelOut: snapshot, process in place, dry/wet blend.
+    auto& procC = slots_[(size_t) C];
+    if (procC && slotActive (C))
+        renderSeriesSlot (C, outL, outR, numSamples);
+    // C disabled => passthrough: outL/outR keep parallelOut unchanged.
+}
+
+void FxChain::renderTopologyParallel1to23 (const float* inL, const float* inR,
+                                           float* outL, float* outR, int numSamples)
+{
+    // ---- Parallel1to23:  A -> (B || C) ----
+    // A processes the dry input in series (stage1), then B and C each process
+    // a COPY of stage1 (equal-gain sum). A disabled => stage1 = dry
+    // passthrough. order_[0..2] = A,B,C.
+    const int A = order_[0];
+    const int B = order_[1];
+    const int C = order_[2];
+
+    // Stage 1 (series A) into outL/outR, starting from the dry input.
+    juce::FloatVectorOperations::copy (outL, inL, numSamples);
+    juce::FloatVectorOperations::copy (outR, inR, numSamples);
+
+    auto& procA = slots_[(size_t) A];
+    if (procA && slotActive (A))
+        renderSeriesSlot (A, outL, outR, numSamples);
+
+    // Stage 2 (parallel {B,C} over stage1). Snapshot stage1 into dryL_/dryR_
+    // (the parallel input reference), then blend into outL/outR.
+    juce::FloatVectorOperations::copy (dryL_.data(), outL, numSamples);
+    juce::FloatVectorOperations::copy (dryR_.data(), outR, numSamples);
+
+    renderParallel (dryL_.data(), dryR_.data(), outL, outR, numSamples, B, C);
 }
 
 void FxChain::renderParallel (const float* inL, const float* inR,
