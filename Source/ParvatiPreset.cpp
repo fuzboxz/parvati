@@ -2,6 +2,7 @@
 
 #include "ParvatiPreset.h"
 
+#include <unordered_map>
 #include <vector>
 
 #include "ParameterLayout.h"
@@ -528,24 +529,40 @@ juce::String choiceLabel (const PatchParamDescriptor& d, int index)
     return {};
 }
 
-// Emit the params map as YAML with inline ` # choice-label` comments.
-juce::String emitParams (const juce::DynamicObject& obj)
+// Descriptor lookup by paramID. One static index replaces the repeated O(n)
+// linear scans over the ~230-entry descriptor table. The table is a static
+// vector, so the pointers stay valid for the process lifetime.
+const PatchParamDescriptor* findDescriptor (const juce::String& id)
+{
+    static const std::unordered_map<juce::String, const PatchParamDescriptor*> index = []
+    {
+        std::unordered_map<juce::String, const PatchParamDescriptor*> m;
+        for (const auto& d : getPatchParamDescriptors())
+            m.emplace (d.paramID, &d);
+        return m;
+    }();
+    const auto it = index.find (id);
+    return it != index.end() ? it->second : nullptr;
+}
+
+// Emit a params map as YAML with inline ` # choice-label` comments.
+// @p indent is the per-key prefix: "  " for a top-level map, "      " for
+// a key inside a multi part entry. The comment column stays fixed.
+juce::String emitParams (const juce::DynamicObject& obj, const char* indent = "  ")
 {
     juce::String out;
     for (const auto& p : obj.getProperties())
     {
-        out << "  " << p.name.toString() << ": " << emitScalar (p.value);
+        out << indent << p.name.toString() << ": " << emitScalar (p.value);
         if (p.value.isInt() || p.value.isInt64())
         {
             // Annotate choice params (their raw value is the index).
-            const auto& descs = getPatchParamDescriptors();
-            for (const auto& d : descs)
-                if (d.paramID == p.name.toString() && d.choices != nullptr)
+            if (const PatchParamDescriptor* d = findDescriptor (p.name.toString()))
+                if (d->choices != nullptr)
                 {
-                    const juce::String lbl = choiceLabel (d, (int) p.value);
+                    const juce::String lbl = choiceLabel (*d, (int) p.value);
                     if (lbl.isNotEmpty())
                         out << "            # " << lbl;
-                    break;
                 }
         }
         out << "\n";
@@ -584,11 +601,8 @@ bool applyParvatiPatch (ParvatiAudioProcessor& proc, const juce::String& yaml)
 
     for (const auto& p : dyn->getProperties())
     {
-        // Look the id up in the descriptor table; clamp to range.
-        const auto& descs = getPatchParamDescriptors();
-        const PatchParamDescriptor* d = nullptr;
-        for (const auto& desc : descs)
-            if (desc.paramID == p.name.toString()) { d = &desc; break; }
+        // Look the id up in the descriptor index; clamp to range.
+        const PatchParamDescriptor* d = findDescriptor (p.name.toString());
         if (d == nullptr) continue;   // unknown key -> ignored (forward-compat)
 
         const float raw = (float) p.value;
@@ -641,36 +655,18 @@ juce::String serializeParvatiMulti (ParvatiAudioProcessor& proc)
 
         auto params = partParamsMap (engine, i);
         out << "    params:\n";
-        for (const auto& p : params->getProperties())
-        {
-            out << "      " << p.name.toString() << ": " << emitScalar (p.value);
-            if (p.value.isInt() || p.value.isInt64())
-            {
-                const auto& descs = getPatchParamDescriptors();
-                for (const auto& d : descs)
-                    if (d.paramID == p.name.toString() && d.choices != nullptr)
-                    {
-                        const juce::String lbl = choiceLabel (d, (int) p.value);
-                        if (lbl.isNotEmpty()) out << "            # " << lbl;
-                        break;
-                    }
-            }
-            out << "\n";
-        }
+        out << emitParams (*params, "      ");
     }
 
     out << "options:\n";
+    // Global option params, emitted in descriptor-table order via the shared
+    // emitter (same map shape as `params:`, so the comments match).
+    auto options = std::make_unique<juce::DynamicObject>();
     for (const auto& d : getPatchParamDescriptors())
         if (d.isOption && isSerializable (d))
-        {
-            out << "  " << d.paramID << ": " << emitScalar (juce::var (juce::roundToInt (currentRaw (proc, d))));
-            if (d.choices != nullptr)
-            {
-                const juce::String lbl = choiceLabel (d, juce::roundToInt (currentRaw (proc, d)));
-                if (lbl.isNotEmpty()) out << "            # " << lbl;
-            }
-            out << "\n";
-        }
+            options->setProperty (juce::Identifier (d.paramID),
+                                 juce::var (juce::roundToInt (currentRaw (proc, d))));
+    out << emitParams (*options);
 
     return out;
 }
@@ -684,7 +680,6 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
     if (arr == nullptr) return false;
 
     SynthEngine& engine = proc.getEngine();
-    const auto& descs = getPatchParamDescriptors();
 
     const int n = juce::jmin ((int) arr->size(), SynthEngine::getNumParts());
     for (int i = 0; i < n; ++i)
@@ -768,9 +763,7 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         {
             for (const auto& p : pobj->getProperties())
             {
-                const PatchParamDescriptor* d = nullptr;
-                for (const auto& desc : descs)
-                    if (desc.paramID == p.name.toString()) { d = &desc; break; }
+                const PatchParamDescriptor* d = findDescriptor (p.name.toString());
                 if (d == nullptr || d->isOption) continue;   // options are global
 
                 const float raw = (float) p.value;
@@ -927,9 +920,7 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
             // below). part_select itself is excluded: applying it mid-load
             // re-enters the part-switch path against half-loaded state.
             // (voice_mode stays parsed-and-ignored above for legacy files.)
-            const PatchParamDescriptor* d = nullptr;
-            for (const auto& desc : descs)
-                if (desc.paramID == p.name.toString()) { d = &desc; break; }
+            const PatchParamDescriptor* d = findDescriptor (p.name.toString());
             if (d == nullptr || ! d->isOption || d->paramID == "part_select")
                 continue;
             if (auto* param = proc.getApvts().getParameter (p.name.toString()))
