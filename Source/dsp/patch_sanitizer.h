@@ -33,6 +33,10 @@
 
 #include "dsp/patch.h"
 #include "TuningTables.h"   // kNumTuningPresets (dependency-free)
+// ArpSeqField bounds pin against the DSP tables they index (kArpPatterns,
+// kMidiClockTickPerStep). Both live in Arpeggiator.h / dsp/constants.h and
+// carry no JUCE dependency, so this sanitizer shard stays dependency-light.
+#include "Arpeggiator.h"
 
 namespace ambika::dsp {
 
@@ -155,6 +159,61 @@ inline size_t sanitizePatch(Patch& p) {
 //   [80..83] unused/reserved        (free)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Arp/seq PartData byte domains — the ONE source for every clamp of these
+// bytes (sanitizePartData here, SynthEngine::stageArpSeqFromPartBytes at the
+// consume boundary, and the descriptor byte offsets in ParameterLayout). The
+// firmware parameter layer guaranteed the same domains; raw-file loaders and
+// this sanitizer re-assert them.
+// ---------------------------------------------------------------------------
+enum class ArpSeqField : uint8_t
+{
+    ArpMode = 0,
+    ArpDirection,
+    ArpOctave,
+    ArpPattern,
+    ArpResolution,
+    SeqLength1,
+    SeqLength2,
+    SeqLength3
+};
+
+struct ArpSeqDomain
+{
+    ArpSeqField field;          // which pendingConfig_ / PartData field
+    uint8_t     partDataOffset; // byte offset inside PartData[84]
+    uint8_t     lo;             // firmware-valid lower bound (inclusive)
+    uint8_t     hi;             // firmware-valid upper bound (inclusive)
+};
+
+inline constexpr ArpSeqDomain kArpSeqDomains[] = {
+    { ArpSeqField::ArpMode,        7, 0, 2 },
+    { ArpSeqField::ArpDirection,   8, 0, 5 },
+    { ArpSeqField::ArpOctave,      9, 1, 4 },
+    { ArpSeqField::ArpPattern,    10, 0, 21 },
+    { ArpSeqField::ArpResolution, 11, 0, 14 },
+    { ArpSeqField::SeqLength1,    12, 1, 16 },
+    { ArpSeqField::SeqLength2,    13, 1, 16 },
+    { ArpSeqField::SeqLength3,    14, 1, 16 },
+};
+
+constexpr const ArpSeqDomain& arpSeqDomain (ArpSeqField f)
+{
+    for (const ArpSeqDomain& d : kArpSeqDomains)
+        if (d.field == f)
+            return d;
+    return kArpSeqDomains[0];   // unreachable for the enum's real values
+}
+
+// The pattern and resolution rows index real DSP tables: pin their bounds
+// against the table sizes so a table edit fails at compile time.
+static_assert (arpSeqDomain (ArpSeqField::ArpPattern).hi + 1
+                   == sizeof (::parvati::kArpPatterns) / sizeof (::parvati::kArpPatterns[0]),
+               "arp pattern domain drifted from kArpPatterns (22 entries)");
+static_assert (arpSeqDomain (ArpSeqField::ArpResolution).hi + 1
+                   == sizeof (::parvati::kMidiClockTickPerStep) / sizeof (::parvati::kMidiClockTickPerStep[0]),
+               "arp resolution domain drifted from kMidiClockTickPerStep (15 entries)");
+
 // Sized so the array type itself enforces the PartData length at compile time.
 inline size_t sanitizePartData(std::array<uint8_t, 84>& part) {
     size_t fixed = 0;
@@ -175,17 +234,10 @@ inline size_t sanitizePartData(std::array<uint8_t, 84>& part) {
     // domain (F-static-2; voice.cpp also clamps at the sink).
     clampByte(part[6], 0, 127);
 
-    // Arp block ([7..11]) — identical bounds to stageArpSeqFromPartBytes.
-    clampByte(part[7],  0, 2);    // arpMode: Off/Arp/Sequencer
-    clampByte(part[8],  0, 5);    // arpDirection: Up..Chord
-    clampByte(part[9],  1, 4);    // arpOctave: >= 1 (0 = audio-thread hang)
-    clampByte(part[10], 0, 21);   // arpPattern: kArpPatterns (22)
-    clampByte(part[11], 0, 14);   // arpResolution: tick table (15)
-
-    // Sequencer lengths ([12..14]) — 1..16 (0 wedges the wrap).
-    clampByte(part[12], 1, 16);
-    clampByte(part[13], 1, 16);
-    clampByte(part[14], 1, 16);
+    // Arp block + sequencer lengths ([7..14]) — bounds come from the single
+    // kArpSeqDomains table (the same rows stageArpSeqFromPartBytes applies).
+    for (const ArpSeqDomain& dom : kArpSeqDomains)
+        clampByte (part[dom.partDataOffset], dom.lo, dom.hi);
 
     // Polyphony mode ([15]) — 0..4 (audio-thread service also clamps).
     clampByte(part[15], 0, 4);

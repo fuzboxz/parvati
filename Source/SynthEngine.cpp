@@ -319,24 +319,30 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
     // Stage under the pendingConfig_ seqlock so the audio-thread reader
     // (servicePendingConfig) never sees a torn snapshot.
     p.writePendingConfig ([&] (Part::PendingConfig& pc) {
-        // CLAMP to the firmware parameter ranges (ParameterLayout): these
-        // bytes arrive RAW from .MUL loads / host-state blobs (never through
-        // the APVTS, which enforces its own ranges). An out-of-range mode
-        // byte makes isActive() true while isEnabled() stays false — the
-        // part absorbs every note into the held-key stack and produces NO
-        // sound. An arpOctave of 0 with direction Random never ends the
-        // Random branch's octave wrap loop (Arpeggiator.cpp) — ON THE
-        // AUDIO THREAD (host hang). The firmware's own bytes are always
-        // legal (its UI/parameter layer clamps); raw-file loaders must do
-        // the same here.
-        pc.arpMode       = static_cast<uint8_t> (juce::jlimit (0, 2,  (int) p.partBytes[7]));   // ArpMode: Off/Arp/Sequencer
-        pc.arpDirection  = static_cast<uint8_t> (juce::jlimit (0, 5,  (int) p.partBytes[8]));   // ArpDirection: Up..Chord
-        pc.arpOctave     = static_cast<uint8_t> (juce::jlimit (1, 4,  (int) p.partBytes[9]));   // >= 1 (0 hung the Random wrap loop)
-        pc.arpPattern    = static_cast<uint8_t> (juce::jlimit (0, 21, (int) p.partBytes[10]));  // kArpPatterns: 22 entries
-        pc.arpResolution = static_cast<uint8_t> (juce::jlimit (0, 14, (int) p.partBytes[11]));  // kMidiClockTickPerStep: 15 entries
-        pc.seqLength[0]  = static_cast<uint8_t> (juce::jlimit (1, 16, (int) p.partBytes[12]));
-        pc.seqLength[1]  = static_cast<uint8_t> (juce::jlimit (1, 16, (int) p.partBytes[13]));
-        pc.seqLength[2]  = static_cast<uint8_t> (juce::jlimit (1, 16, (int) p.partBytes[14]));
+        // CLAMP to the firmware parameter ranges: these bytes arrive RAW from
+        // .MUL loads / host-state blobs (never through the APVTS, which
+        // enforces its own ranges). An out-of-range mode byte makes isActive()
+        // true while isEnabled() stays false — the part absorbs every note
+        // into the held-key stack and produces NO sound. An arpOctave of 0
+        // with direction Random never ends the Random branch's octave wrap
+        // loop (Arpeggiator.cpp) — ON THE AUDIO THREAD (host hang). The
+        // firmware's own bytes are always legal (its UI/parameter layer
+        // clamps); raw-file loaders must do the same here. Bounds live in the
+        // single kArpSeqDomains table (patch_sanitizer.h) — the same rows
+        // sanitizePartData applies at the ingestion boundary.
+        const auto clamped = [&p] (ambika::dsp::ArpSeqField f) {
+            const ambika::dsp::ArpSeqDomain& dom = ambika::dsp::arpSeqDomain (f);
+            return static_cast<uint8_t> (juce::jlimit ((int) dom.lo, (int) dom.hi,
+                                                       (int) p.partBytes[dom.partDataOffset]));
+        };
+        pc.arpMode       = clamped (ambika::dsp::ArpSeqField::ArpMode);
+        pc.arpDirection  = clamped (ambika::dsp::ArpSeqField::ArpDirection);
+        pc.arpOctave     = clamped (ambika::dsp::ArpSeqField::ArpOctave);
+        pc.arpPattern    = clamped (ambika::dsp::ArpSeqField::ArpPattern);
+        pc.arpResolution = clamped (ambika::dsp::ArpSeqField::ArpResolution);
+        pc.seqLength[0]  = clamped (ambika::dsp::ArpSeqField::SeqLength1);
+        pc.seqLength[1]  = clamped (ambika::dsp::ArpSeqField::SeqLength2);
+        pc.seqLength[2]  = clamped (ambika::dsp::ArpSeqField::SeqLength3);
         for (size_t i = 0; i < 64; ++i)
             pc.seqData[i] = p.partBytes[16 + i];
     });
