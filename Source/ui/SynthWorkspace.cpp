@@ -286,22 +286,22 @@ void SynthWorkspace::resized()
     const int rowH = juce::jmax (0, mainRow.getHeight());
     auto layoutTopRow = [&] (int w)
     {
-        // SPACIOUS layout (FX-page parity, 2026-08-20): a uniform kRowGap
-        // margin is taken off ALL FOUR sides of the row AND placed between
-        // the three columns, so the bordered OSC/MIX/FILTER GroupComponent
-        // panels sit in generous whitespace (page backgroundBase) exactly
-        // like the FX page's cards — mirroring FxWorkspace::resized's top-row
-        // treatment. (The panels' own header padding INSIDE each GroupComponent
-        // is ParamPage/L&F territory and is unchanged; this seam adds the
-        // AROUND-panel breathing room the user asked for.) The 40/20/40 split
-        // is preserved against the column budget (inner width minus the two
-        // inter-column gaps).
+        // SPACIOUS + HARMONIZED layout (2026-08-20; gaps unified 2026-08-23):
+        // a uniform kRowGap margin is taken off ALL FOUR sides of the row,
+        // and the columns are separated by kColGap — the SAME inter-module
+        // value the FX page uses — so the bordered OSC/MIX/FILTER
+        // GroupComponent panels sit in whitespace exactly like the FX page's
+        // cards and switching SYNTH<->FX keeps one visual rhythm. (The panels'
+        // own header padding INSIDE each GroupComponent is ParamPage/L&F
+        // territory and is unchanged; this seam adds the AROUND-panel
+        // breathing room.) The 40/20/40 split is preserved against the column
+        // budget (inner width minus the two inter-column gaps).
         auto hostRow = juce::Rectangle<int> (0, 0, w, rowH).reduced (kRowGap);
-        const int colBudget = juce::jmax (0, hostRow.getWidth() - 2 * kRowGap);
+        const int colBudget = juce::jmax (0, hostRow.getWidth() - 2 * kColGap);
         auto oc = hostRow.removeFromLeft (colBudget * 40 / 100);
-        hostRow.removeFromLeft (kRowGap);
+        hostRow.removeFromLeft (kColGap);
         auto mc = hostRow.removeFromLeft (colBudget * 20 / 100);
-        hostRow.removeFromLeft (kRowGap);
+        hostRow.removeFromLeft (kColGap);
         auto fc = hostRow;
         auto sizeDirect = [] (ParamPage* page, const juce::Rectangle<int>& b,
                               int fullRowH)

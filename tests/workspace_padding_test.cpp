@@ -113,6 +113,17 @@ TEST(workspace_padding_test)
                "synth top-row gap equals the FX top-row gap");
         check (synth.rowPaddingForTest() == fx.rowPaddingForTest(),
                "rowPaddingForTest() accessors agree");
+        // INTER-MODULE GAP HARMONIZATION (2026-08-23 user request — "the
+        // padding for synth and fx modules are not the same"): both pages
+        // use ONE shared between-module value (the FX page's tuned 12) with
+        // the shared 8 outer margins, so switching SYNTH<->FX keeps a single
+        // visual rhythm. Pinned here so neither page can drift again.
+        check (SynthWorkspace::kColGap == 12 && FxWorkspace::kColGap == 12,
+               "inter-module gap is 12 on BOTH pages");
+        check (SynthWorkspace::kColGap == FxWorkspace::kColGap,
+               "synth inter-module gap equals the FX one (harmonized)");
+        check (synth.moduleGapForTest() == FxWorkspace::kColGap,
+               "moduleGapForTest() accessor agrees");
     }
 
     std::printf ("\n[3] FX top-row modules: FIXED heights, TOP-pinned (synth parity)\n");
@@ -168,7 +179,12 @@ TEST(workspace_padding_test)
             cards[(size_t) slot] = std::make_unique<FxSlotCard> (proc, slot, c1, c2, c3, c4, c5, cdw);
             fx.setFxSlotCard (slot, cards[(size_t) slot].get());
         }
-        fx.setBounds (0, 0, 900, 600);
+        // 900x800: TALL enough that the top row needs no scrollbar (the
+        // natural row is kCardModuleH + 2*kOuterMargin = 276 < the ~440pt
+        // main row this leaves) — the right-margin pin below then checks the
+        // UNSCROLLED geometry (the scrollbar-aware re-layout narrows the
+        // columns by design; layout_overlap_test covers that path).
+        fx.setBounds (0, 0, 900, 800);
 
         FxRoutingBar* routeBar = nullptr;
         FxSlotCard*   card = nullptr;    // slot 0 (the height pins)
@@ -208,9 +224,11 @@ TEST(workspace_padding_test)
                 const int hostW = card->getParentComponent()->getWidth();
                 check (card->getX() - routeBar->getRight() == FxWorkspace::kColGap,
                        "routing->FX1 gap == kColGap (the wider module spacing)");
-                check (fx3Card->getRight() <= hostW - FxWorkspace::kRowGap
-                       && fx3Card->getRight() >= hostW - FxWorkspace::kRowGap - 2,
+                check (fx3Card->getRight() <= hostW - FxWorkspace::kOuterMargin
+                       && fx3Card->getRight() >= hostW - FxWorkspace::kOuterMargin - 2,
                        "FX3 right edge ends AT the right margin (never truncated)");
+                check (FxWorkspace::kOuterMargin == 16,
+                       "FX outer margin == the synth page's effective outer whitespace (8+8)");
             }
 
             // Grow the workspace 160pt taller: neither the heights NOR the y
@@ -218,13 +236,13 @@ TEST(workspace_padding_test)
             // no centred band).
             const int y0card = card->getY();
             const int y0route = routeBar->getY();
-            fx.setBounds (0, 0, 900, 760);
+            fx.setBounds (0, 0, 900, 960);
             check (card->getHeight() == FxWorkspace::kCardModuleH
                    && routeBar->getHeight() == FxWorkspace::kRouteModuleH,
                    "module heights unchanged when the workspace grows taller");
             check (card->getY() == y0card && routeBar->getY() == y0route
-                   && y0card == FxWorkspace::kRowGap,
-                   "modules stay TOP-pinned at kRowGap (no centring)");
+                   && y0card == FxWorkspace::kOuterMargin,
+                   "modules stay TOP-pinned at kOuterMargin (no centring)");
 
             // The fixed band stays inside the workspace.
             check (card->getBottom() <= fx.getHeight()

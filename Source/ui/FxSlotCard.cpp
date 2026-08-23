@@ -253,7 +253,9 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
 // synth cell height). Fixed header / dropdown heights keep the three cards'
 // baselines aligned; the grid centres vertically in its remainder so a
 // short row-set reads balanced + spacious.
-constexpr int kPad         = 6;      // card edge inset
+constexpr int kPad         = 8;      // card edge inset (2026-08-23 harmonization: matches
+                                     // the synth ParamPage's kGroupPad so the module
+                                     // containers read identically on both pages)
 constexpr int kHeaderH     = 16;     // header row (title + power toggle; synth kGroupTitleH parity)
 constexpr int kHalfGap     = 2;      // gap below the header + between bands
 constexpr int kTypeRowH    = 44;     // the whole algorithm selector is one 44pt tap target

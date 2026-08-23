@@ -78,6 +78,13 @@ public:
     static constexpr int kRouteModuleH = 224;   // routing bar (content-natural)
     static constexpr int kCardModuleH  = 244;   // FX-slot cards (routing + 20)
 
+    // OUTER margin of the FX module row (2026-08-23 harmonization): 16 ==
+    // the SYNTH page's effective outer whitespace (workspace kRowGap 8 +
+    // ParamPage::kMargin 8) — "the FX page global container has as much
+    // whitespace as the synth page". The BETWEEN-module gap stays kColGap
+    // (12, the tuned value). Pinned by tests/workspace_padding_test.cpp [3].
+    static constexpr int kOuterMargin = 16;
+
     // MOD-BAR TOP RULE — the separator above the middle seam (see the ctor).
     // Test hook: its bounds + visibility.
     juce::Rectangle<int> barRuleBoundsForTest() const

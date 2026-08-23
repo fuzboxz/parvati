@@ -274,9 +274,9 @@ void FxWorkspace::resized()
     // the modules (NO vertical centring — the user explicitly rejected the
     // centred band), a shorter frame still scrolls at the kTopRowNaturalH
     // floor. The BETWEEN-module whitespace is kColGap (kRowGap + 4,
-    // 2026-08-23: "a tiny bit more for visual clarity") while the outer four
-    // margins stay kRowGap (the synth-parity constant).
-    constexpr int kGap = kRowGap;   // outer margins (all four sides; BETWEEN modules the class kColGap applies — a few px wider, see header)
+    // 2026-08-23: "a tiny bit more for visual clarity").
+    constexpr int kGap = kOuterMargin;   // OUTER margins (all four sides; synth-page effective whitespace parity — see header)
+    constexpr int kColGap = FxWorkspace::kColGap;   // BETWEEN modules (the class constant — the wider tuned gap)
     // R3: the top row's NATURAL height — derived from the TALLEST fixed
     // module (the cards' kCardModuleH) plus the uniform kGap margins. The
     // viewport host is never laid shorter than this; a shorter FRAME scrolls

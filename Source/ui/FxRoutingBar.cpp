@@ -13,7 +13,7 @@ namespace
 {
     // Vertical-column layout constants (px). The bar is now a slim full-height
     // column (column 0 of the 4-column FX top row), not a wide strip.
-    constexpr int kPad        = 6;    // card edge inset (matches the FX-slot cards)
+    constexpr int kPad        = 8;    // card edge inset (2026-08-23 harmonization: the synth ParamPage's kGroupPad — one module-container inset on both pages)
     constexpr float kCorner   = 7.0f; // card panel corner radius (synth GroupComponent parity)
     constexpr int kHeaderH    = 16;   // header band (painted "FX ROUTING" title)
     constexpr int kGap        = 6;    // vertical gap between sections

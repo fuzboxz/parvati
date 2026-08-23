@@ -57,6 +57,14 @@ public:
     static constexpr int kRowGap = 8;
     int rowPaddingForTest() const noexcept { return kRowGap; }
 
+    // BETWEEN-module gap (2026-08-23 harmonization): the SAME value
+    // FxWorkspace::kColGap uses — the inter-module whitespace is identical on
+    // both pages so switching SYNTH<->FX never reads as a different rhythm
+    // (the outer margins stay kRowGap = 8 everywhere). Pinned EQUAL to
+    // FxWorkspace::kColGap by tests/workspace_padding_test.cpp.
+    static constexpr int kColGap = 12;
+    int moduleGapForTest() const noexcept { return kColGap; }
+
     // Main-row columns in signal-chain order (OSC | MIX | FILTER at 40/20/40).
     // All three are direct editor-owned pages (reparented, never regenerated).
     void setMainLeft    (ParamPage* page);          // Mixer (direct)

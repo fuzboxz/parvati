@@ -452,7 +452,14 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     // geometry (panel position / size) is unchanged.
     constexpr float corner = 7.0f;
     const float textH = 14.0f;
-    constexpr float titleLeftPad = 9.0f;   // a touch more breathing room than the old 6px
+    // Title geometry HARMONIZED with the FX cards (2026-08-23 user request:
+    // "synth module titles as spacious as the ones on the FX page"): the
+    // title band sits kGroupPad (8) below the card top — the same inset
+    // FxSlotCard/FxRoutingBar draw their titles at (y = kPad) — instead of
+    // hugging the top edge at y=3, and the left pad matches the FX routing
+    // bar's kPad+2. One module-header rhythm on both pages.
+    constexpr float titleLeftPad = 10.0f;
+    constexpr float titleTopPad  = 8.0f;
     juce::ignoreUnused (position);
 
     const auto alpha = group.isEnabled() ? 1.0f : 0.5f;
@@ -476,7 +483,7 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     const juce::Colour titleCol = group.findColour (juce::GroupComponent::textColourId)
                                       .withMultipliedAlpha (alpha);
     drawHeadingText (g, displayText, f,
-                     juce::Rectangle<float> (titleLeftPad, 3.0f,
+                     juce::Rectangle<float> (titleLeftPad, titleTopPad,
                                              (float) width - titleLeftPad * 2.0f, textH),
                      titleCol);
 }
