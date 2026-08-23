@@ -27,22 +27,33 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <sys/wait.h>
-#include <unistd.h>
+#if ! defined (_WIN32)
+    #include <sys/wait.h>
+    #include <unistd.h>
+#endif
 
 #include "unified_test_runner.h"
 
 namespace {
 
+#if ! defined (_WIN32)
 bool inProcessRequested()
 {
     const char* e = std::getenv ("PARVATI_UNIFIED_INPROCESS");
     return e != nullptr && e[0] == '1';
 }
+#endif
 
 // Runs one test. Returns 0 on pass, non-zero on failure/kill.
 int runTestIsolated (const std::string& name)
 {
+#if defined (_WIN32)
+    // Windows has no fork()/waitpid(), so the fork-per-test reaper cannot
+    // run. Fall back to the in-process path (the same code the
+    // PARVATI_UNIFIED_INPROCESS=1 opt-out uses). A CreateProcess-based
+    // runner would restore per-test isolation; that work stays open.
+    return unified_test_runner::g_runner.runTest (name) ? 0 : 1;
+#else
     if (! inProcessRequested())
     {
         // Flush ALL stdio BEFORE forking: the child inherits a copy of these
@@ -90,6 +101,7 @@ int runTestIsolated (const std::string& name)
 
     // In-process opt-out (debugging / leak-report inspection).
     return unified_test_runner::g_runner.runTest (name) ? 0 : 1;
+#endif  // _WIN32
 }
 
 }  // namespace

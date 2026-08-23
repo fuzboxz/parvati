@@ -82,7 +82,13 @@ bool toolAvailable (const char* name)
     (void) name;
     return false;
 #else
+    #if defined (_WIN32)
+    // cmd.exe has no `command -v`; `where` is the Windows lookup. Without
+    // it the bit-exact firmware diff reports SKIPPED on every Windows run.
+    const std::string cmd = std::string ("where ") + name + " >NUL 2>&1";
+    #else
     const std::string cmd = std::string ("command -v ") + name + " >/dev/null 2>&1";
+    #endif
     return std::system (cmd.c_str()) == 0;
 #endif
 }

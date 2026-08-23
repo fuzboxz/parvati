@@ -25,7 +25,9 @@
 //
 // Built by default. Run: ./build/parvati_layout_overlap_test
 
-#include <cxxabi.h>
+#if defined (__GNUC__) || defined (__clang__)
+    #include <cxxabi.h>   // abi::__cxa_demangle (GCC/Clang ABI)
+#endif
 #include "unified_test_runner.h"
 #include <cstdio>
 #include <vector>
@@ -61,9 +63,14 @@ juce::String describe (juce::Component* c)
             return juce::String (c->getName()) + "(tooltip '" + t.substring (0, 24) + "')";
     }
     int status = 0;
+#if defined (__GNUC__) || defined (__clang__)
     char* dem = abi::__cxa_demangle (typeid (*c).name(), nullptr, nullptr, &status);
     juce::String cn = (status == 0 && dem != nullptr) ? juce::String (dem) : juce::String (typeid (*c).name());
     ::free (dem);
+#else
+    // MSVC type names are already readable; no demangle step exists.
+    juce::String cn (typeid (*c).name());
+#endif
     const auto cut = cn.lastIndexOf (":");
     if (cut >= 0) cn = cn.substring (cut + 1);
     return juce::String (c->getName()) + "(" + cn + ")";

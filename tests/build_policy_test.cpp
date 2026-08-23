@@ -29,7 +29,9 @@
 #include <string>
 #include <vector>
 
-#include <unistd.h>  // ::access, X_OK
+#if ! defined (_WIN32)
+    #include <unistd.h>  // ::access, X_OK (POSIX exec-bit probe)
+#endif
 
 #include <algorithm>
 #include <filesystem>
@@ -357,8 +359,14 @@ TEST(build_policy_test)
     {
         const std::filesystem::path scaffolder = srcDir / "tools" / "new_test.sh";
         check (std::filesystem::exists (scaffolder), "tools/new_test.sh exists");
+#if ! defined (_WIN32)
         check (::access (scaffolder.string().c_str(), X_OK) == 0,
                "tools/new_test.sh is executable (X_OK)");
+#else
+        // Windows file systems carry no exec bit. The existence check above
+        // is the meaningful invariant there.
+        std::printf ("  note: exec bit not meaningful on Windows; existence checked only\n");
+#endif
         const std::string text = readTextFile (scaffolder);
         check (text.find ("add_executable") == std::string::npos,
                "tools/new_test.sh text contains no 'add_executable' token (cannot create per-test targets)");

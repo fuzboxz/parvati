@@ -34,7 +34,9 @@
 // churn more than doubles the CPU), so the headroom is generous without
 // being permissive. If a legitimate feature raises the floor, re-measure
 // and update BOTH the constant and this comment (a budget that was never
-// re-derived is a budget nobody trusts).
+// re-derived is a budget nobody trusts). Loaded CI hosts without a code
+// regression can scale every budget through PARVATI_TEST_PERF_BUDGET_MULT
+// (for example 2 doubles them; see budgetMultiplier below).
 //
 // What it cannot see: peer-driven repaint cost (no window = no paint) —
 // that is what tools/profile_ui.sh covers as a LOCAL/manual gate (the
@@ -43,12 +45,21 @@
 //
 // Built by default. Run: ./build/parvati_perf_smoke_test
 
+// Non-Apple hosts cannot run this test: the pump drives the macOS
+// CFRunLoop directly and the CPU budget reads getrusage. The single TEST()
+// below branches on __APPLE__: the stub prints a skip note and returns
+// true, so the unified target builds on Linux and Windows. The file keeps
+// exactly one textual TEST() registration (build_policy_test counts them).
+// (macOS behavior stays identical.)
+#include "unified_test_runner.h"
+
 #if ! __APPLE__
- #error "perf_smoke_test pumps the macOS main CFRunLoop directly (see the pump note above)"
-#endif
+
+#include <cstdio>
+
+#else
 
 #include <CoreFoundation/CoreFoundation.h>
-#include "unified_test_runner.h"
 #include <sys/resource.h>
 
 #include <algorithm>
@@ -72,6 +83,18 @@ constexpr int    kRunSeconds          = 10;
 constexpr double kCpuTimeBudgetSecs   = 0.8;   // 10 s window, ~3x measured
 constexpr double kGapP99BudgetMs      = 55.0;  // canary period ~44 ms + headroom
 constexpr double kGapMaxBudgetMs      = 120.0; // no single stalled second
+
+// Loaded CI hosts can exceed the reference wall-clock budgets without a
+// code regression. PARVATI_TEST_PERF_BUDGET_MULT scales every budget; 2
+// doubles them. Values of zero or less fall back to 1.0.
+double budgetMultiplier()
+{
+    const char* e = std::getenv ("PARVATI_TEST_PERF_BUDGET_MULT");
+    if (e == nullptr || e[0] == '\0')
+        return 1.0;
+    const double m = std::atof (e);
+    return m > 0.0 ? m : 1.0;
+}
 
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
@@ -150,6 +173,10 @@ struct CongestionProbe : public juce::Timer
 
 TEST(perf_smoke_test)
 {
+#if ! __APPLE__
+    std::printf ("  SKIPPED: perf_smoke_test is macOS-only (CFRunLoop pump)\n");
+    return true;
+#else
     juce::ScopedJuceInitialiser_GUI gui;   // Timer/MessageManager plumbing
 
     // Construction cost is NOT the regression surface (layout caches etc.);
@@ -177,6 +204,13 @@ TEST(perf_smoke_test)
     const double wallUsed = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - wall0);
     probe.stopTimer();
 
+    // Apply the host-load knob AFTER the measurement: the budgets scale, the
+    // printed raw numbers stay comparable across hosts.
+    const double mult    = budgetMultiplier();
+    const double cpuBud  = kCpuTimeBudgetSecs * mult;
+    const double p99Bud  = kGapP99BudgetMs * mult;
+    const double maxBud  = kGapMaxBudgetMs * mult;
+
     auto& gaps = probe.gapsMs;
     std::sort (gaps.begin(), gaps.end());
     const double gapP99 = gaps.empty() ? 1e9 : gaps[static_cast<size_t> ((double) (gaps.size() - 1) * 0.99)];
@@ -184,12 +218,12 @@ TEST(perf_smoke_test)
     const int    nGaps  = (int) gaps.size();
 
     std::printf ("[perf smoke] %.1f s pumped run loop: cpu %.3f s (budget %.1f), probe gaps n=%d p99/max %.1f/%.1f ms (budgets %.0f/%.0f)\n",
-                 wallUsed, cpuUsed, kCpuTimeBudgetSecs, nGaps, gapP99, gapMax, kGapP99BudgetMs, kGapMaxBudgetMs);
+                 wallUsed, cpuUsed, cpuBud, nGaps, gapP99, gapMax, p99Bud, maxBud);
 
-    check (cpuUsed <= kCpuTimeBudgetSecs, "total CPU time within budget");
+    check (cpuUsed <= cpuBud, "total CPU time within budget");
     check (nGaps >= 30, "probe fired at a plausible rate (timers actually ran)");
-    check (gapP99 <= kGapP99BudgetMs, "99th-percentile message-thread gap within budget");
-    check (gapMax <= kGapMaxBudgetMs, "worst message-thread gap within budget");
+    check (gapP99 <= p99Bud, "99th-percentile message-thread gap within budget");
+    check (gapMax <= maxBud, "worst message-thread gap within budget");
 
     // ------------------------------------------------------------------
     // [F-ios-perf-1] 96-voice worst-case render-cost pins (portable ratios;
@@ -294,4 +328,7 @@ TEST(perf_smoke_test)
     std::printf ("\n%s (%d failure%s)\n", g_failures == 0 ? "PASS" : "FAIL",
                  g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0;
+#endif  // __APPLE__ (TEST body branch)
 }
+
+#endif  // __APPLE__ (file: helpers and includes)
