@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace parvati::mul_export
