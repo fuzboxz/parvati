@@ -2,7 +2,7 @@
 
 #include "FxWorkspace.h"
 
-#include "PluginEditor.h"   // ParamPage complete type
+#include "ParamPage.h"        // ParamPage complete type (ParamControl statics via it)
 #include "FxMatrixView.h"
 #include "FxRoutingBar.h"
 #include "FxSlotCard.h"

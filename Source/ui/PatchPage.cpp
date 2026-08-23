@@ -9,7 +9,9 @@
 #include "PatchArrangement.h"
 
 #include "PluginProcessor.h"   // ParvatiAudioProcessor::getEngine()
-#include "PluginEditor.h"      // ParamPage complete type (reflowToWidth/getContentHeight)
+#include "ParamPage.h"        // ParamPage complete type (reflowToWidth/getContentHeight)
+#include "ParvatiLookAndFeel.h" // ParvatiLookAndFeel::getTheme (hosted-page colours)
+#include "ThemeManager.h"       // ThemeManager (complete type)
 #include "TuningTables.h"      // tuningPresetName (Tune combo items)
 #include "ui/NoteName.h"       // midiNoteName (key-zone knob readouts)
 #include "ui/ParamHelp.h"      // getParamHelp (table-cell tooltips)

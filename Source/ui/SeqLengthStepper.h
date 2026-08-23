@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "PluginEditor.h"   // ParamControl, ParvatiAudioProcessor
+#include "ParamControl.h"   // ParamControl, ParvatiAudioProcessor
 
 class SeqLengthStepper : public ParamControl,
                          private juce::Button::Listener

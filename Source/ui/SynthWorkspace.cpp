@@ -2,7 +2,7 @@
 
 #include "SynthWorkspace.h"
 
-#include "PluginEditor.h"   // ParamPage complete type
+#include "ParamPage.h"        // ParamPage complete type (ParamControl statics via it)
 #include "ModMatrixView.h"
 #include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
 #include "ThemeManager.h"

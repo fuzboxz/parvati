@@ -5,7 +5,7 @@
 
 #include "ParvatiLookAndFeel.h"
 #include "ParvatiTheme.h"
-#include "PluginEditor.h"          // ParamControl complete type
+#include "ParamControl.h"       // ParamControl complete type
 #include "PluginProcessor.h"       // ParvatiAudioProcessor::getApvts()
 #include "ParameterLayout.h"       // PatchParamDescriptor
 #include "dsp/fx/FxTypes.h"        // FxType

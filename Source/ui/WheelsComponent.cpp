@@ -5,7 +5,7 @@
 #include "ParvatiLookAndFeel.h"
 #include "ParvatiTheme.h"
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_PITCH_BEND / MOD_SRC_WHEEL
-#include "PluginEditor.h"   // ParamControl (tap-to-assign state)
+#include "ParamControl.h"    // ParamControl (tap-to-assign state)
 
 //==============================================================================
 // A vertical slider that snaps back to its midpoint (0.0) on mouse release.

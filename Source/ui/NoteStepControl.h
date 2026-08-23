@@ -24,7 +24,7 @@
 
 #pragma once
 
-#include "PluginEditor.h"   // ParamControl, ParvatiAudioProcessor
+#include "ParamControl.h"   // ParamControl, ParvatiAudioProcessor
 
 // A single note-sequencer step cell: one remapped rotary (Rest-at-min + full
 // note range). Lives in a ParamPage's controls_ vector (polymorphic ParamControl)

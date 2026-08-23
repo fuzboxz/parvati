@@ -2,7 +2,7 @@
 
 #include "GroupPager.h"
 
-#include "PluginEditor.h"   // ParamPage complete type
+#include "ParamPage.h"        // ParamPage complete type (ParamControl statics via it)
 #include "ParvatiLookAndFeel.h"   // appFont()/getTheme() + parvatiTabCategoryColourId
 #include "ThemeManager.h"
 

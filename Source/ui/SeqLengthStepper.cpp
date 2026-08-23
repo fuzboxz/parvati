@@ -2,6 +2,9 @@
 
 #include "ui/SeqLengthStepper.h"
 
+#include "ui/ParvatiLookAndFeel.h"   // ParvatiLookAndFeel::getTheme (number-label colours)
+#include "ui/ParvatiTheme.h"          // ParvatiTheme tokens
+
 SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
                                     const PatchParamDescriptor& descriptor)
     : ParamControl (processor, descriptor)
