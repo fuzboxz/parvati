@@ -205,12 +205,6 @@ void FxWorkspace::reflowActiveEditor()
 }
 
 //==============================================================================
-int FxWorkspace::barPreferredWidth() const
-{
-    return modBar_ != nullptr ? modBar_->preferredWidth() : 0;
-}
-
-//==============================================================================
 void FxWorkspace::paint (juce::Graphics& g)
 {
     // Flat windowBackground fill so any integer-division remainder between the

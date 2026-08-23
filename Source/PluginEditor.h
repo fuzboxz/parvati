@@ -36,105 +36,7 @@ class ParvatiAudioProcessor;
 // height/style. juce::Label caches its font, so it must be re-pushed when the
 // UI is (re)built.
 void refreshFontsIn (juce::Component* root, const ParvatiLookAndFeel& lnf);
-#include "ui/SettingsPanel.h"
-
-//==============================================================================
-// Sizes the SettingsPanel inside the settings drawer's Viewport (2026-08-21):
-// a juce::Viewport never resizes its viewed component, and the SidePanel
-// parents the VIEWPORT, so the panel must be sized from the viewport's live
-// view area — width minus any auto-shown scrollbar, height = the panel's FULL
-// row budget (never shorter than the view, so scrolling reads 1:1). Without
-// this the panel kept its 0×0 birth size and the drawer rendered blank.
-class SettingsScrollTracker : public juce::ComponentListener
-{
-public:
-    SettingsScrollTracker (juce::Viewport& vp, SettingsPanel& panel)
-        : viewport_ (vp), panel_ (panel)
-    {
-        apply();
-    }
-
-    // MUST deregister: juce::ComponentListener does NOT auto-detach, and this
-    // tracker is declared after the viewport (destroyed BEFORE it) — without
-    // the explicit removal the viewport's listener list keeps a dangling
-    // pointer and its own destructor calls into freed memory (the teardown
-    // segfault this class introduced).
-    ~SettingsScrollTracker() override
-    {
-        viewport_.removeComponentListener (this);
-    }
-
-    void componentMovedOrResized (juce::Component&, bool, bool wasResized) override
-    {
-        if (wasResized)
-            apply();
-    }
-
-    // Editor hook (onPanelShowHide): the slide animation may not fire a
-    // component-resize on the viewport, so the show edge re-applies directly.
-    void applyFromEditor() { apply(); }
-
-    // OPEN-PATH PRE-SIZE (2026-08-22 open-latency fix): call immediately
-    // BEFORE SidePanel::showOrHide(true). JUCE's slide animation runs through
-    // a PROXY COMPONENT that snapshots the drawer at animation start, and
-    // onPanelShowHide (the normal apply site) fires only AFTER the ~250 ms
-    // slide — so the drawer slid in BLANK and the content popped at the end
-    // (the visible first-open latency). Sizing here (while still hidden) puts
-    // the laid-out rows into the proxy snapshot: the drawer slides in already
-    // drawn. Bypasses the isShowing() gate on purpose; every other invariant
-    // (closed drawer stays 0x0 — the close edge re-collapses via apply())
-    // holds.
-    void preSizeForOpen() { apply (true); }
-
-private:
-    void apply (bool bypassShowingGate = false)
-    {
-        // Only size a SHOWING drawer: while closed, the panel must stay 0×0 so
-        // its children are not "placed" (the HIG 44pt audit walks the tree and
-        // zero-sized-bounds buttons at the closed drawer's off-screen position
-        // read as sub-44 violations). The show path re-applies via the
-        // resize listener + the editor's onPanelShowHide hook.
-        //
-        // WIDTH SOURCE (the 2026-08-22 blank-drawer fix): use the VIEWPORT's
-        // own bounds, NOT getViewWidth()/getViewHeight(). Those return
-        // lastVisibleArea, which Viewport::updateVisibleArea computes as
-        // jmin(viewedComponentExtent, viewportExtent) — and the viewed
-        // component is exactly the panel this tracker sizes (0×0 while
-        // collapsed). That was a circular gate that could never open: the
-        // drawer rendered blank (all 18 rows 0×0) because viewW stayed 0
-        // until the panel was sized, and the panel was never sized because
-        // viewW was 0.
-        if (! bypassShowingGate && (! viewport_.isShowing() || viewport_.getWidth() <= 0))
-        {
-            if (panel_.getWidth() != 0 || panel_.getHeight() != 0)
-                panel_.setSize (0, 0);
-            return;
-        }
-        const int preferredH = panel_.computePreferredHeight();
-        const int viewH = viewport_.getHeight();
-        // Budget for the auto vertical scrollbar: when the full row budget
-        // exceeds the view, the viewport narrows its content area by the
-        // scrollbar thickness — size the panel for that so rows are not
-        // clipped under the bar.
-        const int scrollbarW = (preferredH > viewH) ? viewport_.getScrollBarThickness() : 0;
-        const int w = viewport_.getWidth() - scrollbarW;
-        const int h = juce::jmax (preferredH, viewH);
-        if (panel_.getWidth() != w || panel_.getHeight() != h)
-        {
-            panel_.setTopLeftPosition (0, 0);
-            panel_.setSize (w, h);
-        }
-        // Bar visibility, set EXPLICITLY: JUCE's updateVisibleArea has an
-        // early-return path (content repositioning) that skips the bar's
-        // setVisible — observed as content-area narrowed for a bar that never
-        // appeared. Mirroring the intended state here keeps the affordance
-        // real; idempotent with the viewport's own management.
-        viewport_.getVerticalScrollBar().setVisible (h > viewH);
-    }
-
-    juce::Viewport&   viewport_;
-    SettingsPanel&    panel_;
-};
+#include "ui/SettingsScrollTracker.h"   // SettingsPanel sizing tracker (extracted; also brings in SettingsPanel.h)
 #include "ui/ThemeManager.h"
 #include "ui/IconButton.h"
 #include "ui/PresetBrowser.h"
@@ -822,6 +724,14 @@ private:
     void openSaveDialog();
     void openSaveParvatiDialog();
 
+    // Shared tail for the three save pickers (.PRO / .parvati / .MUL):
+    // default-name fallback, USER/ dir creation, default file, save-mode
+    // FileChooser flags, extension forcing and the picker teardown. @p saver
+    // runs synchronously for the chosen file; it owns the format-specific
+    // write, the failure alert and any follow-up dialog (the .MUL fallback).
+    void launchSavePicker (const char* titleKey, const char* ext,
+                           const std::function<void (const juce::File&)>& saver);
+
     // ---- Keyboard-shortcut seams (keyPressed dispatches to these) ----
     // Small, headless-testable handlers: each returns true when the shortcut
     // was consumed. The FileChooser launch inside the Load/Save handlers is
@@ -840,6 +750,11 @@ private:
     void openSaveMultiDialog();
     // Post-save chrome refresh + iOS Documents mirroring for a saved .MUL.
     void afterMultiSaved (const juce::File& f);
+    // The current Part's MIDI channel for editor-injected MIDI (virtual
+    // keyboard, wheels, channel pressure). Omni (0) folds to channel 1: the
+    // editor injects on a concrete channel, and channel 1 always reaches the
+    // Part.
+    int currentPartMidiChannel();
     void applyPatchFile (const juce::File&);
 
     // Re-apply every editor-chrome string through TRANS() (buttons, captions,
@@ -952,7 +867,6 @@ private:
 
     // Top patch bar. The patch selector is a cascading PresetBrowser (replaces
     // the flat patchCombo_); undo/redo are Path-drawn IconButtons (no font glyph).
-    juce::Label      patchCaption_;
     std::unique_ptr<PresetBrowser> presetBrowser_;
     juce::TextButton loadButton_  { "Load" };
     juce::TextButton saveButton_  { "Save" };
@@ -965,7 +879,6 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Top bar: Part selector (bound to the `part_select` APVTS param).
-    juce::Label    partCaption_;
     juce::ComboBox partCombo_;
     // Display-string cache for refreshPartComboNames: the 30 Hz poll used to
     // call ComboBox::changeItemText 6x every tick unconditionally (it is NOT a
@@ -987,8 +900,7 @@ private:
     juce::TextButton modAssignButton_ { "MAP" };  // header toggle: tap-to-assign modulation mode
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> partComboAttachment_;
 
-    // Top header: brand icon + white "Parvati" wordmark (painted, left) + version label (inline right).
-    juce::Label versionLabel_;
+    // Top header: brand icon + white "Parvati" wordmark (painted, left).
     juce::Rectangle<int> logoArea_;   // set in resized(); paint() draws the icon + "Parvati" text here
 
     // Chrome bands (set in resized()): the separator rules' geometry source
@@ -1018,7 +930,6 @@ public:
     static constexpr int kChromeRuleGap = 5;   // gap between a chrome band and its separator rule (rule is 1px)
     static constexpr int kChromeShadowH = 5;   // depth-falloff height beside a chrome rule (see ChromeRule)
 private:
-    static constexpr int kPageTabsH   = 28;  // top-level [SYNTH | GLOBAL] page-selector strip
     // Bottom keyboard overlay strip. TALL two-octave keyboard (KeyboardView
     // shows exactly C3..C5 with keys stretched to the strip width): 246 == the
     // workspace bottom-row cap kBottomRowMaxH = 8+22+4+4+4*(48+4) in

@@ -281,28 +281,10 @@ constexpr float kLampCx    = static_cast<float> (kPad) + kLampDotW * 0.5f;   // 
 constexpr float kLampCy    = static_cast<float> (kPad) + static_cast<float> (kHeaderH) * 0.5f;   // title optical middle
 constexpr int   kLampTitleGap = 8;   // lamp -> title gap (2026-08-23: "a tiny bit more space between the text and the button")
 
-// Fit-to-text width of a ComboBox's longest item, measured in the active
-// LookAndFeel combo font (mirrors ParamControl::maxChoiceTextWidth) so the FX
-// type dropdown sizes itself exactly like the Osc "Shape" / Filter "Mode"
-// selectors (widest choice + kComboChrome, centred in its row).
-int maxComboItemWidth (const juce::ComboBox& combo)
-{
-    const auto f = [&]() -> juce::Font
-    {
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&combo.getLookAndFeel()))
-            return lnf->appFont (14.0f, juce::Font::plain);
-        return juce::Font (juce::FontOptions (14.0f));
-    }();
-
-    int widest = 0;
-    for (int i = 0; i < combo.getNumItems(); ++i)
-        widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, combo.getItemText (i)));
-    widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, combo.getText()));
-    return widest;
-}
-
 // (The knob grid is a FIXED 3-column x 2-row layout in layoutParamGrid(); no
 // column-count adaptation is needed, so the former knobGridCols() helper is gone.)
+// (The fit-to-text combo measurement is the SHARED widestComboTextWidth in
+// ParvatiLookAndFeel.h — the former local maxComboItemWidth copy is gone.)
 } // namespace
 
 //==============================================================================
@@ -754,7 +736,7 @@ void FxSlotCard::resized()
         // report. The toggle band is HEADER-ONLY now (44x22, ends at the
         // header divider ~2px above this row), so a centred fit-to-text combo
         // can never intersect it at any card width.
-        const int textW  = maxComboItemWidth (*typeCombo_) + kComboChrome;
+        const int textW  = widestComboTextWidth (*typeCombo_, typeCombo_.get()) + kComboChrome;
         const int comboW = juce::jmin (typeRow.getWidth (),
                                        juce::jlimit (kComboMinW, juce::jmax (kComboMinW, typeRow.getWidth ()), textW));
         // The whole algorithm selector is ONE 44pt-tall tap target that opens

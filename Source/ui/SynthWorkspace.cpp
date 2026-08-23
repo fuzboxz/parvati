@@ -222,12 +222,6 @@ void SynthWorkspace::reflowActiveEditor()
 }
 
 //==============================================================================
-int SynthWorkspace::barPreferredWidth() const
-{
-    return modBar_ != nullptr ? modBar_->preferredWidth() : 0;
-}
-
-//==============================================================================
 void SynthWorkspace::paint (juce::Graphics& g)
 {
     // Flat windowBackground fill so any integer-division remainder between the

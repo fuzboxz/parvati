@@ -249,3 +249,38 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiLookAndFeel)
 };
+
+//==============================================================================
+// Shared fit-to-text ComboBox measurement (single source). Previously
+// ParamControl::maxChoiceTextWidth and FxSlotCard's maxComboItemWidth each
+// carried their own copy of the font resolution and the widest-item loop, so
+// the two could drift (one rounding tweak away from different dropdown
+// widths for the same text).
+
+// The combo-list font a fit-to-text measurement must use: @p owner's active
+// ParvatiLookAndFeel 14 pt plain font, or the default 14 pt font when another
+// LookAndFeel is installed.
+inline juce::Font comboListFont (const juce::Component& owner)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->appFont (14.0f, juce::Font::plain);
+    return juce::Font (juce::FontOptions (14.0f));
+}
+
+// The widest string among @p combo's own items, @p extraChoices, and the
+// combo's current text — the text width a fit-to-text ComboBox needs. Each
+// call site adds its own chrome padding on top.
+inline int widestComboTextWidth (const juce::Component& owner, const juce::ComboBox* combo,
+                                 const juce::StringArray& extraChoices = {})
+{
+    const juce::Font f = comboListFont (owner);
+    int widest = 0;
+    if (combo != nullptr)
+        for (int i = 0; i < combo->getNumItems(); ++i)
+            widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, combo->getItemText (i)));
+    for (const auto& c : extraChoices)
+        widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, c));
+    if (combo != nullptr)
+        widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, combo->getText()));
+    return widest;
+}

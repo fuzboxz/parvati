@@ -155,9 +155,6 @@ public:
     // page + the FxMatrixView. Called by the editor on a theme switch.
     void applyThemeColors();
 
-    // The bar's no-clipping minimum width (CentralModBar::preferredWidth).
-    int barPreferredWidth() const;
-
     // The workspace-owned CentralModBar (never null after construction).
     // Live-modulation feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the editor
     // uses this seam to bind the bar's telemetry provider + refresh rate —

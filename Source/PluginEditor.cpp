@@ -77,6 +77,23 @@ constexpr const char* kLogoText       = "PARVATI";   // 2026-08-23: ALL CAPS wor
 constexpr float       kLogoTextHeight = 17.0f;   // 2026-08-23: smaller + letter-spaced + plain ("remove the boldness", lighter read)
 constexpr float       kLogoTracking  = 3.0f;    // extra px BETWEEN characters (the airy wordmark look)
 
+// Letter-spaced wordmark width: the sum of the glyph advances plus
+// @p tracking between characters. paint() and resized() both measure the
+// block with this ONE helper, so the drawn wordmark always fits the block
+// resized() reserves for it (the two loops previously carried their own
+// copies of the same math).
+static float trackedTextWidth (const juce::Font& font, const juce::String& text, float tracking)
+{
+    float w = 0.0f;
+    for (int i = 0; i < text.length(); ++i)
+    {
+        juce::GlyphArrangement gc;
+        gc.addLineOfText (font, text.substring (i, i + 1), 0.0f, 0.0f);
+        w += gc.getBoundingBox (0, gc.getNumGlyphs(), true).getWidth();
+    }
+    return w + tracking * (float) juce::jmax (0, text.length() - 1);
+}
+
 // Re-apply each Label's font in the component tree (same height/style, default
 // family) so each re-resolves its typeface through the active L&F after a
 // font-mode switch (juce::Label caches its font, so a plain repaint would NOT
@@ -99,7 +116,7 @@ namespace
 // ---- Map a parameter ID to one of the GUI sections --------------------------
 // (Derived from the well-defined paramID prefixes in ParameterLayout.cpp, so the
 //  checked APVTS byte-bridge stays untouched.)
-enum class Section { Oscillators, Mixer, Filter, Envelopes, Lfos, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi, Fx, FxMatrix };
+enum class Section { Oscillators, Mixer, Filter, Envelopes, Lfos, ModMatrix, Modifiers, Arp, Sequencer, Global, Fx, FxMatrix };
 
 Section sectionForId (const juce::String& id)
 {
@@ -146,7 +163,7 @@ Section sectionForId (const juce::String& id)
 }
 
 // Map a functional Section to its theme category-token colour. Oscillators /
-// Mixer / Filter / ModMatrix / Modifiers / Global / Multi share the neutral
+// Mixer / Filter / ModMatrix / Modifiers / Global share the neutral
 // "audio" brand accent; Envelopes/LFOs/Sequencer/Arp get their own hue. This is the
 // ONLY place a Section resolves to a category token, so every arc / graph / tint
 // shares one consistent mapping and a theme switch re-resolves automatically.
@@ -160,7 +177,7 @@ juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
     if (s == Section::Lfos)      return theme.catLfo;
     if (s == Section::Sequencer) return theme.catSeq;
     if (s == Section::Arp)       return theme.catArp;
-    return theme.catAudio;   // Osc/Mix/Filter/ModMatrix/Modifiers/Global/Multi
+    return theme.catAudio;   // Osc/Mix/Filter/ModMatrix/Modifiers/Global
 }
 }  // namespace
 
@@ -658,24 +675,12 @@ void ParamControl::setDisplayValueText (std::function<juce::String (double)> toT
 
 int ParamControl::maxChoiceTextWidth() const
 {
-    // Measure every choice (plus the combo's current text) in the active L&F
-    // combo font so the dropdown fits its longest entry. Used to size the
-    // fit-to-text combo width (longest + 24px padding, capped at 140px).
-    const auto f = [this]() -> juce::Font
-    {
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            return lnf->appFont (14.0f, juce::Font::plain);
-        return juce::Font (juce::FontOptions (14.0f));
-    }();
-
-    int widest = 0;
-    if (desc_.choices != nullptr)
-        for (const auto& c : *desc_.choices)
-            widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidthInt (f, c));
-    if (comboBox_ != nullptr)
-        widest = juce::jmax (widest,
-                             juce::GlyphArrangement::getStringWidthInt (f, comboBox_->getText()));
-    return widest;
+    // Measure every choice (plus the combo's current text) in the shared
+    // combo-list font so the dropdown fits its longest entry (see
+    // widestComboTextWidth). Used to size the fit-to-text combo width
+    // (longest + 24px padding, capped at 140px).
+    return widestComboTextWidth (*this, comboBox_.get(),
+                                 desc_.choices != nullptr ? *desc_.choices : juce::StringArray{});
 }
 
 void ParamControl::setTooltipsEnabled (bool enabled)
@@ -1252,7 +1257,7 @@ void ParamControl::mouseUp (const juce::MouseEvent& e)
     // its value. Stays in mode for more routings; clears the selected source
     // each time. (Long-press fires only on touch; tap-assign runs when [MOD]
     // is on.)
-    if (tapAssignActive_ && isModDestKnob_ && e.getDistanceFromDragStart() <= 5)
+    if (tapAssignActive_ && isModDestKnob_ && e.getDistanceFromDragStart() <= kTouchSlop)
     {
         if (tapSelectedSource_ < 0)
         {
@@ -2381,7 +2386,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // `part_select` is intentionally skipped here: it has a dedicated top-bar
     // ComboBox (partCombo_) bound to the same APVTS param, so generating a
     // second control for it on a page would be redundant.
-    std::vector<const PatchParamDescriptor*> sec[10];
+    // Sized from the ENUM (Section::FxMatrix + 1), not a literal: only the
+    // sections up to Global ever reach the index (the isFx skip below keeps
+    // Fx/FxMatrix out), but an enum-sized array can never overflow when a
+    // future section is added.
+    std::vector<const PatchParamDescriptor*> sec[(size_t) Section::FxMatrix + 1];
     for (const auto& d : getPatchParamDescriptors())
     {
         if (d.paramID == "part_select")
@@ -2417,10 +2426,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     const ParvatiTheme& theme = themeManager_.getCurrentTheme();
 
     // ---- Top patch bar: factory patch list + Load .PRO... + name ----
-    patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
-    // Caption text colour from the L&F (dim).
-    patchCaption_.setFont (juce::FontOptions (13.0f));
-    addAndMakeVisible (patchCaption_);
+    // (No "Patch:" caption: the preset dropdown follows the brand block
+    // directly; see resized().)
 
     // Cascading patch menu (Templates / User / Factory banks / Multi). The
     // browser scans the dirs live on each open, so there is no pre-populate.
@@ -2526,11 +2533,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     addAndMakeVisible (zoomOverflowButton_);
 
     // ---- Top bar: Part selector (bound to the `part_select` APVTS param) ----
-    partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
-    // Caption text colour from the L&F (dim).
-    partCaption_.setFont (juce::FontOptions (13.0f));
-    addAndMakeVisible (partCaption_);
-
+    // (No "Part:" caption: the dropdown alone carries the selection.)
     for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
         partCombo_.addItem (TRANS ("Part") + " " + juce::String (i), i);
     // Combo colours from the L&F.
@@ -2542,22 +2545,24 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // tabs are populated (below). TabbedComponent / TabbedButtonBar colours come
     // from the inherited editor L&F.
 
-    struct PageInfo { const char* name; const char* shortName; Section s; int cols, cellW, cellH; };
+    struct PageInfo { Section s; int cols, cellW, cellH; };
     // Cell heights are kept tight (a 44px knob + its label fits in ~76px) so
     // every page matches the dense SEQ reference instead of the sparse look the
     // 106px rows produced. Mod/Modifier/Seq groups override these in
     // configureGroupLayouts() — their entries here are kept for reference only.
+    // (The former name/shortName fields were never read — the loop below uses
+    // only s/cols/cellW/cellH.)
     const PageInfo pages[] = {
-        { "Oscillators", "OSC",        Section::Oscillators, 4, 214, 76 },
-        { "Mixer",       "MIX",        Section::Mixer,       4, 214, 76 },
-        { "Filter",      "FILTER",     Section::Filter,      4, 214, 76 },
-        { "Envelopes",   "ENV",        Section::Envelopes,   3, 198, 76 },
-        { "LFOs",        "LFO",        Section::Lfos,        4, 198, 76 },
-        { "Mod Matrix",  "MOD MATRIX", Section::ModMatrix,   2, 164, 72 },
-        { "Modifiers",   "MODIFIERS",  Section::Modifiers,   3, 300, 64 },   // cellH overridden per-group (configureGroupLayouts); ref only
-        { "Sequencer",   "SEQ",        Section::Sequencer,   6, 150, 80 },
-        { "Arp",         "ARP",        Section::Arp,         3, 214, 76 },
-        { "Patch",       "PATCH",      Section::Global,      3, 214, 76 },
+        { Section::Oscillators, 4, 214, 76 },
+        { Section::Mixer,       4, 214, 76 },
+        { Section::Filter,      4, 214, 76 },
+        { Section::Envelopes,   3, 198, 76 },
+        { Section::Lfos,        4, 198, 76 },
+        { Section::ModMatrix,   2, 164, 72 },
+        { Section::Modifiers,   3, 300, 64 },   // cellH overridden per-group (configureGroupLayouts); ref only
+        { Section::Sequencer,   6, 150, 80 },
+        { Section::Arp,         3, 214, 76 },
+        { Section::Global,      3, 214, 76 },
     };
 
     // Generator pages captured by section during the loop, then registered with
@@ -2794,50 +2799,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     }
 
     // ---- Central Modulation Bar wiring (Phase 2) ----
-    // Register every GENERATOR pill -> { owning ParamPage, groups-to-show } so the
-    // bar's bottom-left active-editor host can reparent + setVisibleGroups the
-    // right slice per pill (pages are never regenerated). Group names match the
-    // ParamPage groupForId() keys (checked in groupForId). VLFO == per-voice
-    // LFO (MOD_SRC_LFO_4, checked in voice.cpp). ARP shows ALL its groups
-    // (EMPTY array). The Note Sequencer pill is the bar-only sentinel
-    // (parvati::kNoteSeqSentinel == -1, NOT a real MOD_SRC_*): it reveals its
-    // "Note Pitch" group from the Sequencer page (Option A: only the note
-    // pitch + gate control; velocity stays in the full Sequencer TAB), and is
-    // click-only (the bar skips its drag because enumValue < 0). The drag
-    // payload ("parvatiModSrc:<enum>") is emitted by the bar itself, so the
-    // destination-side rings / padlock / ModMatrixHighlight need ZERO changes.
-    using namespace ambika::dsp;
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_ENV_1, envPage,        juce::StringArray{ "Env 1 (Mod)" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_ENV_2, envPage,        juce::StringArray{ "Env 2 (Filter)" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_ENV_3, envPage,        juce::StringArray{ "Env 3 (Amp)" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_1, lfoPage,        juce::StringArray{ "LFO 1" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_2, lfoPage,        juce::StringArray{ "LFO 2" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_3, lfoPage,        juce::StringArray{ "LFO 3" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_LFO_4, lfoPage,        juce::StringArray{ "Voice LFO" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_1, seqPage,        juce::StringArray{ "Sequencer 1" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_2, seqPage,        juce::StringArray{ "Sequencer 2" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_ARP_STEP, arpPage,     juce::StringArray{});   // empty => all groups
-    // Note Sequencer pill (bar-only sentinel): click-only, NOT draggable; opens
-    // the Sequencer page showing ONLY Note Pitch (the remapped note rotary +
-    // gate-at-rest). Note Velocity is NOT shown in the generator host — the
-    // ~290px non-viewport band cannot fit both 16-step groups, so stacking them
-    // clipped velocity ~75%. Velocity stays reachable in the full Sequencer TAB
-    // (its knob is unchanged). One group => no clip.
-    synthWorkspace_->registerGeneratorPage (parvati::kNoteSeqSentinel, seqPage,
-                                            juce::StringArray{ "Note Pitch" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_1, modifierPage,    juce::StringArray{ "Modifier 1" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_2, modifierPage,    juce::StringArray{ "Modifier 2" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_3, modifierPage,    juce::StringArray{ "Modifier 3" });
-    synthWorkspace_->registerGeneratorPage (MOD_SRC_OP_4, modifierPage,    juce::StringArray{ "Modifier 4" });
-    // Drag-only (Perf/Util/Const) pill click: briefly flash the mod-matrix rows
-    // routed FROM that source, reusing the existing timed flash.
-    synthWorkspace_->setOnDragOnlyPillClicked ([this] (int src)
-    {
-        if (modMatrixView_ != nullptr)
-            modMatrixView_->flashRowsForSource (src);
-    });
-    // Default to Env 1 visible on startup.
-    synthWorkspace_->setActiveGenerator (MOD_SRC_ENV_1);
+    // The generator pills are registered for BOTH workspaces by ONE shared
+    // table further below (after fxWorkspace_ exists — the pages are SHARED,
+    // never duplicated; only reparented between workspaces on a mode toggle).
+    // The drag-only pill clicks and the Env-1 startup default are wired there
+    // too.
 
 
     // ---- FX workspace construction (Phase 4) ----
@@ -2892,35 +2858,73 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     fxMatrixView_ = std::make_unique<FxMatrixView> (processorRef_, themeManager_);
     fxWorkspace_->setFxMatrixView (fxMatrixView_.get());
 
-    // Register the SAME generator pages into the FX workspace (SHARED editor —
-    // the pages are NOT duplicated, only reparented between workspaces on a
-    // mode toggle). ARP shows all its groups (empty array); the Note Sequencer
-    // pill reveals Note Pitch (only) from the Sequencer page (Option A: one
-    // group fits the non-viewport host without clipping; velocity stays in the
-    // full Sequencer TAB).
+    // ---- Central Modulation Bar wiring (Phase 2, BOTH workspaces) ----
+    // Register every GENERATOR pill -> { owning ParamPage, groups-to-show } so
+    // each bar's bottom-left active-editor host can reparent +
+    // setVisibleGroups the right slice per pill (pages are never regenerated;
+    // the SAME pages are shared by both workspaces, only reparented between
+    // them on a mode toggle). Group names match the ParamPage groupForId()
+    // keys (checked in groupForId). VLFO == per-voice LFO (MOD_SRC_LFO_4,
+    // checked in voice.cpp). ARP shows ALL its groups (EMPTY array). The Note
+    // Sequencer pill is the bar-only sentinel (parvati::kNoteSeqSentinel ==
+    // -1, NOT a real MOD_SRC_*): it reveals its "Note Pitch" group from the
+    // Sequencer page (Option A: only the note pitch + gate control; velocity
+    // stays in the full Sequencer TAB), and is click-only (the bar skips its
+    // drag because enumValue < 0). The drag payload
+    // ("parvatiModSrc:<enum>") is emitted by the bar itself, so the
+    // destination-side rings / padlock / ModMatrixHighlight need ZERO changes.
+    // ONE table drives both workspaces (previously two 15-call copies that
+    // had to be kept in sync by hand).
     using namespace ambika::dsp;
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_1, envPage,        juce::StringArray{ "Env 1 (Mod)" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_2, envPage,        juce::StringArray{ "Env 2 (Filter)" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_ENV_3, envPage,        juce::StringArray{ "Env 3 (Amp)" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_1, lfoPage,        juce::StringArray{ "LFO 1" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_2, lfoPage,        juce::StringArray{ "LFO 2" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_3, lfoPage,        juce::StringArray{ "LFO 3" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_LFO_4, lfoPage,        juce::StringArray{ "Voice LFO" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_1, seqPage,        juce::StringArray{ "Sequencer 1" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_SEQ_2, seqPage,        juce::StringArray{ "Sequencer 2" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_ARP_STEP, arpPage,     juce::StringArray{});   // empty => all groups
-    fxWorkspace_->registerGeneratorPage (parvati::kNoteSeqSentinel, seqPage,
-                                         juce::StringArray{ "Note Pitch" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_1, modifierPage,    juce::StringArray{ "Modifier 1" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_2, modifierPage,    juce::StringArray{ "Modifier 2" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_3, modifierPage,    juce::StringArray{ "Modifier 3" });
-    fxWorkspace_->registerGeneratorPage (MOD_SRC_OP_4, modifierPage,    juce::StringArray{ "Modifier 4" });
-    // Drag-only pill click: flash the FX-matrix rows routed FROM that source.
+    struct GeneratorPill { int source; ParamPage* page; juce::StringArray groups; };
+    const GeneratorPill generatorPills[] = {
+        { MOD_SRC_ENV_1, envPage,     juce::StringArray{ "Env 1 (Mod)" } },
+        { MOD_SRC_ENV_2, envPage,     juce::StringArray{ "Env 2 (Filter)" } },
+        { MOD_SRC_ENV_3, envPage,     juce::StringArray{ "Env 3 (Amp)" } },
+        { MOD_SRC_LFO_1, lfoPage,     juce::StringArray{ "LFO 1" } },
+        { MOD_SRC_LFO_2, lfoPage,     juce::StringArray{ "LFO 2" } },
+        { MOD_SRC_LFO_3, lfoPage,     juce::StringArray{ "LFO 3" } },
+        { MOD_SRC_LFO_4, lfoPage,     juce::StringArray{ "Voice LFO" } },
+        { MOD_SRC_SEQ_1, seqPage,     juce::StringArray{ "Sequencer 1" } },
+        { MOD_SRC_SEQ_2, seqPage,     juce::StringArray{ "Sequencer 2" } },
+        { MOD_SRC_ARP_STEP, arpPage,  juce::StringArray{} },   // empty => all groups
+        // Note Sequencer pill (bar-only sentinel): click-only, NOT draggable;
+        // opens the Sequencer page showing ONLY Note Pitch (the remapped note
+        // rotary + gate-at-rest). Note Velocity is NOT shown in the generator
+        // host — the ~290px non-viewport band cannot fit both 16-step groups,
+        // so stacking them clipped velocity ~75%. Velocity stays reachable in
+        // the full Sequencer TAB (its knob is unchanged). One group => no clip.
+        { parvati::kNoteSeqSentinel, seqPage, juce::StringArray{ "Note Pitch" } },
+        { MOD_SRC_OP_1, modifierPage, juce::StringArray{ "Modifier 1" } },
+        { MOD_SRC_OP_2, modifierPage, juce::StringArray{ "Modifier 2" } },
+        { MOD_SRC_OP_3, modifierPage, juce::StringArray{ "Modifier 3" } },
+        { MOD_SRC_OP_4, modifierPage, juce::StringArray{ "Modifier 4" } },
+    };
+    // Generic lambda: SynthWorkspace and FxWorkspace are unrelated types that
+    // expose the same registerGeneratorPage seam.
+    const auto registerPills = [&generatorPills] (auto& workspace)
+    {
+        for (const auto& pill : generatorPills)
+            workspace.registerGeneratorPage (pill.source, pill.page, pill.groups);
+    };
+    registerPills (*synthWorkspace_);
+    registerPills (*fxWorkspace_);
+
+    // Drag-only (Perf/Util/Const) pill click: briefly flash the matrix rows
+    // routed FROM that source, reusing the existing timed flash. Each
+    // workspace flashes ITS OWN matrix (synth mod matrix / FX mod matrix).
+    synthWorkspace_->setOnDragOnlyPillClicked ([this] (int src)
+    {
+        if (modMatrixView_ != nullptr)
+            modMatrixView_->flashRowsForSource (src);
+    });
     fxWorkspace_->setOnDragOnlyPillClicked ([this] (int src)
     {
         if (fxMatrixView_ != nullptr)
             fxMatrixView_->flashRowsForSource (src);
     });
+    // Default to Env 1 visible on startup.
+    synthWorkspace_->setActiveGenerator (MOD_SRC_ENV_1);
     // Track the SHARED active generator selection from BOTH workspaces so a mode
     // toggle reparents the right page into the newly-visible workspace.
     synthWorkspace_->setOnActiveGeneratorChanged ([this] (int src) { activeGeneratorModSrc_ = src; });
@@ -3101,12 +3105,10 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (modAssignButton_);
 
-    // ---- Header: brand icon + white "Parvati" wordmark (painted, left) + version (inline, right of logo) ----
-    versionLabel_.setText ("by 805Labs - v" PARVATI_VERSION, juce::dontSendNotification);
-    versionLabel_.setFont (juce::FontOptions (10.0f));
-    versionLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
-    versionLabel_.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (versionLabel_);
+    // ---- Header: brand icon + white "Parvati" wordmark (painted, left) ----
+    // (The version subtitle is painted inside the brand block — see paint().
+    // The former versionLabel_ child was built hidden and never shown, so it
+    // is gone.)
 
     // ---- Phase 4a: settings button + side panel ----
     // Click-toggle feedback reflects whether the Settings panel is open (the
@@ -3157,8 +3159,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             75);   // ~2.5 s @ 30 Hz (rapid Z Z Z / V V V re-post one live readout)
     });
     keyboardView_->setNoteCallback ([this] (int note, bool on, float vel) {
-        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
-        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int ch = currentPartMidiChannel();
         const int status   = on ? (0x90 | ((ch - 1) & 0xf)) : (0x80 | ((ch - 1) & 0xf));
         const int velocity = on ? juce::jlimit (0, 127, juce::roundToInt (vel * 127.0f)) : 0;
         processorRef_.addMidiEvent (juce::MidiMessage (status, note, velocity));
@@ -3170,8 +3171,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // stops updating — the engine holds the last value per voice, like a real
     // channel-pressure stream).
     keyboardView_->setPressureCallback ([this] (float pressure) {
-        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
-        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int ch = currentPartMidiChannel();
         const int value = juce::jlimit (0, 127, juce::roundToInt (pressure * 127.0f));
         processorRef_.addMidiEvent (juce::MidiMessage::channelPressureChange (ch, value));
     });
@@ -3181,14 +3181,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // ---- Pitch + Mod wheels (left of the keyboard) ----
     wheels_ = std::make_unique<WheelsComponent>();
     wheels_->onPitch = [this] (float v) {
-        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
-        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int ch = currentPartMidiChannel();
         const int pv = juce::jlimit (0, 16383, juce::roundToInt ((v * 0.5f + 0.5f) * 16383.0f));
         processorRef_.addMidiEvent (juce::MidiMessage::pitchWheel (ch, pv));
     };
     wheels_->onMod = [this] (float v) {
-        int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
-        if (ch == 0) ch = 1;   // Omni -> inject on channel 1
+        const int ch = currentPartMidiChannel();
         const int mv = juce::jlimit (0, 127, juce::roundToInt (v * 127.0f));
         processorRef_.addMidiEvent (juce::MidiMessage::controllerEvent (ch, 1, mv));   // CC1 = mod wheel
     };
@@ -4117,9 +4115,6 @@ void ParvatiEditor::applyHeaderButtonChrome()
             pb->setColour (juce::TextButton::buttonColourId, wash);
             pb->setColour (juce::TextButton::textColourOffId, t.textPrimary);
         }
-    // patchCaption_ is hidden in the current layout but stays wired — keep it
-    // on the bright tier so it is correct if it ever returns.
-    patchCaption_.setColour (juce::Label::textColourId, t.textPrimary);
 }
 
 void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -4359,8 +4354,6 @@ void ParvatiEditor::applyChromeTranslations()
     // CentralModBar pill/cluster labels are short fixed codes (E1/L1/ARP/...),
     // so they need no translation. With no mappings installed (English) TRANS()
     // is the identity, so this is a no-op for the default.
-    patchCaption_.setText (TRANS ("Patch:"), juce::dontSendNotification);
-    partCaption_.setText (TRANS ("Part:"), juce::dontSendNotification);
     loadButton_.setButtonText (TRANS ("Load"));
     saveButton_.setButtonText (TRANS ("Save"));
     loadButton_.setTooltip (TRANS ("Load a patch (Cmd/Ctrl+O)"));
@@ -4442,16 +4435,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
 
             const juce::Font markFont = lnf_.appFont (kLogoTextHeight, juce::Font::plain);
             const juce::String mark (kLogoText);
-            // Letter-spaced wordmark width: sum of glyph advances + tracking
-            // between characters (same math resized() measures the block with).
-            float markW = 0.0f;
-            for (int i = 0; i < mark.length(); ++i)
-            {
-                juce::GlyphArrangement gc;
-                gc.addLineOfText (markFont, mark.substring (i, i + 1), 0.0f, 0.0f);
-                markW += gc.getBoundingBox (0, gc.getNumGlyphs(), true).getWidth();
-            }
-            markW += kLogoTracking * (float) juce::jmax (0, mark.length() - 1);
+            const float markW = trackedTextWidth (markFont, mark, kLogoTracking);
 
             const auto band = block.removeFromTop (juce::roundToInt (static_cast<float> (block.getHeight()) * 0.62f));
             g.setColour (theme.textPrimary);
@@ -4677,18 +4661,7 @@ void ParvatiEditor::resized()
     {
         bar.removeFromLeft (8);   // extra left edge whitespace (6 from bar.reduced + 8 = ~14px)
         const juce::Font textFont = lnf_.appFont (kLogoTextHeight, juce::Font::plain);   // SAME weight/size paint() uses
-        // Letter-spaced wordmark width (mirrors paint()'s per-character math):
-        // sum of glyph advances + kLogoTracking between characters.
-        float textWF = 0.0f;
-        int nChars = 0;
-        for (int i = 0; kLogoText[i] != '\0'; ++i, ++nChars)
-        {
-            juce::GlyphArrangement gc;
-            gc.addLineOfText (textFont, juce::String::charToString ((juce::juce_wchar) kLogoText[i]), 0.0f, 0.0f);
-            textWF += gc.getBoundingBox (0, gc.getNumGlyphs(), true).getWidth();
-        }
-        textWF += kLogoTracking * (float) juce::jmax (0, nChars - 1);   // (len-1) gaps
-        const int textW = juce::roundToInt (textWF);
+        const int textW = juce::roundToInt (trackedTextWidth (textFont, kLogoText, kLogoTracking));
         // ---- Version/patch separation (user feedback: "more distance between
         //      the version and the patch indicator") ----
         // The version subtitle ("by 805Labs · v<ver>", 10px) is painted inside
@@ -4710,7 +4683,6 @@ void ParvatiEditor::resized()
         // logoArea_ carries the breathing-room slack for the left-aligned
         // preset dropdown that follows it.
         logoArea_ = bar.removeFromLeft (brandW + 18);
-        versionLabel_.setVisible (false);
 
     }
 
@@ -4725,8 +4697,6 @@ void ParvatiEditor::resized()
     // leftover affords, clamped to a 60pt floor so it stays functional)
     // instead of the fixed 156pt natural width.
     {
-        patchCaption_.setVisible (false);   // "Patch:" label removed
-        partCaption_.setVisible (false);    // "Part:" label removed (dropdown only)
         const int partComboW = 88;
         const int gapW = 6;
         const int globalW = 64;
@@ -4947,44 +4917,42 @@ void showFileOpFailure (const juce::String& title, const juce::String& path)
 }
 }  // namespace
 
+// Shared tail for the three save pickers (.PRO / .parvati / .MUL). See the
+// header declaration; each dialog below keeps ONLY its saver lambda (and the
+// .MUL fallback branch) — the default name, USER/ dir, default file, save-mode
+// flags, extension forcing and the fileChooser_ teardown live here once.
+void ParvatiEditor::launchSavePicker (const char* titleKey, const char* ext,
+                                      const std::function<void (const juce::File&)>& saver)
+{
+    auto defaultName = processorRef_.getLoadedProgramName();
+    if (defaultName.isEmpty())
+        defaultName = "Parvati";
+    const juce::File defaultDir = processorRef_.getUserPatchDir();
+    defaultDir.createDirectory();   // make sure USER/ exists
+    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ext));
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS (titleKey),
+                                                       defaultFile, juce::String ("*") + ext);
+    const auto flags = juce::FileBrowserComponent::saveMode
+                     | juce::FileBrowserComponent::canSelectFiles
+                     | juce::FileBrowserComponent::warnAboutOverwriting;
+    fileChooser_->launchAsync (flags, [this, ext, saver] (const juce::FileChooser& fc) {
+        if (fc.getResults().size() > 0)
+            saver (fc.getResult().withFileExtension (ext));
+        fileChooser_ = nullptr;
+    });
+}
+
 void ParvatiEditor::openSaveDialog()
 {
     // EXPORT PATH (.PRO — Patch-page button only, 2026-08-20): save the
     // CURRENT part as an Ambika .PRO (byte-faithful; shareable with Ambika
     // hardware; drops vca_curve / filter_card / arp). Desktop-gated by the
     // PatchPage wiring. Defaults to the user's preset area.
-    auto defaultName = processorRef_.getLoadedProgramName();
-    if (defaultName.isEmpty())
-        defaultName = "Parvati";
-    const juce::File defaultDir = processorRef_.getUserPatchDir();
-    defaultDir.createDirectory();   // make sure USER/ exists
-    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".PRO"));
-    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Ambika Patch (.PRO)"),
-                                                       defaultFile, "*.PRO");
-    const auto flags = juce::FileBrowserComponent::saveMode
-                     | juce::FileBrowserComponent::canSelectFiles
-                     | juce::FileBrowserComponent::warnAboutOverwriting;
-    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
-        if (fc.getResults().size() > 0)
-        {
-            const auto f = fc.getResult().withFileExtension (".PRO");
-            if (processorRef_.saveProgramFile (f))
-            {
-#if JUCE_IOS
-                mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
-#endif
-                if (presetBrowser_ != nullptr)
-                {
-                    presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
-                    presetBrowser_->invalidate();   // W10: a save changed the preset tree -> rescan at the next open
-                }
-            }
-            else
-            {
-                showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
-            }
-        }
-        fileChooser_ = nullptr;
+    launchSavePicker ("Save Ambika Patch (.PRO)", ".PRO", [this] (const juce::File& f) {
+        if (processorRef_.saveProgramFile (f))
+            afterMultiSaved (f);
+        else
+            showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
     });
 }
 
@@ -4993,38 +4961,11 @@ void ParvatiEditor::openSaveParvatiDialog()
     // Save a full-fidelity Parvati-native patch (.parvati, YAML) that carries
     // EVERYTHING — including vca_curve / filter_card / arp, which the Ambika
     // .PRO byte format drops. Defaults to the user's preset area.
-    auto defaultName = processorRef_.getLoadedProgramName();
-    if (defaultName.isEmpty())
-        defaultName = "Parvati";
-    const juce::File defaultDir = processorRef_.getUserPatchDir();
-    defaultDir.createDirectory();
-    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".parvati"));
-    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Parvati Patch (.parvati)"),
-                                                       defaultFile, "*.parvati");
-    const auto flags = juce::FileBrowserComponent::saveMode
-                     | juce::FileBrowserComponent::canSelectFiles
-                     | juce::FileBrowserComponent::warnAboutOverwriting;
-    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
-        if (fc.getResults().size() > 0)
-        {
-            const auto f = fc.getResult().withFileExtension (".parvati");
-            if (processorRef_.saveParvatiPatchFile (f))
-            {
-#if JUCE_IOS
-                mirrorUserSaveToDocumentsIOS (f);   // Files-app export (see helper)
-#endif
-                if (presetBrowser_ != nullptr)
-                {
-                    presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
-                    presetBrowser_->invalidate();   // W10: a save changed the preset tree -> rescan at the next open
-                }
-            }
-            else
-            {
-                showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
-            }
-        }
-        fileChooser_ = nullptr;
+    launchSavePicker ("Save Parvati Patch (.parvati)", ".parvati", [this] (const juce::File& f) {
+        if (processorRef_.saveParvatiPatchFile (f))
+            afterMultiSaved (f);
+        else
+            showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
     });
 }
 
@@ -5035,24 +4976,7 @@ void ParvatiEditor::openSaveMultiDialog()
     // its voicecards (the voice-slot extension), the .MUL cannot express the
     // setup faithfully -> the export-fallback dialog picks a strategy for
     // mapping the voices onto the 6 hardware cards (MulExport solver).
-    auto defaultName = processorRef_.getLoadedProgramName();
-    if (defaultName.isEmpty())
-        defaultName = "Parvati";
-    const juce::File defaultDir = processorRef_.getUserPatchDir();
-    defaultDir.createDirectory();
-    const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".MUL"));
-    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Ambika Multi (.MUL)"),
-                                                       defaultFile, "*.MUL");
-    const auto flags = juce::FileBrowserComponent::saveMode
-                     | juce::FileBrowserComponent::canSelectFiles
-                     | juce::FileBrowserComponent::warnAboutOverwriting;
-    fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
-        if (fc.getResults().size() == 0)
-        {
-            fileChooser_ = nullptr;
-            return;
-        }
-        const auto f = fc.getResult().withFileExtension (".MUL");
+    launchSavePicker ("Save Ambika Multi (.MUL)", ".MUL", [this] (const juce::File& f) {
         const auto setup = processorRef_.getMulExportSetup();
         if (! parvati::mul_export::needsFallback (setup))
         {
@@ -5060,7 +4984,6 @@ void ParvatiEditor::openSaveMultiDialog()
                 afterMultiSaved (f);
             else
                 showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
-            fileChooser_ = nullptr;
             return;
         }
         // Needs a strategy: show the fallback dialog (with the part names for
@@ -5081,7 +5004,6 @@ void ParvatiEditor::openSaveMultiDialog()
             else if (strategy >= 0)
                 showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
         });
-        fileChooser_ = nullptr;
     });
 }
 
@@ -5096,6 +5018,16 @@ void ParvatiEditor::afterMultiSaved (const juce::File& f)
         presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
         presetBrowser_->invalidate();   // W10: a save changed the preset tree -> rescan at the next open
     }
+}
+
+int ParvatiEditor::currentPartMidiChannel()
+{
+    // Omni (0) -> 1: the editor's virtual keyboard, wheels and pressure
+    // callbacks inject on a concrete channel, and channel 1 always reaches
+    // the Part (every MIDI consumer folds Omni the same way).
+    int ch = processorRef_.getEngine().getPartChannel (processorRef_.getEngine().getCurrentPart());
+    if (ch == 0) ch = 1;
+    return ch;
 }
 void ParvatiEditor::applyPatchFile (const juce::File& f)
 {

@@ -126,13 +126,6 @@ public:
     // the bar itself stays self-contained (no provider = no strips).
     CentralModBar* modBar() const noexcept { return modBar_.get(); }
 
-    // The bar's no-clipping ideal width (CentralModBar::preferredWidth).
-    // Diagnostic only since R3: the bar scrolls horizontally inside its own
-    // Viewport, so the editor's width floor is a fixed 1024pt (tablets) and
-    // the default size no longer tracks this value — it reports the
-    // uncompressed ideal width (e.g. for tests).
-    int barPreferredWidth() const;
-
     /** Show/hide the central mod-pill bar seam. Hiding COLLAPSES the bar row
         (its height goes to the top (synth/fx) row only — the bottom row keeps
         its size; see resized()); it does NOT
