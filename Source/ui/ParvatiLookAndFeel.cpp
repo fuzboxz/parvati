@@ -747,7 +747,7 @@ void ParvatiLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int 
 {
     // FLAT linear slider (the Settings zoom slider + the pitch/mod wheels — both
     // inherit this LookAndFeel). NOTE: the Mod-Matrix depth sliders use their
-    // OWN BipolarSliderLNF (ModMatrixView.cpp), so they are NOT routed here.
+    // OWN BipolarSliderLNF (MatrixViewBase.cpp), so they are NOT routed here.
     //
     // Style: a dark rounded track, an accent FILL, and a flat solid circle
     // handle — no 3D bevel/shadow. Bipolar ranges (e.g. the -1..1 pitch wheel)
@@ -900,7 +900,7 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     // FAMILY COLOUR TAG (mod-matrix SOURCE combo only): a bright 4px vertical
     // strip on the FAR-LEFT edge, clipped to the rounded rect so it follows the
     // corner radius. The strip colour is carried in the "parvatiComboTag"
-    // property (an ARGB int set by ModMatrixRow for the source combo, in that
+    // property (an ARGB int set by MatrixRow for the source combo, in that
     // source's family colour). It tags the family WITHOUT colouring the dark
     // dropdown fill. Combos without the property (dest combo + every other
     // combo in the editor) get no tag.

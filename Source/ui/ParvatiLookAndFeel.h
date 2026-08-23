@@ -164,7 +164,7 @@ public:
 
     // Linear sliders (the Settings zoom slider + the pitch/mod wheels — both
     // inherit this LookAndFeel). NOTE: the Mod-Matrix depth sliders use their
-    // OWN BipolarSliderLNF (ModMatrixView.cpp), so they are NOT styled here.
+    // OWN BipolarSliderLNF (MatrixViewBase.cpp), so they are NOT styled here.
     // Flat vector style: a dark rounded track, an accent FILL from the start
     // (or the centre for bipolar ranges) to the handle, and a flat solid circle
     // handle — no 3D bevel/shadow.

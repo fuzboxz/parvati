@@ -14,99 +14,32 @@
 // engine (true bypass) and keeps the row visible/greyed; it is in-memory only
 // and does NOT round-trip through presets (agreed convention).
 //
-// Each row exposes: a mute/bypass LAMP on the far LEFT (the module-disable
-// widget style — compact bordered dot, accent while the routing is active,
-// grey while muted), the source combo (category-tinted), dest combo, a bipolar
-// depth slider (-100%..+100%, centre zero-detent, double-click = reset to 0),
-// the value readout, and a compact delete X on the far RIGHT (path-drawn
-// IconButton glyph; frees the slot). Modulators are dragged ONLY from the
-// CentralModBar pills — matrix rows are NOT drag sources (user feedback
-// 2026-08-20); dropping a pill on a destination knob still assigns through
-// this view's assignNextFreeSlot. The view is fully self-contained: it owns its
-// 14 rows + Add button + a local bipolar LookAndFeel, and is wired into the
-// editor (replacing the Mod Matrix GroupPager) in a later step.
+// The shared list/row machinery lives in MatrixViewBase (with the FX twin of
+// this view). This header adds only the synth-side specifics: the 14-slot
+// config, the APVTS-attached dest combos, and the test seams.
+//
+// Modulators are dragged ONLY from the CentralModBar pills — matrix rows are
+// NOT drag sources (user feedback 2026-08-20); dropping a pill on a
+// destination knob still assigns through this view's assignNextFreeSlot.
 
 #pragma once
 
-#include <juce_gui_basics/juce_gui_basics.h>   // Component, Viewport, Label, TextButton, Timer
-
-#include <array>
-#include <memory>
+#include "MatrixViewBase.h"
 
 class ParvatiAudioProcessor;
 class ThemeManager;
 
 //==============================================================================
-class ModMatrixView : public juce::Component,
-                      private juce::Timer
+class ModMatrixView : public MatrixViewBase
 {
 public:
     ModMatrixView (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
-    ~ModMatrixView() override;
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-    // Re-resolve theme colours onto every row + the local L&F; call after a
-    // theme switch (and from the editor's applyThemeColors pass).
-    void applyThemeColors();
-
-    // Re-evaluate the active set and rebuild the list layout. Cheap: it early-
-    // outs when nothing changed. Safe to call from the timer / after any
-    // programmatic param write (mute / clear / add / preset load / undo).
-    void refresh();
-
-    // ---- Accessors used by the (file-local) ModRow + the wiring step ----
-    ParvatiAudioProcessor& processor() noexcept { return processor_; }
-    ThemeManager&          themeManager() noexcept { return themeManager_; }
-
-    // Slot state, 0-based (slot 0 == "Mod 1").
-    int  amountForSlot (int slot) const;             // raw int -63..+63 from the APVTS
-    bool isSlotMuted (int slot) const noexcept { return muted_[(size_t) juce::jlimit (0, 13, slot)]; }
-    int  stashedAmount (int slot) const noexcept { return stashedAmount_[(size_t) juce::jlimit (0, 13, slot)]; }
-    bool isSlotActive (int slot) const;              // amount != 0 || muted
-    int  firstFreeSlot() const;                      // 0..13 or -1 if the matrix is full
-
-    // Operations invoked from a row (Mute / Clear / Add). All write through the
-    // APVTS so they stay byte-bridged + undoable, then trigger a refresh.
-    void toggleMute (int slot);
-    void clearSlot (int slot);
-    void addSlot();
-
-    // Programmatic free-slot assignment — the engine behind addSlot() AND the
-    // drag-and-drop drop target. Finds the first free slot (amount==0, !muted),
-    // writes its source/dest/amount through the APVTS (byte-bridged + undoable,
-    // the same path as typing in the combos), then refreshes. @return false if
-    // the 14-slot matrix is full (no free slot).
-    bool assignNextFreeSlot (int sourceEnum, int destEnum, int amount = 32);
-
-    // Selected source's display name for a slot ("Env 1", "LFO 2", ...) — used by
-    // rows for the category tint + accent bar.
-    juce::String sourceNameForSlot (int slot) const;
 
     // Test hook: the category colour the given row's lamp/slider/tint resolve
     // to for its CURRENT source (the same rowCategoryColour mapping the row
     // uses; exposed so tests can pin the lamp == modulator-colour contract
     // without duplicating the mapping).
     juce::Colour rowCategoryColourForTest (int slot) const;
-
-    // Briefly flash every ACTIVE row now routed FROM @p sourceEnum (a
-    // MOD_SRC_* value), reusing the same transient flash the slot-selection
-    // (knob double-click) uses. Called from the CentralModBar when a drag-only
-    // (Perf/Util/Const) source pill is clicked, so the user can see where that
-    // source is routed. A no-op (besides clearing any prior flash) when no row
-    // uses the source. The flash auto-expires via flashTick() on the timer.
-    void flashRowsForSource (int sourceEnum);
-
-    // The ModulationDestination (MOD_DST_*) a slot is now routed to, read
-    // live from its mod{N}_dest APVTS raw value (-1 on error). Used by the hover
-    // highlight so a row's target dest follows live edits of its dest combo.
-    int destForSlot (int slot) const;
-
-    // The ModulationSource (MOD_SRC_*) a slot is now routed FROM, read
-    // live from its mod{N}_source APVTS raw value (-1 on error). Used by the
-    // source-flash (flashRowsForSource) and test introspection.
-    int sourceForSlot (int slot) const;
 
     // APVTS param ID for a 0-based slot: slotParam(3, "_amount") == "mod4_amount".
     static juce::String slotParam (int slot, const char* suffix);
@@ -116,90 +49,21 @@ public:
     // dragged ONLY from the CentralModBar pills; the former per-row drag-grip
     // was removed). Pins the contract; always false by construction now.
     bool canStartDragFromRowForTest() const noexcept { return false; }
-    // The row component for a slot as a generic Component (ModMatrixRow is
-    // file-local), or nullptr. Lets tests reach the row's children (mute lamp /
-    // delete X / combos) without exposing the row type.
+    // The row component for a slot as a generic Component, or nullptr. Lets
+    // tests reach the row's children (mute lamp / delete X / combos) without
+    // exposing the row type.
     juce::Component* rowForSlotForTest (int slot) const;
-
-private:
-    // Per-slot editor-only mute state (NOT persisted; cleared on external amount change).
-    std::array<bool, 14> muted_ {};
-    std::array<int, 14>  stashedAmount_ {};
-
-    void timerCallback() override { refresh(); flashTick(); }
-    // F-ios-perf-3 (iOS hunt 2026-08-19): gate the 30 Hz poll on visibility.
-    // The TabbedComponent UNPARENTS non-current pages (fires this), and an
-    // AUv3 host can keep the extension process alive with the editor closed
-    // — ~10 components x 30 Hz of atomic/APVTS fetches burn battery for
-    // nothing then. The callbacks are change-only (cheap idle tick), so the
-    // gating is about the wakeup cadence, not the tick cost.
-    void visibilityChanged() override;
-    void setAmountForSlot (int slot, int amount);    // writes the APVTS (denormalized -> 0..1)
-    void rebuildLayout();
-    juce::String buildSignature() const;             // compact "active set" fingerprint
-
-    // ---- ModMatrixHighlight bus (hover + double-click-to-row) ----
-    // React to a dest-highlight broadcast: emphasise every row whose current
-    // dest matches @p modDst (-1 clears all).
-    void onHighlightDest (int modDst);
-    // React to a slot-selection broadcast (from double-clicking a knob's ring):
-    // scroll the row into view and flash it briefly. -1 clears the flash.
-    void onSelectSlot (int slotIndex);
-    // Scroll the Viewport so @p slot's row is fully visible.
-    void ensureRowVisible (int slot);
-    // Advance/clear the transient selection flash (driven from timerCallback).
-    void flashTick();
-
-    ParvatiAudioProcessor& processor_;
-    ThemeManager&          themeManager_;
-
-    juce::Viewport viewport_;
-
-    // The scrolled content. This JUCE Viewport has no background-colour API, so
-    // the content paints its own window-background fill (keeps the list void-free).
-    struct ContentPanel : public juce::Component
-    {
-        juce::Colour bg;
-        void paint (juce::Graphics& g) override { g.fillAll (bg); }
-    } content_;
-    juce::Label    headerLabel_;                     // "N of 14 Used"
-    std::unique_ptr<juce::TextButton> addButton_;    // "+ Add Modulation" / "Matrix Full"
-
-    // Local bipolar depth-slider LookAndFeel (owned here; set on every slider).
-    // Declared BEFORE rows_ so it is destroyed AFTER them (the sliders reference
-    // it via setLookAndFeel): member destruction runs in reverse declaration order.
-    class BipolarSliderLNF;
-    std::unique_ptr<BipolarSliderLNF> bipolarLnf_;
-
-    std::array<std::unique_ptr<struct ModMatrixRow>, 14> rows_;
-
-    juce::String lastSignature_;   // skip relayout when the active set is unchanged
-
-    // ModMatrixHighlight bus subscriptions (ids for unsubscribe in the dtor) +
-    // the transient selection-flash state. The flash marks the row a knob's
-    // double-click jumped to; it auto-expires via flashTick() on the timer.
-    // Generalized to a SET of slots so the single-slot knob-double-click jump
-    // (onSelectSlot) AND the multi-row source-flash (flashRowsForSource) share
-    // one timed expiry.
-    int destHighlightSub_ = -1;
-    int slotSelectSub_    = -1;
-    int assignSub_        = -1;   // drag-drop assign handler (unsubscribe in dtor)
-    juce::Array<int> flashSlots_;
-    juce::uint32 flashStartMs_ = 0;
-    static constexpr int kFlashMs = 1200;
 
     // iOS HIG: taller (48pt) rows give 44pt touch targets; the matrix scrolls
     // vertically so taller rows are free (it just shows fewer rows). Exposed
     // public (access-only; no symbol/codegen change) so the HIG sizing-contract
     // test can static_assert it per platform.
-public:
-    static constexpr int kRowHeight = 48;   // unified (was iOS 48 / desktop 34)
+    static constexpr int kRowHeight = MatrixViewBase::kRowHeight;      // 48 (was iOS 48 / desktop 34)
 
     // "+ Add Modulation" / "Matrix Full" row: the 44pt HIG touch minimum.
     // The rows above scroll inside the Viewport, so the extra height is free.
     // Pinned by tests/ipad_hig_sizing_test.cpp.
-    static constexpr int kAddButtonH = 44;
-private:
+    static constexpr int kAddButtonH = MatrixViewBase::kAddButtonH;    // 44
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModMatrixView)
 };
