@@ -1369,39 +1369,8 @@ static int sLastThermalHint = 0;
 
 void ParvatiEditor::timerCallback()
 {
-    // ---- Settings drawer scrollbar determinism (~30 Hz, ~one compare) ----
-    // JUCE's Viewport::updateVisibleArea has an early-return path (content
-    // repositioning) that can leave the auto scrollbar HIDDEN while the
-    // content area stays narrowed for it — and it re-hides the bar on some
-    // view-position changes even after our tracker set it visible. Wheel
-    // scrolling no longer depends on the bar (allowVerticalScrollingWithout
-    // scrollbar), but the affordance must not flicker: re-assert the intended
-    // state every tick while the drawer shows (idempotent; dirt cheap).
-    if (settingsPanelHost_ != nullptr && settingsPanelHost_->isPanelShowing()
-        && settingsScroll_ != nullptr && settingsPanel_ != nullptr
-        && settingsScroll_->isShowing())
-        settingsScroll_->getVerticalScrollBar().setVisible (
-            settingsPanel_->getHeight() > settingsScroll_->getHeight());
-
-    // ---- Tooltip bleed-through fix (~30 Hz) ----
-    // ROOT CAUSE: the editor's TooltipWindow is parented to the editor (so it
-    // inherits the ParvatiLookAndFeel and scales with the editor / DAW), but a
-    // popup menu (a ComboBox drop-down OR a right-click context menu) lives in
-    // its OWN top-level window with a different ComponentPeer. The base
-    // juce::TooltipWindow::timerCallback only processes components that share
-    // ITS peer, so while a popup is open it SKIPS its show/hide logic and
-    // FREEZES the underlying control's tip on screen (the reported bleed).
-    // A popup always enters the modal state (juce::PopupMenu::showMenuAsync ->
-    // MenuWindow::enterModalState), so while any modal component is active we
-    // hide the editor tooltip. (tooltipWindow_'s own timer then does nothing —
-    // it skips its block while a different-peer popup is open — so the hide
-    // sticks until the popup closes.) The context-menu items show their OWN
-    // tooltips via the desktop TooltipWindow created in
-    // ParamControl::showContextMenu; ComboBox drop-down items simply show
-    // nothing. No-op when no popup is open.
-    const bool popupOpen = juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
-    if (popupOpen && tooltipWindow_ != nullptr)
-        tooltipWindow_->hideTip();
+    tickSettingsScrollbar();
+    const bool popupOpen = tickTooltipPopupGuard();
 
     // Part-name labels follow engine state (edits made on the Patch page fire
     // onPartNamesChanged directly; this also catches file loads + DAW restores).
@@ -1427,11 +1396,74 @@ void ParvatiEditor::timerCallback()
     // extra startup copy; nothing further is needed here.
     applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
 
-    // CONSUMER poll re-asserts (every tick, idempotent): the bars' strip polls
-    // start unconditionally now (see updateTelemetryTimer), but re-asserting
-    // costs nothing and covers a provider/rate arriving after construction;
-    // the display polls re-evaluate their own visibility gates (their per-tick
-    // work is change-gated, so a started-but-hidden display is cheap).
+    tickTelemetryReasserts();
+    tickMouseActivity();
+    tickThermalHint();
+    tickHostTempoHint();
+
+    // Single drain of the tap-to-assign transient status this tick (it has a
+    // frame budget — calling it twice would double-drain). The result feeds
+    // BOTH the tooltip priority below and the adaptive-rate activity signal.
+    const juce::String transientStatus = drainTransientStatus();
+
+    const int activeVoices = tickStatusStrip (transientStatus, popupOpen);
+
+    // NOTE: the Patch page shows ALL 6 parts (it is not part-relative), so there
+    // is nothing to re-sync on a part switch here. External state changes (a
+    // .MUL load) are covered by the forced refresh in applyPatchFile.
+
+    tickKeyboardLatching();
+    tickAdaptiveRate (activeVoices, popupOpen, transientStatus);
+}
+
+// ---- Settings drawer scrollbar determinism (~30 Hz, ~one compare) ----
+// JUCE's Viewport::updateVisibleArea has an early-return path (content
+// repositioning) that can leave the auto scrollbar HIDDEN while the
+// content area stays narrowed for it — and it re-hides the bar on some
+// view-position changes even after our tracker set it visible. Wheel
+// scrolling no longer depends on the bar (allowVerticalScrollingWithout
+// scrollbar), but the affordance must not flicker: re-assert the intended
+// state every tick while the drawer shows (idempotent; dirt cheap).
+void ParvatiEditor::tickSettingsScrollbar()
+{
+    if (settingsPanelHost_ != nullptr && settingsPanelHost_->isPanelShowing()
+        && settingsScroll_ != nullptr && settingsPanel_ != nullptr
+        && settingsScroll_->isShowing())
+        settingsScroll_->getVerticalScrollBar().setVisible (
+            settingsPanel_->getHeight() > settingsScroll_->getHeight());
+}
+
+// ---- Tooltip bleed-through fix (~30 Hz) ----
+// ROOT CAUSE: the editor's TooltipWindow is parented to the editor (so it
+// inherits the ParvatiLookAndFeel and scales with the editor / DAW), but a
+// popup menu (a ComboBox drop-down OR a right-click context menu) lives in
+// its OWN top-level window with a different ComponentPeer. The base
+// juce::TooltipWindow::timerCallback only processes components that share
+// ITS peer, so while a popup is open it SKIPS its show/hide logic and
+// FREEZES the underlying control's tip on screen (the reported bleed).
+// A popup always enters the modal state (juce::PopupMenu::showMenuAsync ->
+// MenuWindow::enterModalState), so while any modal component is active we
+// hide the editor tooltip. (tooltipWindow_'s own timer then does nothing —
+// it skips its block while a different-peer popup is open — so the hide
+// sticks until the popup closes.) The context-menu items show their OWN
+// tooltips via the desktop TooltipWindow created in
+// ParamControl::showContextMenu; ComboBox drop-down items simply show
+// nothing. No-op when no popup is open.
+bool ParvatiEditor::tickTooltipPopupGuard()
+{
+    const bool popupOpen = juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
+    if (popupOpen && tooltipWindow_ != nullptr)
+        tooltipWindow_->hideTip();
+    return popupOpen;
+}
+
+// CONSUMER poll re-asserts (every tick, idempotent): the bars' strip polls
+// start unconditionally now (see updateTelemetryTimer), but re-asserting
+// costs nothing and covers a provider/rate arriving after construction;
+// the display polls re-evaluate their own visibility gates (their per-tick
+// work is change-gated, so a started-but-hidden display is cheap).
+void ParvatiEditor::tickTelemetryReasserts()
+{
     if (synthWorkspace_ != nullptr)
         if (auto* b = synthWorkspace_->modBar())
             b->reassertTelemetryTimer();
@@ -1444,17 +1476,26 @@ void ParvatiEditor::timerCallback()
         d->reassertPollTimer();
     if (liveFilterDisplay_ != nullptr)
         liveFilterDisplay_->reassertPollTimer();
+}
 
-    // Mouse-activity tracking for the adaptive poll rate (see the END of this
-    // callback): getMouseXYRelative() is the peer-cached position (cheap), so a
-    // delta vs the last tick means the mouse moved. A mouse parked OUTSIDE the
-    // window also reports a constant position — no false activity.
+// Mouse-activity tracking for the adaptive poll rate (see
+// tickAdaptiveRate): getMouseXYRelative() is the peer-cached position
+// (cheap), so a delta vs the last tick means the mouse moved. A mouse
+// parked OUTSIDE the window also reports a constant position — no false
+// activity.
+void ParvatiEditor::tickMouseActivity()
+{
     if (const auto mousePos = getMouseXYRelative(); mousePos != lastMousePos_)
     {
         lastMousePos_ = mousePos;
         lastMouseActivity_ = juce::Time::getCurrentTime();
     }
+}
 
+// Empty on non-iOS builds: the processor hint sampler and the state
+// behind sLastThermalHint compile only for iOS.
+void ParvatiEditor::tickThermalHint()
+{
 #if JUCE_IOS
     // ---- Thermal-hint surfacing (F-ios-perf-2, 2026-08-19 follow-up) ----
     // One RELAXED atomic read per 30 Hz tick (the processor's iOS-only ~1 Hz
@@ -1487,39 +1528,49 @@ void ParvatiEditor::timerCallback()
         sLastThermalHint = thermalNow;
     }
 #endif
+}
 
-    // ---- No-host-tempo hint (2026-08-19 AUv3 wave) ----
-    // The processor publishes whether the last block resolved the arp clock
-    // from a HOST tempo or the MANUAL fallback (Settings > Arp Clock — hosts
-    // that expose no musical context, e.g. GarageBand-class AUv3 hosts and
-    // the Standalone app, would otherwise silently run the arp at a fixed
-    // tempo). Fires ONCE per Host->Manual transition; process-static for the
-    // same reason as sLastThermalHint (an AUv3 process hosts several
-    // editors/instances — per-editor state would multiply identical posts).
-    // NOT iOS-gated: the desktop Standalone benefits identically. The
-    // optimistic `true` default means a DAW session (tempo present in every
-    // block) never sees it — the flip only fires once a block has ACTUALLY
-    // rendered without a host tempo.
+// ---- No-host-tempo hint (2026-08-19 AUv3 wave) ----
+// The processor publishes whether the last block resolved the arp clock
+// from a HOST tempo or the MANUAL fallback (Settings > Arp Clock — hosts
+// that expose no musical context, e.g. GarageBand-class AUv3 hosts and
+// the Standalone app, would otherwise silently run the arp at a fixed
+// tempo). Fires ONCE per Host->Manual transition; process-static for the
+// same reason as sLastThermalHint (an AUv3 process hosts several
+// editors/instances — per-editor state would multiply identical posts).
+// NOT iOS-gated: the desktop Standalone benefits identically. The
+// optimistic `true` default means a DAW session (tempo present in every
+// block) never sees it — the flip only fires once a block has ACTUALLY
+// rendered without a host tempo.
+void ParvatiEditor::tickHostTempoHint()
+{
+    static bool sLastHostTempoPresent = true;
+    const bool hostNow = processorRef_.isHostTempoPresent();
+    if (hostNow != sLastHostTempoPresent)
     {
-        static bool sLastHostTempoPresent = true;
-        const bool hostNow = processorRef_.isHostTempoPresent();
-        if (hostNow != sLastHostTempoPresent)
-        {
-            if (! hostNow)
-                ParamControl::postTransientStatus (
-                    TRANS ("No host tempo - arp clock: manual BPM (Settings)"), 150);   // ~5 s @ 30 Hz
-            sLastHostTempoPresent = hostNow;
-        }
+        if (! hostNow)
+            ParamControl::postTransientStatus (
+                TRANS ("No host tempo - arp clock: manual BPM (Settings)"), 150);   // ~5 s @ 30 Hz
+        sLastHostTempoPresent = hostNow;
     }
+}
 
-    // Single drain of the tap-to-assign transient status this tick (it has a
-    // frame budget — calling it twice would double-drain). The result feeds
-    // BOTH the tooltip priority below and the adaptive-rate activity signal.
-    const juce::String transientStatus = ParamControl::tickTransientStatus();
+// Single per-tick drain of the tap-to-assign transient status. The
+// dispatcher calls it exactly once; a second call would double-drain
+// the frame budget.
+juce::String ParvatiEditor::drainTransientStatus()
+{
+    return ParamControl::tickTransientStatus();
+}
 
+// Bottom status strip: current-part voice count, audio-load readout,
+// tooltip bar (hover help, transient priority, keyboard idle readout)
+// and the undo/redo button mirror. Returns the active-voice count for
+// tickAdaptiveRate.
+int ParvatiEditor::tickStatusStrip (const juce::String& transientStatus, bool popupOpen)
+{
     // Voice count for the status strip AND the adaptive-rate activity signal.
     int activeVoices = 0;
-
     // Mirror the UndoManager's undo/redo availability onto the top-bar buttons
     // (~30 Hz, same cadence as the Patch-page refresh below). Cheap O(1)
     // canUndo/canRedo checks; setEnabled() is a no-op when unchanged.
@@ -1637,14 +1688,14 @@ void ParvatiEditor::timerCallback()
         if (statusTooltipLabel_.getText() != tip)
             statusTooltipLabel_.setText (tip, juce::dontSendNotification);
     }
+    return activeVoices;
+}
 
-    // NOTE: the Patch page shows ALL 6 parts (it is not part-relative), so there
-    // is nothing to re-sync on a part switch here. External state changes (a
-    // .MUL load) are covered by the forced refresh in applyPatchFile.
-
-    // ---- Keyboard latching: mirror sounding notes across all voices ----
-    // (No early returns below: the adaptive-rate decision at the END of this
-    // callback must run every tick.)
+// ---- Keyboard latching: mirror sounding notes across all voices ----
+// The count stays GLOBAL across all parts. tickAdaptiveRate runs after
+// this stage every tick, so this method performs no early exit.
+void ParvatiEditor::tickKeyboardLatching()
+{
     if (keyboardView_ != nullptr)
     {
     const int curPart = processorRef_.getEngine().getCurrentPart();
@@ -1696,19 +1747,23 @@ void ParvatiEditor::timerCallback()
     }
     }   // else: same-part latch mirror
     }   // keyboardView_ != nullptr
+}
 
-    // ---- Adaptive poll rate: 30 Hz while anything is happening, 4 Hz idle ----
-    // The timer drives the status strip, the tooltip hover walk, the undo/redo
-    // mirror and the keyboard latching. At true idle — no sounding voices, no
-    // transient status draining, no modal popup, no latched keyboard lamps and
-    // the mouse parked for >3 s — none of those displays can change, so the
-    // poll drops to 4 Hz and the idle repaint/CPU churn collapses. Any
-    // activity flips back to 30 Hz on the next tick (<=250 ms later at worst):
-    // tooltips only matter while the mouse moves (a moving mouse keeps the
-    // 30 Hz rate, well inside the hover delay), voice lamps update while voices
-    // sound, and a transient status drains at full rate while visible. The rate
-    // is recomputed at the END of the callback so this tick's own work (voice
-    // counts, latch state, drained status) already feeds the decision.
+// ---- Adaptive poll rate: 30 Hz while anything is happening, 4 Hz idle ----
+// The timer drives the status strip, the tooltip hover walk, the undo/redo
+// mirror and the keyboard latching. At true idle — no sounding voices, no
+// transient status draining, no modal popup, no latched keyboard lamps and
+// the mouse parked for >3 s — none of those displays can change, so the
+// poll drops to 4 Hz and the idle repaint/CPU churn collapses. Any
+// activity flips back to 30 Hz on the next tick (<=250 ms later at worst):
+// tooltips only matter while the mouse moves (a moving mouse keeps the
+// 30 Hz rate, well inside the hover delay), voice lamps update while voices
+// sound, and a transient status drains at full rate while visible. The rate
+// is recomputed at the END of the tick so this tick's own work (voice
+// counts, latch state, drained status) already feeds the decision.
+void ParvatiEditor::tickAdaptiveRate (int activeVoices, bool popupOpen,
+                                      const juce::String& transientStatus)
+{
     {
         const bool mouseRecentlyMoved = juce::Time::getCurrentTime() - lastMouseActivity_
                                         < juce::RelativeTime::seconds (3.0);

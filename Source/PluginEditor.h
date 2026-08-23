@@ -259,6 +259,22 @@ private:
     // (a restore rewrites the engine; the next reveal re-reads it).
     void timerCallback() override;
 
+    // timerCallback stage helpers: one duty each, called in order. The rate
+    // decision runs last and reads this tick's results, so no stage returns
+    // early. Cross-stage products travel as parameters: the popup state, the
+    // drained transient status and the active-voice count.
+    void tickSettingsScrollbar();        // re-assert the settings drawer scrollbar
+    bool tickTooltipPopupGuard();        // popup state; hides a frozen tip
+    void tickTelemetryReasserts();       // hub + bar + live display poll re-assert
+    void tickMouseActivity();            // mouse-move tracking for the rate signal
+    void tickThermalHint();              // iOS only: surface thermal transitions
+    void tickHostTempoHint();            // once per host-to-manual tempo transition
+    juce::String drainTransientStatus(); // the single per-tick status drain
+    int tickStatusStrip (const juce::String& transientStatus, bool popupOpen);
+    void tickKeyboardLatching();         // mirror sounding notes onto the keys
+    void tickAdaptiveRate (int activeVoices, bool popupOpen,
+                           const juce::String& transientStatus);
+
     // juce::ChangeListener — re-apply the L&F theme + repaint when the
     // ThemeManager selection moves.
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
