@@ -23,6 +23,53 @@
 // (kNumFxSlots / kNumFxSlotParams / kNumFxMatrixSlots) PartFxState stores.
 #include "dsp/fx/FxTypes.h"
 
+namespace parvati
+{
+// ---- seqlock primitives (SPSC: one writer thread, one reader thread) ----
+// The protocol behind every guarded frame in this header and the engine
+// telemetry. Writer: begin (odd) + release fence, body, release fence + end
+// (even). Reader: bounded 64-attempt acquire copy with a sequence re-check.
+// Dependency-free: <atomic> only.
+
+// Writer begin: turn the sequence odd. The release fence keeps the body's
+// stores below it.
+inline void seqlockBegin (std::atomic<uint32_t>& seq)
+{
+    seq.fetch_add (1, std::memory_order_relaxed);   // begin (odd)
+    std::atomic_thread_fence (std::memory_order_release);
+}
+
+// Writer end: publish the body's stores, then turn the sequence even.
+inline void seqlockEnd (std::atomic<uint32_t>& seq)
+{
+    std::atomic_thread_fence (std::memory_order_release);
+    seq.fetch_add (1, std::memory_order_release);   // end (even, publishes data)
+}
+
+// Reader: copy the guarded frame, bounded 64 attempts. Returns true when the
+// copy is consistent; @p out then holds a stable snapshot. On exhaustion
+// returns false and leaves @p out untouched, so the caller keeps its
+// fallback logic at the call site.
+template <typename T>
+bool seqlockTryRead (const std::atomic<uint32_t>& seq, const T& src, T& out)
+{
+    for (int attempt = 0; attempt < 64; ++attempt)
+    {
+        const uint32_t s1 = seq.load (std::memory_order_acquire);
+        if (s1 & 1u)
+            continue;                                // writer mid-update
+        T copy = src;
+        std::atomic_thread_fence (std::memory_order_acquire);
+        if (seq.load (std::memory_order_acquire) == s1)
+        {
+            out = copy;
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace parvati
+
 // Authentic hardware = 6 voicecards => 6 Parts.
 static constexpr int kNumParts  = 6;
 // Per-part voice-slot ceiling (Parvati extension). The engine owns a fixed
@@ -270,11 +317,9 @@ struct Part
     template <typename Fn>
     void writePendingConfig (Fn&& fn)
     {
-        pendingSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
-        std::atomic_thread_fence (std::memory_order_release);
+        parvati::seqlockBegin (pendingSeq_);
         fn (pendingConfig_);
-        std::atomic_thread_fence (std::memory_order_release);
-        pendingSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes data)
+        parvati::seqlockEnd (pendingSeq_);
     }
     // Audio-thread reader: copy out a consistent snapshot (retry on a concurrent
     // write). Bounded retries (64): an unbounded spin on the audio thread could
@@ -290,24 +335,11 @@ struct Part
     // single-threaded in the only exhaustion path that exists.
     PendingConfig readPendingConfig (bool* exhausted = nullptr) const
     {
-        for (int attempt = 0; attempt < 64; ++attempt)
-        {
-            const uint32_t s1 = pendingSeq_.load (std::memory_order_acquire);
-            if (s1 & 1u)
-            {
-                if (exhausted != nullptr) *exhausted = (attempt == 63);
-                continue;                              // writer in progress
-            }
-            PendingConfig copy = pendingConfig_;
-            std::atomic_thread_fence (std::memory_order_acquire);
-            if (pendingSeq_.load (std::memory_order_acquire) == s1)
-            {
-                if (exhausted != nullptr) *exhausted = false;
-                return copy;
-            }
-            if (exhausted != nullptr) *exhausted = (attempt == 63);
-        }
-        return hasLastGoodConfig_ ? lastGoodConfig_ : PendingConfig{};
+        PendingConfig copy;
+        const bool ok = parvati::seqlockTryRead (pendingSeq_, pendingConfig_, copy);
+        if (exhausted != nullptr)
+            *exhausted = ! ok;
+        return ok ? copy : (hasLastGoodConfig_ ? lastGoodConfig_ : PendingConfig{});
     }
 
     // The audio thread's last SUCCESSFULLY-applied config snapshot (updated at

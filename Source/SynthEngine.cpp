@@ -2611,8 +2611,7 @@ void SynthEngine::uiTelServiceStage (int p)
     if (uiTelWrittenPart_ == p && ! resetReq)
         return;   // already servicing this part and no wipe pending
 
-    uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
-    std::atomic_thread_fence (std::memory_order_release);
+    parvati::seqlockBegin (uiTelSeq_);
     // Fixed-size wipe (the ~4 KB frame is zeroed with stores only; this fires
     // once per reset / part switch, never per block).
     uiTel_ = parvati::ModTelemetrySnapshot {};
@@ -2627,8 +2626,7 @@ void SynthEngine::uiTelServiceStage (int p)
     uiTelIdleSeeded_ = false;
     uiTelLiveSeen_   = false;  // no live append since the wipe: the next idle must NOT seed
     uiTelNoteSeqLast_ = 0;
-    std::atomic_thread_fence (std::memory_order_release);
-    uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+    parvati::seqlockEnd (uiTelSeq_);
     uiTelWrittenPart_ = p;
 }
 
@@ -2646,8 +2644,7 @@ bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
     constexpr int kLen = parvati::ModTelemetrySnapshot::kHistoryLen;
     const int idx = uiTel_.historyHead;   // guarded ring metadata (read pre-lock, re-stamped inside)
 
-    uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
-    std::atomic_thread_fence (std::memory_order_release);
+    parvati::seqlockBegin (uiTelSeq_);
     // effSrcs holds MOD_SRC_LAST(31) bytes; the frame's spare slot carries
     // the NOTE-SEQ preview (kNoteSeqSlot): the tracked part's now-sounding
     // sounding sequencer note (0..127 -> 0..254, 0 = rest/gap) — a melody
@@ -2674,8 +2671,7 @@ bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
     uiTel_.historyHead = (idx + 1 >= kLen) ? 0 : idx + 1;
     if (uiTel_.historyCount < kLen)
         ++uiTel_.historyCount;
-    std::atomic_thread_fence (std::memory_order_release);
-    uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+    parvati::seqlockEnd (uiTelSeq_);
     return true;
 }
 
@@ -2688,8 +2684,7 @@ void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* 
     if (! active && ! uiTelWasActive_)
         return;
 
-    uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
-    std::atomic_thread_fence (std::memory_order_release);
+    parvati::seqlockBegin (uiTelSeq_);
     if (active)
     {
         for (int e = 0; e < 3; ++e)
@@ -2721,8 +2716,7 @@ void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* 
             uiTel_.sources[(size_t) src] = currentSources[(size_t) src];
     }
     uiTel_.voiceActive = active;
-    std::atomic_thread_fence (std::memory_order_release);
-    uiTelSeq_.fetch_add (1, std::memory_order_release);          // end (even, publishes)
+    parvati::seqlockEnd (uiTelSeq_);
     uiTelWasActive_ = active;
 }
 
@@ -2758,16 +2752,10 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
     constexpr int kLen  = parvati::ModTelemetrySnapshot::kHistoryLen;
     constexpr int kSrcs = parvati::ModTelemetrySnapshot::kNumSources;
 
-    for (int attempt = 0; attempt < 64; ++attempt)
+    parvati::ModTelemetrySnapshot copy;
+    if (! parvati::seqlockTryRead (uiTelSeq_, uiTel_, copy))
+        return false;   // retries exhausted (sustained writer churn — poll again)
     {
-        const uint32_t s1 = uiTelSeq_.load (std::memory_order_acquire);
-        if (s1 & 1u)
-            continue;                                       // writer mid-update
-        parvati::ModTelemetrySnapshot copy = uiTel_;         // guarded by the seq check below
-        std::atomic_thread_fence (std::memory_order_acquire);
-        if (uiTelSeq_.load (std::memory_order_acquire) != s1)
-            continue;                                       // torn: retry
-
         // Validity (see the public contract in the header): a stale epoch = a
         // reset landed that the audio thread has not serviced yet; a part
         // mismatch = the tracked part switched and the service has not run.
@@ -2813,7 +2801,6 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
         out.voiceActive   = copy.voiceActive;
         return true;
     }
-    return false;   // retries exhausted (sustained writer churn — poll again)
 }
 // Tail-length cache. Pure math over the staged fxState atomics: max over every
 // part's ENABLED slots of tailSecondsForFx, clamped to [floor, cap]. Called on
