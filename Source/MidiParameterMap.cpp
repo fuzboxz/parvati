@@ -225,18 +225,13 @@ void MidiParameterMap::initialise (const std::vector<PatchParamDescriptor>& desc
             continue;  // part_select / vca_curve / filter_card: no patch byte
 
         int address = -1;
-        if (d.isArp)
+        if ((d.isPart || d.isSequencer || d.isArp) && d.byteOffset >= 0)
         {
-            // Arp params have byteOffset=-1; map explicitly by ID (PartData 7..11).
-            if      (d.paramID == "arp_mode")       address = 119;
-            else if (d.paramID == "arp_direction")  address = 120;
-            else if (d.paramID == "arp_octave")     address = 121;
-            else if (d.paramID == "arp_pattern")    address = 122;
-            else if (d.paramID == "arp_resolution") address = 123;
-        }
-        else if ((d.isPart || d.isSequencer) && d.byteOffset >= 0)
-        {
-            address = 112 + d.byteOffset;   // PartData byte -> firmware address
+            // PartData byte -> firmware address. The arp descriptors carry
+            // their true PartData offset (7..11, from kArpSeqDomains), so the
+            // same 112 + byteOffset rule covers the part editor, the sequencer
+            // and the arp block (119..123).
+            address = 112 + d.byteOffset;
         }
         else if (! d.isPart && ! d.isArp && ! d.isSequencer)
         {

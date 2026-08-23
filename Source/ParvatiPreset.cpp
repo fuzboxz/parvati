@@ -422,19 +422,14 @@ float partRaw (SynthEngine& engine, int partIndex, const PatchParamDescriptor& d
     if (d.isArp)
     {
         const auto pc = part.readPendingConfig();
-        if (d.paramID == "arp_mode")       return static_cast<float> (pc.arpMode);
-        if (d.paramID == "arp_direction")  return static_cast<float> (pc.arpDirection);
-        if (d.paramID == "arp_octave")     return static_cast<float> (pc.arpOctave);
-        if (d.paramID == "arp_pattern")    return static_cast<float> (pc.arpPattern);
-        if (d.paramID == "arp_resolution") return static_cast<float> (pc.arpResolution);
-        return 0.0f;
+        const auto f = arpSeqFieldForID (d.paramID);
+        return f ? static_cast<float> (part.arpSeqPendingValue (pc, *f)) : 0.0f;
     }
     if (d.isSequencer)
     {
         const auto pc = part.readPendingConfig();
-        if (d.paramID == "seq_length_1") return static_cast<float> (pc.seqLength[0]);
-        if (d.paramID == "seq_length_2") return static_cast<float> (pc.seqLength[1]);
-        if (d.paramID == "seq_length_3") return static_cast<float> (pc.seqLength[2]);
+        if (const auto f = arpSeqFieldForID (d.paramID))
+            return static_cast<float> (part.arpSeqPendingValue (pc, *f));
         // Step params: byteOffset is the controller PartData offset; the
         // sequence_data[] region is offset by -16 within PartData. Guard the
         // region exactly like the apply side (~:824 — bug hunt 2026-08-18,
@@ -753,9 +748,10 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
         // writer of those, and pendingConfig_ is the serialize source). This
         // keeps all 6 parts configured even though only one can be "current" in
         // the APVTS at a time, and mirrors loadMultiFile. (arp descriptors carry
-        // byteOffset=-1 -- they are controller-side with no Patch byte -- so they
-        // are dispatched by paramID; seq descriptors carry the real PartData
-        // offset.)
+        // their true controller PartData offset from kArpSeqDomains -- they are
+        // controller-side with no Patch byte -- so they are dispatched by
+        // paramID through kArpSeqParamMap; seq descriptors carry the real
+        // PartData offset.)
         const var pmap = partNode["params"];
         bool stagedArpSeq = false;   // set configDirty_ ONCE after the loop (not per param), so the audio thread only ever services a complete pendingConfig_ snapshot
         bool stagedFx = false;       // set fxDirty_ ONCE after the loop (same reason as stagedArpSeq)
@@ -781,11 +777,8 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                         ? juce::jlimit (0, d->choices->size() - 1, (int) raw)
                         : juce::jlimit (d->minValue, d->maxValue, (int) raw);
                     const uint8_t cv = static_cast<uint8_t> (v);
-                    if (d->paramID == "arp_mode")            part.writePendingConfig ([cv] (auto& c) { c.arpMode = cv; });
-                    else if (d->paramID == "arp_direction")  part.writePendingConfig ([cv] (auto& c) { c.arpDirection = cv; });
-                    else if (d->paramID == "arp_octave")     part.writePendingConfig ([cv] (auto& c) { c.arpOctave = cv; });
-                    else if (d->paramID == "arp_pattern")    part.writePendingConfig ([cv] (auto& c) { c.arpPattern = cv; });
-                    else if (d->paramID == "arp_resolution") part.writePendingConfig ([cv] (auto& c) { c.arpResolution = cv; });
+                    if (const auto f = arpSeqFieldForID (d->paramID))
+                        part.stageArpSeqConfig (*f, cv);
                     stagedArpSeq = true;
                 }
                 else if (d->isSequencer)
@@ -797,9 +790,8 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                         ? juce::jlimit (0, d->choices->size() - 1, (int) raw)
                         : juce::jlimit (d->minValue, d->maxValue, (int) raw);
                     const uint8_t cv = static_cast<uint8_t> (v);
-                    if (d->paramID == "seq_length_1")      part.writePendingConfig ([cv] (auto& c) { c.seqLength[0] = cv; });
-                    else if (d->paramID == "seq_length_2") part.writePendingConfig ([cv] (auto& c) { c.seqLength[1] = cv; });
-                    else if (d->paramID == "seq_length_3") part.writePendingConfig ([cv] (auto& c) { c.seqLength[2] = cv; });
+                    if (const auto f = arpSeqFieldForID (d->paramID))
+                        part.stageArpSeqConfig (*f, cv);
                     else if (d->byteOffset >= 16 && d->byteOffset < 80)
                     { const int off = d->byteOffset - 16; part.writePendingConfig ([off,cv] (auto& c) { c.seqData[(size_t) off] = cv; }); }
                     stagedArpSeq = true;

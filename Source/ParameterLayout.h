@@ -15,8 +15,12 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include "dsp/patch_sanitizer.h"   // ArpSeqField + kArpSeqDomains (byte domains)
 
 // Describes one APVTS parameter and how it maps to a Patch/Part struct byte.
 struct PatchParamDescriptor
@@ -69,3 +73,38 @@ float parvatiPatchByteToValue (const PatchParamDescriptor& descriptor, uint8_t b
 
 // (The arp choice lists are built inline from makeArp*() in the descriptor
 // table below; no public accessors are needed.)
+
+// ---------------------------------------------------------------------------
+// Arp/seq parameter ID -> pending-config field. The ONE source for the
+// paramID dispatch that used to be hand-coded in five places (the preset
+// read and write paths, applyArpParameter/applySequencerParameter,
+// loadPartIntoApvts, the NRPN address map). The PartData offsets and byte
+// bounds come from kArpSeqDomains (patch_sanitizer.h).
+// ---------------------------------------------------------------------------
+struct ArpSeqParamMapEntry
+{
+    const char* paramID;
+    ambika::dsp::ArpSeqField field;
+};
+
+constexpr ArpSeqParamMapEntry kArpSeqParamMap[] = {
+    { "arp_mode",       ambika::dsp::ArpSeqField::ArpMode },
+    { "arp_direction",  ambika::dsp::ArpSeqField::ArpDirection },
+    { "arp_octave",     ambika::dsp::ArpSeqField::ArpOctave },
+    { "arp_pattern",    ambika::dsp::ArpSeqField::ArpPattern },
+    { "arp_resolution", ambika::dsp::ArpSeqField::ArpResolution },
+    { "seq_length_1",   ambika::dsp::ArpSeqField::SeqLength1 },
+    { "seq_length_2",   ambika::dsp::ArpSeqField::SeqLength2 },
+    { "seq_length_3",   ambika::dsp::ArpSeqField::SeqLength3 },
+};
+
+// Look up an arp/seq config field by parameter ID. Returns nullopt when the
+// ID names no config field (for example the seq step parameters, which ride
+// their PartData byteOffset instead).
+constexpr std::optional<ambika::dsp::ArpSeqField> arpSeqFieldForID (std::string_view id)
+{
+    for (const ArpSeqParamMapEntry& e : kArpSeqParamMap)
+        if (id == e.paramID)
+            return e.field;
+    return std::nullopt;
+}

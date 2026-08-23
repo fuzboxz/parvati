@@ -161,10 +161,8 @@ void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
         if (e.index < 0 || static_cast<size_t> (e.index) >= descs.size())
             continue;
         const auto& d = descs[static_cast<size_t> (e.index)];
-        if (d.isArp)
-            owner.applyArpParameter (d, e.value);
-        else if (d.isSequencer)
-            owner.applySequencerParameter (d, e.value);
+        if (d.isArp || d.isSequencer)
+            owner.applyArpSeqParameter (d, e.value);
         else if (d.isFx)
             // FX params deferred from the audio thread (host automation):
             // applyFxParameter allocates (juce::String/substring/std::string
@@ -769,11 +767,11 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
         return;
     }
 
-    // Arpeggiator params route to the controller-side arpeggiator, not the
-    // patch-byte bridge.
-    if (d.isArp)
+    // Arp/seq params route to the controller-side arpeggiator/sequencer,
+    // not the patch-byte bridge (kArpSeqParamMap dispatch inside).
+    if (d.isArp || d.isSequencer)
     {
-        applyArpParameter (d, newValue);
+        applyArpSeqParameter (d, newValue);
         return;
     }
 
@@ -781,13 +779,6 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
     if (d.isOption)
     {
         applyOptionParameter (d, newValue);
-        return;
-    }
-
-    // Step-sequencer params route to the engine Sequencer.
-    if (d.isSequencer)
-    {
-        applySequencerParameter (d, newValue);
         return;
     }
 
@@ -812,10 +803,10 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
 
 void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& d)
 {
-    if (d.isArp)
+    if (d.isArp || d.isSequencer)
     {
         const float raw = apvts.getRawParameterValue (d.paramID)->load();
-        applyArpParameter (d, raw);
+        applyArpSeqParameter (d, raw);
         return;
     }
     if (d.isOption)
@@ -828,12 +819,6 @@ void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& 
     // never during a bulk sync (which would recurse / thrash).
     if (d.paramID == "part_select")
         return;
-    if (d.isSequencer)
-    {
-        const float raw = apvts.getRawParameterValue (d.paramID)->load();
-        applySequencerParameter (d, raw);
-        return;
-    }
     if (d.isFx)
     {
         const float raw = apvts.getRawParameterValue (d.paramID)->load();
@@ -849,23 +834,33 @@ void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& 
         engine_.applyPatchByte (d.byteOffset, byte);
 }
 
-void ParvatiAudioProcessor::applyArpParameter (const PatchParamDescriptor& d, float rawValue)
+void ParvatiAudioProcessor::applyArpSeqParameter (const PatchParamDescriptor& d, float rawValue)
 {
     // Message-thread only: this writes the engine's pendingConfig_ seqlock
-    // (single-writer). Audio-thread-origin arp edits arrive via the deferred
+    // (single-writer). Audio-thread-origin arp/seq edits arrive via the deferred
     // ring instead (see parameterChanged / DeferredParamTimer).
     jassert (juce::MessageManager::existsAndIsCurrentThread());
     const int v = static_cast<int> (rawValue);
-    if (d.paramID == "arp_mode")
-        engine_.setArpMode (static_cast<uint8_t> (v));
-    else if (d.paramID == "arp_direction")
-        engine_.setArpDirection (static_cast<uint8_t> (v));
-    else if (d.paramID == "arp_octave")
-        engine_.setArpOctave (static_cast<uint8_t> (juce::jlimit (1, 4, v)));
-    else if (d.paramID == "arp_pattern")
-        engine_.setArpPattern (static_cast<uint8_t> (v));
-    else if (d.paramID == "arp_resolution")
-        engine_.setArpResolution (static_cast<uint8_t> (v));
+    // Config fields (5 arp + 3 lengths) dispatch through the single
+    // kArpSeqParamMap table; the seq STEP params ride their PartData
+    // byteOffset (the Sequencer's sequence_data[] is offset by -16 within
+    // PartData).
+    if (const auto f = arpSeqFieldForID (d.paramID))
+    {
+        switch (*f)
+        {
+            case ambika::dsp::ArpSeqField::ArpMode:       engine_.setArpMode ((uint8_t) v); break;
+            case ambika::dsp::ArpSeqField::ArpDirection:  engine_.setArpDirection ((uint8_t) v); break;
+            case ambika::dsp::ArpSeqField::ArpOctave:     engine_.setArpOctave ((uint8_t) (juce::jlimit (1, 4, v))); break;
+            case ambika::dsp::ArpSeqField::ArpPattern:    engine_.setArpPattern ((uint8_t) v); break;
+            case ambika::dsp::ArpSeqField::ArpResolution: engine_.setArpResolution ((uint8_t) v); break;
+            case ambika::dsp::ArpSeqField::SeqLength1:    engine_.setSequenceLength (0, (uint8_t) v); break;
+            case ambika::dsp::ArpSeqField::SeqLength2:    engine_.setSequenceLength (1, (uint8_t) v); break;
+            case ambika::dsp::ArpSeqField::SeqLength3:    engine_.setSequenceLength (2, (uint8_t) v); break;
+        }
+        return;
+    }
+    engine_.setSequenceDataByte (d.byteOffset - 16, static_cast<uint8_t> (v));
 }
 
 void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d, float rawValue)
@@ -949,25 +944,6 @@ void ParvatiAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, flo
             engine_.setFxModSlot (m - 1, src, dst, static_cast<int8_t> (amt));
         }
     }
-}
-
-void ParvatiAudioProcessor::applySequencerParameter (const PatchParamDescriptor& d, float rawValue)
-{
-    // Message-thread only: this writes the engine's pendingConfig_ seqlock
-    // (single-writer). Audio-thread-origin sequencer edits arrive via the
-    // deferred ring instead (see parameterChanged / DeferredParamTimer).
-    jassert (juce::MessageManager::existsAndIsCurrentThread());
-    const int v = static_cast<int> (rawValue);
-    if (d.paramID == "seq_length_1")
-        engine_.setSequenceLength (0, static_cast<uint8_t> (v));
-    else if (d.paramID == "seq_length_2")
-        engine_.setSequenceLength (1, static_cast<uint8_t> (v));
-    else if (d.paramID == "seq_length_3")
-        engine_.setSequenceLength (2, static_cast<uint8_t> (v));
-    else
-        // Step params: byteOffset is the controller PartData offset; the
-        // Sequencer's sequence_data[] is offset by -16 within PartData.
-        engine_.setSequenceDataByte (d.byteOffset - 16, static_cast<uint8_t> (v));
 }
 
 void ParvatiAudioProcessor::syncAllParamsToEngine()
@@ -1078,19 +1054,16 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
             // Read the MT-authoritative arp config from pendingConfig_ (seqlock
             // snapshot; the live object lags it until the AT services configDirty_).
             const auto pc = p.readPendingConfig();
-            if (d.paramID == "arp_mode")            value = (float) pc.arpMode;
-            else if (d.paramID == "arp_direction")  value = (float) pc.arpDirection;
-            else if (d.paramID == "arp_octave")     value = (float) pc.arpOctave;
-            else if (d.paramID == "arp_pattern")    value = (float) pc.arpPattern;
-            else if (d.paramID == "arp_resolution") value = (float) pc.arpResolution;
+            if (const auto f = arpSeqFieldForID (d.paramID))
+                value = (float) p.arpSeqPendingValue (pc, *f);
         }
         else if (d.isSequencer)
         {
             const auto pc = p.readPendingConfig();
-            if (d.paramID == "seq_length_1")      value = (float) pc.seqLength[0];
-            else if (d.paramID == "seq_length_2") value = (float) pc.seqLength[1];
-            else if (d.paramID == "seq_length_3") value = (float) pc.seqLength[2];
-            else                                   value = (float) pc.seqData[(size_t) (d.byteOffset - 16)];
+            if (const auto f = arpSeqFieldForID (d.paramID))
+                value = (float) p.arpSeqPendingValue (pc, *f);
+            else
+                value = (float) pc.seqData[(size_t) (d.byteOffset - 16)];
         }
         else if (d.isFx)
         {

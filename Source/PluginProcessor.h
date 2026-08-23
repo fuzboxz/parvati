@@ -428,8 +428,10 @@ private:
     // Apply one parameter's current APVTS value to the engine.
     void applyParameterToEngine (const PatchParamDescriptor& descriptor);
 
-    // Route an arpeggiator parameter to the SynthEngine's arpeggiator.
-    void applyArpParameter (const PatchParamDescriptor& descriptor, float rawValue);
+    // Route an arp/seq config parameter to the SynthEngine (the five arp
+    // fields + the three seq lengths via kArpSeqParamMap; the seq step
+    // params ride their PartData byteOffset). Message-thread only.
+    void applyArpSeqParameter (const PatchParamDescriptor& descriptor, float rawValue);
 
     // (Re)builds the oversampling LATENCY probe for @p osFactor (NOT the
     // persisted uiOversampling_ — the offline auto-max path probes 8x without
@@ -464,9 +466,6 @@ private:
     // Multitimbral: switch the Part being edited. Loads the new Part's stored
     // patch/part/arp/seq into the APVTS (GUI reflects it) + the engine.
     void onPartSelect (int newPart1Based);
-
-    // Route a step-sequencer parameter to the engine Sequencer.
-    void applySequencerParameter (const PatchParamDescriptor& descriptor, float rawValue);
 
     SynthEngine engine_;
     // The APVTS-owned UndoManager. Declared before `apvts` so it is constructed

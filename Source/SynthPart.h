@@ -19,9 +19,13 @@
 #include "Arpeggiator.h"
 #include "NoteStack.h"
 #include "Sequencer.h"
+
 // FxTypes.h is the dependency-free FX shard: it carries the slot counts
 // (kNumFxSlots / kNumFxSlotParams / kNumFxMatrixSlots) PartFxState stores.
 #include "dsp/fx/FxTypes.h"
+// patch_sanitizer.h carries the arp/seq field enum (ArpSeqField) that names
+// the pendingConfig_ members below. Dependency-light: no JUCE module enters.
+#include "dsp/patch_sanitizer.h"
 
 namespace parvati
 {
@@ -340,6 +344,45 @@ struct Part
         if (exhausted != nullptr)
             *exhausted = ! ok;
         return ok ? copy : (hasLastGoodConfig_ ? lastGoodConfig_ : PendingConfig{});
+    }
+
+    // ---- Arp/seq config field access over a pendingConfig_ snapshot ----
+    // Single source for the paramID chains that used to hand-code this
+    // mapping in five places (see kArpSeqParamMap in ParameterLayout.h). The
+    // field enum and its byte domains live in patch_sanitizer.h.
+    static uint8_t arpSeqPendingValue (const PendingConfig& pc, ambika::dsp::ArpSeqField f)
+    {
+        switch (f)
+        {
+            case ambika::dsp::ArpSeqField::ArpMode:       return pc.arpMode;
+            case ambika::dsp::ArpSeqField::ArpDirection:  return pc.arpDirection;
+            case ambika::dsp::ArpSeqField::ArpOctave:     return pc.arpOctave;
+            case ambika::dsp::ArpSeqField::ArpPattern:    return pc.arpPattern;
+            case ambika::dsp::ArpSeqField::ArpResolution: return pc.arpResolution;
+            case ambika::dsp::ArpSeqField::SeqLength1:    return pc.seqLength[0];
+            case ambika::dsp::ArpSeqField::SeqLength2:    return pc.seqLength[1];
+            case ambika::dsp::ArpSeqField::SeqLength3:    return pc.seqLength[2];
+        }
+        return 0;   // unreachable for the enum's real values
+    }
+
+    // Write ONE config field under the pendingConfig_ seqlock (message
+    // thread). The caller sets configDirty_ after its whole frame is staged.
+    void stageArpSeqConfig (ambika::dsp::ArpSeqField f, uint8_t value)
+    {
+        writePendingConfig ([f, value] (PendingConfig& pc) {
+            switch (f)
+            {
+                case ambika::dsp::ArpSeqField::ArpMode:       pc.arpMode       = value; break;
+                case ambika::dsp::ArpSeqField::ArpDirection:  pc.arpDirection  = value; break;
+                case ambika::dsp::ArpSeqField::ArpOctave:     pc.arpOctave     = value; break;
+                case ambika::dsp::ArpSeqField::ArpPattern:    pc.arpPattern    = value; break;
+                case ambika::dsp::ArpSeqField::ArpResolution: pc.arpResolution = value; break;
+                case ambika::dsp::ArpSeqField::SeqLength1:    pc.seqLength[0]  = value; break;
+                case ambika::dsp::ArpSeqField::SeqLength2:    pc.seqLength[1]  = value; break;
+                case ambika::dsp::ArpSeqField::SeqLength3:    pc.seqLength[2]  = value; break;
+            }
+        });
     }
 
     // The audio thread's last SUCCESSFULLY-applied config snapshot (updated at

@@ -437,13 +437,18 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             static const auto kArpPatterns    = makeArpPatterns();
             static const auto kArpResolutions = makeArpResolutions();
             auto addArp = [&] (std::string id, std::string label,
-                               const juce::StringArray* choices, int defVal,
-                               int mn = 0, int mx = 0)
+                               ambika::dsp::ArpSeqField field, const juce::StringArray* choices,
+                               int defVal, int mn = 0, int mx = 0)
             {
                 PatchParamDescriptor p;
                 p.paramID = std::move (id);
                 p.label   = std::move (label);
-                p.byteOffset = -1;
+                // The true controller PartData offset (7..11), from the single
+                // byte-domain table. Every byteOffset consumer dispatches on
+                // isArp FIRST, so the offset is metadata for the NRPN map
+                // (112 + byteOffset) — the apply/save paths keep their isArp
+                // staging routes.
+                p.byteOffset = ambika::dsp::arpSeqDomain (field).partDataOffset;
                 p.isArp  = true;
                 p.choices = choices;
                 p.minValue = mn;
@@ -451,11 +456,11 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
                 p.defaultValue = defVal;
                 d.push_back (std::move (p));
             };
-            addArp ("arp_mode",       "Arp Mode",       &kArpModes,       0);          // Off
-            addArp ("arp_direction",  "Arp Direction",  &kArpDirections,  0);          // Up
-            addArp ("arp_octave",     "Arp Octave",     nullptr,          1, 1, 4);
-            addArp ("arp_pattern",    "Arp Pattern",    &kArpPatterns,    0);          // 0
-            addArp ("arp_resolution", "Arp Resolution", &kArpResolutions, 10);         // 1/16 (firmware init_part divider=10)
+            addArp ("arp_mode",       "Arp Mode",       ambika::dsp::ArpSeqField::ArpMode,       &kArpModes,       0);          // Off
+            addArp ("arp_direction",  "Arp Direction",  ambika::dsp::ArpSeqField::ArpDirection,  &kArpDirections,  0);          // Up
+            addArp ("arp_octave",     "Arp Octave",     ambika::dsp::ArpSeqField::ArpOctave,     nullptr,          1, 1, 4);
+            addArp ("arp_pattern",    "Arp Pattern",    ambika::dsp::ArpSeqField::ArpPattern,    &kArpPatterns,    0);          // 0
+            addArp ("arp_resolution", "Arp Resolution", ambika::dsp::ArpSeqField::ArpResolution, &kArpResolutions, 10);         // 1/16 (firmware init_part divider=10)
         }
 
         // ---- Synth options (no Patch byte; routed specially) ----
