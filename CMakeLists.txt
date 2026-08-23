@@ -1004,7 +1004,7 @@ endfunction()
 # ------------------------------------------------------------------------------
 # Headless Layer-3a verification (not shipped): instantiate the processor,
 # push a NoteOn, assert non-silent audio. Build with:
-#   cmake --build build --target parvati_headless_test && ./build/parvati_headless_test
+#   cmake --build build_unified --target parvati_headless_test && ./build_unified/parvati_headless_test
 parvati_add_tool(parvati_headless_test tools/headless_test.cpp)
 
 # ------------------------------------------------------------------------------
@@ -1023,6 +1023,8 @@ parvati_add_tool(parvati_state_donor tools/state_donor.cpp)
 # so they can be fed to a UI-redesign agent. Same link set as the other tools (Parvati static lib).
 # Build: cmake --build build_release --target parvati_screen_shots
 # Run:   ./build_release/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+# build_release is a release-workflow dir, not part of a fresh clone.
+# Configure it first: cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
 #
 # CANONICAL regeneration (builds the tool from the LATEST source, then runs it):
 #   cmake --build build_release --target screens
@@ -1048,6 +1050,8 @@ add_custom_target(screens
 # an LLM. Mirrors parvati_screen_shots's link set.
 # Build: cmake --build build_release --target parvati_menu_shots
 # Run:   ./build_release/parvati_menu_shots [outputDir] [scale]   (defaults: ./screens/menus, 2)
+# build_release is a release-workflow dir; configure it first (see the
+# parvati_screen_shots note above for the exact line).
 parvati_add_tool(parvati_menu_shots tools/menu_shots.cpp)
 
 # ------------------------------------------------------------------------------
@@ -1058,7 +1062,7 @@ parvati_add_tool(parvati_menu_shots tools/menu_shots.cpp)
 # cells), exactly 2 top-level page tabs ([SYNTH][FX]; Global is a header-button
 # overlay), the default size is 1280x634, and the editor deletes cleanly
 # (leak-detector validated).
-#   cmake --build build --target parvati_editor_coverage_check && ./build/parvati_editor_coverage_check
+#   cmake --build build_unified --target parvati_editor_coverage_check && ./build_unified/parvati_editor_coverage_check
 parvati_add_tool(parvati_editor_coverage_check tools/editor_coverage_check.cpp)
 
 # ------------------------------------------------------------------------------
@@ -1080,7 +1084,7 @@ endif()
 # Template-bank generator (dev tool, EXCLUDE_FROM_ALL). Produces the 5 stock init
 # templates as full-fidelity .parvati multis into presets/TEMPLATES/, which are
 # then embedded into the plugin binary. Run from the repo root:
-#   cmake --build build --target parvati_gen_templates && ./build/parvati_gen_templates
+#   cmake --build build_unified --target parvati_gen_templates && ./build_unified/parvati_gen_templates
 parvati_add_tool(parvati_gen_templates tools/gen_templates.cpp)
 
 # ------------------------------------------------------------------------------
@@ -1097,6 +1101,9 @@ parvati_add_tool(parvati_gen_templates tools/gen_templates.cpp)
 # and ~/Library/Audio/Plug-Ins is the macOS install root — Linux/Windows
 # install from Parvati_artefacts by hand, and iOS uses `deploy_ios` instead.
 #   cmake --build build_release --target deploy
+# build_release is a release-workflow dir, not part of a fresh clone.
+# Configure it first: cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
+# (tools/release/README.md documents the full release flow.)
 if(APPLE AND NOT PARVATI_IOS)
 set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
 
