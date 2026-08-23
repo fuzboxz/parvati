@@ -29,6 +29,7 @@
 
 #include "AmbikaVoice.h"
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setParam (host-path helper)
 #include "SynthEngine.h"
 
 namespace
@@ -39,12 +40,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-void setParam (ParvatiAudioProcessor& p, const char* id, int value)
-{
-    if (auto* param = p.getApvts().getParameter (id))
-        param->setValueNotifyingHost (param->convertTo0to1 ((float) value));
 }
 
 void renderBlock (ParvatiAudioProcessor& p, int numSamples)

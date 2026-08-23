@@ -17,6 +17,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setInt (host-path helper)
 #include "PluginEditor.h"
 #include "PatchFile.h"              // AmbikaProgram parse (expected .PRO PartData bytes)
 #include "ui/CentralModBar.h"     // [MOD] toggle check (dynamic_cast target)
@@ -1980,13 +1981,7 @@ TEST(editor_test)
         {
             ParvatiAudioProcessor e2eProc;
             e2eProc.prepareToPlay (48000.0, 256);
-            // setParam equivalent (the ui_telemetry_test idiom, file-local).
-            auto setParamE2E = [] (ParvatiAudioProcessor& p, const char* id, int value)
-            {
-                if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p.getApvts().getParameter (id)))
-                    ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-            };
-            setParamE2E (e2eProc, "env1_lfo_rate", 60);   // free-running LFO 1: the strip data moves
+            setInt (e2eProc, "env1_lfo_rate", 60);      // free-running LFO 1: the strip data moves
             e2eProc.syncAllParamsToEngine();
             auto* e2eEd = dynamic_cast<ParvatiEditor*> (e2eProc.createEditor());
             check (e2eEd != nullptr, "[25] e2e: editor created");

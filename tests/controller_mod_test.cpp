@@ -24,6 +24,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setParam (host-path helper)
 
 namespace
 {
@@ -33,19 +34,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-// Set an Int or Choice parameter to an integer value via the canonical host path
-// (setValueNotifyingHost fires APVTS parameterChanged synchronously -> engine).
-void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* p = proc.getApvts().getParameter (id))
-    {
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-        else if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (p))
-            cp->setValueNotifyingHost (cp->convertTo0to1 (static_cast<float> (value)));
-    }
 }
 
 // RMS over a stereo buffer.

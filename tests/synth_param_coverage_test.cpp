@@ -37,6 +37,7 @@
 
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setInt/setChoice (host-path helpers)
 #include "dsp/patch.h"  // MOD_SRC_* / MOD_DST_* / kNumSyncedLfoRates enum constants
 
 namespace
@@ -51,22 +52,7 @@ void check (bool cond, const std::string& msg)
     if (! cond) ++g_failures;
 }
 
-// ---- parameter setting (the canonical host-automation path) ----
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int index)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
-            choice->setValueNotifyingHost (choice->convertTo0to1 (static_cast<float> (index)));
-}
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
-
-// Generic: choice or int by descriptor.
+// ---- parameter setting: choice/int by descriptor, over the shared helpers ----
 void setByDescriptor (ParvatiAudioProcessor& proc, const PatchParamDescriptor& d, int value)
 {
     if (d.choices != nullptr)

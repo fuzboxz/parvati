@@ -40,6 +40,7 @@
 
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setChoice (host-path helper)
 
 namespace
 {
@@ -63,13 +64,6 @@ int valueForText (ParvatiAudioProcessor& proc, const char* id, const char* text)
     if (auto* param = proc.getApvts().getParameter (id))
         return juce::roundToInt (param->convertFrom0to1 (param->getValueForText (text)));
     return -999;
-}
-
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int index)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
-            choice->setValueNotifyingHost (choice->convertTo0to1 (static_cast<float> (index)));
 }
 }  // namespace
 

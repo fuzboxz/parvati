@@ -12,18 +12,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setInt (host-path helper)
 
 static float amountOf (ParvatiAudioProcessor& proc, const char* id)
 {
     if (auto* r = proc.getApvts().getRawParameterValue (id))
         return r->load();
     return -999.0f;
-}
-
-static void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (proc.getApvts().getParameter (id)))
-        ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
 }
 
 // Render ~0.3 s of a sustained note; return the output peak.

@@ -20,6 +20,7 @@
 
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setInt/setChoice (host-path helpers)
 
 namespace
 {
@@ -64,23 +65,6 @@ double renderPeak (ParvatiAudioProcessor& proc, int midi, int blocks)
             }
     }
     return peak;
-}
-
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int index)
-{
-    // The canonical "host changed this parameter" path: setValueNotifyingHost
-    // fires APVTS parameterChanged synchronously, which writes the patch byte
-    // into every voice (no message-thread pumping needed).
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
-            choice->setValueNotifyingHost (choice->convertTo0to1 (static_cast<float> (index)));
-}
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
 }
 
 // Render `blocks` blocks (noteOn on block 0, held) and return the mono mix.

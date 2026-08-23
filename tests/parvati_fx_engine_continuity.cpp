@@ -33,6 +33,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setInt/setChoice (host-path helpers)
 #include "dsp/fx/FxProcessor.h"   // createFxProcessor (direct WSOLA startup regression)
 
 namespace
@@ -42,18 +43,6 @@ void check (bool cond, const char* msg)
 {
     std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg);
     if (! cond) ++g_failures;
-}
-
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
-            ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
-}
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int index)
-{
-    if (auto* param = proc.getApvts().getParameter (id))
-        param->setValueNotifyingHost (param->convertTo0to1 (static_cast<float> (index)));
 }
 
 const char* fxName (int ti)

@@ -26,6 +26,7 @@
 
 #include "ParvatiPreset.h"
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setParam (host-path helper)
 #include "SynthEngine.h"
 #include "TuningTables.h"
 
@@ -93,12 +94,6 @@ void allNotesOff (ParvatiAudioProcessor& p, int note = -1, int channel = 1)
     }
     p.processBlock (buf, midi);
     renderBlocks (p, 12);   // let releases finish so voices free
-}
-
-void setParam (ParvatiAudioProcessor& p, const char* id, int value)
-{
-    if (auto* param = p.getApvts().getParameter (id))
-        param->setValueNotifyingHost (param->convertTo0to1 (static_cast<float> (value)));
 }
 
 // ---------------------------------------------------------------------------

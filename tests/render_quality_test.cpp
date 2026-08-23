@@ -27,6 +27,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setParam (host-path helper)
 #include "dsp/fx/FxTypes.h"
 
 namespace
@@ -62,12 +63,6 @@ double blockPeak (const juce::AudioBuffer<float>& b, int start, int len)
         for (int i = start; i < start + len && i < b.getNumSamples(); ++i)
             peak = std::fmax (peak, std::fabs ((double) b.getSample (ch, i)));
     return peak;
-}
-
-void setParam (ParvatiAudioProcessor& p, const char* id, int value)
-{
-    if (auto* param = p.getApvts().getParameter (id))
-        param->setValueNotifyingHost (param->convertTo0to1 ((float) value));
 }
 
 // The persisted ui_oversampling inside a saved host state (or -1 when absent).

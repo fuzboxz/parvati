@@ -13,32 +13,20 @@
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_events/juce_events.h>
 #include "PluginProcessor.h"
+#include "test_utils.h"              // shared setInt/setChoice (host-path helpers)
 TEST(parvati_phaser_drag_repro)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     const double sr = 44100.0;
     ParvatiAudioProcessor proc;
     proc.prepareToPlay (sr, 256);
-    auto& apvts = proc.getApvts();
-    auto setI = [&] (const char* id, int v)
-    {
-        if (auto* p = apvts.getParameter (id))
-            if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-                ip->setValueNotifyingHost (ip->convertTo0to1 ((float) v));
-    };
-    auto setC = [&] (const char* id, int v)
-    {
-        if (auto* p = apvts.getParameter (id))
-            if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (p))
-                cp->setValueNotifyingHost (cp->convertTo0to1 ((float) v));
-    };
-    setC ("fx1_type", 15);                       // Phaser
-    setI ("fx1_enabled", 1);
-    setI ("fx1_drywet", 127);
-    setI ("osc1_shape", 0);                      // SINE: isolates FX-generated crackle
-    setI ("fx1_param1", 127);                    // Rate    100%
-    setI ("fx1_param2", 127);                    // Depth   100%
-    setI ("fx1_param3", 127);                    // Feedback 100%
+    setChoice (proc, "fx1_type", 15);         // Phaser
+    setInt (proc, "fx1_enabled", 1);
+    setInt (proc, "fx1_drywet", 127);
+    setInt (proc, "osc1_shape", 0);           // SINE: isolates FX-generated crackle
+    setInt (proc, "fx1_param1", 127);         // Rate    100%
+    setInt (proc, "fx1_param2", 127);         // Depth   100%
+    setInt (proc, "fx1_param3", 127);         // Feedback 100%
     const int total = (int) (3.0 * sr);
     std::vector<float> capL ((size_t) total, 0.f);
     int centerVal = 0;
