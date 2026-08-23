@@ -3,6 +3,19 @@
 Parvati is a JUCE port of the Mutable Instruments Ambika polysynth (macOS/iOS).
 Hard rules first; agents skim, so this file stays short on purpose.
 
+## Language policy (hard rule — write ASD-STE100 STE)
+
+- **Write all documentation, code comments, tooltips and agent responses in
+  ASD-STE100 Simplified Technical English.** Use short sentences (maximum
+  20 words), approved words, active voice, present tense. Commit bodies obey
+  the same rule.
+- **Tooltips and `Source/ui/ParamHelp.cpp` entries: one sentence maximum.**
+- Do not use contractions, idioms or metaphors in repo text. Keep technical
+  names as-is (oscillator, cutoff, `largest-remainder`, register names).
+- Do not rewrite license headers or quoted firmware text.
+- The 2026-08-23 pass converted the whole repo. Keep new text at that level
+  (see commit `90388c1` for examples).
+
 ## Test policy (hard rules — the suite is ONE binary)
 
 - **NEVER create per-test `add_executable` targets.** All tests live in the single
