@@ -110,12 +110,13 @@ TEST(seq_stepper_test)
     const auto& desc = lengthDescriptor();
 
     std::vector<std::pair<const char*, const ParvatiTheme&>> themes {
-        { "Carbon",   carbonTheme()   },
-        { "Midnight", midnightTheme() },
-        { "Obsidian", obsidianTheme() },
-        { "Paper",    paperTheme()    },
-        { "Crimson",  crimsonTheme()  },
-        { "Legacy",   legacyTheme()   },
+        { "Carbon",      carbonTheme()      },
+        { "Midnight",    midnightTheme()    },
+        { "Obsidian",    obsidianTheme()    },
+        { "Paper",       paperTheme()       },
+        { "Crimson",     crimsonTheme()     },
+        {"Immutable",   immutableTheme()      },
+        { "Swedish Red", swedishRedTheme()  },
     };
 
     std::printf ("[1] Occlusion fix (the reported bug)\n");

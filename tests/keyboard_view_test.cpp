@@ -360,7 +360,7 @@ TEST(keyboard_view_test)
             naturalsSeen.add (pal.natural.getARGB());
         }
         check (naturalsSeen.size() == static_cast<int> (getBuiltinThemes().size()),
-               "every theme resolves a DISTINCT natural-key colour (6/6)");
+               "every theme resolves a DISTINCT natural-key colour (all themes)");
 
         // (d-part2) a LIVE keyboard re-resolves on theme switch (refresh seam).
         kb.removeFromDesktop();

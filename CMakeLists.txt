@@ -202,6 +202,7 @@ option(PARVATI_ENABLE_UBSAN           "Enable UndefinedBehaviorSanitizer"  OFF)
 option(PARVATI_ENABLE_TSAN            "Enable ThreadSanitizer"             OFF)
 option(PARVATI_WARNINGS_AS_ERRORS     "Treat compiler warnings as errors"  OFF)
 option(PARVATI_TEST_EXAMPLES          "Register the 8 example_* demo tests in parvati_unified_tests (example_failing_test deliberately fails; default run stays green without them)" OFF)
+option(PARVATI_INSTALL_ON_BUILD       "macOS release convenience: install every built plug-in bundle + the Standalone app as a POST-BUILD step of its own format target (same destinations as `deploy`, minus the screen renders). Opt in per build dir — build_release uses it; build_unified / sanitizer trees stay plain." OFF)
 
 # AddressSanitizer and ThreadSanitizer cannot be combined (both hijack the
 # memory allocator). Fail fast at configure time rather than at link/run.
@@ -1085,12 +1086,33 @@ parvati_add_tool(parvati_gen_templates tools/gen_templates.cpp)
 # /Applications. Use this instead of a plain build so the installed
 # plug-ins / app and the screenshots are never stale (a plain
 # `--target Parvati` does NOT rebuild the VST3/AU/CLAP format wrappers).
+# For installation WITHOUT the screen renders, build_release is configured
+# with PARVATI_INSTALL_ON_BUILD=ON (see the post-build block below): every
+# format target installs itself as it relinks.
 # macOS-only (APPLE AND NOT PARVATI_IOS): the AU target only exists on macOS
 # and ~/Library/Audio/Plug-Ins is the macOS install root — Linux/Windows
 # install from Parvati_artefacts by hand, and iOS uses `deploy_ios` instead.
 #   cmake --build build_release --target deploy
 if(APPLE AND NOT PARVATI_IOS)
 set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
+
+# One artefact's install commands, shared by `deploy` and the
+# PARVATI_INSTALL_ON_BUILD post-build steps below so the two paths can never
+# drift: replace any stale copy, move the fresh bundle in, and (RESIGN)
+# ad-hoc re-sign — a plain cp -R invalidates the built bundle's signature
+# (Gatekeeper / codesign -v reject the copy; see the Standalone note below).
+# Sets the command list (COMMAND rm ... COMMAND cp ... [COMMAND codesign ...])
+# in the named parent-scope variable.
+function(parvati_install_commands out_var artefact dest)
+    set(_cmds
+        COMMAND rm -rf "${dest}"
+        COMMAND cp    -R "${artefact}" "${dest}")
+    if("RESIGN" IN_LIST ARGN)
+        list(APPEND _cmds COMMAND codesign --force --sign - "${dest}")
+    endif()
+    set(${out_var} ${_cmds} PARENT_SCOPE)
+endfunction()
+
 # Per-format composition (TARGET-guarded) so `deploy` stays generatable under
 # ANY PARVATI_FORMATS set; with no plugin format targets at all (tests-only
 # configure) no deploy target is created. Command order matches the historical
@@ -1098,18 +1120,22 @@ set(_parvati_plugins_dir "$ENV{HOME}/Library/Audio/Plug-Ins")
 set(_parvati_deploy_depends screens)
 set(_parvati_deploy_commands "")
 if(TARGET Parvati_VST3)
+    parvati_install_commands(_install_cmds
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3"
+        "${_parvati_plugins_dir}/VST3/Parvati.vst3")
     list(APPEND _parvati_deploy_depends Parvati_VST3)
     list(APPEND _parvati_deploy_commands
         COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
-        COMMAND rm -rf "${_parvati_plugins_dir}/VST3/Parvati.vst3"
-        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3" "${_parvati_plugins_dir}/VST3/Parvati.vst3")
+        ${_install_cmds})
 endif()
 if(TARGET Parvati_AU)
+    parvati_install_commands(_install_cmds
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component"
+        "${_parvati_plugins_dir}/Components/Parvati.component")
     list(APPEND _parvati_deploy_depends Parvati_AU)
     list(APPEND _parvati_deploy_commands
         COMMAND ${CMAKE_COMMAND} -E echo "deploy: install AU"
-        COMMAND rm -rf "${_parvati_plugins_dir}/Components/Parvati.component"
-        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component" "${_parvati_plugins_dir}/Components/Parvati.component")
+        ${_install_cmds})
 endif()
 # The Standalone is BUILT above (Parvati_Standalone dep) and additionally
 # INSTALLED into /Applications — without this the .app the user actually
@@ -1118,16 +1144,20 @@ endif()
 # copy (JUCE's built bundle signature references resources the plain cp
 # invalidates; `codesign -v` complains and Gatekeeper can refuse it).
 if(TARGET Parvati_Standalone)
+    parvati_install_commands(_install_cmds
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app"
+        "/Applications/Parvati.app" RESIGN)
     list(APPEND _parvati_deploy_depends Parvati_Standalone)
     list(APPEND _parvati_deploy_commands
         COMMAND ${CMAKE_COMMAND} -E echo "deploy: install Standalone -> /Applications"
-        COMMAND rm -rf "/Applications/Parvati.app"
-        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app" "/Applications/Parvati.app"
-        COMMAND codesign --force --sign - "/Applications/Parvati.app")
+        ${_install_cmds})
 endif()
 # CLAP install steps are composed separately so `deploy` stays generatable
 # when PARVATI_BUILD_CLAP=OFF (Parvati_CLAP then simply does not exist).
 if(PARVATI_BUILD_CLAP)
+    parvati_install_commands(_install_cmds
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap"
+        "${_parvati_plugins_dir}/CLAP/Parvati.clap" RESIGN)
     list(APPEND _parvati_deploy_depends Parvati_CLAP)
     list(APPEND _parvati_deploy_commands
         COMMAND ${CMAKE_COMMAND} -E echo "deploy: install CLAP"
@@ -1135,13 +1165,7 @@ if(PARVATI_BUILD_CLAP)
         # macOS directory — create it so the cp below succeeds on a machine
         # that never had a CLAP plugin installed.
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_parvati_plugins_dir}/CLAP"
-        COMMAND rm -rf "${_parvati_plugins_dir}/CLAP/Parvati.clap"
-        COMMAND cp    -R "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap" "${_parvati_plugins_dir}/CLAP/Parvati.clap"
-        # Re-sign after the plain cp: the built bundle's signature references
-        # its original path/resources, which the copy invalidates (the same
-        # hazard the VST3 moduleinfo seal and the Standalone re-sign below
-        # guard against — W7).
-        COMMAND codesign --force --sign - "${_parvati_plugins_dir}/CLAP/Parvati.clap")
+        ${_install_cmds})
 endif()
 if(_parvati_deploy_commands)
     add_custom_target(deploy
@@ -1151,6 +1175,54 @@ if(_parvati_deploy_commands)
         COMMENT "Build all formats + render screens + install VST3/AU/CLAP + Standalone"
         VERBATIM
     )
+endif()
+
+# ------------------------------------------------------------------------------
+# PARVATI_INSTALL_ON_BUILD — installation as PART OF the release build: each
+# format target installs its own artefact via a POST-BUILD step the moment it
+# relinks, so a plain `cmake --build build_release` (any target set) leaves
+# the plug-ins in ~/Library/Audio/Plug-Ins and the app in /Applications
+# up to date — no separate `deploy` invocation. Same destinations + re-sign
+# rules as `deploy` (shared command composition above); `deploy` remains the
+# one-shot that ALSO re-renders ./screens. Off by default; macOS desktop only.
+if(PARVATI_INSTALL_ON_BUILD)
+    if(TARGET Parvati_VST3)
+        parvati_install_commands(_install_cmds
+            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3"
+            "${_parvati_plugins_dir}/VST3/Parvati.vst3")
+        add_custom_command(TARGET Parvati_VST3 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "install: VST3 -> ${_parvati_plugins_dir}/VST3"
+            ${_install_cmds}
+            VERBATIM)
+    endif()
+    if(TARGET Parvati_AU)
+        parvati_install_commands(_install_cmds
+            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component"
+            "${_parvati_plugins_dir}/Components/Parvati.component")
+        add_custom_command(TARGET Parvati_AU POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "install: AU -> ${_parvati_plugins_dir}/Components"
+            ${_install_cmds}
+            VERBATIM)
+    endif()
+    if(TARGET Parvati_Standalone)
+        parvati_install_commands(_install_cmds
+            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app"
+            "/Applications/Parvati.app" RESIGN)
+        add_custom_command(TARGET Parvati_Standalone POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "install: Standalone -> /Applications"
+            ${_install_cmds}
+            VERBATIM)
+    endif()
+    if(PARVATI_BUILD_CLAP AND TARGET Parvati_CLAP)
+        parvati_install_commands(_install_cmds
+            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap"
+            "${_parvati_plugins_dir}/CLAP/Parvati.clap" RESIGN)
+        add_custom_command(TARGET Parvati_CLAP POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "install: CLAP -> ${_parvati_plugins_dir}/CLAP"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_parvati_plugins_dir}/CLAP"
+            ${_install_cmds}
+            VERBATIM)
+    endif()
 endif()
 endif()
 

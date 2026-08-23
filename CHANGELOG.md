@@ -5,6 +5,40 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Theme rename: Legacy is now Immutable (2026-08-23).** The light
+  gray/magenta reference-adoption theme was renamed (pre-release rename —
+  no compatibility alias; a state persisting the old name simply falls back
+  to Carbon). Palette unchanged — name + factory identifier
+  (legacyTheme -> immutableTheme) only.
+- **Installation is now part of the release build (2026-08-23).** New
+  CMake option `PARVATI_INSTALL_ON_BUILD` (default OFF, macOS desktop):
+  when ON, every plugin format target installs its own artefact via a
+  POST-BUILD step — VST3/AU/CLAP into ~/Library/Audio/Plug-Ins and the
+  Standalone into /Applications (ad-hoc re-signed) — so a plain
+  `cmake --build build_release` leaves the app + plug-ins installed and
+  current, with no separate `deploy` run. build_release is reconfigured with
+  `-DPARVATI_INSTALL_ON_BUILD=ON -DPARVATI_FORMATS=Standalone;VST3;AU`
+  (the Standalone/app target is new to that dir). `deploy` keeps its
+  one-shot role (same installs PLUS the ./screens re-render); the install
+  command composition (rm stale copy, cp fresh bundle, re-sign where
+  needed) is now shared by both paths via one `parvati_install_commands()`
+  helper so they cannot drift.
+- **Two new themes: Swedish Red (and a since-removed black/yellow retro
+  experiment) (2026-08-22).** Swedish Red is a
+  retro red-chassis instrument look — the signature red window fill with
+  charcoal module cards, grey control tones and a signal-red brand accent —
+  where every display family (oscillator/filter waveform, envelope, LFO
+  previews) renders in old-school monochrome LCD greens so the previews read
+  as backlit green screens set into the dark cards. (A second theme, UK
+  Sting — matte black with hazard-yellow accents and a yellow/black membrane
+  keybed — was added the same day and removed again on review: it didn't
+  hold up visually.) Both are dark
+  themes, appear in the Settings theme selector, persist by name, and the
+  full theme guard surface was extended: the editor_test positional-init
+  guard now encodes EXACT expected category hues for all 7 themes (no
+  expectSpec exceptions left), and the per-theme contrast/typography tables
+  (ui_typography_test, seq_stepper_test) plus keyboard_view_test cover the
+  new palettes.
 - **Voicecard audio oracle in `firmware_parity_test` (2026-08-22).** The REAL
   firmware voicecard (ambika_reference/voicecard — Voice::ProcessBlock,
   oscillator, resources, audio ring) now compiles into the unified test binary

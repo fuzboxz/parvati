@@ -7,7 +7,7 @@
 //     (containerFill — what drawGroupComponentOutline actually paints under
 //     the title) and the panel background, and a measurable margin BRIGHTER
 //     than the body-secondary tier (>= 2:1 more contrast than textSecondary
-//     offers on the same surfaces, all 6 themes).
+//     offers on the same surfaces, all built-in themes).
 // [2] FONT UNIFICATION at the 14pt app-control height: the combo font, the
 //     popup-menu (dropdown list) font, the text-button font, and the SEQ
 //     length stepper's number are all exactly 14pt (the old popup/stepper
@@ -91,12 +91,13 @@ TEST(ui_typography_test)
     const auto& desc = lengthDescriptor();
 
     std::vector<std::pair<const char*, const ParvatiTheme&>> themes {
-        { "Carbon",   carbonTheme()   },
-        { "Midnight", midnightTheme() },
-        { "Obsidian", obsidianTheme() },
-        { "Paper",    paperTheme()    },
-        { "Crimson",  crimsonTheme()  },
-        { "Legacy",   legacyTheme()   },
+        { "Carbon",      carbonTheme()      },
+        { "Midnight",    midnightTheme()    },
+        { "Obsidian",    obsidianTheme()    },
+        { "Paper",       paperTheme()       },
+        { "Crimson",     crimsonTheme()     },
+        {"Immutable",   immutableTheme()      },
+        { "Swedish Red", swedishRedTheme()  },
     };
 
     // ---- [1] Module-header tier + contrast (the reported dim headers) -------

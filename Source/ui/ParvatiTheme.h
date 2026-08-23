@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ParvatiTheme — a self-contained colour-palette struct plus the 6 built-in
-// themes (Carbon, Midnight, Obsidian, Paper, Crimson, Legacy). The palette is a clean
+// ParvatiTheme — a self-contained colour-palette struct plus the 7 built-in
+// themes (Carbon, Midnight, Obsidian, Paper, Crimson, Immutable, Swedish Red). The palette is a clean
 // 3-layer semantic scheme so every LookAndFeel / paint call reads its colours
 // from a single ParvatiTheme (switching themes is one pointer change):
 //
@@ -61,7 +61,7 @@ struct ParvatiTheme
     // The STRICT family palette: teal=Envelope, magenta=LFO, amber=keyboard/perf,
     // mint=sequencer (Seq+Arp), orange=utility, purple=modifier, indigo=constant.
     // Control arcs/graphs + mod-bar pills + matrix rows tinted by function group:
-    juce::Colour catAudio;            // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (NOT a mod-source family; section headers). Adopts the theme's BRAND ACCENT in every theme — never the family amber, so knob rings/previews follow the accent (Carbon/Legacy: primary; Midnight/Paper: secondary — their primaries collide with the Env teal / amber families; Obsidian/Crimson: primary). The mod-source family hues below are unaffected and stay uniform across themes.
+    juce::Colour catAudio;            // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (NOT a mod-source family; section headers). Adopts the theme's BRAND ACCENT in every theme — never the family amber, so knob rings/previews follow the accent (Carbon/Immutable: primary; Midnight/Paper: secondary — their primaries collide with the Env teal / amber families; Obsidian/Crimson: primary; Swedish Red: the theme's deliberately-defined display hues — see the factory). The mod-source family hues below are unaffected and stay uniform across themes.
     juce::Colour catEnv;              // Envelopes (TEAL)
     juce::Colour catLfo;              // LFOs (MAGENTA)
     juce::Colour catSeq;              // Sequencer (MINT GREEN)
@@ -88,13 +88,14 @@ inline const juce::Colour parvatiFallbackAccent { 0xff5b8db8 };
 
 //==============================================================================
 // Stable builtin list order: Carbon(0), Midnight(1), Obsidian(2), Paper(3),
-// Crimson(4), Legacy(5). Each factory returns a reference to a function-local static, so
+// Crimson(4), Immutable(5), Swedish Red(6). Each factory returns a reference to a
+// function-local static, so
 // the theme objects live for the whole program and are safe to hold pointers to.
 
 // All built-in themes, in the order above. Stable for the program's lifetime.
 const std::vector<ParvatiTheme>& getBuiltinThemes();
 
-// Number of built-in themes (== 6).
+// Number of built-in themes (== 7).
 int kNumBuiltinThemes();
 
 const ParvatiTheme& carbonTheme();     // default = current look (dark / cyan)
@@ -102,4 +103,5 @@ const ParvatiTheme& midnightTheme();   // dark blue / teal
 const ParvatiTheme& obsidianTheme();   // near-black / violet
 const ParvatiTheme& paperTheme();      // light
 const ParvatiTheme& crimsonTheme();    // dark red
-const ParvatiTheme& legacyTheme();     // light gray / magenta (reference adoption)
+const ParvatiTheme& immutableTheme();  // light gray / magenta (reference adoption)
+const ParvatiTheme& swedishRedTheme(); // red chassis / grey-black cards / green LCD displays

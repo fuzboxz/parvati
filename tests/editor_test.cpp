@@ -117,14 +117,14 @@ TEST(editor_test)
     check ((int) viaStruct == 5, msg);
 
     // ---- [4] Theme category tokens (positional-init alignment guard) ----
-    // The 6 factories use POSITIONAL brace init, so a missed/extra/misordered
+    // The 7 factories use POSITIONAL brace init, so a missed/extra/misordered
     // value silently misaligns every later field with no compile error. This
     // guard catches that: every category colour is opaque + pairwise-distinct,
-    // isDark is correct per theme, and the dark themes use the exact spec hues.
+    // isDark is correct per theme, and every theme matches its exact expected hues.
     std::printf ("\n[4] Theme category tokens (positional-init guard)\n");
     {
         const juce::Colour specEnv (0xff2DD4BF),
-            specLfo (0xffE879F9), specSeq (0xff34D399), specArp (0xff34D399);
+            specLfo (0xffE879F9), specSeq (0xff34D399);
         // STRICT family palette everywhere: Env=teal, Lfo=magenta, Seq/Arp=mint
         // (and Perf=amber / Util=orange / Mod=purple / Const=indigo in the
         // factories). catAudio is NOT part of the family amber: every theme
@@ -138,14 +138,31 @@ TEST(editor_test)
 
         const auto opaque = [] (const juce::Colour& c) { return c.getAlpha() == 255; };
 
-        struct ThemeCheck { const char* name; const ParvatiTheme& t; bool expectDark; bool expectSpec; };
+        // Per-theme EXACT expected category hues (full-strength positional guard
+        // for every theme, including the palette-deviating ones): audio, env,
+        // lfo, seq. The dark spec themes share the family hues (teal / magenta /
+        // mint); Paper uses its darker 600-tier variants; Immutable adopts the
+        // reference module's hues wholesale; Swedish Red drives its DISPLAY
+        // families with monochrome LCD greens (the green-screen theme identity).
+        // catArp is always the seq hue (the sequencer family share).
+        struct ThemeCheck
+        {
+            const char* name;
+            const ParvatiTheme& t;
+            bool expectDark;
+            juce::Colour expAudio, expEnv, expLfo, expSeq;
+        };
         const ThemeCheck themes[] = {
-            { "Carbon",   carbonTheme(),   true,  true  },
-            { "Midnight", midnightTheme(), true,  true  },
-            { "Obsidian", obsidianTheme(), true,  true  },
-            { "Paper",    paperTheme(),    false, true  },
-            { "Crimson",  crimsonTheme(),  true,  true  },
-            { "Legacy",   legacyTheme(),   false, true  },
+            { "Carbon",      carbonTheme(),      true,  juce::Colour (0xff38BDF8), specEnv, specLfo, specSeq },
+            { "Midnight",    midnightTheme(),    true,  juce::Colour (0xff5b9bd5), specEnv, specLfo, specSeq },
+            { "Obsidian",    obsidianTheme(),    true,  juce::Colour (0xff8b5cf6), specEnv, specLfo, specSeq },
+            { "Paper",       paperTheme(),       false, juce::Colour (0xff2563eb),
+              juce::Colour (0xff0D9488), juce::Colour (0xffC026D3), juce::Colour (0xff059669) },
+            { "Crimson",     crimsonTheme(),     true,  juce::Colour (0xffe5484d), specEnv, specLfo, specSeq },
+            { "Immutable",   immutableTheme(),   false, juce::Colour (0xffC8216A),
+              juce::Colour (0xff009696), juce::Colour (0xffE5B55C), juce::Colour (0xffA8C69F) },
+            { "Swedish Red", swedishRedTheme(), true,  juce::Colour (0xff9BE24A),
+              juce::Colour (0xff57E05C), juce::Colour (0xff2FD98C), juce::Colour (0xffD6D2C4) },
         };
 
         char buf[160];
@@ -182,40 +199,12 @@ TEST(editor_test)
             std::snprintf (buf, sizeof (buf), "%s: keyWhite is distinct from the black-key colour", tc.name);
             check (tc.t.keyWhite.getARGB() != tc.t.backgroundBase.getARGB(), buf);
 
-            if (tc.expectSpec)
             {
                 // catAudio is the theme's BRAND ACCENT, never the family
-                // amber (see the comment above the themes table) — encode the
-                // expected audio hue PER THEME so the exact-ARGB positional
-                // guard keeps full strength on all 5 tokens. Family hues
-                // (Env/Lfo/Seq/Arp) are shared across the dark themes; the
-                // light themes use their darker 600-tier variants.
-                const juce::Colour expAudio = (std::strcmp (tc.name, "Carbon") == 0)
-                                                ? juce::Colour (0xff38BDF8)
-                                                : (std::strcmp (tc.name, "Midnight") == 0)
-                                                    ? juce::Colour (0xff5b9bd5)
-                                                    : (std::strcmp (tc.name, "Obsidian") == 0)
-                                                        ? juce::Colour (0xff8b5cf6)
-                                                        : (std::strcmp (tc.name, "Paper") == 0)
-                                                            ? juce::Colour (0xff2563eb)
-                                                            : (std::strcmp (tc.name, "Crimson") == 0)
-                                                                ? juce::Colour (0xffe5484d)
-                                                                : juce::Colour (0xffC8216A);   // Legacy magenta
-                const bool paperTheme_  = (std::strcmp (tc.name, "Paper")  == 0);
-                const bool legacyTheme_ = (std::strcmp (tc.name, "Legacy") == 0);
-                // Paper uses darker 600-tier family hues for light-bg contrast;
-                // Legacy adopts the reference module's family hues wholesale.
-                const juce::Colour expEnv = paperTheme_  ? juce::Colour (0xff0D9488)
-                                            : legacyTheme_ ? juce::Colour (0xff009696)
-                                            : specEnv;
-                const juce::Colour expLfo = paperTheme_  ? juce::Colour (0xffC026D3)
-                                            : legacyTheme_ ? juce::Colour (0xffE5B55C)
-                                            : specLfo;
-                const juce::Colour expSeq = paperTheme_  ? juce::Colour (0xff059669)
-                                            : legacyTheme_ ? juce::Colour (0xffA8C69F)
-                                            : specSeq;
-                const juce::Colour expArp = expSeq;   // Seq family share
-                const juce::Colour spec[] = { expAudio, expEnv, expLfo, expSeq, expArp };
+                // amber (see the comment above the themes table) — the expected
+                // hues are encoded PER THEME so the exact-ARGB positional
+                // guard keeps full strength on all 5 tokens.
+                const juce::Colour spec[] = { tc.expAudio, tc.expEnv, tc.expLfo, tc.expSeq, tc.expSeq };
                 bool matchSpec = true;
                 for (size_t i = 0; i < 5; ++i)
                     if (cats[i].getARGB() != spec[i].getARGB()) matchSpec = false;

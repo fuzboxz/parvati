@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ParvatiTheme — the 5 built-in themes. The factories initialise ParvatiTheme
+// ParvatiTheme — the 7 built-in themes. The factories initialise ParvatiTheme
 // POSITIONALLY in field order (see ParvatiTheme.h), so a missed / extra / mis-
 // ordered value silently misaligns every later field with NO compile error.
 // Keep this list and every factory in lockstep with the struct, and keep the
@@ -184,9 +184,9 @@ const ParvatiTheme& crimsonTheme()
     return t;
 }
 
-const ParvatiTheme& legacyTheme()
+const ParvatiTheme& immutableTheme()
 {
-    // Legacy — a flat, matte LIGHT interface adopted from a reference module's
+    // Immutable — a flat, matte LIGHT interface adopted from a reference module's
     // structural colour system (NOT a copy of Parvati's usual category hues).
     // isDark = false. Reference identities and their translation:
     //  - Main background #E8E8E8 -> backgroundBase (matte light gray, no gradients).
@@ -215,7 +215,7 @@ const ParvatiTheme& legacyTheme()
     // Light-theme tonal steps follow paperTheme(): panel darker than the page and
     // an input hover DARKENS (opposite of the dark themes).
     static const ParvatiTheme t {
-        "Legacy",
+        "Immutable",
         // Layer 1 — BASE
         juce::Colour (0xffE8E8E8), juce::Colour (0xffDCDCDC), juce::Colour (0xffD2D2D2),
         juce::Colour (0xffC7C7C7),
@@ -243,6 +243,50 @@ const ParvatiTheme& legacyTheme()
 }
 
 //==============================================================================
+const ParvatiTheme& swedishRedTheme()
+{
+    // Swedish Red — a retro red-chassis instrument: the window fill is the
+    // signature red, the module cards are charcoal (near-black "black panel"
+    // plastic with grey control tones), and every DISPLAY family trace
+    // (osc/filter waveform, envelope, LFO previews) renders in old-school
+    // monochrome LCD greens so those read as backlit green screens set into
+    // the dark cards. The brand accent is a signal red for knob arcs / active
+    // fills; the secondary accent is the cool knob grey (bypass / bipolar).
+    // The modulation palette keeps the greens DISTINCT (audio = phosphor
+    // yellow-green, env = LCD green, lfo = green-cyan — pairwise distinct so
+    // the positional-init guard stays full-strength) while the non-display
+    // families go monochrome neutral greys, with the performance family in
+    // off-white and utility/modifier/constant in stepped knob-greys — a red
+    // machine, grey controls, green screens. Dark theme.
+    static const ParvatiTheme t {
+        "Swedish Red",
+        // Layer 1 — BASE: red chassis, charcoal cards, recessed input + hover
+        juce::Colour (0xffB32328), juce::Colour (0xff26262A), juce::Colour (0xff313135),
+        juce::Colour (0xff3A3A3F),
+        // Layer 2 — INFORMATION: silkscreen off-white values, warm grey labels
+        juce::Colour (0xffF4F1E8), juce::Colour (0xffC3BDB0), juce::Colour (0xff8B877E),
+        juce::Colour (0xff414146),
+        // Layer 3 — ACTION: signal red / cool knob grey
+        juce::Colour (0xffE8443A), juce::Colour (0xffB9BDC4),
+        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
+        // keyWhite (light knob grey naturals), keyBlack (near-black recessed)
+        juce::Colour (0xff45454B), juce::Colour (0xff3A3A40), juce::Colour (0xff26262A),
+        juce::Colour (0xff1E1E22), juce::Colour (0xff313135), juce::Colour (0xffD9DAD6),
+        juce::Colour (0xff1A1A1E),
+        // modulation routing palette — the DISPLAY families (audio/env/lfo)
+        // are the LCD greens so the waveform/env/LFO previews read as green
+        // screens; the rest are neutral greys (seq/arp shared warm grey).
+        juce::Colour (0xff9BE24A), juce::Colour (0xff57E05C), juce::Colour (0xff2FD98C),
+        juce::Colour (0xffD6D2C4), juce::Colour (0xffD6D2C4),
+        // catPerf, catUtil, catMod, catConst: off-white + stepped knob greys
+        juce::Colour (0xffF0EDE2), juce::Colour (0xff9BA0A2), juce::Colour (0xffC0BBAC),
+        juce::Colour (0xff6B7072),
+        true
+    };
+    return t;
+}
+
+//==============================================================================
 const std::vector<ParvatiTheme>& getBuiltinThemes()
 {
     static const std::vector<ParvatiTheme> v {
@@ -251,7 +295,8 @@ const std::vector<ParvatiTheme>& getBuiltinThemes()
         obsidianTheme(),
         paperTheme(),
         crimsonTheme(),
-        legacyTheme()
+        immutableTheme(),
+        swedishRedTheme()
     };
     return v;
 }
