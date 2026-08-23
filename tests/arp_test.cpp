@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include "unified_test_runner.h"
+#include "test_utils.h"   // FakePlayHead
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -46,24 +47,6 @@ void renderIdleBlocks (ParvatiAudioProcessor& p, int blocks)
 }
 
 // A minimal AudioPlayHead that reports a fixed BPM + playing state.
-class FakePlayHead : public juce::AudioPlayHead
-{
-public:
-    FakePlayHead (double bpm, bool playing) : bpm_ (bpm), playing_ (playing) {}
-
-    juce::Optional<PositionInfo> getPosition() const override
-    {
-        PositionInfo info;
-        info.setBpm (bpm_);
-        info.setIsPlaying (playing_);
-        info.setTimeInSamples (static_cast<int64_t> (0));
-        return info;
-    }
-
-private:
-    double bpm_;
-    bool playing_;
-};
 }  // namespace
 
 TEST(arp_test)

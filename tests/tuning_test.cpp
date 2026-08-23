@@ -50,17 +50,6 @@ void prepareProc (ParvatiAudioProcessor& proc)
     proc.prepareToPlay (48000.0, 256);
 }
 
-void renderBlocks (ParvatiAudioProcessor& p, int blocks = 3)
-{
-    juce::AudioBuffer<float> buf (2, 256);
-    juce::MidiBuffer empty;
-    for (int b = 0; b < blocks; ++b)
-    {
-        buf.clear();
-        p.processBlock (buf, empty);
-    }
-}
-
 // Trigger @p note on @p channel for one block, then find the voice it landed
 // on (via the SF-1 displayed-note mirror). Returns nullptr if no active voice.
 AmbikaVoice* playNote (ParvatiAudioProcessor& p, int note, int channel = 1, uint8_t vel = 100)

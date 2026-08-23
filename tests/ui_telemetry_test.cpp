@@ -66,20 +66,6 @@ void check (bool cond, const char* msg)
 constexpr int    kBlock = 512;
 constexpr double kRate  = 48000.0;
 
-// Render @p blocks, optionally injecting one MIDI message into block 0.
-void renderBlocks (ParvatiAudioProcessor& proc, int blocks, const juce::MidiMessage* inject = nullptr)
-{
-    juce::AudioBuffer<float> buf (2, kBlock);
-    for (int b = 0; b < blocks; ++b)
-    {
-        juce::MidiBuffer midi;
-        if (b == 0 && inject != nullptr)
-            midi.addEvent (*inject, 0);
-        buf.clear();
-        proc.processBlock (buf, midi);
-    }
-}
-
 constexpr double kMsPerBlock = 1000.0 * kBlock / kRate;   // 10.67 ms
 int blocksForMs (double ms) { return static_cast<int> (ms / kMsPerBlock) + 1; }
 
@@ -122,7 +108,7 @@ TEST(ui_telemetry_test)
             check (! eng.readUiTelemetry (s2),
                    "[1] invalid until the first render services the tracked part");
         }
-        renderBlocks (proc, 2);                          // part service lands
+        renderBlocks (proc, 2, nullptr, kBlock);                          // part service lands
 
         // ---- ALWAYS-ON CONTRACT (2026-08-21): before any note the history
         // POPULATES WITH ZEROS (the strips start at a zero buffer and always
@@ -130,7 +116,7 @@ TEST(ui_telemetry_test)
         // constants keep their literal values (a constant's state is its
         // value) — the frame is not misindexed.
         parvati::ModTelemetrySnapshot snap;
-        renderBlocks (proc, blocksForMs (300.0));        // idle: zero rows append
+        renderBlocks (proc, blocksForMs (300.0), nullptr, kBlock);        // idle: zero rows append
         readSnap (proc, snap, "[1] frame valid while idle (pre-note)");
         check (snap.historyCount > 0, "[1] history populates BEFORE any note (zero buffer start)");
         {
@@ -146,7 +132,7 @@ TEST(ui_telemetry_test)
         check (! snap.voiceActive, "[1] voiceActive truthful (false) while idle");
 
         const auto on = noteOnMsg();
-        renderBlocks (proc, blocksForMs (500.0), &on);   // ~0.5 s held
+        renderBlocks (proc, blocksForMs (500.0), &on, kBlock);   // ~0.5 s held
         readSnap (proc, snap, "[1] frame valid while held");
         check (snap.voiceActive, "[1] voiceActive true while held");
         {
@@ -155,14 +141,14 @@ TEST(ui_telemetry_test)
             check (snap.historyCount > 20, m);
         }
 
-        renderBlocks (proc, blocksForMs (3600.0));      // well past the ~3.13 s window
+        renderBlocks (proc, blocksForMs (3600.0), nullptr, kBlock);      // well past the ~3.13 s window
         readSnap (proc, snap, "[1] frame valid at full window");
         check (snap.historyCount == kLen, "[1] history saturates at kHistoryLen");
 
         // The NEWEST tail must move between reads ~0.21 s apart (the LFO swept).
         parvati::ModTelemetrySnapshot a, b;
         eng.readUiTelemetry (a);
-        renderBlocks (proc, 20);
+        renderBlocks (proc, 20, nullptr, kBlock);
         eng.readUiTelemetry (b);
         bool tailMoved = false;
         for (int i = b.historyCount - 16; i < b.historyCount; ++i)
@@ -189,8 +175,8 @@ TEST(ui_telemetry_test)
         // ---- [2] rides on the same held note ----
         std::printf ("[2] Falls to zero after release and keeps scrolling\n");
         const auto off = noteOffMsg();
-        renderBlocks (proc, 5, &off);
-        renderBlocks (proc, blocksForMs (3800.0));      // > tail (~0.63 s) + the full-scale idle drag-out (<= 256 appends ~ 3.13 s)
+        renderBlocks (proc, 5, &off, kBlock);
+        renderBlocks (proc, blocksForMs (3800.0), nullptr, kBlock);      // > tail (~0.63 s) + the full-scale idle drag-out (<= 256 appends ~ 3.13 s)
         readSnap (proc, snap, "[2] frame valid after the release tail");
         check (! snap.voiceActive, "[2] voiceActive false after the tail");
         check (snap.historyCount == kLen, "[2] history kept (not cleared)");
@@ -202,7 +188,7 @@ TEST(ui_telemetry_test)
                 if (snap.history[(size_t) kLfo1 * kLen + (size_t) i] != 0) { zeros = false; break; }
             check (zeros, "[2] LFO fell to zero after release (not frozen mid-air)");
         }
-        renderBlocks (proc, blocksForMs (350.0));       // still idle: must KEEP appending
+        renderBlocks (proc, blocksForMs (350.0), nullptr, kBlock);       // still idle: must KEEP appending
         readSnap (proc, snap, "[2] frame valid while idle");
         check (snap.historyCount == kLen, "[2] history keeps appending while idle (saturated)");
         {
@@ -222,7 +208,7 @@ TEST(ui_telemetry_test)
             check (! eng.readUiTelemetry (s2),
                    "[3] read invalid immediately after reset (stale epoch, pre-service)");
         }
-        renderBlocks (proc, 5);                          // AT services the wipe (no note)
+        renderBlocks (proc, 5, nullptr, kBlock);                          // AT services the wipe (no note)
         readSnap (proc, snap, "[3] valid again once the clear is serviced");
         // ALWAYS-ON: the wipe clears, then the idle zero rows immediately
         // begin repopulating (a handful of fresh appends in 5 blocks is the
@@ -238,8 +224,8 @@ TEST(ui_telemetry_test)
         }
         check (! snap.voiceActive, "[3] voiceActive false after the reset");
 
-        renderBlocks (proc, 3, &on);
-        renderBlocks (proc, blocksForMs (400.0));
+        renderBlocks (proc, 3, &on, kBlock);
+        renderBlocks (proc, blocksForMs (400.0), nullptr, kBlock);
         readSnap (proc, snap, "[3] valid after a fresh note");
         check (snap.historyCount > 0, "[3] history repopulates on the next note");
 
@@ -250,14 +236,14 @@ TEST(ui_telemetry_test)
             parvati::ModTelemetrySnapshot s2;
             check (! eng.readUiTelemetry (s2), "[4] invalid until serviced after a part switch");
         }
-        renderBlocks (proc, 2);
+        renderBlocks (proc, 2, nullptr, kBlock);
         readSnap (proc, snap, "[4] valid once the new part is serviced");
         check (snap.part == 1, "[4] frame follows the tracked part");
         // ALWAYS-ON: the new part's window restarts from (near) zero — a
         // couple of fresh zero appends may already have landed.
         check (snap.historyCount < 16, "[4] history (re)starts fresh for the new part");
         eng.setUiTelemetryPart (0);
-        renderBlocks (proc, 2);
+        renderBlocks (proc, 2, nullptr, kBlock);
         readSnap (proc, snap, "[4] valid after switching back");
         check (snap.part == 0, "[4] frame back on part 0");
         check (snap.sources[kConst256] == 255, "[4] constant source still 255 (frame intact)");
@@ -277,19 +263,19 @@ TEST(ui_telemetry_test)
         setParam (proc, "env3_release", 50);
         proc.syncAllParamsToEngine();
         eng.setUiTelemetryPart (0);
-        renderBlocks (proc, 2);                          // part service
+        renderBlocks (proc, 2, nullptr, kBlock);                          // part service
 
         parvati::ModTelemetrySnapshot snap;
         const auto on = noteOnMsg();
         const auto off = noteOffMsg();
 
-        renderBlocks (proc, 3, &on);                     // ~32 ms in: ATTACK
+        renderBlocks (proc, 3, &on, kBlock);                     // ~32 ms in: ATTACK
         readSnap (proc, snap, "[5] valid early in the attack");
         check (snap.voiceActive, "[5] voiceActive during the attack");
         check (snap.envStage[2] == 0, "[5] Env 3 in ATTACK early");
         const float progEarly = snap.envProgress[2];
 
-        renderBlocks (proc, blocksForMs (950.0));        // ~1.0 s < 1.81 s: still ATTACK
+        renderBlocks (proc, blocksForMs (950.0), nullptr, kBlock);        // ~1.0 s < 1.81 s: still ATTACK
         readSnap (proc, snap, "[5] valid mid-attack");
         check (snap.envStage[2] == 0, "[5] Env 3 still ATTACK mid-segment");
         check (snap.envProgress[2] > progEarly, "[5] attack progress grows");
@@ -297,24 +283,24 @@ TEST(ui_telemetry_test)
         // DECAY pin (review follow-up: the walk previously skipped stage 1):
         // past the 1.81 s attack, ~0.15 s into the 0.41 s DECAY — well clear
         // of both neighbouring stages.
-        renderBlocks (proc, blocksForMs (950.0));        // ~1.96 s total: inside DECAY
+        renderBlocks (proc, blocksForMs (950.0), nullptr, kBlock);        // ~1.96 s total: inside DECAY
         readSnap (proc, snap, "[5] valid inside the decay");
         check (snap.envStage[2] == 1, "[5] Env 3 passes through DECAY (stage 1)");
         check (snap.envProgress[2] >= 0.0f && snap.envProgress[2] <= 1.0f,
                "[5] decay progress within 0..1");
 
-        renderBlocks (proc, blocksForMs (1700.0));       // ~3.66 s total: DECAY done
+        renderBlocks (proc, blocksForMs (1700.0), nullptr, kBlock);       // ~3.66 s total: DECAY done
         readSnap (proc, snap, "[5] valid at the plateau");
         check (snap.envStage[2] == 2, "[5] Env 3 reaches SUSTAIN");
         check (snap.envProgress[2] == 1.0f, "[5] SUSTAIN progress pinned at 1.0");
         check (snap.envLevel[2] > 0.7f && snap.envLevel[2] < 0.85f,
                "[5] Env 3 level rests at the sustain target (~200/255)");
 
-        renderBlocks (proc, 10, &off);                   // ~0.11 s: RELEASE (0.41 s)
+        renderBlocks (proc, 10, &off, kBlock);                   // ~0.11 s: RELEASE (0.41 s)
         readSnap (proc, snap, "[5] valid during release");
         check (snap.envStage[2] == 3, "[5] Env 3 enters RELEASE after note-off");
 
-        renderBlocks (proc, blocksForMs (1100.0));       // > every envelope's release
+        renderBlocks (proc, blocksForMs (1100.0), nullptr, kBlock);       // > every envelope's release
         readSnap (proc, snap, "[5] valid after the tail");
         // DEAD is communicated by voiceActive=false (the UI hides its markers
         // on that flag); envStage is a FROZEN tail value while idle — the last
@@ -336,7 +322,7 @@ TEST(ui_telemetry_test)
         setParam (proc, "filter1_cutoff", 64);
         proc.syncAllParamsToEngine();
         eng.setUiTelemetryPart (0);
-        renderBlocks (proc, 2);
+        renderBlocks (proc, 2, nullptr, kBlock);
 
         // Base mapping (dsp/voice.cpp LoadSources -> UpdateDestinations, both
         // hardcoded filter amounts zero):
@@ -349,8 +335,8 @@ TEST(ui_telemetry_test)
         const uint16_t expected = U14ShiftRight6 (static_cast<uint16_t> (dst14));
 
         const auto on = noteOnMsg();
-        renderBlocks (proc, 3, &on);
-        renderBlocks (proc, blocksForMs (1000.0));       // env 2 settled at sustain (amount 0)
+        renderBlocks (proc, 3, &on, kBlock);
+        renderBlocks (proc, blocksForMs (1000.0), nullptr, kBlock);       // env 2 settled at sustain (amount 0)
 
         parvati::ModTelemetrySnapshot snap;
         readSnap (proc, snap, "[6] valid while held");
@@ -366,7 +352,7 @@ TEST(ui_telemetry_test)
         bool constant = true;
         for (int i = 0; i < 20; ++i)
         {
-            renderBlocks (proc, 2);
+            renderBlocks (proc, 2, nullptr, kBlock);
             parvati::ModTelemetrySnapshot s2;
             if (! eng.readUiTelemetry (s2) || s2.effCutoff != expected)
                 constant = false;
@@ -384,9 +370,9 @@ TEST(ui_telemetry_test)
         setParam (proc2, "filter1_cutoff", 64);
         proc2.syncAllParamsToEngine();
         eng2.setUiTelemetryPart (0);
-        renderBlocks (proc2, 2);
-        renderBlocks (proc2, 3, &on);
-        renderBlocks (proc2, blocksForMs (1000.0));      // env 2 rests at its sustain
+        renderBlocks (proc2, 2, nullptr, kBlock);
+        renderBlocks (proc2, 3, &on, kBlock);
+        renderBlocks (proc2, blocksForMs (1000.0), nullptr, kBlock);      // env 2 rests at its sustain
 
         parvati::ModTelemetrySnapshot snap2;
         readSnap (proc2, snap2, "[6] valid (modulated patch) while held");
@@ -410,7 +396,7 @@ TEST(ui_telemetry_test)
         proc.syncAllParamsToEngine();
         proc.getEngine().setUiTelemetryPart (0);   // wire tracking (the editor's job in app life)
         const auto on = noteOnMsg();
-        renderBlocks (proc, blocksForMs (2500.0), &on);   // ~2.5 s INTO the attack
+        renderBlocks (proc, blocksForMs (2500.0), &on, kBlock);   // ~2.5 s INTO the attack
 
         parvati::ModTelemetrySnapshot snap;
         if (readSnap (proc, snap, "[7] valid while the slow attack runs"))
@@ -459,7 +445,7 @@ TEST(ui_telemetry_test)
             // Note 62 re-triggers a FRESH voice while note 60 is held; the
             // trace must stay monotonic across the re-strike.
             const auto on2 = juce::MidiMessage::noteOn (1, 62, 0.9f);
-            renderBlocks (proc, blocksForMs (1500.0), &on2);
+            renderBlocks (proc, blocksForMs (1500.0), &on2, kBlock);
             {
                 parvati::ModTelemetrySnapshot s3;
                 if (readSnap (proc, s3, "[7] valid after the re-strike"))
@@ -496,13 +482,13 @@ TEST(ui_telemetry_test)
         setParam (proc, "env1_lfo_rate", 60);          // free-running LFO 1
         proc.syncAllParamsToEngine();
         eng.setUiTelemetryPart (0);
-        renderBlocks (proc, 2);                          // service the tracked part
+        renderBlocks (proc, 2, nullptr, kBlock);                          // service the tracked part
 
         parvati::ModTelemetrySnapshot snap;
         constexpr int kWheel = 17;                       // MOD_SRC_WHEEL
 
         // (a) zero buffer at start: history grows while idle, all values 0.
-        renderBlocks (proc, blocksForMs (250.0));
+        renderBlocks (proc, blocksForMs (250.0), nullptr, kBlock);
         readSnap (proc, snap, "[8] valid while idle (pre-note)");
         check (snap.historyCount > 0, "[8a] history populates from a zero buffer (idle)");
         {
@@ -516,7 +502,7 @@ TEST(ui_telemetry_test)
 
         // (b) held note: the LFO row moves (nonzero span within the window).
         const auto on = noteOnMsg();
-        renderBlocks (proc, blocksForMs (600.0), &on);
+        renderBlocks (proc, blocksForMs (600.0), &on, kBlock);
         readSnap (proc, snap, "[8] valid while held");
         {
             int lo = 255, hi = 0;
@@ -532,8 +518,8 @@ TEST(ui_telemetry_test)
 
         // (c) release: LFO decays out and STAYS zero while idle.
         const auto off = noteOffMsg();
-        renderBlocks (proc, 5, &off);
-        renderBlocks (proc, blocksForMs (1500.0));      // past the tail
+        renderBlocks (proc, 5, &off, kBlock);
+        renderBlocks (proc, blocksForMs (1500.0), nullptr, kBlock);      // past the tail
         readSnap (proc, snap, "[8] valid after release");
         {
             bool zeros = true;
@@ -544,8 +530,8 @@ TEST(ui_telemetry_test)
 
         // (d) mod wheel moved WHILE IDLE: the WHEEL strip shows it, others 0.
         const auto wheel = juce::MidiMessage::controllerEvent (1, 1, 100);   // CC1 -> MOD_SRC_WHEEL
-        renderBlocks (proc, 5, &wheel);
-        renderBlocks (proc, blocksForMs (300.0));       // idle: appends carry the wheel
+        renderBlocks (proc, 5, &wheel, kBlock);
+        renderBlocks (proc, blocksForMs (300.0), nullptr, kBlock);       // idle: appends carry the wheel
         readSnap (proc, snap, "[8] valid after idle wheel move");
         {
             bool wheelUp = false, lfoStillZero = true;
@@ -577,13 +563,13 @@ TEST(ui_telemetry_test)
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         eng.setUiTelemetryPart (0);
-        renderBlocks (proc, 2);                          // service the tracked part
+        renderBlocks (proc, 2, nullptr, kBlock);                          // service the tracked part
 
         constexpr int kPitchBend = 16;                   // MOD_SRC_PITCH_BEND
         parvati::ModTelemetrySnapshot snap;
 
         // (a) rest, no note ever: the strip AND the current source read MID.
-        renderBlocks (proc, blocksForMs (250.0));
+        renderBlocks (proc, blocksForMs (250.0), nullptr, kBlock);
         if (readSnap (proc, snap, "[9] valid while idle (never a note)"))
         {
             char m[96];
@@ -598,14 +584,14 @@ TEST(ui_telemetry_test)
 
         // (b) wheel moved while IDLE tracks both directions (no note needed).
         const auto bendUp = juce::MidiMessage::pitchWheel (1, 16383);   // full +
-        renderBlocks (proc, 5, &bendUp);
-        renderBlocks (proc, blocksForMs (150.0));
+        renderBlocks (proc, 5, &bendUp, kBlock);
+        renderBlocks (proc, blocksForMs (150.0), nullptr, kBlock);
         readSnap (proc, snap, "[9] valid after idle bend up");
         check (snap.sources[kPitchBend] == 255,
                "[9b] full-up wheel reads 255 while idle");
         const auto bendDown = juce::MidiMessage::pitchWheel (1, 0);     // full -
-        renderBlocks (proc, 5, &bendDown);
-        renderBlocks (proc, blocksForMs (150.0));
+        renderBlocks (proc, 5, &bendDown, kBlock);
+        renderBlocks (proc, blocksForMs (150.0), nullptr, kBlock);
         readSnap (proc, snap, "[9] valid after idle bend down");
         check (snap.sources[kPitchBend] == 1,
                "[9b] full-down wheel reads 1 while idle");
@@ -613,7 +599,7 @@ TEST(ui_telemetry_test)
         // (c) telemetry WIPE (patch-load seam): the row re-derives from the
         // latch — the pre-fix code resurrected the zero buffer here.
         eng.resetUiTelemetry();
-        renderBlocks (proc, blocksForMs (150.0));       // appends after the wipe
+        renderBlocks (proc, blocksForMs (150.0), nullptr, kBlock);       // appends after the wipe
         if (readSnap (proc, snap, "[9] valid after the wipe"))
         {
             char m[96];
@@ -624,8 +610,8 @@ TEST(ui_telemetry_test)
 
         // (d) re-centering while idle returns the strip to mid.
         const auto bendCentre = juce::MidiMessage::pitchWheel (1, 8192);
-        renderBlocks (proc, 5, &bendCentre);
-        renderBlocks (proc, blocksForMs (150.0));
+        renderBlocks (proc, 5, &bendCentre, kBlock);
+        renderBlocks (proc, blocksForMs (150.0), nullptr, kBlock);
         readSnap (proc, snap, "[9] valid after re-centre");
         check (snap.sources[kPitchBend] == 128,
                "[9d] re-centred wheel reads 128 while idle");

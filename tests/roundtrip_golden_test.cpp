@@ -34,6 +34,7 @@
 
 #include <cstdint>
 #include "unified_test_runner.h"
+#include "test_utils.h"   // renderBlocks
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -113,17 +114,6 @@ juce::File tempCaseDir (int idx, const juce::String& sub = {})
         d.deleteRecursively();
     d.createDirectory();
     return d;
-}
-
-void renderBlocks (ParvatiAudioProcessor& proc, int n)
-{
-    for (int i = 0; i < n; ++i)
-    {
-        juce::AudioBuffer<float> buf (2, 256);
-        buf.clear();
-        juce::MidiBuffer midi;
-        proc.processBlock (buf, midi);
-    }
 }
 
 //==============================================================================

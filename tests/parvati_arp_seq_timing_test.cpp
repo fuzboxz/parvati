@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include "unified_test_runner.h"
+#include "test_utils.h"   // FakePlayHead
 #include <cstdio>
 #include <set>
 #include <vector>
@@ -145,22 +146,7 @@ static void testEngineNoteSeqNoStuck()
     juce::ScopedJuceInitialiser_GUI guiInit;
     juce::MessageManager::getInstance();
 
-    // Minimal play head at 120 BPM, playing.
-    class FakePlayHead : public juce::AudioPlayHead
-    {
-    public:
-        FakePlayHead (double bpm, bool playing) : bpm_ (bpm), playing_ (playing) {}
-        juce::Optional<PositionInfo> getPosition() const override
-        {
-            PositionInfo info;
-            info.setBpm (bpm_);
-            info.setIsPlaying (playing_);
-            return info;
-        }
-    private:
-        double bpm_; bool playing_;
-    };
-
+    // Minimal play head at 120 BPM, playing (shared fixture).
     ParvatiAudioProcessor proc;
     FakePlayHead playHead (120.0, true);
     proc.setPlayHead (&playHead);

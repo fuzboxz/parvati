@@ -93,19 +93,6 @@ int onsetIndex (const juce::AudioBuffer<float>& b, int start, int len, double th
 
 // A settable play head so processBlock's transport reads a host BPM (the
 // tail-cache tempo-move path recompute gate). Pattern: synth_param_coverage.
-class FakePlayHead : public juce::AudioPlayHead
-{
-public:
-    double bpm = 120.0;
-    juce::Optional<PositionInfo> getPosition() const override
-    {
-        PositionInfo info;
-        info.setBpm (bpm);
-        info.setIsPlaying (true);
-        info.setTimeInSamples ((int64_t) 0);
-        return info;
-    }
-};
 }   // namespace
 
 //==============================================================================

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include "unified_test_runner.h"
+#include "test_utils.h"   // FakePlayHead
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -32,18 +33,6 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-class FakePlayHead : public juce::AudioPlayHead
-{
-public:
-    juce::Optional<PositionInfo> getPosition() const override
-    {
-        PositionInfo info;
-        info.setBpm (120.0);
-        info.setIsPlaying (true);
-        info.setTimeInSamples (static_cast<int64_t> (0));
-        return info;
-    }
-};
 }  // namespace
 
 TEST(sequencer_test)

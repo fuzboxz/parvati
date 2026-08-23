@@ -113,19 +113,6 @@ void renderOnce (uint8_t shape, uint8_t param, uint8_t (&out)[ambika::dsp::kAudi
 constexpr int    kBlock = 512;
 constexpr double kRate  = 48000.0;
 
-void renderBlocks (ParvatiAudioProcessor& proc, int blocks, const juce::MidiMessage* inject = nullptr)
-{
-    juce::AudioBuffer<float> buf (2, kBlock);
-    for (int b = 0; b < blocks; ++b)
-    {
-        juce::MidiBuffer midi;
-        if (b == 0 && inject != nullptr)
-            midi.addEvent (*inject, 0);
-        buf.clear();
-        proc.processBlock (buf, midi);
-    }
-}
-
 constexpr double kMsPerBlock = 1000.0 * kBlock / kRate;   // 10.67 ms
 int blocksForMs (double ms) { return static_cast<int> (ms / kMsPerBlock) + 1; }
 
@@ -314,11 +301,11 @@ TEST(osc_preview_live_test)
         setInt (proc, "osc2_param", 7);
         proc.syncAllParamsToEngine();
         eng.setUiTelemetryPart (0);
-        renderBlocks (proc, 2);                          // part service lands
+        renderBlocks (proc, 2, nullptr, kBlock);                          // part service lands
 
         const auto on = noteOnMsg();
-        renderBlocks (proc, 3, &on);
-        renderBlocks (proc, blocksForMs (1000.0));      // envelopes settled
+        renderBlocks (proc, 3, &on, kBlock);
+        renderBlocks (proc, blocksForMs (1000.0), nullptr, kBlock);      // envelopes settled
 
         parvati::ModTelemetrySnapshot snap;
         CHECK(proc.getEngine().readUiTelemetry (snap), "[d] frame valid while held");
@@ -329,7 +316,7 @@ TEST(osc_preview_live_test)
         bool constant = true;
         for (int i = 0; i < 20; ++i)
         {
-            renderBlocks (proc, 2);
+            renderBlocks (proc, 2, nullptr, kBlock);
             parvati::ModTelemetrySnapshot s2;
             if (! proc.getEngine().readUiTelemetry (s2) || s2.effOscParam[0] != 100)
                 constant = false;
@@ -358,9 +345,9 @@ TEST(osc_preview_live_test)
         setInt (proc2, "osc2_param", 9);
         proc2.syncAllParamsToEngine();
         eng2.setUiTelemetryPart (0);
-        renderBlocks (proc2, 2);
-        renderBlocks (proc2, 3, &on);
-        renderBlocks (proc2, blocksForMs (1000.0));      // env 1 rests at sustain
+        renderBlocks (proc2, 2, nullptr, kBlock);
+        renderBlocks (proc2, 3, &on, kBlock);
+        renderBlocks (proc2, blocksForMs (1000.0), nullptr, kBlock);      // env 1 rests at sustain
 
         parvati::ModTelemetrySnapshot snap2;
         CHECK(eng2.readUiTelemetry (snap2), "[d] frame valid (modulated) while held");

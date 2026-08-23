@@ -23,6 +23,7 @@
 
 #include <cmath>
 #include "unified_test_runner.h"
+#include "test_utils.h"   // renderBlocks
 #include <cstdio>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -63,28 +64,12 @@ void routeParam1 (ParvatiAudioProcessor& proc, int source, uint8_t baseParam1)
                              static_cast<uint8_t> (kDstFx1Param1), 63);
 }
 
-// Render @p blocks of silence-with-MIDI at @p block samples. Returns nothing;
-// callers read engine debug state after.
-void renderBlocks (ParvatiAudioProcessor& proc, int block, int blocks,
-             const juce::MidiMessage* msg = nullptr, int msgBlock = 0)
-{
-    juce::AudioBuffer<float> buf (2, block);
-    for (int b = 0; b < blocks; ++b)
-    {
-        juce::MidiBuffer midi;
-        if (msg != nullptr && b == msgBlock)
-            midi.addEvent (*msg, 0);
-        buf.clear();
-        proc.processBlock (buf, midi);
-    }
-}
-
 // Average effective fx1_param1 over a short render (debug min/max track the
 // effective value; for a held source they converge, so the mean is the level).
 float meanEffParam (ParvatiAudioProcessor& proc, int block, int blocks)
 {
     proc.getEngine().debugResetEffParamTracking (0);
-    renderBlocks (proc, block, blocks);
+    renderBlocks (proc, blocks, nullptr, block);
     proc.getEngine().debugStopEffParamTracking();
     const float mn = proc.getEngine().debugEffParamMin (0);
     const float mx = proc.getEngine().debugEffParamMax (0);
@@ -108,7 +93,7 @@ static void testAcCentering()
     routeParam1 (proc, kSrcPitchBend, 32);   // base param1 = 32/127 ~ 0.252
 
     const auto noteOn = juce::MidiMessage::noteOn (1, 60, static_cast<uint8_t> (100));
-    renderBlocks (proc, 256, 8, &noteOn, 0);        // sustain, NO pitch-bend movement
+    renderBlocks (proc, 8, &noteOn, 256, 0);        // sustain, NO pitch-bend movement
 
     const float eff = meanEffParam (proc, 256, 6);
     const float base = 32.0f / 127.0f;
@@ -135,19 +120,19 @@ static void testAcBipolar()
     routeParam1 (proc, kSrcPitchBend, 32);   // base ~ 0.252
 
     const auto noteOn = juce::MidiMessage::noteOn (1, 60, static_cast<uint8_t> (100));
-    renderBlocks (proc, 256, 8, &noteOn, 0);        // sustain
+    renderBlocks (proc, 8, &noteOn, 256, 0);        // sustain
 
     // Full UP bend (wheel 16383) => src ~ 255 => norm ~ +0.99 => eff clamps to 1.
     const auto bendUp = juce::MidiMessage::pitchWheel (1, 16383);
     proc.getEngine().debugResetEffParamTracking (0);
-    renderBlocks (proc, 256, 6, &bendUp, 0);
+    renderBlocks (proc, 6, &bendUp, 256, 0);
     proc.getEngine().debugStopEffParamTracking();
     const float upMax = proc.getEngine().debugEffParamMax (0);
 
     // Full DOWN bend (wheel 0) => src ~ 1 => norm ~ -0.99 => eff clamps to 0.
     const auto bendDown = juce::MidiMessage::pitchWheel (1, 0);
     proc.getEngine().debugResetEffParamTracking (0);
-    renderBlocks (proc, 256, 6, &bendDown, 0);
+    renderBlocks (proc, 6, &bendDown, 256, 0);
     proc.getEngine().debugStopEffParamTracking();
     const float downMin = proc.getEngine().debugEffParamMin (0);
 
@@ -177,14 +162,14 @@ static void testMostRecentVoiceTracking()
 
     // Note 1 (velocity 100). Default Part 0 is POLY (6 voices): note 60 -> voice 0.
     const auto n1 = juce::MidiMessage::noteOn (1, 60, static_cast<uint8_t> (100));
-    renderBlocks (proc, 256, 10, &n1, 0);
+    renderBlocks (proc, 10, &n1, 256, 0);
     const int v1 = proc.getEngine().debugFxTrackedVoice (0);
     const float eff1 = meanEffParam (proc, 256, 4);
 
     // Note 2 (velocity 30) on a DIFFERENT key, note 60 still held => a different
     // voice (more recently triggered) becomes the tracked voice.
     const auto n2 = juce::MidiMessage::noteOn (1, 64, static_cast<uint8_t> (30));
-    renderBlocks (proc, 256, 10, &n2, 0);           // crossfade (~5 ms) completes within one block
+    renderBlocks (proc, 10, &n2, 256, 0);           // crossfade (~5 ms) completes within one block
     const int v2 = proc.getEngine().debugFxTrackedVoice (0);
     const float eff2 = meanEffParam (proc, 256, 4);
 
@@ -218,17 +203,17 @@ static void testCrossfadeArmed()
     routeParam1 (proc, kSrcVelocity, 0);
 
     const auto n1 = juce::MidiMessage::noteOn (1, 60, static_cast<uint8_t> (100));
-    renderBlocks (proc, 32, 40, &n1, 0);            // settle note 1
+    renderBlocks (proc, 40, &n1, 32, 0);            // settle note 1
     const float phaseAfter1 = proc.getEngine().debugFxFadePhase (0);
 
     // Trigger note 2 (different voice) then read the phase after ONE 32-sample
     // block (~0.67 ms): the crossfade must be ARMED (0 < phase < 1).
     const auto n2 = juce::MidiMessage::noteOn (1, 64, static_cast<uint8_t> (30));
-    renderBlocks (proc, 32, 1, &n2, 0);
+    renderBlocks (proc, 1, &n2, 32, 0);
     const float phaseMid = proc.getEngine().debugFxFadePhase (0);
 
     // Render the rest of the crossfade (~5 ms ~ 8 blocks): it must SETTLE (== 1).
-    renderBlocks (proc, 32, 12);
+    renderBlocks (proc, 12, nullptr, 32);
     const float phaseSettled = proc.getEngine().debugFxFadePhase (0);
 
     char msg[160];

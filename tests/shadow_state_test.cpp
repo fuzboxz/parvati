@@ -33,6 +33,7 @@
 
 #include <cstdint>
 #include "unified_test_runner.h"
+#include "test_utils.h"   // renderBlocks
 #include <cstdio>
 #include <vector>
 
@@ -63,17 +64,6 @@ constexpr int kBlock = 256;
 // Render n empty blocks (services the staged config/fx/tuning dirty flags +
 // consumes the pending FX type swaps — one block is enough; render a few so
 // the assertion is not sensitive to the exact service cadence).
-void renderBlocks (ParvatiAudioProcessor& proc, int blocks)
-{
-    for (int b = 0; b < blocks; ++b)
-    {
-        juce::AudioBuffer<float> buf (2, kBlock);
-        buf.clear();
-        juce::MidiBuffer empty;
-        proc.processBlock (buf, empty);
-    }
-}
-
 // juce::String + int is ambiguous (int / int64 overloads) — every int in a
 // diff message goes through this explicit wrapper.
 juce::String J (int v) { return juce::String (v); }

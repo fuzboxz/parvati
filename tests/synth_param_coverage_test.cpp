@@ -62,19 +62,6 @@ void setByDescriptor (ParvatiAudioProcessor& proc, const PatchParamDescriptor& d
 }
 
 // ---- a minimal play head so the transport reads as "playing" (arp/seq run) ----
-class FakePlayHead : public juce::AudioPlayHead
-{
-public:
-    juce::Optional<PositionInfo> getPosition() const override
-    {
-        PositionInfo info;
-        info.setBpm (120.0);
-        info.setIsPlaying (true);
-        info.setTimeInSamples (static_cast<int64_t> (0));
-        return info;
-    }
-};
-
 // ---- audio render helpers ----
 constexpr double kFs   = 48000.0;
 constexpr int    kBlk  = 512;
