@@ -278,6 +278,13 @@ public:
     bool loadProgramFromBytes (const uint8_t* patch112, const uint8_t* part84);
     // Load + parse a .PRO file. Returns true on success.
     bool loadProgramFile (const juce::File& file);
+    // Gather the CURRENT part's APVTS values as Patch[112] + PartData[84]
+    // bytes: every descriptor except isArp / isOption / isFx (they carry no
+    // patch or part byte); sequencer params convert directly (the shared
+    // helper early-returns 0 for them); part/sequencer bytes route to @p part,
+    // the rest to @p patch. The shared bridge of saveProgramFile and
+    // saveMultiFile (the current part of the .MUL captures live edits).
+    void gatherCurrentPartBytes (std::array<uint8_t, 112>& patch, std::array<uint8_t, 84>& part) const;
     // Save the CURRENT part's Patch[112] + PartData[84] (gathered from the
     // APVTS) as an Ambika .PRO — the exact inverse of loadProgramFile. A saved
     // file re-loads to the same engine state. Returns true on success.
@@ -473,7 +480,9 @@ private:
     bool undoInvalidatedByPartSwitch_ = false;   // set by onPartSelect; swept by undoSafe/redoSafe
     juce::AudioProcessorValueTreeState apvts;
     juce::String loadedProgramName_ { "Init" };
-    int currentPart_ = 0;   // 0-based part now shown in the APVTS/editor
+    // NOTE: there is no mirrored current-part member — engine_.getCurrentPart()
+    // is the single source of truth. Every write goes through
+    // engine_.setCurrentPart (message thread).
 
     // True while loadPartIntoApvts is pushing engine storage into the APVTS.
     // Suppresses the parameterChanged -> engine re-apply feedback loop: loading

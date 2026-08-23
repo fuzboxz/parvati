@@ -306,6 +306,25 @@ public:
     int  getVoiceCard() const noexcept { return voiceCard_.load (std::memory_order_relaxed); }
     void setVoiceCard (int vc) noexcept { voiceCard_.store (vc, std::memory_order_relaxed); }
 
+    // Snap @p factor to the supported oversampling factors (1 / 2 / 4 / 8;
+    // anything else rounds to the nearest). Shared by the voice staging and
+    // the processor's factor setters so the two paths never disagree.
+    static int clampOversamplingFactor (int factor) noexcept
+    {
+        if (factor == 1 || factor == 2 || factor == 4 || factor == 8)
+            return factor;
+        return (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
+    }
+
+    // Builds the per-voice Oversampling object for @p factor (exponent
+    // mapping, min-phase IIR half-band, integer latency, initProcessing at the
+    // constant internal block size). Returns null for factor 1 (the
+    // bit-identical no-OS path). Used by BOTH the MT staging (pre-build) and
+    // recreateOversampling (the AT fallback), so the two paths stay
+    // configuration-identical. The processor's latency probe uses it too, so
+    // its getLatencyInSamples() matches every voice exactly.
+    static std::unique_ptr<juce::dsp::Oversampling<float>> buildOversamplingFor (int factor);
+
 private:
     // Index clamp for the 3-slot envelope wrappers above (mirrors the
     // mod-ring accessor's juce::jlimit discipline — defensive against a
@@ -319,15 +338,6 @@ private:
     // program is then driven entirely by the APVTS parameter bridge (see
     // PluginProcessor), which writes the patch bytes after Init(). Idempotent.
     void ensureInitialized();
-
-    // Renders one 40-sample engine block -> float -> filter -> VCA -> staging.
-    // Builds the per-voice Oversampling object for @p factor (exponent
-    // mapping, min-phase IIR half-band, integer latency, initProcessing at the
-    // constant internal block size). Returns null for factor 1 (the
-    // bit-identical no-OS path). Used by BOTH the MT staging (pre-build) and
-    // recreateOversampling (the AT fallback), so the two paths stay
-    // configuration-identical.
-    static std::unique_ptr<juce::dsp::Oversampling<float>> buildOversamplingFor (int factor);
 
     // ---- Staged-OS-swap internals (audit F3; mirrors FxChain's staging) ----
     // MT: acquire the staging slot (spin over the 3-way state; take back an

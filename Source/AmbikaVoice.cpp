@@ -104,8 +104,7 @@ void AmbikaVoice::prepare (double hostSampleRate, int /*blockSize*/)
 void AmbikaVoice::setOversamplingFactor (int factor)
 {
     // Clamp to the supported factors (1 / 2 / 4 / 8).
-    if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
-        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
+    factor = clampOversamplingFactor (factor);
 
     // No-op: the last staged factor matches AND nothing is queued. (This
     // implies the active osFactor_ already equals @p factor: state Empty with

@@ -988,10 +988,9 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
     // deferred ring (see parameterChanged / DeferredParamTimer).
     jassert (juce::MessageManager::existsAndIsCurrentThread());
     const int newPart = juce::jlimit (0, SynthEngine::getNumParts() - 1, newPart1Based - 1);
-    if (newPart == currentPart_)
+    if (newPart == engine_.getCurrentPart())
         return;
 
-    currentPart_ = newPart;
     engine_.setCurrentPart (newPart);
     loadPartIntoApvts (newPart);
     syncAllParamsToEngine();   // make sure the new Part's voices match (idempotent)
@@ -1003,7 +1002,7 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
     // point — every editor path (combo, Cmd+1..6, context menu) and every file
     // load routes through part_select -> here).
     engine_.resetUiTelemetry();
-    engine_.setUiTelemetryPart (currentPart_);
+    engine_.setUiTelemetryPart (engine_.getCurrentPart());
 
     // DATA-INTEGRITY GUARD (undo cannot cross a part switch). Two hazards:
     //   (1) DUMP POLLUTION — the display dump above rewrites ~250 params;
@@ -1199,7 +1198,7 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     // dots + live filter curve never carry the previous patch's motion across
     // the load boundary (epoch bump + engine-side wipe + re-point at this part).
     engine_.resetUiTelemetry();
-    engine_.setUiTelemetryPart (currentPart_);
+    engine_.setUiTelemetryPart (engine_.getCurrentPart());
     return true;
 }
 
@@ -1219,18 +1218,9 @@ bool ParvatiAudioProcessor::loadProgramFile (const juce::File& file)
     return true;
 }
 
-bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
+void ParvatiAudioProcessor::gatherCurrentPartBytes (std::array<uint8_t, 112>& patch,
+                                                    std::array<uint8_t, 84>&  part) const
 {
-    // The byte-exact inverse of loadProgramFromBytes: iterate the same set of
-    // descriptors with the same skip rule (isArp / isOption carry no patch or
-    // part byte) and the same patch/part routing, and store each one's current
-    // APVTS value as its faithful byte.
-    AmbikaProgram prog;
-    prog.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Parvati";
-    // prog.patch / prog.part are zero-initialised (the bytes no parameter maps
-    // to — e.g. PartData's MIDI channel / key zone / voice allocation, which live
-    // in the .MUL MultiData, not the .PRO — stay 0, exactly as on load).
-
     for (const auto& d : getPatchParamDescriptors())
     {
         if (d.isArp || d.isOption || d.isFx)
@@ -1249,13 +1239,27 @@ bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
         const int off = d.byteOffset;
         if (d.isPart || d.isSequencer)
         {
-            if (off >= 0 && off < 84) prog.part[(size_t) off] = byte;
+            if (off >= 0 && off < 84) part[(size_t) off] = byte;
         }
         else
         {
-            if (off >= 0 && off < 112) prog.patch[(size_t) off] = byte;
+            if (off >= 0 && off < 112) patch[(size_t) off] = byte;
         }
     }
+}
+
+bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
+{
+    // The byte-exact inverse of loadProgramFromBytes: gatherCurrentPartBytes
+    // iterates the same set of descriptors with the same skip rule (isArp /
+    // isOption carry no patch or part byte) and the same patch/part routing,
+    // and stores each one's current APVTS value as its faithful byte.
+    AmbikaProgram prog;
+    prog.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Parvati";
+    // prog.patch / prog.part are zero-initialised (the bytes no parameter maps
+    // to — e.g. PartData's MIDI channel / key zone / voice allocation, which live
+    // in the .MUL MultiData, not the .PRO — stay 0, exactly as on load).
+    gatherCurrentPartBytes (prog.patch, prog.part);
     prog.hasPatch = true;
     prog.hasPart  = true;
 
@@ -1361,14 +1365,13 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     engine_.markAllocationDirty();
 
     // Show Part 0 in the editor and re-apply its parameters.
-    currentPart_ = 0;
     engine_.setCurrentPart (0);
     // Sync the part_select parameter to the engine's part-0 state (mirrors the
     // .parvati multi path, ParvatiPreset.cpp:794-795). Without this the
     // editor's part combo kept showing the PREVIOUSLY selected part while the
     // engine/edits had already moved to Part 0 -- the combo desynced from
     // engine state until the user re-picked a part. onPartSelect early-returns
-    // (currentPart_ is already 0), so this is a parameter/combo update only.
+    // (the engine is already on Part 0), so this is a parameter/combo update only.
     if (auto* ps = apvts.getParameter ("part_select"))
         ps->setValueNotifyingHost (ps->convertTo0to1 (1.0f));
     loadPartIntoApvts (0);   // engine→APVTS one-way display refresh (Part 0 authoritative)
@@ -1382,9 +1385,10 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): a whole-multi
     // load swaps every part's patch — wipe the telemetry history and re-point
     // the frame at the freshly-shown Part 0 (onPartSelect early-returns here:
-    // currentPart_ was set directly, so its hook cannot run for this boundary).
+    // the engine was set to Part 0 directly, so its hook cannot run for this
+    // boundary).
     engine_.resetUiTelemetry();
-    engine_.setUiTelemetryPart (currentPart_);
+    engine_.setUiTelemetryPart (engine_.getCurrentPart());
     return true;
 }
 
@@ -1425,32 +1429,10 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     {
         auto& mp = multi.parts[(size_t) i];
 
-        if (i == currentPart_)
+        if (i == engine_.getCurrentPart())
         {
-            // Same byte-bridge as saveProgramFile: iterate every descriptor
-            // (skip arp/option; sequencer special-case) and route each byte into
-            // patch[off<112] / part[off<84]. Captures live APVTS edits.
-            for (const auto& d : getPatchParamDescriptors())
-            {
-                if (d.isArp || d.isOption || d.isFx)
-                    continue;
-
-                const float raw = apvts.getRawParameterValue (d.paramID)->load();
-                const uint8_t byte = d.isSequencer
-                    ? static_cast<uint8_t> (juce::jlimit (d.minValue, d.maxValue, static_cast<int> (raw)))
-                    : parvatiValueToPatchByte (d, raw);
-
-                const int off = d.byteOffset;
-                if (d.isPart || d.isSequencer)
-                {
-                    if (off >= 0 && off < 84) mp.part[(size_t) off] = byte;
-                }
-                else
-                {
-                    if (off >= 0 && off < 112) mp.patch[(size_t) off] = byte;
-                }
-            }
-
+            // Same byte-bridge as saveProgramFile (captures live APVTS edits).
+            gatherCurrentPartBytes (mp.patch, mp.part);
         }
         else
         {
@@ -1639,7 +1621,7 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
     // swaps the whole edited patch — wipe the telemetry history + re-point at
     // the edited part so the pill sparklines / live markers start clean.
     engine_.resetUiTelemetry();
-    engine_.setUiTelemetryPart (currentPart_);
+    engine_.setUiTelemetryPart (engine_.getCurrentPart());
     return true;
 }
 
@@ -1726,7 +1708,7 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
     // (applyParvatiMulti routes its own part-0 select through the part_select
     // boundary, but this explicit reset also covers a same-part restore).
     engine_.resetUiTelemetry();
-    engine_.setUiTelemetryPart (currentPart_);
+    engine_.setUiTelemetryPart (engine_.getCurrentPart());
     return true;
 }
 
@@ -1899,11 +1881,10 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 if (! engine_.restoreState (blob.getData(), blob.getSize()))
                     return false;
                 // Engine is authoritative for all 6 parts; refresh the APVTS
-                // display for the restored current part. currentPart_ is synced
-                // explicitly (it previously tracked the restore only via the
-                // accidental re-entrant part_select callback, which
+                // display for the restored current part. restoreState itself
+                // sets the engine's current part (it previously synced a mirror
+                // only via the accidental re-entrant part_select callback, which
                 // restoringState_ now suppresses).
-                currentPart_ = engine_.getCurrentPart();
                 // Re-echo part_select to the restored current part (mirrors
                 // loadMultiFile): loadPartIntoApvts SKIPS isOption descriptors
                 // (incl. part_select), so if the tree's param and the blob's
@@ -1927,7 +1908,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 // syncAllParamsToEngine option coverage with the exact option
                 // apply tail. part_select is excluded: it is a selection, not an
                 // engine option — onPartSelect would thrash the just-restored
-                // part state (currentPart_ is already synced above).
+                // part state (the engine already holds the restored part).
                 for (const auto& d : getPatchParamDescriptors())
                     if (d.isOption && d.paramID != "part_select")
                         applyOptionParameter (d, apvts.getRawParameterValue (d.paramID)->load());
@@ -1937,7 +1918,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 // sparklines / live markers never carry the pre-restore session's
                 // motion (replacing state mid-session leaves the editor open).
                 engine_.resetUiTelemetry();
-                engine_.setUiTelemetryPart (currentPart_);
+                engine_.setUiTelemetryPart (engine_.getCurrentPart());
                 return true;
             }();
             if (! restored)
@@ -1948,10 +1929,10 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 // the plan's literal sync-then-select order would write the
                 // saved part's bytes into the previously-current part's
                 // storage). syncAllParamsToEngine routes every byte edit through
-                // currentPart_, so the saved values must land on the saved part.
+                // the engine's current part, so the saved values must land on the
+                // saved part.
                 const int savedPart = juce::jlimit (0, SynthEngine::getNumParts() - 1,
                     juce::roundToInt (apvts.getRawParameterValue ("part_select")->load()) - 1);
-                currentPart_ = savedPart;
                 engine_.setCurrentPart (savedPart);
                 syncAllParamsToEngine();
                 loadPartIntoApvts (savedPart);   // display refresh (no-op values)
@@ -1959,7 +1940,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 // wipe + re-point for the legacy (APVTS-authoritative) restore
                 // path above — a restored session starts with clean histories.
                 engine_.resetUiTelemetry();
-                engine_.setUiTelemetryPart (currentPart_);
+                engine_.setUiTelemetryPart (engine_.getCurrentPart());
             }
         }
         engine_.setParameterSmoothing (getUiSmoothing());
@@ -1980,37 +1961,21 @@ void ParvatiAudioProcessor::setParameterSmoothing (bool smoothing)
 //==========================================================================
 void ParvatiAudioProcessor::rebuildOsLatencyProbe (int osFactor)
 {
-    // The probe mirrors the per-voice Oversampling config (1 channel, min-phase
-    // IIR half-band, max quality, integer latency) so its getLatencyInSamples()
+    // The probe IS the per-voice Oversampling config (AmbikaVoice::
+    // buildOversamplingFor builds both paths) so its getLatencyInSamples()
     // exactly matches what every voice adds. Never fed audio, so rebuilding on
     // the message thread is race-free. The caller passes the factor it is
     // applying — the persisted uiOversampling_ for user edits, 8x for the
     // offline auto-max boost (which must NOT touch the persisted pref).
-    if (osFactor > 1)
-    {
-        // juce::dsp::Oversampling takes a power-of-2 EXPONENT: 2^factorExp.
-        // 2x -> 1, 4x -> 2, 8x -> 3. Min-phase IIR half-band = minimal latency;
-        // max quality steepens the transition band. Integer latency is enabled
-        // so getLatencyInSamples() is a whole number of INPUT samples (clean for
-        // host PDC reporting).
-        const size_t factorExp = (osFactor >= 8) ? 3 : (osFactor >= 4) ? 2 : 1;
-        osLatencyProbe_ = std::make_unique<juce::dsp::Oversampling<float>> (
-            1u,
-            factorExp,
-            juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR,
-            true, true);
-        // Stage the OS latency (input samples) for the audio thread to read --
-        // it must not dereference osLatencyProbe_ (rebuilt here on the message
-        // thread) from processBlock. acquire/release pair with computePluginLatency.
-        stagedOsLatencyInputSamples_.store (
-            static_cast<int> (osLatencyProbe_->getLatencyInSamples()),
-            std::memory_order_release);
-    }
-    else
-    {
-        osLatencyProbe_.reset();
-        stagedOsLatencyInputSamples_.store (0, std::memory_order_release);
-    }
+    osLatencyProbe_ = AmbikaVoice::buildOversamplingFor (osFactor);   // null for factor 1
+    // Stage the OS latency (input samples) for the audio thread to read --
+    // it must not dereference osLatencyProbe_ (rebuilt here on the message
+    // thread) from processBlock. acquire/release pair with computePluginLatency.
+    stagedOsLatencyInputSamples_.store (
+        osLatencyProbe_ != nullptr
+            ? static_cast<int> (osLatencyProbe_->getLatencyInSamples())
+            : 0,
+        std::memory_order_release);
 }
 
 int ParvatiAudioProcessor::computePluginLatency (double hostSampleRate) const
@@ -2035,8 +2000,7 @@ void ParvatiAudioProcessor::applyOversamplingFactor (int factor)
 {
     // Supported factors: 1 / 2 / 4 / 8 (powers of two up to the 8x UI maximum).
     // Anything else snaps to the nearest supported factor.
-    if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
-        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
+    factor = AmbikaVoice::clampOversamplingFactor (factor);
 
     rebuildOsLatencyProbe (factor);                // message-thread safe (no audio)
     // Per-voice: PRE-BUILD + stage each voice's replacement Oversampling here
@@ -2052,8 +2016,7 @@ void ParvatiAudioProcessor::setOversamplingFactor (int factor)
     // change made DURING an offline auto-max boost (editor open over a bounce)
     // re-targets the restore point and applies immediately — the user's
     // explicit choice wins mid-bounce too.
-    if (factor != 1 && factor != 2 && factor != 4 && factor != 8)
-        factor = (factor <= 1) ? 1 : (factor <= 2 ? 2 : (factor <= 4 ? 4 : 8));
+    factor = AmbikaVoice::clampOversamplingFactor (factor);
 
     setUiOversampling (factor);             // persist (locked accessor — F-ios-lc-1)
     if (offlineSavedOs_ >= 0)
