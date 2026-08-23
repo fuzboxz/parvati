@@ -26,7 +26,7 @@ set -uo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="${BUILD:-}"
 if [ -z "$BUILD" ]; then
-    for d in build build_release build_san_asan; do
+    for d in build_unified build build_release build_san_asan; do
         if [ -f "$SRC/$d/compile_commands.json" ]; then BUILD="$SRC/$d"; break; fi
     done
 fi

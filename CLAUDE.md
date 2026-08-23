@@ -42,7 +42,7 @@ Debug, full plugin formats + the unified test binary:
 cmake -B build_unified -DCMAKE_BUILD_TYPE=Debug   # canonical (only) build dir
 cmake --build build_unified --target parvati_unified_tests -j8
 
-./build_unified/parvati_unified_tests             # all 114 tests (~15-20 min)
+./build_unified/parvati_unified_tests             # full suite (~15-20 min; `list` prints the count)
 ./build_unified/parvati_unified_tests list        # list tests
 ./build_unified/parvati_unified_tests <name>      # one test
 PARVATI_UNIFIED_INPROCESS=1 ./build_unified/parvati_unified_tests <name>
@@ -79,7 +79,7 @@ tools/run_sanitizers.sh                           # ASan+UBSan / TSan sweeps
 
 - `Source/` — plugin + dsp port of Ambika. `ambika_reference/` is the **untracked**
   GPL3 firmware reference tree, required at configure time (see `NOTICES.md`).
-- `tests/` — the unified suite (114 tests, single binary).
+- `tests/` — the unified suite (single binary; `./build_unified/parvati_unified_tests list` prints the live count).
 - `tools/` — scripts + `EXCLUDE_FROM_ALL` utilities (registered via `parvati_add_tool`).
 - `docs/` + `MIGRATION_STATUS.md` — status source of truth (gitignored by
   root `*.md` policy). `CHANGELOG.md` must be updated for user-visible changes

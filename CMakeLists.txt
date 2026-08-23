@@ -138,19 +138,9 @@ else()
     set(PARVATI_IOS_PLIST_ARGS "")
 endif()
 
-# Use ccache when available so reconfigures / rebuilds reuse compiled objects
-# instead of recompiling the ~1161 memory-heavy JUCE + DSP translation units
-# every time. (A clean build fan-out is what thrashes a 16 GB machine; ccache
-# turns repeat builds near-instant.) Auto-detected; no-op when not installed.
-# ccache DISABLED: it was serving stale compiled objects on source changes
-# (screen renders / installed plugins fell behind the code). Re-enable only on
-# explicit request; the `deploy` target rebuilds reliably without it.
-# find_program(CCACHE_PROGRAM ccache)
-# if(CCACHE_PROGRAM)
-#     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
-#     set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}" CACHE STRING "" FORCE)
-#     message(STATUS "ccache enabled: ${CCACHE_PROGRAM}")
-# endif()
+# ccache is DISABLED: it served stale compiled objects on source changes
+# (screen renders / installed plugins fell behind the code). The unset pair
+# below clears any cached launcher a previous configure may have set.
 unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
 unset(CMAKE_C_COMPILER_LAUNCHER CACHE)
 
@@ -725,18 +715,9 @@ target_compile_definitions(Parvati PUBLIC
 
 target_link_libraries(Parvati
     PRIVATE
-        juce::juce_audio_basics
-        juce::juce_audio_devices
-        juce::juce_audio_formats
-        juce::juce_audio_processors
-        juce::juce_audio_utils
-        juce::juce_core
-        juce::juce_data_structures
-        juce::juce_dsp
-        juce::juce_events
-        juce::juce_graphics
-        juce::juce_gui_basics
-        juce::juce_gui_extra
+        # The module set from PARVATI_JUCE_MODULES (set above): one list drives
+        # both this private link and the interface re-export loop.
+        ${PARVATI_JUCE_MODULES}
     PUBLIC
         juce::juce_recommended_lto_flags
         juce::juce_recommended_config_flags
@@ -842,7 +823,7 @@ add_executable(parvati_unified_tests
     tests/ui_telemetry_test.cpp
     tests/ui_mirror_test.cpp
     tests/host_state_test.cpp
-    # I/O & File Tests (12)
+    # I/O & File Tests (10)
     tests/ios_file_flow_test.cpp
     tests/ios_openin_test.cpp
     tests/loader_fuzz_test.cpp

@@ -51,11 +51,12 @@ cmake --build build_unified --target parvati_unified_tests -j 8
 (`PARVATI_UNIFIED_INPROCESS=1` disables the fork isolation when debugging a
 single test under a debugger or to see JUCE's exit-time leak report.)
 
-If you add a feature, add `tests/<name>_test.cpp` registering a
-`TEST(<name>_test)` (see any existing file or `tests/unified_test_examples.cpp`,
-which doubles as harness documentation when built with
-`-DPARVATI_TEST_EXAMPLES=ON`), and add the file to the
-`parvati_unified_tests` source list in `CMakeLists.txt`. The editor coverage
+If you add a feature, run `tools/new_test.sh <name>` and fill in the scaffolded
+`TEST(<name>_test)` body. The script registers the file in the
+`parvati_unified_tests` source list itself, so a hand edit of `CMakeLists.txt`
+is not needed (a configure-time guard fails `cmake` if a `tests/*.cpp` file is
+missing from the list). Reuse the shared helpers in `tests/test_utils.h`
+instead of copying them. The editor coverage
 check (`tools/editor_coverage_check.cpp`, target `parvati_editor_coverage_check`) and the layout
 sanity check are especially good guards for UI work.
 
