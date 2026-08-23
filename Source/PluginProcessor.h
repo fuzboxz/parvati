@@ -37,7 +37,7 @@ public:
     // F-ios-lc-2 (bug hunt 2026-08-19): hosts tear down render resources on
     // interruption / route change (AUv3 deallocateRenderResources -> this
     // hook). Clears held notes + queued MIDI so a resume starts from silence
-    // — see the .cpp definition for the seam choice.
+    // — see the .cpp definition for where the split happens.
     void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
@@ -134,7 +134,7 @@ public:
     void setUiZoom (double z)                     { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiZoom_ = z; }
 
     // ---- Arpeggiator clock: manual tempo fallback (2026-08-19 AUv3 wave) ----
-    // Hosts that provide no musical context to the plugin (the GarageBand-
+    // Hosts that supply no musical context to the plugin (the GarageBand-
     // class AUv3 hosts; also the Standalone app, which has no transport)
     // used to run the arpeggiator clock at a hard-coded 120 BPM. processBlock
     // now resolves the clock tempo as: HOST bpm when the playhead carries
@@ -218,17 +218,17 @@ public:
     // units ≈ a ~130-step history; APVTS routes every parameter write through
     // the manager). Chosen over runtime memory-pressure machinery: a bounded
     // per-instance history keeps an AUv3 extension process (several hosted
-    // instances, one memory budget) predictable with zero moving parts.
+    // instances, one memory budget) predictable with no dynamic machinery.
     static constexpr int kUndoMaxUnits        = 16000;   // ≈ ~130 undo steps
     static constexpr int kUndoMinTransactions = 16;      // always-undoable floor
     juce::UndoManager& getUndoManager() noexcept { return undoManager_; }
 
     // The editor's ONLY undo/redo entry points (header buttons + keyboard
     // shortcuts). A part switch invalidates every recorded action's part
-    // context (replaying an old action would write Part A's values into
+    // context (a replay of an old action would write Part A's values into
     // Part B's engine storage via parameterChanged), and JUCE's
     // append-after-listeners ordering plus the 10 Hz APVTS tree-flush timer
-    // can leave stragglers after onPartSelect's synchronous clear — these
+    // can leave late entries after onPartSelect's synchronous clear — these
     // sweep once more, then replay. Always call these instead of
     // getUndoManager().undo()/redo() from UI code.
     void undoSafe();
@@ -299,12 +299,12 @@ public:
     // Multi-load hygiene: reset every Part's voice slots to the ENGINE INIT
     // allocation (Part 0 = 6 voices, the popcount of the constructor's 0x3f
     // init bitmask; Parts 1..5 disabled) BEFORE a multi file applies its own
-    // per-part data, so a file that does not carry voice settings for a Part
-    // never inherits the PREVIOUS multi's leftover counts (stale-voice bug:
-    // a short/legacy .parvati parts list, or any future MultiData-less .MUL
-    // acceptance). Public setters only: setPartVoiceSlots for the enabled
-    // Part 0 and the legacy setPartVoiceAllocation(part, 0) disable path for
-    // the rest. Called by loadMultiFile + loadParvatiMultiFile.
+    // per-part data. Thus a file that does not carry voice settings for a
+    // Part never inherits the PREVIOUS multi's leftover counts (stale-voice
+    // bug: a short/legacy .parvati parts list, or any future MultiData-less
+    // .MUL acceptance). Public setters only: setPartVoiceSlots for the
+    // enabled Part 0 and the legacy setPartVoiceAllocation(part, 0) disable
+    // path for the rest. Called by loadMultiFile + loadParvatiMultiFile.
     void resetVoiceSlotsToInit();
 
     // ---- Ambika .MUL (multi) support ----
@@ -327,7 +327,7 @@ public:
     // Export fallback (voice-slot extension): when a Part requests more voices
     // than its voicecards (see mul_export::needsFallback), the chosen strategy
     // maps the requested voices onto the 6 hardware cards (bitmask rewrite +
-    // optional polyphony-mode rewrite). ChainSplit writes additional sibling
+    // optional polyphony-mode rewrite). ChainSplit writes more sibling
     // "-2.MUL"/"-3.MUL" unit files for physically chained Ambikas. The default
     // (0 = AsIs) is the legacy behaviour: bitmasks unchanged, slots ignored.
     // @p strategyInt is a parvati::mul_export::Strategy value passed as int to
@@ -365,8 +365,8 @@ private:
     // second writer tears it), part_select (loadPartIntoApvts' ~250
     // ValueTree+UndoManager writes), and the FX params (applyFxParameter builds
     // juce::String/substring/std::string lookup keys = heap traffic on the
-    // render thread; the engine stages FX values through fxDirty_ atomics
-    // anyway, so a <=16 ms deferral is inaudible).
+    // render thread). The engine stages FX values through fxDirty_ atomics
+    // anyway, so a <=16 ms deferral is inaudible.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
     // ---- Deferred audio-thread-origin parameter writes (message-thread drain) ----
@@ -401,7 +401,7 @@ private:
     };
 
     // The 60 Hz message-thread drain for deferredParams_. Plain juce::Timer
-    // (not HighResolutionTimer): the drain performs the exact GUI-path apply
+    // (not HighResolutionTimer): the drain does the exact GUI-path apply
     // work (engine setters that stage atomics / loadPartIntoApvts' ValueTree
     // writes), which is message-thread work; <=16.7 ms added latency for
     // audio-thread-origin arp/seq/part_select edits only (GUI edits stay
@@ -473,15 +473,16 @@ private:
     bool undoInvalidatedByPartSwitch_ = false;   // set by onPartSelect; swept by undoSafe/redoSafe
     juce::AudioProcessorValueTreeState apvts;
     juce::String loadedProgramName_ { "Init" };
-    int currentPart_ = 0;   // 0-based part currently shown in the APVTS/editor
+    int currentPart_ = 0;   // 0-based part now shown in the APVTS/editor
 
     // True while loadPartIntoApvts is pushing engine storage into the APVTS.
     // Suppresses the parameterChanged -> engine re-apply feedback loop: loading
     // is engine->APVTS, so feeding the same values back into the engine is
-    // redundant for byte/arp/seq params and HARMFUL for the FX mod matrix, whose
-    // applyFxParameter re-reads all three sibling APVTS values (source/dest/
-    // amount) and would otherwise read them stale mid-load and clobber the
-    // engine fxState it is sourcing from. Message-thread-only (load + listener).
+    // redundant for byte/arp/seq params and HARMFUL for the FX mod matrix.
+    // Its applyFxParameter re-reads all three sibling APVTS values (source/
+    // dest/amount) and would otherwise read them stale mid-load and clobber
+    // the engine fxState it is sourcing from. Message-thread-only (load +
+    // listener).
     bool loadingPartIntoApvts_ = false;
 
     // True while setStateInformation's replaceState rewrites the APVTS from a
@@ -561,9 +562,10 @@ private:
     // contract violation that does occur in the wild: buffer-size transitions,
     // offline/freeze renders) degrades to a truncated render instead of a heap
     // OOB write (FX audit F3/F6). Atomic + relaxed: hosts that overlap
-    // prepareToPlay with a running callback would otherwise risk a torn read;
-    // worst case the clamp briefly uses the previous block size. 0 = not yet
-    // prepared (the clamp is bypassed, preserving the old behaviour).
+    // prepareToPlay with a running callback would otherwise risk a torn read.
+    // In the worst case the clamp briefly uses the previous block size.
+    // 0 = not yet prepared (the clamp is bypassed, preserving the old
+    // behaviour).
     std::atomic<int> preparedMaxBlock_ { 0 };
 
     // Filter-OS latency probe + a dirty flag so a live factor change (UI)

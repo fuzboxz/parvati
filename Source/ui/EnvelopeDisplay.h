@@ -107,7 +107,7 @@ public:
         std::function call per poll tick. */
     void setLiveStageProvider (std::function<parvati::LiveEnvStage()> p);
 
-    // TEST-ONLY: is the live stage marker currently SHOWN (the painted state,
+    // TEST-ONLY: is the live stage marker now SHOWN (the painted state,
     // i.e. after the change gate — lets a headless test observe the marker
     // without a Graphics context)?
     bool  liveMarkerVisibleForTest() const noexcept { return markerVisible_; }

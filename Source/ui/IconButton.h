@@ -23,7 +23,7 @@ public:
     // Accessible name for each glyph (screen readers see only this — the icon
     // itself is pure Path drawing). "Undo"/"Redo"/"Settings" are existing
     // chrome translation keys (Translations.cpp), so the fallback chain is
-    // localized for free; English elsewhere. "Delete modulation" names the
+    // localized at no extra cost; English elsewhere. "Delete modulation" names the
     // mod-matrix row X (the Close glyph's introducing consumer — a reuse can
     // override the title with setTitle()).
     static juce::String iconTitle (Icon icon)
@@ -98,7 +98,7 @@ private:
     // round instead of the old quadratic's pointed dome: a shallow wide
     // ellipse whose top HALF spans foot-to-foot (flatten ~0.78), giving the
     // classic rounded-rainbow with vertically-departing feet the arrowhead
-    // tangent expects. Undo => head at the LEFT foot; Redo => mirror.
+    // tangent needs. Undo => head at the LEFT foot; Redo => mirror.
     // The head is filled + stroked with the SAME stroke object as the arc
     // (one solid weight; see the colour note below).
     static void drawCurvedArrow (juce::Graphics& g, juce::Rectangle<float> r, bool clockwise)

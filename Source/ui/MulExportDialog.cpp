@@ -43,7 +43,7 @@ const StrategyItem kItems[] = {
     { Strategy::MonoFold, "Keep them fat instead of polyphonic",
       "Shares fairly like the first option, but every part that loses voices switches to Mono: all of its voicecards then play each note together (the classic unison character), so nothing sounds thin." },
     { Strategy::ChainSplit, "Use two or more chained Ambikas",
-      "Writes one extra file per additional Ambika (\"-2.MUL\", \"-3.MUL\", ...). Connect the units by MIDI, load one file into each, and they play as one big synth — keeping every voice." },
+      "Each chained Ambika after the first gets one extra file (\"-2.MUL\", \"-3.MUL\", ...). Connect the units by MIDI. Load one file into each unit. The units then play as one big synth. Every voice stays." },
     { Strategy::AsIs, "Keep the current card assignment",
       "Exports the voicecards exactly as assigned on the Patch page and simply leaves the extra voice settings out — nothing is re-arranged." },
 };

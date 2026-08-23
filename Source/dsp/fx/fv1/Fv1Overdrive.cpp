@@ -71,7 +71,8 @@ void Fv1Overdrive::setParams (const std::array<float, kNumFxSlotParams>& param)
     // The remainder is kept in [0.5,1) — q14() clamps any c >= 1.0 to unity
     // (the OLD [1,2) split was therefore pinned to 1.0x and the Drive knob
     // collapsed to a powers-of-two staircase: 1/2/4/8/16x only, every
-    // intermediate position dead — caught by the subagent audit 2026-08-21).
+    // intermediate position without effect — caught by the subagent audit
+    // 2026-08-21).
     driveShift_ = 0;
     while (drive / static_cast<float> (1 << (driveShift_ + 1)) >= 0.5f) ++driveShift_;
     drive14_ = q14 (drive / static_cast<float> (1 << driveShift_));
@@ -173,7 +174,7 @@ void Fv1Overdrive::processSampleFx (int32_t lin, int32_t /*rin*/,
     //     idx = 128 * (D*x + bias) + 512
     // so the curve is read at xT = D*x — the documented 1..16x Drive.
     // (The old >>13 read the table at 8*D*x: every documented gain and the
-    // "low-Drive transparent" slope were 8x hot — see audit rev_dyn.md.)
+    // "low-Drive transparent" slope were 8x too high — see audit rev_dyn.md.)
     // UNSATURATED gain ladder (2026-08-21: re-applied — an earlier fix was
     // lost to a git checkout during red-validation; the subagent audit caught
     // it). f24_addSat doublings rail-clamped v at 2^23, collapsing the table

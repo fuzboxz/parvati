@@ -2,7 +2,7 @@
 //
 // SynthWorkspace — the content of the top-level SYNTH tab. A rigid, void-free
 // 3-row integrated panel that hosts the EXISTING, editor-owned ParamPages
-// (reparented, NOT regenerated), so every APVTS attachment and the verified
+// (reparented, NOT regenerated), so every APVTS attachment and the checked
 // byte-bridge survive the reorganization unchanged:
 //
 //   TOP row:    3 columns  [ OSCILLATORS 40% | MIXER 20% | FILTER 40% ]
@@ -89,7 +89,7 @@ public:
     // at startup to set the default (Env 1).
     void setActiveGenerator (int modSrcEnum);
 
-    // Detach the currently-active generator page from this workspace's
+    // Detach the active generator page from this workspace's
     // active-editor host (non-owned: removeChildComponent, never deleted) and
     // forget it. Used by the editor on a Synth<->FX toggle so the SHARED page
     // re-parents cleanly into the newly-visible FxWorkspace (a JUCE Component
@@ -97,7 +97,7 @@ public:
     void releaseActiveEditor();
 
     // Drag-only (Perf / Util / Const) pill click — the editor registers a handler
-    // that briefly highlights the mod-matrix rows currently routed FROM that
+    // that briefly highlights the mod-matrix rows now routed FROM that
     // source (ModMatrixView::flashRowsForSource), reusing the existing timed
     // flash. Generators do NOT reach this handler (they swap the editor instead).
     void setOnDragOnlyPillClicked (std::function<void (int)> cb);
@@ -181,7 +181,7 @@ private:
     std::unique_ptr<juce::Component> topRowHost_;
     std::unique_ptr<juce::Viewport> topRowViewport_;
 
-    std::unique_ptr<juce::Viewport> activeEditorHost_;    ParamPage* activePage_ = nullptr;   // page currently reparented into the host
+    std::unique_ptr<juce::Viewport> activeEditorHost_;    ParamPage* activePage_ = nullptr;   // page now reparented into the host
 
     // Generator -> { page, groups-to-show } registration (built by the editor from
     // the page-generation loop; one entry per generator pill).
@@ -202,7 +202,7 @@ private:
     // pills; the bar pill highlight is handled separately by setActiveGenerator.
     void showGenerator (int modSrcEnum);
 
-    // Reflow the currently-active page into the host's current bounds. Called
+    // Reflow the active page into the host's current bounds. Called
     // from resized() (and after a generator swap) so the page follows resizes.
     void reflowActiveEditor();
 

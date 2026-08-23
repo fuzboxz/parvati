@@ -307,7 +307,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     // ---- Plot area ----
     // Horizontal inset tightened 8 -> 3 px (2026-08-23, same request as the
     // kEdgePad tightening): the pre/post-envelope silence is the pad's job
-    // now, so the plot itself hugs the panel border like the osc/filter
+    // now, so the plot itself sits against the panel border like the osc/filter
     // previews (3 px) instead of adding another 8 px of emptiness on each
     // side of the curve.
     auto plot = bounds.reduced (3.0f, 0.0f);

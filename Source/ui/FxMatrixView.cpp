@@ -789,7 +789,7 @@ void FxMatrixView::flashTick()
 
 void FxMatrixView::flashRowsForSource (int sourceEnum)
 {
-    // Clear any prior flash, then flash every ACTIVE row currently routed FROM
+    // Clear any prior flash, then flash every ACTIVE row now routed FROM
     // @p sourceEnum (read live so a freshly-edited source combo follows). The
     // first matching row is scrolled into view; the flash auto-expires via
     // flashTick() on the timer.

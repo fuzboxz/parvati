@@ -102,7 +102,7 @@ std::array<int, kParts> proportionalCounts (const Setup& s)
         for (int q = 0; q < kParts; ++q)
             if (counts[(size_t) q] > 1 && (rich < 0 || counts[(size_t) q] > counts[(size_t) rich]))
                 rich = q;
-        if (rich < 0) break;   // nothing to steal (can't happen with <= 6 active)
+        if (rich < 0) break;   // nothing to steal (cannot happen with <= 6 active)
         --counts[(size_t) rich];
         counts[(size_t) p] = 1;
     }
@@ -207,10 +207,10 @@ Solution solve (const Setup& s, Strategy strategy)
 std::vector<Solution> solveChain (const Setup& s)
 {
     // Sequential packing: each Part's request is split into segments of at
-    // most (the unit's remaining) cards; a Part that continues on a later unit
+    // most (the unit's remaining) cards. A Part that continues on a later unit
     // gets CHAIN on every non-final segment (the firmware forwards that
     // Part's overflow to the next unit, which matches it on channel +
-    // key zone); the final segment keeps the original mode.
+    // key zone). The final segment keeps the original mode.
     std::vector<std::array<int, kParts>> units (1);
     int remaining = kParts;
 

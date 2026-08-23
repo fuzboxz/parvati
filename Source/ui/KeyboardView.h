@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// KeyboardView — a virtual keyboard that (a) reflects notes currently sounding
+// KeyboardView — a virtual keyboard that (a) reflects notes now sounding
 // in the engine (driven by the editor's timer via latchNoteOn/Off) and (b) lets
 // the user click-and-drag to play notes (routed to the engine through the
 // NoteCallback set by the editor). It wraps a juce::MidiKeyboardComponent fed by
@@ -154,7 +154,7 @@ public:
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
 private:
-    // Channel used for latching note activity into the owned state_.
+    // Channel used to latch note activity into the owned state_.
     static constexpr int kLatchChannel = 1;
 
     // ---- The visible window: exactly TWO octaves, C3..C5 inclusive ----
@@ -178,7 +178,7 @@ private:
 
     NoteCallback noteCallback_;
     PressureCallback pressureCallback_;   // continuous Y-pressure while a key is held (-> channel pressure / AT)
-    // Per-MouseInputSource -> the midi note it currently holds. The desktop
+    // Per-MouseInputSource -> the midi note it now holds. The desktop
     // mouse is source 0 (identical to the old single int); on a touchscreen each
     // finger is a separate source, so several notes can sound at once (chords).
     std::map<int, int> mouseDownNotesBySource_;
@@ -198,7 +198,7 @@ private:
     // note-on uses it; mouse clicks keep their own event-derived velocity.
     float qwertyVelocity_ { 100.0f / 127.0f };
 
-    std::map<char, int> heldNotes_;        // QWERTY char -> MIDI note currently held
+    std::map<char, int> heldNotes_;        // QWERTY char -> MIDI note now held
 
     // Editor-side feedback channel for the Ableton-style settings (Z/X octave,
     // C/V velocity): fired on every change with the new values.
@@ -221,7 +221,7 @@ private:
     void firePressureFromEvent (const juce::MouseEvent& e);
     float velocityFromEvent (const juce::MouseEvent& e) const;
 
-    // True when a MouseInputSource OTHER than exceptSource currently holds the
+    // True when a MouseInputSource OTHER than exceptSource now holds the
     // given note. Multitouch overlap dedup for the KeyComp note routing: the
     // engine must hear each note exactly once even when two sources (fingers /
     // finger + mouse) land on the same key via press or glissando retarget.

@@ -112,9 +112,9 @@ void AmbikaVoice::setOversamplingFactor (int factor)
     // pendingOsFactor_ == factor means the last consume/prepare installed
     // exactly that value — osFactor_ itself is AT-owned and must not be read
     // from this thread.) CONSUMING also satisfies the early-out: the AT is
-    // installing exactly that staged factor, so re-staging is pointless (the
+    // installing exactly that staged factor, so re-staging is pointless. (The
     // audio-stopped-engine case never spins here either — the take-back CAS
-    // in acquireOsStaging succeeds immediately). Redundant calls (the
+    // in acquireOsStaging succeeds immediately.) Redundant calls (the
     // processor seeds every voice with the same factor) must not allocate 96
     // objects.
     if (pendingOsFactor_.load (std::memory_order_relaxed) == factor
@@ -133,8 +133,8 @@ void AmbikaVoice::setOversamplingFactor (int factor)
     osStageState_.store (kOsStageStaged, std::memory_order_release);
 
     // The dirty flag remains the trigger the audio thread polls (and the
-    // belt-and-braces fallback below); a silent voice installs on its next
-    // note, exactly like the old rebuild.
+    // extra fallback below); a silent voice installs on its next note,
+    // exactly like the old rebuild.
     osFactorDirty_.store (true, std::memory_order_release);
 }
 
@@ -281,13 +281,14 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     const bool legato = legatoNext_;
     const bool continueAudio = legato || continuityNext_;
 
-    // Drop any tail from a previous note so it doesn't bleed into this attack
-    // — EXCEPT when continuing a sounding voice (legato overlap or a mono
-    // retrigger of a release tail): those paths deliberately continue the
-    // live audio; clearing the resampler FIFO here would discard ~0.4-1.3 ms
-    // of unconsumed internal samples and restart the Lagrange interpolator
-    // cold — a time-skip discontinuity (click) at EVERY retrigger. The
-    // fresh-note and hard-stop paths still clear (hard stop: stopNote below).
+    // Drop any tail from a previous note so it does not bleed into this
+    // attack — EXCEPT when continuing a sounding voice (legato overlap or a
+    // mono retrigger of a release tail): those paths deliberately continue
+    // the live audio. Clearing the resampler FIFO here would discard
+    // ~0.4-1.3 ms of unconsumed internal samples and restart the Lagrange
+    // interpolator cold — a time-skip discontinuity (click) at EVERY
+    // retrigger. The fresh-note and hard-stop paths still clear (hard stop:
+    // stopNote below).
     if (! continueAudio)
     {
         fifo_.clear();
@@ -296,7 +297,7 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     isReleasing_ = false;
 
     // De-click: arm the one-shot startup gain ramp ONLY on a fresh trigger.
-    // (A continuing voice is already sounding — ramping its gain 1→0→…→1
+    // (A continuing voice is already sounding — a gain ramp of 1→0→…→1
     // would CREATE the click the ramp exists to prevent.)
     if (continueAudio) { startupGain_ = 1.0f; startupRampRemaining_ = 0; }
     else               { startupGain_ = 0.0f; startupRampRemaining_ = kDeClickRamp; }
@@ -398,7 +399,7 @@ void AmbikaVoice::fillInternalBlock()
     if (! consumeStagedOversampling()
         && osFactorDirty_.exchange (false, std::memory_order_acq_rel))
     {
-        // Belt-and-braces fallback (legacy staged-flag path, no pre-built
+        // Extra fallback (legacy staged-flag path, no pre-built
         // object): no current caller reaches this (the message-thread setter
         // always stages an object before publishing the flag), but a future
         // caller that only sets the flag stays CORRECT — the old AT-side
@@ -530,7 +531,7 @@ void AmbikaVoice::fillInternalBlock()
     // linear). The voice's cutoff/resonance/vca fold in keytracking + env + lfo;
     // we smooth the three dominant zipper sources (AnalogFilter exposes cheap
     // per-sample setCutoffHz / setResonance setters, so all three are smoothed
-    // — resonance rides the same commit() as cutoff at no extra cost).
+    // — resonance shares the same commit() as cutoff at no extra cost).
     const float targetCutoff = ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff());
     const float targetReso   = static_cast<float> (voice_.resonance()) / 255.0f;
     const float vcaNorm      = static_cast<float> (voice_.vca()) / 255.0f;
@@ -691,9 +692,9 @@ void AmbikaVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer,
 
     // Idle-voice self-gate. JUCE's Synthesiser calls renderNextBlock for EVERY
     // voice every block; an idle voice (no current note, not in a release tail)
-    // must emit silence. Without this, an idle voice runs the full DSP and,
-    // because the multiplicative ENV->VCA modulation only fully closes the VCA
-    // when the amount is exactly 63, any patch with amount < 63 leaves the VCA
+    // must emit silence. Without this, an idle voice runs the full DSP. The
+    // multiplicative ENV->VCA modulation only fully closes the VCA when the
+    // amount is exactly 63, so any patch with amount < 63 leaves the VCA
     // open (~126) and the oscillator renders at pitch_value_ == 0 (sub-audio)
     // => a startup low-frequency rumble. isVoiceActive() is true while a voice
     // holds a note, INCLUDING during release tail-off until this same function
@@ -716,8 +717,8 @@ void AmbikaVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer,
             fillInternalBlock();
 
         float tmpOut[kMaxChunk];
-        // Safe overload: produces exactly `chunk` outputs, won't over-read the
-        // FIFO, returns the number of internal samples consumed.
+        // Safe overload: produces exactly `chunk` outputs, does not over-read
+        // the FIFO, returns the number of internal samples consumed.
         const int consumed = interp_.process (speedRatio_,
                                               fifo_.data(),
                                               tmpOut,
@@ -756,10 +757,11 @@ void AmbikaVoice::renderNextBlock (juce::AudioBuffer<float>& outputBuffer,
     // Release tail-off: free the voice once the engine's VCA has converged
     // (envelope DEAD => essentially silent) OR once ALL three envelopes have
     // reached DEAD (Voice::envelopesDead). The second condition is robust to a
-    // patch with no ENV->VCA modulation routing, where the multiplicative VCA
-    // never collapses below 2 and the voice would otherwise linger active
-    // (stuck meter / reduced polyphony) until JUCE steals it. (The few ms of
-    // FIFO tail below the noise floor are inaudible.)
+    // patch with no ENV->VCA modulation routing. In such a patch the
+    // multiplicative VCA never collapses below 2 and the voice would
+    // otherwise linger active (stuck meter / reduced polyphony) until JUCE
+    // steals it. (The few ms of FIFO tail below the noise floor are
+    // inaudible.)
     if (isReleasing_ && (voice_.vca() < 2 || voice_.envelopesDead()))
     {
         clearCurrentNote();

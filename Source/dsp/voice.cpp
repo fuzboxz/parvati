@@ -142,8 +142,8 @@ void Voice::Init() {
     // (they default to 0) would freeze on its first Trigger(ATTACK): Trigger
     // reads stage_phase_increment_[ATTACK] at trigger time, and 0 means the
     // attack segment never advances (VCA stuck at 0 => a triggered voice is
-    // silent). Update() is normally called every block in UpdateDestinations();
-    // this just primes the values at construction so a gated idle voice is
+    // silent). Update() is normally called every block in UpdateDestinations().
+    // This just primes the values at construction so a gated idle voice is
     // trigger-ready. (When a voice later runs ProcessBlock, Update() re-seeds
     // these from the live patch, so this does not affect byte-faithfulness.)
     for (uint8_t i = 0; i < kNumEnvelopes; ++i)
@@ -534,8 +534,8 @@ void Voice::ProcessBlock() {
     // 441-442). Interpolate each gain LINEARLY (8.8 fixed point) from its
     // previously APPLIED value to this block's target — pos(i) = start +
     // (target - start) * i / blockSize — and use the glided values inside
-    // the mix loops below, so a CV tick slews over the whole block instead
-    // of stepping the waveform once: the analog mixer stage does this
+    // the mix loops below. Thus a CV tick slews over the whole block instead
+    // of stepping the waveform once; the analog mixer stage does this
     // smoothing in hardware. The interpolation lands EXACTLY on the target
     // (no accumulator residual — an earlier increment-based version
     // oscillated ±1 sub-LSB around targets and cast acc=-1 to gain 255,

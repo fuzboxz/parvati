@@ -2,7 +2,7 @@
 //
 // MulExportDialog — the .MUL hardware-export fallback dialog. Shown when a
 // multi uses the per-part voice-slot extension beyond what the 6 hardware
-// voicecards can express: the user picks a plain-language strategy for fitting
+// voicecards can express: the user picks a plain-language strategy to fit
 // the voices onto the cards ("Share the voicecards fairly", "Use two or more
 // chained Ambikas", ...), with a live description line, a one-line outcome
 // summary, and a per-part preview. The dialog is pure UI: the mapping itself

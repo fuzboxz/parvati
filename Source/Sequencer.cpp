@@ -56,7 +56,7 @@ void Sequencer::clockTick (uint8_t heldNote, bool keyHeld)
     {
         // Defensive self-clean (PATH A / D): the note-block guard is false (key
         // released, length set to 0, or mode != NOTE) but a note is still held.
-        // Release it so it can't strand. (The engine ALSO calls allNotesOff() on
+        // Release it so it cannot strand. (The engine ALSO calls allNotesOff() on
         // key-release / transport stop, which fires even when the clock has
         // stopped — this branch covers the case where the clock is still running.)
         internalNoteOff (previousNote_);

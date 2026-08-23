@@ -93,7 +93,7 @@ public:
     // rows for the category tint + accent bar.
     juce::String sourceNameForSlot (int slot) const;
 
-    // Briefly flash every ACTIVE row currently routed FROM @p sourceEnum (a
+    // Briefly flash every ACTIVE row now routed FROM @p sourceEnum (a
     // MOD_SRC_* value), reusing the same transient flash the slot-selection
     // (knob double-click) uses. Called from the FX workspace's CentralModBar when
     // a drag-only (Perf/Util/Const) source pill is clicked, so the user can see
@@ -102,11 +102,11 @@ public:
     // flashTick() on the timer.
     void flashRowsForSource (int sourceEnum);
 
-    // The FX destination (FX_DST_*) a slot is currently routed to, read live from
+    // The FX destination (FX_DST_*) a slot is now routed to, read live from
     // its fxmod{N}_dest APVTS raw value (-1 on error).
     int destForSlot (int slot) const;
 
-    // The ModulationSource (MOD_SRC_*) a slot is currently routed FROM, read
+    // The ModulationSource (MOD_SRC_*) a slot is now routed FROM, read
     // live from its fxmod{N}_source APVTS raw value (-1 on error). Used by the
     // drag-grip so the dragged payload reflects the row's current source.
     int sourceForSlot (int slot) const;

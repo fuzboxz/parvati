@@ -3,7 +3,7 @@
 // FxWorkspace — the content of the top-level FX tab. A rigid, void-free 3-row
 // integrated panel that mirrors SynthWorkspace's skeleton, hosting EDITOR-OWNED
 // ParamPages (reparented, NOT regenerated) so every APVTS attachment and the
-// verified byte-bridge survive unchanged:
+// checked byte-bridge survive unchanged:
 //
 //   TOP row:    4 columns [ ROUTING | FX1 | FX2 | FX3 ]. A slim FxRoutingBar
 //               column (topology dropdown + global MIX + master EQ) on
@@ -124,7 +124,7 @@ public:
     // generator.
     void setActiveGenerator (int modSrcEnum);
 
-    // Detach the currently-active generator page from this workspace's
+    // Detach the active generator page from this workspace's
     // active-editor host (non-owned: removeChildComponent, never deleted) and
     // forget it. Used by the editor on a Synth<->FX toggle so the SHARED page
     // re-parents cleanly into the newly-visible workspace (a JUCE Component can
@@ -133,7 +133,7 @@ public:
     void releaseActiveEditor();
 
     // Drag-only (Perf / Util / Const) pill click — the editor registers a handler
-    // that briefly highlights the FX-matrix rows currently routed FROM that source
+    // that briefly highlights the FX-matrix rows now routed FROM that source
     // (FxMatrixView::flashRowsForSource). Generators do NOT reach this handler.
     void setOnDragOnlyPillClicked (std::function<void (int)> cb);
 
@@ -193,7 +193,7 @@ private:
     std::unique_ptr<juce::Viewport> topRowViewport_;
 
     std::unique_ptr<juce::Viewport> activeEditorHost_;
-    ParamPage* activePage_ = nullptr;   // page currently reparented into the host
+    ParamPage* activePage_ = nullptr;   // page now reparented into the host
 
     // Generator -> { page, groups-to-show } registration (built by the editor from
     // the page-generation loop; one entry per generator pill).
@@ -213,7 +213,7 @@ private:
     // active-editor host (the page is never regenerated).
     void showGenerator (int modSrcEnum);
 
-    // Reflow the currently-active page into the host's current bounds. Called
+    // Reflow the active page into the host's current bounds. Called
     // from resized() (and after a generator swap) so the page follows resizes.
     void reflowActiveEditor();
 

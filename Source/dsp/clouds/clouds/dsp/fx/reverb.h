@@ -66,7 +66,7 @@ class Reverb {
   void Process(FloatFrame* in_out, size_t size) {
     // This is the Griesinger topology described in the Dattorro paper
     // (4 AP diffusers on the input, then a loop of 2x 2AP+1Delay).
-    // Modulation is applied in the loop of the first diffuser AP for additional
+    // Modulation is applied in the loop of the first diffuser AP for more
     // smearing; and to the two long delays for a slow shimmer/chorus effect.
     typedef E::Reserve<113,
       E::Reserve<162,

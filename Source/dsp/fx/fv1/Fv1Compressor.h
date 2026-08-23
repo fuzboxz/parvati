@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// Fv1Compressor — the bread-and-butter clean feed-forward peak compressor
+// Fv1Compressor — the standard clean feed-forward peak compressor
 // (the non-vinyl sibling of the Vinyl Compressor: no wow, no noise, no
 // saturation — just leveling). Float sidechain (the FV-1 LOG/EXP equivalent);
 // gain applied in fixed point exactly like the family contract.
@@ -43,7 +43,8 @@ private:
     int16_t level14_ = 8192;  // q14 fractional trim (0..1); 8192 = unity
     int levelShift_ = 0;      // 0/1 extra x2 stage when Level > 1 (q14 alone
                               // tops out at ~1.0 — the old q14(p3*2) clamped
-                              // every p3 > ~0.5 to unity: dead upper half)
+                              // every p3 > ~0.5 to unity: upper half without
+                              // effect)
 };
 
 } // namespace parvati::fv1

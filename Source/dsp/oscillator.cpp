@@ -47,7 +47,7 @@ inline uint8_t InterpolateTwoTables(const uint8_t* table_a, const uint8_t* table
 // ---------------------------------------------------------------------------
 // Phase / sample-loop macros — faithful copies of oscillator.cc:18-44.
 // (void) casts are inert; they only suppress -Wunused-variable for render fns
-// that don't touch every local the macro declares.)
+// that do not touch every local the macro declares.)
 // ---------------------------------------------------------------------------
 
 #define UPDATE_PHASE \

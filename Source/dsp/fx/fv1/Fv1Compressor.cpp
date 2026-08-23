@@ -25,7 +25,7 @@ void Fv1Compressor::setParams (const std::array<float, kNumFxSlotParams>& param)
     makeup_   = 1.0f + 2.0f * p0;                  // 1 -> 3
     // Level 0..2 via the same ki/kf split used for g below: q14() clamps
     // c >= 1.0 to 8191, so q14(p3*2) pinned every p3 > ~0.5 to ~unity (the
-    // upper half of the knob was dead — audit rev_dyn.md).
+    // upper half of the knob had no effect — audit rev_dyn.md).
     {
         float lvl = p3 * 2.0f;
         if (lvl < 0.0f) lvl = 0.0f;

@@ -46,7 +46,7 @@ constexpr int kTableContentInset = 4;
 
 // Which columns each table tab shows (regrouped 2026-08-20 per the Ambika
 // note-path split: MIDI carries the NOTE-ROUTING controls — channel, key
-// zone, the voice ALLOCATOR (Mono/Poly/Unison/Cyclic/Chain, which decides
+// zone, the voice ALLOCATOR (Mono/Poly/Unison/Cyclic/Chain, which selects
 // how incoming notes map to voices) and Octave (transpose acts on the note
 // stream); Voice carries the SOUND-shaping controls — voice count, glide,
 // legato feel, output level/tuning/detune, scale. Portamento/Legato
@@ -67,7 +67,7 @@ constexpr bool kMidiTabMask[PartTableColumns::kCount] = {
 // 1024x500-floor budget (Voice tab: 728 + 11 gaps = 772 <= 944).
 struct PartColumnSpec { int minW; int weight; int maxW; };
 constexpr PartColumnSpec kColumnSpecs[PartTableColumns::kCount] = {
-    /* kName   */ {  96, 1,        160 },   // capped: the name field should hug its 16-char content, not drink the row
+    /* kName   */ {  96, 1,        160 },   // capped: the name field must fit its 16-char content, not fill the row
     /* kVoices */ {  56, 2,         90 },   // measured fit: numbers 0..16 + combo chrome
     /* kCh     */ {  56, 3,        110 },   // "Omni" + 1..16 + chrome
     /* kZoneLo */ {  44, 1,        72 },
@@ -332,12 +332,11 @@ public:
         // tooltips is concatenation of TRANS fragments, since TRANS must wrap
         // each COMPLETE source string to hit the translation table).
         voicesTip_ =
-            TRANS ("How many voices this part plays at once, drawn from the shared ")
-            + TRANS ("96-voice pool (0-16). 0 disables the part entirely — it gets no ")
-            + TRANS ("voice in the pool and stops sounding. Every part can be maxed out ")
-            + TRANS ("at the same time — the pool holds 6 x 16. The hardware voicecards ")
+            TRANS ("How many voices this part plays at once from the shared ")
+            + TRANS ("96-voice pool (0-16; 0 disables the part; the pool holds 6 x 16 so ")
+            + TRANS ("all parts can be maxed at the same time; the hardware voicecards ")
             + TRANS ("are shared out automatically for the individual outputs and the ")
-            + TRANS (".MUL hardware export.");
+            + TRANS (".MUL export).");
         addAndMakeVisible (voicesCombo_);
 
         // ---- Ch: Omni (0) + 1..16 (id = channel + 1). ----
@@ -531,7 +530,7 @@ public:
         resized();
     }
 
-    // Test hook: the mask of columns this row CURRENTLY renders (mirrors the
+    // Test hook: the mask of columns this row now renders (mirrors the
     // panel's active tab; PartRow::resized consumes the same kVoice/kMidi
     // masks, so this is the row-visible truth the test asserts against).
     const bool* visibleColumnsForTest() const { return midiTab_ ? kMidiTabMask : kVoiceTabMask; }
@@ -572,14 +571,14 @@ public:
             TRANS ("Click (or tap) to rename this part — an empty name reverts to the ")
             + TRANS ("default 'Part N' label.");
         channelTip_ =
-            TRANS ("MIDI channel this part listens on. Omni responds on every ")
-            + TRANS ("channel (multitimbral stacks usually want distinct channels).");
+            TRANS ("MIDI channel this part listens on (Omni responds on every ")
+            + TRANS ("channel; multitimbral stacks usually need distinct channels).");
         zoneLoTip_ =
-            TRANS ("Key zone: the lowest MIDI note this part responds to. Notes ")
-            + TRANS ("below stay silent so another part can own them.");
+            TRANS ("Key zone: the lowest MIDI note this part responds to (notes ")
+            + TRANS ("below stay silent so another part can use them).");
         zoneHiTip_ =
-            TRANS ("Key zone: the highest MIDI note this part responds to. Notes ")
-            + TRANS ("above stay silent so another part can own them.");
+            TRANS ("Key zone: the highest MIDI note this part responds to (notes ")
+            + TRANS ("above stay silent so another part can use them).");
     }
 
     // Test hook: every interactive cell exposes a tooltip when the global
@@ -732,7 +731,7 @@ public:
                             juce::dontSendNotification);
     }
 
-    // The Poly combo's currently-displayed mode (0..4 = the combo id - 1).
+    // The Poly combo's displayed mode (0..4 = the combo id - 1).
     int displayedPolyphony() const
     {
         const int id = polyCombo_.getSelectedId();
@@ -813,7 +812,7 @@ public:
         onSpreadChanged();
     }
 
-    // The Voices combo's currently-displayed voice count (0..16; 0 = the
+    // The Voices combo's displayed voice count (0..16; 0 = the
     // part is disabled — a real selected item, not a placeholder).
     int displayedVoiceSlots() const
     {
@@ -834,7 +833,7 @@ public:
         onVoicesChanged();
     }
 
-    // The Tune combo's currently-displayed mode (0..32).
+    // The Tune combo's displayed mode (0..32).
     int displayedTuningMode() const
     {
         return tuneCombo_.getSelectedId() - 1;
@@ -1401,15 +1400,15 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     // Text + tooltips at construction (refreshLanguage re-translates them on
     // a live language switch — the editor calls it after building).
     exportProButton_.setTooltip (
-        TRANS ("Export the current part as an Ambika .PRO patch ")
-        + TRANS ("(byte-faithful, hardware-shareable). Parvati-only options ")
-        + TRANS ("(VCA curve, filter card, arp) are not carried — use Save ")
-        + TRANS ("(.parvati) for the full patch."));
+        TRANS ("Export this part as an Ambika .PRO patch ")
+        + TRANS ("(byte-faithful, hardware-shareable; Parvati-only options ")
+        + TRANS ("— VCA curve, filter card, arp — are not carried; use Save ")
+        + TRANS ("(.parvati) for the full patch)."));
     exportMulButton_.setTooltip (
         TRANS ("Export the whole 6-part setup as an Ambika .MUL multi ")
-        + TRANS ("(hardware-shareable). If a part needs more voices than its ")
+        + TRANS ("(hardware-shareable; if a part needs more voices than its ")
         + TRANS ("voicecards, the export-fallback dialog maps them onto the ")
-        + TRANS ("6 cards."));
+        + TRANS ("6 cards)."));
     tablePanel_->addAndMakeVisible (exportProButton_);
     tablePanel_->addAndMakeVisible (exportMulButton_);
     exportProButton_.getProperties().set ("parvatiButtonOutlined", true);
@@ -1488,15 +1487,15 @@ void PatchPage::refreshLanguage()
     exportProButton_.setButtonText (TRANS ("Export .PRO"));
     exportMulButton_.setButtonText (TRANS ("Export .MUL"));
     exportProButton_.setTooltip (
-        TRANS ("Export the current part as an Ambika .PRO patch ")
-        + TRANS ("(byte-faithful, hardware-shareable). Parvati-only options ")
-        + TRANS ("(VCA curve, filter card, arp) are not carried — use Save ")
-        + TRANS ("(.parvati) for the full patch."));
+        TRANS ("Export this part as an Ambika .PRO patch ")
+        + TRANS ("(byte-faithful, hardware-shareable; Parvati-only options ")
+        + TRANS ("— VCA curve, filter card, arp — are not carried; use Save ")
+        + TRANS ("(.parvati) for the full patch)."));
     exportMulButton_.setTooltip (
         TRANS ("Export the whole 6-part setup as an Ambika .MUL multi ")
-        + TRANS ("(hardware-shareable). If a part needs more voices than its ")
+        + TRANS ("(hardware-shareable; if a part needs more voices than its ")
         + TRANS ("voicecards, the export-fallback dialog maps them onto the ")
-        + TRANS ("6 cards."));
+        + TRANS ("6 cards)."));
     repaint();
 }
 

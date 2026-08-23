@@ -20,7 +20,7 @@ namespace parvati
 {
 // Extract every embedded factory preset into @p factoryDir (*.PRO, organized as
 // FACTORY/<bank>/), @p factoryMultiDir (*.MUL, FACTORY_MULTI/), and @p templatesDir
-// (full-fidelity *.parvati multis, TEMPLATES/), and ensure @p userDir (USER/)
+// (full-fidelity *.parvati multis, TEMPLATES/), and make sure @p userDir (USER/)
 // exists for user saves. Factory banks are written only if missing; the stock
 // TEMPLATES set is SYNCED every run (writes new/changed templates and removes a
 // local *.parvati no longer in the embedded set) so renames/removals propagate
@@ -39,7 +39,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
 constexpr int kFactoryInstallVersion = 1;
 
 // Test-only: forget the process-once install guard so a single test binary can
-// exercise BOTH the first-run (full pass) and the subsequent-run (marker fast
+// exercise BOTH the first-run (full pass) and the later-run (marker fast
 // path) behaviours. Single-threaded use only (tests). Resets nothing on disk.
 void resetInstallOnceForTest();
 }  // namespace parvati

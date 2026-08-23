@@ -88,7 +88,7 @@ inline constexpr std::array<SourceEntry, 32> kAllSources =
     // ===== Generators (LEFT half of the bar — click opens the editor) =====
     // --- Env (generators) ---
     // Short labels name the envelope's DESTINATION (Mod / Filter / Amp — the
-    // semantic mapping verified against the generator-page registration and
+    // semantic mapping checked against the generator-page registration and
     // the Env group headers); the fullName tooltips keep the "Env n" identity
     // for the status strip / hover / tests.
     { ambika::dsp::MOD_SRC_ENV_1, "MOD",  "Env 1",   Cluster::Env,    true },

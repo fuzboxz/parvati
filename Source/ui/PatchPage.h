@@ -1,6 +1,6 @@
 // Phase 2 of the "Patch page" feature: the Patch juce::Component.
 //
-// A custom Component (no APVTS descriptor magic) that replaces the separate
+// A custom Component (with no APVTS descriptor of its own) that replaces the separate
 // Multi/Setup + Global pages. It lets the user pick a high-level arrangement
 // (Mono/Poly/Unison/Multitimbral/Drum Kit — voice-budget presets over the
 // 96-voice pool) which auto-configures all 6 Parts, then fine-tunes each Part
@@ -139,16 +139,16 @@ public:
     void applyExportButtonChrome();
 
     // ---- test / automation hooks (observe + drive the exact UI code paths) ----
-    // Currently-displayed arrangement (the combo selection; Custom if none).
+    // Displayed arrangement (the combo selection; Custom if none).
     Arrangement getDisplayedArrangement() const;
-    // Currently-displayed tuning mode for @p part from its Tune combo
+    // Displayed tuning mode for @p part from its Tune combo
     // (0 = 12-EDO, 1..32 = preset; -1 for an out-of-range part).
     int getDisplayedTuningMode (int part) const;
     // Set @p part's tuning as if the user chose it in the Tune combo: sets the
     // selection then runs the normal byte-4 write path
     // (JUCE does not fire onChange for a programmatic setSelectedId).
     void chooseTuningMode (int part, int mode);
-    // Currently-displayed voice count for @p part from its Voices combo
+    // Displayed voice count for @p part from its Voices combo
     // (0..16; 0 = the Part is DISABLED — a real "0" item, selected at full
     // strength; -1 for an out-of-range part).
     int getDisplayedVoiceSlots (int part) const;
@@ -160,7 +160,7 @@ public:
     // programmatic setSelectedId, hence the explicit drive.
     // @p slots is clamped into the combo's 0..16 range.
     void chooseVoiceSlots (int part, int slots);
-    // Currently-displayed polyphony mode for @p part from its Poly combo
+    // Displayed polyphony mode for @p part from its Poly combo
     // (0 = MONO, 1 = POLY, 2 = UNISON 2x, 3 = CYCLIC, 4 = CHAIN;
     // -1 for an out-of-range part). Same observe-only hook contract as
     // getDisplayedVoiceSlots: editor-load tests assert the combo mirrors the

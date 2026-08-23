@@ -33,7 +33,7 @@ float shapeFn (int s, float x)
     auto clamp1 = [] (float v) { return std::clamp (v, -1.0f, 1.0f); };
     switch (s)
     {
-        case 0:  // Clip: hard knees at +-0.7, 1.6x hot
+        case 0:  // Clip: hard knees at +-0.7, 1.6x gain
             return clamp1 (1.6f * x);
         case 1:  // Soft: x/(1+|x|), 1.5x out
             return clamp1 (1.5f * x / (1.0f + std::fabs (x)));
@@ -84,7 +84,7 @@ float shapeFn (int s, float x)
         case 12: // Mirror: mirrored tube (even harmonics, opposite tilt)
             return clamp1 (x >= 0.0f ? 1.7f * x / (1.0f + 0.22f * x * x)
                                      : 1.5f * x / (1.0f + 0.35f * x * x));
-        case 13: // HGate: hot positive, crushed negative (gate-y)
+        case 13: // HGate: high-gain positive, crushed negative (gate-like)
             return clamp1 (x >= 0.0f ? 1.4f * x / (1.0f + 0.3f * x)
                                      : 0.3f * x / (1.0f + std::fabs (x)));
         case 14: // Crush4: 16-level staircase, loud (the "digital rasp")
@@ -110,7 +110,7 @@ Fv1LutDistortion::Fv1LutDistortion()
             const float x = (static_cast<float> (i) - 512.0f) / 128.0f;   // [-4,4)
             const float y = shapeFn (s, x);
             tables_[s][static_cast<size_t> (i)] =
-                static_cast<int16_t> (std::lround (y * 16383.0f * 0.75f));   // Q.14, hot
+                static_cast<int16_t> (std::lround (y * 16383.0f * 0.75f));   // Q.14, high gain
         }
 }
 

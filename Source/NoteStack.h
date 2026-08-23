@@ -30,11 +30,12 @@ class NoteStack
 public:
     // Default-constructed NoteStack must have every pool slot marked free
     // (note == kFreeSlot). The member `{}` initializers zero the storage (note ==
-    // 0), which would make the free-slot search in noteOn() always fail -- the
-    // caller (Arpeggiator::pressedKeys_) never calls clear(), so without this the
-    // first noteOn writes the pool_[0] dummy sentinel + inflates size_, desyncs
-    // the linked list from the sorted array, and corrupts adjacent memory (the
-    // hosted note-sequencer SIGBUS). init()/clear() does the faithful reset.
+    // 0), which would make the free-slot search in noteOn() always fail. The
+    // caller (Arpeggiator::pressedKeys_) never calls clear(), so without this
+    // the first noteOn writes the pool_[0] dummy sentinel + inflates size_,
+    // desyncs the linked list from the sorted array, and corrupts adjacent
+    // memory (the hosted note-sequencer SIGBUS). init()/clear() does the
+    // faithful reset.
     NoteStack() { clear(); }
 
     void init() { clear(); }
@@ -65,10 +66,10 @@ public:
         // No free slot (saturation above failed to free one -- e.g. the linked
         // list has a cycle, so no node had next_ptr==0). BAIL rather than write
         // pool_[0] (the dummy sentinel) + inflate size_: that would desync the
-        // linked list from the sorted array, producing out-of-range pool_/
-        // sorted_ptr_ indices that corrupt adjacent memory (this was the root
-        // cause of the hosted note-sequencer SIGBUS). Dropping the note is the
-        // faithful saturation behaviour.
+        // linked list from the sorted array. It would produce out-of-range
+        // pool_/sorted_ptr_ indices that corrupt adjacent memory (this was the
+        // root cause of the hosted note-sequencer SIGBUS). Dropping the note is
+        // the faithful saturation behaviour.
         if (free_slot == 0)
             return;
         pool_[free_slot].next_ptr = root_ptr_;
@@ -137,7 +138,7 @@ public:
 
     uint8_t size() const { return size_; }
 
-    // Does the stack currently hold @p note? (const lookup — no removal; used
+    // Does the stack now hold @p note? (const lookup — no removal. Used
     // by the engine's note-off routing to tell a note the arp/sequencer is
     // HOLDING from one that was sounding before the mode was enabled and so
     // never entered the stack.)

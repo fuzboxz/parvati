@@ -48,7 +48,7 @@ struct ModTelemetrySnapshot
 
     // The bar-only Note Sequencer pill has NO MOD_SRC_* enum (its output is
     // note events, not a modulation bus value), so its live preview rides the
-    // one spare slot: the tracked part's currently-sounding sequencer note
+    // one spare slot: the tracked part's active sequencer note
     // (0..127 -> 0..254, 0 = rest/gap) — a melody trace with rests as gaps.
     static constexpr int kNoteSeqSlot = kNumSources - 1;
 

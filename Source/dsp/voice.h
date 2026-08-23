@@ -229,7 +229,7 @@ class Voice {
     // divergences.txt; exercised by firmware_parity_test's voicecard audio
     // oracle). Firmware latches the mix gains once per 40-sample block
     // (voice.cc:441-442) and the ANALOG mixer stage smooths the DAC steps in
-    // hardware; the digital port has no analog domain, so a mix_balance /
+    // hardware. The digital port has no analog domain, so a mix_balance /
     // mix_parameter tick steps the osc crossfade gains by up to 16/255 of
     // the waveform — the zipper measured at 0.0597 by parvati_synth_drag_
     // probe (gate 0.05). Parvati glides each gain linearly across the block

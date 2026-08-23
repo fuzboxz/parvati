@@ -100,8 +100,8 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
     // Feedback with SOFT saturation (2026-08-21, caught by the fx-invariants
     // [I2] loop-DC test): the old f24_sat HARD clip on the feedback source
     // rectified asymmetric input (a chord wash) into loop DC — measured
-    // |mean|/rms 0.136 at max feedback — the same class that DC-poisoned the
-    // delay->reverb->shaper chains. Transparent knee to +/-0.6, tanh to the
+    // |mean|/rms 0.136 at max feedback — the same class that contaminated the
+    // delay->reverb->shaper chains with DC. Transparent knee to +/-0.6, tanh to the
     // rail (the Fv1Flanger regen idiom).
     // Regen return path (2026-08-21): HF-DAMPED (the crackle fix — see the
     // header: near-Nyquist positive-feedback phase of the 6-stage cascade

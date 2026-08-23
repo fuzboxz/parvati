@@ -31,7 +31,7 @@ enum class FilterTopology {
 // Local filter-mode enum. Values match common/patch.h FilterMode
 // (FILTER_MODE_LP=0, _BP=1, _HP=2, _NOTCH=3). Kept as a *distinct* identifier
 // (AnalogFilterMode) so this module stays independent of dsp/patch.h during the
-// parallel porting phase; integration will reconcile it with patch.h::FilterMode.
+// parallel porting phase; integration reconciles it with patch.h::FilterMode.
 enum class AnalogFilterMode : int {
     Lowpass  = 0,
     Bandpass = 1,

@@ -262,7 +262,7 @@ public:
     // knobs). Over a destination knob the modulation ring glows (STEP-3
     // highlight bus) and the drop consumes the next free slot for
     // (source -> this knob's dest). Over a NON-destination control a small
-    // padlock is shown (setDropLocked) to signal "can't drop here", and the
+    // padlock is shown (setDropLocked) to signal "cannot drop here", and the
     // drop is a no-op.
     bool isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
     void itemDragEnter (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
@@ -295,7 +295,7 @@ public:
     bool isLengthControl() const noexcept { return paramIDStr_.startsWith ("seq_length_"); }
     // 0-based step index for a seq*_step* / seqnote_* control, else -1.
     int  stepIndex() const noexcept { return parseStepIndex (paramIDStr_); }
-    // Whether the step's slider is currently interactive (false => dimmed: step
+    // Whether the step's slider is now interactive (false => dimmed: step
     // index >= its sequence length). True for non-step controls.
     bool isStepEnabled() const noexcept { return slider_ ? slider_->isEnabled() : true; }
     // Whether this control shows a visible (Length) label — used by the test.
@@ -366,7 +366,7 @@ protected:
     // ---- Sequencer step dimming + subclass access (NoteStepControl /
     // SeqLengthStepper) ----
     // APVTS::Listener callback: the sibling seq_length_* param changed, so
-    // re-evaluate whether this step's slider should be enabled/dimmed.
+    // re-evaluate whether to enable/dim this step's slider.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     // Re-enable/dim this step based on its sibling sequence length (steps at
     // index >= length are disabled => the LookAndFeel omits the fill arc).
@@ -406,7 +406,7 @@ private:
 
     juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
     static bool tooltipsEnabled_;   // toggled from the Settings panel
-    static bool modDragActive_;     // true while a parvatiModSrc drag is in flight
+    static bool modDragActive_;     // true while a parvatiModSrc drag is active
     static bool tapAssignActive_;       // [MOD] toggle ON -> reuse the drop-zone affordance
     static int  tapSelectedSource_;     // MOD_SRC_* tapped on a source; -1 = none yet
     static juce::String transientStatusText_;   // transient status-strip text (e.g. "Mod Matrix full")
@@ -544,7 +544,7 @@ public:
     juce::Component* getGroupDecorationForTest (const juce::String& groupName) const;
     juce::Component* getGroupInlinePreviewForTest (const juce::String& groupName) const;
 
-    // Headless layout sanity check (called by parvati_editor_coverage_check): every group
+    // Headless layout check (called by parvati_editor_coverage_check): every group
     // panel has positive size, no two panels overlap, every (active) control
     // sits inside its group, and at least one non-dense row fills the page width.
     // Returns true when the flexible-width grid is well-formed.
@@ -553,7 +553,7 @@ public:
 private:
     // Maps a paramID to its bordered-group display name (e.g. "osc1_*"->"Osc 1",
     // "mod3_*"->"Mod 3"). Derived purely from the param-ID prefixes so the
-    // verified APVTS byte-bridge is untouched.
+    // checked APVTS byte-bridge is untouched.
     static juce::String groupForId (const juce::String& id);
 
     // One logical group of controls sharing a bordered panel.
@@ -619,7 +619,7 @@ private:
     // Active group-subset filter (empty => ALL groups visible). Set by
     // setVisibleGroups; honoured by layoutGroups/applyLayout/layoutIsSane so a
     // GroupPager can show one slice of a page at a time (hidden groups neither
-    // occupy space, overlap, nor fail the layout-sanity check).
+    // occupy space, overlap, nor fail the layout check).
     juce::StringArray visibleGroups_;
     bool groupVisible (const GroupLayout& g) const noexcept
     { return visibleGroups_.isEmpty() || visibleGroups_.contains (g.name); }
@@ -732,7 +732,7 @@ public:
 
     // Test-only (settings drawer regression): opens the settings SidePanel
     // exactly as the gear button does (showOrHide + the toggle-state sync the
-    // button's onClick performs), so a probe can drive the REAL drawer path
+    // button's onClick does), so a probe can drive the REAL drawer path
     // (slide animation, tracker, viewport sizing) without private access.
     void openSettingsForTest()
     {
@@ -869,7 +869,7 @@ private:
     // arrangement summary) merged into its Global panel.
     std::unique_ptr<PatchPage> patchPage_;
     // Generated ParamPages — EDITOR-OWNED. Every page is created here so every
-    // APVTS attachment and the verified byte-bridge survive the layout
+    // APVTS attachment and the checked byte-bridge survive the layout
     // unchanged: the 3 top-row direct pages (OSC/Mixer/Filter), the generator
     // pages (ENV/LFO/SEQ/ARP/Modifiers), and the Global ParamPage. At most one
     // generator page is reparented into SynthWorkspace's active-editor host at a
@@ -1113,7 +1113,7 @@ private:
     juce::Label statusLoadLabel_;               // realtime audio-load % ("CPU N%", rightmost in the strip; current block only)
     juce::Label statusTooltipLabel_;            // bottom hover-tooltip bar (fills the strip left of the indicators)
 
-    // Keyboard latching state: notes currently lit on the virtual keyboard so
+    // Keyboard latching state: notes now lit on the virtual keyboard so
     // we only fire latchNoteOn/Off on actual transitions (avoids stuck lamps).
     juce::Array<int> latchedNotes_;
     int lastLatchPart_ { -1 };   // last part seen; clear latches when it changes

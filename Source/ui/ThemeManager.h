@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ThemeManager — owns the built-in (and future user) themes plus the currently
+// ThemeManager — owns the built-in (and future user) themes plus the
 // selected one, and broadcasts a change notification whenever the selection
 // moves. Persistence is via a juce::ValueTree so it composes with the APVTS
 // state later (Phase 3d adds zoom + tooltips to the same tree). Phase 1a of

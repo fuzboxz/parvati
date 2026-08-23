@@ -29,9 +29,9 @@
 //
 // Improvements:
 // * No dynamic allocations.
-// * No additional buffering (can use the input buffer as a workspace).
+// * No extra buffering (can use the input buffer as a workspace).
 // * No big bitrev lookup table.
-// * Keep the fixed size template signature, but also provide method for
+// * Keep the fixed size template signature, but also provide a method for
 //   variable size (up to the fixed size).
 
 #ifndef STMLIB_FFT_SHY_FFT_H_
@@ -310,7 +310,7 @@ struct DirectTransform {
       }
     }
     
-    // Annoying additional data copy step.
+    // Extra data copy step.
     if (d != output) {
       std::copy(&d[0], &d[size], &output[0]);
     }
@@ -411,7 +411,7 @@ struct DirectTransform {
       }
     }
     
-    // Annoying additional data copy step.
+    // Extra data copy step.
     if (d != output) {
       std::copy(&d[0], &d[rt_size], &output[0]);
     }

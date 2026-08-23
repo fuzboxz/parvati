@@ -8,9 +8,9 @@
 // (a 6-bit bitmask) and its polyphony MODE. When a setup requests more voices
 // than a Part has cards, exporting needs a STRATEGY for mapping the requested
 // voices onto the 6 cards across Parts. This module owns that mapping as pure
-// functions (no JUCE / engine state) so it is trivially unit-testable; the
-// processor applies the result while writing the .MUL, and the editor shows a
-// preview derived from it before saving.
+// functions (no JUCE / engine state) so it is trivially unit-testable. The
+// processor applies the result while it writes the .MUL, and the editor shows
+// a preview derived from it before saving.
 //
 // All strategies produce CONTIGUOUS bitmasks in Part order (part 0 takes the
 // first cards, part 1 the next, ...) — the same shape PatchArrangement and the
@@ -56,7 +56,7 @@ bool needsFallback (const Setup& s);
 // each nonzero count, minimum one card per Part with a nonzero count, cards
 // packed contiguously in Part order (part 0 first). This is the allocation
 // rule the ENGINE uses to derive its card masks from voiceSlots (the slots
-// model: 1 voice = digital voice + card) and the same shape
+// model: 1 voice = digital voice + card). It is also the same shape
 // Strategy::Proportional produces for export — one source of truth, kept
 // here (pure + dependency-free) so the engine cannot drift from the solver.
 std::array<uint8_t, kParts> deriveMasks (const std::array<int, kParts>& requested);
@@ -77,12 +77,12 @@ Solution solve (const Setup& s, Strategy strategy);
 
 // Solve the chain strategy: packs each active Part's request into units of at
 // most 6 cards. Every segment of a Part that continues on a later unit is
-// written with polyphony CHAIN (the firmware forwards that Part's overflow
-// notes over MIDI to the next unit, which receives them on the same channel +
-// key zone); the final segment keeps the Part's original mode. Later Parts
+// written with polyphony CHAIN. (The firmware forwards that Part's overflow
+// notes over MIDI to the next unit, which receives them on the same channel
+// + key zone.) The final segment keeps the Part's original mode. Later Parts
 // pack after a continuation on the same unit (zone collisions between such
-// Parts are the user's responsibility — a power-user strategy). The first unit
-// is the file the user chose; the rest are written as sibling files.
+// Parts are the user's responsibility — a power-user strategy). The first
+// unit is the file the user chose; the rest are written as sibling files.
 std::vector<Solution> solveChain (const Setup& s);
 
 // Optional human context for the preview helpers (empty = "Part N" fallback).

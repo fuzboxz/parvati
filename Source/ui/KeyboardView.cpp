@@ -143,7 +143,7 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
     // mouseUpOnKey when the release lands on a key. A release off the keys / off
     // the component would otherwise leave THIS source's note held. Route through
     // the base first (on-key releases still clear via mouseUpOnKey), then clear
-    // the source's note as a fallback. Per-source so multitouch releases don't
+    // the source's note as a fallback. Per-source so multitouch releases do not
     // clobber other held fingers.
     void mouseUp (const juce::MouseEvent& e) override
     {
@@ -288,7 +288,7 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
 
     // The owning KeyboardView paints a rounded-top panel behind this component;
     // clip the stock keys to that same rounded shape so the square key corners
-    // don't paint over the panel's rounded top corners. The strip then reads as
+    // do not paint over the panel's rounded top corners. The strip then reads as
     // an integrated rounded card (matching the GroupComponent cards) instead of
     // a keyboard abutting the content. Cosmetic only — hit-testing uses the
     // integer getKeyPosition geometry.

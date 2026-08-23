@@ -33,9 +33,9 @@ namespace
 // main stereo bus; at unity gain several loud voices (and especially Unison
 // stacks) clip. Internal mixing is 32-bit float
 // (voiceCardBuffers_ are AudioBuffer<float>; addFrom accumulates in float), so
-// there is no INTERNAL clipping — this trim only buys headroom on the summed
+// there is no INTERNAL clipping — this trim only adds headroom on the summed
 // MAIN output. -6 dB (0.5x) is a reasoned default for a 6-voicecard sum; the
-// raw per-voicecard AUX buses are left un-trimmed. Tune up/down if needed.
+// raw per-voicecard AUX buses are left un-trimmed. Adjust up/down if needed.
 constexpr float kMainMixHeadroomGain = 0.5f;   // -6 dB
 }  // namespace
 
@@ -71,10 +71,10 @@ juce::Array<ParvatiAudioProcessor::DeferredParamRing::Entry> ParvatiAudioProcess
     // FX audit finding 4: the previous drain built the juce::Array WHILE
     // HOLDING the spinlock -- juce::Array::add can MALLOC, and the audio
     // thread's push() spins unbounded against the flag: if the OS preempts
-    // this (message) thread inside that malloc, the audio thread burns its
-    // entire block budget spinning -> overrun -> crackle. Copy into a
+    // this (message) thread inside that malloc, the audio thread spends its
+    // entire block budget in the spin -> overrun -> crackle. Copy into a
     // FIXED-capacity local array under the lock instead (a bounded copy of
-    // trivially-copyable 8-byte entries -- provably allocation-free), then
+    // trivially-copyable 8-byte entries -- provably allocation-free). Then
     // build the returned Array AFTER the lock is released (still the message
     // thread, where allocating is safe).
     decltype (slots) snapshot;   // same fixed capacity as the ring (64)
@@ -132,7 +132,7 @@ void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
     // the exact GUI-path apply function for its class. These are idempotent
     // staging writes (engine setters -> atomics + dirty flags; onPartSelect ->
     // loadPartIntoApvts + syncAllParamsToEngine), the same work a GUI edit
-    // performs -- safe and correct here, and NOT safe on the audio thread
+    // does -- safe and correct here, and NOT safe on the audio thread
     // (which is why parameterChanged defers them).
 
     // Audit F1/F3 reaper: free the audio objects the audio thread parked when
@@ -212,9 +212,9 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
         [this] (const char* id) -> float { if (auto v = apvts.getRawParameterValue (id)) return v->load(); return 0.0f; });
 
     // Extract the embedded GPL-3.0 factory presets into the user app-data dirs
-    // on first run (process-once) so the Patch combo is populated out of the
-    // box. Also ensures the USER save area exists. Non-fatal: a failure just
-    // leaves the combo empty.
+    // on first run (process-once) so the Patch combo is populated without
+    // user setup. This also makes sure the USER save area exists. Non-fatal:
+    // a failure just leaves the combo empty.
     parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getTemplatesDir(), getUserPatchDir());
 
     // Start the deferred-parameter drain (60 Hz, message thread). Processor
@@ -360,10 +360,10 @@ void ParvatiAudioProcessor::releaseResources()
     // gated at the interruption resume gated and note-offs lost during the
     // window are never re-delivered — STUCK NOTES after an interruption.
     //
-    // Seam choice: engine_.resetAllVoices() DEFERS the kill to the audio
+    // Split choice: engine_.resetAllVoices() DEFERS the kill to the audio
     // thread (stopNote(0,false) = Kill + clearCurrentNote, serviced at the top
-    // of processTransport BEFORE any render) — the same seam patch/multi loads
-    // use, and it touches ONLY voice activity, never patch/part state (which
+    // of processTransport BEFORE any render) — the same split the patch/multi
+    // loads use. It touches ONLY voice activity, never patch/part state (which
     // lives in the Parts' AtomicByteArrays and is untouched here; the next
     // prepare's syncAllParamsToEngine re-primes the voices from the APVTS
     // regardless). JUCE calls releaseResources with the callback stopped
@@ -529,7 +529,7 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // buffer BEFORE processTransport so a clicked key is routed through the
     // arpeggiator / note-sequencer exactly like hardware MIDI: it must engage
     // the current Part's held-key stack + note generation, and — critically —
-    // the key-release hook that fires Sequencer::allNotesOff(). The old order
+    // fire the key-release hook that calls Sequencer::allNotesOff(). The old order
     // (merge AFTER processTransport) bypassed the arp entirely: a clicked note
     // played directly AND its note-off never reached the key-release hook,
     // stranding the note-sequencer's sounding note on release. When the Part's
@@ -994,13 +994,13 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
     currentPart_ = newPart;
     engine_.setCurrentPart (newPart);
     loadPartIntoApvts (newPart);
-    syncAllParamsToEngine();   // ensure the new Part's voices match (idempotent)
+    syncAllParamsToEngine();   // make sure the new Part's voices match (idempotent)
 
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): re-point the
     // engine's telemetry frame at the newly-edited part and wipe its history
     // so the pill sparklines / stage markers / live filter curve never carry
     // the PREVIOUS part's values across the switch (this is the AUTHORITATIVE
-    // seam — every editor path (combo, Cmd+1..6, context menu) and every file
+    // point — every editor path (combo, Cmd+1..6, context menu) and every file
     // load routes through part_select -> here).
     engine_.resetUiTelemetry();
     engine_.setUiTelemetryPart (currentPart_);
@@ -1016,7 +1016,7 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
     //       through parameterChanged into B's engine storage — silent
     //       cross-part sound corruption. The clear below removes the stack,
     //       and undoSafe()/redoSafe() (the editor's undo entry points) sweep
-    //       the stragglers this clear cannot reach: JUCE appends the caller's
+    //       the late entries this clear cannot reach: JUCE appends the caller's
     //       part_select action AFTER its change listeners return, and the 10
     //       Hz APVTS tree-flush timer records host-automation writes late.
     // The isPerformingUndoRedo guard matters: an undo() REPLAY that includes
@@ -1034,7 +1034,7 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
 // The editor's ONLY undo/redo entry points (header buttons + Cmd+Z). A part
 // switch invalidates every recorded action's part context, and the JUCE
 // append-after-listeners ordering + the 10 Hz tree-flush timer can leave
-// stragglers after onPartSelect's synchronous clear — sweep once more, then
+// late entries after onPartSelect's synchronous clear — sweep once more, then
 // replay. Host automation never drives this UndoManager (it is a plugin-side
 // UI concept), so these two entry points cover every real replay.
 void ParvatiAudioProcessor::undoSafe()
@@ -1197,7 +1197,7 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the new patch's
     // histories/markers start clean — the pill sparklines + envelope stage
     // dots + live filter curve never carry the previous patch's motion across
-    // the load seam (epoch bump + engine-side wipe + re-point at this part).
+    // the load boundary (epoch bump + engine-side wipe + re-point at this part).
     engine_.resetUiTelemetry();
     engine_.setUiTelemetryPart (currentPart_);
     return true;
@@ -1382,7 +1382,7 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): a whole-multi
     // load swaps every part's patch — wipe the telemetry history and re-point
     // the frame at the freshly-shown Part 0 (onPartSelect early-returns here:
-    // currentPart_ was set directly, so its hook cannot run for this seam).
+    // currentPart_ was set directly, so its hook cannot run for this boundary).
     engine_.resetUiTelemetry();
     engine_.setUiTelemetryPart (currentPart_);
     return true;
@@ -1497,7 +1497,7 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     // Export fallback: when a Part requests more voices than its voicecards
     // (the voice-slot extension), the chosen strategy rewrites the bitmasks
     // (and optionally the polyphony modes) to map the requested voices onto
-    // the 6 hardware cards. ChainSplit additionally writes sibling "-2.MUL"
+    // the 6 hardware cards. ChainSplit also writes sibling "-2.MUL"
     // unit files for physically chained Ambikas — AFTER the primary file, so
     // a mid-set failure can roll the whole generation back (see below).
     std::vector<AmbikaMulti> unitMultis;   // ChainSplit units 1..N (unit 0 rides the primary)
@@ -1724,7 +1724,7 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): whole-multi load —
     // wipe the telemetry history + re-point at the restored current part
     // (applyParvatiMulti routes its own part-0 select through the part_select
-    // seam, but this explicit reset also covers a same-part restore).
+    // boundary, but this explicit reset also covers a same-part restore).
     engine_.resetUiTelemetry();
     engine_.setUiTelemetryPart (currentPart_);
     return true;

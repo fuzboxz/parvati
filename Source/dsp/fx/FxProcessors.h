@@ -85,7 +85,7 @@ private:
 
 // Reverb — the Clouds Griesinger/Dattorro reverb (FxEngine<16384, 12-bit>).
 // Signal path: Pre-Delay -> input diffusers (Diffusion) -> tank loop (Time) ->
-// LP damping (Tone) -> post Low-Cut (HP) to shed mud. param0 = Pre-Delay
+// LP damping (Tone) -> post Low-Cut (HP) to remove low-frequency buildup. param0 = Pre-Delay
 // (0..200 ms), param1 = Diffusion, param2 = Time, param3 = Tone (LP/damping),
 // param4 = Low-Cut (post HP). The internal amount is pinned full-wet (1.0); the
 // wet/dry mix is the chain Dry/Wet (the old Amount knob was a duplicate of it).
@@ -258,9 +258,9 @@ private:
 // corners anti-alias exactly as the hardware does. Per channel: upsample 6x ->
 // (Drive pre-gain x) fold each oversampled sample -> downsample 6x -> Tone LP.
 // Signal path: Drive (pre-gain into the fold) -> Fold -> Bias -> Tone (post-fold
-// one-pole LP that tames the harsh upper harmonics the fold generates).
+// one-pole LP that reduces the harsh upper harmonics the fold generates).
 // param0 = Drive (1x..4x pre-gain), param1 = Fold (fold amount), param2 = Bias
-// (a small constant second input for an asymmetric fold), param3 = Tone
+// // (a small constant second input for an asymmetric fold), param3 = Tone
 // (post-fold LP; 1 = bright/near-bypass). ~8 base samples of group delay from
 // the SRC filters.
 class FxWavefolder : public FxProcessor
@@ -291,7 +291,7 @@ private:
 };
 
 // Frequency Shifter — the Warps quadrature (Hilbert) frequency shifter (the
-// Warps "easter-egg" algorithm). NATIVE host rate (the Hilbert allpass network
+// Warps hidden "cross-fade" algorithm). NATIVE host rate (the Hilbert allpass network
 // is normalized-frequency, so its 90 deg band scales with the host rate; the
 // carrier QuadratureOscillator inits at the host rate). True-stereo: each channel
 // through its own QuadratureTransform, one shared carrier; the Spread knob

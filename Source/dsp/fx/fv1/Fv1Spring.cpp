@@ -94,8 +94,8 @@ static inline int32_t springLoop (DelayLine<2048>& delay, int delayLen,
 void Fv1Spring::processSampleFx (int32_t lin, int32_t /*rin*/,
                                  int32_t& lout, int32_t& rout)
 {
-    // Driver: cubic soft clip (the spring's driven transducer — slams into
-    // its travel limit on hard hits, which is where the boing comes from).
+    // Driver: cubic soft clip (the spring's driven transducer — hits its
+    // travel limit on hard excitation, which is where the boing comes from).
     auto driver = [] (int32_t x) -> int32_t
     {
         const int32_t v = f24_sat (x);

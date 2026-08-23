@@ -53,8 +53,8 @@ void Fv1Flanger::setParams (const std::array<float, kNumFxSlotParams>& param)
     // Depth clamp: never let the sweep pin at the 1-sample read floor.
     // Base min (0.15 ms = 4.9) << Depth max (4.5 ms = 147.5), so the corner
     // Manual=0/Depth=1 used to clamp inside readFrac for ~49% of EVERY LFO
-    // cycle — half the sweep dead at ~zero delay, the jet collapsing toward
-    // a near-through path. Capping depth at base-1 keeps the deepest read at
+    // cycle — half the sweep inactive at ~zero delay, the jet collapsing
+    // toward a near-through path. Capping depth at base-1 keeps the deepest read at
     // exactly 1 sample; the documented ranges are untouched (only the
     // out-of-range combination is affected).
     if (depthSamp_ > baseSamp_ - 1.0f)
@@ -98,7 +98,7 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
     // buildup: measured -58 dB inharmonic foldback splatter on a PURE SINE
     // (tests/parvati_fx_foldback_probe). The float-domain soft knee below is
     // transparent up to +/-0.6 (C1 at the knee) and eases into the rail like
-    // a regen analog stage — the jet character stays, the edges go.
+    // a regen analog stage — the jet character stays, the edges are removed.
     const int32_t fbTap = damp_.process (rL);
     {
         // Knee + DC killer on the FEEDBACK COMPONENT only (2026-08-21

@@ -175,7 +175,7 @@ public:
         if (m <= 0)
         {
             // No internal sample was produced this call (can happen when the
-            // caller passes a 1-sample block whose phase carry didn't cross an
+            // caller passes a 1-sample block whose phase carry did not cross an
             // internal boundary -- e.g. renderPartFx's drift-corrected sub-
             // chunking emits a 1-sample sub-chunk). Zeroing here would be a
             // full-amplitude dropout (the bug); instead HOLD the last processed

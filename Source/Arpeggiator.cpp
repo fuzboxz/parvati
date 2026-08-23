@@ -74,7 +74,7 @@ void Arpeggiator::clockArpeggiator()
             uint8_t note = arpNote->note;
             uint8_t velocity = arpNote->velocity & 0x7f;
             note += 12 * arpOctave_;
-            while (note > 127)  // NOLINT(bugprone-infinite-loop): note -= 12 each iter terminates the loop; clang-tidy FP
+            while (note > 127)  // NOLINT(bugprone-infinite-loop): note -= 12 each iter ends the loop; clang-tidy FP
                 note -= 12;
 
             internalNoteOn (note, velocity);
@@ -126,7 +126,7 @@ void Arpeggiator::stepArpeggio()
         arpStep_ = (r & 0xf0) >> 4;
         // octaveRange_ > 0 guard: setOctave clamps to >= 1 on every APVTS path,
         // but a raw PartData byte could stage 0 before the staging-site clamp
-        // existed — with range 0 this wrap loop never terminates (audio-thread
+        // existed — with range 0 this wrap loop never ends (audio-thread
         // hang). The sibling numNotes guard below has the same shape.
         while (arpOctave_ >= static_cast<int8_t> (octaveRange_) && octaveRange_ > 0)
             arpOctave_ -= static_cast<int8_t> (octaveRange_);

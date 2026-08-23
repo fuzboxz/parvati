@@ -63,7 +63,7 @@ public:
     // bounds). <= 0 keeps the default: proportional (jmin(w,h)*0.68, capped).
     // The mod-matrix rows pin the FX-card size (15pt) so the synth matrix's
     // taller band does not render a bigger dot than the FX modules' (2026-08-20
-    // user request: the matrix lamp should use the FX enable/disable size).
+    // user request: the matrix lamp must use the FX enable/disable size).
     void setLampDiameter (float d) { lampDiameter_ = d; }
 
     // Override the ON fill colour (e.g. the row's modulator category colour).
@@ -175,7 +175,7 @@ public:
     // ComboBox: a flat DARK dropdown — a 5px rounded solid dark-gray fill with
     // NO outline / inset shadow / arrow bevel, crisp WHITE inline text and a
     // minimal ▼ chevron (light token, right-aligned). A mod-matrix SOURCE combo
-    // additionally carries a 4px family-colour TAG strip on its far-left edge
+    // also carries a 4px family-colour TAG strip on its far-left edge
     // (the "parvatiComboTag" property). Inline text via positionComboBoxText()
     // reserves ~24px on the right for the chevron so long choices never clip.
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
@@ -187,7 +187,7 @@ public:
     // fill (accent when toggled on via buttonOnColourId, panel fill
     // otherwise), LIGHTER on hover and DARKER on press, with NO stroke / bevel
     // / shadow, EXCEPT buttons carrying the "parvatiButtonOutlined" component
-    // property (e.g. the Patch page's Ambika export actions) which additionally
+    // property (e.g. the Patch page's Ambika export actions) which also
     // get a 1px rounded stroke derived from their text colour — proper button
     // chrome where the flat block would read as floating text. IconButton
     // (gear/undo/redo) paints itself and bypasses this. (Text itself is drawn

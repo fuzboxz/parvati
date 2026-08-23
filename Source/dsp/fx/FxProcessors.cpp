@@ -162,7 +162,7 @@ void FxReverb::process (float* L, float* R, int numSamples)
     reverb_.Process (bridge_.internal(), static_cast<size_t> (m));
     bridge_.internalToHost (L, R, numSamples);
 
-    // LOW-CUT: one-pole HP on the tail to shed mud (HP = input - one-pole LP).
+    // LOW-CUT: one-pole HP on the tail to remove low-frequency buildup (HP = input - one-pole LP).
     // lowCut=0 ~ flat (15 Hz, inaudible); increasing raises the cutoff
     // (15..450 Hz). Bypassed near 0.
     if (lowCutParam_ > 0.001f)
@@ -457,7 +457,7 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     // original). Wrapped in the Warps 6x oversampling (kOversampling=6) so the
     // sharp fold corners anti-alias exactly as the hardware does. Native host
     // base rate; the 6x is internal to the fold (upsample 6x -> fold each os
-    // sample -> downsample 6x). A post-fold one-pole Tone LP tames the harsh
+    // sample -> downsample 6x). A post-fold one-pole Tone LP reduces the harsh
     // upper harmonics the fold generates.
     const float x2    = (biasParam_ - 0.5f) * 0.4f;          // bipolar bias (-0.2..+0.2)
     const float gain  = 0.02f + foldParam_;                  // fold amount
@@ -705,8 +705,9 @@ void FxRingModulator::process (float* L, float* R, int numSamples)
         const float c = carrierOs_[i] * 2.0f;
         // Input-domain clamp (Wavefolder precedent, :477-482): warpsDiode
         // grows QUADRATICALLY past its dead zone and SoftLimit is NOT
-        // bounded (x/9 for large x), so an unclamped hot chain input makes
-        // gain*diode-sum explode (|in|=4 @ amount=1 measured ~16x). Upstream
+        // bounded (x/9 for large x), so an unclamped high-level chain input makes
+        // the gain*diode-sum grow far out of range (|in|=4 @ amount=1
+        // measured ~16x). Upstream
         // Warps fed this stage ADC-bounded +/-1 audio — restore that
         // contract in the oversampled domain. Everything at or below nominal
         // full scale is bit-identical; the clamped path peaks ~2.95 at max

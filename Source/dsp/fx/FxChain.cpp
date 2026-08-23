@@ -19,8 +19,8 @@ FxChain::FxChain()
     pendingType_.fill (static_cast<uint8_t> (FxType::None));
     // F-eng-3: -1 = "no staged swap" (None / factory-refused), so the AT-side
     // latency() snapshot never misreads a value-initialized 0 as a real staged
-    // latency before the first stage (state==Empty gates it anyway — belt and
-    // braces, matching pendingType_'s defensive fill above).
+    // latency before the first stage (state==Empty gates it anyway — extra
+    // defense, matching pendingType_'s defensive fill above).
     for (auto& pl : pendingLatency_)
         pl.store (-1, std::memory_order_relaxed);
     for (auto& st : stageState_)
@@ -83,7 +83,7 @@ void FxChain::prepare (double rate, int maxBlock)
     rate_     = rate;
     maxBlock_ = juce::jmax (1, maxBlock);
 
-    // Silence gate starts fresh (a re-prepare is a life-cycle seam — rate /
+    // Silence gate starts fresh (a re-prepare is a life-cycle boundary — rate /
     // block change — and the arm counter's block-count debounce is
     // cadence-dependent by design; see FxChain.h).
     resetSilenceGate();
@@ -642,7 +642,7 @@ int FxChain::latency() const noexcept
         const auto idx = static_cast<size_t> (s);
         // A staged (pending) swap wins: latency() is a PLANNING query (the
         // dry-delay rings + PDC), and the staged type is what the next block
-        // will run — reporting the old slot's latency after a setSlotType
+        // runs — reporting the old slot's latency after a setSlotType
         // would leave the alignment one install behind (the param-coverage
         // test reads it pre-render).
         // F-eng-3: the staged value is read from the pendingLatency_ SNAPSHOT
@@ -703,7 +703,7 @@ void FxChain::process (const float* inL, const float* inR,
     // renders, some AU/AUv3 hosts -- JUCE does not universally guarantee
     // numSamples <= samplesPerBlock) would overrun all of them: a 6x-amplified
     // heap OOB WRITE. Clamp here and degrade to rendering the first maxBlock_
-    // samples (a truncated block with an untouched tail) instead of smashing
+    // samples (a truncated block with an untouched tail) instead of corrupting
     // the heap. renderParallel/blendSlotWetFade/delayPassthrough all receive
     // this already-clamped count from below, so they need no guard of their
     // own; PluginProcessor::processBlock clamps first, making this the second
@@ -742,10 +742,10 @@ void FxChain::process (const float* inL, const float* inR,
     // One input scan (early-exit) decides wake vs gated serve. GATED: the
     // input is still (near-)zero, the output has been <= kQuietOutEps for the
     // whole arm window, and the delay rings were zeroed at arm time — so the
-    // ungated path would emit <=eps residue and keep stuffing exact zeros
+    // ungated path would emit <=eps residue and keep writing exact zeros
     // into the rings. Zero the outputs and SKIP the topology, the smoothers
     // and the EQ: the saved work is the entire per-part FX cost that made an
-    // idle-enabled chain burn CPU forever (renderPartFx runs every part every
+    // idle-enabled chain consume CPU forever (renderPartFx runs every part every
     // block). Ring POSITIONS freeze (content is all-zero, and an all-zero ring
     // is write-position-invariant: any read returns 0), so latency() timing
     // across the arm/wake boundary is preserved exactly — see the header
@@ -926,7 +926,7 @@ void FxChain::process (const float* inL, const float* inR,
     // counter at 0 for however long its tail is audible-by-measure). Once the
     // run reaches kGateSilentBlocks, arm + zero the delay rings (they hold
     // only <=eps residue by the arm condition, and exact zeros keep the
-    // ring-phase argument airtight for the post-wake latency reads). Any other
+    // ring-phase argument exact for the post-wake latency reads). Any other
     // block resets the run. Skipped entirely while the test OFF pin holds so
     // control runs take the exact pre-gate path.
     if (silenceGateEnabled_)
@@ -948,7 +948,7 @@ void FxChain::process (const float* inL, const float* inR,
                 // energy BEFORE latency() and breaking the bypass-latency
                 // invariant across an arm/wake cycle (caught by the N2 pin in
                 // fx_param_coverage_test). The arm condition guarantees the
-                // tail being terminated is <= kQuietOutEps inaudible. ONLY the
+                // tail being ended is <= kQuietOutEps inaudible. ONLY the
                 // disabled slots snap: an ENABLED slot's fade is left at its
                 // per-sample-stalled just-under-1 value — snapping it to an
                 // exact 1.0 diverges from the never-gated control's float
@@ -1104,7 +1104,7 @@ void FxChain::renderParallel (const float* inL, const float* inR,
                 dR = inR[i];
             }
 
-            // outL/outR currently hold the summed wet outputs of the active
+            // outL/outR now hold the summed wet outputs of the active
             // slots; blend against the dry input. The WET path carries the
             // per-branch dw already (see the sum loop above); the DRY gain
             // keeps the mean W (1 - mean dw) for the equal-gain character.

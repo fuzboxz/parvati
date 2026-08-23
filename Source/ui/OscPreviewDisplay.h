@@ -122,7 +122,7 @@ public:
         poll tick. */
     void setLiveValuesProvider (std::function<parvati::LiveOscValues()> p);
 
-    // TEST-ONLY: is the live modulated overlay currently ARMED (the temporal
+    // TEST-ONLY: is the live modulated overlay now ARMED (the temporal
     // activity state after the change gate — lets a headless test observe the
     // overlay without a Graphics context, mirroring the filter display's
     // liveCurveVisibleForTest seam).

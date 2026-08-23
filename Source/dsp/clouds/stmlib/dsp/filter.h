@@ -122,7 +122,7 @@ class OnePole {
       float f2 = f * f;
       return f * (M_PI_F + f2 * (a + b * f2));
     } else if (approximation == FREQUENCY_ACCURATE) {
-      // These coefficients don't need to be tweaked for the audio range.
+      // These coefficients do not need to be adjusted for the audio range.
       const float a = 3.333314036e-01f * M_PI_POW_3;
       const float b = 1.333923995e-01f * M_PI_POW_5;
       const float c = 5.33740603e-02f * M_PI_POW_7;

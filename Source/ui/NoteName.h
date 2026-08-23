@@ -7,7 +7,7 @@
 //
 // (Consolidation note: the local kNoteNames in FxSlotLabels.cpp implements
 // the IDENTICAL math. This is the canonical home; deduping that caller onto
-// it is a mechanical, verified-identical follow-up — deliberately deferred
+// it is a mechanical follow-up with identical math — deliberately deferred
 // here so the just-shipped FX code is not perturbed.)
 
 #pragma once

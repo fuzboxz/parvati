@@ -27,32 +27,32 @@
 // (wetFade_), advanced inside each blend loop, not a block multiplier.
 //
 // SILENCE GATE (2026-08-23 idle-CPU fix, chain-level): SynthEngine::renderPartFx
-// runs EVERY part's chain every block regardless of voice activity, and once
-// any slot is enabled the old process() had no input-silence path — the full
+// runs EVERY part's chain every block regardless of voice activity. Once
+// any slot is enabled, the old process() had no input-silence path — the full
 // topology + slot DSP ran forever on dead-silent input (the "CPU stays at ~20%
 // after playing" report; the Resonator/FV-1 DSP was ~29% of a sampled idle
 // frame). The gate: process() tracks consecutive blocks whose INPUT is (near-)
-// zero AND whose rendered OUTPUT has decayed below an inaudible epsilon; after
-// kGateSilentBlocks such blocks the chain ARMS — subsequent silent blocks take
+// zero AND whose rendered OUTPUT has decayed below an inaudible epsilon. After
+// kGateSilentBlocks such blocks the chain ARMS. Later silent blocks take
 // a zero-output early return that skips the topology, the smoothers and the EQ
 // entirely (a per-part CPU floor of two maxAbs scans). The OUTPUT-energy term
 // makes the gate tail-length-agnostic: it arms only after the audible tail has
-// actually decayed, however long that is, and the K-block debounce only covers
+// actually decayed, however long that is. The K-block debounce only covers
 // sub-chunk granularity. Disarm/reset on ANY state change that could alter the
 // output — a non-silent input block (the wake), a real enable/dry-wet/param/
 // master-mix/EQ/topology/order VALUE change, an installed type swap, or a
 // re-prepare (value-guarded: the engine re-pushes identical param values every
-// ~980 Hz sub-chunk at rest, and that must NOT starve the gate — a changing
+// ~980 Hz sub-chunk at rest, and that must NOT starve the gate. A changing
 // push, i.e. live modulation, legitimately keeps the chain running). Latency
 // invariance (N1/N2) is preserved through the gate: the delay rings are zeroed
 // at arm time (they hold only <=-120 dB residue by the arm condition), so an
 // all-zero ring is write-position-invariant and the first post-wake samples
-// read exact zeros exactly as the ungated path would emit them — the impulse
-// response timing (latency()) is bit-preserved across an arm/wake cycle.
-// Residual, documented: while armed the processors' internal state (a <=eps
-// tail) and the one-pole smoothers freeze instead of decaying the final ~-120
-// dB; on wake they resume from that residue — an inaudible <=eps perturbation
-// vs the never-gated path.
+// read exact zeros exactly as the ungated path would emit them. Thus the
+// impulse response timing (latency()) is bit-preserved across an arm/wake
+// cycle. Residual, documented: while armed the processors' internal state (a
+// <=eps tail) and the one-pole smoothers freeze instead of decaying the final
+// ~-120 dB; on wake they resume from that residue — an inaudible <=eps
+// perturbation vs the never-gated path.
 //
 // The two-branch parallel blend is shared via renderParallel(). FxType/FxTopology are forward-declared via FxProcessor.h; the chain caches
 // the current slot types as uint8_t to avoid requiring the enum to be complete
@@ -77,8 +77,8 @@ public:
 
     // Test-only: process() call counter (proves renderPartFx sub-chunks at the
     // ~980 Hz internal-block cadence). Incremented at the top of process().
-    // (Always compiled — a trivial int increment with no release overhead — so
-    // the FX diagnostic tests build in every config.)
+    // (Always compiled — a trivial int increment with no release overhead. The
+    // always-available form lets the FX diagnostic tests build in every config.)
     void resetProcessCallCountForTest() noexcept { processCallCountForTest_ = 0; }
     int  getProcessCallCountForTest() const noexcept { return processCallCountForTest_; }
     // Test-only: read the live param value stored for @p slot/@p idx (the value
@@ -120,7 +120,7 @@ public:
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
     // Safe to call on a sample-rate / block-size change. Any staged-but-
     // unconsumed type swap is applied first (same thread discipline: the
-    // audio callback is not running), then every slot -- including a freshly
+    // audio callback is not running). Then every slot -- including a freshly
     // applied one -- is re-prepared at the new rate/block, so a swap staged
     // before prepareToPlay can never render with undersized scratch.
     void prepare (double rate, int maxBlock);
@@ -212,7 +212,7 @@ private:
     // queued-but-never-audible swap is replaced, its object freed on the MT).
     // The AT claims Staged->Consuming, moves pending_ into slots_ (pointer
     // moves only), and only THEN stores Empty: pending_ is free ONLY after
-    // that final store. A plain pendingReady_ bool is NOT sufficient, and
+    // that final store. A plain pendingReady_ bool is NOT enough, and
     // neither is claiming straight back to Empty: the release-store of the
     // claim CAS only orders writes BEFORE the CAS, so an MT fill could start
     // while the AT is still mid-move-out (TSan-verified race: setSlotType's
@@ -228,7 +228,7 @@ private:
     // the take-back path — through a plain null test. Instead the MT publishes
     // the staged slot's latency VALUE here (release-ordered before the
     // kStageStaged store; -1 = staged None / factory-refused), and the AT
-    // reads this snapshot acquire-ordered. A take-back can race the read, but
+    // reads this snapshot acquire-ordered. A take-back can race the read. But
     // the value is a PLANNING query that converges next block (clearDelayRings
     // flushes on install — N3); the pointer race (UAF) is gone.
     std::array<std::atomic<int>, kNumFxSlots> pendingLatency_ {};   // -1 = None

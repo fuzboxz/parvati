@@ -55,7 +55,7 @@ void Fv1VinylCompressor::setParams (const std::array<float, kNumFxSlotParams>& p
 void Fv1VinylCompressor::prepareInternal (double /*sampleRate*/, int /*maxBlock*/)
 {
     // Attack/release are fixed at the FV-1 internal rate (32.768 kHz):
-    // fast attack (0.8 ms) grabs transients like a vinyl mastering limiter;
+    // fast attack (0.8 ms) catches transients like a vinyl mastering limiter;
     // the slow release (250 ms) is the SP pump-and-glide.
     attackA_  = 1.0f - std::exp (-1.0f / (0.0008f * 32768.0f));
     releaseA_ = 1.0f - std::exp (-1.0f / (0.250f * 32768.0f));
@@ -136,7 +136,7 @@ void Fv1VinylCompressor::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t warped = delay_.readFrac (readDelay);
     ph1_ += 0.4f / 32768.0f;
     ph2_ += 3.1f / 32768.0f;
-    if (ph1_ >= 1.0f) ph1_ -= 1.0f;   // keep float precision tidy over long runs
+    if (ph1_ >= 1.0f) ph1_ -= 1.0f;   // keeps float precision within range over long runs
     if (ph2_ >= 1.0f) ph2_ -= 1.0f;
 
     // ---- Age low-pass ----

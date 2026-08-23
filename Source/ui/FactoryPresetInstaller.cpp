@@ -99,7 +99,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
     int written = 0;
     std::call_once (*g_installOnceFlag, [&]
     {
-        // Always provide a USER area for the user's own saved presets.
+        // Always supply a USER area for the user's own saved presets.
         userDir.createDirectory();
         templatesDir.createDirectory();
 

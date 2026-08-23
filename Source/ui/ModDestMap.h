@@ -53,12 +53,12 @@ juce::String paramIDForDest (ModDst dest);
 // modulation-ring and drag-and-drop target.
 bool hasVisibleKnob (ModDst dest);
 
-// Sums the signed amounts (-63..+63) of every slot currently routed to @p dest.
+// Sums the signed amounts (-63..+63) of every slot now routed to @p dest.
 // @p excludeSlot (0-based slot index 0..13) is omitted when non-negative — used
 // while dragging a slot so its in-progress value is excluded from the ring.
 int aggregateAmount (juce::AudioProcessorValueTreeState& apvts, ModDst dest, int excludeSlot = -1);
 
-// The 0-based slot indices (0..13) currently routed to @p dest, in ascending
+// The 0-based slot indices (0..13) now routed to @p dest, in ascending
 // order. Returns an empty vector for an invalid destination.
 std::vector<int> slotsForDest (juce::AudioProcessorValueTreeState& apvts, ModDst dest);
 

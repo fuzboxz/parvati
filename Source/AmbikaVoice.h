@@ -54,7 +54,7 @@ public:
     // staged on the audio thread so the GUI (voice meter + keyboard latch,
     // polled at ~30 Hz on the message thread) never reads the non-atomic
     // SynthesiserVoice::currentlyPlayingNote. The transitions mirror the base
-    // semantics exactly: set to (note, true) on startNote, cleared (-1, false)
+    // semantics exactly: set to (note, true) on startNote. Cleared (-1, false)
     // when the voice is fully freed (hard stopNote / release-tail completion);
     // a release-tail stopNote keeps the voice lit until the tail ends.
     int  getDisplayedNote()  const noexcept { return displayedNote_.load(); }
@@ -70,12 +70,13 @@ public:
     }
     // Re-prime the envelope phase increments from the CURRENT patch bytes. The
     // increments default to 0 and are (re)seeded by Voice::Init() and by
-    // Envelope::Update() each ProcessBlock for ACTIVE voices — but an IDLE voice
+    // Envelope::Update() each ProcessBlock for ACTIVE voices. But an IDLE voice
     // is gated out of renderNextBlock, so after a bulk patch-byte push (a
-    // voice-mode / allocation rebuild, or a .MUL/.parvati load) its increments are
-    // stale and the next Trigger(ATTACK) reads a 0 attack increment => the voice
-    // renders SILENT (VCA never opens). This was the standalone "goes dead after
-    // a voice-mode / template switch" glitch. Call right after a bulk push.
+    // voice-mode / allocation rebuild, or a .MUL/.parvati load) its increments
+    // are stale. The next Trigger(ATTACK) then reads a 0 attack increment =>
+    // the voice renders SILENT (VCA never opens). This was the standalone
+    // "goes dead after a voice-mode / template switch" glitch. Call right
+    // after a bulk push.
     void reprimeEnvelopes()
     {
         const auto& p = voice_.patch();
@@ -119,21 +120,21 @@ public:
     {
         // Stage for the audio thread (same pattern as setOversamplingFactor):
         // filter_.setTopology + prepareFilterAtOsRate mutate float filter state
-        // that fillInternalBlock() reads every block, so applying them on the
-        // message thread would race the processSample reader. Serviced at the top
-        // of fillInternalBlock().
+        // that fillInternalBlock() reads every block. An application on the
+        // message thread would race the processSample reader. Serviced at the
+        // top of fillInternalBlock().
         pendingTopology_.store (t, std::memory_order_relaxed);
         topologyDirty_.store (true, std::memory_order_release);
     }
 
     // OPTIONAL filter oversampling. The digital filter MODEL (not the real
-    // analog card) aliases; running it at osFactor_*kInternalSampleRate and
-    // up/downsampling its I/O reduces that aliasing for higher fidelity. The
+    // analog card) aliases. Run it at osFactor_*kInternalSampleRate with
+    // up/downsampled I/O to reduce that aliasing for higher fidelity. The
     // oscillators stay FIXED-RATE at kInternalSampleRate (39216) for
     // authenticity — only the filter is oversampled. osFactor_==1 keeps
     // fillInternalBlock() bit-identical to the un-oversampled path. The new
     // Oversampling object is PRE-BUILT here on the calling (message) thread
-    // and staged; the audio thread installs it with pointer moves only
+    // and staged. The audio thread installs it with pointer moves only
     // (audit F3 — the old AT-side rebuild was up to 96 make_unique + frees
     // inside one callback).
     void setOversamplingFactor (int factor);
@@ -239,7 +240,7 @@ public:
     // No-kill re-trigger of an ALREADY-SOUNDING voice (legato overlap OR a
     // mono retrigger of a release tail), 2026-08-22 redesign:
     // through the engine's startVoice (full truthful JUCE bookkeeping: note,
-    // channel, noteOnTime, sound, pedals) with the kill guard neutralized —
+    // channel, noteOnTime, sound, pedals) with the kill guard neutralized.
     // clearCurrentNote() (bookkeeping-only; the DSP voice / FIFO / gain are
     // NOT touched) drops the currentlyPlayingSound pointer that arms
     // startVoice's pre-emptive stopNote(0,false) -> Kill. continuityNext_
@@ -254,7 +255,7 @@ public:
 
     // One-shot per-voice pitch-drift hint (14-bit units, 1/128 semitone each):
 // firmware PartData.spread applied as `tuned_note + drift` at Trigger. Consumed
-    // (reset to 0) by startNote so a subsequent default trigger has no drift.
+    // (reset to 0) by startNote so a later default trigger has no drift.
     void setSpreadDrift (int drift14) { spreadDrift14_ = drift14; }
 
     // ---- MPE / per-voice expression (MIDI Polyphonic Expression) ----
@@ -282,7 +283,7 @@ public:
     // Test-only readouts (tuning_test): the 14-bit pitch the last startNote
     // computed (baseNote*128 + tuneOffsets_[note % 12] + partTuning_ + drift,
     // before jlimit — clamped exactly like the live path) and the net bend
-    // semitones currently applied to the oscillator (standing-bend pickup).
+    // semitones now applied to the oscillator (standing-bend pickup).
     // Atomic staged in startNote / the MPE setters; relaxed reads are fine for
     // tests (the same SF-1 displayedNote_ pattern).
     int   getLastNote14() const noexcept { return lastNote14_.load (std::memory_order_relaxed); }
@@ -425,7 +426,7 @@ private:
     static constexpr int kOsStageStaged    = 2;
     // Bug hunt 2026-08-18 (TSan, same class as FxChain F-eng-3): the AT's
     // consumeStagedOversampling used to CAS Staged->EMPTY before moving
-    // pendingOs_ out — the MT could then acquire and WRITE pendingOs_ while
+    // pendingOs_ out. The MT could then acquire and WRITE pendingOs_ while
     // the AT was still between its CAS and its move (a verified data race /
     // UAF window). Consuming marks the AT's exclusive ownership window; the
     // MT's acquireOsStaging spins (neither of its CASes match Consuming) until
@@ -500,7 +501,7 @@ private:
 
     // De-click: a one-shot per-voice gain ramp (0 -> 1) applied over the first
     // ~1 ms of a FRESH (non-legato) note start, so the oscillator/envelope
-    // restart doesn't produce a click. Runs only while startupRampRemaining_ >
+    // restart does not produce a click. Runs only while startupRampRemaining_ >
     // 0 (host-rate samples); sustained + legato notes pass through at gain 1.0.
     static constexpr int   kDeClickRamp = 48;                 // ~1 ms @ 48 kHz
     static constexpr float kDeClickInc  = 1.0f / kDeClickRamp;

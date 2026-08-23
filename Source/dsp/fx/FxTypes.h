@@ -34,7 +34,7 @@ enum class FxType : uint8_t {
     // enum value, so inserting/reordering would remap existing presets.
     ClockedDelay = 11, Ensemble = 12, PlateReverb = 13,
     VinylCompressor = 14, Phaser = 15,
-    // FV-1 family, second wave (2026-08-17): the bread-and-butter + quirky
+    // FV-1 family, second wave (2026-08-17): the standard + quirky
     // set. APPEND-ONLY (same serialization rule as above).
     Overdrive = 16, LutDistortion = 17, Compressor = 18, Gate = 19,
     Chorus = 20, Flanger = 21, Echo = 22, Room = 23, Spring = 24,
@@ -100,7 +100,7 @@ inline std::array<int, 3> fxOrderPermutation (uint8_t idx)
 
 // ----------------------------------------------------------------------------
 // Effect categories — DISPLAY-ONLY grouping for the FX-slot type dropdown
-// (what-effect-does-what discoverability). The APVTS choice list (host surface)
+// (helps the user find which effect does what). The APVTS choice list (host surface)
 // stays FLAT and enum-ordered: the stored value is the enum/choice index, so
 // categories never touch serialization, host automation, or the < > step
 // buttons. Only Parvati's own FxTypeCombo popup presents the grouped order.
@@ -135,7 +135,7 @@ inline const char* fxCategoryName (FxCategory c) noexcept
 // Category of each effect (see docs/FX_FV1_DESIGN.md + FxProcessors.h for the
 // per-effect signal paths backing these):
 //   Diffuser -> Reverb (an allpass diffusion smear — the front half of a
-//     reverb; where someone hunting "that smeary space sound" looks),
+//     reverb; the place a user who wants "that smeary space sound" looks),
 //   PitchShifter/WSOLA/Spectral/Resonator -> Pitch/Time (the Resonator is the
 //     filter-domain dual of a tuned delay/comb network — its defining control
 //     is Pitch: it re-rings the input at the tuned pitch),
@@ -331,7 +331,7 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
         // mode 0 keeps full q, q_loss only trims higher modes), so
         // t60 = ln(1e-3)*q/pi = 1099*10^(4*d) samples. The table is
         // rate-free, so normalize at 48 kHz (44.1 kHz runs ~8% longer —
-        // immaterial next to the cap). Damping is param[1] (the Decay
+        // small next to the cap). Damping is param[1] (the Decay
         // knob): 0.3 -> 0.36 s, 0.6 -> 5.8 s, 1.0 -> formally minutes -> cap.
         case FxType::Resonator: {
             const double t60 = 1099.0 * std::pow (10.0, 4.0 * (double) p1) / 48000.0;
@@ -361,7 +361,7 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
 // Clamp an aggregate tail estimate into [floor, cap]. The FLOOR keeps a
 // pure-synth patch reporting a small nonzero release tail (hosts render a
 // sensible decay even with no FX); the CAP bounds formally-infinite cases
-// (frozen loops, near-unity feedback) so bounces don't grow by minutes.
+// (frozen loops, near-unity feedback) so bounces do not grow by minutes.
 inline double clampTailSeconds (double s) noexcept
 {
     if (! (s > 0.0))  return kTailFloorSeconds;   // also maps NaN -> floor

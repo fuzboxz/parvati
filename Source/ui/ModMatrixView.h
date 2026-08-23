@@ -90,7 +90,7 @@ public:
     // without duplicating the mapping).
     juce::Colour rowCategoryColourForTest (int slot) const;
 
-    // Briefly flash every ACTIVE row currently routed FROM @p sourceEnum (a
+    // Briefly flash every ACTIVE row now routed FROM @p sourceEnum (a
     // MOD_SRC_* value), reusing the same transient flash the slot-selection
     // (knob double-click) uses. Called from the CentralModBar when a drag-only
     // (Perf/Util/Const) source pill is clicked, so the user can see where that
@@ -98,12 +98,12 @@ public:
     // uses the source. The flash auto-expires via flashTick() on the timer.
     void flashRowsForSource (int sourceEnum);
 
-    // The ModulationDestination (MOD_DST_*) a slot is currently routed to, read
+    // The ModulationDestination (MOD_DST_*) a slot is now routed to, read
     // live from its mod{N}_dest APVTS raw value (-1 on error). Used by the hover
     // highlight so a row's target dest follows live edits of its dest combo.
     int destForSlot (int slot) const;
 
-    // The ModulationSource (MOD_SRC_*) a slot is currently routed FROM, read
+    // The ModulationSource (MOD_SRC_*) a slot is now routed FROM, read
     // live from its mod{N}_source APVTS raw value (-1 on error). Used by the
     // source-flash (flashRowsForSource) and test introspection.
     int sourceForSlot (int slot) const;

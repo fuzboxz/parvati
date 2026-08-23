@@ -26,7 +26,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
 
     // ---- Mixer (8) ----
     m["mix_balance"]   = "Balance between oscillator 1 and oscillator 2 (0..63).";
-    m["mix_op"]        = "How the oscillators combine: Sum, Sync, Ring Mod, XOR, Fold, Bits.";
+    m["mix_op"]        = "Oscillator mix operation (Sum, Sync, Ring Mod, XOR, Fold, Bits).";
     m["mix_param"]     = "Depth of the selected mix operation (0..63).";
     m["mix_sub_shape"] = "Sub-oscillator waveform.";
     m["mix_sub"]       = "Sub-oscillator level (one octave below the root).";
@@ -76,7 +76,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
 
     // ---- 14 modulation routings (42 = 3 each) ----
     m["mod1_source"]  = "Mod 1 source (env, LFO, seq, velocity, pitch bend...).";
-    m["mod1_dest"]    = "Mod 1 destination parameter. Filter Cutoff also always receives Env2 x FilterEnv + LFO2 x FilterLFO + key tracking; VCA amounts multiply (matrix slots stack with these pre-routes, like the hardware).";
+    m["mod1_dest"]    = "Mod 1 destination parameter (Filter Cutoff always gets Env2 x FilterEnv + LFO2 x FilterLFO + key tracking; VCA amounts multiply; matrix slots stack with these pre-routes like the hardware).";
     m["mod1_amount"]  = "Mod 1 depth (-63..+63; bipolar).";
     m["mod2_source"]  = "Mod 2 source (env, LFO, seq, velocity, pitch bend...).";
     m["mod2_dest"]    = "Mod 2 destination parameter.";
@@ -136,9 +136,9 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["part_volume"] = "Part output volume (0..127).";
     m["part_octave"]     = "Part global octave shift (-2..+2).";
     m["part_tuning"] = "Part master tuning in 1/128-semitone steps (-127..+127).";
-    m["part_raga"] = "Per-part scale preset (firmware 'raga'); 0 = 12-EDO, 1..32 = presets. Muted note classes are refused, like the hardware.";
-    m["part_spread"] = "Per-voice detune spread for ensemble thickness (0..40).";
-    m["part_legato"]     = "Legato mode: re-trigger off between legato notes.";
+    m["part_raga"] = "Per-part scale preset (0 = 12-EDO, 1..32 = presets; muted note classes are refused).";
+    m["part_spread"] = "Per-voice detune spread for a wider ensemble sound (0..40).";
+    m["part_legato"]     = "Legato mode: no re-trigger between legato notes.";
     m["part_portamento"] = "Portamento glide time (0..63).";
     m["part_polyphony"]  = "Voice allocator: Mono, Poly, Unison 2x, Cyclic, Chain.";
 
@@ -152,13 +152,13 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["arp_direction"]  = "Arp note order: Up, Down, Up-Down, As-Played, Random, Chord.";
     m["arp_octave"]     = "Arp octave span (1..4).";
     m["arp_pattern"]    = "Arp note-selection gate pattern (22 stored patterns).";
-    m["arp_resolution"] = "Arp rhythmic value vs host tempo (1/1 .. 1/64T).";
+    m["arp_resolution"] = "Arp rhythmic value synced to host tempo (1/1 .. 1/64T).";
 
     // ---- Options (3) ----
     m["vca_curve"]   = "VCA response curve: Linearized or Exponential.";
     m["part_select"] = "Selects which Part (1..6) the editor edits.";
     m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, or SVF.";
-    m["filter_drive"] = "Ladder filter saturation drive (1.2 = JUCE default). Higher = more OTA-style tanh saturation and bass-drop at high resonance. Only affects the Ladder filter card.";
+    m["filter_drive"] = "Ladder filter saturation drive; higher values add OTA-style tanh saturation and bass drop (1.2 = JUCE default; Ladder card only).";
 
     // ---- Per-part FX (78 = 24 slot + 6 chain/master + 48 fxmod) ----
     // Parvati-exclusive; no Ambika patch byte. Slot/fxmod entries are loop-
@@ -168,7 +168,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
         const auto n = std::to_string (s);
         m["fx" + n + "_type"]    = "FX slot " + n + " effect algorithm (None, Diffuser, Pitch Shifter, Clouds Reverb, Echo, ...).";
         m["fx" + n + "_enabled"] = "FX slot " + n + " enable / bypass toggle (0 = bypassed, 1 = active).";
-        m["fx" + n + "_drywet"]  = "FX slot " + n + " wet/dry blend (0 = fully dry, 127 = fully wet). Per-slot; a delay placed before a reverb/echo keeps sounding in that module's tail for a while after drying it out — move it later for an immediate cut.";
+        m["fx" + n + "_drywet"]  = "FX slot " + n + " wet/dry blend (0 = fully dry, 127 = fully wet; a delay before a reverb still sounds in the tail after drying — move it later for an immediate cut).";
         for (int p = 1; p <= 5; ++p)
             m["fx" + n + "_param" + std::to_string (p)] =
                 "FX slot " + n + " parameter " + std::to_string (p) +
@@ -178,8 +178,8 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["fx_order"]    = "Slot order within the FX chain (permutation index 0..5).";
     m["fx_mix"]      = "Global FX wet/dry mix applied after the chain (0 = fully dry, 127 = fully wet).";
     m["fx_eq_low"]   = "Master FX low-cut (high-pass): 0 = Off, otherwise the cutoff frequency.";
-    m["fx_eq_mid"]   = "Master FX mid peaking gain (64 = 0 dB; roughly 0.19 dB per step).";
-    m["fx_eq_high"]  = "Master FX high-shelf gain (64 = 0 dB; roughly 0.19 dB per step).";
+    m["fx_eq_mid"]   = "Master FX mid peaking gain (64 = 0 dB; about 0.19 dB per step).";
+    m["fx_eq_high"]  = "Master FX high-shelf gain (64 = 0 dB; about 0.19 dB per step).";
     for (int fm = 1; fm <= 16; ++fm)
     {
         const auto q = std::to_string (fm);

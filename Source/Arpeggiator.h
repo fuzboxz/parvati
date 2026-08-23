@@ -87,7 +87,7 @@ public:
     uint8_t lastNote() const { return previousNote_; }
 
     // MOD_SRC_ARP_STEP value (firmware has_arpeggiator_note): 255 while an arp
-    // note is currently sounding, 0 otherwise. Injected per block by the engine.
+    // note now sounds, 0 otherwise. Injected per block by the engine.
     uint8_t stepGateValue() const { return (previousNote_ != 0xff) ? 255 : 0; }
 
     // ---- held-key tracking (from MIDI, when arp is on) ----
@@ -104,7 +104,7 @@ public:
         // firmware kills the note DIRECTLY at key-up (same branch as STEP
         // mode) to avoid stuck notes. The port dropped this: the released
         // pitch kept ringing (no off was ever sent — each step only
-        // re-triggers held keys), and on the LAST key-up allNotesOff()'s
+        // re-triggers held keys). On the LAST key-up, allNotesOff()'s
         // chord branch looped the already-empty stack, stranding every chord
         // voice until CC123/voice-steal.
         if (direction_ == static_cast<uint8_t> (ArpDirection::Chord))
@@ -142,10 +142,11 @@ public:
     // Held-key access for the note-sequence transpose (shared with Sequencer).
     bool    hasHeldKeys() const { return pressedKeys_.size() > 0; }
     // Is @p note in the held-key stack? The engine's note-off routing uses
-    // this to distinguish a key the arp/sequencer is HOLDING (note-off goes to
-    // the stack) from one that was sounding DIRECTLY before the mode was
-    // enabled (never entered the stack; its note-off must release the direct
-    // voice through the normal MIDI path — otherwise it sustains forever).
+    // this to distinguish two key kinds: a key the arp/sequencer is HOLDING
+    // (note-off goes to the stack), and a key that was sounding DIRECTLY
+    // before the mode was enabled (never entered the stack). In the second
+    // case the note-off must release the direct voice through the normal
+    // MIDI path — otherwise it sustains forever.
     bool    holdsNote (int note) const
     {
         return pressedKeys_.contains (static_cast<uint8_t> (note));

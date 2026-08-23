@@ -4,8 +4,8 @@
 // the BBD Ensemble): two EQUAL-RATE SIN LFOs with a fixed 108-degree (0.30
 // cycle) offset between the L and R voices (the AN-0001 wide-chorus idiom —
 // the offset, not detune, is what keeps the sides always moving apart),
-// independent voices panned L/R, light feedback. No BBD coloration — plain
-// "bread and butter" chorus.
+// independent voices panned L/R, light feedback. No BBD coloration — a
+// plain standard chorus.
 //
 // Params (param[4] is UNUSED; Mix is the chain Dry/Wet):
 //   * Rate     (p0): 0.1..8 Hz (log) — both LFOs scale together.

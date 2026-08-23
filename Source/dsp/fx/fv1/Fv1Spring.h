@@ -3,7 +3,7 @@
 // Fv1Spring — a dispersive-network spring reverb: each spring is a feedback
 // loop of [long delay -> cascade of SIX short allpasses -> damping LP], with a
 // soft-clipped driver. The short-AP cascade IS the dispersion — transients
-// come out chirping ("boing"), the classic spring signature no plain delay
+// emerge chirped ("boing"), the classic spring signature that no plain delay
 // loop has. Two springs with slightly different lengths/AP orders give
 // natural stereo; Width blends the second spring in.
 //
@@ -41,7 +41,7 @@ private:
     // Spring A is ODD (2026-08-21, subagent audit): 1146 (even) + the six
     // odd-length chirp APs (each exactly -1 at Nyquist) gave total loop phase
     // 0 mod 2*pi at Nyquist = positive feedback with ~0.60 loop gain on a
-    // single damp pole — the measured-insufficient phaser-crackle regime.
+    // single damp pole — the phaser-crackle regime measured as insufficient.
     // 1145 keeps the ~35 ms loop but makes the total Nyquist phase pi
     // (negative feedback). Spring B (1123) was already odd/safe.
     static constexpr int kSpringDelay[2] = { 1145, 1123 };          // ~35 ms loops

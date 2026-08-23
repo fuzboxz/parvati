@@ -377,7 +377,7 @@ void FxRoutingBar::resized()
     if (area.getHeight() > kGap) area.removeFromTop (kGap);
 
     // Reserve the three rows + their gaps, then centre the block vertically.
-    // FIXED (verified W6/W7 review): the bar's height is the FIXED
+    // FIXED (checked in the W6/W7 review): the bar's height is the FIXED
     // FxWorkspace::kRouteModuleH (224 — unchanged by the 2026-08-23 cards'
     // +20px spaciousness bump), so flow (50) + EQ (60) + ctrl (58) + gaps
     // (12) = 180 fits and the Dry/Wet dial ALWAYS lays out (it draws at

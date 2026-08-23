@@ -9,8 +9,8 @@
 // poll timers via std::function providers — so the engine's seqlock is read
 // exactly once per tick no matter how many components consume it.
 //
-// Decoupled contract: the hub knows NOTHING about SynthEngine (it takes a
-// plain fetcher returning bool-valid), and the components know nothing about
+// Decoupled contract: the hub holds no reference to SynthEngine (it takes a
+// plain fetcher returning bool-valid), and the components hold no reference to
 // the hub (they take LiveEnvStage / LiveFilterValues providers from
 // ModTelemetryTypes.h). The editor glues the two halves.
 //

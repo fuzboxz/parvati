@@ -647,7 +647,7 @@ int ModMatrixView::destForSlot (int slot) const
 
 void ModMatrixView::onHighlightDest (int modDst)
 {
-    // Emphasise every row currently routed to the highlighted dest (read live so
+    // Emphasise every row now routed to the highlighted dest (read live so
     // a row whose dest combo was just edited follows immediately). -1 clears all.
     for (const auto& r : rows_)
         if (r)
@@ -709,7 +709,7 @@ void ModMatrixView::flashTick()
 
 void ModMatrixView::flashRowsForSource (int sourceEnum)
 {
-    // Clear any prior flash, then flash every ACTIVE row currently routed FROM
+    // Clear any prior flash, then flash every ACTIVE row now routed FROM
     // @p sourceEnum (read live so a freshly-edited source combo follows). The
     // first matching row is scrolled into view; the flash auto-expires via
     // flashTick() on the timer (same kFlashMs as the knob-double-click jump).

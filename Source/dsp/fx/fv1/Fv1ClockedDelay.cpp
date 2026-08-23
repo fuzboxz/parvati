@@ -192,7 +192,7 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     const int32_t readSamp = delay_.readFrac (modDelay);
 
     // Feedback write (saturating; feedback gain quantized to 14-bit) through
-    // the LOOP DC KILLER (~10 Hz one-pole HP — see the header note): kills the
+    // the LOOP DC KILLER (~10 Hz one-pole HP — see the header note): removes the
     // near-unity regen's DC accumulation without touching audio-band feedback.
     {
         const float x = f24_toFloat (readSamp);
@@ -214,7 +214,8 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     // loop-DC test, 2026-08-21): the Grit stage is authentic TRUNCATION
     // quantization (the FV-1 AND-MASK), whose systematic truncation error is
     // a DC source (measured |mean|/rms 0.17 at 100% Grit) — blocked here so
-    // the lo-fi character survives without DC-poisoning downstream shapers.
+    // the lo-fi character survives without contaminating downstream shapers
+    // with DC.
     {
         constexpr float kPole = 1.0f - 6.28318530718f * 10.0f
                                     / static_cast<float> (kInternalRate);

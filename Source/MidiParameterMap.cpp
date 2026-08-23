@@ -284,9 +284,9 @@ void MidiParameterMap::applyValue (int address, int midiValue, bool scaled)
         // (those with a negative APVTS range: osc range/detune, mod amounts)
         // are TWO'S COMPLEMENT — the firmware's Clamp reads the byte as int8_t
         // (parameter.cc UNIT_INT8) — so a byte >= 128 is NEGATIVE. Reinterpret
-        // BEFORE clamping or the clamp saturates it to +max and negative values
-        // are unreachable over NRPN (an Ambika editor cannot set any detune/
-        // mod amount below zero).
+        // BEFORE clamping. Otherwise the clamp saturates it to +max and
+        // negative values are unreachable over NRPN (an Ambika editor cannot
+        // set any detune/mod amount below zero).
         value = midiValue;
         if (lo < 0 && midiValue > 127)
             value = static_cast<int> (static_cast<int8_t> (midiValue));
@@ -381,7 +381,7 @@ void MidiParameterMap::handleBuffer (const juce::MidiBuffer& midi)
                 c -= p.stride;
             }
             if (instance >= p.num_instances)
-                continue;  // CC not in this param's group (shouldn't happen)
+                continue;  // CC not in this param's group (not expected)
 
             const int address = p.offset + p.stride * instance;
             applyValue (address, value, true /*scaled*/);

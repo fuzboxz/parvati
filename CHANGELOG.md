@@ -5,6 +5,11 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Docs, UI text and code comments rewritten in Simplified Technical
+  English (2026-08-23).** All tooltips, UI strings, code comments and the
+  documentation were rewritten in ASD-STE100 Simplified Technical English.
+  Tooltips are now one sentence maximum. The French translation keys were
+  kept in sync with the changed English strings. No code behaviour changed.
 - **OSC waveform previews now glide like the filter preview and follow live
   engine modulation (2026-08-23).** The inline Osc 1/Osc 2 waveform preview
   was noticeably less fluid than the filter response curve: parameter motion

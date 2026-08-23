@@ -66,7 +66,7 @@ private:
     float   ageLfoDepth_ = 0.0f;  // pAge_*6.0 — read-pointer LFO depth (samples)
     // LOOP DC KILLER state (2026-08-21 — see Fv1Echo.h's note; same integrator
     // class: near-unity regen accumulates input/saturation DC until the loop
-    // parks near a rail, DC-poisoning everything downstream).
+    // parks near a rail, contaminating everything downstream).
     float dcX1_ = 0.0f, dcY1_ = 0.0f;
     // OUTPUT DC blocker state (the Grit truncation-DC removal — see the
     // output comment in the .cpp).

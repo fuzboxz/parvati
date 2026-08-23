@@ -2,7 +2,7 @@
 //
 // Fv1LutDistortion — the "super digital" wavetable distortion: Drive into ONE
 // OF SIXTEEN 1024-entry weird-distortion wavetables (the FV-1 external-EEPROM
-// table idiom taken seriously), a CLOCK JITTER stage (a shared-clock timing
+// table idiom applied in full), a CLOCK JITTER stage (a shared-clock timing
 // wobble on the input — both channels drift together, like a wobbling crystal),
 // and a Tone LP. No bitcrushing (the Clocked Delay's Grit owns that).
 //
@@ -99,8 +99,8 @@ private:
     // shapes' edge entries, which are ZERO (sin(±π) = 0): every out-of-domain
     // peak came out as literal silence — measured RMS collapse to 0.2-1.4% of
     // the running median mid-note (the "full voice dropouts and horrible
-    // audio quality" report; the chain input is hotter than the main bus, so
-    // even moderate drive trips it).
+    // audio quality" report; the chain input is at a higher level than the
+    // main bus, so even moderate drive exceeds the domain).
     static constexpr bool kShapeIsPeriodic[kShapes] = {
         false, false, false, true,  false, false, false, false,
         true,  false, false, false, false, false, false, false };
@@ -131,7 +131,7 @@ private:
     // internal samples (~3.9 ms) with a per-sample Q.14 fade counter:
     //   out = f24_addSat (f24_mulk (lutOld (x), q14 (1-f)),
     //                     f24_mulk (lutNew (x), q14 (f)))
-    // fadeFrom_ == nullptr means "no fade in flight". Trivially lock-free
+    // fadeFrom_ == nullptr means "no fade active". Trivially lock-free
     // (two ints + two pointers; setParams runs on the audio thread).
     static constexpr int kShapeFade = 128;          // samples @ 32.768 kHz
     static constexpr int kFadeStep14 = 8191 / kShapeFade + 1;   // Q.14/sample

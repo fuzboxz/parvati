@@ -123,7 +123,7 @@ namespace
 // are truncated at a code-point boundary so the written file always contains
 // valid UTF-8 (a raw 16-byte memcpy can cut a multi-byte sequence in half).
 // Control characters (newlines etc.) are dropped — the hardware LCD shows
-// printable text and a stray newline byte buys nothing.
+// printable text and a stray newline byte has no use.
 void writeName16 (std::vector<uint8_t>& b, const juce::String& name)
 {
     char name16[16];
@@ -349,7 +349,7 @@ bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi)
 
     // Six Parts (1-based index in the type prefix), each an interleaved Patch +
     // PartData object.
-    for (uint32_t i = 1; i <= 6u; ++i)  // NOLINT(bugprone-infinite-loop): ++i terminates it; clang-tidy FP on the uint counter
+    for (uint32_t i = 1; i <= 6u; ++i)  // NOLINT(bugprone-infinite-loop): ++i ends it; clang-tidy FP on the uint counter
     {
         const auto& p = multi.parts[i - 1u];
 

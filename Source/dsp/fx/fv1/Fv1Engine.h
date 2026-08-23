@@ -201,7 +201,7 @@ struct Allpass1Fx
 // (delay/echo/combs) is a DC integrator with DC gain 1/(1-g) — up to 200x
 // (echo fb 0.995) or ~1000x (plate decay 0.999). Residual input DC or
 // saturation asymmetry accumulates until the loop parks near a rail; the
-// DC-heavy wash then makes any following shaper pin constant (its own DC
+// DC-heavy output then makes any following shaper pin constant (its own DC
 // blocker strips it -> gated silence: the delay->reverb->shaper "complete
 // voice dropout" chain, measured dc -0.22..-0.28 at the shaper input). The
 // killer drops loop DC gain to ~0 while leaving audio-band regen untouched.
@@ -370,8 +370,8 @@ public:
         // Denormal flush: a stable IIR fed silence (a reverb/delay tail, a
         // paused track, or the gap between notes) decays its z-state toward 0
         // but never reaches it in finite steps, passing through the subnormal
-        // range (~1e-38..1e-45) where x86 CPUs stall ~50x (a real-time audio
-        // thread killer). Subnormals are numerically indistinguishable from 0
+        // range (~1e-38..1e-45) where x86 CPUs stall ~50x (a hazard for a
+        // real-time audio thread). Subnormals are numerically indistinguishable from 0
         // here (the biquad's target is 15 kHz BW-limiting; 1e-40 is ~280 dB
         // below full scale), so zeroing them is inaudible and removes the
         // stall. (Direct Form II Transposed z1/z2 are the only float state.)
@@ -482,7 +482,7 @@ public:
         if (m <= 0)
         {
             // No internal sample was produced this call (a 1-sample sub-chunk
-            // whose phase carry didn't cross an internal boundary can hit this).
+            // whose phase carry did not cross an internal boundary can hit this).
             // Zero-order-hold the last internal sample so the output is
             // continuous instead of a full-amplitude dropout (mirrors
             // HostRateBridge). No OOB: iL_/iR_ are untouched.

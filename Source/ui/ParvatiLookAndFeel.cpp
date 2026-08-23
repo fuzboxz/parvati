@@ -488,7 +488,7 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
                      titleCol);
 }
 
-// A small padlock glyph drawn centred at @p c (size @p sz) — the "can't drop
+// A small padlock glyph drawn centred at @p c (size @p sz) — the "cannot drop
 // here" indicator shown on non-destination controls while a mod-source drag is
 // hovered over them. Theme-agnostic (caller supplies the colour).
 static void drawPadlock (juce::Graphics& g, juce::Point<float> c, float sz, juce::Colour col)
@@ -617,7 +617,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
         if ((float) textW > maxTextW && textW > 0)
             // Auto-shrink for long values, floored at 11pt (T15, iPadOS audit:
             // was 9pt — below arm's-length touch readability). An over-long
-            // value that can't fit at 11pt simply draws past the dial edge
+            // value that cannot fit at 11pt simply draws past the dial edge
             // rather than becoming unreadably small.
             vf = appFont (juce::jmax (11.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
 
@@ -671,7 +671,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     const int N = (nVar != nullptr && nVar->isInt()) ? juce::jlimit (0, 6, (int) *nVar) : 0;
     if (N > 0)
     {
-        // The first arc sits just outside the value arc; subsequent arcs step
+        // The first arc sits just outside the value arc; arcs after it step
         // outward, all clamped to the cell half-extent (minus a 1px margin) so
         // the concentric stack never clips. Tiny knobs with no room draw none.
         const float cellHalf = juce::jmin ((float) width, (float) height) * 0.5f;
@@ -686,7 +686,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
 
             const auto* colVar = slider.getProperties().getVarPointer ("parvatiModCol" + juce::String (i));
             // LOCKED (2026-08-23): every ring paints the locked grey (the
-            // knob reads fully deactivated under the can't-drop drag); the
+            // knob reads fully deactivated under the cannot-drop drag); the
             // per-mod colour is only used while unlocked.
             const juce::Colour col = modLocked ? lockedGrey
                 : ((colVar != nullptr && colVar->isInt())
@@ -725,7 +725,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
         }
     }
 
-    // "Can't drop here" padlock: shown on a NON-destination knob while a
+    // "Cannot drop here" padlock: shown on a NON-destination knob while a
     // mod-source drag is hovered over it (ParamControl::setDropLocked).
     {
         if (modLocked)
@@ -733,7 +733,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
             // 0.34 -> 0.46 (2026-08-23 user request: "increase the size of the
             // lock icon when dragging over something") and the glyph colour is
             // a LIGHT GREY (not the text colour, not white): a clear
-            // mid-light grey reads as the neutral "can't modulate this"
+            // mid-light grey reads as the neutral "cannot modulate this"
             // state on every theme.
             const float lsz = juce::jmin ((float) width, (float) height) * 0.46f;
             drawPadlock (g, centre, lsz, juce::Colour::greyLevel (0.72f));
@@ -855,7 +855,7 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     // (the darkest chassis tone on dark themes) so crisp WHITE text reads fully
     // legible over any row tint, with a minimal ▼ chevron (light token,
     // right-aligned) and NO outline / inset shadow / arrow bevel. A mod-matrix
-    // SOURCE combo additionally carries a 4px family-colour TAG strip on its
+    // SOURCE combo also carries a 4px family-colour TAG strip on its
     // far-left edge (the "parvatiComboTag" property). Inline text is laid out
     // by positionComboBoxText(), whose ~24px right reserve matches the chevron
     // so long choices never clip.
@@ -931,7 +931,7 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     g.setColour (chevronCol);
     g.fillPath (chevron);
 
-    // "Can't drop here" padlock on a NON-destination combo while a mod-source
+    // "Cannot drop here" padlock on a NON-destination combo while a mod-source
     // drag is hovered over it (ParamControl::setDropLocked).
     {
         const auto* lv = box.getProperties().getVarPointer ("parvatiModLocked");
@@ -1007,7 +1007,7 @@ void ParvatiLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& 
     g.fillRoundedRectangle (r, corner);   // flat, borderless
 
     // OUTLINED chrome (2026-08-23, Patch-page export buttons): a button
-    // carrying the "parvatiButtonOutlined" component property additionally
+    // carrying the "parvatiButtonOutlined" component property also
     // gets a 1px rounded STROKE around the tonal fill. The default flat
     // block reads as floating text on large tonal panels — the stroke + the
     // caller's accent-tinted fill/text give a proper button affordance

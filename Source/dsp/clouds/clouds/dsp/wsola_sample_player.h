@@ -82,7 +82,7 @@ class WSOLASamplePlayer {
     // correlator. Before any search has run, Correlator::best_match() reports
     // its Init() zero, so the first window was scheduled at buffer position
     // -window_size_/2: its 0->1 gain ramp played over the NEVER-WRITTEN (zeroed)
-    // tail of the record buffer, and the window reached full gain exactly as it
+    // tail of the record buffer. The window reached full gain exactly as it
     // stepped onto the first recorded sample at the head - an instantaneous
     // full-amplitude discontinuity (measured: ~0.14 output jump at 0.5 input
     // amplitude, ~32 ms in = window_size_/2 internal samples) with NO fading

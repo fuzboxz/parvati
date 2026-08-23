@@ -82,7 +82,7 @@ private:
     // Level (p3, documented 0..2) split exactly like the compressor's gain:
     // q14 tops out at ~1.0, so the integer 2x stage lives here and only the
     // fractional remainder is quantized. (The old q14(p3*2) clamped every
-    // p3 > ~0.5 to unity — the upper half of the knob was dead.)
+    // p3 > ~0.5 to unity — the upper half of the knob had no effect.)
     int16_t level14_ = 8192;  // q14 fractional trim (0..1); 8192 = unity
     int levelShift_  = 0;     // 0/1 extra x2 stage when Level > 1
 

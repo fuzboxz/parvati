@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// SynthEngine — a juce::Synthesiser owning a fixed pool of AmbikaVoice
-// instances (kNumVoices = kNumParts * kMaxVoicesPerPart), divided among up to
-// kNumParts (6) Parts (multitimbral, hardware-accurate). Each Part
+// SynthEngine — a juce::Synthesiser that owns a fixed pool of AmbikaVoice
+// instances (kNumVoices = kNumParts * kMaxVoicesPerPart). The pool is divided
+// among up to kNumParts (6) Parts (multitimbral, hardware-accurate). Each Part
 // has its own Patch + PartData + Arpeggiator + Sequencer + MIDI channel + key
-// zone + a subset of the voices. Only the "current" Part is edited via APVTS
-// (matching the hardware: one editor, part-select). Direct MIDI is routed by
-// channel+keyzone to the matching Part; arpeggiator/sequencer-generated notes
-// trigger a voice WITHIN the generating Part.
+// zone + a subset of the voices. Only the "current" Part is edited via APVTS.
+// The hardware works the same way: one editor, part-select. Direct MIDI is
+// routed by channel+keyzone to the matching Part. Arpeggiator/sequencer notes
+// trigger a voice WITHIN the Part that generates them.
 
 #pragma once
 
@@ -32,32 +32,32 @@
 // Authentic hardware = 6 voicecards => 6 Parts.
 static constexpr int kNumParts  = 6;
 // Per-part voice-slot ceiling (Parvati extension). The engine owns a fixed
-// pool of kNumParts * kMaxVoicesPerPart voices so EVERY Part can be maxed out
-// SIMULTANEOUSLY: the pool always satisfies the sum of all Parts' slot
+// pool of kNumParts * kMaxVoicesPerPart voices. Thus EVERY Part can be maxed
+// out SIMULTANEOUSLY. The pool always satisfies the sum of all Parts' slot
 // settings, so allocation never steals between Parts. voiceSlots is the
 // SINGLE SOURCE OF TRUTH for a Part's polyphony (1 voice = digital voice
-// section + voicecard): 1..16 voices drawn from the pool, 0 = disabled (only
-// the ctor default and legacy loaders ever store 0). The firmware
+// section + voicecard). It holds 1..16 voices from the pool. 0 = disabled.
+// Only the ctor default and legacy loaders ever store 0. The firmware
 // 6-voicecard bitmask is DERIVED from the slot counts (contiguous
-// proportional share, mul_export::deriveMasks) and keeps its aux-out routing
-// + .MUL export jobs. Idle pool voices are gated silent and skipped by the
-// renderer, so the large pool costs nothing until played; worst-case CPU
-// scales with PLAYED voices only.
+// proportional share, mul_export::deriveMasks). The bitmask keeps its
+// aux-out routing + .MUL export jobs. Idle pool voices are gated silent and
+// skipped by the renderer, so the large pool costs nothing until played.
+// Worst-case CPU scales with PLAYED voices only.
 static constexpr int kMaxVoicesPerPart = 16;
 static constexpr int kNumVoices = kNumParts * kMaxVoicesPerPart;   // 96
 
 // ===== Parvati-exclusive per-part FX (Ambika knows nothing about these) =====
 // FxType / FxTopology / FxModDestination / kNumFxSlots / kNumFxMatrixSlots /
-// kNumFxSlotParams / fxOrderPermutation. Kept in a dependency-free shard
-// (dsp/fx/FxTypes.h) so the FX DSP core can use them without pulling in all of
-// SynthEngine.h (avoids a circular include: this file -> FxChain.h ->
-// FxProcessor.h).
+// kNumFxSlotParams / fxOrderPermutation. These live in a dependency-free
+// shard (dsp/fx/FxTypes.h). The FX DSP core can use them without pulling in
+// all of SynthEngine.h. The split avoids a circular include (this file ->
+// FxChain.h -> FxProcessor.h).
 #include "dsp/fx/FxTypes.h"
 
 // ===== UI live-modulation telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md) =====
 // The shared snapshot contract is a dependency-light shard under ui/ (only
-// <cstddef>/<cstdint>) so this engine header and every UI component agree on
-// ONE frame layout without dragging JUCE module headers into the DSP shard.
+// <cstddef>/<cstdint>). Thus this engine header and every UI component agree
+// on ONE frame layout. No JUCE module header enters the DSP shard.
 // The engine is the seqlock WRITER (audio thread, renderPartFx); the editor's
 // LiveFeedbackHub is the bounded-retry reader (message thread).
 #include "ui/ModTelemetryTypes.h"
@@ -65,17 +65,17 @@ static_assert (parvati::ModTelemetrySnapshot::kNumSources >= ambika::dsp::MOD_SR
                "the telemetry frame must hold every MOD_SRC_* source without "
                "misindexing sources[]/history[]");
 // NOTE (contract deviation, reported to the parent): the frozen shared header
-// pins kNumSources = 32 while the enum's MOD_SRC_LAST sentinel is 31 (there
-// are 31 named sources), so a == assert can never hold. The >= form above is
-// the true invariant: every real source index (0..MOD_SRC_LAST-1) fits and the
-// one spare slot (index 31) stays zero — the UI only enumerates the
+// pins kNumSources = 32. The enum's MOD_SRC_LAST sentinel is 31 (there are
+// 31 named sources), so a == assert can never hold. The >= form above is the
+// true invariant: every real source index (0..MOD_SRC_LAST-1) fits. The one
+// spare slot (index 31) stays zero. The UI only enumerates the
 // ModSourceCatalog's real enum values, so nothing reads it.
 
-// One multitimbral Part. The Arpeggiator/Sesequencer objects ARE the per-part
+// One multitimbral Part. The Arpeggiator/Sequencer objects ARE the per-part
 // storage for those settings (edits route to the current Part's objects).
 //
 // Polyphony: faithful port of ambika::VoiceAllocator (controller/
-// voice_allocator.cc) operating over a Part's voiceIndices. PolyphonyMode
+// voice_allocator.cc) over a Part's voiceIndices. PolyphonyMode
 // (firmware part.h:58): MONO=0, POLY=1, UNISON_2X=2, CYCLIC=3, CHAIN=4.
 // pool_[i]: 0 = inactive; 0x80|note = active holding note. cyclic_: 0xff = LRU
 // mode (POLY/UNISON_2X/CHAIN); else a round-robin counter (CYCLIC).
@@ -94,11 +94,12 @@ struct PolyAllocator
         for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;  // NOLINT(modernize-loop-convert): faithful port of ambika::VoiceAllocator (controller/voice_allocator.cc)
         for (uint8_t i = 0; i < kMax; ++i) lru_[i] = (i < size_) ? static_cast<uint8_t> (size_ - 1 - i) : 0;
     }
-    // Forget every note->voice mapping WITHOUT changing the allocator size/
-    // mode (firmware VoiceAllocator::ClearNotes, called by Part::AllNotesOff).
-    // The voices themselves are stopped separately; a stale mapping would
-    // otherwise misroute a later note-off onto a re-stolen slot (harmless via
-    // releaseNoteInPart's defensive scan, but unclean) — W7.
+    // Forget every note->voice mapping WITHOUT a change to the allocator
+    // size/mode (firmware VoiceAllocator::ClearNotes, called by
+    // Part::AllNotesOff). The voices themselves are stopped separately. A
+    // stale mapping would misroute a later note-off onto a re-stolen slot.
+    // The misroute is harmless via releaseNoteInPart's defensive scan, but
+    // unclean — W7.
     void clearNotes()
     {
         for (uint8_t i = 0; i < kMax; ++i) pool_[i] = 0;
@@ -146,14 +147,14 @@ struct PolyAllocator
 };
 
 // Fixed-size array of atomically-accessed bytes. The message thread writes
-// (apply*/loads/seed) and the audio thread reads (pushPartBytesToVoices, spread,
-// polyphony) the same patch/part byte storage; per-byte atomic access removes
-// the data race a plain std::array would have under concurrent re-dirtying (the
-// per-Part frameDirty_ release/acquire still orders a whole frame's publish, but
-// the individual byte reads/writes must themselves be atomic to satisfy the C++
-// memory model / TSAN). Element proxies keep the existing `arr[i] = v` and
-// `uint8_t x = arr[i]` call sites working unchanged; whole-array ops use the
-// loadFrom / fill / assignFrom / copyTo helpers.
+// the same patch/part byte storage (apply*/loads/seed). The audio thread
+// reads it (pushPartBytesToVoices, spread, polyphony). Per-byte atomic access
+// removes the data race a plain std::array would have under concurrent
+// re-dirtying. The per-Part frameDirty_ release/acquire still orders a whole
+// frame's publish. But the individual byte reads/writes must themselves be
+// atomic to satisfy the C++ memory model / TSAN. Element proxies keep the
+// existing `arr[i] = v` and `uint8_t x = arr[i]` call sites unchanged.
+// Whole-array ops use the loadFrom / fill / assignFrom / copyTo helpers.
 template <size_t N>
 struct AtomicByteArray
 {
@@ -180,11 +181,12 @@ struct AtomicByteArray
 };
 
 // Per-part FX storage. MT writes (engine setters called by applyFxParameter),
-// AT reads (renderPartFx). Each field is atomic; fxDirty_ (release-store by MT,
-// acq_rel-exchange by AT) publishes a frame of writes. EXACTLY the frameDirty_ /
-// optionsDirty_ pattern (processTransport's dirty-flag service loop). Values are
-// stored as raw 0..127 / -63..63 controller-style bytes; the AT normalizes them
-// to 0..1 floats when servicing the chain (FxChain::setSlotDryWet/Param).
+// AT reads (renderPartFx). Each field is atomic. fxDirty_ (release-store by
+// MT, acq_rel-exchange by AT) publishes a frame of writes. EXACTLY the
+// frameDirty_ / optionsDirty_ pattern (processTransport's dirty-flag service
+// loop). Values are stored as raw 0..127 / -63..63 controller-style bytes.
+// The AT normalizes them to 0..1 floats when it services the chain
+// (FxChain::setSlotDryWet/Param).
 struct PartFxState
 {
     std::atomic<uint8_t> slotType   [kNumFxSlots] {};               // FxType
@@ -348,12 +350,12 @@ struct Part
     // ---- Sustain pedal (CC64): firmware part.cc:335-390 semantics (W7) ----
     // AUDIO-THREAD-ONLY state (like polyAlloc/monoStack): the pedal CC, every
     // note-off routing decision and the pedal-up drain all run inside
-    // renderNextBlock/processTransport on the audio thread, so plain fields
+    // renderNextBlock/processTransport on the audio thread. Plain fields
     // follow the established discipline (no atomics/locks needed; the message
     // thread never touches these). sustainHold == firmware
     // ignore_note_off_messages_: while set, note-offs for this Part are
-    // SWALLOWED (the notes keep sounding) and remembered in sustainedNotes_;
-    // pedal-up replays them through the normal release path. Capacity 16 ==
+    // held back (the notes keep sounding) and remembered in sustainedNotes_.
+    // Pedal-up replays them through the normal release path. Capacity 16 ==
     // kMaxVoicesPerPart (a part cannot sound more distinct notes than voices).
     // Overflow (impossible today: >16 held keys with the pedal down) releases
     // the OLDEST entry immediately so nothing strands.
@@ -410,12 +412,12 @@ public:
     // ---- MPE / per-voice expression ----
     // Per-voice pitch-bend range in semitones, fixed at 2 = the MPE standard
     // per-note bend range (AmbikaVoice::mpeBendRangeSemitones_ default). Not
-    // exposed as a parameter; handlePitchWheel uses it to convert the host wheel
-    // to semitones before routing per-voice.
+    // exposed as a parameter. handlePitchWheel uses it to convert the host
+    // wheel to semitones before per-voice routing.
 
     // Global (all voices): optional FILTER oversampling (1/2/4/8). Factor 1
     // keeps the audio path bit-identical. Each voice PRE-BUILDS the
-    // replacement Oversampling on this (message) thread and stages it; the
+    // replacement Oversampling on this (message) thread and stages it. The
     // audio thread installs it with pointer moves only (audit F3 — see
     // AmbikaVoice::setOversamplingFactor / consumeStagedOversampling).
     void setOversamplingFactor (int factor)
@@ -463,10 +465,10 @@ public:
     // Full 6-Part controller-state capture/restore for host plugin-state
     // persistence (getStateInformation / setStateInformation). Captures every
     // Part's patch/part bytes, arp/seq config (pendingConfig_), MIDI routing,
-    // voice allocation, polyphony (via partBytes[15]) and the current part — so
-    // a DAW project reload preserves the full
-    // multitimbral setup, not just the current Part. restoreState returns false
-    // for an absent/short/foreign blob so the caller can fall back to the legacy
+    // voice allocation, polyphony (via partBytes[15]) and the current part.
+    // Thus a DAW project reload preserves the full multitimbral setup, not
+    // just the current Part. restoreState returns false for an
+    // absent/short/foreign blob. The caller can then fall back to the legacy
     // current-part APVTS restore (backward compatible with pre-persistence
     // states). Byte-oriented payload (endian-independent).
     void captureState (juce::MemoryBlock& dest) const;
@@ -480,23 +482,24 @@ public:
     // Stage a Part's arp/sequencer config from its 84-byte PartData (message
     // thread). Routes the arp/seq bytes (PartData 7..14 + 16..79) into
     // pendingConfig_ + flags configDirty_ instead of writing the live
-    // Arpeggiator/Sequencer objects directly -- the audio thread is the sole
-    // writer of those (it services configDirty_ in processTransport), which
-    // removes the data race between a file load and the audio-thread clock
-    // loop, and keeps pendingConfig_ (the serialize source) in sync with the
-    // loaded values. Used by the .MUL and .parvati multi-load paths.
+    // Arpeggiator/Sequencer objects directly. The audio thread is the sole
+    // writer of those (it services configDirty_ in processTransport). The
+    // staging removes the data race between a file load and the audio-thread
+    // clock loop. It also keeps pendingConfig_ (the serialize source) in sync
+    // with the loaded values. Used by the .MUL and .parvati multi-load paths.
     void stageArpSeqFromPartBytes (int part);   // reads parts_[part].partBytes (atomic)
 
     // Hard-reset EVERY voice: stopNote(.,false) (Kill + clearCurrentNote) +
-    // reprimeEnvelopes, so a patch switch starts from silence with no stuck /
-    // orphaned voices carrying stale Part/patch state. Called on the message
-    // thread before new patch bytes are pushed (the audio thread services the
-    // subsequent rebuild). Mirrors firmware Part::AllSoundOff + re-init.
+    // reprimeEnvelopes. Thus a patch switch starts from silence, with no stuck
+    // or orphaned voices that carry stale Part/patch state. Called on the
+    // message thread before new patch bytes are pushed (the audio thread
+    // services the next rebuild). Mirrors firmware Part::AllSoundOff +
+    // re-init.
     void resetAllVoices();
 
     // Mark that the voice allocation / polyphony / patch data changed on the
-    // message thread; the audio thread services it (rebuild + push) at the top
-    // of the next processTransport so voiceIndices is never mutated under a
+    // message thread. The audio thread services it (rebuild + push) at the top
+    // of the next processTransport, so voiceIndices is never mutated under a
     // concurrent reader. (Message-thread callers must NOT rebuild directly.)
     void markAllocationDirty() { allocationDirty_.store (true, std::memory_order_release); }
 
@@ -505,12 +508,12 @@ public:
     // Patch page mirrors (per-part polyphony/tuning bytes, voice slots,
     // channel, key zone, names). The editor's poll timer
     // compares it to decide whether a VISIBLE Patch page must re-read the
-    // engine: engine writes that arrive out-of-band (host automation of
+    // engine. Engine writes that arrive out-of-band (host automation of
     // part_polyphony / part_raga, MIDI NRPN, host undo, state restores) have
-    // no editor hook of their own, so without this the page could keep
-    // showing stale rows until the next reveal/load. NOT bumped by
-    // audio-thread paths (the AT never mutates those sources); a missed bump
-    // would leave a stale row until the next reveal, a spurious bump only
+    // no editor hook of their own. Without this version the page could keep
+    // stale rows on display until the next reveal/load. NOT bumped by
+    // audio-thread paths (the AT never mutates those sources). A missed bump
+    // would leave a stale row until the next reveal. A spurious bump only
     // costs one cheap idempotent refresh(). Atomic: setStateInformation can
     // arrive off the message thread on some hosts.
     uint32_t getDisplayVersion() const noexcept
@@ -543,16 +546,16 @@ public:
 
     // ---- Voicecard masks (DERIVED from the voice slots) ----
     // The firmware 6-voicecard bitmask is no longer user state: voiceSlots is
-    // the single source of truth and rebuildVoiceAllocation derives each
-    // Part's contiguous proportional card share via mul_export::deriveMasks
-    // (same shape as the .MUL Proportional strategy), publishing it into
+    // the single source of truth. rebuildVoiceAllocation derives each Part's
+    // contiguous proportional card share via mul_export::deriveMasks (same
+    // shape as the .MUL Proportional strategy) and publishes it into
     // Part::voiceAllocation. setPartVoiceAllocation is kept as the LEGACY
     // LOAD PATH: .MUL files, host-state v1..v5 and older .parvati files carry
-    // bitmasks, so it materializes the equivalent slot count (slots =
+    // bitmasks. The setter materializes the equivalent slot count (slots =
     // popcount(mask), 0 -> disabled) and marks the allocation dirty.
     void setPartVoiceAllocation (int part, uint8_t bitmask);
     // The DERIVED mask for @p part, computed FRESH from the slot counts
-    // (same pure rule the audio-thread rebuild tags voices with) so readers
+    // (same pure rule the audio-thread rebuild tags voices with). Thus readers
     // (.MUL export, Patch page) never see a stale-by-one-block value after a
     // slots edit. Part::voiceAllocation keeps the AT-published copy solely as
     // the legacy seed written into host-state blobs.
@@ -573,7 +576,7 @@ public:
     // satisfies every Part simultaneously. Changing slots re-partitions the
     // pool on the audio thread (deferred via markAllocationDirty, the same
     // path as the legacy-bitmask/polyphony edits). A Part is enabled iff its
-    // slot count >= 1; the PUBLIC setter clamps 0 to 1 (disabling is the
+    // slot count >= 1. The PUBLIC setter clamps 0 to 1 (disabling is the
     // legacy loaders' job via setPartVoiceAllocation).
     void setPartVoiceSlots (int part, int slots);
     int  getPartVoiceSlots (int part) const { return ok (part) ? static_cast<int> (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed)) : 0; }
@@ -598,8 +601,8 @@ public:
     // ---- Part names / aliases (Parvati extension; message-thread only) ----
     // 16-char limit keeps the Multi page rows + .parvati lines tidy. Control
     // characters (newlines) are stripped: the .parvati multi format is
-    // LINE-based, so a newline inside a name would corrupt the document on
-    // save (and the hardware name chunk only wants printable text anyway).
+    // LINE-based. A newline inside a name would corrupt the document on save
+    // (and the hardware name chunk only wants printable text anyway).
     static juce::String sanitizePartName (const juce::String& n)
     {
         juce::String out;
@@ -635,8 +638,8 @@ public:
     // Test-only: the number of times FxChain::process() was called for @p part
     // since the last reset (proves renderPartFx sub-chunks at ~980 Hz).
     // (Always compiled: the instrumentation is runtime-gated by debugEffParamTracking_
-    // and the counters are trivial, so there is no release-build overhead. Keeping
-    // it always-available lets the FX diagnostic tests build in every config.)
+    // and the counters are trivial, so there is no release-build overhead. The
+    // always-available form lets the FX diagnostic tests build in every config.)
     int debugFxProcessCallCount (int part) const
     {
         return fxChains_[(size_t) part].getProcessCallCountForTest();
@@ -651,8 +654,9 @@ public:
     // Test-only: the live value the chain for @p part consumes for @p slot / @p
     // field, where field 0 = dry/wet and 1..5 = slot param 0..4. The FX param-
     // coverage test drives every FxModDestination through the full engine path
-    // and reads this to prove the modulation reached the DSP at full depth
-    // (engine -> renderPartFx -> setSlotDryWet/setSlotParam -> params_/dryWet_).
+    // and reads this value. The read proves the modulation reached the DSP at
+    // full depth (engine -> renderPartFx -> setSlotDryWet/setSlotParam ->
+    // params_/dryWet_).
     float debugGetChainValue (int part, int slot, int field) const noexcept
     {
         if (field == 0)
@@ -663,8 +667,8 @@ public:
     // slotType_ cache — a staged swap is reflected only after the audio
     // thread's servicePendingTypeSwaps consumed it, i.e. after a
     // processBlock). Proves a .parvati multi load staged its FX slot TYPES
-    // into the DSP chains, not just the fxState atomics (the atomic-only load
-    // left the chains on their previous processors).
+    // into the DSP chains, not just the fxState atomics. (The atomic-only load
+    // left the chains on their previous processors.)
     uint8_t fxChainSlotTypeForTest (int part, int slot) const
     {
         return (part >= 0 && part < kNumParts)
@@ -721,25 +725,25 @@ public:
     // Voicecard (0..5) for a given voice index. Pool voices are pre-tagged
     // round-robin (i % 6) at construction; rebuildVoiceAllocation re-tags every
     // ALLOCATED voice onto its OWN Part's cards (round-robin across the cards
-    // the Part's bitmask claims), so a Part's audio reaches its individual
-    // voicecard outputs no matter how many pool slots it owns. This function is
-    // only the pre-rebuild default.
+    // the Part's bitmask claims). Thus a Part's audio reaches its individual
+    // voicecard outputs no matter how many pool slots it owns. This function
+    // is only the pre-rebuild default.
     static int voiceCardForIndex (int voiceIndex);
     // Back-compat: the current Part's arp/seq accessors were removed: they
     // returned references to AUDIO-THREAD-owned objects with zero call sites
-    // (verified: Source/ tests/ tools/), so nothing may call them from the
-    // editor. The arp/seq state is MT-readable via pendingConfig_
+    // (verified: Source/ tests/ tools/), so no editor code can call them. The
+    // arp/seq state is MT-readable via pendingConfig_
     // (readPendingConfig) instead.
 
     // ---- Per-part FX (Parvati-exclusive; post-render, host-rate stereo) ----
     // Render every Part's FX chain into its stereo FX-output buffer (called from
     // PluginProcessor::processBlock AFTER renderNextBlock, BEFORE the main-bus
-    // sum). For each Part: services fxDirty_ single-threaded (pushes the staged
-    // FX params + mod-matrix into the chain), builds a per-part mono sum of its
-    // voicecard buffers, samples the first active voice's mod sources, evaluates
-    // the 16-slot FX mod matrix at block rate, duplicates mono to L+R, and runs
-    // the chain. With all fx*_enabled=0 the chain is a dry copy (audibly-
-    // identical to the pre-FX path).
+    // sum). For each Part: (1) services fxDirty_ single-threaded (pushes the
+    // staged FX params + mod-matrix into the chain); (2) builds a per-part mono
+    // sum of its voicecard buffers; (3) samples the first active voice's mod
+    // sources; (4) evaluates the 16-slot FX mod matrix at block rate; (5)
+    // duplicates mono to L+R; (6) runs the chain. With all fx*_enabled=0 the
+    // chain is a dry copy (audibly-identical to the pre-FX path).
     void renderPartFx (int numSamples);
     // The per-part stereo FX-output buffers (2 channels each), sourced by the
     // processor for the main-bus sum. Sized in prepare().
@@ -773,15 +777,15 @@ public:
     // Reset a Part's entire FX state to the clean defaults (all slots None /
     // bypassed / dry, Series topology, order 0, master mix fully wet, EQ flat,
     // cleared mod matrix). Used when loading a legacy Ambika patch (.PRO/.MUL)
-    // that carries no FX information, so the FX section is a clean slate instead
-    // of retaining the previously-loaded patch's FX. Publishes via fxDirty_.
+    // that carries no FX information. The FX section is then a clean slate, not
+    // the previously-loaded patch's FX. Publishes via fxDirty_.
     void resetPartFx (int part);
 
     // ---- Tail-length cache (AudioProcessor::getTailLengthSeconds) ----
     // Max tail estimate over every part's ENABLED FX slots (tailSecondsForFx),
     // clamped to [kTailFloorSeconds, kTailCapSeconds]. Maintained by
     // recomputeTailCache() — pure math over the fxState atomics (no audio, no
-    // allocation) — called from the audio thread whenever FX state is serviced
+    // allocation). Called from the audio thread whenever FX state is serviced
     // (fxDirty_) or the transport tempo moves materially (tempo-synced delay
     // tails). Atomic so the host can query it from any thread.
     double getTailLengthSeconds() const noexcept
@@ -800,7 +804,7 @@ public:
     // loader behaviour) left the chain on its previous processors — the AT's
     // fxDirty_ service deliberately does NOT install slot types — so a loaded
     // multi's FX were silently absent (fresh engine: all-None chains) or kept
-    // playing the PREVIOUS effect. A None type stages an empty slot (the
+    // the PREVIOUS effect active. A None type stages an empty slot (the
     // install clears the processor), same as setSlotType.
     void stagePartFxSlotType (int part, int slot, int type);
 
@@ -814,19 +818,19 @@ public:
     //
     // Reader (message thread — the editor's LiveFeedbackHub): copies out ONE
     // consistent frame, linearizing the internal history ring OLDEST-FIRST.
-    // Returns false (and leaves @p out untouched) when no part is tracked, the
-    // retries were exhausted (a torn read: the writer is mid-update — the
-    // caller simply polls again), the frame's epoch is stale (a
-    // resetUiTelemetry landed and the audio thread has not serviced the clear
-    // yet — the UI must hide its live overlays for that window), or the
+    // Returns false (and leaves @p out untouched) in these cases: no part is
+    // tracked; the retries were exhausted (a torn read: the writer is
+    // mid-update — the caller simply polls again); the frame's epoch is stale
+    // (a resetUiTelemetry landed and the audio thread has not serviced the
+    // clear yet — the UI must hide its live overlays for that window); or the
     // serviced part no longer matches the tracked part (a part switch).
     bool readUiTelemetry (parvati::ModTelemetrySnapshot& out) const;
 
     // Reset the telemetry (message thread): invalidates the current frame via
     // an epoch bump (visible to the reader IMMEDIATELY, before the audio
     // thread services the clear) and requests the audio thread to wipe the
-    // history/sources. Called on patch load / patch switch / init so the pill
-    // histories never carry the previous patch's motion across the seam.
+    // history/sources. Called on patch load / patch switch / init. Thus the pill
+    // histories never carry the previous patch's motion into the new patch.
     void resetUiTelemetry();
 
     // The authoritative validity epoch (starts 0; bumped by every
@@ -861,8 +865,8 @@ private:
     // The voicecard bitmask each Part actually OWNS after exclusive-claim
     // resolution (rebuildVoiceAllocation's per-part `partCards` locals,
     // persisted). renderPartFx sums exactly these card buffers into a Part's
-    // FX input — voiceIndices holds POOL indices (0..95, SynthEngine.h:271),
-    // which are NOT card indices once slots != card count, so indexing
+    // FX input. voiceIndices holds POOL indices (0..95, SynthEngine.h:271),
+    // which are NOT card indices once slots != card count. Indexing
     // voiceCardBuffers_ by them cross-bleeds other Parts' cards into the FX
     // input (or leaves it silent for pool slices >= 6). AT-only: written in
     // rebuildVoiceAllocation (allocationDirty_ service / ctor) and read in
@@ -881,9 +885,9 @@ private:
     std::array<std::array<uint8_t, ambika::dsp::MOD_SRC_LAST>, kNumParts> lastModSources_ {};
 
     // ---- FX representative-voice tracker (per part) ----
-    // The FX stage is per-part but modulation sources are per-voice, so
+    // The FX stage is per-part but modulation sources are per-voice. Thus
     // renderPartFx samples ONE voice per part: the MOST-RECENTLY-TRIGGERED
-    // active voice (via the per-voice triggerSeq_), so per-voice sources
+    // active voice (via the per-voice triggerSeq_). Per-voice sources
     // (VELOCITY / NOTE / per-note MPE) follow the latest note. On any voice
     // IDENTITY change a short crossfade bridges the old voice's last effective
     // source values (lastModSources_) to the new voice's live values, so those
@@ -907,11 +911,12 @@ private:
     std::array<double, kNumParts> fxSubPhase_ {};
 
     // ---- Base-only param de-click (Task: smooth knob/preset jumps, pass LFO
-    // modulation RAW). FX param knobs are 7-bit (0..127); the LFO mod source is
-    // 8-bit (0..255) and ramps continuously at the 980 Hz cadence, so continuous
-    // modulation does NOT need smoothing (it would only SLEW/band-limit audio-
-    // rate modulation). Only abrupt BASE changes (manual knob jumps, preset
-    // loads, double-click-to-default) produce discontinuous steps that click.
+    // modulation RAW). FX param knobs are 7-bit (0..127). The LFO mod source
+    // is 8-bit (0..255) and ramps continuously at the 980 Hz cadence, so
+    // continuous modulation does NOT need smoothing. A smoother there would
+    // only SLEW/band-limit audio-rate modulation. Only abrupt BASE changes
+    // (manual knob jumps, preset loads, double-click-to-default) produce
+    // discontinuous steps that click.
     // The de-click one-pole is applied to the BASE ONLY; the mod-matrix offset
     // is added RAW. This gives audio-rate modulation parity with the synth voice
     // path (which applies CV raw at 980 Hz) + de-clicked manual jumps.
@@ -920,7 +925,7 @@ private:
     // the per-sub-chunk param steps stepped the FX output directly (the
     // wavefolder fold drag measured 0.05-0.10 diff-impulse zipper at 980 Hz
     // sub-chunk cadence). 15 ms is the standard dezipper window: knob drags
-    // glide, preset loads land over one smooth ~30 ms transition, and the FX
+    // glide, and preset loads land over one smooth ~30 ms transition. The FX
     // MOD MATRIX still passes through RAW (audio-rate parity preserved).
     static constexpr double kBaseDeClickTauSec = 0.015;
     std::array<std::array<std::array<float, kNumFxSlotParams>, kNumFxSlots>, kNumParts>
@@ -940,9 +945,10 @@ private:
     std::array<float, kNumParts> debugEffParamMax_ {};
     bool debugEffParamTracking_ = false;
     // AT-side cache of each Part's base FX values + mod-matrix config, read from
-    // fxState when fxDirty_ is serviced and reused every block (mod sources
+    // fxState when fxDirty_ is serviced and reused every block. (Mod sources
     // change block-to-block, but the base values + matrix routing are stable
-    // between edits). AT-only. Effective chain values = base + mod-matrix offset.
+    // between edits.) AT-only. Effective chain values = base + mod-matrix
+    // offset.
     struct FxPartCache {
         float   baseDryWet[kNumFxSlots] {};
         float   baseParam [kNumFxSlots][kNumFxSlotParams] {};
@@ -974,9 +980,9 @@ private:
     // Thread roles are FIXED: the AUDIO thread is the sole writer of the plain
     // members below (renderPartFx); the MESSAGE thread is the sole reader
     // (readUiTelemetry via the editor's poll). uiTelSeq_ is the seqlock
-    // separating them — the exact Part::readPendingConfig discipline (single
+    // separating them — the exact Part::readPendingConfig discipline: single
     // writer, single reader, bounded 64-retry reader, odd-begin /
-    // release-fence / write / release-fence / even-end writer). The atomics
+    // release-fence / write / release-fence / even-end writer. The atomics
     // marked MT are written by the message thread and read by the audio thread.
     //
     // Frame layout: uiTel_ carries the CURRENT sources + envelope/filter
@@ -984,7 +990,7 @@ private:
     // IN THE FRAME (uiTel_.historyHead, written under the same seqlock
     // critical sections — the head is metadata the reader needs to linearize,
     // so it is guarded exactly like the samples; a separate plain member was
-    // a torn-read window) and readUiTelemetry linearizes it OLDEST-FIRST into
+    // a torn-read window). readUiTelemetry linearizes it OLDEST-FIRST into
     // the caller's frame. Storage is fixed-size (no allocation anywhere on
     // the audio-thread path).
     parvati::ModTelemetrySnapshot uiTel_ {};   // ring storage + observables (AT writes under the seqlock)
@@ -1057,7 +1063,7 @@ private:
     // ---- firmware routing predicates (multi.h PartMapping) ----
     // accept_note (multi.h:47-53): contiguous zone (low<=high) accepts
     // low..high; a WRAP zone (low>high) accepts the complement (note<=high OR
-    // note>=low) — the classic hardware split trick. Static: pure function of
+    // note>=low) — the classic hardware wrap split. Static: pure function of
     // the atomic keyrange snapshot.
     static bool partAcceptsNote (const Part& pm, int note);
     // receive_channel (multi.h:41-43): Omni (0) or exact 1-based match.
@@ -1106,12 +1112,13 @@ private:
     void initAllocator (Part& p);
 
     // Voice selection WITHIN a Part (never touches other Parts' voices).
-    // incomingChannel tags the triggered voice with its real MIDI channel so the
-    // per-channel expression routing (handlePitchWheel / ChannelPressure /
-    // Controller) isolates per-note under MPE (Omni Part) and stays channel-wide
-    // under standard single-channel MIDI. For non-Omni Parts incomingChannel ==
-    // the Part's channel (findPartForNote matched), so behaviour is unchanged;
-    // arp/sequencer-generated notes pass the Part's channel.
+    // incomingChannel tags the triggered voice with its real MIDI channel.
+    // Thus the per-channel expression routing (handlePitchWheel /
+    // ChannelPressure / Controller) isolates per-note under MPE (Omni Part)
+    // and stays channel-wide under standard single-channel MIDI. For
+    // non-Omni Parts incomingChannel == the Part's channel (findPartForNote
+    // matched), so behaviour is unchanged. Arp/sequencer notes pass the
+    // Part's channel.
     void triggerNoteInPart (int part, int note, float velocity, int incomingChannel);
     void releaseNoteInPart (int part, int note, int incomingChannel);
 
@@ -1128,14 +1135,15 @@ private:
 public:
     // juce::Synthesiser::handleMidiEvent intercepts both messages BEFORE the
     // controller dispatch and calls allNotesOff() — so THIS override is the
-    // seam (the base only stops channel-matched VOICES; the per-part arp
-    // held-key stacks, sequencer notes and mono stacks would survive and the
-    // arp would keep re-triggering from "held" keys). Firmware treats CC120
-    // identically through the same path; Part::AllNotesOff is a no-op while
-    // the sustain pedal holds — mirrored. NOTE: the base ALSO clears its own
-    // sustain-pedal-down bookkeeping on this message; ours deliberately does
-    // NOT clear the per-part pedal hold (firmware keeps
-    // ignore_note_off_messages_ set — the pedal must keep swallowing releases).
+    // single service point (the base only stops channel-matched VOICES; the
+    // per-part arp held-key stacks, sequencer notes and mono stacks would
+    // survive and the arp would keep re-triggering from "held" keys).
+    // Firmware treats CC120 identically through the same path;
+    // Part::AllNotesOff is a no-op while the sustain pedal holds — mirrored.
+    // NOTE: the base ALSO clears its own sustain-pedal-down bookkeeping on
+    // this message; ours deliberately does NOT clear the per-part pedal hold
+    // (firmware keeps ignore_note_off_messages_ set — the pedal must keep
+    // holding back the note-offs).
     void allNotesOff (int midiChannel, bool allowTailOff) override;
 
 private:
@@ -1154,15 +1162,15 @@ private:
     // part.cc:485-526): unlike the three per-channel handlers above, the
     // firmware routes poly-AT PER NOTE through the full accept_channel_note
     // predicate (channel AND zone), then — inside the part — per polyphony
-    // mode: POLY/CYCLIC/CHAIN write the voice playing THAT note, UNISON_2X
-    // writes the pair, MONO falls back to a channel-wide write (all the
+    // mode: POLY/CYCLIC/CHAIN write the voice that plays THAT note; UNISON_2X
+    // writes the pair; MONO does a channel-wide write instead (all the
     // part's voices, like channel pressure). Implemented in the multicast
     // routing family: every accepting part handles the note.
     void handleAftertouch (int midiChannel, int midiNoteNumber, int aftertouchValue) override;
 
     void handleController      (int midiChannel, int controllerNumber, int controllerValue) override;
 
-    // Trigger a voice for a note-on, stamping it as the most-recently-triggered
+    // Trigger a voice for a note-on and stamp it as the most-recently-triggered
     // (so the FX representative-voice tracker picks it). Wraps juce::Synthesiser
     // ::startVoice / AmbikaVoice::retriggerNote so EVERY trigger site stays in
     // sync with the FX tracker without per-call boilerplate.
@@ -1177,7 +1185,7 @@ private:
     // whose channel matches @p channel (Omni or exact; firmware Part::
     // WriteToAllVoices applies to the channel-routing PART's allocated voicecards
     // — multi.cc ControlChange routes by part first). See the .cpp for why this
-    // also gives new notes current-wheel pickup for free.
+    // also gives new notes current-wheel pickup automatically.
     void applyGlobalModSource (int modSrcEnum, uint8_t value0to254, int midiChannel);
 
     // Sustain pedal (CC64) drain (W7): release every note the pedal swallowed

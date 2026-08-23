@@ -47,7 +47,7 @@ private:
 
     // LOOP DC KILLER (2026-08-21, caught by fx-invariants [I2]): at max
     // feedback (loop gain 0.9) a hard-driven asymmetric input rectifies on
-    // the loop rail into |mean|/rms ~0.13 DC — the same poisoning class as
+    // the loop rail into |mean|/rms ~0.13 DC — the same contamination class as
     // the delays (see Fv1Echo.h). In the feedback return path.
     LoopDcKiller fbDc_ {};
 
@@ -58,7 +58,7 @@ private:
     // ~4x into audible ticks (measured worst 0.096 on a pure sine, no
     // modulation) that pulse with the LFO sweep. A one-pole LP at 8 kHz in
     // the regen return (the Fv1Flanger idiom — analog regen stages are
-    // band-limited too) kills the near-Nyquist amplification while leaving
+    // band-limited too) removes the near-Nyquist amplification while leaving
     // the musical notch band (<= 3.5 kHz at max Center+Depth) untouched.
     // FOUR cascaded poles at 5 kHz (measured ladder: 1 pole -> 0.063 worst,
     // 2 poles -> 0.034-0.046: the fb-0.9 resonance is up to +20 dB and the

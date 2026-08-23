@@ -8,7 +8,7 @@
 // "parvatiModSrc:<enum>" payload the generator tabs / matrix grip / wheel
 // captions already emit, so the existing drop feedback works unchanged).
 //
-// It additionally renders the LIVE modulation feedback pill strips: a subtle
+// It also renders the LIVE modulation feedback pill strips: a subtle
 // family-coloured sparkline of the RECENT values each source produced (the
 // Pigments-style history indicator), fed by a telemetry provider the editor
 // binds to SynthEngine::readUiTelemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md).

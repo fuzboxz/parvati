@@ -6,7 +6,7 @@
 // Document types + exported UTIs were grafted into the Standalone plist
 // (ios/parvati_filetypes.plist), so iOS offers "Open in Parvati" /
 // "Copy to Parvati" for .parvati/.PRO/.MUL — but JUCE 9's iOS glue
-// has NO application:openURL:options: implementation (verified: no openURL in
+// has NO application:openURL:options: implementation (checked: no openURL in
 // juce_Windowing_ios.mm / juce_MessageManager_ios.mm /
 // juce_audio_plugin_client; the only openURL in ~/JUCE SENDS one). Without
 // this shim the file event is dropped: the app launches and nothing happens.

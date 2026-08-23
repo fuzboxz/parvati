@@ -59,7 +59,7 @@ void Fv1Ensemble::setParams (const std::array<float, kNumFxSlotParams>& param)
     // Center min (2 ms = 65.5) < Depth max (15 ms = 491.5), so the corner
     // Center=0/Depth=1 used to clamp inside readFrac for ~46% of the cycle
     // (a real BBD cannot go through zero delay, but THIS was an undocumented
-    // dead half-sweep). Capping depth at center-1 keeps the deepest read at
+    // inactive half-sweep). Capping depth at center-1 keeps the deepest read at
     // exactly 1 sample — the sweep always moves.
     if (depthSamp_ > centerSamp_ - 1.0f)
         depthSamp_ = centerSamp_ - 1.0f;

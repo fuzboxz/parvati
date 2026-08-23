@@ -95,7 +95,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
         if (id.endsWith ("_range"))  return formatSemis (iv);                 // ±24 st
         if (id.endsWith ("_detune"))                                            // ±64 -> cents
         {
-            // display fallback; verify against DSP (detune byte is 1/128-st units)
+            // display fallback; check against DSP (detune byte is 1/128-st units)
             const int ct = juce::roundToInt (value * 100.0 / 128.0);
             return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + "ct";
         }
@@ -119,7 +119,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
             return (iv < 32 ? "L" : "R") + juce::String (p);
         }
         if (id == "mix_crush")   // sample-rate decimator, not bit-depth -> %
-            return iv == 0 ? "Off" : pct (value, 31.0);   // display fallback; verify
+            return iv == 0 ? "Off" : pct (value, 31.0);   // display fallback; check
         // mix_param / mix_sub / mix_noise / mix_fuzz (0..63)
         return pct (value, 63.0);
     }
@@ -129,7 +129,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
     {
         if (id == "filter1_cutoff")
         {
-            // Knob 0..127 -> cutoff byte 0..254 -> Hz. Approximate (the real cutoff
+            // Knob 0..127 -> cutoff byte 0..254 -> Hz. Not exact (the real cutoff
             // is key-tracked + mod-matrix shifted); this is the BASE cutoff position.
             const int byte = juce::jlimit (0, 255, juce::roundToInt (value * 2.0));
             return hzReadoutSynth (ambika::dsp::AnalogFilter::cutoffByteToHz (static_cast<uint8_t> (byte)));
@@ -178,7 +178,7 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
     // ---- Sequencer ----
     if (id.startsWith ("seq"))
     {
-        // 28px SEQ dial can't fit "16 steps"; the "Length" label disambiguates.
+        // A 28px SEQ dial cannot fit "16 steps"; the "Length" label disambiguates.
         // (SeqLengthStepper now shows its own number; this is unused at runtime
         // for seq_length_ but kept as a pure-formatter regression check.)
         if (id.startsWith ("seq_length_")) return juce::String (iv);
@@ -219,8 +219,8 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
             return (ct > 0 ? "+" : juce::String()) + juce::String (ct) + "ct";
         }
         if (id == "part_spread")   return pct (value, 40.0);
-        if (id == "part_portamento") return pct (value, 63.0);   // display fallback; verify (rate, not time)
-        if (id == "part_volume")   return pct (value, 127.0);    // display fallback; verify (dB)
+        if (id == "part_portamento") return pct (value, 63.0);   // display fallback; check (rate, not time)
+        if (id == "part_volume")   return pct (value, 127.0);    // display fallback; check (dB)
         if (id == "part_raga")
         {
             // PURE-FORMATTER regression entry: part_raga is a CHOICE param, so

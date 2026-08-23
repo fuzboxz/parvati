@@ -38,14 +38,14 @@ SynthEngine::SynthEngine()
     // (and its JUCE steal path unreachable).
 
     // Default voice allocation: SINGLE-PART — all 6 voicecards on Part 0, so a
-    // player on MIDI channel 1 gets the full hardware polyphony (6 voices) out
-    // of the box. This differs from the firmware factory multi
-    // (controller/multi.cc: Part0=0x15, Part1=0x2a, a 3+3 multitimbral split),
-    // which remains available by loading a factory .MUL or setting voice
-    // counts per Part on the Patch page. The slots model makes voiceSlots the
-    // single source of truth (1 voice = digital voice + voicecard): the
+    // player on MIDI channel 1 gets the full hardware polyphony (6 voices)
+    // without setup. This differs from the firmware factory multi
+    // (controller/multi.cc: Part0=0x15, Part1=0x2a, a 3+3 multitimbral split).
+    // That split remains available: load a factory .MUL or set voice counts
+    // per Part on the Patch page. The slots model makes voiceSlots the
+    // single source of truth (1 voice = digital voice + voicecard). The
     // default materializes 6 voices on Part 0 (the faithful 6-voice Ambika)
-    // and 0 (disabled) elsewhere; rebuildVoiceAllocation() derives the
+    // and 0 (disabled) elsewhere. rebuildVoiceAllocation() derives the
     // voicecard masks from those counts and partitions the pool.
     constexpr uint8_t kInitVoiceAllocation[kNumParts] = { 0x3f, 0, 0, 0, 0, 0 };
     for (int p = 0; p < kNumParts; ++p)
@@ -152,13 +152,14 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
     {
         // Seed EVERY Part with the CONTROLLER init patch (Part::InitPatch(DEFAULT):
         // osc1=Saw, audible) + the firmware init_part PartData (volume 120; arp
-        // octave 1 / resolution 10; seq length 16; POLY), and mirror those arp/seq
-        // values into the live per-part Arpeggiator/Sequencer OBJECTS so
-        // loadPartIntoApvts (which reads arp/seq from the objects) sees consistent
-        // state. Previously this seeded the VOICECARD silence fallback
-        // (osc1=None, inaudible) for Parts 1..5 and only set Part 0 via the APVTS
-        // sync, so a freshly-loaded plugin left Parts 1..5 silent until visited --
-        // incorrect vs the firmware (init_part, part.cc:83-100).
+        // octave 1 / resolution 10; seq length 16; POLY). Also mirror those
+        // arp/seq values into the live per-part Arpeggiator/Sequencer OBJECTS,
+        // so loadPartIntoApvts (which reads arp/seq from the objects) sees
+        // consistent state. Previously this seeded the VOICECARD silence
+        // fallback (osc1=None, inaudible) for Parts 1..5 and only set Part 0
+        // via the APVTS sync. A freshly-loaded plugin then left Parts 1..5
+        // silent until visited -- incorrect vs the firmware (init_part,
+        // part.cc:83-100).
         const uint8_t* const initPatch = getControllerInitPatchBytes();
         for (int p = 0; p < kNumParts; ++p)
         {
@@ -178,9 +179,9 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
             // pendingConfig_ (the message-thread-authoritative config the audio
             // thread applies via servicePendingConfig, and that serialize /
             // loadPartIntoApvts read). Seeding pendingConfig_ here keeps it in
-            // sync with the live objects, so a later live edit (which stages only
-            // its own field into pendingConfig_ + flags configDirty_) does not
-            // re-apply stale defaults and clobber these init values.
+            // sync with the live objects. Thus a later live edit (which stages
+            // only its own field into pendingConfig_ + flags configDirty_)
+            // does not re-apply stale defaults and clobber these init values.
             parts_[(size_t) p].arp.setMode (0);              parts_[(size_t) p].seq.setMode (0);
             parts_[(size_t) p].arp.setDirection (0);
             parts_[(size_t) p].arp.setOctave (1);
@@ -216,9 +217,10 @@ void SynthEngine::applyPatchByte (int offset, uint8_t value)
     auto& part = parts_[(size_t) currentPart_];
     if (offset >= 0 && offset < 112) part.patchBytes[(size_t) offset] = value;
     // DEFER the voice write to the audio thread: setPatchByte mutates voice_.patch_
-    // which the renderer reads every block, so writing it here (message thread)
-    // was a torn read. Stage it in Part storage (above) + flag frameDirty_; the
-    // audio thread pushes the full frame (pushPartBytesToVoices) at the block top.
+    // which the renderer reads every block, so a write here (message thread)
+    // was a torn read. Stage it in Part storage (above) + flag frameDirty_.
+    // The audio thread pushes the full frame (pushPartBytesToVoices) at the
+    // block top.
     // (release publishes the byte write to the audio-thread acquire.)
     part.frameDirty_.store (true, std::memory_order_release);
 }
@@ -228,14 +230,14 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
     auto& part = parts_[(size_t) currentPart_];
     // Capture the previous polyphony mode before the generic write so we only
     // defer work on an ACTUAL change (syncAllParamsToEngine re-applies every
-    // param, including part_polyphony, with its current value — re-servicing
-    // that would needlessly rebuild+push every block and perturb render state).
+    // param, including part_polyphony, with its current value — a re-service
+    // would rebuild+push every block for no reason and perturb render state).
     const uint8_t prevMode = (offset == 15) ? part.partBytes[15] : 0;
     // Capture the previous values of the Patch-page-mirrored bytes BEFORE the
-    // generic write below, so the display-version bump stays change-only
-    // (applyPartByte fires for EVERY part-param automation write; bumping only
+    // generic write below, so the display-version bump stays change-only.
+    // (applyPartByte fires for EVERY part-param automation write; a bump only
     // on a real change of a MIRRORED byte keeps the 30 Hz poll check O(1) and
-    // quiet). Mirrored offsets: 15 (polyphony), 4 (raga/Tune), the three
+    // quiet.) Mirrored offsets: 15 (polyphony), 4 (raga/Tune), the three
     // part-character columns — 1 (octave), 5 (legato), 6 (portamento) — and
     // (the completing absorption, 2026-08-20) the output columns 0 (Vol),
     // 2 (Fine tuning), 3 (Spread).
@@ -305,9 +307,9 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
     // the full arp/seq config from a Part's PartData into pendingConfig_ + flag
     // configDirty_, exactly like the live setters do. The audio thread is the
     // sole writer of the live Arpeggiator/Sequencer objects (it services
-    // configDirty_), so writing them here would race the clock loop; staging
+    // configDirty_), so a write here would race the clock loop. Staging also
     // keeps pendingConfig_ (the serialize / loadPartIntoApvts source) in sync
-    // with the loaded values too. Reads parts_[(size_t) part].partBytes (atomic).
+    // with the loaded values. Reads parts_[(size_t) part].partBytes (atomic).
     if (! ok (part))
         return;
     auto& p  = parts_[(size_t) part];
@@ -318,9 +320,9 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
         // bytes arrive RAW from .MUL loads / host-state blobs (never through
         // the APVTS, which enforces its own ranges). An out-of-range mode
         // byte makes isActive() true while isEnabled() stays false — the
-        // part swallows every note into the held-key stack and produces NO
-        // sound; an arpOctave of 0 with direction Random never terminates
-        // the Random branch's octave wrap loop (Arpeggiator.cpp) — ON THE
+        // part absorbs every note into the held-key stack and produces NO
+        // sound. An arpOctave of 0 with direction Random never ends the
+        // Random branch's octave wrap loop (Arpeggiator.cpp) — ON THE
         // AUDIO THREAD (host hang). The firmware's own bytes are always
         // legal (its UI/parameter layer clamps); raw-file loaders must do
         // the same here.
@@ -461,7 +463,7 @@ void SynthEngine::reapRetiredAudioObjects()
     // object the audio thread parked for retirement -- the FX processors
     // displaced by a staged type swap (audit F1) and the per-voice Oversampling
     // objects displaced by a staged filter-oversampling change (audit F3).
-    // Keeping operator delete here means the audio thread's steady state and
+    // With operator delete kept here, the audio thread's steady state and
     // change paths are pointer moves only.
     for (int p = 0; p < kNumParts; ++p)
         fxChains_[(size_t) p].reapRetired();
@@ -481,17 +483,17 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     // from the authoritative pendingConfig_), midi channel / keyzone / voice
     // allocation, then a length-prefixed FX block (Parvati-exclusive; version 2),
     // voice slots + name (version 6). polyphony rides in
-    // partBytes[15]; arp/seq lives in pendingConfig_ (overlaid here) and is
+    // partBytes[15]. arp/seq lives in pendingConfig_ (overlaid here) and is
     // re-staged on restore. The length prefixes are for forward-safety (a
     // future version may grow the blocks without re-versioning).
     //
     // Version history: v8 REMOVED the per-part tuning block (the custom-table
     // extension was removed 2026-08-19 — the raga preset rides partBytes[4],
     // which the core payload already carries, so no tuning block is needed).
-    // v7 carried a length-prefixed {u8 resolvedMode; i16 offsets[12]} block;
+    // v7 carried a length-prefixed {u8 resolvedMode; i16 offsets[12]} block.
     // restoreState still ACCEPTS v7 blobs (parses + ignores the tuning block —
     // a v7 custom mode 33 loads as 12-EDO, its raga byte was kept 0 by the
-    // custom-active invariant). Version bump means legacy (pre-2026-08-19)
+    // custom-active invariant). The version bump means legacy (pre-2026-08-19)
     // Parvati builds reject the v8 blob and fall back to legacy APVTS restore
     // — the same accepted tradeoff as v5->v6 (documented in CHANGELOG).
     //
@@ -580,8 +582,8 @@ bool SynthEngine::restoreState (const void* data, size_t size)
     // ---- PHASE 1: parse the whole blob into local snapshots (NO mutation) ----
     // A truncated/corrupt blob previously mutated parts_[p] as it parsed and
     // returned false MID-WAY, leaving a half-restored engine (some Parts from
-    // the blob, the rest the previous session) that the caller's legacy
-    // fallback then layered the APVTS on top of. Every failure return below
+    // the blob, the rest the previous session). The caller's legacy fallback
+    // then layered the APVTS on top of that. Every failure return below
     // happens BEFORE any engine state is touched, so a rejected blob leaves
     // the engine exactly as it was.
     struct RestoredPart
@@ -731,9 +733,9 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modSource[(size_t) m].store (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modDest  [(size_t) m].store (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modAmount[(size_t) m].store ((int8_t) take(), std::memory_order_relaxed);
-            // Master section (v3): reset to the audio-preserving defaults first
-            // (so a v1/v2 blob -- which lacks these -- loads at defaults, not
-            // 0-filled by take()), then overwrite from the blob for a v3+ save.
+            // Master section (v3): reset to the audio-preserving defaults first.
+            // (Thus a v1/v2 blob -- which lacks these -- loads at defaults, not
+            // 0-filled by take().) Then overwrite from the blob for a v3+ save.
             fx.mix.store (127, std::memory_order_relaxed);
             fx.eqLow.store (0, std::memory_order_relaxed);
             fx.eqMid.store (64, std::memory_order_relaxed);
@@ -775,10 +777,10 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             // restoredSlots' popcount is inherently <= 8 but the explicit
             // file byte is not), and every nonzero voiceSlots consumer assumes
             // 1..kMaxVoicesPerPart. A hostile/corrupt blob (e.g. 200) must
-            // clamp to 16 — while 0 (the legacy AUTO byte / a mask-empty
-            // disabled part) must stay 0: forcing it to 1 would steal a card
-            // and shift every later part's contiguous share (host_state_test
-            // [1] pins exactly that).
+            // clamp to 16. A 0 (the legacy AUTO byte / a mask-empty disabled
+            // part) must stay 0: forcing it to 1 would steal a card and shift
+            // every later part's contiguous share (host_state_test [1] pins
+            // exactly that).
             const int rawSlots = s.slots != 0 ? (int) s.slots : restoredSlots;
             part.voiceSlots.store (
                 static_cast<uint8_t> (rawSlots == 0 ? 0 : juce::jlimit (1, kMaxVoicesPerPart, rawSlots)),
@@ -841,7 +843,7 @@ void SynthEngine::rebuildVoiceAllocation()
     // 0 = disabled, only ever set by the ctor default / legacy loaders) is the
     // SINGLE SOURCE OF TRUTH for polyphony — 1 voice = digital voice section
     // + voicecard. The engine partitions its fixed pool of kNumVoices (96)
-    // voices in Part order from those counts; because the pool =
+    // voices in Part order from those counts. Because the pool =
     // kNumParts * kMaxVoicesPerPart, every Part can sit at its maximum
     // simultaneously — the partition never runs short (the jmin clamp below is
     // pure defense).
@@ -864,7 +866,7 @@ void SynthEngine::rebuildVoiceAllocation()
     int nextVoice = 0;                    // next free pool index
 
     // Voices owned by ANY Part before this rebuild. A voice that DROPS OUT of
-    // its Part's set (fewer slots) will never receive a noteOff from that Part
+    // its Part's set (fewer slots) never receives a noteOff from that Part
     // again — release it with a graceful tail-off below so it rings out and
     // frees itself instead of sustaining forever. (A hard kill is wrong here:
     // Kill + idle would leave the voice silent on its next trigger — the
@@ -893,12 +895,12 @@ void SynthEngine::rebuildVoiceAllocation()
                 av->setVoiceCard (nthSetBit (partCards[(size_t) p], k % cards));
         }
     }
-    // CHAIN (Option A): a CHAIN Part doubles its voice set by drawing partner
+    // CHAIN (Option A): a CHAIN Part doubles its voice set with partner
     // slots from the REMAINING pool (the plugin equivalent of the firmware's
     // 2-unit chain, 2N voices via midi_dispatcher.ForwardNote,
     // midi_dispatcher.h:228, but fully internal — no MIDI output). Base claims
-    // (above) are honoured first; if the pool runs low it gets a partial chain
-    // (graceful). Partner voices are tagged onto the Part's own cards.
+    // (above) are honoured first; if the pool runs low the Part gets a partial
+    // chain (graceful). Partner voices are tagged onto the Part's own cards.
     for (int p = 0; p < kNumParts; ++p)
     {
         if (parts_[(size_t) p].polyphonyMode != 4 /*CHAIN*/) continue;
@@ -941,7 +943,7 @@ void SynthEngine::rebuildVoiceAllocation()
     }
 
     // Persist each Part's resolved card bitmask for renderPartFx's per-part FX
-    // input sum (see partCardMask_): summing the OWNED card buffers, not the
+    // input sum (see partCardMask_): sum the OWNED card buffers, not the
     // buffers indexed by pool voice indices (which only coincide in the default
     // single-part layout). The DERIVED mask is also published into
     // Part::voiceAllocation so message-thread readers (getPartVoiceAllocation:
@@ -1077,14 +1079,14 @@ void SynthEngine::pushPartBytesToVoices (int part)
         for (int o = 0; o < 112; ++o)
             av->setPatchByte (o, p.patchBytes[(size_t) o]);
         // Only the 7-byte dsp::Part is voicecard-relevant (volume/octave/tuning/
-        // spread/_/legato/portamento at offsets 0..6); the rest of PartData is
-        // controller-side (arp/seq/polyphony) and MUST NOT be pushed -- pushing
-        // offsets 7..83 was an out-of-bounds write that clobbered the Voice's
+        // spread/_/legato/portamento at offsets 0..6). The rest of PartData is
+        // controller-side (arp/seq/polyphony) and MUST NOT be pushed -- a push
+        // of offsets 7..83 was an out-of-bounds write that clobbered the Voice's
         // envelopes/LFOs/oscillators on every patch/mode switch.
         for (int o = 0; o < static_cast<int>(sizeof (ambika::dsp::Part)); ++o)
             av->setPartByte (o, p.partBytes[(size_t) o]);
         // Re-prime the envelope increments from the just-pushed patch: an idle
-        // voice is gated out of renderNextBlock, so without this the pushed A/D/S/R
+        // voice is gated out of renderNextBlock. Without this the pushed A/D/S/R
         // bytes leave its attack increment stale/0 and the next note is SILENT
         // (the standalone "dead after a voice-mode / template switch" glitch).
         av->reprimeEnvelopes();
@@ -1099,9 +1101,9 @@ void SynthEngine::resetAllVoices()
 {
     // DEFER the kill to the audio thread. stopNote(.,false) runs Voice::Kill +
     // clearCurrentNote + FIFO clear on a voice the audio thread may be
-    // mid-rendering -- calling it here (message thread) raced the audio thread
+    // mid-rendering -- a call here (message thread) raced the audio thread
     // and crashed in hosts (e.g. Ableton). The kill is serviced at the top of
-    // the next processTransport() block; the caller has already pushed the new
+    // the next processTransport() block. The caller has already pushed the new
     // patch bytes + flagged allocationDirty_, whose service rebuilds and
     // re-primes (pushPartBytesToVoices) every voice.
     resetAllVoicesPending_.store (true, std::memory_order_release);
@@ -1166,9 +1168,9 @@ void SynthEngine::initAllocator (Part& p)
 // triggerVoice / retriggerVoice — wrap juce::Synthesiser::startVoice and
 // AmbikaVoice::retriggerNote to stamp each triggered voice as the most-recently-
 // triggered (a monotonic seq), so the FX representative-voice tracker in
-// renderPartFx can pick the newest active voice per part. Centralising the
-// stamp here keeps every trigger site in sync with the tracker without
-// per-call boilerplate (and future note-on paths stay correct automatically).
+// renderPartFx can pick the newest active voice per part. The central stamp
+// keeps every trigger site in sync with the tracker without per-call
+// boilerplate (and future note-on paths stay correct automatically).
 void SynthEngine::triggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound,
                                 int channel, int note, float velocity)
 {
@@ -1192,8 +1194,8 @@ void SynthEngine::retriggerVoice (AmbikaVoice* av, juce::SynthesiserSound* sound
     // pre-emptive stopNote(0,false) -> Voice::Kill that fires when
     // currentlyPlayingSound != nullptr (it zeroes the envelope: the "fast
     // mono note changes cut out" bug). The voice's audio state (dsp voice,
-    // resampler FIFO, gains) is untouched by the disarm — startNote then
-    // continues the live audio via continuityNext_ and performs the
+    // resampler FIFO, gains) is untouched by the disarm. startNote then
+    // continues the live audio via continuityNext_ and runs the
     // firmware-faithful Trigger (envelope ATTACK from the CURRENT value).
     av->armRetriggerContinuation();
     startVoice (av, sound, channel, note, velocity);
@@ -1253,7 +1255,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
                 // release level, continuously. retriggerNote's
                 // continuityNext_ also keeps the resampler FIFO and the
                 // output gain flowing (no time-skip click, no de-click
-                // hole); legatoNext_ (false in the tail case) selects the
+                // hole). legatoNext_ (false in the tail case) selects the
                 // full non-legato DSP retrigger — firmware semantics.
                 // The first note (voice idle) still uses startVoice for a
                 // fresh attack.
@@ -1359,7 +1361,7 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
         // the NOTE-sequencer "single pitch held forever on key-release" symptom
         // -- because releaseNoteInPart would otherwise bail and leave it
         // sounding. Scan this Part's voices and release any actually sounding
-        // the released pitch. Safe: a no-op when no voice is sounding n8.
+        // the released pitch. Safe: a no-op when no voice sounds n8.
         for (int vi : p.voiceIndices)
             if (auto* av = getAmbikaVoice (vi))
                 if (av->isVoiceActive() && av->getCurrentlyPlayingNote() == static_cast<int> (n8))
@@ -1450,7 +1452,7 @@ void SynthEngine::allNotesOff (int midiChannel, bool allowTailOff)
 {
     // CC123 / CC120 (W7; see the header note): per firmware Multi::AllNotesOff
     // -> Part::AllNotesOff, for every channel-matching part — clear the
-    // bookkeeping AND release the voices (the base's voice-only stop is
+    // bookkeeping AND release the voices. The base's voice-only stop is
     // replaced, not augmented: our per-part loop already covers every voice
     // the base would have matched, plus the parts' stacks). allowTailOff is
     // honored per-voice (CC123 -> tail-off release; CC120 / direct calls ->
@@ -1488,14 +1490,14 @@ void SynthEngine::noteOff (int midiChannel, int midiNoteNumber, float /*velocity
 {
     // MULTICAST (W8 item 4): the same predicate that routed the note-on
     // delivers the release — the pairing is symmetric by construction (a
-    // part that accepted the on also accepts the off; zones/channels cannot
+    // part that accepted the on also accepts the off). Zones/channels cannot
     // change between the two without an allocation-rebuild in between, which
-    // re-tags/releases voices anyway).
+    // re-tags/releases voices anyway.
     forEachAcceptingPart (midiChannel, midiNoteNumber, [&] (int part)
     {
         // SUSTAIN PEDAL (W7, firmware part.cc:347-362): while the part's pedal
-        // is down, a key release is SWALLOWED — the note keeps sounding and is
-        // remembered; the pedal-up drain (drainSustainedNotes) replays it
+        // is down, a key release is held back — the note keeps sounding and is
+        // remembered. The pedal-up drain (drainSustainedNotes) replays it
         // through the normal release path below.
         if (parts_[(size_t) part].sustainHold_)
         {
@@ -1508,7 +1510,7 @@ void SynthEngine::noteOff (int midiChannel, int midiNoteNumber, float /*velocity
         // there), so a note-off arriving here was deliberately NOT given to
         // the arp — either the mode is off, or the note was sounding DIRECTLY
         // before the mode was enabled and never entered the held-key stack.
-        // Handing it to arp.noteOff anyway (the old unconditional isActive()
+        // A hand-off to arp.noteOff anyway (the old unconditional isActive()
         // gate) swallowed the release and sustained the direct voice forever.
         // The holdsNote() check keeps the defensive branch for a genuinely-
         // held note while releasing everything else through the direct path.
@@ -1577,7 +1579,7 @@ void SynthEngine::handleAftertouch (int midiChannel, int midiNoteNumber, int aft
             // Firmware: write the voice ALLOCATED to that note
             // (poly_allocator_.Find). The engine's per-voice currentlyPlaying
             // note is the equivalent live mapping (a re-stolen slot carries
-            // the NEW note), so write the part's ACTIVE voice playing this
+            // the NEW note), so write the part's ACTIVE voice that plays this
             // note. Idle voices do not get the write (a future note-on picks
             // up 0, same as firmware).
             bool written = false;
@@ -1616,9 +1618,9 @@ void SynthEngine::handleAftertouch (int midiChannel, int midiNoteNumber, int aft
 // foot pedal). Faithful to firmware Part::WriteToAllVoices (part.cc:998):
 // iterate every allocated voicecard and set the mod source. Parvati gives each
 // Voice its own modulation_sources_[] (firmware's is a single shared static
-// array), so writing EVERY voice reproduces that shared-global semantics — a CC
-// move is immediately visible to all sounding notes AND persists in idle voices,
-// so the next note-on inherits the current value. This works because note-on
+// array), so a write to EVERY voice reproduces that shared-global semantics —
+// a CC move is immediately visible to all sounding notes AND persists in idle
+// voices, so the next note-on inherits the current value. This works because note-on
 // does NOT reset these sources: Voice::Trigger only writes VELOCITY/RANDOM, and
 // Kill()/stopNote only touch the envelope — verified against the firmware
 // voicecard/voice.cc Trigger (which behaves identically). `value0to254` is
@@ -1631,7 +1633,7 @@ void SynthEngine::applyGlobalModSource (int modSrcEnum, uint8_t value0to254, int
     // CC's channel (Omni or exact) write the source — the old whole-pool loop
     // made a ch-3 mod wheel modulate ALL six parts of a multitimbral setup
     // (W7, lane-B finding 3). Within a matching Part every voice (sounding
-    // AND idle) is written, which preserves the current-value pickup on the
+    // AND idle) is written; that preserves the current-value pickup on the
     // next note-on of that part.
     for (int p = 0; p < kNumParts; ++p)
     {
@@ -1662,7 +1664,7 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
     // MOD_SRC_EXPRESSION, each value<<1 (0..254). These are CHANNEL-GLOBAL (not
     // per-note), so they do NOT use the per-channel MPE routing that pitch bend /
     // channel pressure / CC74 use. applyGlobalModSource writes the value to EVERY
-    // voice (firmware WriteToAllVoices over all allocated voicecards); since
+    // voice (firmware WriteToAllVoices over all allocated voicecards). Since
     // note-on does NOT reset these sources, a new note-on automatically inherits
     // the current wheel/breath/foot value (current-wheel pickup). Coexistence
     // with the parameter map: MidiParameterMap::handleBuffer runs independently
@@ -1686,12 +1688,12 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
 
     // ---- Sustain pedal CC64 (W7, firmware part.cc:379-390) ----
     // Per-PART hold state routed by channel (multi.cc ControlChange): value
-    // >= 64 sets the hold (note-offs for the part are swallowed + remembered);
+    // >= 64 sets the hold (note-offs for the part are held back + remembered);
     // value < 64 clears it and drains the remembered note-offs through their
     // normal release path. Handled HERE and returned — the base class's
     // sustain handling only sets a per-voice flag that nothing in AmbikaVoice
     // reads (the old noteOff override bypassed the base release gate that
-    // consumed it), so passing CC64 on would be a no-op.
+    // consumed it), so a pass-on of CC64 would be a no-op.
     if (controllerNumber == 64)
     {
         for (int p = 0; p < kNumParts; ++p)
@@ -1789,10 +1791,11 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     // THREAD. The message thread (Multi page edits, polyphony param, .MUL load)
     // only sets the Part fields + allocationDirty_; it never touches voiceIndices.
     // The flag's release-store publishes those field writes (voiceAllocation,
-    // partBytes[15], patchBytes...) to this acquire-read, so voiceIndices — which
-    // is read by trigger/release/inject below on this same thread — is mutated
-    // only here, never under a concurrent reader. (Constructor/prepare still call
-    // rebuildVoiceAllocation() directly, but they run before audio starts.)
+    // partBytes[15], patchBytes...) to this acquire-read. Thus voiceIndices —
+    // which is read by trigger/release/inject below on this same thread — is
+    // mutated only here, never under a concurrent reader. (Constructor/prepare
+    // still call rebuildVoiceAllocation() directly, but they run before audio
+    // starts.)
     if (allocationDirty_.exchange (false, std::memory_order_acq_rel))
     {
         // NOTE: we deliberately do NOT stop/kill voices here. A hard kill
@@ -1800,10 +1803,10 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         // envelope state that only Voice::Init() re-primes, so a voice killed
         // while IDLE would render SILENT on its next note -- heard as the
         // standalone going dead after a voice-mode / template switch (the
-        // reported glitch). Instead let any sounding voice ring out naturally:
+        // reported glitch). Instead let any sounding voice ring out naturally.
         // rebuildVoiceAllocation re-tags still-allocated voices to their
         // (possibly new) Part and pushPartBytesToVoices re-applies that Part's
-        // patch, so a held note picks up the new Part's sound; a voice whose
+        // patch, so a held note picks up the new Part's sound. A voice whose
         // voicecard is no longer allocated plays out its release and frees
         // itself. No permanent stuck notes, no dead-voice glitch.
 
@@ -1906,7 +1909,7 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     wasPlaying_ = isPlaying;
 
     // Per-Part: route note on/off into a Part's held-key stack when that Part's
-    // arp/sequencer is active (strip them so renderNextBlock doesn't also play
+    // arp/sequencer is active (strip them so renderNextBlock does not also play
     // the raw held key). Non-arp Parts pass through to handleNoteOn/Off.
     processedMidi_.clear();
     for (const auto meta : midi)
@@ -1989,8 +1992,8 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
                     // time transitions do not migrate sounding notes into it,
                     // and killGeneratedNotes_ only fires on the
                     // active->inactive direction). Forward the note-off through
-                    // the normal path so the direct voice releases; swallowing
-                    // it here sustained that voice forever (firmware
+                    // the normal path so the direct voice releases. A swallow
+                    // here sustained that voice forever (firmware
                     // Part::NoteOff -> AllNotesOff on empty stack).
                     anyDirect = true;
                 }
@@ -2213,11 +2216,11 @@ void SynthEngine::renderPartFx (int numSamples)
         // Sum each OWNED card's buffer exactly once, per the bitmask resolved by
         // rebuildVoiceAllocation (partCardMask_). Indexing voiceCardBuffers_ by
         // the pool voice index instead (as this loop once did) is only correct
-        // in the default single-part layout where pool index == card index; with
-        // per-part voice slots or custom card bitmasks it cross-bleeds other
-        // Parts' cards into this Part's FX input and leaves later Parts' FX
-        // silent (pool slices >= kNumParts). Mask 0 => silence (a disabled Part),
-        // which is correct.
+        // in the default single-part layout where pool index == card index.
+        // With per-part voice slots or custom card bitmasks it cross-bleeds
+        // other Parts' cards into this Part's FX input and leaves later Parts'
+        // FX silent (pool slices >= kNumParts). Mask 0 => silence (a disabled
+        // Part), which is correct.
 #ifndef NDEBUG
         {
             // Debug consistency check: recomputing the owned-card mask from the
@@ -2242,8 +2245,8 @@ void SynthEngine::renderPartFx (int numSamples)
         // roughly unity-per-voice levels. A SoftLimit knee (unity-gain mapping
         // 8 * SoftLimit(s/8)) keeps ordinary playing TRANSPARENT (measured:
         // -0.04 dB at |s|=1, -0.35 dB at |s|=3 — a loud chord; -2.2 dB at |s|=8)
-        // while progressively taming runaway sums, and the hard jlimit (+/-16)
-        // is a last-resort ceiling for pathological input (|s| >= ~100). This
+        // while it progressively limits runaway sums. The hard jlimit (+/-16)
+        // is the final ceiling for pathological input (|s| >= ~100). The pair
         // guarantees downstream processors never see unbounded levels — the
         // class of over-range input that fed the Wavefolder LUT overrun (fixed
         // at the lookup itself too; this is defense in depth, finding 8).
@@ -2261,7 +2264,7 @@ void SynthEngine::renderPartFx (int numSamples)
         // The FX stage is per-part but sources are per-voice, so we sample ONE
         // voice per part: among the part's active voices, the one with the
         // highest triggerSeq() (the "last" note). A monotonic seq makes the pick
-        // STABLE between note-on events (no churn), it follows the latest note-
+        // STABLE between note-on events (no churn). It follows the latest note-
         // on automatically, and on a release it falls back to the next-most-
         // recent active voice. On any voice IDENTITY change a short (~5 ms)
         // crossfade bridges the old voice's last effective source values
@@ -2355,14 +2358,14 @@ void SynthEngine::renderPartFx (int numSamples)
             }
             const uint8_t* srcs = effSrcs;
             // Mirror EFFECTIVE into lastModSources_ so held tails / later
-            // sub-chunks keep the freshest value AND a subsequent voice change
+            // sub-chunks keep the freshest value AND a later voice change
             // crossfades from here.
             for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
                 lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
             // UI telemetry: decimated history append of THIS internal block's
             // sources — ALWAYS (2026-08-21 always-on contract, user request:
             // strips start at zero, keep scrolling, and show the modulator's
-            // ACTUAL state; a released/idle part no longer freezes mid-air).
+            // ACTUAL state; a released/idle part no longer freezes in place).
             // PURE OBSERVATION.
             //
             // STICKY VOICE (2026-08-21 — the "jumpy slow envelope" fix): while
@@ -2371,7 +2374,7 @@ void SynthEngine::renderPartFx (int numSamples)
             // every strike, so a slow release tail interleaved with fresh
             // attacks read as noise). The telemetry pick sticks to its voice
             // while that exact trigger is still active (slot + triggerSeq
-            // identify it) and only re-picks when it dies. When NOTHING is
+            // identify it) and only re-picks when it stops. When NOTHING is
             // active the IDLE row carries the actual state: persisted
             // controllers (bend/wheels/expression) + literal constants, zeros
             // for the per-voice generators (LFO/ENV/... only run inside active
@@ -2408,7 +2411,7 @@ void SynthEngine::renderPartFx (int numSamples)
                     // IDLE (no active voice): the actual-state row — with a
                     // DRAG-OUT (2026-08-22 user request): the per-voice
                     // generators do not SNAP to zero on release (that read as
-                    // the pill suddenly speeding); their row values fall
+                    // the pill suddenly speeding). Their row values fall
                     // linearly at the strip's own scroll pace — 2 bytes per
                     // append = a full-scale 255->0 fall across exactly one
                     // history window (256 appends ~ 3.1 s), the same speed the
@@ -2451,7 +2454,7 @@ void SynthEngine::renderPartFx (int numSamples)
                                     static_cast<uint8_t> (src));
                     // PITCH_BEND from the standing-bend LATCH (pre-existing
                     // bug fixed 2026-08-23): lastModSources_ is only written
-                    // from a SOUNDING voice's ring, so at startup / after a
+                    // from a SOUNDING voice's ring. So at startup / after a
                     // telemetry wipe — before any note — the idle row carried
                     // 0 and the Pitch Bend pill strip scrolled from the FLOOR
                     // although the wheel rests at 128 = mid = 50%. The latch
@@ -2641,7 +2644,7 @@ bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
     uiTelSeq_.fetch_add (1, std::memory_order_relaxed);          // begin (odd)
     std::atomic_thread_fence (std::memory_order_release);
     // effSrcs holds MOD_SRC_LAST(31) bytes; the frame's spare slot carries
-    // the NOTE-SEQ preview (kNoteSeqSlot): the tracked part's currently-
+    // the NOTE-SEQ preview (kNoteSeqSlot): the tracked part's now-sounding
     // sounding sequencer note (0..127 -> 0..254, 0 = rest/gap) — a melody
     // trace with rests as gaps, driven PURELY by observation of the same
     // Sequencer object the audio path fires from.
@@ -2722,7 +2725,7 @@ void SynthEngine::resetUiTelemetry()
 {
     // Message thread. The EPOCH bump is what the reader observes immediately
     // (readUiTelemetry fails on a stale epoch before the audio thread has
-    // serviced anything, so the UI hides its overlays across the seam); the
+    // serviced anything, so the UI hides its overlays for that window). The
     // request flag then drives the audio-thread wipe at the next renderPartFx.
     uiTelemetryEpoch_.fetch_add (1, std::memory_order_relaxed);
     uiTelResetReq_.store (true, std::memory_order_release);

@@ -11,7 +11,7 @@ LiveFeedbackHub::LiveFeedbackHub (std::function<bool (ModTelemetrySnapshot&)> fe
     jassert (fetch_ != nullptr);   // the editor always binds readUiTelemetry
     // Runs UNCONDITIONALLY at the configured rate (2026-08-21 reliability
     // fix): earlier versions gated the timer on the editor's isShowing(),
-    // which is peer-derived and unreliable for starting (a starved hook left
+    // which is peer-derived and unreliable as a start signal (a starved hook left
     // the pump stopped forever -> every strip cleared -> the shipped
     // invisible-indicator bug). The per-tick cost while nothing consumes the
     // cache is ONE bounded seqlock read (~µs, no repaints — the consumers

@@ -98,7 +98,7 @@ namespace
 {
 // ---- Map a parameter ID to one of the GUI sections --------------------------
 // (Derived from the well-defined paramID prefixes in ParameterLayout.cpp, so the
-//  verified APVTS byte-bridge stays untouched.)
+//  checked APVTS byte-bridge stays untouched.)
 enum class Section { Oscillators, Mixer, Filter, Envelopes, Lfos, ModMatrix, Modifiers, Arp, Sequencer, Global, Multi, Fx, FxMatrix };
 
 Section sectionForId (const juce::String& id)
@@ -198,7 +198,7 @@ static int sLiveEditorCount = 0;
 // Strip the redundant section prefix from a control's display label, driven by
 // the parameter ID prefix (deterministic, easy to review). The full label is
 // preserved elsewhere (tooltip / accessibility), so the section name stays
-// discoverable. If the label doesn't start with the expected prefix, it is
+// discoverable. If the label does not start with the expected prefix, it is
 // returned unchanged — never mangled. Display-only: ParameterLayout.cpp is NOT
 // touched.
 juce::String displayLabelFor (const juce::String& paramID, const juce::String& fullLabel)
@@ -341,7 +341,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     setViewportIgnoreDragFlag (true);
 
     // Visible label uses the short (prefix-stripped) display form so the section
-    // name (shown in the panel border) isn't redundantly repeated in every knob
+    // name (shown in the panel border) is not redundantly repeated in every knob
     // caption. The FULL label is preserved for tooltips / accessibility (see
     // getTooltip -> getParamHelp, which returns the full param help text).
     label_ = std::make_unique<juce::Label> (d.paramID + "_lbl",
@@ -365,7 +365,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         addAndMakeVisible (*comboBox_);
         comboAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             processor.getApvts(), d.paramID, *comboBox_);
-        // Catch right-clicks on the combo (it would otherwise swallow the popup
+        // Catch right-clicks on the combo (it would otherwise consume the popup
         // click before this component sees it). `false` => events for the combo
         // only (no recursion into its popup children).
         comboBox_->addMouseListener (this, false);
@@ -917,7 +917,7 @@ void ParamControl::applyModHighlight (int modDst)
 
 void ParamControl::applyModDragAffordance()
 {
-    // A modulation-source drag is in flight: visually HIDE every control that
+    // A modulation-source drag is active: visually HIDE every control that
     // is NOT a valid drop target (dim to 0.3 alpha), and light up every
     // destination knob (full alpha + the drop-zone ring flag). setAlpha on the
     // ParamControl multiplies the whole cell — slider + label + combo — so
@@ -1125,7 +1125,7 @@ void ParamControl::itemDragEnter (const juce::DragAndDropTarget::SourceDetails&)
     if (isModDestKnob_)
         parvati::ModMatrixHighlight::instance().setHighlightedDest (modDest_);   // glow the ring
     else
-        setDropLocked (true);   // non-target: show the "can't drop here" padlock
+        setDropLocked (true);   // non-target: show the "cannot drop here" padlock
 }
 
 void ParamControl::itemDragExit (const juce::DragAndDropTarget::SourceDetails&)
@@ -1207,7 +1207,7 @@ void ParamControl::mouseDrag (const juce::MouseEvent& e)
 {
     // An intentional knob drag (finger moved past kTouchSlop — the SAME slop
     // the tap-assign gate uses) cancels a pending OR already-armed long-press:
-    // neither should survive a real drag, and movement that fails a clean tap
+    // neither survives a real drag, and movement that fails a clean tap
     // must not leave the long-press armed (a 6-8px drift would otherwise open
     // the context menu from what felt like a small knob tweak).
     if (e.getScreenPosition().getDistanceFrom (longPressStart_) > kTouchSlop)
@@ -1224,7 +1224,7 @@ void ParamControl::mouseUp (const juce::MouseEvent& e)
     // Open it NOW, on release — the Slider's own mouseUp has already run (these
     // handlers are listener-forwarded, non-consuming) so its drag ended cleanly
     // before the modal popup appears. Long-press takes priority over a tap-assign
-    // (a held dest knob wants Reset/Randomize, not an assign).
+    // (a held dest knob needs Reset/Randomize, not an assign).
     if (longPressArmed_)
     {
         longPressArmed_ = false;
@@ -1296,12 +1296,12 @@ void ParamControl::showContextMenu()
     // menu is still open (e.g. editor closed mid-menu).
     juce::Component::SafePointer<ParamControl> safe (this);
 
-    // ---- Host-provided entries (VST3 hosts: Cubase/Reaper-class automation
+    // ---- Host entries (VST3 hosts: Cubase/Reaper-class automation
     // actions, e.g. "show automation lane"). getHostContext() is set by the
     // VST3 wrapper (AudioProcessorEditor::setHostContext) and is null in AU /
     // AUv3 / standalone — the null paths fall through to the local-only menu.
     // Pattern: take the host's PopupMenu as the BASE (so host entries stay on
-    // top, where the user expects them) and APPEND our Reset/Randomize below;
+    // top, where the user looks for them) and APPEND our Reset/Randomize below;
     // an empty host menu (host offers nothing for this parameter) is ignored.
     // The HostProvidedContextMenu unique_ptr is dropped after copying its
     // PopupMenu — the JUCE header documents the returned menu is safe to
@@ -1366,7 +1366,7 @@ void ParamControl::showContextMenu()
 
     // F-ui-5 (bug hunt 2026-08-18): withTargetComponent only positions the
     // menu / watches the target — it does NOT theme it (PopupMenu L&F comes
-    // solely from PopupMenu::setLookAndFeel in this JUCE; verified against
+    // solely from PopupMenu::setLookAndFeel in this JUCE; checked against
     // juce_PopupMenu.cpp findLookAndFeel). Set it explicitly like the zoom
     // overflow popup and FxTypeCombo do, so Reset/Randomize render themed.
     menu.setLookAndFeel (&getLookAndFeel());
@@ -1533,7 +1533,7 @@ juce::String ParamPage::groupForId (const juce::String& id)
 
     // ---- Envelopes / LFOs (now on separate tabs) ----
     // env{N}_attack/decay/sustain/release -> "Env N (role)"; env{N}_lfo_* -> "LFO N".
-    // Role verified from the dsp routing: ENV3 -> VCA (mod-matrix default,
+    // Role checked from the dsp routing: ENV3 -> VCA (mod-matrix default,
     // amount 63) = Amp; ENV2 -> filter cutoff (hardcoded filter_env) = Filter;
     // ENV1 -> free mod parameters = Mod.
     if (id.startsWith ("env") && id.length() > 3 && id[3] >= '1' && id[3] <= '3')
@@ -1590,7 +1590,7 @@ void ParamPage::buildGroups (const std::vector<const PatchParamDescriptor*>& des
         g->controlIndices.push_back (i);
     }
 
-    // For sequencer step-grid groups, the Length control should be the LAST cell
+    // For sequencer step-grid groups, the Length control must be the LAST cell
     // (user edits steps first, then sets the length). The descriptor order has
     // seq_length_* before the step params, so reorder via stable_partition.
     for (auto& g : groups_)
@@ -2170,7 +2170,7 @@ void ParamPage::setVisibleGroups (const juce::StringArray& groupNames)
     visibleGroups_ = groupNames;
 
     // Not yet sized (construction / pre-layout): defer entirely. The owning
-    // GroupPager::resized() performs the first real layout at the true content
+    // GroupPager::resized() does the first real layout at the true content
     // width; laying out here at a guessed width would be wasted and wrong.
     if (getWidth() <= 0)
         return;
@@ -2483,7 +2483,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // dangle when the item action finally runs.
         juce::Component::SafePointer<ParvatiEditor> safe (this);
         // ---- W9 folded header actions (AUv3 compact panes): the popup grows
-        // the sections whose header controls are currently folded away (the
+        // the sections whose header controls are now folded away (the
         // SAME breakpoints resized() uses, re-evaluated at click time so a
         // resize between layout and click can never desync the menu). Every
         // item drives the SAME seam as the hidden control: page items call
@@ -2761,7 +2761,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // Route the editor-owned page into the integrated workspace by section.
         // The Global page is hosted inside the Patch page after the loop.
         // Pages are reparented — NOT regenerated — so every APVTS attachment and
-        // the verified byte-bridge survive the reorganization unchanged. Dense
+        // the checked byte-bridge survive the reorganization unchanged. Dense
         // sections paginate by group via a GroupPager (one sub-tab = one group
         // subset) so each visible slice fits its cell with NO scrollbar. (Patch
         // is never a generated page; if/else avoids switch/enum + branch-clone
@@ -2770,7 +2770,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // SEQ) are captured here and registered with the CentralModBar's
         // active-generator editor AFTER the loop (one pill -> one page+group).
         // Pages are reparented — NOT regenerated — so every APVTS attachment and
-        // the verified byte-bridge survive unchanged. (Patch/ModMatrix never
+        // the checked byte-bridge survive unchanged. (Patch/ModMatrix never
         // reach here; the if/else avoids switch/enum + branch-clone warnings.)
         if (pg.s == Section::Mixer)
             synthWorkspace_->setMainLeft (rawPage);
@@ -2797,8 +2797,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Register every GENERATOR pill -> { owning ParamPage, groups-to-show } so the
     // bar's bottom-left active-editor host can reparent + setVisibleGroups the
     // right slice per pill (pages are never regenerated). Group names match the
-    // ParamPage groupForId() keys (verified in groupForId). VLFO == per-voice
-    // LFO (MOD_SRC_LFO_4, verified in voice.cpp). ARP shows ALL its groups
+    // ParamPage groupForId() keys (checked in groupForId). VLFO == per-voice
+    // LFO (MOD_SRC_LFO_4, checked in voice.cpp). ARP shows ALL its groups
     // (EMPTY array). The Note Sequencer pill is the bar-only sentinel
     // (parvati::kNoteSeqSentinel == -1, NOT a real MOD_SRC_*): it reveals its
     // "Note Pitch" group from the Sequencer page (Option A: only the note
@@ -2952,7 +2952,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         bar->setTelemetryProvider (barTelemetryProvider);
     // Point the engine's telemetry at the part being EDITED (the frame follows
     // the header Part selector; the processor's load/part-switch reset hooks are
-    // the authoritative re-sync, this is the startup belt-and-braces copy).
+    // the authoritative re-sync, this is the extra startup copy).
     processorRef_.getEngine().setUiTelemetryPart (processorRef_.getEngine().getCurrentPart());
     // Apply the persisted refresh rate once up front (the timerCallback
     // re-checks every tick, so a Settings change lands within one tick).
@@ -3015,7 +3015,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // showTopPage(idx), which sets EXCLUSIVE visibility (Patch is now a FULL
     // page — pageSelector_ is hidden while it is active, so it is the sole
     // content, not a floating overlay) and syncs every button. Synth/FX
-    // additionally reparent the shared generator (only on a real Synth<->FX
+    // also reparent the shared generator (only on a real Synth<->FX
     // change). NOT APVTS params — view-state only.
     synthModeButton_.setTooltip (TRANS ("Synth page"));
     fxModeButton_.setTooltip    (TRANS ("FX page"));
@@ -3145,12 +3145,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // "seen" flag is PER-INSTANCE (a shared_ptr captured by value — no `this`
     // is captured, so the callback is safe even if it ever fired late): a
     // process-wide `static bool` was consumed by the FIRST editor ever opened,
-    // so every subsequent instance (or a close+reopen) flashed a spurious
+    // so every later instance (or a close+reopen) flashed a spurious
     // initial report in the status strip at open.
     auto primed = std::make_shared<bool> (false);
     keyboardView_->setSettingsChangedCallback ([primed] (int base, int vel)
     {
-        if (! *primed) { *primed = true; return; }   // swallow the one initial-state report
+        if (! *primed) { *primed = true; return; }   // discard the one initial-state report
         ParamControl::postTransientStatus (
             TRANS ("Keyboard: octave ") + midiNoteName (base) + "\u2013" + midiNoteName (base + 24)
                 + "  \u00b7  " + TRANS ("velocity") + " " + juce::String (vel),
@@ -3234,8 +3234,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     statusLoadLabel_.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     statusLoadLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
     statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
-    statusLoadLabel_.setTooltip (TRANS ("Audio-thread realtime load (current block). "
-                                       "Near 100% = dropouts/crackle."));
+    statusLoadLabel_.setTooltip (TRANS ("Audio-thread realtime load (current block; "
+                                       "near 100% = dropouts/crackle)."));
     addAndMakeVisible (statusLoadLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
     statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
@@ -3367,8 +3367,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     setResizable (true, true);
     setResizeLimits (1024, 500, 1800, 1100);
 
-    // Apply persisted zoom (global scale; only if non-default to avoid an
-    // unnecessary rescale at startup). iOS fullscreen always starts at 100%,
+    // Apply persisted zoom (global scale; only if non-default — a rescale at
+    // startup is not needed). iOS fullscreen always starts at 100%,
     // ignoring any persisted value.
 #if JUCE_IOS
     setZoom (1.0);
@@ -3590,7 +3590,7 @@ void ParvatiEditor::timerCallback()
     // content area stays narrowed for it — and it re-hides the bar on some
     // view-position changes even after our tracker set it visible. Wheel
     // scrolling no longer depends on the bar (allowVerticalScrollingWithout
-    // scrollbar), but the affordance should not flap: re-assert the intended
+    // scrollbar), but the affordance must not flicker: re-assert the intended
     // state every tick while the drawer shows (idempotent; dirt cheap).
     if (settingsPanelHost_ != nullptr && settingsPanelHost_->isPanelShowing()
         && settingsScroll_ != nullptr && settingsPanel_ != nullptr
@@ -3639,7 +3639,7 @@ void ParvatiEditor::timerCallback()
     // menu, file loads, state restores) funnels through the processor's
     // part_select -> onPartSelect seam, whose engine telemetry reset hook is
     // the AUTHORITATIVE re-sync — the ctor's setUiTelemetryPart is the startup
-    // belt-and-braces copy; nothing further is needed here.
+    // extra startup copy; nothing further is needed here.
     applyLiveFeedbackRefreshRate (processorRef_.getUiRefreshHz());
 
     // CONSUMER poll re-asserts (every tick, idempotent): the bars' strip polls
@@ -3874,7 +3874,7 @@ void ParvatiEditor::timerCallback()
     else
     {
 
-    // Collect the set of currently-active notes across ALL voices.
+    // Collect the set of active notes across ALL voices.
     juce::Array<int> activeNotes;
     auto& engine = processorRef_.getEngine();
     for (int i = 0; i < engine.getNumVoices(); ++i)
@@ -3987,7 +3987,7 @@ void ParvatiEditor::showTopPage (int idx)
     currentTopPage_ = idx;
 
     // Reparent the shared generator only when landing on Synth/FX and it is
-    // currently hosted by the OTHER workspace. Going to/from Patch leaves the
+    // now hosted by the OTHER workspace. Going to/from Patch leaves the
     // generator where it was (its workspace is just hidden, not torn down).
     if (idx == 0 && fxModeActive_)        { fxModeActive_ = false; reparentGeneratorTo (false); }
     else if (idx == 1 && ! fxModeActive_) { fxModeActive_ = true;  reparentGeneratorTo (true); }
@@ -4110,7 +4110,7 @@ void ParvatiEditor::applyHeaderButtonChrome()
     }
     // The patch indicator: PresetBrowser's name button (its only child
     // TextButton) gets the same treatment + the brighter text tier (user
-    // feedback: the patch indicator should match the other header contrast).
+    // feedback: the patch indicator must match the other header contrast).
     if (presetBrowser_ != nullptr)
         if (auto* pb = dynamic_cast<juce::TextButton*> (presetBrowser_->getChildComponent (0)))
         {
@@ -4196,7 +4196,7 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     // only; a focused TextEditor consumes them itself and this handler never
     // runs), so they are safe to claim at the editor level. The Cmd/Ctrl
     // variants exist for hosts/layouts where a child grabs plain brackets.
-    // Guard: never step while a text field has the focus (belt-and-braces —
+    // Guard: never step while a text field has the focus (extra safety —
     // a focused TextEditor consumes the key first; this covers text-entry
     // children that forward keypresses, e.g. the preset menu's find field
     // if one is ever added).
@@ -4217,10 +4217,10 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     // wantsKeyboardFocus tree-wide (the previous approach left the focus
     // traversal empty). Guards: the strip must be on screen and the focused
     // component must not be a text entry (a TextEditor consumes keys itself
-    // and never reaches this handler; the check is belt-and-braces).
+    // and never reaches this handler; the check is extra safety).
     // KeyboardView::keyPressed re-checks the modifier/computer-keyboard rules
     // itself and returns false for anything it does not own (including
-    // Cmd/Ctrl combos), so this forward can never swallow a shortcut.
+    // Cmd/Ctrl combos), so this forward can never consume a shortcut.
     if (! cmdOrCtrl && keyboardView_ != nullptr && keyboardView_->isShowing())
     {
         const bool typing = dynamic_cast<juce::TextEditor*> (
@@ -4307,7 +4307,7 @@ bool ParvatiEditor::keyStateChanged (bool isKeyDown)
 
 bool ParvatiEditor::handleStepPresetShortcut (int direction)
 {
-    // No browser (should not happen — it is editor-owned) => not consumed.
+    // No browser (this cannot happen — it is editor-owned) => not consumed.
     if (presetBrowser_ == nullptr)
         return false;
     const juce::File next = direction >= 0 ? presetBrowser_->selectNext()
@@ -4488,7 +4488,7 @@ void ParvatiEditor::resized()
 
     // Keep the UI out of the OS safe area (iOS: status bar / home indicator /
     // landscape camera stub). Without the TOP inset the header is laid out at
-    // y=0 directly under the iOS status bar, where iOS swallows/defers the
+    // y=0 directly under the iOS status bar, where iOS consumes/defers the
     // first touch — the reported double-tap / non-recognized-tap issue on the
     // top row. iOS ONLY: desktop displays can report non-zero insets too (e.g.
     // a MacBook notch), which would pad the WINDOWED desktop UI — desktop
@@ -4541,7 +4541,7 @@ void ParvatiEditor::resized()
 #endif
 
     // ---- Bottom status strip = LOWEST band: [tooltip bar] + [n/denom] +
-    //      [CPU %] on the RIGHT (indicators hug the right edge; the hover
+    //      [CPU %] on the RIGHT (indicators sit at the right edge; the hover
     //      tooltip fills the left). ----
     {
         statusBand_ = area.removeFromBottom (kVoiceStripH);
@@ -4593,9 +4593,9 @@ void ParvatiEditor::resized()
     //   < 1024: Part combo + [Synth]/[FX] fold (the cluster's designed budget
     //           is exactly 1024 — below it SYNTH/FX historically collapsed;
     //           at the floor the budget closes at ~1015, 9pt slack);
-    //   < 810:  [MOD]/[MAP]/gear additionally fold (the preset+Patch cluster
+    //   < 810:  [MOD]/[MAP]/gear also fold (the preset+Patch cluster
     //           + full right cluster needs ~815);
-    //   < 650:  Redo AND the [Patch] page button additionally fold (with both
+    //   < 650:  Redo AND the [Patch] page button also fold (with both
     //           placed, 560pt runs ~46pt over; the Patch page stays reachable
     //           via the popup's page items).
     // Primary controls (preset browser, Load, Save, Undo, [KBD], "...") NEVER
@@ -4717,7 +4717,7 @@ void ParvatiEditor::resized()
     // Patch/Part menu cluster. The "Patch:" caption is removed and the preset
     // dropdown is LEFT-aligned right after the logo block (logoArea_ carries
     // breathing-room slack) so it sits close to the wordmark; the preset browser
-    // is narrowed. The toolbar hugs the right edge, so the menus pack from the
+    // is narrowed. The toolbar sits at the right edge, so the menus pack from the
     // left of the remaining bar. Layout: [preset][gap][Patch][Part n][Synth][FX]
     // W9: the secondary tail controls fold at the measured breakpoints (see
     // the fold block above) and are hidden; the preset browser is PRIMARY —
@@ -4957,7 +4957,7 @@ void ParvatiEditor::openSaveDialog()
     if (defaultName.isEmpty())
         defaultName = "Parvati";
     const juce::File defaultDir = processorRef_.getUserPatchDir();
-    defaultDir.createDirectory();   // ensure USER/ exists
+    defaultDir.createDirectory();   // make sure USER/ exists
     const juce::File defaultFile (defaultDir.getChildFile (defaultName + ".PRO"));
     fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Save Ambika Patch (.PRO)"),
                                                        defaultFile, "*.PRO");

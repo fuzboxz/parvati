@@ -72,7 +72,7 @@ class Correlator {
   // constructor and Init() (correlator.cc) sets only offset_/best_match_/
   // done_, leaving increment_/size_/candidate_/best_score_ indeterminate at
   // construction. best_match() reads increment_ (multiplied by best_match_,
-  // currently 0, so the value is masked) - an indeterminate read is still
+  // now 0, so the value is masked) - an indeterminate read is still
   // undefined behavior on every pre-search call. Deterministic zeros/unity
   // cost nothing and keep the pre-search best_match() semantics identical
   // (offset_ + 0).

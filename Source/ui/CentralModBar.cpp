@@ -170,7 +170,7 @@ namespace
 // theme resolution and active-state).
 //
 // LIVE HISTORY STRIP (docs/LIVE_MOD_FEEDBACK_DESIGN.md): when the bar's
-// telemetry tick feeds it data, the pill additionally draws a family-coloured
+// telemetry tick feeds it data, the pill also draws a family-coloured
 // sparkline of the source's recent values spanning the pill's inner height
 // (label on top — the Pigments-style scope reading). Flat and quiet — no
 // fill, no glow, no grid; the accent-on-dark contrast keeps the strip an
@@ -1276,7 +1276,7 @@ void CentralModBar::timerCallback()
     if (! isVisible() || telemetryFetch_ == nullptr)
         return;
 
-    // WATCHDOG role while the vblank attachment is alive: verify vsync
+    // WATCHDOG role while the vblank attachment is alive: check vsync
     // callbacks are actually arriving; healthy (< 250 ms stale) -> stand down
     // and let the display-locked driver run. Stalled -> promote this Timer to
     // the fallback driver (resets the animation cadence to 60 Hz).

@@ -83,7 +83,7 @@ public:
         beyond one std::function call per poll tick. */
     void setLiveValuesProvider (std::function<parvati::LiveFilterValues()> p);
 
-    // TEST-ONLY: is the live modulated curve currently SHOWN (the painted
+    // TEST-ONLY: is the live modulated curve now SHOWN (the painted
     // state, i.e. after the change gate — lets a headless test observe the
     // overlay without a Graphics context)?
     bool  liveCurveVisibleForTest() const noexcept { return dispLiveActive_; }

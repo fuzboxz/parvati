@@ -96,8 +96,8 @@ void Fv1Echo::processSampleFx (int32_t lin, int32_t /*rin*/,
     const int32_t tapL = lineL_.readFrac (timeL);
     const int32_t tapR = lineR_.readFrac (timeR);
 
-    // Ping-pong: the L tap walks into the R line; the damped R tap walks back
-    // into the L line together with the input. The R->L hop carries the LOOP
+    // Ping-pong: the L tap is written into the R line; the damped R tap is
+    // written back into the L line together with the input. The R->L hop carries the LOOP
     // DC KILLER (see the header): ~10 Hz one-pole HP so near-unity regen can
     // never integrate DC into the runaway offset.
     lineR_.write (tapL);

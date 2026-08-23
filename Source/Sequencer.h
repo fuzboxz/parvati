@@ -14,7 +14,7 @@
 //  (B) The NOTE sequence (ArpSequencerMode == NOTE): when sequence_length[2] > 0
 //      and a key is held, generates notes from sequence_data bytes 32..63
 //      (per step: a (note|gate) byte + a (velocity|legato) byte), transposed by
-//      the most-recently-played key, honouring gate/legato.
+//      the most-recently-played key; gate/legato are honoured.
 //
 // sequence_data layout (controller PartData; see part.h):
 //   0..15  : step sequence 1 (modulation values)
@@ -71,7 +71,7 @@ public:
         sequencerStep_[0] = sequencerStep_[1] = sequencerStep_[2] = 0;
     }
 
-    // Release the currently-sounding note sequence note (twin of
+    // Release the now-sounding note sequence note (twin of
     // Arpeggiator::allNotesOff). Called by the engine wherever the arp's notes
     // are killed: key-release emptying the held-key stack, transport stop, and
     // before start(). Idempotent (no-op when previousNote_ == 0xff).
@@ -84,7 +84,7 @@ public:
     // Transport stop (twin of Arpeggiator::stop).
     void stop() { allNotesOff(); }
 
-    // Test/debug: the currently-sounding (last generated) note, or 0xff if none.
+    // Test/debug: the now-sounding (last generated) note, or 0xff if none.
     uint8_t debugPreviousNote() const noexcept { return previousNote_; }
 
     // LIVE observation of the same value (0xff = none): used by the UI

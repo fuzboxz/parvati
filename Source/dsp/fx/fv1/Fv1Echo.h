@@ -9,10 +9,10 @@
 //   * Time     (p0): 10..470 ms per side (log).
 //   * Feedback (p1): 0..0.995 internal loop gain. The UI shows 0..100%; 100%
 //                  reads as INFINITE (-0.04 dB per repeat — below perception,
-//                  a tail that outlives the note). The loop stays stable: the
-//                  Tone damper bleeds HF every round trip and sub-unity gain
-//                  means DC cannot lock either. (The old 0.95 cap lost
-//                  -0.45 dB/repeat — an audible pump-away that contradicted
+//                  a tail longer than the note). The loop stays stable: the
+//                  Tone damper removes HF every round trip, and sub-unity gain
+//                  prevents DC build-up. (The old 0.95 cap lost
+//                  -0.45 dB/repeat — an audible decay that contradicted
 //                  the "100%" readout.)
 //   * Tone     (p2): 700..12000 Hz loop damper.
 //   * Spread   (p3): R time factor 1..2x.
@@ -69,7 +69,7 @@ private:
     // loop is a DC integrator with DC gain 1/(1-0.995) = 200x — any residual
     // input DC / saturation asymmetry accumulates until the loop parks near a
     // rail (measured dc -0.28 on a held chord through Echo->Plate, peak >1.0),
-    // and the DC-heavy wash makes any following shaper pin constant -> its own
+    // and the DC-heavy output makes any following shaper pin constant -> its own
     // DC blocker strips it -> gated silence. A 10 Hz one-pole high-pass in the
     // R->L hop kills the recirculation (loop DC gain ~0) while leaving the
     // audio-band regen untouched. Float-domain, matching the family's control

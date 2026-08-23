@@ -43,7 +43,7 @@ void Fv1Gate::processSampleFx (int32_t lin, int32_t /*rin*/,
     env_ += 0.02f * (xf - env_);   // ~2.7 ms detector (peak-ish, chatter-resistant)
 
     // State machine: above threshold (or disabled) -> OPEN, else CLOSED after
-    // the hold expires. The gain one-pole rides between 1 and 0.
+    // the hold expires. The gain one-pole moves between 1 and 0.
     if (th_ <= 0.0f || env_ > th_)
     {
         open_ = true;
