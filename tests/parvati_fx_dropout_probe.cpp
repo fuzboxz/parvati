@@ -228,9 +228,9 @@ TEST(parvati_fx_dropout_probe)
             const int total2 = (int) (dur * sr);
             std::vector<float> capL ((size_t) total2, 0.0f), capR ((size_t) total2, 0.0f);
             if (std::string (r.name).find ("Overdrive") != std::string::npos)
-                ::setenv ("PARVATI_TAP_ON", "1", 1);
+                setEnvVar ("PARVATI_TAP_ON", "1");
             render (proc, sr, bufSize, capL, capR);
-            ::unsetenv ("PARVATI_TAP_ON");
+            setEnvVar ("PARVATI_TAP_ON", "");
             const Metrics a = analyze (capL, (int) (0.3 * sr));
             std::printf ("REPRO %-26s: zeroRun=%4d rail=%5.2f%% dc=%+.3f rmsMin=%.4f imp=%.3f\n",
                          r.name, a.zeroRun, 100.0 * a.railFrac, a.dc, a.rmsMin, a.worstImp);

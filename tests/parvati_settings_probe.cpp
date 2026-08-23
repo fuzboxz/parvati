@@ -2,12 +2,11 @@
 // REAL drawer on a desktop-attached editor, dumps the content-tree bounds
 // (SidePanel -> Viewport -> SettingsPanel -> every row child), and (with
 // PARVATI_TEST_SHOTS=1, mirroring PARVATI_TEST_HOLD) saves PNG snapshots to
-// /tmp/settings_shots/ for inspection. Scenarios: default
+// the temp directory (settings_shots/) for inspection. Scenarios: default
 // 1280x634, short 1280x500, after theme switch, after close+reopen.
 #include <cstdio>
 #include "unified_test_runner.h"
 #include <typeinfo>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -23,6 +22,7 @@
 #endif
 
 #include "PluginEditor.h"
+#include "test_utils.h"              // displayAvailable (headless-host skip)
 #include "PluginProcessor.h"
 #include "ui/SettingsPanel.h"
 
@@ -53,13 +53,18 @@ void dumpTree (juce::Component* c, int depth, juce::String& out)
 
 void snapshot (juce::Component& c, const juce::String& name)
 {
-    // Opt-in only: writing /tmp/settings_shots on every suite run pollutes
-    // the machine and makes this probe's footprint machine-state dependent.
+    // Opt-in only: writing screenshots on every suite run pollutes the
+    // machine and makes this probe's footprint machine-state dependent.
     if (juce::SystemStats::getEnvironmentVariable ("PARVATI_TEST_SHOTS", "0") != "1")
         return;
-    std::filesystem::create_directories ("/tmp/settings_shots");
+    // Route through juce::File::tempDirectory: the path follows the
+    // per-lane TMPDIR that tools/run_tests_parallel.sh sets, and Windows
+    // resolves a real temp tree instead of the current drive root.
+    const juce::File dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                              .getChildFile ("settings_shots");
+    dir.createDirectory();
     auto img = c.createComponentSnapshot (c.getLocalBounds());
-    juce::File f ("/tmp/settings_shots/" + name + ".png");
+    juce::File f (dir.getChildFile (name + ".png"));
     juce::FileOutputStream os (f);
     juce::PNGImageFormat().writeImageToStream (img, os);
 }
@@ -67,7 +72,14 @@ void snapshot (juce::Component& c, const juce::String& name)
 
 TEST(parvati_settings_probe)
 {
-    ::setenv ("PARVATI_HEADLESS", "1", 1);
+    setEnvVar ("PARVATI_HEADLESS", "1");
+    // The probe drives a real on-desktop window (native title bar + peer);
+    // a headless host cannot create one. macOS always reports a display.
+    if (! displayAvailable())
+    {
+        std::printf ("  SKIP: no display server (headless host)\n");
+        return true;
+    }
     juce::ScopedJuceInitialiser_GUI gui;
 
     const bool interactive = juce::SystemStats::getEnvironmentVariable ("PARVATI_TEST_HOLD", "0") == "1";

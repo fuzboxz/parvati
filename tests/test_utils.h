@@ -27,9 +27,35 @@
 #ifndef PARVATI_TEST_UTILS_H_
 #define PARVATI_TEST_UTILS_H_
 
+#include <cstdlib>   // ::setenv (POSIX branch of setEnvVar)
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "PluginProcessor.h"
+
+// True when the host reports at least one display. Headless Linux CI has no
+// display server, so JUCE cannot create a desktop peer. Tests that need a
+// real window call this first and print a skip note. macOS always reports a
+// display, so the guard stays dormant there. (JUCE 9 exposes the check as
+// Displays::getPrimaryDisplay; it returns nullptr with no connected screen.)
+inline bool displayAvailable()
+{
+    return juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr;
+}
+
+// Sets a process environment variable on every platform. JUCE 9 exposes
+// only a reader (SystemStats::getEnvironmentVariable), so the setter wraps
+// the native calls: setenv on POSIX, _putenv_s under MSVC. An empty value
+// removes the variable on POSIX and blanks it on Windows; no reader in the
+// tree distinguishes the two states.
+inline void setEnvVar (const char* key, const char* value)
+{
+#if defined (_WIN32)
+    _putenv_s (key, value);
+#else
+    ::setenv (key, value, 1);
+#endif
+}
 
 // Typed: host-style write to an AudioParameterInt; silently no-ops if the id
 // is not an int parameter (mirrors the original per-file copies).

@@ -51,6 +51,13 @@ TEST(theme_switch_preview_test)
     CHECK(ed != nullptr, "editor created");
     if (ed == nullptr)
         return false;
+    // The preview polls need a real peer; a headless host cannot create one.
+    // macOS always reports a display, so the guard stays dormant there.
+    if (! displayAvailable())
+    {
+        std::printf ("  SKIP: no display server (headless host)\n");
+        return true;
+    }
     ed->addToDesktop (juce::ComponentPeer::windowAppearsOnTaskbar);
     ed->setVisible (true);
     pump (0.3);

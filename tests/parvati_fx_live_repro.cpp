@@ -67,7 +67,14 @@ Health analyze (const std::vector<float>& out, int from, int to)
 
 TEST(parvati_fx_live_repro)
 {
-    ::setenv ("PARVATI_HEADLESS", "1", 1);
+    setEnvVar ("PARVATI_HEADLESS", "1");
+    // The repro renders through a real on-desktop editor (hub + strips);
+    // a headless host cannot create the peer. macOS always reports a display.
+    if (! displayAvailable())
+    {
+        std::printf ("  SKIP: no display server (headless host)\n");
+        return true;
+    }
     juce::ScopedJuceInitialiser_GUI gui;
 
     constexpr double sr = 44100.0;

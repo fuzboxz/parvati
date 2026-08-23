@@ -151,7 +151,7 @@ std::vector<Ev> makeEvents (int kind, double durSec)
 
 TEST(parvati_retrig_probe)
 {
-    ::setenv ("PARVATI_HEADLESS", "1", 1);
+    setEnvVar ("PARVATI_HEADLESS", "1");
     juce::ScopedJuceInitialiser_GUI gui;
 
     const double dur = 3.0;

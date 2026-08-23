@@ -6,7 +6,7 @@
 #include "unified_test_runner.h"
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>   // ::setenv (PARVATI_HEADLESS — native-dialog suppression in main)
+#include <cstdlib>   // std::getenv (PARVATI_HEADLESS reads below)
 #include <cstring>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -83,7 +83,9 @@ TEST(editor_test)
     // the pump runs. Setting the override keeps the seam semantics (handlers
     // still fire) with zero native chrome. A developer can export the same
     // variable to suppress pickers in ANY manual binary run.
-    ::setenv ("PARVATI_HEADLESS", "1", 1);
+    // (setEnvVar from test_utils.h wraps ::setenv on POSIX and _putenv_s on
+    // Windows, so every platform that builds the suite gets the override.)
+    setEnvVar ("PARVATI_HEADLESS", "1");
 
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -1912,7 +1914,11 @@ TEST(editor_test)
             SyntheticTelemetry synth;
             bar.setTelemetryProvider ([&synth] (parvati::ModTelemetrySnapshot& s) { return synth (s); });
             bar.setTelemetryRateHz (60);
-            bar.addToDesktop (0);   // borderless, taskbar-less — parentHierarchyChanged starts the poll
+            // A headless host cannot create the off-screen probe peer; the
+            // isShowing() gate below then skips the checks. macOS always
+            // reports a display.
+            if (displayAvailable())
+                bar.addToDesktop (0);   // borderless, taskbar-less — parentHierarchyChanged starts the poll
             if (bar.isShowing())
             {
                 // Moving history: the strip data changes each tick, so the
@@ -1986,7 +1992,12 @@ TEST(editor_test)
             auto* e2eEd = dynamic_cast<ParvatiEditor*> (e2eProc.createEditor());
             check (e2eEd != nullptr, "[25] e2e: editor created");
             CentralModBar* e2eBar = nullptr;
-            if (e2eEd != nullptr)
+            // The e2e animation check needs the real peer (the hub pump
+            // starts on visibility). A headless host cannot create one.
+            const bool e2eDesktop = displayAvailable();
+            if (! e2eDesktop)
+                std::printf ("  SKIP [25] e2e: no display server (headless host)\n");
+            if (e2eEd != nullptr && e2eDesktop)
             {
                 e2eEd->setSize (1280, 634);
                 auto win2 = std::make_unique<juce::DocumentWindow> ("E2E",
@@ -2007,7 +2018,10 @@ TEST(editor_test)
                 e2eBar = (e2eEd->getSynthWorkspaceForTest() != nullptr)
                     ? e2eEd->getSynthWorkspaceForTest()->modBar() : nullptr;
             }
-            check (e2eBar != nullptr, "[25] e2e: editor bar reachable");
+            if (e2eDesktop)
+                check (e2eBar != nullptr, "[25] e2e: editor bar reachable");
+            else
+                std::printf ("       (bar-reachable check skipped: no display)\n");
             if (e2eBar != nullptr)
             {
                 // Render a held note through the REAL audio path (the message
@@ -2285,9 +2299,10 @@ static int runPreviewRegression (bool windowed)
 
     // Optional: host the editor in a real on-desktop window (the Standalone
     // scenario — a REAL peer changes isShowing() semantics for the preview
-    // timers gated in visibilityChanged).
+    // timers gated in visibilityChanged). A headless host cannot create the
+    // peer, so the windowed path needs a display.
     std::unique_ptr<juce::DocumentWindow> win;
-    if (windowed)
+    if (windowed && displayAvailable())
     {
         win = std::make_unique<juce::DocumentWindow> ("PreviewProbe",
             juce::Colours::black, juce::DocumentWindow::allButtons);
@@ -2377,7 +2392,7 @@ static int runPreviewRegression (bool windowed)
             p->setValueNotifyingHost (v);
     };
 
-    if (windowed)
+    if (windowed && displayAvailable())
     {
         pump (700);   // let the 30 Hz polls settle past the initial build
 

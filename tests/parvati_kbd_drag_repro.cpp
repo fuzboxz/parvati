@@ -14,6 +14,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PluginProcessor.h"
+#include "test_utils.h"              // displayAvailable (headless-host skip)
 #include "PluginEditor.h"
 #include "ui/KeyboardView.h"
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -45,7 +46,14 @@ int census (const std::vector<float>& capL, int from, int to, float* worstOut)
 
 TEST(parvati_kbd_drag_repro)
 {
-    ::setenv ("PARVATI_HEADLESS", "1", 1);
+    setEnvVar ("PARVATI_HEADLESS", "1");
+    // The repro drives a real on-desktop editor with synthetic mouse events;
+    // a headless host cannot create the peer. macOS always reports a display.
+    if (! displayAvailable())
+    {
+        std::printf ("  SKIP: no display server (headless host)\n");
+        return true;
+    }
     juce::ScopedJuceInitialiser_GUI gui;
     const double sr = 44100.0;
 

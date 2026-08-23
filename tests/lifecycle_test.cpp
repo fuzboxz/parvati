@@ -50,6 +50,7 @@
 
 #include "PluginEditor.h"   // ParvatiEditor + ParamControl (tap-assign statics)
 #include "PluginProcessor.h"
+#include "test_utils.h"              // displayAvailable (headless-host skip)
 #include "ui/SeqLengthStepper.h"   // [4] the seq-length picker seam
 
 namespace
@@ -197,6 +198,13 @@ TEST(lifecycle_test)
     //      guarded by [2]).
     // ==================================================================
     std::printf ("[2b] musical typing survives a focused control\n");
+    // The section needs a real desktop peer (isShowing() + timer delivery);
+    // a headless host cannot create one. macOS always reports a display.
+    if (! displayAvailable())
+    {
+        std::printf ("  SKIP [2b]: no display server (headless host)\n");
+    }
+    else
     {
         ParvatiAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
