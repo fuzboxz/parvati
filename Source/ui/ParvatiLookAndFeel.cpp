@@ -498,17 +498,26 @@ static void drawPadlock (juce::Graphics& g, juce::Point<float> c, float sz, juce
     const auto  body  = juce::Rectangle<float> (c.x - bodyW * 0.5f,
                                                 c.y - bodyH * 0.5f + sz * 0.14f,
                                                 bodyW, bodyH);
-    // Shackle: top half-arc resting on the body's top edge.
+    // Shackle: a half-circle whose FEET DESCEND INTO THE BODY (2026-08-23
+    // revision 2 — "make the lock LOCKED; it reads open"): the arc's centre
+    // sits BELOW the body's top edge, so both ends pass through the body's
+    // interior and are covered by the body fill drawn after — the shackle
+    // visibly ENTERS the body on both sides, the unambiguous closed-padlock
+    // reading. (Also carries the earlier BUG FIX: addCentredArc with
+    // startAsNewSubPath=false on a fresh path lineTo's from (0,0) — the stray
+    // top-left line; startNewSubPath at the arc start prevents it.)
     juce::Path shackle;
-    const float r = bodyW * 0.34f;
-    shackle.addCentredArc (c.x, body.getY(), r, r, 0.0f,
+    const float r = bodyW * 0.38f;
+    const float shackleCY = body.getY() + r * 0.34f;   // feet land INSIDE the body
+    shackle.startNewSubPath (c.x - r, shackleCY);
+    shackle.addCentredArc (c.x, shackleCY, r, r, 0.0f,
                            juce::MathConstants<float>::pi,
                            juce::MathConstants<float>::twoPi, false);
     g.setColour (col);
-    g.strokePath (shackle, juce::PathStrokeType (juce::jmax (1.0f, sz * 0.12f),
+    g.strokePath (shackle, juce::PathStrokeType (juce::jmax (1.4f, sz * 0.15f),
                                                  juce::PathStrokeType::curved,
                                                  juce::PathStrokeType::rounded));
-    g.fillRoundedRectangle (body, juce::jmax (1.0f, sz * 0.12f));
+    g.fillRoundedRectangle (body, juce::jmax (1.0f, sz * 0.14f));
     // Keyhole.
     g.setColour (col.contrasting (0.6f));
     g.fillEllipse (juce::Rectangle<float> (sz * 0.13f, sz * 0.13f).withCentre (body.getCentre()));
@@ -534,6 +543,19 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     const auto fill    = slider.findColour (juce::Slider::rotarySliderFillColourId);      // accent arc (brand / category)
     const auto valueCol = slider.findColour (juce::Slider::textBoxTextColourId);
     const auto trackCol = slider.findColour (juce::Slider::rotarySliderOutlineColourId);  // solid dark-gray track (knobTrack)
+
+    // LOCKED-KNOB GREY-OUT (2026-08-23, two revisions): while a mod-source
+    // drag hovers this knob as a NON-destination (parvatiModLocked via
+    // ParamControl::setDropLocked), EVERYTHING accent-coloured on the dial
+    // greys out to the padlock's light grey — the VALUE fill arc (the
+    // dominant "indicator arc around the control"), the drop-target zone
+    // ring and the per-modulation arcs — so the whole control reads
+    // deactivated, not just the glyph. The dark TRACK keeps its colour (it
+    // already reads as inactive chrome).
+    const auto* lv = slider.getProperties().getVarPointer ("parvatiModLocked");
+    const bool modLocked = (lv != nullptr && lv->isBool() && (bool) *lv);
+    const juce::Colour lockedGrey = juce::Colour::greyLevel (0.72f);
+    const juce::Colour effFill = modLocked ? lockedGrey : fill;
 
     // Square dial area centred in the given bounds.
     const int dial = juce::jmin (width, height);
@@ -565,10 +587,14 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
                                                   juce::PathStrokeType::rounded));
 
     // Fill arc — start angle -> value angle, bright accent. Skipped for disabled
-    // knobs so they read as inactive.
+    // knobs so they read as inactive. While a mod-source drag hovers this knob
+    // as a NON-destination (modLocked), the fill greys out with everything
+    // else (2026-08-23 revision 2: "the issue still exists" — the value arc
+    // IS the indicator arc the user meant; greying only the outer mod rings
+    // left the knob's dominant arc accented).
     if (slider.isEnabled() && rotaryEndAngle > rotaryStartAngle)
     {
-        g.setColour (fill);
+        g.setColour (modLocked ? lockedGrey : fill);
         juce::Path fillArc;
         fillArc.addCentredArc (centre.x, centre.y, radius, radius, 0.0f,
                                rotaryStartAngle, toAngle, true);
@@ -632,7 +658,7 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
         const float cellHalf = juce::jmin ((float) width, (float) height) * 0.5f;
         const float ringR = juce::jlimit (4.0f, juce::jmax (4.0f, cellHalf - 1.0f),
                                            radius + 2.0f);
-        g.setColour (fill.brighter (0.25f).withAlpha (0.6f));
+        g.setColour ((modLocked ? lockedGrey : fill).brighter (0.25f).withAlpha (0.6f));
         juce::Path zone;
         zone.addCentredArc (centre.x, centre.y, ringR, ringR, 0.0f,
                             rotaryStartAngle, rotaryEndAngle, true);
@@ -659,9 +685,13 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
                 break;   // cap: no more arcs fit inside the cell
 
             const auto* colVar = slider.getProperties().getVarPointer ("parvatiModCol" + juce::String (i));
-            const juce::Colour col = (colVar != nullptr && colVar->isInt())
-                ? juce::Colour ((uint32_t) (int) *colVar)
-                : fill;   // fallback to the knob fill if no colour was pushed
+            // LOCKED (2026-08-23): every ring paints the locked grey (the
+            // knob reads fully deactivated under the can't-drop drag); the
+            // per-mod colour is only used while unlocked.
+            const juce::Colour col = modLocked ? lockedGrey
+                : ((colVar != nullptr && colVar->isInt())
+                       ? juce::Colour ((uint32_t) (int) *colVar)
+                       : effFill);   // fallback to the knob fill if no colour was pushed
 
             const auto* amtVar = slider.getProperties().getVarPointer ("parvatiModAmt" + juce::String (i));
             const int amt = (amtVar != nullptr && amtVar->isInt())
@@ -698,12 +728,15 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     // "Can't drop here" padlock: shown on a NON-destination knob while a
     // mod-source drag is hovered over it (ParamControl::setDropLocked).
     {
-        const auto* lv = slider.getProperties().getVarPointer ("parvatiModLocked");
-        if (lv != nullptr && lv->isBool() && (bool) *lv)
+        if (modLocked)
         {
-            const float lsz = juce::jmin ((float) width, (float) height) * 0.34f;
-            drawPadlock (g, centre, lsz,
-                         slider.findColour (juce::Slider::textBoxTextColourId).withAlpha (0.9f));
+            // 0.34 -> 0.46 (2026-08-23 user request: "increase the size of the
+            // lock icon when dragging over something") and the glyph colour is
+            // a LIGHT GREY (not the text colour, not white): a clear
+            // mid-light grey reads as the neutral "can't modulate this"
+            // state on every theme.
+            const float lsz = juce::jmin ((float) width, (float) height) * 0.46f;
+            drawPadlock (g, centre, lsz, juce::Colour::greyLevel (0.72f));
         }
     }
 }
@@ -903,9 +936,11 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     {
         const auto* lv = box.getProperties().getVarPointer ("parvatiModLocked");
         if (lv != nullptr && lv->isBool() && (bool) *lv)
+            // Same 2026-08-23 treatment as the knob path: LIGHT GREY (theme-
+            // agnostic, clearly not white) + a larger glyph.
             drawPadlock (g, r.getCentre(),
-                         r.getHeight() * 0.7f,
-                         box.findColour (juce::ComboBox::textColourId).withAlpha (0.9f));
+                         r.getHeight() * 0.8f,
+                         juce::Colour::greyLevel (0.72f));
     }
 }
 

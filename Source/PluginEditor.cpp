@@ -73,8 +73,9 @@ bool nativeDialogsSuppressed()
 // so it re-colours on theme switch. The logo block width is measured in
 // resized() with the SAME font paint() uses so the logo/version/centre/right
 // header cluster stays byte-stable.
-constexpr const char* kLogoText       = "Parvati";
-constexpr float       kLogoTextHeight = 22.0f;   // bold sans-serif cap height in the header bar
+constexpr const char* kLogoText       = "PARVATI";   // 2026-08-23: ALL CAPS wordmark
+constexpr float       kLogoTextHeight = 17.0f;   // 2026-08-23: smaller + letter-spaced + plain ("remove the boldness", lighter read)
+constexpr float       kLogoTracking  = 3.0f;    // extra px BETWEEN characters (the airy wordmark look)
 
 // Re-apply each Label's font in the component tree (same height/style, default
 // family) so each re-resolves its typeface through the active L&F after a
@@ -4425,22 +4426,58 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // "Parvati" text uses the theme `text` token so it re-colours each paint().
     if (! logoArea_.isEmpty())
     {
-        // Two-line brand: "Parvati" (bold) over the subtitle (10px, dim).
-        // brand — "Parvati" (bold) over "by 805Labs \xc2\xb7 v<ver>" (10px, dim).
+        // Two-line brand (2026-08-23 revision 3): "PARVATI" — ALL CAPS, PLAIN,
+        // 17pt, LETTER-SPACED — centred over the SUBTITLE TEXT's own span
+        // (not the whole block: the block carries breathing slack that would
+        // offset the optical centre), above "by 805Labs \xc2\xb7 v<ver>"
+        // (10px, dim, LEFT-aligned at the block's left edge). The airy
+        // tracking + smaller plain weight is the "lighter font" read.
         auto block = logoArea_;
-        g.setFont (lnf_.appFont (kLogoTextHeight, juce::Font::bold));
-        g.setColour (theme.textPrimary);
-        g.drawText (kLogoText, block.removeFromTop (juce::roundToInt (static_cast<float> (block.getHeight()) * 0.62f)),
-                    juce::Justification::centredLeft, false);
-        g.setFont (lnf_.appFont (10.0f, juce::Font::plain));
+        const juce::Font subFont = lnf_.appFont (10.0f, juce::Font::plain);
+        const juce::String subText (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION));
+        {
+            juce::GlyphArrangement gs;
+            gs.addLineOfText (subFont, subText, 0.0f, 0.0f);
+            const float subW = gs.getBoundingBox (0, gs.getNumGlyphs(), true).getWidth();
+
+            const juce::Font markFont = lnf_.appFont (kLogoTextHeight, juce::Font::plain);
+            const juce::String mark (kLogoText);
+            // Letter-spaced wordmark width: sum of glyph advances + tracking
+            // between characters (same math resized() measures the block with).
+            float markW = 0.0f;
+            for (int i = 0; i < mark.length(); ++i)
+            {
+                juce::GlyphArrangement gc;
+                gc.addLineOfText (markFont, mark.substring (i, i + 1), 0.0f, 0.0f);
+                markW += gc.getBoundingBox (0, gc.getNumGlyphs(), true).getWidth();
+            }
+            markW += kLogoTracking * (float) juce::jmax (0, mark.length() - 1);
+
+            const auto band = block.removeFromTop (juce::roundToInt (static_cast<float> (block.getHeight()) * 0.62f));
+            g.setColour (theme.textPrimary);
+            // Draw each character at its tracked x, baseline-centred in the
+            // band (optical middle ~= band centre + ~0.3 of the font height).
+            float x = block.getX() + (subW - markW) * 0.5f;   // centred OVER THE SUBTITLE SPAN
+            if (x < block.getX()) x = block.getX();
+            const float baseline = band.getCentre().y + kLogoTextHeight * 0.30f;
+            for (int i = 0; i < mark.length(); ++i)
+            {
+                const auto ch = mark.substring (i, i + 1);
+                juce::GlyphArrangement gc;
+                gc.addLineOfText (markFont, ch, 0.0f, 0.0f);
+                const float chW = gc.getBoundingBox (0, gc.getNumGlyphs(), true).getWidth();
+                g.drawSingleLineText (ch, juce::roundToInt (x), juce::roundToInt (baseline));
+                x += chW + kLogoTracking;
+            }
+        }
+        g.setFont (subFont);
         g.setColour (theme.textSecondary);
         // CharPointer_UTF8: the \xc2\xb7 middle dot makes this a UTF-8 literal;
         // the implicit juce::String (const char*) conversion would assert
         // (CharPointer_ASCII::isValidString) on EVERY editor paint — the paint
         // is not clipped before the String is constructed — and in Release the
         // ASCII path is ambiguous for bytes >127.
-        g.drawText (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION), block,
-                    juce::Justification::centredLeft, false);
+        g.drawText (subText, block, juce::Justification::centredLeft, false);
 
     }
 }
@@ -4639,10 +4676,19 @@ void ParvatiEditor::resized()
     // (equal 6px gaps; text width measured with the SAME font paint() uses).
     {
         bar.removeFromLeft (8);   // extra left edge whitespace (6 from bar.reduced + 8 = ~14px)
-        const juce::Font textFont = lnf_.appFont (kLogoTextHeight, juce::Font::bold);
-        juce::GlyphArrangement ga;
-        ga.addLineOfText (textFont, kLogoText, 0.0f, 0.0f);
-        const int textW = juce::roundToInt (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
+        const juce::Font textFont = lnf_.appFont (kLogoTextHeight, juce::Font::plain);   // SAME weight/size paint() uses
+        // Letter-spaced wordmark width (mirrors paint()'s per-character math):
+        // sum of glyph advances + kLogoTracking between characters.
+        float textWF = 0.0f;
+        int nChars = 0;
+        for (int i = 0; kLogoText[i] != '\0'; ++i, ++nChars)
+        {
+            juce::GlyphArrangement gc;
+            gc.addLineOfText (textFont, juce::String::charToString ((juce::juce_wchar) kLogoText[i]), 0.0f, 0.0f);
+            textWF += gc.getBoundingBox (0, gc.getNumGlyphs(), true).getWidth();
+        }
+        textWF += kLogoTracking * (float) juce::jmax (0, nChars - 1);   // (len-1) gaps
+        const int textW = juce::roundToInt (textWF);
         // ---- Version/patch separation (user feedback: "more distance between
         //      the version and the patch indicator") ----
         // The version subtitle ("by 805Labs · v<ver>", 10px) is painted inside

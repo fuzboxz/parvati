@@ -78,7 +78,8 @@ public:
 
 private:
     // A compact "X": two rounded-cap strokes corner to corner. Pure Path
-    // drawing (no font dependency), themed like the other glyphs.
+    // drawing (no font dependency), themed like the other glyphs. Stroke
+    // bolded 2.0 -> 2.6 (2026-08-3 vector-boldness pass).
     static void drawClose (juce::Graphics& g, juce::Rectangle<float> r)
     {
         const auto inner = r.reduced (juce::jmin (r.getWidth(), r.getHeight()) * 0.18f);
@@ -87,37 +88,66 @@ private:
         x.lineTo (inner.getBottomRight());
         x.startNewSubPath (inner.getTopRight());
         x.lineTo (inner.getBottomLeft());
-        g.strokePath (x, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved,
+        g.strokePath (x, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
     }
 
-    // A "rainbow" arc with an arrowhead at one foot. Undo => head at the LEFT
-    // foot pointing left; Redo => mirror (head at the RIGHT foot pointing right).
+    // The "rainbow" arc with an arrowhead at one foot (2026-08-23 revision
+    // 3: back to the RAINBOW silhouette — the true half circle read bad —
+    // but built from a REAL ELLIPSE quarter pair so the curve is properly
+    // round instead of the old quadratic's pointed dome: a shallow wide
+    // ellipse whose top HALF spans foot-to-foot (flatten ~0.78), giving the
+    // classic rounded-rainbow with vertically-departing feet the arrowhead
+    // tangent expects. Undo => head at the LEFT foot; Redo => mirror.
+    // The head is filled + stroked with the SAME stroke object as the arc
+    // (one solid weight; see the colour note below).
     static void drawCurvedArrow (juce::Graphics& g, juce::Rectangle<float> r, bool clockwise)
     {
+        // 2026-08-23 revision 4 (user spec: "the vector should start from
+        // center left and point to center right with an arrow on the end, or
+        // the other way"): a single OVER-THE-TOP arc whose FEET sit at the
+        // cell's vertical CENTER (left-center -> right-center), with a
+        // HORIZONTAL chevron arrowhead at the destination foot pointing
+        // outward (Undo => head at the LEFT foot pointing LEFT; Redo =>
+        // mirrored). The whole glyph — arc + both barbs — is ONE stroked
+        // path with round caps/joins and NO fills: a pure-stroke glyph has
+        // bit-identical colour on every segment (the persistent "arc vs
+        // arrow look different colours / translucent" report was the
+        // fill-vs-stroke AA seam, which cannot exist without a fill).
         const auto c = r.getCentre();
-        const float rad = juce::jmin (r.getWidth(), r.getHeight()) * 0.34f;
+        const float rad = juce::jmin (r.getWidth(), r.getHeight()) * 0.40f;
+        const float ry  = rad * 0.85f;              // round dome, not pointed
+        const float footY  = c.y;                   // feet at the vertical CENTER
         const float leftX  = c.x - rad;
         const float rightX = c.x + rad;
-        const float footY  = c.y + rad * 0.45f;
 
-        juce::Path arc;
-        arc.startNewSubPath (leftX, footY);
-        arc.quadraticTo (c.x, footY - rad * 2.1f, rightX, footY);
-        g.strokePath (arc, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved));
+        juce::Path p;
+        // The arc: left-center up over the round dome to right-center.
+        p.startNewSubPath (leftX, footY);
+        p.addCentredArc (c.x, footY, rad, ry, 0.0f,
+                         juce::MathConstants<float>::pi,
+                         juce::MathConstants<float>::twoPi, false);
 
-        const float ah  = rad * 0.55f;                 // arrowhead size
-        const float ax  = clockwise ? rightX : leftX;
+        // Horizontal chevron head at the DESTINATION foot: tip one head-length
+        // OUT along x, barbs sweeping back past the foot. Overlapping the arc
+        // end is intentional — the classic ↶ / ↷ glyph.
+        const float ah  = rad * 0.52f;              // head size
         const float dir = clockwise ? 1.0f : -1.0f;
-        juce::Path head;
-        head.startNewSubPath (ax + dir * ah, footY);
-        head.lineTo (ax, footY - ah * 0.7f);
-        head.lineTo (ax, footY + ah * 0.7f);
-        head.closeSubPath();
-        g.fillPath (head);
+        const float ax  = clockwise ? rightX : leftX;
+        const float tipX = ax + dir * ah;
+        const float backX = ax - dir * ah * 0.18f;
+        p.startNewSubPath (tipX, footY);
+        p.lineTo (backX, footY - ah * 0.62f);
+        p.startNewSubPath (tipX, footY);
+        p.lineTo (backX, footY + ah * 0.62f);
+
+        g.strokePath (p, juce::PathStrokeType (2.8f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
     }
 
     // A gear: 8 radial teeth + an outer ring + an inner hole, all stroked.
+    // Strokes bolded (teeth/ring 2.0 -> 2.6, hole 1.6 -> 2.2) for the
+    // 2026-08-23 vector-boldness pass.
     static void drawGear (juce::Graphics& g, juce::Rectangle<float> r)
     {
         const auto c = r.getCentre();
@@ -130,10 +160,10 @@ private:
             const float dx = std::cos (a), dy = std::sin (a);
             g.drawLine (juce::Line<float> (c.x + dx * outer,        c.y + dy * outer,
                                             c.x + dx * outer * 1.30f, c.y + dy * outer * 1.30f),
-                        2.0f);
+                        2.6f);
         }
-        g.drawEllipse (c.x - outer, c.y - outer, outer * 2.0f, outer * 2.0f, 2.0f);
-        g.drawEllipse (c.x - inner, c.y - inner, inner * 2.0f, inner * 2.0f, 1.6f);
+        g.drawEllipse (c.x - outer, c.y - outer, outer * 2.0f, outer * 2.0f, 2.6f);
+        g.drawEllipse (c.x - inner, c.y - inner, inner * 2.0f, inner * 2.0f, 2.2f);
     }
 
     Icon icon_;

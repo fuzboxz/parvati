@@ -276,10 +276,10 @@ constexpr float kCorner        = 7.0f; // card panel corner radius (synth GroupC
 // (kPad + kHeaderH/2 vertically) and kPad in from the left edge horizontally.
 // The toggle's hit band is the 44pt-wide HEADER band (44 x kPad+kHeaderH) —
 // see FxSlotCard::resized().
-constexpr float kLampDotW  = 15.0f;                              // lamp diameter (ParvatiModuleLamp @ 44x22 band)
-constexpr float kLampCx    = static_cast<float> (kPad) + kLampDotW * 0.5f;   // 13.5
+constexpr float kLampDotW  = 14.0f;                              // lamp diameter (PINNED via setLampDiameter — see resized(); 14pt keeps the 2.5pt ring inside the header band)
+constexpr float kLampCx    = static_cast<float> (kPad) + kLampDotW * 0.5f;   // lamp centre x (optical)
 constexpr float kLampCy    = static_cast<float> (kPad) + static_cast<float> (kHeaderH) * 0.5f;   // title optical middle
-constexpr int   kLampTitleGap = 5;   // lamp -> title gap
+constexpr int   kLampTitleGap = 8;   // lamp -> title gap (2026-08-23: "a tiny bit more space between the text and the button")
 
 // Fit-to-text width of a ComboBox's longest item, measured in the active
 // LookAndFeel combo font (mirrors ParamControl::maxChoiceTextWidth) so the FX
@@ -708,11 +708,15 @@ void FxSlotCard::resized()
     area.removeFromTop (kHeaderH);
     if (powerToggle_ != nullptr)
     {
-        // 44pt-wide HIG target, height = the header band (kPad + kHeaderH;
-        // stops at the header divider — the type row below starts at
-        // kPad + kHeaderH + kHalfGap, so the two never intersect).
+        // 44pt-wide HIG target, height = the header band + 1pt of ring room
+        // (kPad + kHeaderH + 1; the lamp's 2.5pt border ring is centred on
+        // the dot edge so it extends ~1.25pt past it — the exact +1 band
+        // height is what stops the ring's BOTTOM being clipped by the
+        // button bounds, the 2026-08-23 "on/off button has its bottom cut
+        // off" report. The band still ends 1pt ABOVE the type row (which
+        // starts at kPad + kHeaderH + kHalfGap), so the two never meet.)
         const int hitW = juce::jmin (kPowerHitSize, getWidth ());
-        const int hitH = juce::jmin (kPad + kHeaderH, getHeight ());
+        const int hitH = juce::jmin (kPad + kHeaderH + 1, getHeight ());
         powerToggle_->setBounds (getLocalBounds ().removeFromTop (hitH).removeFromLeft (hitW));
         // The lamp is pinned to the title band's optical middle
         // (kLampCx/kLampCy are relative to the card's top-left == the band's
@@ -720,7 +724,15 @@ void FxSlotCard::resized()
         // header (PowerToggle is file-local), so downcast to the concrete
         // type we constructed (now the SHARED ParvatiModuleLamp subclass).
         if (auto* lamp = static_cast<PowerToggle*> (powerToggle_.get ()))
+        {
             lamp->setLampCentreOffset ({ kLampCx, kLampCy });
+            // PIN the dot at 14pt (2026-08-23): the proportional default
+            // (jmin(44, kPad+kHeaderH)*0.68 ~= 16.3 after the kPad 6->8
+            // harmonization) pushed the ring's bottom past the band edge —
+            // the clipped-bottom look. 14pt keeps ring-outer bottom at
+            // kLampCy + 7 + 1.25 = 24.25 < 25 (the +1 band).
+            lamp->setLampDiameter (kLampDotW);
+        }
     }
 
     if (area.isEmpty())
