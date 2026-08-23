@@ -910,16 +910,32 @@ target_include_directories(parvati_unified_tests SYSTEM PRIVATE Source/dsp/cloud
 # headers (the contract the pre-unification standalone parity harness had);
 # Source/tests stay AHEAD of the shim so the rest of the suite keeps resolving
 # same-named headers (parameter.h, op.h, midi_dispatcher.h, ...) from Source.
-# -dead_strip drops the firmware's never-called MonoModeOn/PolyModeOn (they
-# reference TouchVoiceAllocation, which the firmware tree never defines).
 target_include_directories(parvati_unified_tests PRIVATE
     Source
     tests
     tests/firmware_shim
     ambika_reference
 )
-target_compile_options(parvati_unified_tests PRIVATE -Wno-c++11-narrowing)
-target_link_options(parvati_unified_tests PRIVATE -Wl,-dead_strip)
+# Narrowing suppression: Clang and GCC spell the flag differently. GCC drops
+# unknown -Wno-* options silently. The Clang spelling then turns the
+# suppressed narrowing into a hard error under GCC. MSVC needs no flag.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(parvati_unified_tests PRIVATE -Wno-narrowing)
+elseif(NOT MSVC)
+    target_compile_options(parvati_unified_tests PRIVATE -Wno-c++11-narrowing)
+endif()
+# Dead-code strip. It drops the firmware's never-called MonoModeOn and
+# PolyModeOn; they reference TouchVoiceAllocation, which the firmware tree
+# never defines. -Wl,-dead_strip works on Apple ld64 only. GNU ld and lld
+# reject it. ELF builds strip per section instead. MSVC drops unreferenced
+# COMDAT functions without a flag.
+if(APPLE)
+    target_link_options(parvati_unified_tests PRIVATE -Wl,-dead_strip)
+elseif(NOT MSVC)
+    target_compile_options(parvati_unified_tests PRIVATE
+        -ffunction-sections -fdata-sections)
+    target_link_options(parvati_unified_tests PRIVATE -Wl,--gc-sections)
+endif()
 # --- Single-binary test policy: configure-time orphan guard -----------------
 # Every tests/*.cpp must be part of parvati_unified_tests — there are no
 # per-test targets. This makes "add a test file but forget the source list"
@@ -1051,10 +1067,14 @@ parvati_add_tool(parvati_editor_coverage_check tools/editor_coverage_check.cpp)
 # whatever connects to it. Zero Parvati/JUCE dependencies — deliberately NOT
 # registered via parvati_add_tool (that would link the whole Parvati lib);
 # a plain target with the two macOS frameworks it actually needs.
-#   cmake --build build --target parvati_vmidi_probe && ./build/parvati_vmidi_probe <delay> <hold> [note] [vel]
+#   cmake --build build_unified --target parvati_vmidi_probe && ./build_unified/parvati_vmidi_probe <delay> <hold> [note] [vel]
+# Apple-only target: -framework is an Apple linker spelling. GCC on Linux
+# and cl on Windows reject it, so the target stays unregistered there.
+if(APPLE)
 add_executable(parvati_vmidi_probe EXCLUDE_FROM_ALL tools/vmidi_probe.cpp)
 target_compile_features(parvati_vmidi_probe PRIVATE cxx_std_17)
 target_link_libraries(parvati_vmidi_probe PRIVATE "-framework CoreMIDI" "-framework CoreFoundation")
+endif()
 
 # ------------------------------------------------------------------------------
 # Template-bank generator (dev tool, EXCLUDE_FROM_ALL). Produces the 5 stock init
@@ -1246,9 +1266,18 @@ endif()
 # enable_testing() is a CMake BUILTIN command, so guarding it with
 # "NOT COMMAND enable_testing" never fires — call it unconditionally
 # (idempotent) so the add_test entries below are actually registered.
+#
+# Interpreter resolution: Windows ships no python3 on PATH. The Microsoft
+# Store alias fails, and python.org installs provide python.exe only.
+# find_package locates both. Plain python3 stays as the fallback.
+find_package(Python3 COMPONENTS Interpreter)
+set(PARVATI_PYTHON3 python3)
+if(Python3_Interpreter_FOUND)
+    set(PARVATI_PYTHON3 "${Python3_EXECUTABLE}")
+endif()
 enable_testing()
 add_test(NAME parvati_check_combo_clear
-         COMMAND python3 tools/check_combo_clear.py --self-test-and-scan
+         COMMAND ${PARVATI_PYTHON3} tools/check_combo_clear.py --self-test-and-scan
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # (tool 6) Raw-`this`-in-async-callback guard: every lambda handed to an
@@ -1260,7 +1289,7 @@ add_test(NAME parvati_check_combo_clear
 # contract). The crash-window class: popup/dialog completions firing after
 # the host tore the editor down. Canary-gated like tool 5.
 add_test(NAME parvati_check_async_this
-         COMMAND python3 tools/check_async_this.py --self-test-and-scan
+         COMMAND ${PARVATI_PYTHON3} tools/check_async_this.py --self-test-and-scan
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # (tool 10) TRANS-key completeness: every TRANS() string literal in Source/
@@ -1273,16 +1302,16 @@ add_test(NAME parvati_check_async_this
 # like tools 5/6: an in-memory table with one key stripped must be reported
 # before the real scan runs.
 add_test(NAME parvati_check_translations
-         COMMAND python3 tools/check_translations.py --self-test-and-scan
+         COMMAND ${PARVATI_PYTHON3} tools/check_translations.py --self-test-and-scan
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # One build target that runs every static scanner in sequence (tools 5/6/10)
 # so a single `cmake --build --target parvati_static_checks` gates them in
 # CI without needing ctest. Fails (non-zero) if any scanner fails.
 add_custom_target(parvati_static_checks
-    COMMAND python3 tools/check_combo_clear.py --self-test-and-scan
-    COMMAND python3 tools/check_async_this.py --self-test-and-scan
-    COMMAND python3 tools/check_translations.py --self-test-and-scan
+    COMMAND ${PARVATI_PYTHON3} tools/check_combo_clear.py --self-test-and-scan
+    COMMAND ${PARVATI_PYTHON3} tools/check_async_this.py --self-test-and-scan
+    COMMAND ${PARVATI_PYTHON3} tools/check_translations.py --self-test-and-scan
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Running static scanners (combo-clear / async-this / translations)"
     VERBATIM)
