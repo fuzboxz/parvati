@@ -197,19 +197,13 @@ float AnalogFilter::processSample (float inputValue)
     if (topology_ == FilterTopology::TWO_POLE_SVF)
     {
         // NOTE: juce::dsp::StateVariableTPTFilter::processSample(channel, input).
-        switch (mode_)
-        {
-            case AnalogFilterMode::Bandpass:
-                return svf_.processSample (0, inputValue);
-            case AnalogFilterMode::Highpass:
-                return svf_.processSample (0, inputValue);
-            case AnalogFilterMode::Notch:
-                return svf_.processSample (0, inputValue)     // lowpass
-                     + svfNotch_.processSample (0, inputValue); // highpass
-            case AnalogFilterMode::Lowpass:
-            default:
-                return svf_.processSample (0, inputValue);
-        }
+        // Lowpass / Bandpass / Highpass all take the single svf_ call (the
+        // filter is constructed in the matching mode); Notch sums the svf_
+        // lowpass with the svfNotch_ highpass.
+        if (mode_ == AnalogFilterMode::Notch)
+            return svf_.processSample (0, inputValue)
+                 + svfNotch_.processSample (0, inputValue);
+        return svf_.processSample (0, inputValue);
     }
 
     // 4-pole. Direct per-sample call through the LadderTap: JUCE's public

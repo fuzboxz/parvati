@@ -26,11 +26,6 @@
 
 namespace ambika::dsp {
 
-// Bandlimited multi-zone sample-rate selection counts (also in constants.h;
-// kept here to mirror the firmware header).
-static const uint8_t kNumZonesFullSampleRateOsc = 6;
-static const uint8_t kNumZonesHalfSampleRateOsc = 5;
-
 // ---- Per-algorithm state (union; same layout as firmware) ----------------
 
 struct VowelSynthesizerState {
@@ -78,10 +73,6 @@ class Oscillator {
         data_.no.rng_reset_value = static_cast<uint16_t>(random().GetByte()) + 1;
     }
 
-    // Render one kAudioBlockSize buffer. `increment` is the 24-bit phase
-    // increment; `sync_input`/`sync_output` are per-sample sync arrays of
-    // length kAudioBlockSize (a non-zero sync input sample resets the phase to
-    // 0 before the increment; the sync output records phase wraps / carries).
     // Render one kAudioBlockSize buffer. `increment` is the 24-bit phase
     // increment; `sync_input`/`sync_output` are per-sample sync arrays of
     // length kAudioBlockSize (a non-zero sync input sample resets the phase

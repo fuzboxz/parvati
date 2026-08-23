@@ -546,16 +546,14 @@ void Voice::ProcessBlock() {
     // ~osc_2 / ~wet are derived per sample, preserving the exact pairing).
     const int32_t balance_target = static_cast<int32_t>(osc_2_gain) << 8;
     const int32_t param_target = static_cast<int32_t>(wet_gain) << 8;
-    if (mix_glide_ready_) {
-        // Ramp from the previously applied gains (recomputed each block, so
-        // the glide converges to the target after ONE block of change).
-        ;
-    } else {
+    if (! mix_glide_ready_) {
         // First audible block after Init(): snap (firmware behaviour).
         mix_glide_ready_ = true;
         mix_balance_acc_ = balance_target;
         mix_param_acc_ = param_target;
     }
+    // Ready state: ramp from the previously applied gains (recomputed each
+    // block, so the glide converges to the target after ONE block of change).
     const int32_t balance_start = mix_balance_acc_;
     const int32_t param_start = mix_param_acc_;
     const int32_t balance_diff = balance_target - balance_start;

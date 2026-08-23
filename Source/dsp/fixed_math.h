@@ -12,6 +12,9 @@
 //  * S8U8Mul*/S8S8Mul* : the int8_t operand is sign-extended; muls/mulsu.
 //  * U24 ops use a 32-bit intermediate; U24AddC.carry = 24-bit overflow flag.
 //  * U14ShiftRight6 / U15ShiftRight7 are plain >>6 / >>7 (C fallback).
+//
+// The port is complete: every op.h operator is carried, also the ones with
+// no current caller. Unused entries stay for firmware parity and for tests.
 
 #ifndef PARVATI_DSP_FIXED_MATH_H
 #define PARVATI_DSP_FIXED_MATH_H

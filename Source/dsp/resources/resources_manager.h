@@ -3,16 +3,16 @@
 // All AVR PROGMEM semantics collapse to plain RAM array access:
 //   Lookup<uint16_t,uint8_t>(table, i)  ->  table[i]   (uint16 element i)
 //   Lookup<uint8_t, uint8_t>(table, i)  ->  table[i]   (uint8  byte   i)
-//   Load(p, i, dest)                    ->  memcpy(dest, p+i, sizeof(*p))
 // These match the firmware's pgm_read_word/pgm_read_byte results exactly,
 // because the data arrays in resources_data.cpp are byte-identical to the
-// firmware PROGMEM tables.
+// firmware PROGMEM tables. The firmware's Load() memcpy helpers have no
+// callers in this port; they are not carried.
 
 #ifndef AMBIKA_DSP_RESOURCES_RESOURCES_MANAGER_H_
 #define AMBIKA_DSP_RESOURCES_RESOURCES_MANAGER_H_
 
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 #include "dsp/resources/resources.h"
 
@@ -41,29 +41,13 @@ struct ResourcesManager {
   // BOUNDS-GUARDED (memory-safety migration): `resource` is a runtime int; an
   // id outside 0..kNumLookupTables-1 now reads 0 instead of walking past the
   // indirection table. In-range ids are byte-for-byte firmware parity.
+  // (dsp_memory_safety_test pins this guard.)
   template <typename ResultType, typename IndexType>
   static inline ResultType Lookup(int resource, IndexType i) {
     if (resource < 0 || static_cast<std::size_t>(resource) >= kNumLookupTables)
       return static_cast<ResultType>(0);
     const uint16_t* table = lookup_table_table[static_cast<std::size_t>(resource)];
     return static_cast<ResultType>(table[static_cast<std::size_t>(i)]);
-  }
-
-  // --- Load one element: Load(p, i, dest) copies sizeof(T) from p+i ---------
-  // Used by oscillator.cc to fetch a RenderFn from fn_table_[index], and by
-  // voice.cc to copy the init_patch struct (Load(&init_patch, 0, &patch_)).
-  template <typename T, typename U>
-  static inline void Load(const T* p, uint8_t i, U* destination) {
-    static_assert(sizeof(T) == sizeof(U), "ResourcesManager::Load size mismatch");
-    std::memcpy(destination, p + i, sizeof(T));
-  }
-
-  // --- Load a raw byte range: Load(p, dest, size) ---------------------------
-  // Firmware parity (used by the controller for patch I/O; kept for API
-  // completeness). Copies `size` bytes from p to destination.
-  template <typename T, typename U>
-  static inline void Load(const T* p, U* destination, std::size_t size) {
-    std::memcpy(destination, p, size);
   }
 };
 

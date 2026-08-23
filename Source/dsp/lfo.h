@@ -113,8 +113,6 @@ class Lfo {
         phase_increment_ = phase_increment;
     }
 
-    uint8_t looped() const { return looped_; }
-
  private:
     // Phase increment.
     uint16_t phase_increment_ = 0;

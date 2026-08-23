@@ -95,27 +95,28 @@ inline constexpr std::size_t WAV_RES_BANDLIMITED_SQUARE_2_SIZE   = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SQUARE_3_SIZE   = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SQUARE_4_SIZE   = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SQUARE_5_SIZE   = 257;
-inline constexpr std::size_t WAV_RES_BANDLIMITED_SQUARE_6_SIZE   = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_0_SIZE      = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_1_SIZE      = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_2_SIZE      = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_3_SIZE      = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_4_SIZE      = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_5_SIZE      = 257;
-inline constexpr std::size_t WAV_RES_BANDLIMITED_SAW_6_SIZE      = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_0_SIZE = 257;
-inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_1_SIZE = 257;
-inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_2_SIZE = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_3_SIZE = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_4_SIZE = 257;
 inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_5_SIZE = 257;
-inline constexpr std::size_t WAV_RES_BANDLIMITED_TRIANGLE_6_SIZE = 257;
 inline constexpr std::size_t WAV_RES_VOWEL_DATA_SIZE             = 63;   // 9 vowels x 7 bytes
 inline constexpr std::size_t WAV_RES_DISTORTION_SIZE             = 256;
 inline constexpr std::size_t WAV_RES_LFO_WAVEFORMS_SIZE          = 2;
 inline constexpr std::size_t WAV_RES_ENV_EXPO_SIZE               = 257;  // 256 + 1 guard
 inline constexpr std::size_t WAV_RES_WAVES_SIZE                  = 10320; // 80 single-cycle waves x 129 bytes
 inline constexpr std::size_t WAV_RES_WAVETABLES_SIZE             = 288;  // 16 definitions x 18 bytes
+
+// The SIZE list is not contiguous: the firmware defines SQUARE_6 / SAW_6 /
+// TRIANGLE_1 / TRIANGLE_2 / TRIANGLE_6 placeholder slots, but the indirection
+// table in resources_data.cpp aliases wav_res_sine and
+// wav_res_bandlimited_triangle_0 there. This port carries no arrays for those
+// slots, so it carries no SIZE constants for them either.
 
 // (See kNumLookupTables above.) Bounds for the waveform indirection table.
 inline constexpr std::size_t kNumWaveformTables = static_cast<std::size_t>(WAV_RES_WAVETABLES) + 1; // 30
