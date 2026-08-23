@@ -151,6 +151,8 @@ private:
     uint8_t seqValue_[2] { 0, 0 };
     bool    seqActive_[2] { false, false };
     uint8_t previousNote_ = 0xff;
+    // Channel source for the note callbacks. The engine routes the callbacks
+    // by Part, so nothing assigns this field; it stays at its default (1).
     int     midiChannel_ = 1;
 };
 

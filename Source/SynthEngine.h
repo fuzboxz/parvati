@@ -205,6 +205,36 @@ struct PartFxState
     std::atomic<uint8_t> modDest  [kNumFxMatrixSlots] {};          // FxModDestination
     std::atomic<int8_t>  modAmount[kNumFxMatrixSlots] {};          // -63..+63
     std::atomic<bool>    fxDirty_ { false };
+
+    // Write the clean defaults of every field (the same values a default-
+    // constructed PartFxState holds: slots None / bypassed / dry, Series
+    // topology, order 0, master mix fully wet, EQ flat, cleared mod matrix).
+    // resetPartFx and a state restore use this as the shared clean slate; a
+    // blob overwrites the fields it carries afterwards. PartFxState holds
+    // atomics (non-copyable), so the writes are field-by-field.
+    void storeCleanDefaults() noexcept
+    {
+        for (int s = 0; s < kNumFxSlots; ++s)
+        {
+            slotType   [(size_t) s].store (0, std::memory_order_relaxed);   // FxType::None
+            slotEnabled[(size_t) s].store (0, std::memory_order_relaxed);
+            slotDryWet [(size_t) s].store (0, std::memory_order_relaxed);   // fully dry
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+                slotParam[(size_t) s][(size_t) k].store (0, std::memory_order_relaxed);
+        }
+        topology.store (0,   std::memory_order_relaxed);   // Series
+        orderIdx.store (0,   std::memory_order_relaxed);
+        mix.store      (127, std::memory_order_relaxed);    // fully wet (no-op)
+        eqLow.store    (0,   std::memory_order_relaxed);    // flat
+        eqMid.store    (64,  std::memory_order_relaxed);    // 0 dB
+        eqHigh.store   (64,  std::memory_order_relaxed);    // 0 dB
+        for (int m = 0; m < kNumFxMatrixSlots; ++m)
+        {
+            modSource[(size_t) m].store (0, std::memory_order_relaxed);
+            modDest  [(size_t) m].store (0, std::memory_order_relaxed);
+            modAmount[(size_t) m].store (0, std::memory_order_relaxed);
+        }
+    }
 };
 
 struct Part
@@ -422,17 +452,15 @@ public:
     // AmbikaVoice::setOversamplingFactor / consumeStagedOversampling).
     void setOversamplingFactor (int factor)
     {
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->setOversamplingFactor (factor);
+        for (auto* av : voicePool_)
+            av->setOversamplingFactor (factor);
     }
 
     // GLOBAL filter-card topology (one Ambika unit = one filter card).
     void setFilterTopology (ambika::dsp::FilterTopology topology)
     {
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->setFilterTopology (topology);
+        for (auto* av : voicePool_)
+            av->setFilterTopology (topology);
     }
 
     // GLOBAL Ladder saturation drive (one Ambika unit). Ladder card only; cached
@@ -630,9 +658,7 @@ public:
     // Test/internal access.
     AmbikaVoice* getAmbikaVoice (int i)
     {
-        if (i >= 0 && i < voices.size())
-            return dynamic_cast<AmbikaVoice*> (voices[i]);
-        return nullptr;
+        return (i >= 0 && i < kNumVoices) ? voicePool_[(size_t) i] : nullptr;
     }
 
     // Test-only: the number of times FxChain::process() was called for @p part
@@ -898,11 +924,6 @@ private:
     std::array<float, kNumParts> fxFadePhase_ {};         // 0..1 (1 = settled; live values used directly)
     static constexpr double kFxCrossfadeTauSec = 0.005;   // ~5 ms de-click on a voice change
 
-    // Monotonic trigger counter for the per-voice triggerSeq_ stamps. Bumped at
-    // every note-on (audio thread via render, or message thread via a direct
-    // noteOn); renderPartFx reads it on the audio thread. Relaxed ordering
-    // suffices (only the relative recency across voices matters).
-
     // Drift-free fractional internal-block boundary position (host-sample
     // units), carried across blocks, for the FX mod-matrix sub-chunking loop in
     // renderPartFx. At host-rate, an internal block (40 @ 39216) spans
@@ -967,6 +988,10 @@ private:
     // Mono scratch buffer for the per-part voicecard sum (sized in prepare; AT-only).
     juce::AudioBuffer<float> fxMonoScratch_;
     parvati::TransportClock transport_;
+    // Typed view of the juce::Synthesiser voice pool. The ctor adds exactly
+    // kNumVoices AmbikaVoice objects and nothing else, so voicePool_[i] aliases
+    // voices[i] without a dynamic_cast. The base class keeps ownership.
+    std::array<AmbikaVoice*, kNumVoices> voicePool_ {};
     // Reused per-block scratch MidiBuffer (avoids an audio-thread allocation in
     // processTransport's note-routing pass; clear() each block keeps capacity).
     juce::MidiBuffer processedMidi_;
@@ -1088,6 +1113,42 @@ private:
                 ++n;
             }
         return n;
+    }
+
+    // Channel-only twin of forEachAcceptingPart: call @p fn for every Part
+    // whose receive channel matches @p channel (Omni or exact; no keyzone
+    // test). Same template discipline (no std::function on the audio thread).
+    template <typename Fn>
+    int forEachPartOnChannel (int channel, Fn&& fn) const
+    {
+        int n = 0;
+        for (int p = 0; p < kNumParts; ++p)
+        {
+            const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
+            if (ch != 0 && ch != channel)
+                continue;
+            fn (p);
+            ++n;
+        }
+        return n;
+    }
+
+    // Call @p fn for every ACTIVE voice playing @p midiChannel (the MPE
+    // channel-global routing used by pitch bend / channel pressure / CC74).
+    template <typename Fn>
+    void forEachActiveVoiceOnChannel (int midiChannel, Fn&& fn)
+    {
+        for (auto* av : voicePool_)
+            if (av->isVoiceActive() && av->isPlayingChannel (midiChannel))
+                fn (av);
+    }
+
+    // Host wheel 0..16383 (centre 8192) -> semitones via the per-voice bend
+    // range. The one conversion shared by handlePitchWheel and the standing-
+    // bend latch.
+    float wheelToSemitones (int wheel) const noexcept
+    {
+        return (static_cast<float> (wheel) - 8192.0f) / 8192.0f * bendRangeSemitones_;
     }
 
     // First Part whose channel+keyzone accepts (channel,note); -1 if none.

@@ -203,6 +203,8 @@ private:
     uint8_t  previousNote_   = 0xff; // 0xff = none
     uint8_t  clockCounter_   = 0;
 
+    // Channel source for the note callbacks. The engine routes the callbacks
+    // by Part, so nothing assigns this field; it stays at its default (1).
     int midiChannel_ = 1;
 
     // RANDOM direction draws from the shared global Galois LFSR, matching the

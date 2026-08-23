@@ -8,13 +8,18 @@
 
 #include "stmlib/dsp/dsp.h"    // stmlib::SoftLimit (FX chain-input safety knee)
 #include "MulExport.h"        // mul_export::deriveMasks (derived voicecard masks)
+#include "VoiceMasks.h"       // parvati::popcount8 (bitmask slot counting)
 #include "ParameterLayout.h"   // getControllerInitPatchBytes (audible init patch)
 #include "TuningTables.h"     // raga preset tables (resolvedTuningOffsets)
 
 SynthEngine::SynthEngine()
 {
     for (int i = 0; i < kNumVoices; ++i)
-        addVoice (new AmbikaVoice());
+    {
+        auto* av = new AmbikaVoice();
+        addVoice (av);
+        voicePool_[(size_t) i] = av;   // typed alias of voices[i] (see header)
+    }
 
     // Pre-tag each pool voice round-robin over the 6 firmware voicecards
     // (Ambika hardware: 6 voicecards, each with individual outputs).
@@ -55,9 +60,9 @@ SynthEngine::SynthEngine()
         // (popcount; 0 -> disabled), exactly like a legacy-blob/.MUL load —
         // the bitmask itself is only the seed, rebuildVoiceAllocation derives
         // the live masks from the slots.
-        int initSlots = 0;
-        for (uint8_t m = kInitVoiceAllocation[p]; m; m >>= 1) initSlots += m & 1;
-        part.voiceSlots.store (static_cast<uint8_t> (initSlots), std::memory_order_relaxed);
+        part.voiceSlots.store (
+            static_cast<uint8_t> (parvati::popcount8 (kInitVoiceAllocation[p])),
+            std::memory_order_relaxed);
         part.voiceAllocation.store (kInitVoiceAllocation[p]);
         // Default: part i -> MIDI channel i+1 (so channel 1 -> Part 0).
         part.midiChannel.store  (static_cast<uint8_t> (p + 1));
@@ -135,9 +140,8 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
     // correct even if audio never runs. Pure math + atomics: thread-safe here.
     recomputeTailCache();
 
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            av->prepare (sampleRate, blockSize);
+    for (auto* av : voicePool_)
+        av->prepare (sampleRate, blockSize);
 
     transport_.prepare (sampleRate);
 
@@ -275,9 +279,8 @@ void SynthEngine::applyPartByte (int offset, uint8_t value)
 
 void SynthEngine::applyTempo (double bpm)
 {
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            av->setTempo (bpm);
+    for (auto* av : voicePool_)
+        av->setTempo (bpm);
 }
 
 void SynthEngine::setVcaExponential (bool exponential)
@@ -406,34 +409,13 @@ void SynthEngine::setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t 
 
 void SynthEngine::resetPartFx (int part)
 {
-    // Reset every field of this Part's fxState to the clean defaults (the same
-    // values a default-constructed PartFxState holds: all slots None / bypassed /
-    // dry, Series topology, order 0, master mix fully wet, EQ flat, cleared mod
-    // matrix). Relaxed stores published as one frame by the fxDirty_ release-
-    // store. PartFxState holds atomics (non-copyable), so assign field-by-field.
+    // Reset every field of this Part's fxState to the clean defaults (see
+    // PartFxState::storeCleanDefaults). Relaxed stores published as one frame
+    // by the fxDirty_ release-store.
     if (part < 0 || part >= kNumParts)
         return;
     auto& fx = parts_[(size_t) part].fxState;
-    for (int s = 0; s < kNumFxSlots; ++s)
-    {
-        fx.slotType   [(size_t) s].store (0, std::memory_order_relaxed);   // FxType::None
-        fx.slotEnabled[(size_t) s].store (0, std::memory_order_relaxed);
-        fx.slotDryWet [(size_t) s].store (0, std::memory_order_relaxed);   // fully dry
-        for (int k = 0; k < kNumFxSlotParams; ++k)
-            fx.slotParam[(size_t) s][(size_t) k].store (0, std::memory_order_relaxed);
-    }
-    fx.topology.store (0,   std::memory_order_relaxed);   // Series
-    fx.orderIdx.store (0,   std::memory_order_relaxed);
-    fx.mix.store      (127, std::memory_order_relaxed);    // fully wet (no-op)
-    fx.eqLow.store    (0,   std::memory_order_relaxed);    // flat
-    fx.eqMid.store    (64,  std::memory_order_relaxed);    // 0 dB
-    fx.eqHigh.store   (64,  std::memory_order_relaxed);    // 0 dB
-    for (int m = 0; m < kNumFxMatrixSlots; ++m)
-    {
-        fx.modSource[(size_t) m].store (0, std::memory_order_relaxed);
-        fx.modDest  [(size_t) m].store (0, std::memory_order_relaxed);
-        fx.modAmount[(size_t) m].store (0, std::memory_order_relaxed);
-    }
+    fx.storeCleanDefaults();
     // Audit F1: stage the slot-type resets on the message thread too (the AT
     // installs them with pointer moves only) -- the chain, not just the atomic
     // state, must return to all-None.
@@ -467,9 +449,8 @@ void SynthEngine::reapRetiredAudioObjects()
     // change paths are pointer moves only.
     for (int p = 0; p < kNumParts; ++p)
         fxChains_[(size_t) p].reapRetired();
-    for (auto* v : voices)
-        if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            av->reapRetired();
+    for (auto* av : voicePool_)
+        av->reapRetired();
 }
 
 //==========================================================================
@@ -644,12 +625,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
                 // strip): a corrupt or hand-edited state blob could otherwise
                 // carry a newline into a name that a later .parvati save would
                 // corrupt. Done here (phase 1) so the commit stays a pure copy.
-                juce::String clean;
-                const juce::String raw = juce::String::fromUTF8 (nb, nameLen);
-                for (int i = 0; i < raw.length() && clean.length() < 16; ++i)
-                    if (raw[i] >= 0x20)
-                        clean += raw[i];
-                s.name = clean;
+                s.name = sanitizePartName (juce::String::fromUTF8 (nb, nameLen));
             }
             s.hasSlotsName = true;
         }
@@ -709,6 +685,11 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         if (s.hasFx)
         {
             auto& fx = part.fxState;
+            // Clean slate first: a blob overwrites the fields it carries; a
+            // legacy blob that lacks a field (param5 before v5, the master
+            // section before v3) loads that field at its clean default, not a
+            // stale value from the pre-restore state.
+            fx.storeCleanDefaults();
             const uint8_t* fxBlob = s.fxBlob.get();
             const uint32_t fxLen = s.fxLen;
             size_t o = 0;
@@ -719,27 +700,19 @@ bool SynthEngine::restoreState (const void* data, size_t size)
             // Per-slot param count is version-dependent: v5+ carries 5 params
             // per slot (param1..5); v1..v4 carry only 4 (param1..4). Reading the
             // wrong count would shift every subsequent byte (topology/order/mods),
-            // so gate on the version. param5 is zeroed first so a legacy blob
-            // loads with its 5th param at the neutral default, not a stale value.
+            // so gate on the version. param5 stays at its clean default for a
+            // legacy blob (storeCleanDefaults above zeroed it).
             const int nParams = (version >= 5) ? kNumFxSlotParams : 4;
             for (int sl = 0; sl < kNumFxSlots; ++sl)
-            {
-                fx.slotParam[(size_t) sl][(size_t) (kNumFxSlotParams - 1)].store (0, std::memory_order_relaxed);
                 for (int k = 0; k < nParams; ++k)
                     fx.slotParam[(size_t) sl][(size_t) k].store (take(), std::memory_order_relaxed);
-            }
             fx.topology.store (take(), std::memory_order_relaxed);
             fx.orderIdx.store  (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modSource[(size_t) m].store (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modDest  [(size_t) m].store (take(), std::memory_order_relaxed);
             for (int m = 0; m < kNumFxMatrixSlots; ++m) fx.modAmount[(size_t) m].store ((int8_t) take(), std::memory_order_relaxed);
-            // Master section (v3): reset to the audio-preserving defaults first.
-            // (Thus a v1/v2 blob -- which lacks these -- loads at defaults, not
-            // 0-filled by take().) Then overwrite from the blob for a v3+ save.
-            fx.mix.store (127, std::memory_order_relaxed);
-            fx.eqLow.store (0, std::memory_order_relaxed);
-            fx.eqMid.store (64, std::memory_order_relaxed);
-            fx.eqHigh.store (64, std::memory_order_relaxed);
+            // Master section (v3): the clean slate above left the defaults in
+            // place; a v3+ save overwrites them next.
             if (version >= 3)
             {
                 fx.mix.store (take(), std::memory_order_relaxed);
@@ -770,8 +743,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         // their faithful card counts. Absent in v1..v5 -> empty name ("Part N").
         if (s.hasSlotsName)
         {
-            int restoredSlots = 0;
-            for (uint8_t m = s.mask; m; m >>= 1) restoredSlots += m & 1;
+            const int restoredSlots = parvati::popcount8 (s.mask);
             // Clamp like the public setPartVoiceSlots (bug hunt 2026-08-18,
             // F-state-5): s.slots is a raw blob byte (no upstream validation;
             // restoredSlots' popcount is inherently <= 8 but the explicit
@@ -789,9 +761,9 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         }
         else
         {
-            int restoredSlots = 0;
-            for (uint8_t m = s.mask; m; m >>= 1) restoredSlots += m & 1;
-            part.voiceSlots.store ((uint8_t) restoredSlots, std::memory_order_relaxed);
+            part.voiceSlots.store (
+                static_cast<uint8_t> (parvati::popcount8 (s.mask)),
+                std::memory_order_relaxed);
             part.name = juce::String();
         }
     }
@@ -818,12 +790,6 @@ void SynthEngine::setCurrentPart (int part)
 // extension.
 namespace
 {
-    int popcount8 (uint8_t x)
-    {
-        int n = 0;
-        for (; x; x >>= 1) n += x & 1;
-        return n;
-    }
     // Index of the n-th set bit of @p mask (n 0-based). Mask must be non-zero.
     int nthSetBit (uint8_t mask, int n)
     {
@@ -885,7 +851,7 @@ void SynthEngine::rebuildVoiceAllocation()
         if (want[(size_t) p] <= 0 || partCards[(size_t) p] == 0)
             continue;   // disabled Part (0 slots): no voices
 
-        const int cards = popcount8 (partCards[(size_t) p]);
+        const int cards = parvati::popcount8 (partCards[(size_t) p]);
         const int n = juce::jmin (want[(size_t) p], kNumVoices - nextVoice);
         for (int k = 0; k < n; ++k)
         {
@@ -906,7 +872,7 @@ void SynthEngine::rebuildVoiceAllocation()
         if (parts_[(size_t) p].polyphonyMode != 4 /*CHAIN*/) continue;
         const int baseN = static_cast<int> (parts_[(size_t) p].voiceIndices.size());
         if (baseN == 0 || partCards[(size_t) p] == 0) continue;
-        const int cards = popcount8 (partCards[(size_t) p]);
+        const int cards = parvati::popcount8 (partCards[(size_t) p]);
         const int n = juce::jmin (baseN, kNumVoices - nextVoice);
         for (int k = 0; k < n; ++k)
         {
@@ -969,8 +935,7 @@ void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
     if (! ok (part))
         return;
 
-    int slots = 0;
-    for (uint8_t m = bitmask; m; m >>= 1) slots += m & 1;
+    int slots = parvati::popcount8 (bitmask);
     const uint8_t v = static_cast<uint8_t> (slots);
 
     if (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed) == v)
@@ -1051,10 +1016,9 @@ void SynthEngine::pushTuningToVoices (int part)
     // same change-on-new-notes semantics as partOctave_/partTuning_).
     int16_t t[12];
     resolveTuningOffsets (part, t);
-    for (auto* v : voices)
+    for (auto* av : voicePool_)
     {
-        auto* av = dynamic_cast<AmbikaVoice*> (v);
-        if (av == nullptr || av->getPartIndex() != part)
+        if (av->getPartIndex() != part)
             continue;
         av->setTuningOffsets (t);
     }
@@ -1066,15 +1030,14 @@ void SynthEngine::pushPartBytesToVoices (int part)
         return;
     // Audio-thread path (called only from the allocationDirty service): push this
     // Part's stored patch/part bytes into every voice owned by it. Iterate the
-    // Synthesiser's stable `voices` array filtered by partIndex (NOT voiceIndices)
-    // so this is robust even if called before a rebuild has settled voiceIndices.
+    // stable voice pool filtered by partIndex (NOT voiceIndices) so this is
+    // robust even if called before a rebuild has settled voiceIndices.
     // (polyphonyMode / voiceAllocation are synced + rebuilt by the service before
     // this is called, so voice ownership is final here.)
     const auto& p = parts_[(size_t) part];
-    for (auto* v : voices)
+    for (auto* av : voicePool_)
     {
-        auto* av = dynamic_cast<AmbikaVoice*> (v);
-        if (av == nullptr || av->getPartIndex() != part)
+        if (av->getPartIndex() != part)
             continue;
         for (int o = 0; o < 112; ++o)
             av->setPatchByte (o, p.patchBytes[(size_t) o]);
@@ -1457,13 +1420,10 @@ void SynthEngine::allNotesOff (int midiChannel, bool allowTailOff)
     // the base would have matched, plus the parts' stacks). allowTailOff is
     // honored per-voice (CC123 -> tail-off release; CC120 / direct calls ->
     // immediate Kill, the base's contract for the parameter).
-    for (int p = 0; p < kNumParts; ++p)
+    forEachPartOnChannel (midiChannel, [this, allowTailOff] (int p)
     {
-        const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
-        if (ch != 0 && ch != midiChannel)
-            continue;
         partAllNotesOff (p, allowTailOff);
-    }
+    });
 }
 
 void SynthEngine::noteOn (int midiChannel, int midiNoteNumber, float velocity)
@@ -1537,26 +1497,20 @@ void SynthEngine::handlePitchWheel (int midiChannel, int wheelValue)
         lastWheel_[(size_t) midiChannel].store (static_cast<int16_t> (wheelValue),
                                                 std::memory_order_relaxed);
     // Host wheel 0..16383 (centre 8192) -> semitones via the per-voice bend range.
-    const float semis = (static_cast<float> (wheelValue) - 8192.0f) / 8192.0f * bendRangeSemitones_;
-    for (auto* v : voices)
+    const float semis = wheelToSemitones (wheelValue);
+    forEachActiveVoiceOnChannel (midiChannel, [semis] (AmbikaVoice* av)
     {
-        auto* av = dynamic_cast<AmbikaVoice*> (v);
-        if (av == nullptr) continue;
-        if (av->isVoiceActive() && av->isPlayingChannel (midiChannel))
-            av->setMpePitchBendSemitones (semis);
-    }
+        av->setMpePitchBendSemitones (semis);
+    });
 }
 
 void SynthEngine::handleChannelPressure (int midiChannel, int channelPressureValue)
 {
     const float pressure = juce::jlimit (0.0f, 1.0f, static_cast<float> (channelPressureValue) / 127.0f);
-    for (auto* v : voices)
+    forEachActiveVoiceOnChannel (midiChannel, [pressure] (AmbikaVoice* av)
     {
-        auto* av = dynamic_cast<AmbikaVoice*> (v);
-        if (av == nullptr) continue;
-        if (av->isVoiceActive() && av->isPlayingChannel (midiChannel))
-            av->setMpePressure (pressure);
-    }
+        av->setMpePressure (pressure);
+    });
 }
 
 void SynthEngine::handleAftertouch (int midiChannel, int midiNoteNumber, int aftertouchValue)
@@ -1581,18 +1535,13 @@ void SynthEngine::handleAftertouch (int midiChannel, int midiNoteNumber, int aft
             // note is the equivalent live mapping (a re-stolen slot carries
             // the NEW note), so write the part's ACTIVE voice that plays this
             // note. Idle voices do not get the write (a future note-on picks
-            // up 0, same as firmware).
-            bool written = false;
+            // up 0, same as firmware). Keep scanning after a write: CHAIN can
+            // duplicate a note across its (doubled) set.
             for (int vi : part.voiceIndices)
                 if (auto* av = getAmbikaVoice (vi);
                     av != nullptr && av->isVoiceActive()
                     && av->getCurrentlyPlayingNote() == midiNoteNumber)
-                {
                     av->setModulationSource (idx, val);
-                    written = true;   // keep scanning: CHAIN can duplicate a
-                                      // note across its (doubled) set
-                }
-            (void) written;
         }
         else if (mode == 2 /*UNISON_2X*/)
         {
@@ -1635,15 +1584,12 @@ void SynthEngine::applyGlobalModSource (int modSrcEnum, uint8_t value0to254, int
     // (W7, lane-B finding 3). Within a matching Part every voice (sounding
     // AND idle) is written; that preserves the current-value pickup on the
     // next note-on of that part.
-    for (int p = 0; p < kNumParts; ++p)
+    forEachPartOnChannel (midiChannel, [&] (int p)
     {
-        const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
-        if (ch != 0 && ch != midiChannel)
-            continue;
         for (int vi : parts_[(size_t) p].voiceIndices)
             if (auto* av = getAmbikaVoice (vi))
                 av->setModulationSource (idx, value0to254);
-    }
+    });
 }
 
 void SynthEngine::applyStandingBend (AmbikaVoice* av, int channel)
@@ -1654,7 +1600,7 @@ void SynthEngine::applyStandingBend (AmbikaVoice* av, int channel)
     // wheel of the note's channel — so the new voice starts where the sounding
     // ones already are (no re-centering glitch until the next wheel event).
     const int wheel = lastWheel_[(size_t) channel].load (std::memory_order_relaxed);
-    av->setMpePitchBendSemitones ((static_cast<float> (wheel) - 8192.0f) / 8192.0f * bendRangeSemitones_);
+    av->setMpePitchBendSemitones (wheelToSemitones (wheel));
 }
 
 void SynthEngine::handleController (int midiChannel, int controllerNumber, int controllerValue)
@@ -1696,11 +1642,8 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
     // consumed it), so a pass-on of CC64 would be a no-op.
     if (controllerNumber == 64)
     {
-        for (int p = 0; p < kNumParts; ++p)
+        forEachPartOnChannel (midiChannel, [controllerValue, this] (int p)
         {
-            const uint8_t ch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
-            if (ch != 0 && ch != midiChannel)
-                continue;
             auto& part = parts_[(size_t) p];
             if (controllerValue >= 64)
             {
@@ -1711,7 +1654,7 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
                 part.sustainHold_ = false;
                 drainSustainedNotes (p);
             }
-        }
+        });
         return;
     }
 
@@ -1729,13 +1672,10 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
     if (controllerNumber == 74)
     {
         const float slide = juce::jlimit (0.0f, 1.0f, static_cast<float> (controllerValue) / 127.0f);
-        for (auto* v : voices)
+        forEachActiveVoiceOnChannel (midiChannel, [slide] (AmbikaVoice* av)
         {
-            auto* av = dynamic_cast<AmbikaVoice*> (v);
-            if (av == nullptr) continue;
-            if (av->isVoiceActive() && av->isPlayingChannel (midiChannel))
-                av->setMpeSlide (slide);
-        }
+            av->setMpeSlide (slide);
+        });
         return;
     }
     juce::Synthesiser::handleController (midiChannel, controllerNumber, controllerValue);
@@ -1750,9 +1690,8 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     // mid-render (it Kill()s + clearCurrentNote() + clears the FIFO). Runs before
     // the allocationDirty service below, which rebuilds + re-primes the voices.
     if (resetAllVoicesPending_.exchange (false, std::memory_order_acq_rel))
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->stopNote (0.0f, false);
+        for (auto* av : voicePool_)
+            av->stopNote (0.0f, false);
 
     // Service deferred live-edit frame writes ON THE AUDIO THREAD: a knob edit
     // (applyPatchByte/applyPartByte) staged a Part's patch/part bytes + flagged
@@ -1778,12 +1717,11 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         const bool vca = pendingVcaExp_.load (std::memory_order_relaxed);
         const bool sm  = pendingSmoothing_.load (std::memory_order_relaxed);
         const float fd = pendingFilterDrive_.load (std::memory_order_relaxed);
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-            {
-                av->setVcaExponential (vca);
-                av->setSmoothingEnabled (sm);
-                av->setFilterDrive (fd);
+        for (auto* av : voicePool_)
+        {
+            av->setVcaExponential (vca);
+            av->setSmoothingEnabled (sm);
+            av->setFilterDrive (fd);
             }
     }
 
@@ -1873,10 +1811,9 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
     {
         if (parts_[(size_t) p].killGeneratedNotes_.exchange (false, std::memory_order_acq_rel))
         {
-            for (auto* v : voices)
-                if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                    if (av->getPartIndex() == p)
-                        av->stopNote (0.0f, false);
+            for (auto* av : voicePool_)
+                if (av->getPartIndex() == p)
+                    av->stopNote (0.0f, false);
         }
     }
 
@@ -2099,19 +2036,15 @@ void SynthEngine::renderVoices (juce::AudioBuffer<float>& outputAudio,
     // FIFO refill (one entry per 40-sample internal block); renderPartFx reads
     // the first-active voice's ring at the ~980 Hz internal-block cadence.
     if (startSample == 0)
-        for (auto* v : voices)
-            if (auto* av = dynamic_cast<AmbikaVoice*> (v))
-                av->clearModRing();
+        for (auto* av : voicePool_)
+            av->clearModRing();
 
     // Route each voice to its FIXED voicecard buffer (Ambika hardware: 6
     // individual voicecard outputs). The master outputAudio is left untouched
     // here; the processor fills the main + aux buses from these buffers after
     // renderNextBlock returns.
-    for (int i = 0; i < voices.size(); ++i)
+    for (auto* av : voicePool_)
     {
-        auto* av = dynamic_cast<AmbikaVoice*> (voices[i]);
-        if (av == nullptr)
-            continue;   // all voices are AmbikaVoice; nothing else to render
         const int vc = juce::jlimit (0, kNumParts - 1, av->getVoiceCard());
         av->renderNextBlock (voiceCardBuffers_[(size_t) vc], startSample, numSamples);
     }

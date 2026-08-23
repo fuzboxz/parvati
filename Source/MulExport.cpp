@@ -4,6 +4,8 @@
 
 #include "MulExport.h"
 
+#include "VoiceMasks.h"    // parvati::popcount8 (bitmask slot counting)
+
 #include <algorithm>
 #include <string>
 
@@ -11,13 +13,6 @@ namespace parvati::mul_export
 {
 namespace
 {
-int popcount8 (uint8_t x)
-{
-    int n = 0;
-    for (; x; x >>= 1) n += x & 1;
-    return n;
-}
-
 // Contiguous bitmasks from per-Part card counts (part p takes the next
 // counts[p] cards, in Part order).
 std::array<uint8_t, kParts> masksFromCounts (const std::array<int, kParts>& counts)
