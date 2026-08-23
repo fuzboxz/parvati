@@ -14,6 +14,7 @@
 
 #include "dsp/fx/fv1/Fv1Phaser.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace parvati::fv1
@@ -22,22 +23,12 @@ namespace parvati::fv1
 // No DelayLine instances in this effect; the summed delay memory is 0 samples.
 static_assert (0 <= kMaxMemorySamples, "Fv1Phaser: total delay memory within budget");
 
-namespace
-{
-inline float clamp01 (float x) noexcept
-{
-    if (x < 0.0f) return 0.0f;
-    if (x > 1.0f) return 1.0f;
-    return x;
-}
-} // namespace
-
 void Fv1Phaser::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
-    const float p0 = clamp01 (param[0]);
-    const float p1 = clamp01 (param[1]);
-    const float p2 = clamp01 (param[2]);
-    const float p3 = clamp01 (param[3]);
+    const float p0 = std::clamp (param[0], 0.0f, 1.0f);
+    const float p1 = std::clamp (param[1], 0.0f, 1.0f);
+    const float p2 = std::clamp (param[2], 0.0f, 1.0f);
+    const float p3 = std::clamp (param[3], 0.0f, 1.0f);
     // param[4] is UNUSED (Mix is the chain Dry/Wet).
 
     rateHz_   = 0.1f * std::pow (80.0f, p0);   // 0.1..8 Hz
@@ -114,8 +105,7 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
         fd = fbDamp3_.process (fd);
         fd = fbDamp4_.process (fd);
         float f = f24_toFloat (fd);
-        if (f > 0.6f)        f =  0.6f + 0.4f * std::tanh (( f - 0.6f) * 2.5f);
-        else if (f < -0.6f)  f = -0.6f - 0.4f * std::tanh ((-f - 0.6f) * 2.5f);
+        f = softKneeTanh (f);
         fbIn = f24_addSat (lin, f24_mulk (fbDc_.process (f24_fromFloat (f)), fb14_));
     }
 

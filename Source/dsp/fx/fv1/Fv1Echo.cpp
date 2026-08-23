@@ -15,35 +15,10 @@ static_assert (2 * DelayLine<16384>::capacity == kMaxMemorySamples,
 
 namespace
 {
-// Q.16 glide constants — verbatim the Fv1ClockedDelay tap glide (see the
-// TIME GLIDE note in this file's header): one-pole k = 1/256 per internal
-// sample, capped at ~0.25 sample/sample (tape-speed pitch bend, click-free),
-// with the sub-1/16-sample tail snapped and a +/-1 Q16 minimum step so the
-// glide can never stall below one quantum.
-constexpr int32_t kQOne    = 65536;    // 1.0 sample in Q.16
-constexpr int32_t kGlideCapQ = 16384;  // ~0.25 sample per internal sample
-constexpr int kGlideShift  = 8;        // one-pole k = 1/256 per sample
-
 inline int32_t echoTargetQ (float timeSamples) noexcept
 {
     return static_cast<int32_t> (std::lround (
         static_cast<double> (timeSamples) * 65536.0));
-}
-
-inline void glideTapQ16 (int32_t& cur, int32_t target) noexcept
-{
-    const int32_t deltaQ = target - cur;
-    const int32_t distQ  = (deltaQ < 0) ? -deltaQ : deltaQ;
-    if (distQ <= kQOne / 16)
-    {
-        cur = target;   // settle the inaudible tail instantly
-        return;
-    }
-    int32_t stepQ = deltaQ >> kGlideShift;
-    if (stepQ >  kGlideCapQ) stepQ =  kGlideCapQ;
-    if (stepQ < -kGlideCapQ) stepQ = -kGlideCapQ;
-    if (stepQ == 0) stepQ = (deltaQ > 0) ? 1 : -1;   // never stall below 1 Q16
-    cur += stepQ;
 }
 } // namespace
 
@@ -67,11 +42,10 @@ void Fv1Echo::setParams (const std::array<float, kNumFxSlotParams>& param)
 
 void Fv1Echo::resetInternal()
 {
-    lineL_.clear();
     lineR_.clear();
+    lineL_.clear();
     damp_.clear();
-    dcX1_ = 0.0f;
-    dcY1_ = 0.0f;
+    dcKiller_.clear();
     // "unset" glide sentinel: the next block snaps both taps to target
     // (a fresh instance must not glide in from zero for a tenth of a second).
     timeQL_ = 0;
@@ -101,15 +75,7 @@ void Fv1Echo::processSampleFx (int32_t lin, int32_t /*rin*/,
     // DC KILLER (see the header): ~10 Hz one-pole HP so near-unity regen can
     // never integrate DC into the runaway offset.
     lineR_.write (tapL);
-    {
-        const float x = f24_toFloat (damp_.process (tapR));
-        constexpr float kDcPole = 1.0f - 6.28318530718f * 10.0f
-                                        / static_cast<float> (kInternalRate);
-        const float y  = x - dcX1_ + kDcPole * dcY1_;
-        dcX1_ = x;
-        dcY1_ = y;
-        lineL_.write (f24_addSat (lin, f24_mulk (f24_fromFloat (y), fb14_)));
-    }
+    lineL_.write (f24_addSat (lin, f24_mulk (dcKiller_.process (damp_.process (tapR)), fb14_)));
 
     lout = tapL;
     rout = tapR;

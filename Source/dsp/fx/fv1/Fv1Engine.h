@@ -221,6 +221,40 @@ struct LoopDcKiller
     }
 };
 
+// Q.16 read-pointer glide (the tap-glide idiom the Echo / Flanger /
+// ClockedDelay base delays share): one-pole k = 1/256 per internal sample,
+// capped at ~0.25 sample/sample (a tape-speed pitch bend, click-free), with
+// the sub-1/16-sample tail snapped and a +/-1 Q.16 minimum step so the glide
+// can never stall below one quantum.
+inline void glideTapQ16 (int32_t& cur, int32_t target) noexcept
+{
+    constexpr int32_t kQOne      = 65536;   // 1.0 sample in Q.16
+    constexpr int32_t kGlideCapQ = 16384;   // ~0.25 sample per internal sample
+    constexpr int     kGlideShift = 8;      // one-pole k = 1/256 per sample
+    const int32_t deltaQ = target - cur;
+    const int32_t distQ  = (deltaQ < 0) ? -deltaQ : deltaQ;
+    if (distQ <= kQOne / 16)
+    {
+        cur = target;   // settle the inaudible tail instantly
+        return;
+    }
+    int32_t stepQ = deltaQ >> kGlideShift;
+    if (stepQ >  kGlideCapQ) stepQ =  kGlideCapQ;
+    if (stepQ < -kGlideCapQ) stepQ = -kGlideCapQ;
+    if (stepQ == 0) stepQ = (deltaQ > 0) ? 1 : -1;   // never stall below 1 Q16
+    cur += stepQ;
+}
+
+// Soft-saturation knee (the Flanger "crackle" fix, 2026-08-21): transparent
+// up to +/-0.6, then a tanh ease into the rail. The Flanger / Ensemble /
+// Phaser feedback writes share it.
+inline float softKneeTanh (float f) noexcept
+{
+    if (f > 0.6f)  return  0.6f + 0.4f * std::tanh (( f - 0.6f) * 2.5f);
+    if (f < -0.6f) return -0.6f - 0.4f * std::tanh ((-f - 0.6f) * 2.5f);
+    return f;
+}
+
 // ---------------------------------------------------------------------------
 // Fixed-point delay line (power-of-two capacity). Integer + fractional reads.
 // ---------------------------------------------------------------------------

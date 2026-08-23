@@ -13,27 +13,9 @@ namespace parvati::fv1
 
 // BASE-DELAY GLIDE (2026-08-21, the Fv1Echo/Fv1ClockedDelay idiom): the
 // Manual knob steps the read position at the sub-chunk cadence; a fast drag
-// jumps it ~2.5 samples per tick. The Q16 one-pole below (k=1/256, capped at
-// ~0.25 sample/internal-sample, sub-1/16 tail snapped, never stalls below one
-// quantum) turns every Manual move into a tape-speed pitch bend — click-free.
-namespace
-{
-constexpr int32_t kFlQOne    = 65536;
-constexpr int32_t kFlGlideCapQ = 16384;
-constexpr int kFlGlideShift = 8;
-
-inline void flGlideTapQ16 (int32_t& cur, int32_t target) noexcept
-{
-    const int32_t deltaQ = target - cur;
-    const int32_t distQ  = (deltaQ < 0) ? -deltaQ : deltaQ;
-    if (distQ <= kFlQOne / 16) { cur = target; return; }
-    int32_t stepQ = deltaQ >> kFlGlideShift;
-    if (stepQ >  kFlGlideCapQ) stepQ =  kFlGlideCapQ;
-    if (stepQ < -kFlGlideCapQ) stepQ = -kFlGlideCapQ;
-    if (stepQ == 0) stepQ = (deltaQ > 0) ? 1 : -1;
-    cur += stepQ;
-}
-} // namespace
+// jumps it ~2.5 samples per tick. The shared Q.16 one-pole glideTapQ16
+// (Fv1Engine.h) turns every Manual move into a tape-speed pitch bend —
+// click-free.
 
 static_assert (DelayLine<1024>::capacity <= kMaxMemorySamples,
                "Fv1Flanger within the FV-1 RAM budget");
@@ -82,7 +64,7 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
         const int32_t targetQ = static_cast<int32_t> (std::lround (
             static_cast<double> (baseSamp_) * 65536.0));
         if (baseQL_ <= 1) baseQL_ = targetQ;
-        else              flGlideTapQ16 (baseQL_, targetQ);
+        else              glideTapQ16 (baseQL_, targetQ);
     }
     const float baseNow = static_cast<float> (baseQL_) * (1.0f / 65536.0f);
     const float dl = baseNow + depthSamp_ * lutSine32 (phase_);
@@ -108,8 +90,7 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
         // the loop DC gain still drops to ~0 (fb * |HP(0)| = 0).
         float fbF = f24_toFloat (fbTap)
                   * (static_cast<float> (fb14_) * (1.0f / 8191.0f));
-        if (fbF > 0.6f)       fbF =  0.6f + 0.4f * std::tanh (( fbF - 0.6f) * 2.5f);
-        else if (fbF < -0.6f) fbF = -0.6f - 0.4f * std::tanh ((-fbF - 0.6f) * 2.5f);
+        fbF = softKneeTanh (fbF);
         line_.write (f24_addSat (lin, f24_mulk (fbDc_.process (f24_fromFloat (fbF)), fb14_)));
     }
 

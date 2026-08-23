@@ -117,9 +117,8 @@ private:
     int             preDelaySamples_ = 0;     // 0..(capacity-1), from preDelayParam_
     int             preDelayCap_     = 0;     // ring capacity (set in prepare)
     int             preDelayPos_     = 0;     // ring write position
-    // Post low-cut one-pole HP state (L/R).
-    float           lowCutLpL_ = 0.0f;
-    float           lowCutLpR_ = 0.0f;
+    // Post low-cut one-pole HP stage (L/R).
+    OnePoleTone     lowCut_;
 };
 
 //==========================================================================
@@ -206,8 +205,7 @@ private:
     float freezeParam_   = 0.0f;   // >0.5 holds the recorded loop (no buffer write)
     float toneParam_     = 1.0f;   // 1 = bright (near-bypass); 0 = dark one-pole LP
     double sampleRate_   = 44100.0;
-    float toneLpL_       = 0.0f;   // post one-pole LP state (L/R)
-    float toneLpR_       = 0.0f;
+    OnePoleTone toneLp_;              // post one-pole LP stage (L/R)
 };
 
 // Spectral — the Clouds phase vocoder (STFT + overlap-add + spectral frame
@@ -280,8 +278,7 @@ private:
     std::vector<float> osR_;
 
     double sampleRate_  = 44100.0;   // for the post-fold Tone one-pole LP
-    float  toneLpL_     = 0.0f;      // post-fold one-pole LP state (L/R)
-    float  toneLpR_     = 0.0f;
+    OnePoleTone toneLp_;             // post-fold one-pole LP stage (L/R)
 
 
     float driveParam_ = 0.0f;   // 0..1 (1x..4x pre-gain; 0 = unity = bit-identical)

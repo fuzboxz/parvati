@@ -22,8 +22,6 @@
 #include "dsp/fx/fv1/Fv1Room.h"
 #include "dsp/fx/fv1/Fv1Spring.h"
 
-#include "SynthEngine.h"   // FxType enumerators (factory switch)
-
 //==========================================================================
 // FxDiffuser — Clouds AP diffusion network (FxEngine<2048, 32-bit float>).
 void FxDiffuser::prepare (double sampleRate, int maxBlock)
@@ -117,8 +115,7 @@ void FxReverb::reset()
     std::fill (preDelayL_.begin(), preDelayL_.end(), 0.0f);
     std::fill (preDelayR_.begin(), preDelayR_.end(), 0.0f);
     preDelayPos_ = 0;
-    lowCutLpL_ = 0.0f;
-    lowCutLpR_ = 0.0f;
+    lowCut_.clear();
 }
 
 void FxReverb::process (float* L, float* R, int numSamples)
@@ -168,14 +165,8 @@ void FxReverb::process (float* L, float* R, int numSamples)
     if (lowCutParam_ > 0.001f)
     {
         const float fc = 15.0f * std::pow (30.0f, lowCutParam_);   // 15..450 Hz
-        const float a  = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate_));
-        for (int i = 0; i < numSamples; ++i)
-        {
-            lowCutLpL_ += a * (L[i] - lowCutLpL_);
-            L[i] -= lowCutLpL_;
-            lowCutLpR_ += a * (R[i] - lowCutLpR_);
-            R[i] -= lowCutLpR_;
-        }
+        lowCut_.setCutoff (fc, sampleRate_);
+        lowCut_.processHP (L, R, numSamples);
     }
 }
 
@@ -283,8 +274,7 @@ void FxWSOLAStretch::reset()
     ws_.Init (&correlator_, 2);
     bridge_.reset();
     params_ = {};
-    toneLpL_ = 0.0f;
-    toneLpR_ = 0.0f;
+    toneLp_.clear();
 }
 
 void FxWSOLAStretch::process (float* L, float* R, int numSamples)
@@ -330,14 +320,8 @@ void FxWSOLAStretch::process (float* L, float* R, int numSamples)
     if (toneParam_ < 0.999f)
     {
         const float fc = 200.0f * std::pow (100.0f, toneParam_);   // 200 Hz..20 kHz
-        const float a  = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate_));
-        for (int i = 0; i < numSamples; ++i)
-        {
-            toneLpL_ += a * (L[i] - toneLpL_);
-            L[i] = toneLpL_;
-            toneLpR_ += a * (R[i] - toneLpR_);
-            R[i] = toneLpR_;
-        }
+        toneLp_.setCutoff (fc, sampleRate_);
+        toneLp_.processLP (L, R, numSamples);
     }
 }
 
@@ -444,8 +428,7 @@ void FxWavefolder::reset()
     srcDown_[0].Init(); srcDown_[1].Init();
     std::fill (osL_.begin(), osL_.end(), 0.0f);
     std::fill (osR_.begin(), osR_.end(), 0.0f);
-    toneLpL_ = 0.0f;
-    toneLpR_ = 0.0f;
+    toneLp_.clear();
 }
 
 void FxWavefolder::process (float* L, float* R, int numSamples)
@@ -495,14 +478,8 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     if (toneParam_ < 0.999f)
     {
         const float fc = 200.0f * std::pow (100.0f, toneParam_);   // 200 Hz..20 kHz
-        const float a  = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate_));
-        for (int i = 0; i < numSamples; ++i)
-        {
-            toneLpL_ += a * (L[i] - toneLpL_);
-            L[i] = toneLpL_;
-            toneLpR_ += a * (R[i] - toneLpR_);
-            R[i] = toneLpR_;
-        }
+        toneLp_.setCutoff (fc, sampleRate_);
+        toneLp_.processLP (L, R, numSamples);
     }
 
     // BIAS-REFERENCE DC REMOVAL (2026-08-21, subagent audit — bug class 4):

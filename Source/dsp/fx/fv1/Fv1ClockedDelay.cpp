@@ -5,6 +5,7 @@
 
 #include "dsp/fx/fv1/Fv1ClockedDelay.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace parvati::fv1
@@ -24,13 +25,6 @@ constexpr double kDivisors[8] = { 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0 };
 
 // kMaxDelaySamples as a float, for the read-pointer clamp below.
 constexpr float kMaxDelayF = static_cast<float> (kMaxDelaySamples);
-
-inline float clamp01 (float v) noexcept
-{
-    if (v < 0.0f) return 0.0f;
-    if (v > 1.0f) return 1.0f;
-    return v;
-}
 
 // The tempo-synced base delay target, in whole internal samples, from the
 // cached Sync param + BPM (clamped to [1, kMaxDelaySamples]). Pure: no state.
@@ -56,8 +50,6 @@ inline int tempoDelayTargetSamples (float pSync, double bpm) noexcept
 // exact multiples of 65536, so the glide never loses its fractional residual
 // (an int-samples one-pole would stall when the remaining distance < 1).
 constexpr int32_t kDelayQOne = 65536;          // 1.0 sample in Q.16
-constexpr int32_t kDelayGlideCapQ = 16384;     // glide ≤ ~0.25 sample/sample (~a tape-speed pitch bend, click-free)
-constexpr int kDelayGlideShift = 8;            // one-pole k = 1/256 per internal sample (τ ≈ 8 ms)
 } // namespace
 
 void Fv1ClockedDelay::prepareInternal (double, int)
@@ -68,10 +60,8 @@ void Fv1ClockedDelay::prepareInternal (double, int)
 
 void Fv1ClockedDelay::resetInternal()
 {
-    dcX1_ = 0.0f;
-    dcY1_ = 0.0f;
-    dcOX1_ = 0.0f;
-    dcOY1_ = 0.0f;
+    loopDc_.clear();
+    outDc_.clear();
     fbDamp_[0].clear();
     fbDamp_[1].clear();
     delay_.clear();
@@ -86,10 +76,10 @@ void Fv1ClockedDelay::resetInternal()
 
 void Fv1ClockedDelay::setParams (const std::array<float, kNumFxSlotParams>& param)
 {
-    pSync_ = clamp01 (param[0]);
-    pFb_   = clamp01 (param[1]);
-    pAge_  = clamp01 (param[2]);
-    pGrit_ = clamp01 (param[3]);
+    pSync_ = std::clamp (param[0], 0.0f, 1.0f);
+    pFb_   = std::clamp (param[1], 0.0f, 1.0f);
+    pAge_  = std::clamp (param[2], 0.0f, 1.0f);
+    pGrit_ = std::clamp (param[3], 0.0f, 1.0f);
     // param[4] is UNUSED (Mix is the chain Dry/Wet).
 
     // Feedback gain (display 0..0.95): quantize to 14-bit.
@@ -158,20 +148,7 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     // immediately, matching the chain's ~980 Hz param cadence.
     const int32_t targetQ = static_cast<int32_t> (
         tempoDelayTargetSamples (pSync_, bpm_)) << 16;
-    const int32_t deltaQ = targetQ - delayLen_;
-    const int32_t distQ = (deltaQ < 0) ? -deltaQ : deltaQ;
-    if (distQ <= kDelayQOne / 16)
-    {
-        delayLen_ = targetQ;   // settle the inaudible tail instantly
-    }
-    else
-    {
-        int32_t stepQ = deltaQ >> kDelayGlideShift;
-        if (stepQ >  kDelayGlideCapQ) stepQ =  kDelayGlideCapQ;
-        if (stepQ < -kDelayGlideCapQ) stepQ = -kDelayGlideCapQ;
-        if (stepQ == 0) stepQ = (deltaQ > 0) ? 1 : -1;   // never stall below 1 Q16
-        delayLen_ += stepQ;
-    }
+    glideTapQ16 (delayLen_, targetQ);
     const float baseDelay = static_cast<float> (delayLen_)
                           * (1.0f / static_cast<float> (kDelayQOne));
 
@@ -195,13 +172,7 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     // the LOOP DC KILLER (~10 Hz one-pole HP — see the header note): removes the
     // near-unity regen's DC accumulation without touching audio-band feedback.
     {
-        const float x = f24_toFloat (readSamp);
-        constexpr float kDcPole = 1.0f - 6.28318530718f * 10.0f
-                                        / static_cast<float> (kInternalRate);
-        const float y  = x - dcX1_ + kDcPole * dcY1_;
-        dcX1_ = x;
-        dcY1_ = y;
-        const int32_t damped = fbDamp_[1].process (fbDamp_[0].process (f24_fromFloat (y)));
+        const int32_t damped = fbDamp_[1].process (fbDamp_[0].process (loopDc_.process (readSamp)));
         delay_.write (f24_addSat (lpOut, f24_mulk (damped, fbK14_)));
     }
 
@@ -217,13 +188,7 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     // the lo-fi character survives without contaminating downstream shapers
     // with DC.
     {
-        constexpr float kPole = 1.0f - 6.28318530718f * 10.0f
-                                    / static_cast<float> (kInternalRate);
-        const float x  = f24_toFloat (readSamp);
-        const float y  = x - dcOX1_ + kPole * dcOY1_;
-        dcOX1_ = x;
-        dcOY1_ = y;
-        const int32_t out = f24_fromFloat (y);
+        const int32_t out = outDc_.process (readSamp);
         lout = out;
         rout = out;
     }

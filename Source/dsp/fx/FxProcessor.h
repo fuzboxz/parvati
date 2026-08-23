@@ -12,11 +12,12 @@
 //
 // `FxType` is defined in dsp/fx/FxTypes.h (a dependency-free shard), NOT here,
 // to avoid a circular include: SynthEngine.h includes FxChain.h -> FxProcessor.h.
-// FxProcessors.cpp includes SynthEngine.h for the engine integration but the
-// FxType enumerators themselves come from FxTypes.h.
+// The FxType enumerators come from FxTypes.h; nothing in the fx/ tree needs
+// SynthEngine.h.
 
 #pragma once
 
+#include <cmath>
 #include <memory>
 
 #include "dsp/fx/FxTypes.h"   // FxType (dependency-free shard)
@@ -58,6 +59,46 @@ public:
     virtual int latency() const noexcept { return 0; }
 
     virtual FxType type() const = 0;
+};
+
+// One-pole tone stage shared by the post-effect Tone (LP) and Low-Cut (HP)
+// blocks: y[n] = y[n-1] + a * (x[n] - y[n-1]) with a = 1 - exp(-2*pi*fc/fs).
+// Holds one L and one R state. processHP emits input minus the low-pass
+// (a first-order high-pass). Bit-identical to the inline blocks it replaces.
+struct OnePoleTone
+{
+    void clear() noexcept { zL_ = 0.0f; zR_ = 0.0f; }
+
+    void setCutoff (float fc, double sampleRate) noexcept
+    {
+        a_ = 1.0f - std::exp (-6.28318530718f * fc / static_cast<float> (sampleRate));
+    }
+
+    void processLP (float* L, float* R, int numSamples) noexcept
+    {
+        for (int i = 0; i < numSamples; ++i)
+        {
+            zL_ += a_ * (L[i] - zL_);
+            L[i] = zL_;
+            zR_ += a_ * (R[i] - zR_);
+            R[i] = zR_;
+        }
+    }
+
+    void processHP (float* L, float* R, int numSamples) noexcept
+    {
+        for (int i = 0; i < numSamples; ++i)
+        {
+            zL_ += a_ * (L[i] - zL_);
+            L[i] -= zL_;
+            zR_ += a_ * (R[i] - zR_);
+            R[i] -= zR_;
+        }
+    }
+
+private:
+    float a_  = 1.0f;
+    float zL_ = 0.0f, zR_ = 0.0f;
 };
 
 // Factory: build a fresh effect instance for the given type, or nullptr for

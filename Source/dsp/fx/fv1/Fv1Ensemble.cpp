@@ -101,8 +101,7 @@ void Fv1Ensemble::processSampleFx (int32_t lin, int32_t /*rin*/,
         int32_t d = damp[0].process (x);
         d = damp[1].process (d); d = damp[2].process (d); d = damp[3].process (d);
         float f = f24_toFloat (d);
-        if (f > 0.6f)       f =  0.6f + 0.4f * std::tanh (( f - 0.6f) * 2.5f);
-        else if (f < -0.6f) f = -0.6f - 0.4f * std::tanh ((-f - 0.6f) * 2.5f);
+        f = softKneeTanh (f);
         return f24_addSat (in, f24_mulk (dc.process (f24_fromFloat (f)), fbK));
     };
     lineA_.write (treated (readA, fbDampA_, fbDcA_, lin, fb14_));

@@ -57,7 +57,7 @@
 // The two-branch parallel blend is shared via renderParallel(). FxType/FxTopology are forward-declared via FxProcessor.h; the chain caches
 // the current slot types as uint8_t to avoid requiring the enum to be complete
 // in this header (SynthEngine.h includes this file before defining the enum).
-// FxChain.cpp includes SynthEngine.h for the enumerators.
+// FxChain.cpp includes FxProcessors.h (which pulls FxTypes.h) for the factory.
 
 #pragma once
 

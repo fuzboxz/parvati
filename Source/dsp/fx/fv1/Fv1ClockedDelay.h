@@ -67,10 +67,10 @@ private:
     // LOOP DC KILLER state (2026-08-21 — see Fv1Echo.h's note; same integrator
     // class: near-unity regen accumulates input/saturation DC until the loop
     // parks near a rail, contaminating everything downstream).
-    float dcX1_ = 0.0f, dcY1_ = 0.0f;
+    LoopDcKiller loopDc_;
     // OUTPUT DC blocker state (the Grit truncation-DC removal — see the
     // output comment in the .cpp).
-    float dcOX1_ = 0.0f, dcOY1_ = 0.0f;
+    LoopDcKiller outDc_;
     // IN-LOOP HF DAMP (2026-08-21, subagent audit): the loop (fb 0.95,
     // integer tempo-synced reads = zero interpolation loss) had NO high-
     // frequency damping — tapeLp_ ages the INPUT branch only — so even-parity

@@ -72,9 +72,9 @@ private:
     // and the DC-heavy output makes any following shaper pin constant -> its own
     // DC blocker strips it -> gated silence. A 10 Hz one-pole high-pass in the
     // R->L hop kills the recirculation (loop DC gain ~0) while leaving the
-    // audio-band regen untouched. Float-domain, matching the family's control
-    // math (kDcPole idiom from Fv1Overdrive/LutDistortion).
-    float dcX1_ = 0.0f, dcY1_ = 0.0f;
+    // audio-band regen untouched. The shared LoopDcKiller (Fv1Engine.h) is the
+    // same float-domain recurrence the family's control math uses.
+    LoopDcKiller dcKiller_;
 };
 
 } // namespace parvati::fv1
