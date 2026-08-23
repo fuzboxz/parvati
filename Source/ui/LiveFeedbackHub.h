@@ -66,6 +66,12 @@ public:
         cache is stale or no voice is active). */
     LiveFilterValues liveFilter() const;
 
+    /** Live effective OSC parameter of oscillator 0/1 from the cached frame
+        (inactive when the cache is stale or no voice is active). Mirrors
+        liveFilter(): one flat payload read from the cached frame, consumed by
+        OscPreviewDisplay's live overlay through its provider. */
+    LiveOscValues liveOsc (int oscIndex) const;
+
     /** Cached frame's validity (false after an engine reset until the next
         good tick — the pill histories hide during that window). */
     bool valid() const noexcept { return valid_; }

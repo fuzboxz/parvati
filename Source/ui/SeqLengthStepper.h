@@ -15,6 +15,15 @@
 // undo granularity. The number label follows the slider value via
 // onValueChange (covers both picks and external param writes like preset load
 // / host automation).
+//
+// DROPDOWN AFFORDANCE (2026-08-23 user feedback: "the dropdown isn't styled
+// as a proper dropdown — not clear it can be changed"): the cell band now
+// paints the app's COMBO chrome (the same dark rounded field + right ▼
+// chevron ParvatiLookAndFeel::drawComboBox draws) behind the number, so the
+// control reads as a dropdown that opens the 1..16 picker. The tappable band
+// and the visual field are the SAME rect; the number keeps the bright value
+// tier; the fully-transparent tap button and always-on-top label (the 3
+// defences below) are unchanged.
 
 #pragma once
 
@@ -36,6 +45,11 @@ public:
     // Test hook (headless): open the 1..16 picker exactly as a tap does.
     void showLengthPopup();
 
+    // TEST-ONLY: the painted dropdown-field rect (the combo-style affordance
+    // band — the SAME rect the tap button covers). Lets the headless stepper
+    // test pin the affordance without a Graphics context.
+    juce::Rectangle<int> comboFieldRectForTest() const;
+
     // Test-only seam (F-ios-touch-2): drive a picker item action + the
     // keyboard nudge headlessly (the lifecycle test [4]).
     void setValueForTest (int v) { setValue (v); }
@@ -53,8 +67,22 @@ public:
     void parentHierarchyChanged() override;
 
 private:
+    // The control band: the cell below the bold "Length" caption, reduced
+    // like resized() has always done. ONE definition shared by the layout
+    // (tap button + number label) and the painted dropdown field so the
+    // visual affordance can never drift from the hit target.
+    juce::Rectangle<int> controlBand() const
+    {
+        auto b = getLocalBounds().reduced (2);
+        b.removeFromTop (15);
+        b.removeFromTop (3);
+        return b;
+    }
+
     // Button::Listener: the full-cell tap button.
     void buttonClicked (juce::Button*) override;
+
+    void paint (juce::Graphics&) override;
 
     bool keyPressed (const juce::KeyPress& key) override;
 

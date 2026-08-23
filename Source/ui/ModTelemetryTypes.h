@@ -87,6 +87,13 @@ struct ModTelemetrySnapshot
     uint16_t effResonance  = 0;  // 0..255
     uint8_t  filterMode    = 0;  // 0..3 LP/BP/HP/Notch
 
+    // Oscillator parameters (representative voice, EFFECTIVE = the
+    // modulation-applied bytes UpdateDestinations feeds osc_1/osc_2's
+    // set_parameter() — dst_[MOD_DST_PARAMETER_{1,2}] >> 7, 0..127). Drives
+    // the OSC waveform preview's live overlay (same discipline as the filter
+    // bytes above; meaningful while voiceActive).
+    uint8_t  effOscParam[2] {};
+
     // True while the tracked part has an active representative voice. False =>
     // the envelope/filter observables are the held tail values and the UI hides
     // its live markers.
@@ -110,6 +117,18 @@ struct LiveFilterValues
     bool  active  = false;
     float cutoff01 = 0.5f;
     float reso01   = 0.0f;
+};
+
+// Live effective OSC parameter for ONE oscillator (index 0/1), as consumed by
+// OscPreviewDisplay's live overlay (2026-08-23 parity pass — the osc preview
+// now follows the engine exactly like the filter preview). param01 is the
+// 0..127 effective byte normalized to 0..1 (the same domain as the display's
+// base param byte), so the display's temporal activity gate can byte-diff it
+// against its own quantization of the target.
+struct LiveOscValues
+{
+    bool  active  = false;
+    float param01 = 0.0f;
 };
 
 //==============================================================================

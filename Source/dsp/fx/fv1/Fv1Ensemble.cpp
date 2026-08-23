@@ -89,6 +89,15 @@ void Fv1Ensemble::processSampleFx (int32_t lin, int32_t /*rin*/,
     auto treated = [] (int32_t x, OnePoleLpFx (&damp) [4], LoopDcKiller& dc,
                        int32_t in, int16_t fbK) -> int32_t
     {
+        // fb == 0 EARLY-OUT (2026-08-23 CPU fix): at zero feedback the
+        // return path (8 one-pole sections + 2 float conversions + the
+        // branchy tanh knee + the DC killer, added by the 2026-08-21 "full
+        // phaser treatment" commit) contributes EXACTLY nothing — the full
+        // chain reduces to f24_addSat(in, mulk(dc(...), 0)) == in, so skip
+        // straight to the passthrough input. (A disabled-effect patch keeps
+        // fb14_ == 0, and most chorus-style patches sit near 0 too.)
+        if (fbK == 0)
+            return in;
         int32_t d = damp[0].process (x);
         d = damp[1].process (d); d = damp[2].process (d); d = damp[3].process (d);
         float f = f24_toFloat (d);

@@ -110,6 +110,23 @@ public:
     // headless test can observe "the strip reacted" without painting.
     int telemetryGeneration() const noexcept { return telemetryGeneration_; }
 
+    // ---- TEST-ONLY paint-split seams (modbar_pill_paint_split_test) ----
+    // The 2026-08-23 label/strip paint split: each pill's sparkline and label
+    // are CHILD components (ModPill itself paints only the cheap chrome).
+    // These expose the @p pillIndex-th pill's children (pill order == the
+    // ModSourceCatalog order) as plain Components — nullptr when out of
+    // range — plus the label child's REAL paint count (0 until a genuine
+    // paint cycle runs; the split's contract is that strip animation NEVER
+    // increments it).
+    juce::Component* pillStripChildForTest (int pillIndex) const;
+    juce::Component* pillLabelChildForTest (int pillIndex) const;
+    int pillLabelPaintCountForTest (int pillIndex) const;
+    int pillStripPaintCountForTest (int pillIndex) const;
+    /** The @p pillIndex-th pill itself (the ModPill component; nullptr when
+        out of range) — lets the headless paint-split test drive pill mouse
+        paths (hover) exactly as a real pointer does. */
+    juce::Component* pillComponentForTest (int pillIndex) const;
+
     /** Re-evaluate the strip-poll timer's run state NOW (public twin of the
         private visibility-hook gate). The EDITOR's status timer calls this
         every ~30 Hz tick: JUCE's visible-before-desktop / content-then-peer
@@ -127,6 +144,11 @@ public:
 
     //==========================================================================
     void resized() override;
+    // The bar's OWN background fill (2026-08-23 opaque-bar pass — see the .cpp
+    // ctor): the bar promises JUCE it covers every pixel (setOpaque), so this
+    // must fillAll the full bounds. Required by the base Component::paint
+    // contract (an opaque component without a full-coverage paint asserts).
+    void paint (juce::Graphics&) override;
 
 private:
     // The two animation drivers (see updateTelemetryTimer): vsync primary,

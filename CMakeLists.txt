@@ -901,7 +901,10 @@ add_executable(parvati_unified_tests
     # tracked but never compiled/registered; now part of the unified target)
     tests/parvati_retrig_probe.cpp
 # Unified test sources (keep alphabetical-ish; new_test.sh appends here)
+    tests/modbar_pill_paint_split_test.cpp
+    tests/osc_preview_live_test.cpp
     tests/theme_switch_preview_test.cpp
+    tests/fx_silence_gate_test.cpp
     tests/lfo_shape_preview_test.cpp
     tests/release_vca_glide_test.cpp
     tests/mono_retrigger_continuity_test.cpp

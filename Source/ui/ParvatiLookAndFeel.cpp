@@ -963,6 +963,25 @@ void ParvatiLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& 
     }
     g.setColour (fill);
     g.fillRoundedRectangle (r, corner);   // flat, borderless
+
+    // OUTLINED chrome (2026-08-23, Patch-page export buttons): a button
+    // carrying the "parvatiButtonOutlined" component property additionally
+    // gets a 1px rounded STROKE around the tonal fill. The default flat
+    // block reads as floating text on large tonal panels — the stroke + the
+    // caller's accent-tinted fill/text give a proper button affordance
+    // without touching the global tonal style every other button uses.
+    // The stroke follows the button's OWN text colour (off state), so the
+    // whole chrome derives from the two colours the caller sets and re-skins
+    // with the theme automatically; hover brightens it toward the text
+    // colour for feedback. Off-state only — a toggled-on accent fill needs
+    // no outline.
+    if (! on && button.getProperties().getVarPointer ("parvatiButtonOutlined") != nullptr)
+    {
+        const auto stroke = button.findColour (juce::TextButton::textColourOffId, true)
+                                .withMultipliedAlpha (enabledAlpha * (over ? 0.85f : 0.60f));
+        g.setColour (stroke);
+        g.drawRoundedRectangle (r, corner, 1.0f);
+    }
 }
 
 void ParvatiLookAndFeel::drawHeadingText (juce::Graphics& g, const juce::String& text,

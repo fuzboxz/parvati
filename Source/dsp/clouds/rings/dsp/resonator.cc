@@ -103,13 +103,28 @@ void Resonator::Process(const float* in, float* out, float* aux, size_t size) {
   // Per-sample frequency interpolation: ramp the normalized frequency across
   // the block so the 64 SVF coefficients glide instead of stepping (prevents
   // coefficient-jump transients / pops from raw 980 Hz param modulation).
-  // ComputeFilters() is called per-sample to recompute all mode coefficients
-  // from the interpolated frequency. CPU cost: ~64 set_f_q per sample — trivial.
+  //
+  // COEFFICIENT RECOMPUTE THROTTLE (2026-08-23 CPU fix): ComputeFilters()
+  // used to run PER SAMPLE — ~64 set_f_q + LUT interps + the stretch/Q
+  // recursion every sample, which micro-benchmarks showed is ~58% of the
+  // Resonator's total cost (0.641 -> 0.269 ms per 512-block when hoisted;
+  // upstream Rings recomputes once per block). The recompute now runs only
+  // when the interpolated frequency has actually MOVED since the last
+  // recompute (>= 1e-4 normalized — a couple of cents): during a sweep it
+  // still updates per sample (the pop-free glide is fully preserved), but a
+  // static frequency — the common case — recomputes once and then reuses the
+  // coefficients, paying only the 64-mode SVF filter bank per sample (the
+  // actual resonance work). The amplitude/position interpolation and the
+  // constant num_modes processing below are unchanged.
   ParameterInterpolator position(&previous_position_, position_, size);
   ParameterInterpolator frequency(&previous_frequency_, frequency_, size);
+  float cfFrequency_ = -1.0f;  // normalized frequency the current coefficients were computed for (-1 = none)
   while (size--) {
     frequency_ = frequency.Next();
-    ComputeFilters();  // recompute all mode coefficients per-sample (per-sample freq interp)
+    if (std::fabs(frequency_ - cfFrequency_) >= 1e-4f) {
+      ComputeFilters();  // coefficients track the interpolated frequency (throttled)
+      cfFrequency_ = frequency_;
+    }
     // Always process ALL modes (not just sub-Nyquist ones): Nyquist-clamped
     // modes (partial_frequency >= 0.49) contribute ~0 at audio frequencies, but
     // EXCLUDING them when pitch sweeps would cause a discontinuity (mode

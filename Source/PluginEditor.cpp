@@ -2697,6 +2697,18 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 disp->setCategoryColour (theme.catAudio);   // amber trace
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                            &ParvatiTheme::catAudio);
+                // Live modulation overlay (2026-08-23 parity pass — same
+                // contract as the filter display): while a voice sounds and
+                // the EFFECTIVE osc parameter byte is MOVING (env/LFO/matrix/
+                // wheel routed to PARAMETER_1/2), the preview's smoothed target
+                // follows the engine state instead of the knob, so modulations
+                // visibly ride the waveform and settle back at rest. Same
+                // call-time null-check pattern (construction precedes the hub).
+                disp->setLiveValuesProvider ([this, i]
+                {
+                    return liveHub_ != nullptr ? liveHub_->liveOsc (i)
+                                               : parvati::LiveOscValues{};
+                });
                 // Register for the status tick's poll re-assert (same starve
                 // class as the env/LFO displays: a page built while not on
                 // screen can starve the component's own visibility hooks and

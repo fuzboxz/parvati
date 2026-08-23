@@ -159,6 +159,52 @@ void SeqLengthStepper::parentHierarchyChanged()
     applyNumberLabelStyle();
 }
 
+juce::Rectangle<int> SeqLengthStepper::comboFieldRectForTest() const { return controlBand(); }
+
+void SeqLengthStepper::paint (juce::Graphics& g)
+{
+    // Base first: the bold "Length" caption + the category arc / mod tint.
+    ParamControl::paint (g);
+
+    // ---- DROPDOWN AFFORDANCE (2026-08-23, see the header) ----
+    // The app combo chrome — the same dark rounded field + right ▼ chevron
+    // ParvatiLookAndFeel::drawComboBox draws — painted behind the number so
+    // the cell reads as a dropdown that opens the 1..16 picker. Drawn HERE
+    // (component paint) rather than on the tap button so the three pinned
+    // visibility defences stay untouched: the button keeps its fully
+    // transparent fill and the always-on-top label still paints above this
+    // field. The number label is inset from the field's right edge in
+    // resized() so the centred digit clears the chevron.
+    const auto field = controlBand();
+    if (field.getWidth() < 24 || field.getHeight() < 14)
+        return;   // degenerate cell (host squeeze): keep the bare number
+
+    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+    const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
+    const juce::Colour baseFill = (t != nullptr && t->isDark)
+                                    ? t->backgroundBase
+                                    : juce::Colour (0xff2A2E35);   // light-theme dark-dropdown tone
+    const auto fill = isMouseOver() ? baseFill.brighter (0.06f) : baseFill;
+    g.setColour (fill);
+    g.fillRoundedRectangle (field.toFloat(), 5.0f);
+
+    // Crisp ▼ chevron, right-aligned — the exact geometry + tokens of
+    // drawComboBox (chevronSize 5, light token) so the affordance is visually
+    // identical to every real dropdown on the page.
+    const auto chevronCol = (t != nullptr && t->isDark) ? t->textPrimary
+                                                        : juce::Colour (0xfff6f6fa);
+    const float cy = field.getCentreY() - 0.5f;
+    const float cx = static_cast<float> (field.getRight()) - 10.0f;
+    constexpr float s = 5.0f;
+    juce::Path chevron;
+    chevron.startNewSubPath (cx - s, cy - s * 0.5f);
+    chevron.lineTo (cx + s, cy - s * 0.5f);
+    chevron.lineTo (cx, cy + s * 0.5f);
+    chevron.closeSubPath();
+    g.setColour (chevronCol);
+    g.fillPath (chevron);
+}
+
 void SeqLengthStepper::resized()
 {
     // Base lays out the bold "Length" label + the (hidden) slider bounds; the
@@ -166,12 +212,14 @@ void SeqLengthStepper::resized()
     // >=44pt target instead of two sub-44 buttons).
     ParamControl::resized();
 
-    auto b = getLocalBounds().reduced (2);
-    b.removeFromTop (15);
-    b.removeFromTop (3);
+    const auto b = controlBand();
 
+    // The tap button covers the FULL band (the hit target == the visual
+    // field); the number label is inset on the right by the chevron's reserve
+    // (~14pt, matching the combo text inset idiom) so the centred digit never
+    // collides with the ▼.
     if (tapBtn_ != nullptr)
         tapBtn_->setBounds (b);
     if (numberLabel_ != nullptr)
-        numberLabel_->setBounds (b);
+        numberLabel_->setBounds (b.withTrimmedRight (b.getWidth() > 48 ? 14 : 0));
 }

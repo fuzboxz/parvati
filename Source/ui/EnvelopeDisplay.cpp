@@ -8,10 +8,13 @@
 #include "dsp/resources/resources.h"   // lut_res_env_portamento_increments (time-honest ADSR spans)
 
 //==============================================================================
-// Edge padding (2026-08-22 user request): a few empty pixels of silence
-// before the attack begins and after the release ends, so a near-vertical
-// 1 ms attack/release ramp is readable AGAINST the flat padding — steepness
-// made visible by contrast instead of hiding against the plot edge.
+// Edge padding (2026-08-22 user request, tightened 2026-08-23): a couple of
+// empty pixels of silence before the attack begins and after the release
+// ends, so a near-vertical 1 ms attack/release ramp is readable AGAINST the
+// flat padding — steepness made visible by contrast instead of hiding
+// against the plot edge. kEdgePad is a FRACTION of the plot width sized for
+// ~2 px at the real panel widths (was 4% ~= 10 px; the user asked for just
+// enough to show where the envelope starts and ends).
 // (the value lives on the class as EnvelopeDisplay::kEdgePad so tests share it)
 
 //==============================================================================
@@ -302,7 +305,12 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                 juce::Justification::topLeft);
 
     // ---- Plot area ----
-    auto plot = bounds.reduced (8.0f, 0.0f);
+    // Horizontal inset tightened 8 -> 3 px (2026-08-23, same request as the
+    // kEdgePad tightening): the pre/post-envelope silence is the pad's job
+    // now, so the plot itself hugs the panel border like the osc/filter
+    // previews (3 px) instead of adding another 8 px of emptiness on each
+    // side of the curve.
+    auto plot = bounds.reduced (3.0f, 0.0f);
     plot.removeFromTop (22.0f);
     plot.removeFromBottom (8.0f);
 

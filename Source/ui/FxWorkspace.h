@@ -59,6 +59,25 @@ public:
     static constexpr int kRowGap = 8;
     int rowPaddingForTest() const noexcept { return kRowGap; }
 
+    // Inter-module whitespace of the FX top row (2026-08-23 user request:
+    // "a tiny bit more between the FX modules for visual clarity") — a few
+    // px WIDER than the outer row margin, which stays kRowGap (synth parity
+    // pins kRowGap equality, NOT the column gap — the synth page keeps its
+    // kRowGap column spacing; the FX modules are denser cards and read
+    // better with the wider separation). Pinned by workspace_padding_test [3].
+    static constexpr int kColGap = kRowGap + 4;   // 12 between routing/FX1/FX2/FX3
+
+    // FIXED top-row module heights (2026-08-23): the routing bar and the
+    // FX-slot cards never stretch with the window — they keep these
+    // content-natural heights, pin to the TOP of the row (synth-page parity:
+    // extra frame height shows page background BELOW the modules, exactly
+    // how a taller synth viewport leaves background under its group cards;
+    // a shorter frame scrolls at the kTopRowNaturalH floor), and the cards
+    // carry the user's +20px "spacious" bump over the routing bar. Pinned
+    // by tests/workspace_padding_test.cpp [3].
+    static constexpr int kRouteModuleH = 224;   // routing bar (content-natural)
+    static constexpr int kCardModuleH  = 244;   // FX-slot cards (routing + 20)
+
     // MOD-BAR TOP RULE — the separator above the middle seam (see the ctor).
     // Test hook: its bounds + visibility.
     juce::Rectangle<int> barRuleBoundsForTest() const

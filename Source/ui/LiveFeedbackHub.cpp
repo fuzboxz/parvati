@@ -84,6 +84,20 @@ LiveFilterValues LiveFeedbackHub::liveFilter() const
     return f;
 }
 
+LiveOscValues LiveFeedbackHub::liveOsc (int oscIndex) const
+{
+    LiveOscValues v;
+    if (! valid_ || ! cached_.voiceActive)
+        return v;
+    v.active  = true;
+    // The effective OSC byte domain is 0..127 (dst_[MOD_DST_PARAMETER_*] >> 7),
+    // NOT the filter's 0..255 — normalize over 127 so the display's byte
+    // quantization round-trips exactly.
+    v.param01 = static_cast<float> (cached_.effOscParam[static_cast<size_t> (
+                    juce::jlimit (0, 1, oscIndex))]) / 127.0f;
+    return v;
+}
+
 void LiveFeedbackHub::timerCallback()
 {
     if (! fetch_)

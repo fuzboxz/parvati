@@ -69,9 +69,13 @@ public:
     { adsrSegmentSpans (a, d, s, r, wA, wD, wS, wR); }
 
     // The edge padding the curve and marker are both remapped through
-    // (a few pixels of silence before the attack / after the release —
-    // see EnvelopeDisplay.cpp). Public so tests share the exact value.
-    static constexpr float kEdgePad = 0.04f;
+    // (silence before the attack / after the release — see
+    // EnvelopeDisplay.cpp). Public so tests share the exact value.
+    // 0.01 of the plot width ~= 2 px at the panel widths these previews run
+    // at (2026-08-23 user request: tighten from 4% — only a couple of pixels
+    // are needed to read where the envelope starts/ends against the flat
+    // silence).
+    static constexpr float kEdgePad = 0.01f;
 
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base.)
     bool isPollRunningForTest() const noexcept { return getTimerInterval() > 0; }

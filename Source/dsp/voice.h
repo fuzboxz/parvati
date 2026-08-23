@@ -80,6 +80,16 @@ class Voice {
     inline uint8_t resonance() const {
         return static_cast<uint8_t>(modulation_destinations_[MOD_DST_FILTER_RESONANCE]);
     }
+    // Effective (modulation-applied) OSC parameter byte (0..127) of oscillator
+    // 0/1 — exactly the byte UpdateDestinations feeds the oscillator's
+    // set_parameter() this block (dst_ >> 7, i.e. the top 7 bits of the
+    // 14-bit modulated accumulator seeded with parameter*128 in LoadSources).
+    // PURE READOUT for UI telemetry — no state is touched (same discipline as
+    // cutoff()/resonance() above).
+    inline uint8_t osc_parameter(uint8_t osc) const {
+        return (osc == 0) ? static_cast<uint8_t>(dst_[MOD_DST_PARAMETER_1] >> 7)
+                          : static_cast<uint8_t>(dst_[MOD_DST_PARAMETER_2] >> 7);
+    }
     // filter[0].mode selects the analog filter output (LP/BP/HP/NOTCH).
     inline uint8_t mode() const { return patch_.filter[0].mode; }
 

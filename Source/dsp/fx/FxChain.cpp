@@ -83,6 +83,11 @@ void FxChain::prepare (double rate, int maxBlock)
     rate_     = rate;
     maxBlock_ = juce::jmax (1, maxBlock);
 
+    // Silence gate starts fresh (a re-prepare is a life-cycle seam — rate /
+    // block change — and the arm counter's block-count debounce is
+    // cadence-dependent by design; see FxChain.h).
+    resetSilenceGate();
+
     // Apply any staged-but-unconsumed type swaps FIRST (prepare runs with the
     // audio callback stopped, so the shared install routine is safe here).
     // This both honours a swap staged before prepareToPlay and re-sizes a
@@ -275,6 +280,7 @@ void FxChain::consumePendingSwap (int slot) noexcept
     // must be click-free.)
     wetFade_[(size_t) slot] = 0.0f;
     clearDelayRings();   // N3: latency may have changed -- flush stale ring history
+    resetSilenceGate();  // a new processor + fade-in ends any silence regime
 
     // pending_ is free ONLY now (release orders the move-out above before
     // this store, so an MT that observes Empty cannot be racing our reads).
@@ -288,20 +294,46 @@ void FxChain::reapRetired() noexcept
 
 void FxChain::setSlotEnabled (int slot, bool e) noexcept
 {
-    if (slot >= 0 && slot < kNumFxSlots)
+    // VALUE-GUARDED silence-gate reset (2026-08-23): the engine's fxDirty_
+    // service re-pushes enable on every dirty frame; only a REAL toggle may
+    // disarm (an identical re-push must not — the gate would flap and never
+    // hold on an idle chain).
+    if (slot >= 0 && slot < kNumFxSlots && enabled_[(size_t) slot] != e)
+    {
         enabled_[(size_t) slot] = e;
+        resetSilenceGate();
+    }
 }
 
 void FxChain::setSlotDryWet (int slot, float dw) noexcept
 {
+    // VALUE-GUARDED (see setSlotEnabled): renderPartFx re-pushes dry/wet EVERY
+    // ~980 Hz sub-chunk (base + FX-mod offset); at rest the value is bit-
+    // constant, and only a real move (knob / live modulation) may disarm.
     if (slot >= 0 && slot < kNumFxSlots)
-        dryWet_[(size_t) slot] = juce::jlimit (0.0f, 1.0f, dw);
+    {
+        const float v = juce::jlimit (0.0f, 1.0f, dw);
+        if (dryWet_[(size_t) slot] != v)
+        {
+            dryWet_[(size_t) slot] = v;
+            resetSilenceGate();
+        }
+    }
 }
 
 void FxChain::setSlotParam (int slot, int idx, float v) noexcept
 {
+    // VALUE-GUARDED (see setSlotEnabled): same per-sub-chunk re-push argument
+    // as setSlotDryWet — the smoothedBase_/modOffset sum is bit-stable at rest.
     if (slot >= 0 && slot < kNumFxSlots && idx >= 0 && idx < kNumFxSlotParams)
-        params_[(size_t) slot][(size_t) idx] = juce::jlimit (0.0f, 1.0f, v);
+    {
+        const float c = juce::jlimit (0.0f, 1.0f, v);
+        if (params_[(size_t) slot][(size_t) idx] != c)
+        {
+            params_[(size_t) slot][(size_t) idx] = c;
+            resetSilenceGate();
+        }
+    }
 }
 
 void FxChain::setTopology (FxTopology t) noexcept
@@ -316,6 +348,7 @@ void FxChain::setTopology (FxTopology t) noexcept
     const auto v = static_cast<uint8_t> (t);
     if (topology_ == v) return;
     topology_ = v;
+    resetSilenceGate();   // routing change: a re-route can end the silence regime
     clearDelayRings();   // N3: routing changed — stale ring history is meaningless
 }
 
@@ -325,11 +358,23 @@ void FxChain::setOrder (const std::array<int, 3>& ord) noexcept
     // at drag rate must not clear the latency-compensation rings.
     if (order_ == ord) return;
     order_ = ord;
+    resetSilenceGate();   // routing change (see setTopology)
     clearDelayRings();   // N3: order changed — stale ring history is meaningless
 }
 
 void FxChain::setTempo (double bpm, bool isPlaying) noexcept
 {
+    // VALUE-GUARDED silence-gate reset (2026-08-23 review settlement — closes
+    // the gate's reset enumeration): the engine pushes transport every block,
+    // so only a real (bpm, playing) MOVE disarms. A transport start/stop or
+    // tempo change can alter tempo-synced slot behaviour (and a start flushes
+    // frozen state), so the chain re-enters the full render path for the
+    // debounce window rather than staying frozen through the change.
+    if (lastTempoBpm_ == bpm && lastTempoPlaying_ == isPlaying)
+        return;
+    lastTempoBpm_ = bpm;
+    lastTempoPlaying_ = isPlaying;
+    resetSilenceGate();
     for (auto& s : slots_)
         if (s)
             s->setTransport (bpm, isPlaying);
@@ -337,7 +382,12 @@ void FxChain::setTempo (double bpm, bool isPlaying) noexcept
 
 void FxChain::setMasterMix (float g01) noexcept
 {
-    masterMix_ = juce::jlimit (0.0f, 1.0f, g01);
+    // VALUE-GUARDED silence-gate reset (2026-08-23): the fxDirty_ frame
+    // re-pushes masterMix on every dirty frame; only a real move disarms.
+    const float v = juce::jlimit (0.0f, 1.0f, g01);
+    if (masterMix_ == v) return;
+    masterMix_ = v;
+    resetSilenceGate();
 }
 
 void FxChain::setMasterEqLow (uint8_t v) noexcept
@@ -345,6 +395,7 @@ void FxChain::setMasterEqLow (uint8_t v) noexcept
     v = (uint8_t) juce::jlimit (0, 127, (int) v);
     if (eqLowV_ == v) return;
     eqLowV_ = v;
+    resetSilenceGate();   // EQ change alters the (silent) output path
     updateEqCoeffs();
 }
 
@@ -353,6 +404,7 @@ void FxChain::setMasterEqMid (uint8_t v) noexcept
     v = (uint8_t) juce::jlimit (0, 127, (int) v);
     if (eqMidV_ == v) return;
     eqMidV_ = v;
+    resetSilenceGate();   // (see setMasterEqLow)
     updateEqCoeffs();
 }
 
@@ -361,6 +413,7 @@ void FxChain::setMasterEqHigh (uint8_t v) noexcept
     v = (uint8_t) juce::jlimit (0, 127, (int) v);
     if (eqHighV_ == v) return;
     eqHighV_ = v;
+    resetSilenceGate();   // (see setMasterEqLow)
     updateEqCoeffs();
 }
 
@@ -620,6 +673,17 @@ void FxChain::process (const float* inL, const float* inR,
 {
     ++processCallCountForTest_;
 
+    // Silence-gate helper (2026-08-23 idle-CPU fix; see FxChain.h): the input
+    // / output energy scan. Early-exits on the first sample above @p eps, so
+    // active-audio blocks pay ~one comparison per channel.
+    auto belowEps = [] (const float* x, int n, float eps) noexcept -> bool
+    {
+        for (int i = 0; i < n; ++i)
+            if (std::fabs (x[i]) > eps)
+                return false;
+        return true;
+    };
+
     // Install any staged type swaps BEFORE the first slot read (latency(),
     // anyEnabled(), the renders). This is the AT's install point in the
     // engine path (renderPartFx also services explicitly before its fxDirty_
@@ -672,6 +736,36 @@ void FxChain::process (const float* inL, const float* inR,
         juce::FloatVectorOperations::copy (outL, inL, numSamples);
         juce::FloatVectorOperations::copy (outR, inR, numSamples);
         return;
+    }
+
+    // ---- SILENCE GATE: armed fast path (2026-08-23 idle-CPU fix) ----
+    // One input scan (early-exit) decides wake vs gated serve. GATED: the
+    // input is still (near-)zero, the output has been <= kQuietOutEps for the
+    // whole arm window, and the delay rings were zeroed at arm time — so the
+    // ungated path would emit <=eps residue and keep stuffing exact zeros
+    // into the rings. Zero the outputs and SKIP the topology, the smoothers
+    // and the EQ: the saved work is the entire per-part FX cost that made an
+    // idle-enabled chain burn CPU forever (renderPartFx runs every part every
+    // block). Ring POSITIONS freeze (content is all-zero, and an all-zero ring
+    // is write-position-invariant: any read returns 0), so latency() timing
+    // across the arm/wake boundary is preserved exactly — see the header
+    // comment. WAKE: any non-silent sample falls through to the full path THIS
+    // block (the first post-wake latency reads return the exact zeros the
+    // ungated path would also have returned).
+    const bool inSilent = silenceGateEnabled_
+        && belowEps (inL, numSamples, kSilentInEps)
+        && belowEps (inR, numSamples, kSilentInEps);
+    if (silenceGateArmed_)
+    {
+        if (inSilent)
+        {
+            ++gatedProcessCountForTest_;
+            juce::FloatVectorOperations::clear (outL, numSamples);
+            juce::FloatVectorOperations::clear (outR, numSamples);
+            return;
+        }
+        silenceGateArmed_ = false;   // wake: a real signal arrived
+        silentRunBlocks_ = 0;
     }
 
     // ---- Render the chain (topology) into outL/outR ----
@@ -824,6 +918,52 @@ void FxChain::process (const float* inL, const float* inR,
     // ---- Master EQ (skipped entirely when flat) ----
     if (eqActive_)
         applyMasterEq (outL, outR, numSamples);
+
+    // ---- SILENCE GATE: arming (end of the full path) ----
+    // Count consecutive blocks that are silent at the INPUT and quiet at the
+    // OUTPUT (the rendered tail has decayed below kQuietOutEps — the term that
+    // makes the arm tail-length-agnostic: a ringing reverb/resonator keeps the
+    // counter at 0 for however long its tail is audible-by-measure). Once the
+    // run reaches kGateSilentBlocks, arm + zero the delay rings (they hold
+    // only <=eps residue by the arm condition, and exact zeros keep the
+    // ring-phase argument airtight for the post-wake latency reads). Any other
+    // block resets the run. Skipped entirely while the test OFF pin holds so
+    // control runs take the exact pre-gate path.
+    if (silenceGateEnabled_)
+    {
+        if (inSilent
+            && belowEps (outL, numSamples, kQuietOutEps)
+            && belowEps (outR, numSamples, kQuietOutEps))
+        {
+            if (++silentRunBlocks_ >= kGateSilentBlocks)
+            {
+                silenceGateArmed_ = true;
+                clearDelayRings();
+                // FINALIZE the tail-retention fades (N2 latency parity): a
+                // tailing (disabled) slot's wetFade_ would otherwise FREEZE
+                // mid-decay and keep the slot slotActive() at wake — the
+                // post-wake block would then run the processor (with its
+                // oversampling pre-ring) instead of the pure ring delay the
+                // never-gated path has reached by then, leaking ~1e-3-scale
+                // energy BEFORE latency() and breaking the bypass-latency
+                // invariant across an arm/wake cycle (caught by the N2 pin in
+                // fx_param_coverage_test). The arm condition guarantees the
+                // tail being terminated is <= kQuietOutEps inaudible. ONLY the
+                // disabled slots snap: an ENABLED slot's fade is left at its
+                // per-sample-stalled just-under-1 value — snapping it to an
+                // exact 1.0 diverges from the never-gated control's float
+                // trajectory (the one-pole stalls ~1.4e-5 short of 1) and
+                // shows up as a ~3e-6 A/B diff on the impulse response.
+                for (int s = 0; s < kNumFxSlots; ++s)
+                    if (! enabled_[(size_t) s])
+                        wetFade_[(size_t) s] = 0.0f;
+            }
+        }
+        else
+        {
+            silentRunBlocks_ = 0;
+        }
+    }
 }
 
 void FxChain::renderParallel (const float* inL, const float* inR,

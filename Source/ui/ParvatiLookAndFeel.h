@@ -183,11 +183,15 @@ public:
                        juce::ComboBox&) override;
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
 
-    // TextButton background: flat borderless tonal block — 4px rounded corners,
-    // a solid fill (accent when toggled on via buttonOnColourId, panel fill
-    // otherwise), LIGHTER on hover and DARKER on press, with NO stroke / bevel /
-    // shadow. IconButton (gear/undo/redo) paints itself and bypasses this. (Text
-    // itself is drawn by drawButtonText via getTextButtonFont.)
+    // TextButton background: flat tonal block — 4px rounded corners, a solid
+    // fill (accent when toggled on via buttonOnColourId, panel fill
+    // otherwise), LIGHTER on hover and DARKER on press, with NO stroke / bevel
+    // / shadow, EXCEPT buttons carrying the "parvatiButtonOutlined" component
+    // property (e.g. the Patch page's Ambika export actions) which additionally
+    // get a 1px rounded stroke derived from their text colour — proper button
+    // chrome where the flat block would read as floating text. IconButton
+    // (gear/undo/redo) paints itself and bypasses this. (Text itself is drawn
+    // by drawButtonText via getTextButtonFont.)
     void drawButtonBackground (juce::Graphics&, juce::Button&,
                                const juce::Colour& backgroundColour,
                                bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;

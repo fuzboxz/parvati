@@ -5,6 +5,25 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **OSC waveform previews now glide like the filter preview and follow live
+  engine modulation (2026-08-23).** The inline Osc 1/Osc 2 waveform preview
+  was noticeably less fluid than the filter response curve: parameter motion
+  (knob turns, automation) rebuilt the waveform in 8 coarse quantization
+  steps with short morph restarts. The displayed parameter is now smoothed
+  with the filter preview's exact critically-damped model (tau 130 ms) and
+  the cycle rebuilds whenever its byte-quantized level moves, so sweeps
+  glide; a shape switch still gets the short cross-fade. In addition —
+  exactly like the filter preview — modulations now apply to the preview and
+  follow the engine's CURRENT osc-parameter state: while a voice sounds and
+  the effective (modulation-applied) parameter byte is moving (an
+  env/LFO/sequencer/matrix routing to the osc parameter), the preview tracks
+  it live and eases back to the knob state once the modulation settles (a
+  ~270 ms hold bridges slow LFO dips). Plumbing: new engine telemetry field
+  `effOscParam[2]` (the same modulated bytes `UpdateDestinations` feeds the
+  oscillators), `LiveOscValues` payload, `LiveFeedbackHub::liveOsc(i)`, and a
+  live provider wired to both osc previews; pinned by the new
+  `osc_preview_live_test` (render determinism, glide, temporal gate, engine
+  end-to-end).
 - **Theme rename: Legacy is now Immutable (2026-08-23).** The light
   gray/magenta reference-adoption theme was renamed (pre-release rename —
   no compatibility alias; a state persisting the old name simply falls back
@@ -57,6 +76,75 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   byte-level equality possible at all.
 
 ### Fixed
+- **FX DSP no longer runs forever on silence (idle CPU, 2026-08-23).**
+  `renderPartFx` renders every part's FX chain every block regardless of
+  voice activity, and once any slot was enabled the chain had no input-
+  silence path — the full effect DSP (Resonator, FV-1, …) kept running on
+  dead-silent input forever, which is why the app's CPU climbed after
+  playing notes and never came back down. FxChain now tracks consecutive
+  blocks that are silent at the input AND whose rendered output has decayed
+  below an inaudible ~-120 dB epsilon (so reverb/resonator tails ring out
+  fully before the gate arms, however long they are); after ~100 such
+  blocks (plus the tail) the chain serves further silent blocks from a
+  zero-output fast path that skips the topology, smoothers and EQ entirely.
+  Any real signal — a played note, a knob/param/enable/EQ/routing change —
+  wakes it instantly, and latency/PDC timing is preserved bit-exactly across
+  an arm/wake cycle (verified against a never-gated control chain). A
+  transport (tempo/play-state) move also disarms now (value-guarded — the
+  engine re-pushes the same transport every block, so steady-state keeps the
+  gate).
+- **FX DSP: Resonator coefficient recompute throttled + Ensemble zero-feedback
+  early-out (playing CPU, 2026-08-23).** A subagent decomposition of the
+  3-FX "highcpu" patch measured the during-note cost per effect (Debug):
+  LUT Distortion ~7.7% (≈80% of it the 6× oversampling polyphase FIR, a
+  port-time anti-crackle design), Ensemble ~1.4%, Resonator ~6.3% — of
+  which ~58% was `ComputeFilters()` recomputing ALL 64 modal coefficients
+  PER SAMPLE (upstream Rings computes once per block; the port's "trivial"
+  comment was wrong). The recompute now runs only when the interpolated
+  frequency has actually moved (>= 1e-4 normalized): sweeps still glide
+  per-sample (pop-free), static frequencies pay only the SVF bank. The
+  Ensemble's feedback "full phaser treatment" (4-pole damp + tanh knee +
+  DC killer per line per sample — a real 2026-08-21 correctness fix) now
+  early-outs at exactly zero feedback, where the whole chain provably
+  reduces to the passthrough input. Together: roughly -3.5% of a core on
+  the measured patch (Debug); Release ≈ 2–5× cheaper in absolute terms.
+  The LUT oversampling policy (3×/24-tap or shape-gated 1×) was quantified
+  but deliberately NOT changed — it is an audible-quality trade-off.
+- **Mod-pill strips no longer repaint forever after animating once (idle
+  CPU, 2026-08-23).** The 0.5 s "static strip drops out of the animation
+  set" park existed only in the vblank/timer SUB-tick branches; the fetch
+  tick itself repainted any `stripAnimating_` pill unconditionally. With
+  `vblankFetchDiv_ == 1` (a 60 Hz refresh pref on a ~60 Hz display) the
+  sub-ticks never ran, so a pill that animated ONCE — e.g. the always-on
+  telemetry window filling at launch — stayed armed forever and every strip
+  repainted at fetch cadence on flat data indefinitely (~35% CPU measured
+  at idle in the Standalone; up to ~65% while a stuck-animated state
+  compounded). The park rule is now uniform across all three drivers
+  (vblank sub-ticks, timer fallback, and the fetch tick itself).
+- **Mod-pill diff gate skips the full recompute on parked strips (idle CPU,
+  2026-08-23).** `updateStripFromHistory` recomputed all 96 min/max band
+  points over the 256-sample window for every pill on every 30 Hz fetch
+  (~6k byte reads x 24 pills x 30 Hz) just to conclude "nothing changed".
+  A strip whose last signature was FLAT (band span <= 1 byte) now vets
+  future ticks by scanning ONLY the newly appended bytes against the flat
+  level — provably sufficient (a flat window can only change through new
+  appends; aged-out bytes were already at the level) — and both early-out
+  paths track the window edge so the delta stays bounded. Idle Standalone
+  CPU dropped from ~19% to ~4-5% (Debug) with strips live and scrolling
+  semantics unchanged.
+- **Mod-pill strip animation no longer re-rasters the pill label every
+  tick (mod-bar CPU, 2026-08-23).** The telemetry strips animate at display
+  rate while any modulator moves; JUCE's paint dispatch walks the whole
+  hierarchy clipped to the dirty rect, so the old single-component pill
+  re-ran Graphics::drawText (full glyph layout) for the label on every
+  strip repaint — ~63% of the sampled message-thread cost. The pill is now
+  split: the sparkline is its own child that the animation ticks dirty
+  exclusively, and the label is a child BUFFERED TO AN IMAGE, so strip
+  dirty rects answer with a cached-bitmap blit — the label's glyph layout
+  runs only when the label itself changes (hover / active / theme). The
+  CentralModBar and its scrolled content are also OPAQUE now, so a strip
+  repaint no longer recomposites the whole non-opaque ancestor chain up to
+  the window (the same opaque-painting class that fixed the osc previews).
 - **LFO waveform preview froze on its first-frame shape (2026-08-22).** The
   LFO previews (LFO 1/2/3 + Voice LFO) are EnvelopeDisplays in previewMode 1
   whose 30 Hz poll timer relies on the component's visibility hooks — but a

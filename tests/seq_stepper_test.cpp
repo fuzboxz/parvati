@@ -153,6 +153,19 @@ TEST(seq_stepper_test)
                    "number bounds are a visible band (>= 44x20)");
             check (tap->getWidth() >= 44 && tap->getHeight() >= 20,
                    "tap hit band spans the cell (>= 44pt target)");
+
+            // DROPDOWN AFFORDANCE (2026-08-23): the painted combo-style field
+            // IS the tap band (visual == hit target), and the number label is
+            // inset from the field's right edge so the centred digit clears
+            // the painted ▼ chevron reserve.
+            const auto field = stepper.comboFieldRectForTest();
+            check (! field.isEmpty() && field.getWidth() >= 44 && field.getHeight() >= 14,
+                   "dropdown affordance field is a real band (>= 44x14)");
+            check (field == tap->getBounds(),
+                   "affordance field == tap hit band (visual == hit target)");
+            if (field.getWidth() > 48)
+                check (number->getBounds().getRight() <= field.getRight() - 8,
+                       "number label clears the chevron reserve (>= 8pt)");
         }
     }
 

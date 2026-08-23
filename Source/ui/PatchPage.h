@@ -132,6 +132,12 @@ public:
     // L&F / the active ParvatiTheme.
     void applyThemeColors();
 
+    // Accent-tinted OUTLINED chrome for the two Ambika export buttons (the
+    // parvatiButtonOutlined property is set once in the ctor; this (re)applies
+    // the theme-derived fill/text colours — called from the ctor and
+    // applyThemeColors so a theme switch re-skins them).
+    void applyExportButtonChrome();
+
     // ---- test / automation hooks (observe + drive the exact UI code paths) ----
     // Currently-displayed arrangement (the combo selection; Custom if none).
     Arrangement getDisplayedArrangement() const;

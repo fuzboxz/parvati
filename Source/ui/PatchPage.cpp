@@ -99,13 +99,28 @@ int tableContentWidth (const bool* visibleMask)
     return w + juce::jmax (0, n - 1) * kPartColGap;
 }
 
-// The centred content band for a full-width @p band: min(band, content-max)
-// wide, horizontally centred. Both the rows' resized() and the header's
-// paint() consume THIS, so captions and cells stay aligned inside the
-// centred table.
-juce::Rectangle<int> centredTableBand (juce::Rectangle<int> band, const bool* visibleMask)
+// The table's BAND width is TAB-INDEPENDENT (2026-08-23 user request): the
+// frame — the arrangement summary row (combo + tab strip + the export
+// buttons), the header strip and the row band — keeps the WIDEST tab's
+// content width on BOTH tabs. Before this, switching to MIDI clamped the
+// whole body to the narrower column set and the panel visibly COLLAPSED
+// (the export buttons + arrangement combo jumped left, the rows shrank);
+// now only the active tab's column group changes inside the unchanged band
+// (a narrower group CENTRES — see partColumnRects).
+int tableBandContentWidth()
 {
-    const int contentW = juce::jmin (band.getWidth(), tableContentWidth (visibleMask));
+    return juce::jmax (tableContentWidth (kVoiceTabMask),
+                       tableContentWidth (kMidiTabMask));
+}
+
+// The centred content band for a full-width @p band: min(band, band-content)
+// wide, horizontally centred — the clamp is the TAB-INDEPENDENT union width
+// (see tableBandContentWidth), so the band geometry is identical on both
+// tabs. Both the rows' resized() and the header's paint()/columnXForTest()
+// consume THIS, so captions and cells stay aligned inside the shared band.
+juce::Rectangle<int> centredTableBand (juce::Rectangle<int> band)
+{
+    const int contentW = juce::jmin (band.getWidth(), tableBandContentWidth());
     return band.withSizeKeepingCentre (contentW, band.getHeight());
 }
 
@@ -213,7 +228,14 @@ std::array<juce::Rectangle<int>, PartTableColumns::kCount> partColumnRects (
         }
     }
 
-    // Place left-to-right with uniform gaps between visible columns.
+    // Place left-to-right with uniform gaps between visible columns. When
+    // the ACTIVE tab's columns (at their maxima, after the flex split) are
+    // NARROWER than the tab-independent band — the MIDI group inside the
+    // Voice-width band, 2026-08-23 — the group packs against the band's LEFT
+    // edge (user follow-up: left-aligned reads as a steadier grid than the
+    // centred group; the Part-name column keeps a constant x across both
+    // tabs), while the frame (summary row + export buttons + header) keeps
+    // spanning the full fixed band.
     int x = b.getX();
     for (int i = 0; i < PartTableColumns::kCount; ++i)
         if (visibleMask[i])
@@ -456,7 +478,7 @@ public:
         // hidden cells (they read state, not visibility).
         const bool* mask = midiTab_ ? kMidiTabMask : kVoiceTabMask;
         const auto c = partColumnRects (
-            centredTableBand (getLocalBounds().reduced (kTableContentInset), mask), mask);
+            centredTableBand (getLocalBounds().reduced (kTableContentInset)), mask);
         lastColumnRects_ = c;   // test hook: the row's ACTUAL column geometry
 
         partLabel_.setBounds (c[PartTableColumns::kName]);
@@ -1122,7 +1144,11 @@ public:
         // bounds set cannot de-centre them. ----
         const bool* mask = tabStrip_.getCurrentTabIndex() == 1 ? kMidiTabMask : kVoiceTabMask;
         const int bandW  = b.getWidth();
-        const int contW  = juce::jmin (bandW, tableContentWidth (mask));
+        // TAB-INDEPENDENT band (2026-08-23): the clamp is the UNION of the
+        // two tabs' content widths (== the Voice tab's — see
+        // tableBandContentWidth), so the frame keeps the same width on BOTH
+        // tabs and switching to MIDI no longer collapses the panel.
+        const int contW  = juce::jmin (bandW, tableBandContentWidth());
         lastBandW_  = bandW;
         lastContW_  = contW;
         b = b.withX (b.getX() + (bandW - contW) / 2).withWidth (contW);
@@ -1145,8 +1171,12 @@ public:
                 auto mulBtn = summary.removeFromRight (mulW);
                 summary.removeFromRight (gap);
                 auto proBtn = summary.removeFromRight (proW);
-                owner_.exportMulButton_.setBounds (mulBtn);
-                owner_.exportProButton_.setBounds (proBtn);
+                // 26pt VISUAL box centred in the 44pt tap band (the same HIG
+                // idiom as the arrangement combo — 2026-08-23: filling the
+                // full 44pt made the outlined action buttons read as fat
+                // slabs; the combo-matching visual height lines the row up).
+                owner_.exportMulButton_.setBounds (mulBtn.withSizeKeepingCentre (mulW, 26));
+                owner_.exportProButton_.setBounds (proBtn.withSizeKeepingCentre (proW, 26));
             }
             owner_.arrangementCombo_.setBounds (summary.removeFromLeft (220));
             summary.removeFromLeft (12);
@@ -1191,7 +1221,7 @@ public:
             // x-positions are then exactly the cell x-positions (pinned by
             // the header-vs-row alignment test).
             const auto c = partColumnRects (
-                centredTableBand (getLocalBounds().reduced (kTableContentInset), mask), mask);
+                centredTableBand (getLocalBounds().reduced (kTableContentInset)), mask);
             // labels_ is the FILTERED caption list (hidden columns absent),
             // so the binding column→caption must resolve the filtered
             // position — indexing labels_ by the raw column index painted
@@ -1243,7 +1273,7 @@ public:
             const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
             if (i < 0 || i >= PartTableColumns::kCount || ! mask[i])
                 return -1;
-            return partColumnRects (centredTableBand (getLocalBounds().reduced (kTableContentInset), mask),
+            return partColumnRects (centredTableBand (getLocalBounds().reduced (kTableContentInset)),
                                     mask)[static_cast<size_t> (i)].getX();
         }
 
@@ -1362,6 +1392,12 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     // callbacks are null-safe for headless tests.
     exportProButton_.onClick = [this] { clickExportProForTest(); };
     exportMulButton_.onClick = [this] { clickExportMulForTest(); };
+    // PROPER BUTTON CHROME (2026-08-23 user request): the default flat tonal
+    // block read as floating text on the table panel. Both buttons carry the
+    // "parvatiButtonOutlined" property (ParvatiLookAndFeel::drawButtonBackground
+    // strokes a 1px rounded outline derived from the text colour) plus an
+    // accent-tinted fill/text pair re-resolved on every theme change via
+    // applyExportButtonChrome().
     // Text + tooltips at construction (refreshLanguage re-translates them on
     // a live language switch — the editor calls it after building).
     exportProButton_.setTooltip (
@@ -1376,6 +1412,9 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
         + TRANS ("6 cards."));
     tablePanel_->addAndMakeVisible (exportProButton_);
     tablePanel_->addAndMakeVisible (exportMulButton_);
+    exportProButton_.getProperties().set ("parvatiButtonOutlined", true);
+    exportMulButton_.getProperties().set ("parvatiButtonOutlined", true);
+    applyExportButtonChrome();
 
     // Pool-budget readout: how many of the 96 pool voices are allocated
     // across all parts (sum of the per-part voiceCount_ snapshots) — the only
@@ -1416,8 +1455,26 @@ void PatchPage::paint (juce::Graphics& g)
 
 void PatchPage::applyThemeColors()
 {
-    const auto theme = themeManager_.getCurrentTheme();
+    // Export buttons re-skin with the (possibly new) accent.
+    applyExportButtonChrome();
     repaint();
+}
+
+void PatchPage::applyExportButtonChrome()
+{
+    // Accent-tinted ACTION look for the two Ambika export buttons: a subtle
+    // accent wash fill + accent text (the L&F adds the matching outline via
+    // the parvatiButtonOutlined property; hover brightens both). WithAlpha
+    // colours must be RE-SET per theme (they are baked at call time), which
+    // is why this lives here and is called from applyThemeColors.
+    const auto accent = themeManager_.getCurrentTheme().accentPrimary;
+    for (auto* b : { &exportProButton_, &exportMulButton_ })
+    {
+        b->setColour (juce::TextButton::buttonColourId, accent.withAlpha (0.16f));
+        b->setColour (juce::TextButton::textColourOffId, accent);
+        b->setColour (juce::TextButton::textColourOnId,
+                      themeManager_.getCurrentTheme().backgroundBase);
+    }
 }
 
 void PatchPage::refreshLanguage()

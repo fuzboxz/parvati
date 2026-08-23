@@ -178,6 +178,26 @@ namespace
 // Note Sequencer sentinel DOES — its melody trace rides the spare
 // kNoteSeqSlot (see the telemetry tick). With no telemetry the strip simply
 // stays empty.
+//
+// PAINT SPLIT (2026-08-23 CPU fix, the message-thread hot spot from the
+// sampled profile): the pill's paint is split across THREE components —
+//   * the PILL itself paints the fill / accent band / family underline
+//     (only on full repaints: hover, active change, theme switch);
+//   * a strip CHILD (HistoryStripView) paints the sparkline and is the ONLY
+//     thing the bar's per-tick repaint(pill.stripRect()) dirties — a sibling
+//     dirty region can never reach the label, so strip animation no longer
+//     re-rasters the pill tile or re-runs the label's text layout
+//     (Graphics::drawText was ~63% of the sampled message-thread cost:
+//     every 30-60 Hz strip tick used to re-layout the label glyphs);
+//   * a label CHILD (PillLabelView) paints the short label ABOVE the strip
+//     (later sibling => on top; the "label over the scope" reading is
+//     unchanged) and owns a CACHED resolved font (pillFont()'s appFont /
+//     FontOptions construction is not free — resolved once per L&F change
+//     instead of per paint).
+// Both children are fully transparent to the mouse, so hit-testing,
+// clicks, drags, tooltips and accessibility are byte-identical to the
+// single-component pill (pinned by modbar_pill_click_test + the new
+// modbar_pill_paint_split_test).
 struct CentralModBar::ModPill : public juce::Component,
                                 public juce::SettableTooltipClient
 {
@@ -198,7 +218,123 @@ struct CentralModBar::ModPill : public juce::Component,
         setTitle (fullName_);
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         setInterceptsMouseClicks (true, false);
+
+        // PAINT SPLIT (2026-08-23, see the class comment): strip FIRST, label
+        // SECOND — children paint after the parent and in add order, so the
+        // composite reads exactly like the old single paint: fill / band /
+        // underline (parent) -> sparkline -> label on top. Both children are
+        // mouse-transparent (see their ctors); the pill keeps every mouse /
+        // tooltip / a11y path to itself.
+        stripView_ = std::make_unique<HistoryStripView> (*this);
+        labelView_ = std::make_unique<PillLabelView> (*this);
+        addAndMakeVisible (*stripView_);
+        addAndMakeVisible (*labelView_);
     }
+
+    // ---- PAINT-SPLIT children (2026-08-23 CPU fix; see the class comment) ----
+
+    /** The history sparkline as its own CHILD component: the bar's per-tick
+        repaint(pill.stripRect()) dirties ONLY this child, so strip animation
+        never re-rasters the pill tile — and the label child, being
+        BUFFERED TO AN IMAGE (see PillLabelView), answers the same dispatch
+        with a cached-bitmap blit instead of a text raster (the sampled hot
+        spot). Non-opaque (the pill fill shows through); fully transparent to
+        the mouse (all hit-testing / clicks / drags stay on the pill). */
+    struct HistoryStripView : public juce::Component
+    {
+        explicit HistoryStripView (ModPill& pill) : pill_ (pill)
+        {
+            // Named for headless test discovery (no API surface needed —
+            // tests walk the component tree by name).
+            setName ("modPillStrip");
+            setInterceptsMouseClicks (false, false);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            ++paintCountForTest_;   // TEST-ONLY seam (see the bar's accessors)
+            // The child IS the pill's stripRect() (resized() keeps them
+            // equal), so its local bounds carry the same geometry the old
+            // single-paint drawHistoryStrip computed from stripRect().
+            pill_.paintHistoryStrip (g, getLocalBounds().toFloat());
+        }
+
+        ModPill& pill_;
+        int paintCountForTest_ = 0;   // TEST-ONLY: real paints of the strip
+    };
+
+    /** The pill's short label as its own CHILD, added AFTER the strip child
+        so it paints ON TOP of the sparkline (the Pigments-style "label over
+        the scope" reading is unchanged). Owns the CACHED resolved pill
+        font: pillFont() goes through appFont()/FontOptions construction,
+        which the profile showed is not free — it is resolved once per L&F
+        change (lookAndFeelChanged fires on setLookAndFeel AND the editor's
+        theme switch via sendLookAndFeelChange; parentHierarchyChanged
+        catches the inherited-L&F case at the initial reparent) instead of
+        on every paint. BUFFERED TO AN IMAGE (2026-08-23 review settlement):
+        JUCE's peer paint dispatch walks the WHOLE hierarchy clipped to the
+        dirty region, so a strip-tick dirty rect DOES dispatch a clipped
+        paint to this sibling too (its bounds span the pill) — but with a
+        cached component image the dispatch becomes a StandardCached-
+        ComponentImage BLIT: this component's paint() (glyph layout, text
+        raster, font use) runs only when the label's OWN state changes and
+        repaint() invalidates the cache (hover / active / theme / font).
+        The paint count therefore moves on real content changes only. */
+    struct PillLabelView : public juce::Component
+    {
+        explicit PillLabelView (ModPill& pill) : pill_ (pill)
+        {
+            setName ("modPillLabel");   // headless test discovery
+            setInterceptsMouseClicks (false, false);
+            // The blit-cache (see the struct doc): turns foreign-region
+            // dispatches into drawImage calls; repaint() on THIS component
+            // re-renders it. Safe here because every visual input is either
+            // a colour token re-resolved through lookAndFeelChanged ->
+            // refreshFont() -> repaint(), or a pill-state flip that the
+            // setters already route to a label repaint.
+            setBufferedToImage (true);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            ++paintCountForTest_;   // TEST-ONLY seam (see the bar's accessors)
+            if (! fontCached_)
+                refreshFont();      // defensive: no L&F hook fired before the first paint
+
+            // Colour tier exactly as the pre-split single-paint label (git
+            // parity, 2026-08-23 review): GENERATOR pills — the ACTIVE one
+            // reads textPrimary, hover lifts textSecondary, rest stays
+            // textSecondary; DRAG-ONLY pills are ALWAYS textSecondary (their
+            // hover cue is the pill FILL lift, not the label).
+            const auto& t = pill_.owner_.theme();
+            g.setColour (! pill_.isGenerator_ ? t.textSecondary
+                        : (pill_.active_ ? t.textPrimary
+                        : (pill_.hovered_ ? t.textSecondary.brighter (0.20f)
+                                          : t.textSecondary)));
+            g.setFont (cachedFont_);
+            // Generators centre over the FULL pill; drag-only pills keep the
+            // old 5px horizontal inset (same rects as the removed branches).
+            g.drawText (pill_.shortLabel_,
+                        pill_.isGenerator_ ? getLocalBounds()
+                                           : getLocalBounds().reduced (5, 0),
+                        juce::Justification::centred, true);
+        }
+
+        void lookAndFeelChanged() override   { refreshFont(); }
+        void parentHierarchyChanged() override { refreshFont(); }
+
+        void refreshFont()
+        {
+            cachedFont_ = pill_.owner_.pillFont();
+            fontCached_ = true;
+            repaint();   // a new typeface/size needs a fresh raster
+        }
+
+        ModPill& pill_;
+        juce::Font cachedFont_;
+        bool fontCached_ = false;
+        int paintCountForTest_ = 0;   // TEST-ONLY: real paints of the label
+    };
 
     // Accessibility: role `button` + a `press` action wired to the SAME
     // callback a real click fires (owner_.invokeClicked), so switch-control /
@@ -224,8 +360,40 @@ struct CentralModBar::ModPill : public juce::Component,
 
     void setActive (bool a)
     {
-        if (a != active_) { active_ = a; repaint(); }
+        // The label child repaints TOO: its text tier follows active_
+        // (textPrimary vs textSecondary — the paint split moved the label
+        // into its own component, so a pill repaint no longer re-rasters it).
+        if (a != active_) { active_ = a; repaint(); if (labelView_) labelView_->repaint(); }
     }
+
+    // Positions the paint-split children (the pill's bounds are set by the
+    // bar's computeLayout; children follow on every resize). The strip child
+    // IS the strip rect — the bar's per-tick animation repaints that child
+    // alone — and the label overlays the FULL pill (both rects are the exact
+    // regions the old single-paint drew into).
+    void resized() override
+    {
+        if (stripView_ != nullptr)
+            stripView_->setBounds (stripRect());
+        if (labelView_ != nullptr)
+            labelView_->setBounds (getLocalBounds());
+    }
+
+    /** Route a strip animation repaint to the STRIP CHILD only — the entire
+        point of the paint split: the pill tile and the label (and its text
+        layout) stay clean while telemetry scrolls. */
+    void repaintStrip()
+    {
+        if (stripView_ != nullptr)
+            stripView_->repaint();
+    }
+
+    // TEST-ONLY passthroughs (the child types are file-local; tests and the
+    // bar's public accessors consume them as plain Components).
+    juce::Component* stripChildForTest() const { return stripView_.get(); }
+    juce::Component* labelChildForTest() const { return labelView_.get(); }
+    int labelPaintCountForTest() const { return labelView_ != nullptr ? labelView_->paintCountForTest_ : -1; }
+    int stripPaintCountForTest() const { return stripView_  != nullptr ? stripView_->paintCountForTest_  : -1; }
 
     /** Persistent family-coloured underline (the cluster cue now that the
         captions are gone). Subtle (thin, dim) on every pill; STRENGTHENED
@@ -280,7 +448,7 @@ struct CentralModBar::ModPill : public juce::Component,
         point-sampled no matter the point count). Returns true when the drawn
         data changed (the caller repaints the strip rect); a signature-
         identical frame returns false and costs nothing. */
-    bool updateStripFromHistory (const uint8_t* samples, int count)
+    bool updateStripFromHistory (const uint8_t* samples, int count, uint8_t currentVal)
     {
         constexpr int kWindow = parvati::ModTelemetrySnapshot::kHistoryLen;
         constexpr float kEps = 1.0f / 255.0f;   // one value quantum
@@ -288,15 +456,67 @@ struct CentralModBar::ModPill : public juce::Component,
 
         if (count > kWindow)
             count = kWindow;
+
+        // FLAT-SKIP FAST PATH (2026-08-23 CPU fix — the idle diff-gate cost):
+        // the full recompute below evaluates ~96 points x their age ranges
+        // (~2.7 samples each) PER PILL PER FETCH — ~6k byte reads x 24 pills
+        // x 30 Hz in Debug just to conclude "nothing changed" on a parked
+        // strip. But a strip whose last signature was FLAT (every point
+        // within kEps of one level L) can only change through the NEWLY
+        // APPENDED bytes: the window either grows at its right edge (ring
+        // not yet full) or slides (full — old bytes age out on the left,
+        // which cannot break flatness), and every retained byte was already
+        // ≈ L. So: no new appends (delta == 0), or all delta new bytes ≈ L
+        // => the signature is provably identical — return without the
+        // recompute. A single moving byte falls back to the full path (and
+        // re-arms flatness only when the window settles flat again).
+        if (stripFlat_ && stripRawCount_ > 0)
+        {
+            int delta = count - stripRawCount_;
+            if (delta < 0)
+                delta += kWindow;   // the linearized window slid (ring wrapped)
+            if (delta == 0)
+                return false;   // identical frame (same count, head unchanged upstream)
+            if (delta > 0 && delta < 32)
+            {
+                bool clean = true;
+                for (int i = count - delta; i < count; ++i)
+                {
+                    const float v = (float) samples[(size_t) i] * (1.0f / 255.0f);
+                    if (std::fabs (v - stripFlatLevel_) > kEps) { clean = false; break; }
+                }
+                if (clean)
+                {
+                    stripRawCount_ = count;   // track the window edge or delta grows unbounded
+                    return false;   // flat window stayed flat: nothing to draw differently
+                }
+            }
+            // (delta >= 32 = a reset/wipe-scale jump: fall through to the full
+            // recompute — the fast path must never guess across a discontinuity.)
+        }
+
         float mn[m], mx[m];
         float lo = 1.0f, hi = 0.0f;
         float moment = 0.0f;   // Σ j·v[j] on the max series: POSITION-weighted signature term
         const float step = (m > 1) ? (float) (kWindow - 1) / (float) (m - 1) : (float) kWindow;
-        const auto ageVal = [&] (int age) -> float   // age behind newest -> value (0 if pre-zeroed)
+        // The UNWRITTEN prefix (older than the appended count) renders as the
+        // CURRENT source value, NOT zero (2026-08-23 — "PB starts from zero
+        // instead of the default value"): the always-on window starts empty at
+        // launch / after a telemetry wipe and fills right-to-left at the
+        // append rate; drawing the empty prefix as the floor made every
+        // resting-at-mid bipolar strip (Pitch Bend rests at 128 = 50%) ramp up
+        // from ZERO for a full ~3.1 s window. "The unwritten past = the
+        // current state" is the honest always-on semantics (the strip shows
+        // the modulator's state; a moment ago it was, as far as the frame
+        // knows, what it is now) — constants, held wheels and resting bends
+        // render flat at truth from the first frame, while per-voice
+        // generators (sources[] == 0 at rest) keep the zero floor exactly as
+        // before.
+        const auto ageVal = [&] (int age) -> float   // age behind newest -> value
         {
             return (age < count)
                 ? (float) samples[(size_t) (count - 1 - age)] * (1.0f / 255.0f)
-                : 0.0f;
+                : (float) currentVal * (1.0f / 255.0f);
         };
         for (int j = 0; j < m; ++j)
         {
@@ -336,7 +556,10 @@ struct CentralModBar::ModPill : public juce::Component,
             && std::fabs (lo - sigMin_) <= kEps
             && std::fabs (hi - sigMax_) <= kEps
             && std::fabs (moment - sigMoment_) <= kEps)
+        {
+            stripRawCount_ = count;   // signature-identical: still track the window edge
             return false;
+        }
 
         for (int j = 0; j < m; ++j)
         {
@@ -350,6 +573,11 @@ struct CentralModBar::ModPill : public juce::Component,
         sigMin_   = lo;
         sigMax_   = hi;
         sigMoment_ = moment;
+        // FLAT-SKIP bookkeeping: a signature whose whole band spans <= kEps
+        // is "flat at level L" — the fast path above can then vet future
+        // ticks by scanning only the newly appended bytes.
+        stripFlat_       = (hi - lo) <= kEps;
+        stripFlatLevel_  = 0.5f * (lo + hi);
         return true;
     }
 
@@ -365,14 +593,19 @@ struct CentralModBar::ModPill : public juce::Component,
         stripMax_.fill (0.0f);
         sigFirst_ = sigLast_ = sigMin_ = sigMax_ = -1.0f;
         sigMoment_ = -1.0f;
+        stripFlat_ = false;   // fast path re-arms only after a fresh flat recompute
         return true;
     }
 
-    /** The history sparkline: a thin family-coloured polyline inside the strip
-        band, just above the underline. Bipolar sources (LFO / bend / note)
-        swing around the band's vertical midline (value 128 = centre);
-        unipolar ones rise from the band's bottom. */
-    void drawHistoryStrip (juce::Graphics& g)
+    /** The history sparkline: a thin family-coloured polyline inside the
+        strip band, just above the underline. Bipolar sources (LFO / bend /
+        note) swing around the band's vertical midline (value 128 = centre);
+        unipolar ones rise from the band's bottom.
+        PAINT SPLIT (2026-08-23): takes the strip RECT (the strip child's
+        local bounds == the pill's stripRect()) instead of computing it — the
+        identical geometry, now drawn by the HistoryStripView child so the
+        bar's animation repaints dirty only that child. */
+    void paintHistoryStrip (juce::Graphics& g, const juce::Rectangle<float>& sr)
     {
         // Const pills are static amounts (no history); every OTHER pill has a
         // telemetry slot — including the bar-only Note Sequencer sentinel
@@ -383,7 +616,6 @@ struct CentralModBar::ModPill : public juce::Component,
         if (stripCount_ <= 0)
             return;   // no history yet (e.g. after a reset): the band stays empty
 
-        const auto sr = stripRect().toFloat();
         // Keep the stroke inside the band (see the 2026-08-21 jitter note:
         // the tick's repaint dirty region is exactly stripRect(); inset the
         // plotted range by the stroke radius + an AA hair — vertically AND
@@ -471,15 +703,21 @@ struct CentralModBar::ModPill : public juce::Component,
 
     void paint (juce::Graphics& g) override
     {
-        const auto&      t = owner_.theme();
-        const juce::Font f = owner_.pillFont();
+        // PAINT SPLIT (2026-08-23): this paint covers ONLY the cheap chrome —
+        // fill / top accent band / family underline. The sparkline lives in
+        // the strip CHILD (the bar's animation repaints dirty it alone) and
+        // the label in the label CHILD above it (cached font, painted only on
+        // its own state changes). A full pill repaint therefore fires on
+        // hover / active / theme changes only — never on strip animation.
+        const auto& t = owner_.theme();
         const juce::Rectangle<float> r = getLocalBounds().toFloat().reduced (0.5f);
 
         if (isGenerator_)
         {
             // Active clarity: the active generator pill gets a SOLID slightly-
             // lighter background (tabSelectedBg) with HIGH-CONTRAST text
-            // (textPrimary) — the solid fill is the PRIMARY active cue, with NO
+            // (textPrimary — drawn by the label child) — the solid fill is the
+            // PRIMARY active cue, with NO
             // outline. Inactive pills keep the dark fill (tabUnselectedBg) +
             // dim text (textSecondary), lifted a touch on hover. Every pill
             // draws a persistent FAMILY-coloured underline (the family colour
@@ -499,15 +737,6 @@ struct CentralModBar::ModPill : public juce::Component,
             g.fillRect (r.withHeight (3.5f));
             g.restoreState();
             drawFamilyUnderline (g, r);
-            drawHistoryStrip (g);
-
-            g.setColour (active_ ? t.textPrimary
-                                 : (hovered_ ? t.textSecondary.brighter (0.20f)
-                                             : t.textSecondary));
-            g.setFont (f);
-            // Label centred over the FULL pill, on top of the full-height
-            // history strip (the Pigments-style scope reading).
-            g.drawText (shortLabel_, getLocalBounds(), juce::Justification::centred, true);
         }
         else
         {
@@ -528,18 +757,19 @@ struct CentralModBar::ModPill : public juce::Component,
             g.restoreState();
 
             drawFamilyUnderline (g, r);
-            drawHistoryStrip (g);
-
-            g.setColour (t.textSecondary);
-            g.setFont (f);
-            // Label centred over the full pill (minus the drag-only horizontal
-            // inset), on top of the full-height history strip.
-            g.drawText (shortLabel_, getLocalBounds().reduced (5, 0), juce::Justification::centred, true);
         }
     }
 
-    void mouseEnter (const juce::MouseEvent&) override { hovered_ = true;  repaint(); }
-    void mouseExit  (const juce::MouseEvent&) override { hovered_ = false; repaint(); }
+    void mouseEnter (const juce::MouseEvent&) override
+    {
+        // The label child repaints TOO (its text tier lifts on hover) — see
+        // the paint split note in setActive.
+        hovered_ = true;  repaint(); if (labelView_ != nullptr) labelView_->repaint();
+    }
+    void mouseExit  (const juce::MouseEvent&) override
+    {
+        hovered_ = false; repaint(); if (labelView_ != nullptr) labelView_->repaint();
+    }
 
     void mouseDown (const juce::MouseEvent&) override { dragStarted_ = false; }
 
@@ -586,6 +816,13 @@ struct CentralModBar::ModPill : public juce::Component,
     bool              hovered_     = false;
     juce::Colour      accent_;          // family colour (ModSourceCatalog cluster -> cat* token)
 
+    // ---- paint-split children (2026-08-23 CPU fix; see the class comment ----
+    //      and the HistoryStripView / PillLabelView docs above). Public like
+    //      the members around them: only CentralModBar + the pill itself
+    //      touch them, and the bar's TEST-ONLY accessors read through. ----
+    std::unique_ptr<HistoryStripView> stripView_;   // the sparkline (receives the strip-rect repaints)
+    std::unique_ptr<PillLabelView>    labelView_;   // the label above it (cached font, paints only on its own changes)
+
     // ---- history strip cache (live telemetry; docs/LIVE_MOD_FEEDBACK_DESIGN.md).
     // Public like the members above: only CentralModBar's telemetry tick writes
     // them; paint() reads them. stripMin_/stripMax_ hold the per-point
@@ -601,6 +838,11 @@ struct CentralModBar::ModPill : public juce::Component,
     // of stretching across the full width and "speeding off" for the first
     // few seconds after every open/reset.
     int                   stripRawCount_ = 0;       // history ring count when the strip was drawn
+    // FLAT-SKIP fast path (see updateStripFromHistory): the last signature
+    // was a flat band at stripFlatLevel_ — future ticks scan only the newly
+    // appended bytes against it instead of recomputing all 96 points.
+    bool                  stripFlat_ = false;
+    float                 stripFlatLevel_ = 0.0f;
     // MIN-MAX band cache (2026-08-22): per plotted point, the min/max of the
     // RAW ring samples whose age falls in the point's coverage — an
     // oscilloscope-style envelope. A fast LFO/env/arp (more than ~1 cycle in
@@ -682,6 +924,37 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     // so we disable scroll-on-drag entirely. Scrolling happens via the `<` / `>`
     // nav pills (created below), avoiding any drag/scroll gesture conflict.
     viewport_->setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::never);
+    // ---- OPAQUE BAR + SCROLLED CONTENT (2026-08-23, CPU "amplifier" fix —
+    // finding 3 of the post-note CPU investigation): the pill strips' dirty
+    // rects (bounded to the strip area since the paint split) used to cascade
+    // through ~15 NON-OPAQUE ancestors all the way to the DocumentWindow —
+    // the sampled app spent the majority of its message-thread time painting
+    // the workspace / editor / window fills INSIDE those small dirty rects,
+    // at display rate, for every animating strip. Both the bar and the
+    // scrolled pill content paint their FULL bounds (paint() below and
+    // paintSegments() fillAll the theme backgroundBase), so they can promise
+    // JUCE they cover every pixel: the renderer then treats them as opaque
+    // occluders and the strips' repaints stop AT the bar — the surrounding
+    // fills inside the dirty rects disappear.
+    //   * VISUALLY IDENTICAL: the bar's fill is the SAME backgroundBase the
+    //     hosting workspace paints behind it (SynthWorkspace/FxWorkspace
+    //     ::paint fillAll the same token), so the opaque promise changes
+       //     nothing on screen — it only lets the compositor skip work.
+    //   * TOP RULE UNAFFECTED: the seam's ChromeRule (barRule_) is a HIGHER-Z
+    //     sibling laid over the bar's top ~8px pad; opacity only lets JUCE
+    //     skip components BENEATH an opaque one, and any dirty region that
+    //     intersects the rule still paints it (after the bar's fresh fill),
+    //     so its shadow falloff into the bar's top pad is never erased.
+    //   * PILLS STAY NON-OPAQUE (deliberate): their 5px rounded corners need
+    //     the alpha channel — an opaque pill would stamp corner artefacts
+    //     over the segment background. The bar/content opaqueness BEHIND the
+    //     pills is what merges their dirty rects into one opaque parent; the
+    //     Viewport itself paints nothing (this JUCE's Viewport has no
+    //     background fill), so the bar's own fill covers the viewport's area
+    //     too, including the region right of the scrolled content when the
+    //     content is narrower than the view.
+    setOpaque (true);
+    pillContent_->setOpaque (true);
     addAndMakeVisible (*viewport_);
     for (auto& p : pills_)
         pillContent_->addAndMakeVisible (*p);
@@ -794,6 +1067,53 @@ juce::Font CentralModBar::pillFont() const
     if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         return lnf->appFont (size, juce::Font::plain);
     return juce::Font (juce::FontOptions (size));
+}
+
+// ---- TEST-ONLY paint-split accessors (see the header) ----
+juce::Component* CentralModBar::pillComponentForTest (int pillIndex) const
+{
+    return (pillIndex >= 0 && pillIndex < (int) pills_.size())
+        ? pills_[(size_t) pillIndex].get() : nullptr;
+}
+
+juce::Component* CentralModBar::pillStripChildForTest (int pillIndex) const
+{
+    return (pillIndex >= 0 && pillIndex < (int) pills_.size())
+        ? pills_[(size_t) pillIndex]->stripChildForTest() : nullptr;
+}
+juce::Component* CentralModBar::pillLabelChildForTest (int pillIndex) const
+{
+    return (pillIndex >= 0 && pillIndex < (int) pills_.size())
+        ? pills_[(size_t) pillIndex]->labelChildForTest() : nullptr;
+}
+
+int CentralModBar::pillLabelPaintCountForTest (int pillIndex) const
+{
+    return (pillIndex >= 0 && pillIndex < (int) pills_.size())
+        ? pills_[(size_t) pillIndex]->labelPaintCountForTest() : -1;
+}
+
+int CentralModBar::pillStripPaintCountForTest (int pillIndex) const
+{
+    return (pillIndex >= 0 && pillIndex < (int) pills_.size())
+        ? pills_[(size_t) pillIndex]->stripPaintCountForTest() : -1;
+}
+
+void CentralModBar::paint (juce::Graphics& g)
+{
+    // THE BAR'S OWN BACKGROUND (2026-08-23 opaque-bar pass — see the ctor's
+    // opacity block for the full rationale). Fills the WHOLE bounds so the
+    // setOpaque promise is honest: this covers the two nav-pill side bands
+    // (previously parent-painted — the workspace paints the SAME token, so
+    // this is visually identical) AND the area under the Viewport (this
+    // JUCE's Viewport paints nothing itself, so the bar's fill shows through
+    // wherever the scrolled content or its gaps do not cover — including the
+    // region right of the content when it is narrower than the view). The
+    // colour is re-resolved from the live theme every paint and
+    // applyThemeColors() ends with a full repaint(), so theme switches
+    // re-skin the fill. The pills, segment tabs, nav tiles and the top rule
+    // paint OVER it as children / higher-z siblings.
+    g.fillAll (theme().backgroundBase);
 }
 
 void CentralModBar::resized()
@@ -938,13 +1258,13 @@ void CentralModBar::setTelemetryRateHz (int hz)
 void CentralModBar::clearTelemetry()
 {
     // Hide every strip (an invalid frame / a reset). Only pills that actually
-    // had data painted repaint — bounded to the strip rect again, never the
-    // whole pill — and the hide counts as a data change for the test seam.
+    // had data painted repaint — bounded to the strip child, never the whole
+    // pill — and the hide counts as a data change for the test seam.
     bool anyRepainted = false;
     for (auto& p : pills_)
         if (p->clearStrip())
         {
-            p->repaint (p->stripRect());
+            p->repaintStrip();   // PAINT SPLIT
             anyRepainted = true;
         }
     if (anyRepainted)
@@ -980,7 +1300,7 @@ void CentralModBar::timerCallback()
         const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
         for (auto& p : pills_)
             if (p->stripAnimating_ && now - p->stripLastChangeMono_ < 0.5)
-                p->repaint (p->stripRect());
+                p->repaintStrip();   // PAINT SPLIT
             else
                 p->stripAnimating_ = false;
         return;
@@ -1044,19 +1364,37 @@ void CentralModBar::telemetryTick()
             : parvati::ModTelemetrySnapshot::kNoteSeqSlot;
         const uint8_t* hist = snap.history
             + (size_t) slot * (size_t) parvati::ModTelemetrySnapshot::kHistoryLen;
-        if (p->updateStripFromHistory (hist, n))
+        if (p->updateStripFromHistory (hist, n, snap.sources[(size_t) slot]))
         {
             p->stripLastChangeMono_ = juce::Time::getMillisecondCounterHiRes() * 0.001;
             p->stripAnimating_ = true;
             anyRepainted = true;
         }
-        if (p->stripAnimating_)
+        // UNIFORM 0.5 s DROPOUT (2026-08-23 CPU fix — the idle hot spot):
+        // this loop used to repaint ANY stripAnimating_ pill unconditionally
+        // on every fetch tick, but the 0.5 s park lived ONLY in the vblank /
+        // timer SUB-tick branches — so whenever vblankFetchDiv_ == 1 (a 60 Hz
+        // refresh pref on a ~60 Hz display) the sub-ticks never ran, a pill
+        // that animated ONCE (e.g. the always-on window filling at launch)
+        // stayed stripAnimating_ FOREVER, and every strip repainted at the
+        // fetch cadence on flat data indefinitely (~35% CPU measured in the
+        // Standalone at idle). The SAME park rule now applies here: a strip
+        // static for 0.5 s drops out of the animation set (matches the
+        // documented design and the sub-tick behaviour).
+        const double nowMono = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        if (p->stripAnimating_ && nowMono - p->stripLastChangeMono_ < 0.5)
         {
-            // THE GPU-COST CONTROL stays: repaint ONLY the strip's bounding
-            // rect (an animating source never re-rasters the pill tile /
-            // label), every animation tick while in motion; a pill static for
-            // 0.5 s drops out of the animation set entirely.
-            p->repaint (p->stripRect());
+            // THE GPU-COST CONTROL stays: repaint ONLY the strip child's
+            // bounding rect, every animation tick while in motion; a pill
+            // static for 0.5 s drops out of the animation set entirely. The
+            // pill tile never re-rasters, and the label child — though the
+            // peer dispatch may walk it clipped to this rect — answers from
+            // its BUFFERED IMAGE (a blit, not a text raster).
+            p->repaintStrip();   // PAINT SPLIT: dirty the strip CHILD only
+        }
+        else
+        {
+            p->stripAnimating_ = false;
         }
     }
     if (anyRepainted)
@@ -1162,7 +1500,7 @@ void CentralModBar::vblankTick()
         const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
         for (auto& p : pills_)
             if (p->stripAnimating_ && now - p->stripLastChangeMono_ < 0.5)
-                p->repaint (p->stripRect());
+                p->repaintStrip();   // PAINT SPLIT
             else
                 p->stripAnimating_ = false;
         return;

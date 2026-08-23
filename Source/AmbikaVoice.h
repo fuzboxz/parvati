@@ -196,12 +196,25 @@ public:
     //   * effectiveCutoff()/effectiveResonance()/filterMode() — the
     //     modulation-applied filter bytes the analog filter consumes this
     //     block (NOT the knob bytes; env-2/lfo-2/matrix offsets included).
+    //   * effectiveOscParameter(osc) — the modulation-applied OSC parameter
+    //     byte (0..127) the oscillator consumes this block (NOT the knob
+    //     byte; env/LFO/matrix offsets included) — drives the OSC waveform
+    //     preview's live overlay.
     uint8_t  envelopeStage          (int i) const { return voice_.envelope (envIdx (i)).stage(); }
     uint16_t envelopePhase          (int i) const { return voice_.envelope (envIdx (i)).phase(); }
     uint16_t envelopePhaseIncrement (int i) const { return voice_.envelope (envIdx (i)).phase_increment(); }
     uint8_t  envelopeValueByte      (int i) const { return voice_.envelope (envIdx (i)).value_byte(); }
     uint8_t  effectiveCutoff    () const { return voice_.cutoff(); }
     uint8_t  effectiveResonance () const { return voice_.resonance(); }
+    // Effective (modulation-applied) OSC parameter byte (0..127) of
+    // oscillator 0/1 — the same modulated byte UpdateDestinations feeds the
+    // oscillator's set_parameter() this block (env/LFO/matrix amounts folded
+    // into the 14-bit accumulator, top 7 bits taken). Drives the OSC waveform
+    // preview's live overlay through the telemetry frame.
+    uint8_t  effectiveOscParameter (int oscIdx) const
+    {
+        return voice_.osc_parameter (static_cast<uint8_t> (juce::jlimit (0, 1, oscIdx)));
+    }
     uint8_t  filterMode         () const { return voice_.mode(); }
 
     // VCA response curve: false = linearized (gain=vca/255), true = exponential OTA taper.

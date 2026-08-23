@@ -12,7 +12,9 @@
 //       the session mute).
 // Built by default. Run: ./build/parvati_workspace_padding_test
 
+#include <array>
 #include <cstdio>
+#include <memory>
 #include "unified_test_runner.h"
 #include <vector>
 
@@ -22,7 +24,10 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginProcessor.h"
+#include "ParameterLayout.h"        // getPatchParamDescriptors (FX card ctor descriptors)
 #include "ui/FxMatrixView.h"
+#include "ui/FxRoutingBar.h"        // FxRoutingBar (fixed-height module pin [3])
+#include "ui/FxSlotCard.h"          // FxSlotCard (fixed-height module pin [3])
 #include "ui/FxWorkspace.h"
 #include "ui/IconButton.h"
 #include "ui/SynthWorkspace.h"
@@ -108,6 +113,177 @@ TEST(workspace_padding_test)
                "synth top-row gap equals the FX top-row gap");
         check (synth.rowPaddingForTest() == fx.rowPaddingForTest(),
                "rowPaddingForTest() accessors agree");
+    }
+
+    std::printf ("\n[3] FX top-row modules: FIXED heights, TOP-pinned (synth parity)\n");
+    {
+        // 2026-08-23 user requests: "all FX module heights fixed like FX
+        // Routing", then "cards +20px spacious, routing UNCHANGED, and NO
+        // centred band — work just like the synth page's controls". Pins:
+        // (a) the routing bar + the slot cards sit at their FIXED class
+        // constants (routing NOT resized by the cards' +20 bump), (b) growing
+        // the workspace TALLER changes NEITHER module height NOR their y —
+        // the modules stay top-pinned at kRowGap (the old code stretched them
+        // to viewH - 2*kGap; the interim fix centred the band — both
+        // rejected), and (c) the modules stay inside the workspace.
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (48000.0, 256);
+        ThemeManager themeManager;
+
+        const juce::String prefix = "fx1_";
+        const PatchParamDescriptor *p1 = nullptr, *p2 = nullptr, *p3 = nullptr,
+                                   *p4 = nullptr, *p5 = nullptr, *dw = nullptr;
+        for (const auto& d : getPatchParamDescriptors())
+        {
+            if (! (d.isFx && juce::String (d.paramID).startsWith (prefix)))
+                continue;
+            if      (d.paramID == prefix + "param1") p1 = &d;
+            else if (d.paramID == prefix + "param2") p2 = &d;
+            else if (d.paramID == prefix + "param3") p3 = &d;
+            else if (d.paramID == prefix + "param4") p4 = &d;
+            else if (d.paramID == prefix + "param5") p5 = &d;
+            else if (d.paramID == prefix + "drywet") dw = &d;
+        }
+
+        FxWorkspace fx (themeManager);
+        auto routing = std::make_unique<FxRoutingBar> (proc, themeManager);
+        fx.setFxRoutingBar (routing.get());
+        std::array<std::unique_ptr<FxSlotCard>, 3> cards;
+        for (int slot = 0; slot < 3; ++slot)
+        {
+            const juce::String pfx = "fx" + juce::String (slot + 1) + "_";
+            const PatchParamDescriptor *c1 = nullptr, *c2 = nullptr, *c3 = nullptr,
+                                       *c4 = nullptr, *c5 = nullptr, *cdw = nullptr;
+            for (const auto& d : getPatchParamDescriptors())
+            {
+                if (! (d.isFx && juce::String (d.paramID).startsWith (pfx)))
+                    continue;
+                if      (d.paramID == pfx + "param1") c1 = &d;
+                else if (d.paramID == pfx + "param2") c2 = &d;
+                else if (d.paramID == pfx + "param3") c3 = &d;
+                else if (d.paramID == pfx + "param4") c4 = &d;
+                else if (d.paramID == pfx + "param5") c5 = &d;
+                else if (d.paramID == pfx + "drywet") cdw = &d;
+            }
+            cards[(size_t) slot] = std::make_unique<FxSlotCard> (proc, slot, c1, c2, c3, c4, c5, cdw);
+            fx.setFxSlotCard (slot, cards[(size_t) slot].get());
+        }
+        fx.setBounds (0, 0, 900, 600);
+
+        FxRoutingBar* routeBar = nullptr;
+        FxSlotCard*   card = nullptr;    // slot 0 (the height pins)
+        FxSlotCard*   fx3Card = nullptr; // slot 2 (the right-margin pin)
+        {
+            std::vector<juce::Component*> all;
+            collectAll (&fx, all);
+            for (auto* c : all)
+            {
+                if (routeBar == nullptr) routeBar = dynamic_cast<FxRoutingBar*> (c);
+                if (card == nullptr) card = dynamic_cast<FxSlotCard*> (c);
+                if (auto* sc = dynamic_cast<FxSlotCard*> (c))
+                    fx3Card = sc;   // DFS order -> the LAST card found is FX3
+            }
+        }
+        check (routeBar != nullptr && card != nullptr && fx3Card != nullptr,
+               "routing bar + all three slot cards present in the FX workspace");
+        if (routeBar != nullptr && card != nullptr && fx3Card != nullptr)
+        {
+            check (routeBar->getHeight() == FxWorkspace::kRouteModuleH
+                   && card->getHeight() == FxWorkspace::kCardModuleH,
+                   "module heights == the fixed class constants (routing exempt from +20)");
+            check (card->getHeight() == FxWorkspace::kRouteModuleH + 20,
+                   "cards carry exactly the +20px spaciousness bump");
+
+            // BETWEEN-module whitespace + the fx3 right margin (2026-08-23
+            // user follow-ups: "a tiny bit more whitespace between the FX
+            // modules" and "the right edge of the FX3 module is truncated,
+            // all modules should fit including whitespace"). All four
+            // modules share the top-row host as parent, so parent-space
+            // bounds compare directly.
+            check (FxWorkspace::kColGap > FxWorkspace::kRowGap,
+                   "inter-module gap is a few px wider than the outer margin");
+            {
+                // Gap routing->FX1 and the fx3 right margin (the gap between
+                // FX1/FX2/FX3 is covered implicitly: equal cardW columns).
+                const int hostW = card->getParentComponent()->getWidth();
+                check (card->getX() - routeBar->getRight() == FxWorkspace::kColGap,
+                       "routing->FX1 gap == kColGap (the wider module spacing)");
+                check (fx3Card->getRight() <= hostW - FxWorkspace::kRowGap
+                       && fx3Card->getRight() >= hostW - FxWorkspace::kRowGap - 2,
+                       "FX3 right edge ends AT the right margin (never truncated)");
+            }
+
+            // Grow the workspace 160pt taller: neither the heights NOR the y
+            // positions move (top-pinned like the synth page — no stretch,
+            // no centred band).
+            const int y0card = card->getY();
+            const int y0route = routeBar->getY();
+            fx.setBounds (0, 0, 900, 760);
+            check (card->getHeight() == FxWorkspace::kCardModuleH
+                   && routeBar->getHeight() == FxWorkspace::kRouteModuleH,
+                   "module heights unchanged when the workspace grows taller");
+            check (card->getY() == y0card && routeBar->getY() == y0route
+                   && y0card == FxWorkspace::kRowGap,
+                   "modules stay TOP-pinned at kRowGap (no centring)");
+
+            // The fixed band stays inside the workspace.
+            check (card->getBottom() <= fx.getHeight()
+                   && routeBar->getBottom() <= fx.getHeight(),
+                   "module band fits inside the workspace");
+        }
+
+        // ---- [3b] MOD-BAR OPAQUENESS (2026-08-23 CPU fix, finding 3): the
+        // bar + its scrolled pill content paint their FULL bounds and are
+        // flagged opaque, so the pill strips' dirty rects stop AT the bar
+        // (the pre-fix cascade climbed ~15 non-transparent ancestors to the
+        // DocumentWindow, re-painting the workspace/editor/window fills
+        // inside every small strip dirty rect at display rate). The pills
+        // themselves stay NON-opaque by design (rounded corners need alpha —
+        // pinned below so the opaque pass can never silently widen to them).
+        // Read through PUBLIC JUCE APIs only (isOpaque + the Viewport's
+        // viewed component), so no product-code test seam is required. ----
+        if (fx.modBar() != nullptr)
+        {
+            auto* bar = fx.modBar();
+            check (bar->isOpaque(),
+                   "mod bar is opaque (paint covers its full bounds)");
+            // The Viewport is the bar's FIRST child (created before the nav
+            // buttons); its viewed component is the scrolled PillContent.
+            if (auto* vp = dynamic_cast<juce::Viewport*> (bar->getChildComponent (0)))
+            {
+                auto* content = vp->getViewedComponent();
+                check (content != nullptr && content->isOpaque(),
+                       "scrolled pill content is opaque (segments fillAll)");
+            }
+            else
+            {
+                check (false,
+                       "bar child 0 is the pill Viewport (layout seam moved?)");
+            }
+            // The pills (direct children of the scrolled content) must stay
+            // NON-opaque: rounded-corner chrome needs the alpha channel.
+            // Discovery: FIX 2's headless seam — each pill carries a child
+            // named "modPillStrip" (the strip VIEW), so no name is needed on
+            // the pill itself.
+            {
+                int nonOpaquePills = 0, pillCount = 0;
+                if (auto* vp = dynamic_cast<juce::Viewport*> (bar->getChildComponent (0)))
+                    if (auto* content = vp->getViewedComponent())
+                        for (auto* ch : content->getChildren())
+                        {
+                            bool hasStrip = false;
+                            for (auto* gc : ch->getChildren())
+                                if (gc->getName() == "modPillStrip") hasStrip = true;
+                            if (! hasStrip) continue;
+                            ++pillCount;
+                            if (! ch->isOpaque()) ++nonOpaquePills;
+                        }
+                char m[96];
+                std::snprintf (m, sizeof (m),
+                               "pills stay non-opaque (%d/%d)", nonOpaquePills, pillCount);
+                check (pillCount > 0 && nonOpaquePills == pillCount, m);
+            }
+        }
     }
 
     std::printf ("\n[2] FX-matrix rows use the icon idiom (lamp + X, no text buttons)\n");

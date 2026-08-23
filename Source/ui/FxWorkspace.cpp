@@ -265,24 +265,23 @@ void FxWorkspace::resized()
     // AND placed between every column, so the borderless card panels sit in
     // generous whitespace (page backgroundBase) instead of butting each other
     // and the workspace edges — mirroring how the synth page's kMargin insets
-    // its GroupComponent cards. Each card gets the remaining height and sizes
-    // its knobs internally. (kRowGap is the class constant; the former local
-    // kGap was hoisted for the parity test.)
-    constexpr int kGap = kRowGap;
-    // R3: the top row's NATURAL height — the routing bar's stacked rows (flow
-    // diagram 50 + EQ 60 + Dry/Wet band) need ~190px, and the FX-slot cards'
-    // FIXED-height knob grid (2 x kCellH = 140px of grid + header 16 + type row
-    // 44 + gaps 4 + card padding 12 = 216px) needs 216px + the host's 2*kGap
-    // margins = 232px for FULL-SIZE knobs; 240 keeps a small breathing margin.
-    // (The per-slot VISUALIZER band was REMOVED 2026-08-20 — 264 became 240;
-    // the freed 24px flows to the workspace rows below.) The viewport host is
-    // never laid shorter than this; a shorter FRAME scrolls instead of
-    // starving the rows (which previously made the EQ labels / Dry/Wet caption
-    // / stepper buttons paint outside the bar and over the rows below — and,
-    // pre-2026-08, shrank the FX knob cells themselves). Knob-size stability
-    // parity with the synth pages (ParamPage::reflowToWidth scrolls the same
-    // way).
-    constexpr int kTopRowNaturalH = 240;
+    // its GroupComponent cards. FIXED MODULE HEIGHTS (2026-08-23 user
+    // request — "all FX module heights fixed, like FX Routing"): the modules
+    // keep their content-natural FIXED heights (kRouteModuleH for the routing
+    // bar, kCardModuleH = +20px for the cards — the follow-up exempted the
+    // routing bar from the spaciousness bump) and pin to the row's TOP like
+    // the synth page's controls: a taller frame leaves page background BELOW
+    // the modules (NO vertical centring — the user explicitly rejected the
+    // centred band), a shorter frame still scrolls at the kTopRowNaturalH
+    // floor. The BETWEEN-module whitespace is kColGap (kRowGap + 4,
+    // 2026-08-23: "a tiny bit more for visual clarity") while the outer four
+    // margins stay kRowGap (the synth-parity constant).
+    constexpr int kGap = kRowGap;   // outer margins (all four sides; BETWEEN modules the class kColGap applies — a few px wider, see header)
+    // R3: the top row's NATURAL height — derived from the TALLEST fixed
+    // module (the cards' kCardModuleH) plus the uniform kGap margins. The
+    // viewport host is never laid shorter than this; a shorter FRAME scrolls
+    // instead of
+    constexpr int kTopRowNaturalH = kCardModuleH + 2 * kGap;
     topRowViewport_->setBounds (mainRow);
     // mainRow (NOT Viewport::getViewWidth()) is the width source: the viewport
     // caches its visible area and can be stale mid-cascade (SynthWorkspace hit
@@ -291,22 +290,37 @@ void FxWorkspace::resized()
     const int viewH = juce::jmax (kTopRowNaturalH, mainRow.getHeight());
     auto layoutTopRow = [&] (int w)
     {
+        // Column budget (RIGHT-MARGIN FIX, 2026-08-23 — "the right edge of
+        // the FX3 module is truncated"): BOTH outer margins and the three
+        // kColGap column gaps come off the top, so the columns end at
+        // w - kGap by construction. The old fx3 width formula (x0 + w - kGap
+        // - fx3x) double-counted the left inset and left fx3 FLUSH with the
+        // host edge — combined with the (until now missing) scrollbar pass
+        // below, the overlay scrollbar truncated the card.
         // 232pt floor = the diagram's no-overlap Series minimum (see the
         // column comment above); 288pt cap keeps the cards roomy on wide
-        // frames. At the 1024pt editor floor: routeW 232 -> cards 768/3 = 256pt
+        // frames. At the 1024pt editor floor: routeW 232 -> cards ~238pt
         // each (well above the ~200pt card comfort floor).
-        const int routeW = juce::jlimit (232, 288, (w - 3 * kGap) * 19 / 100);
-        const int cardsRegionW = juce::jmax (0, w - routeW - 3 * kGap);
-        const int cardW = cardsRegionW / 3;
+        const int innerW  = juce::jmax (0, w - 2 * kGap - 3 * kColGap);
+        const int routeW  = juce::jlimit (232, 288, innerW * 19 / 100);
+        const int cardW   = juce::jmax (0, (innerW - routeW) / 3);
 
-        const int x0 = kGap, y0 = kGap;
-        const int h0 = viewH - 2 * kGap;
+        const int x0 = kGap;
+        // TOP-PINNED (synth-page parity, 2026-08-23 user follow-up: the
+        // centred band was rejected): the modules start at the top margin at
+        // ANY frame height — a taller window shows page background BELOW
+        // them (like a taller synth viewport), never a re-centred band.
+        const int y0 = kGap;
+        const int routeH0 = kRouteModuleH;   // FIXED heights (see header)
+        const int cardH0  = kCardModuleH;
 
-        const juce::Rectangle<int> routeCol (x0, y0, routeW, h0);
-        const juce::Rectangle<int> fx1Col   (x0 + routeW + kGap,                    y0, cardW, h0);
-        const juce::Rectangle<int> fx2Col   (x0 + routeW + kGap + cardW + kGap,     y0, cardW, h0);
-        const int fx3x = x0 + routeW + 3 * kGap + 2 * cardW;   // 3 gaps between 4 columns (ROUTE/FX1/FX2/FX3)
-        const juce::Rectangle<int> fx3Col   (fx3x, y0, juce::jmax (0, x0 + w - kGap - fx3x), h0);
+        const juce::Rectangle<int> routeCol (x0, y0, routeW, routeH0);
+        const juce::Rectangle<int> fx1Col   (x0 + routeW + kColGap,                  y0, cardW, cardH0);
+        const juce::Rectangle<int> fx2Col   (x0 + routeW + kColGap + cardW + kColGap, y0, cardW, cardH0);
+        const int fx3x = x0 + routeW + 3 * kColGap + 2 * cardW;   // 3 gaps between 4 columns (ROUTE/FX1/FX2/FX3)
+        // fx3 absorbs the cardW division remainder (0..2px) so the row ends
+        // EXACTLY at the right margin — never past it.
+        const juce::Rectangle<int> fx3Col   (fx3x, y0, juce::jmax (0, w - kGap - fx3x), cardH0);
 
         if (fxRoutingBar_ != nullptr)
             fxRoutingBar_->setBounds (routeCol);
@@ -321,6 +335,16 @@ void FxWorkspace::resized()
         sizeCard (fxSlotCards_[2], fx3Col);
     };
     layoutTopRow (viewW);
+    // SCROLLBAR-AWARE RE-LAYOUT (2026-08-23 — the other half of the fx3
+    // truncation): the top viewport scrolls vertically when the frame is
+    // shorter than kTopRowNaturalH, and the overlay scrollbar then covers the
+    // right ~14pt of the host — fx3's freshly restored right margin. The
+    // SynthWorkspace precedent: re-lay the columns one scrollbar-thickness
+    // NARROWER when the host will scroll, so every module + its whitespace
+    // stays fully visible; the host keeps the full width (the freed strip is
+    // empty page background behind the scrollbar).
+    if (viewH > mainRow.getHeight())
+        layoutTopRow (juce::jmax (0, viewW - topRowViewport_->getScrollBarThickness()));
     topRowHost_->setSize (viewW, viewH);
 
     // ---- Middle seam: full-width bar ----

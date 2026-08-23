@@ -58,6 +58,23 @@ per its own rule.
   (inactive/active) + a 2.2px stroke — the early low-alpha thin trace was
   illegible against the dark pill fill. The drag-only pills' dotted
   left-handle specks were removed (family band + underline carry the cue).
+- **OscPreviewDisplay live overlay + filter-parity smoothing (2026-08-23
+  parity pass)**: the OSC waveform preview joined the consumer set with the
+  SAME contract the filter preview has. New snapshot field
+  `effOscParam[2]` (0..127, `dst_[MOD_DST_PARAMETER_{1,2}] >> 7` — exactly
+  what `UpdateDestinations` feeds the oscillators), new payload
+  `LiveOscValues`, new hub accessor `liveOsc(i)`, and the editor wires a
+  `setLiveValuesProvider` per osc preview. The activity gate is the filter's
+  temporal one (>= 1 byte move vs the previous tick arms a ~270 ms hold);
+  there is no second curve — the ONE waveform's smoothed display target
+  switches from the knob value to the live effective byte while armed and
+  eases back at rest. Fluidity parity came with it: the displayed parameter
+  is now a critically-damped smoothed value (tau 130 ms, the filter's exact
+  model) rebuilt whenever its byte-quantized level moves — replacing the
+  former 8-step quantized rebuild + 66 ms morph-restart chain. The per-byte
+  rebuild of the DSP-sampled shapes is flicker-free because every rebuild
+  uses a FRESH `Oscillator` instance (deterministic per (shape, byte);
+  pinned by osc_preview_live_test [a]).
 - **Poll timers START unconditionally (provider + rate), not gated on
   isShowing()** (2026-08-21 reliability lesson). The hub and the mod-bar strip
   poll originally required isShowing() to START — but isShowing() is
@@ -110,7 +127,9 @@ renderPartFx (per part,            LiveFeedbackHub (editor-owned juce::Timer
         (seqlock, ~4 KB)                +-- EnvelopeDisplay::timerCallback (30 Hz)
                                         |     stage marker (change-gated)
                                         +-- FilterResponseDisplay::timerCallback (30 Hz)
-                                              live curve (change-gated)
+                                        |     live curve (change-gated)
+                                        +-- OscPreviewDisplay::timerCallback (30 Hz)
+                                              live effective param (change-gated)
 ```
 
 - The engine NEVER allocates on the audio thread for this; writes are bounded,
@@ -254,6 +273,27 @@ Write path (audio thread, inside `renderPartFx`):
   Below the threshold → single base curve only (no duplicate strokes).
 - Repaint gating: extend the existing eps gate with the live-vs-base and
   live-vs-lastLive deltas.
+
+## OscPreviewDisplay contract (2026-08-23 parity pass)
+
+- New API:
+  ```cpp
+  void setLiveValuesProvider (std::function<parvati::LiveOscValues()> p);
+  // TEST-ONLY:
+  bool liveOverlayActiveForTest() const noexcept;
+  ```
+- `LiveOscValues.param01` is the EFFECTIVE byte normalized to 0..1 of the
+  0..127 domain (the same domain as the display's base `roundToInt(p*127)`);
+  the hub derives it from the snapshot's `effOscParam[osc]`.
+- ONE waveform, no overlay curve: while the temporal gate is armed (the live
+  byte MOVED >= 1 vs the previous tick, held ~270 ms), the display's SMOOTHED
+  parameter target switches from the knob value to the live byte; at rest it
+  eases back. The cycle is rebuilt whenever the byte-quantized SMOOTHED value
+  moves (analytic glyph or a fresh deterministic Oscillator render — see the
+  deviation bullet above).
+- Repaint gating: the filter's exact gate — shape change || base param change
+  (eps) || live change (activity flip or >= 1 byte) || still converging
+  (eps 1/1024).
 
 ## Settings + persistence (settings task)
 

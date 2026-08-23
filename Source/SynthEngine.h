@@ -670,6 +670,15 @@ public:
         return (part >= 0 && part < kNumParts)
             ? fxChains_[(size_t) part].getInstalledSlotTypeForTest (slot) : 0;
     }
+    // Test-only: is @p part's FX-chain SILENCE GATE armed (FxChain.h, the
+    // 2026-08-23 idle-CPU gate)? Lets the engine-level silence test observe
+    // the gate through the FULL path (processBlock -> renderPartFx ~980 Hz
+    // sub-chunks -> chain.process) without exposing the chain object.
+    bool fxChainSilenceGateArmedForTest (int part) const
+    {
+        return (part >= 0 && part < kNumParts)
+            && fxChains_[(size_t) part].silenceGateArmedForTest();
+    }
     // Test-only: the engine-side state of the global OPTION params staged by
     // setVcaExponential / setFilterDrive (the option atomics the audio thread
     // services; they hold the last-written value). Used by the host-state test

@@ -653,7 +653,14 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
     const int cellH  = kCellH;
     const int cellW  = gridArea.getWidth() / cols;
     const int blockH = rows * cellH;
-    const int y0     = gridArea.getY() + (gridArea.getHeight() - blockH) / 2;
+    // TOP-PINNED grid (2026-08-23 user follow-up — "work just like the synth
+    // page's controls"): the grid flows from the TOP of the card body
+    // (header -> type row -> grid), exactly how a synth ParamPage group lays
+    // its control grid under its title; the card's fixed +20px spaciousness
+    // (kCardModuleH) shows as panel space at the BOTTOM of the card instead
+    // of padding the grid from both sides. (The old vertical centring was the
+    // pre-fixed-height stretch compensation — superseded.)
+    const int y0     = gridArea.getY();
 
     auto placeCell = [&] (ParamControl* pc, int cell)
     {

@@ -26,6 +26,34 @@
 // does not slam in at full wet (B3/B4). The fade is a per-sample one-pole
 // (wetFade_), advanced inside each blend loop, not a block multiplier.
 //
+// SILENCE GATE (2026-08-23 idle-CPU fix, chain-level): SynthEngine::renderPartFx
+// runs EVERY part's chain every block regardless of voice activity, and once
+// any slot is enabled the old process() had no input-silence path — the full
+// topology + slot DSP ran forever on dead-silent input (the "CPU stays at ~20%
+// after playing" report; the Resonator/FV-1 DSP was ~29% of a sampled idle
+// frame). The gate: process() tracks consecutive blocks whose INPUT is (near-)
+// zero AND whose rendered OUTPUT has decayed below an inaudible epsilon; after
+// kGateSilentBlocks such blocks the chain ARMS — subsequent silent blocks take
+// a zero-output early return that skips the topology, the smoothers and the EQ
+// entirely (a per-part CPU floor of two maxAbs scans). The OUTPUT-energy term
+// makes the gate tail-length-agnostic: it arms only after the audible tail has
+// actually decayed, however long that is, and the K-block debounce only covers
+// sub-chunk granularity. Disarm/reset on ANY state change that could alter the
+// output — a non-silent input block (the wake), a real enable/dry-wet/param/
+// master-mix/EQ/topology/order VALUE change, an installed type swap, or a
+// re-prepare (value-guarded: the engine re-pushes identical param values every
+// ~980 Hz sub-chunk at rest, and that must NOT starve the gate — a changing
+// push, i.e. live modulation, legitimately keeps the chain running). Latency
+// invariance (N1/N2) is preserved through the gate: the delay rings are zeroed
+// at arm time (they hold only <=-120 dB residue by the arm condition), so an
+// all-zero ring is write-position-invariant and the first post-wake samples
+// read exact zeros exactly as the ungated path would emit them — the impulse
+// response timing (latency()) is bit-preserved across an arm/wake cycle.
+// Residual, documented: while armed the processors' internal state (a <=eps
+// tail) and the one-pole smoothers freeze instead of decaying the final ~-120
+// dB; on wake they resume from that residue — an inaudible <=eps perturbation
+// vs the never-gated path.
+//
 // The two-branch parallel blend is shared via renderParallel(). FxType/FxTopology are forward-declared via FxProcessor.h; the chain caches
 // the current slot types as uint8_t to avoid requiring the enum to be complete
 // in this header (SynthEngine.h includes this file before defining the enum).
@@ -70,6 +98,24 @@ public:
     // is what the DSP actually renders. Proves a .parvati multi load staged
     // its slot types into the chain (SynthEngine::fxChainSlotTypeForTest).
     uint8_t getInstalledSlotTypeForTest (int slot) const noexcept { return slotType_[(size_t) slot]; }
+
+    // Test-only: the SILENCE GATE (see the header comment). Armed == true once
+    // kGateSilentBlocks consecutive (silent-in, <=eps-out) blocks have run and
+    // until a wake/reset; gatedCount counts process() calls that took the gated
+    // zero-output early return (the DSP work actually saved). setSilenceGate-
+    // EnabledForTest(false) pins the gate OFF for A/B control runs (the exact
+    // pre-gate code path — the scans are skipped too).
+    bool silenceGateArmedForTest() const noexcept { return silenceGateArmed_; }
+    int  gatedProcessCountForTest() const noexcept { return gatedProcessCountForTest_; }
+    void resetGatedProcessCountForTest() noexcept { gatedProcessCountForTest_ = 0; }
+    // Test-only: the arm debounce (consecutive quiet blocks) — tests pump
+    // exactly K-1 / K blocks to pin the debounce.
+    static constexpr int kGateSilentBlocksForTest() noexcept { return kGateSilentBlocks; }
+    void setSilenceGateEnabledForTest (bool on) noexcept
+    {
+        silenceGateEnabled_ = on;
+        if (! on) { silenceGateArmed_ = false; silentRunBlocks_ = 0; }
+    }
 
     // Reserve internal DSP state for up to maxBlock stereo samples at rate.
     // Safe to call on a sample-rate / block-size change. Any staged-but-
@@ -279,6 +325,28 @@ private:
     float coefIn_  = 1.0f;   // one-pole per-sample coeff while rising toward 1
     float coefOut_ = 1.0f;   // one-pole per-sample coeff while falling toward 0
     std::array<float, kNumFxSlots> wetFade_ {};   // per-sample one-pole wet mult (0..1)
+
+    // ---- Silence gate (2026-08-23 idle-CPU fix; see the header comment) ----
+    // Arms after kGateSilentBlocks consecutive blocks whose input is below
+    // kSilentInEps AND whose rendered output is below kQuietOutEps, then serves
+    // silent blocks from a zero-output early return. kQuietOutEps (~-120 dB,
+    // under the 16-bit noise floor of 3e-5) is the inaudibility bar the tail
+    // must decay to; the input epsilon is effectively "exact zero" (the idle
+    // voicecard sum is exact 0.0f). kGateSilentBlocks is a block-count debounce
+    // (~102 ms at the engine's ~980 Hz sub-chunk cadence, ~533 ms for direct
+    // 512-sample use) on TOP of the output-decay condition, not a tail-length
+    // guess — the output term handles arbitrarily long tails.
+    static constexpr float kSilentInEps  = 1.0e-9f;
+    static constexpr float kQuietOutEps  = 1.0e-6f;
+    static constexpr int   kGateSilentBlocks = 100;
+    int  silentRunBlocks_      = 0;    // consecutive (silent-in, quiet-out) blocks
+    bool silenceGateArmed_     = false;
+    bool silenceGateEnabled_   = true;   // test-only OFF pin (A/B control runs)
+    int  gatedProcessCountForTest_ = 0;  // test-only: gated early-returns taken
+    double lastTempoBpm_       = -1.0;  // value-guard for setTempo's gate reset
+    bool   lastTempoPlaying_   = false; // (the engine re-pushes transport every block)
+    // Disarm + zero the run counter (every output-relevant state change).
+    void resetSilenceGate() noexcept { silenceGateArmed_ = false; silentRunBlocks_ = 0; }
 
     // ---- Per-sample smoothing of dryWet / masterMix gain-style params (B2-engine, B6) ----
     // The per-slot dry/wet target (dryWet_[s]) and the global master-mix target

@@ -13,6 +13,17 @@
 // LookAndFeel every repaint, so theme switches are picked up automatically; the
 // trace adopts a category hue (catAudio) via setCategoryColour().
 //
+// LIVE MODULATED OVERLAY (2026-08-23 parity pass): an optional LiveOscValues
+// provider (wired to the engine telemetry through the editor's LiveFeedbackHub)
+// reports the EFFECTIVE (modulation-applied) oscillator parameter while a
+// voice sounds — the same contract FilterResponseDisplay has for cutoff /
+// resonance. The preview follows the CURRENT engine state: while the effective
+// byte is MOVING (>= 1 byte per tick, held ~270 ms after the last movement) the
+// smoothed display target switches from the knob value to the live byte, so an
+// env/LFO/matrix sweep on the osc parameter visibly rides the waveform; at
+// rest the preview settles back to the knob state. There is no second curve —
+// ONE waveform moves, exactly like the filter's "one curve at a time" handoff.
+//
 // Rendering strategy (hybrid):
 //   * The 5 basic shapes (None/Saw/Square/Triangle/Sine) are drawn ANALYTICALLY
 //     (exact). Square's duty cycle tracks the parameter (PWM).
@@ -26,23 +37,28 @@
 //     mutated -> Filtered Noise uses its OWN per-instance LFSR instead.
 //   * The Vowel algorithm touches the shared global Random (data race with the
 //     audio thread), so it falls back to an analytic multi-formant GLYPH.
-// The sampled cycle is cached keyed by (shape, quantized parameter) so it only
-// re-renders on change.
+// The sampled cycle is rebuilt whenever the (quantized) parameter byte moves
+// (see SMOOTHING below). Determinism: every rebuild instantiates a FRESH
+// Oscillator (phase zeroed by value-initialization; the filtered-noise LFSR
+// starts from its fixed zero state; Reset() is never called so the global RNG
+// is never touched), so the same (shape, param byte) always renders the
+// bit-identical buffer — successive rebuilds of a moving param read as a
+// smooth re-shaping, never flicker.
 //
-// SMOOTHING (Phase: interpolation pass):
-//   * Shape (and quantized-parameter) changes do NOT snap — the previously
-//     displayed cycle is kept as `prevCycle_` and each painted sample is a lerp
-//     from prev to the new target over ~66 ms (`morphProgress_` advances in the
-//     30 Hz timer, ~2 ticks). Both buffers are indexed by the same phase
-//     fraction so they need not share a length (analytic = 256, sampled =
-//     kAudioBlockSize).
-//   * The continuous oscillator parameter is tracked EXACTLY (displayed = live
-//     APVTS target) so the preview is accurate under automation/modulation (no
-//     smoothing lag). For the flicker-free analytic shapes (Square PWM / Vowel
-//     formants) the cycle is rebuilt from the exact parameter on change; the
-//     DSP-sampled shapes keep the quantized rebuild (to avoid per-tick oscillator
-//     re-render flicker) and morph between cycles instead.
-// The eps-diff gate is retained: it only repaints while morphing or on change.
+// SMOOTHING (2026-08-23 — filter-preview parity, revised twice the same
+// day): the displayed parameter is SMOOTHED, not snapped. Two paths share
+// smoothParam01_: the KNOB path uses a FIXED-DURATION glide (kGlideT ~140 ms,
+// quadratic-out ease, retargeted on every knob change — tracks a fast spin
+// with <= one glide of lag and finishes EXACTLY kGlideT after the last
+// change, so no byte-step can land after the animation completes); the LIVE
+// overlay path keeps the FilterResponseDisplay's critically-damped
+// exponential (tau 130 ms, half-byte snap) so modulated telemetry steps
+// blend identically to the filter preview. The cycle rebuilds whenever the
+// quantized byte of the smoothed value moves; the repaint gate is BYTE-driven
+// (a tick that moves no byte paints nothing) and the component paints OPAQUE
+// (no parent recomposite per repaint). A discrete SHAPE switch still uses the
+// short prev->next cycle morph (~66 ms), the analogue of the filter's
+// snapping mode.
 
 #pragma once
 
@@ -51,6 +67,8 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
+
+#include "ModTelemetryTypes.h"   // parvati::LiveOscValues (live modulated overlay)
 
 //==============================================================================
 class OscPreviewDisplay : public juce::Component,
@@ -73,10 +91,11 @@ public:
     bool hasCategoryColour() const noexcept { return hasCategoryColour_; }
     juce::Colour getCategoryColour() const noexcept { return categoryColour_; }
 
-    // TEST-ONLY diagnostic: incremented on every real cycle REBUILD (shape
-    // switch / quantized-param change / analytic exact-param rebuild). Lets a
-    // headless test observe "the preview reacted to a param change" without
-    // touching painting. Not read by any product code.
+    // TEST-ONLY diagnostic: incremented on every real cycle REBUILD (a shape
+    // switch, or a move of the byte-quantized SMOOTHED parameter — see
+    // SMOOTHING above). Lets a headless test observe "the preview reacted to
+    // a param change" without touching painting. Not read by any product
+    // code.
     int previewGeneration() const noexcept { return generation_; }
 
     // TEST-ONLY: is the 30 Hz poll timer running? (Timer is a private base;
@@ -90,6 +109,24 @@ public:
         preview (liveOscDisplays_), so a poll whose own hooks were starved
         (page built off-screen, then swapped in) starts within one tick. */
     void reassertPollTimer() { updatePollTimer(); }
+
+    /** Live modulated overlay (2026-08-23 parity pass — same contract as
+        FilterResponseDisplay::setLiveValuesProvider): @p p returns the
+        EFFECTIVE (modulation-applied) oscillator parameter, normalized to
+        0..1 of the 0..127 effective-byte domain (the same domain as the base
+        param byte). While the effective byte is MOVING (>= 1 byte vs the
+        previous tick) the smoothed display target follows it; a short hold
+        (~270 ms) bridges modulation dips below the 1-byte rate, then the
+        preview eases back to the knob value. An empty or inactive provider
+        hides the overlay at zero overhead beyond one std::function call per
+        poll tick. */
+    void setLiveValuesProvider (std::function<parvati::LiveOscValues()> p);
+
+    // TEST-ONLY: is the live modulated overlay currently ARMED (the temporal
+    // activity state after the change gate — lets a headless test observe the
+    // overlay without a Graphics context, mirroring the filter display's
+    // liveCurveVisibleForTest seam).
+    bool liveOverlayActiveForTest() const noexcept { return dispLiveActive_; }
 
     void paint (juce::Graphics&) override;
 
@@ -128,7 +165,8 @@ private:
     void buildSampled (int shapeIdx, uint8_t paramByte);
 
     // Stash the current cycle as the morph source, rebuild the new target from
-    // the (smoothed) parameter, and (re)start the morph.
+    // the (smoothed) parameter, and (re)start the morph. SHAPE switches only —
+    // parameter motion glides through the smoothed rebuild instead.
     void stashAndRebuild (int shapeIdx);
 
     juce::String title_;
@@ -137,25 +175,51 @@ private:
     juce::Colour categoryColour_;
     bool hasCategoryColour_ = false;
 
-    // Cached (shape, quantized parameter) the current cycle was built for
-    // (-1 / 0xff => nothing built yet -> first timer tick rebuilds).
-    int cachedShape_ = -1;
-    uint8_t cachedParamQ_ = 0xff;
+    // Cached shape the current cycle was built for (-1 => nothing built yet ->
+    // first timer tick rebuilds) + the byte it was built from (0xff => none).
+    int     cachedShape_ = -1;
+    uint8_t lastBuiltParamByte_ = 0xff;
 
     // The rendered one-cycle waveform (normalized -1..1), resampled to the
     // canvas columns at paint time.
     std::vector<float> cycle_;
 
-    // Shape/param morph: prevCycle_ is the previously-displayed cycle (the morph
-    // source); morphProgress_ runs 0->1 over ~66 ms (~2 ticks; 1 => morph done,
-    // prev dropped). displayedParam_ is the oscillator parameter tracked EXACTLY
-    // to the live APVTS target (accurate under automation); lastBuiltParamF_
-    // tracks the parameter the current analytic cycle was built for (to detect
-    // movement requiring a continuous rebuild).
+    // SHAPE-switch morph (param motion now glides via smoothParam01_ instead):
+    // prevCycle_ is the previously-displayed cycle (the morph source);
+    // morphProgress_ runs 0->1 over ~66 ms (~2 ticks; 1 => morph done, prev
+    // dropped).
     std::vector<float> prevCycle_;
     float morphProgress_   = 1.0f;
-    float displayedParam_  = 0.0f;
-    float lastBuiltParamF_ = -1.0f;
+
+    // displayedParam_ tracks the base knob fetch EXACTLY (the eps-change gate
+    // term + fallback before the first tick); smoothParam01_ is the eased
+    // DISPLAY value — it converges toward the current target (base at rest,
+    // live effective byte under modulation) with the filter preview's
+    // critically-damped exponential (tau 130 ms) and drives the byte-quantized
+    // cycle rebuild. -1 = never ticked (snap on the first tick).
+    float displayedParam_ = 0.0f;
+    float smoothParam01_  = -1.0f;
+
+    // KNOB-path fixed-duration glide (see OscPreviewDisplay.cpp kGlideT):
+    // glideFrom01_ -> glideTo01_ over kGlideT with a quadratic-out ease,
+    // retargeted whenever the knob value moves. glideTo01_ < 0 = no active
+    // glide (retarget on the next tick). Bounds every byte change INSIDE the
+    // window — nothing can land after the ease completes (the "delayed
+    // change after the animation finishes" bug).
+    float glideFrom01_ = 0.0f;
+    float glideTo01_   = -1.0f;
+    float glideT_      = 0.0f;
+
+    // ---- Live modulated overlay state (see setLiveValuesProvider) ----
+    // The provider is pulled in the SAME 30 Hz tick as the base getters;
+    // activity is TEMPORAL like the filter overlay: a >= 1-byte move vs the
+    // previous tick (re)arms a ~270 ms hold, a settled or absent voice hides
+    // the overlay at once. dispLiveParamByte_ is the quantized live byte
+    // (-1 => never seen an active provider frame).
+    std::function<parvati::LiveOscValues()> liveValuesProvider_;
+    bool dispLiveActive_     = false;
+    int  dispLiveParamByte_  = -1;
+    int  liveHoldTicks_      = 0;     // temporal-gate hold budget (ticks)
 
     // TEST-ONLY (see previewGeneration).
     int generation_ = 0;

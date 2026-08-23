@@ -2413,13 +2413,13 @@ void SynthEngine::renderPartFx (int numSamples)
                     // append = a full-scale 255->0 fall across exactly one
                     // history window (256 appends ~ 3.1 s), the same speed the
                     // trace itself progresses. Persisted controllers keep their true
-                    // value: PITCH_BEND from lastModSources_ (per-voice bend
-                    // mirrors live only while a voice sounds); WHEEL/WHEEL_2/
-                    // EXPRESSION from the PART'S VOICE TABLE (handleController
-                    // CC1/2/4 writes them to every voice, sounding AND idle);
-                    // constants literal. uiTelIdlePrev_ seeds from the last
-                    // effective row on the active->idle transition and decays
-                    // only on real appends (the append's own decimation gate).
+                    // value: WHEEL/WHEEL_2/EXPRESSION from the PART'S VOICE TABLE
+                    // (handleController CC1/2/4 writes them to every voice,
+                    // sounding AND idle); PITCH_BEND from the standing-bend
+                    // LATCH (see the override below); constants literal.
+                    // uiTelIdlePrev_ seeds from the last effective row on the
+                    // active->idle transition and decays only on real appends
+                    // (the append's own decimation gate).
                     if (uiTelLiveSeen_ && ! uiTelIdleSeeded_)
                     {
                         // Seed ONLY on a genuine active->idle transition: after
@@ -2449,6 +2449,30 @@ void SynthEngine::renderPartFx (int numSamples)
                                  src <= ambika::dsp::MOD_SRC_EXPRESSION; ++src)
                                 idleRow[(size_t) src] = gv->getModulationSource (
                                     static_cast<uint8_t> (src));
+                    // PITCH_BEND from the standing-bend LATCH (pre-existing
+                    // bug fixed 2026-08-23): lastModSources_ is only written
+                    // from a SOUNDING voice's ring, so at startup / after a
+                    // telemetry wipe — before any note — the idle row carried
+                    // 0 and the Pitch Bend pill strip scrolled from the FLOOR
+                    // although the wheel rests at 128 = mid = 50%. The latch
+                    // (lastWheel_, initialized to the centre, per MIDI channel,
+                    // written by handlePitchWheel) IS the idle truth; the byte
+                    // mapping mirrors the voice side (applyMpeToVoice:
+                    // 128 + norm*127 — the bend-range factor cancels, so the
+                    // host wheel maps linearly 0..16383 -> 1..255 about 128).
+                    // An Omni part (channel 0) has no single channel: read the
+                    // global master channel 1 latch, where a non-MPE wheel
+                    // arrives.
+                    {
+                        const uint8_t pch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
+                        const int bendCh = (pch >= 1 && pch <= 16) ? (int) pch : 1;
+                        const int wheel = lastWheel_[(size_t) bendCh].load (std::memory_order_relaxed);
+                        const float bendNorm = juce::jlimit (-1.0f, 1.0f,
+                            (static_cast<float> (wheel) - 8192.0f) * (1.0f / 8192.0f));
+                        idleRow[(size_t) ambika::dsp::MOD_SRC_PITCH_BEND] =
+                            static_cast<uint8_t> (juce::jlimit (0, 255,
+                                juce::roundToInt (128.0f + bendNorm * 127.0f)));
+                    }
                     const bool appended = uiTelAppendHistory (idleRow, part.seq,
                                                               uiTelNoteSeqLast_);
                     if (appended)
@@ -2677,6 +2701,12 @@ void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* 
         uiTel_.effCutoff    = repVoice->effectiveCutoff();
         uiTel_.effResonance = repVoice->effectiveResonance();
         uiTel_.filterMode   = repVoice->filterMode();
+        // EFFECTIVE OSC parameter bytes (modulation-applied — the same bytes
+        // UpdateDestinations feeds the oscillators' set_parameter() this
+        // block). Same readout discipline as the filter bytes above; drives
+        // the OSC waveform preview's live overlay.
+        uiTel_.effOscParam[0] = repVoice->effectiveOscParameter (0);
+        uiTel_.effOscParam[1] = repVoice->effectiveOscParameter (1);
         // Current sources: the freshest effective bytes for this part (the
         // final sub-chunk's effSrcs, mirrored into lastModSources_ above).
         for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
@@ -2770,6 +2800,8 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
         out.effCutoff     = copy.effCutoff;
         out.effResonance  = copy.effResonance;
         out.filterMode    = copy.filterMode;
+        out.effOscParam[0] = copy.effOscParam[0];
+        out.effOscParam[1] = copy.effOscParam[1];
         out.voiceActive   = copy.voiceActive;
         return true;
     }

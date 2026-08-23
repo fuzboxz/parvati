@@ -574,6 +574,75 @@ TEST(ui_telemetry_test)
         }
     }
 
+    std::printf ("[9] PITCH_BEND idle truth: rests at 128, tracks the wheel, survives a wipe\n");
+    {
+        // Pre-existing bug (fixed 2026-08-23): the idle row read
+        // lastModSources_[PITCH_BEND] — only written from a SOUNDING voice's
+        // ring — so at startup / after a telemetry wipe (before any note) the
+        // Pitch Bend pill strip scrolled from the FLOOR (0) although the wheel
+        // rests at 128 = mid = 50%. The row now derives from the standing-bend
+        // LATCH (lastWheel_), like WHEEL/WHEEL_2/EXPRESSION derive from the
+        // part's voice table. Pins: rest == 128 with NO note ever played, a
+        // wheel move while IDLE tracks immediately (both directions), and a
+        // telemetry wipe (the patch-load seam) does NOT resurrect the zero.
+        ParvatiAudioProcessor proc;
+        proc.prepareToPlay (kRate, kBlock);
+        auto& eng = proc.getEngine();
+        eng.setUiTelemetryPart (0);
+        renderBlocks (proc, 2);                          // service the tracked part
+
+        constexpr int kPitchBend = 16;                   // MOD_SRC_PITCH_BEND
+        parvati::ModTelemetrySnapshot snap;
+
+        // (a) rest, no note ever: the strip AND the current source read MID.
+        renderBlocks (proc, blocksForMs (250.0));
+        if (readSnap (proc, snap, "[9] valid while idle (never a note)"))
+        {
+            char m[96];
+            std::snprintf (m, sizeof (m), "[9a] sources[PITCH_BEND]=%d at rest (want 128)",
+                          (int) snap.sources[kPitchBend]);
+            check (snap.sources[kPitchBend] == 128, m);
+            bool allMid = snap.historyCount > 0;
+            for (int i = 0; i < snap.historyCount; ++i)
+                if (snap.history[(size_t) kPitchBend * kLen + (size_t) i] != 128) { allMid = false; break; }
+            check (allMid, "[9a] idle history rows all 128 (strip starts at mid, not the floor)");
+        }
+
+        // (b) wheel moved while IDLE tracks both directions (no note needed).
+        const auto bendUp = juce::MidiMessage::pitchWheel (1, 16383);   // full +
+        renderBlocks (proc, 5, &bendUp);
+        renderBlocks (proc, blocksForMs (150.0));
+        readSnap (proc, snap, "[9] valid after idle bend up");
+        check (snap.sources[kPitchBend] == 255,
+               "[9b] full-up wheel reads 255 while idle");
+        const auto bendDown = juce::MidiMessage::pitchWheel (1, 0);     // full -
+        renderBlocks (proc, 5, &bendDown);
+        renderBlocks (proc, blocksForMs (150.0));
+        readSnap (proc, snap, "[9] valid after idle bend down");
+        check (snap.sources[kPitchBend] == 1,
+               "[9b] full-down wheel reads 1 while idle");
+
+        // (c) telemetry WIPE (patch-load seam): the row re-derives from the
+        // latch — the pre-fix code resurrected the zero buffer here.
+        eng.resetUiTelemetry();
+        renderBlocks (proc, blocksForMs (150.0));       // appends after the wipe
+        if (readSnap (proc, snap, "[9] valid after the wipe"))
+        {
+            char m[96];
+            std::snprintf (m, sizeof (m), "[9c] sources[PITCH_BEND]=%d after wipe (latch held)",
+                          (int) snap.sources[kPitchBend]);
+            check (snap.sources[kPitchBend] == 1, m);
+        }
+
+        // (d) re-centering while idle returns the strip to mid.
+        const auto bendCentre = juce::MidiMessage::pitchWheel (1, 8192);
+        renderBlocks (proc, 5, &bendCentre);
+        renderBlocks (proc, blocksForMs (150.0));
+        readSnap (proc, snap, "[9] valid after re-centre");
+        check (snap.sources[kPitchBend] == 128,
+               "[9d] re-centred wheel reads 128 while idle");
+    }
+
     std::printf ("\n%s (%d failure%s)\n",
                  g_failures ? "UI TELEMETRY TEST: FAILURES" : "UI TELEMETRY TEST: ALL PASSED",
                  g_failures, g_failures == 1 ? "" : "s");
