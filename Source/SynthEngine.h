@@ -624,6 +624,19 @@ private:
         int8_t  modAmt    [kNumFxMatrixSlots] {};
     };
     std::array<FxPartCache, kNumParts> fxCached_ {};
+
+    // ---- renderPartFx stage helpers (2026-08-23 decomposition) ----
+    // Each helper holds one stage of the per-part FX render, moved verbatim
+    // from the former ~440-line renderPartFx body. Statement order, loop
+    // bounds and memory orders are unchanged; renderPartFx calls them in the
+    // original order. Audio thread only.
+    bool serviceFxDirtyFrame (int p, Part& part, FxChain& chain, FxPartCache& cache);
+    float* sumPartMono (int p, int numSamples);
+    AmbikaVoice* pickRepresentativeVoice (int p, int& newestIdx, uint64_t& newestSeq,
+                                          int& ringCount);
+    void runFxSubChunkLoop (int p, float* mono, int numSamples, AmbikaVoice* repVoice,
+                            int newestIdx, uint64_t newestSeq, int ringCount, bool uiTelTrack);
+    void buildIdleTelemetryRow (int p, uint8_t* idleRow);
     // ---- Tail-length cache (see getTailLengthSeconds) ----
     // Written by recomputeTailCache() (relaxed; advisory read by the host via
     // the processor's getTailLengthSeconds) on the audio thread. The BPM used

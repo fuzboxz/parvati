@@ -2090,417 +2090,21 @@ void SynthEngine::renderPartFx (int numSamples)
         if (uiTelTrack)
             uiTelServiceStage (p);
 
-        // ---- 1. Service staged FX state (single-threaded on the AT) ----
-        // (a) Install any staged type swaps FIRST (a staged swap is its own
-        //     reason to service -- it must land before this block's process,
-        //     regardless of the dirty flag). Pointer moves only: the processor
-        //     was built + prepared on the message thread (audit F1; the old
-        //     in-service createFxProcessor + ~512 KB free ran inside
-        //     processBlock).
-        chain.servicePendingTypeSwaps();
-
-        // (b) Read the MT-staged fxState frame (published by fxDirty_ release-
-        //     store) into the AT cache + push topology/order/enabled to the
-        //     chain. Slot TYPES were consumed above.
-        if (part.fxState.fxDirty_.exchange (false, std::memory_order_acq_rel))
-        {
+        // ---- 1. Service staged FX state; 2/2b. mono sum; 3. representative
+        // voice; 4-5. sub-chunk loop: the stage helpers below this function
+        // hold the moved statements (pure code motion).
+        if (serviceFxDirtyFrame (p, part, chain, cache))
             anyFxDirtied = true;
-            chain.setTopology (static_cast<FxTopology> (part.fxState.topology.load (std::memory_order_relaxed)));
-            chain.setOrder (fxOrderPermutation (part.fxState.orderIdx.load (std::memory_order_relaxed)));
 
-            for (int s = 0; s < kNumFxSlots; ++s)
-            {
-                const uint8_t newType = part.fxState.slotType[(size_t) s].load (std::memory_order_relaxed);
-                chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
-                cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
-                for (int k = 0; k < kNumFxSlotParams; ++k)
-                    cache.baseParam[(size_t) s][(size_t) k] = (float) part.fxState.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
-                // On a type change the param MEANINGS change entirely — snap the
-                // smoothed base to the new values so it does not ramp through the
-                // old effect's stale param values (which would be audibly wrong).
-                if (newType != prevSlotType_[(size_t) p][(size_t) s])
-                {
-                    for (int k = 0; k < kNumFxSlotParams; ++k)
-                        smoothedBase_[(size_t) p][(size_t) s][(size_t) k] = cache.baseParam[(size_t) s][(size_t) k];
-                    prevSlotType_[(size_t) p][(size_t) s] = newType;
-                }
-            }
-            for (int m = 0; m < kNumFxMatrixSlots; ++m)
-            {
-                cache.modSrc[(size_t) m] = part.fxState.modSource[(size_t) m].load (std::memory_order_relaxed);
-                cache.modDst[(size_t) m] = part.fxState.modDest  [(size_t) m].load (std::memory_order_relaxed);
-                cache.modAmt[(size_t) m] = part.fxState.modAmount[(size_t) m].load (std::memory_order_relaxed);
-            }
-            // Master-section frame (v3): push global mix + the 3-band master EQ
-            // to this part's chain. (Tail retention is now unconditional inside
-            // FxChain.)
-            const uint8_t fxMixV       = part.fxState.mix.load (std::memory_order_relaxed);
-            const uint8_t fxEqLowV     = part.fxState.eqLow.load (std::memory_order_relaxed);
-            const uint8_t fxEqMidV     = part.fxState.eqMid.load (std::memory_order_relaxed);
-            const uint8_t fxEqHighV    = part.fxState.eqHigh.load (std::memory_order_relaxed);
-            chain.setMasterMix    ((float) fxMixV / 127.0f);
-            chain.setMasterEqLow  (fxEqLowV);
-            chain.setMasterEqMid  (fxEqMidV);
-            chain.setMasterEqHigh (fxEqHighV);
-        }
+        float* mono = sumPartMono (p, numSamples);
 
-        // ---- 2. Per-part mono sum of this Part's voicecard buffers ----
-        // (voiceCardBuffers_ holds the full block after renderNextBlock.)
-        // Sum each OWNED card's buffer exactly once, per the bitmask resolved by
-        // rebuildVoiceAllocation (partCardMask_). Indexing voiceCardBuffers_ by
-        // the pool voice index instead (as this loop once did) is only correct
-        // in the default single-part layout where pool index == card index.
-        // With per-part voice slots or custom card bitmasks it cross-bleeds
-        // other Parts' cards into this Part's FX input and leaves later Parts'
-        // FX silent (pool slices >= kNumParts). Mask 0 => silence (a disabled
-        // Part), which is correct.
-#ifndef NDEBUG
-        {
-            // Debug consistency check: recomputing the owned-card mask from the
-            // voices themselves must equal the persisted rebuild result.
-            uint8_t recompute = 0;
-            for (int vi : part.voiceIndices)
-                if (auto* av = getAmbikaVoice (vi))
-                    recompute = static_cast<uint8_t> (recompute | (1u << juce::jlimit (0, kNumParts - 1, av->getVoiceCard())));
-            jassert (recompute == partCardMask_[(size_t) p]);
-        }
-#endif
-        float* mono = fxMonoScratch_.getWritePointer (0);
-        juce::FloatVectorOperations::clear (mono, numSamples);
-        for (int vc = 0; vc < kNumParts; ++vc)
-            if (partCardMask_[(size_t) p] & (1u << vc))
-                juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vc].getReadPointer (0), numSamples);
-
-        // ---- 2b. Chain-input safety ceiling ----
-        // The mono voicecard sum is UNCLAMPED polyphony: up to 16 voices per
-        // part, each with resonant filter peaks above unity, and the whole
-        // chain (Wavefolder 6x SRC, Diffuser, WSOLA...) is gain-staged for
-        // roughly unity-per-voice levels. A SoftLimit knee (unity-gain mapping
-        // 8 * SoftLimit(s/8)) keeps ordinary playing TRANSPARENT (measured:
-        // -0.04 dB at |s|=1, -0.35 dB at |s|=3 — a loud chord; -2.2 dB at |s|=8)
-        // while it progressively limits runaway sums. The hard jlimit (+/-16)
-        // is the final ceiling for pathological input (|s| >= ~100). The pair
-        // guarantees downstream processors never see unbounded levels — the
-        // class of over-range input that fed the Wavefolder LUT overrun (fixed
-        // at the lookup itself too; this is defense in depth, finding 8).
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float s = mono[i];
-            mono[i] = juce::jlimit (-16.0f, 16.0f,
-                                    8.0f * stmlib::SoftLimit (s * 0.125f));
-        }
-
-        // ---- 3. Representative voice = the MOST-RECENTLY-TRIGGERED active voice ----
-        // ---- + crossfade on any voice change.                                  ----
-        // The mod sources advance once per 40-sample internal block inside each
-        // voice (980 Hz); fillInternalBlock pushes them into a per-voice ring.
-        // The FX stage is per-part but sources are per-voice, so we sample ONE
-        // voice per part: among the part's active voices, the one with the
-        // highest triggerSeq() (the "last" note). A monotonic seq makes the pick
-        // STABLE between note-on events (no churn). It follows the latest note-
-        // on automatically, and on a release it falls back to the next-most-
-        // recent active voice. On any voice IDENTITY change a short (~5 ms)
-        // crossfade bridges the old voice's last effective source values
-        // (lastModSources_) to the new voice's live values, so per-voice sources
-        // (VELOCITY / NOTE / per-note MPE) glide instead of clicking. Global /
-        // part-global sources are identical across voices so the crossfade is a
-        // no-op there. When no voice is active we hold the last snapshot so
-        // tails still modulate.
-        AmbikaVoice* repVoice = nullptr;
         int newestIdx = -1;
         uint64_t newestSeq = 0;
-        for (int vi : part.voiceIndices)
-        {
-            auto* av = getAmbikaVoice (vi);
-            if (av == nullptr || ! av->isVoiceActive()) continue;
-            const uint64_t s = av->triggerSeq();
-            if (repVoice == nullptr || s > newestSeq)
-            {
-                repVoice = av; newestIdx = vi; newestSeq = s;
-            }
-        }
-        if (repVoice != nullptr && newestIdx != fxTrackedVoice_[(size_t) p])
-        {
-            // Identity changed (a new note-on landed on a different voice, or
-            // the tracked voice released and another active voice is now the
-            // most recent). Arm the crossfade from the last effective values.
-            // The very first selection (fxTrackedVoice_ < 0) has no prior values
-            // to fade from, so the crossfade stays settled and the new voice is
-            // used live directly (no fade-in from zero).
-            if (fxTrackedVoice_[(size_t) p] >= 0)
-            {
-                fxFadeStart_[(size_t) p] = lastModSources_[(size_t) p];
-                fxFadePhase_[(size_t) p] = 0.0f;
-            }
-            fxTrackedVoice_[(size_t) p] = newestIdx;
-        }
-        const int ringCount = repVoice != nullptr ? repVoice->modRingCount() : 0;
-        debugLastFxRingCount_[(size_t) p] = ringCount;
+        int ringCount = 0;
+        AmbikaVoice* repVoice = pickRepresentativeVoice (p, newestIdx, newestSeq, ringCount);
 
-        // ---- 4–5. Sub-chunk the host block at internal-block boundaries ----
-        // An internal block (40 samples @ 39216 Hz) spans 40*sr/39216 host
-        // samples (non-integer). A drift-free fractional phase tracks the
-        // boundary across blocks so the ~980 Hz cadence is exact over time. For
-        // each sub-chunk: read this internal block's mod sources (ring entry, or
-        // held lastModSources_), evaluate the 16-slot FX mod matrix, push the
-        // effective dryWet/param, and run the chain on just that sub-chunk.
-        // Because every FX processor is block-size-invariant (state carries
-        // across calls), this is bit-identical to one full-block call when the
-        // params are constant.
-        const double step = 40.0 * getSampleRate() / ambika::dsp::kInternalSampleRate;
-        double nextBoundary = fxSubPhase_[(size_t) p];
-        auto& out = fxOutputBuffers_[(size_t) p];
-        float* outL = out.getWritePointer (0);
-        float* outR = out.getWritePointer (1);
-
-        int written = 0;
-        int ringIdx = 0;
-        while (written < numSamples)
-        {
-            int sub = (int) (nextBoundary - (double) written);
-            if (sub <= 0) sub = 1;                                   // rounding guard
-            if (sub > numSamples - written) sub = numSamples - written;
-
-            // Mod sources for THIS internal block: the tracked voice's live
-            // ring entry (or the held lastModSources_ when no voice is active /
-            // the ring is empty), CROSSFADED from fxFadeStart_ when a voice
-            // change is in progress. The lerp is a no-op for global/part-global
-            // sources (identical across voices) and only blends the per-voice
-            // ones (VELOCITY / NOTE / per-note MPE) so they glide on a switch.
-            const uint8_t* liveSrcs = (ringCount > 0)
-                ? repVoice->modRingEntry (juce::jmin (ringIdx, ringCount - 1))
-                : lastModSources_[(size_t) p].data();
-            const float fade = fxFadePhase_[(size_t) p];
-            uint8_t effSrcs[ambika::dsp::MOD_SRC_LAST];
-            if (fade >= 1.0f)
-            {
-                // Settled (the steady-state path): copy live directly, no lerp.
-                for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                    effSrcs[src] = liveSrcs[src];
-            }
-            else
-            {
-                const auto& start = fxFadeStart_[(size_t) p];
-                for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                {
-                    const float v = juce::jmap (fade,
-                        static_cast<float> (start[(size_t) src]),
-                        static_cast<float> (liveSrcs[src]));
-                    effSrcs[src] = static_cast<uint8_t> (juce::jlimit (0.0f, 255.0f, v));
-                }
-            }
-            const uint8_t* srcs = effSrcs;
-            // Mirror EFFECTIVE into lastModSources_ so held tails / later
-            // sub-chunks keep the freshest value AND a later voice change
-            // crossfades from here.
-            for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
-            // UI telemetry: decimated history append of THIS internal block's
-            // sources — ALWAYS (2026-08-21 always-on contract, user request:
-            // strips start at zero, keep scrolling, and show the modulator's
-            // ACTUAL state; a released/idle part no longer freezes in place).
-            // PURE OBSERVATION.
-            //
-            // STICKY VOICE (2026-08-21 — the "jumpy slow envelope" fix): while
-            // a voice sounds, appends follow ONE voice per note, NOT the FX
-            // representative (the rep voice switches to the NEWEST note on
-            // every strike, so a slow release tail interleaved with fresh
-            // attacks read as noise). The telemetry pick sticks to its voice
-            // while that exact trigger is still active (slot + triggerSeq
-            // identify it) and only re-picks when it stops. When NOTHING is
-            // active the IDLE row carries the actual state: persisted
-            // controllers (bend/wheels/expression) + literal constants, zeros
-            // for the per-voice generators (LFO/ENV/... only run inside active
-            // voices here — not running = zero, the user's LFO example).
-            if (uiTelTrack)
-            {
-                // Sticky alive check: the exact trigger must still be sounding
-                // (slot active + seq match; a recycled slot never masquerades).
-                auto* sticky = (uiTelVoiceSlot_ >= 0)
-                    ? getAmbikaVoice (uiTelVoiceSlot_) : nullptr;
-                const bool stickyAlive = sticky != nullptr
-                    && sticky->isVoiceActive()
-                    && sticky->triggerSeq() == uiTelVoiceSeq_;
-                if (! stickyAlive)
-                {
-                    uiTelVoiceSlot_ = newestIdx;   // re-pick: the newest active trigger
-                    uiTelVoiceSeq_  = newestSeq;
-                    sticky = (uiTelVoiceSlot_ >= 0)
-                        ? getAmbikaVoice (uiTelVoiceSlot_) : nullptr;
-                }
-                if (sticky != nullptr && sticky->isVoiceActive()
-                    && sticky->triggerSeq() == uiTelVoiceSeq_)
-                {
-                    const int telRing = sticky->modRingCount();
-                    if (telRing > 0)
-                        uiTelAppendHistory (
-                            sticky->modRingEntry (juce::jmin (ringIdx, telRing - 1)),
-                            part.seq);
-                    uiTelLiveSeen_ = true;      // live truth seen; the next idle transition re-seeds
-                    uiTelIdleSeeded_ = false;
-                }
-                else
-                {
-                    // IDLE (no active voice): the actual-state row — with a
-                    // DRAG-OUT (2026-08-22 user request): the per-voice
-                    // generators do not SNAP to zero on release (that read as
-                    // the pill suddenly speeding). Their row values fall
-                    // linearly at the strip's own scroll pace — 2 bytes per
-                    // append = a full-scale 255->0 fall across exactly one
-                    // history window (256 appends ~ 3.1 s), the same speed the
-                    // trace itself progresses. Persisted controllers keep their true
-                    // value: WHEEL/WHEEL_2/EXPRESSION from the PART'S VOICE TABLE
-                    // (handleController CC1/2/4 writes them to every voice,
-                    // sounding AND idle); PITCH_BEND from the standing-bend
-                    // LATCH (see the override below); constants literal.
-                    // uiTelIdlePrev_ seeds from the last effective row on the
-                    // active->idle transition and decays only on real appends
-                    // (the append's own decimation gate).
-                    if (uiTelLiveSeen_ && ! uiTelIdleSeeded_)
-                    {
-                        // Seed ONLY on a genuine active->idle transition: after
-                        // a telemetry wipe (fresh zero buffer) lastModSources_
-                        // still holds the pre-wipe live row — FX-tail state the
-                        // wipe deliberately does not clear — and seeding from
-                        // it would resurrect stale motion into the fresh
-                        // window ([3] reset contract).
-                        std::copy (lastModSources_[(size_t) p].begin(),
-                                   lastModSources_[(size_t) p].end(),
-                                   uiTelIdlePrev_.begin());
-                        uiTelIdleSeeded_ = true;
-                    }
-                    uint8_t idleRow[ambika::dsp::MOD_SRC_LAST];
-                    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                    {
-                        if (src >= 24)   // CONSTANT_*: a constant's state IS its value
-                            idleRow[(size_t) src] = parvati::telemetryConstantByte (src);
-                        else if (parvati::telemetrySourcePersistsWhenIdle (src))
-                            idleRow[(size_t) src] = lastModSources_[(size_t) p][(size_t) src];
-                        else
-                            idleRow[(size_t) src] = uiTelIdlePrev_[(size_t) src];
-                    }
-                    if (! part.voiceIndices.empty())
-                        if (auto* gv = getAmbikaVoice (part.voiceIndices[0]))
-                            for (int src = ambika::dsp::MOD_SRC_WHEEL;
-                                 src <= ambika::dsp::MOD_SRC_EXPRESSION; ++src)
-                                idleRow[(size_t) src] = gv->getModulationSource (
-                                    static_cast<uint8_t> (src));
-                    // PITCH_BEND from the standing-bend LATCH (pre-existing
-                    // bug fixed 2026-08-23): lastModSources_ is only written
-                    // from a SOUNDING voice's ring. So at startup / after a
-                    // telemetry wipe — before any note — the idle row carried
-                    // 0 and the Pitch Bend pill strip scrolled from the FLOOR
-                    // although the wheel rests at 128 = mid = 50%. The latch
-                    // (lastWheel_, initialized to the centre, per MIDI channel,
-                    // written by handlePitchWheel) IS the idle truth; the byte
-                    // mapping mirrors the voice side (applyMpeToVoice:
-                    // 128 + norm*127 — the bend-range factor cancels, so the
-                    // host wheel maps linearly 0..16383 -> 1..255 about 128).
-                    // An Omni part (channel 0) has no single channel: read the
-                    // global master channel 1 latch, where a non-MPE wheel
-                    // arrives.
-                    {
-                        const uint8_t pch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
-                        const int bendCh = (pch >= 1 && pch <= 16) ? (int) pch : 1;
-                        const int wheel = lastWheel_[(size_t) bendCh].load (std::memory_order_relaxed);
-                        const float bendNorm = juce::jlimit (-1.0f, 1.0f,
-                            (static_cast<float> (wheel) - 8192.0f) * (1.0f / 8192.0f));
-                        idleRow[(size_t) ambika::dsp::MOD_SRC_PITCH_BEND] =
-                            static_cast<uint8_t> (juce::jlimit (0, 255,
-                                juce::roundToInt (128.0f + bendNorm * 127.0f)));
-                    }
-                    const bool appended = uiTelAppendHistory (idleRow, part.seq,
-                                                              uiTelNoteSeqLast_);
-                    if (appended)
-                    {
-                        constexpr uint8_t kFall = 1;   // 255->0 in ~256 appends = one window
-                        for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                            if (! parvati::telemetrySourcePersistsWhenIdle (src))
-                                uiTelIdlePrev_[(size_t) src] = (uiTelIdlePrev_[(size_t) src] > kFall)
-                                    ? static_cast<uint8_t> (uiTelIdlePrev_[(size_t) src] - kFall)
-                                    : uint8_t { 0 };
-                        uiTelNoteSeqLast_ = (uiTelNoteSeqLast_ > kFall)
-                            ? static_cast<uint8_t> (uiTelNoteSeqLast_ - kFall) : uint8_t { 0 };
-                    }
-                    uiTelVoiceSlot_ = -1;   // the pick is gone; re-pick on the next note
-                }
-            }
-            // Advance the crossfade phase for the next sub-chunk (drift-free:
-            // tau in seconds => sample-rate independent).
-            if (fade < 1.0f)
-                fxFadePhase_[(size_t) p] = juce::jmin (1.0f, fade
-                    + static_cast<float> (sub)
-                        / static_cast<float> (kFxCrossfadeTauSec * getSampleRate()));
-
-            // ---- FX mod matrix (per sub-chunk) ----
-            // modOffset[dest] += amount/63 * norm (dest = slot*(kNumFxSlotParams+1)
-            // + field: 0=dryWet, 1..kNumFxSlotParams=param 0..N-1). AC/DC coupling
-            // mirrors the SYNTH voice mod matrix (voice.cpp ProcessModulationMatrix):
-            // LFO_1..4 / PITCH_BEND / NOTE are AC-coupled (128 = neutral, bipolar ±1);
-            // all other sources are DC-coupled (0 = neutral, unipolar 0..1). Without
-            // the AC branch an LFO/bend/note at rest (128) injected a static
-            // +0.126 offset (at amount 63) instead of zero modulation.
-            constexpr int kFxFields = kNumFxSlotParams + 1;   // 1 dry/wet + N params per slot
-            float modOffset[kNumFxSlots * kFxFields] {};
-            for (int m = 0; m < kNumFxMatrixSlots; ++m)
-            {
-                const int8_t amt = cache.modAmt[(size_t) m];
-                if (amt == 0) continue;
-                const int dst = (int) cache.modDst[(size_t) m];
-                if (dst < 0 || dst >= (int) (sizeof (modOffset) / sizeof (float))) continue;
-                const uint8_t sIdx = cache.modSrc[(size_t) m];
-                if (sIdx >= ambika::dsp::MOD_SRC_LAST) continue;
-                const bool ac = (sIdx >= ambika::dsp::MOD_SRC_LFO_1 && sIdx <= ambika::dsp::MOD_SRC_LFO_4)
-                             || sIdx == ambika::dsp::MOD_SRC_PITCH_BEND
-                             || sIdx == ambika::dsp::MOD_SRC_NOTE;
-                const float norm = ac
-                    ? ((static_cast<float> (srcs[sIdx]) - 128.0f) * (1.0f / 128.0f))
-                    :  (static_cast<float> (srcs[sIdx]) * (1.0f / 255.0f));
-                modOffset[dst] += ((float) amt / 63.0f) * norm;
-            }
-
-            // De-click coefficient for the BASE param (N-adaptive: computed from
-            // the sub-chunk size so the 3 ms tau is correct at any block size).
-            const float dcPc = 1.0f - std::exp (-static_cast<float> (sub)
-                / static_cast<float> (kBaseDeClickTauSec * getSampleRate()));
-
-            // Effective slot values = SMOOTHED base + RAW mod, clamped 0..1.
-            // The base is one-pole-smoothed (de-clicks knob/preset jumps); the
-            // mod-matrix offset passes through RAW (no slew on LFO/env/seq
-            // modulation — audio-rate parity with the synth voice path). dryWet
-            // keeps its own per-sample smoother in FxChain (smoothCoef_, 20 ms).
-            for (int s = 0; s < kNumFxSlots; ++s)
-            {
-                chain.setSlotDryWet (s, juce::jlimit (0.0f, 1.0f,
-                    cache.baseDryWet[(size_t) s] + modOffset[s * kFxFields + 0]));
-                for (int k = 0; k < kNumFxSlotParams; ++k)
-                {
-                    float& sb = smoothedBase_[(size_t) p][(size_t) s][(size_t) k];
-                    sb += (cache.baseParam[(size_t) s][(size_t) k] - sb) * dcPc;
-                    const float eff = juce::jlimit (0.0f, 1.0f,
-                        sb + modOffset[s * kFxFields + 1 + k]);
-                    chain.setSlotParam (s, k, eff);
-                    if (debugEffParamTracking_ && s == 0 && k == 0)
-                    {
-                        // Read what FxChain actually stored (params_), not the
-                        // local eff — so a smoother injected between eff and the
-                        // DSP (engine-side or via setSlotParam) IS caught.
-                        const float pv = chain.debugGetParam (0, 0);
-                        debugEffParamMin_[(size_t) p] = juce::jmin (debugEffParamMin_[(size_t) p], pv);
-                        debugEffParamMax_[(size_t) p] = juce::jmax (debugEffParamMax_[(size_t) p], pv);
-                    }
-                }
-            }
-
-            // Run the chain on this sub-chunk (params_ is pushed raw at ~980 Hz).
-            chain.process (mono + written, mono + written,
-                           outL + written, outR + written, sub);
-
-            written += sub;
-            nextBoundary += step;
-            if (ringIdx < ringCount - 1) ++ringIdx;   // hold last entry for any extra sub-chunks
-        }
-        fxSubPhase_[(size_t) p] = nextBoundary - (double) numSamples;   // drift-free carry
+        runFxSubChunkLoop (p, mono, numSamples, repVoice, newestIdx, newestSeq, ringCount,
+                           uiTelTrack);
 
         // UI telemetry: once-per-block observables refresh (envelope stage /
         // progress, effective filter bytes, current sources, voiceActive). The
@@ -2516,6 +2120,474 @@ void SynthEngine::renderPartFx (int numSamples)
     // longer bounce tail; all-None -> floor).
     if (anyFxDirtied)
         recomputeTailCache();
+}
+
+//==========================================================================
+
+// Stage 1: service the staged FX frame for one Part. Installs pending slot
+// type swaps, then consumes fxDirty_: reads the MT-staged fxState frame into
+// the AT cache and pushes topology, order, enabled flags and the master
+// section to the chain. Returns true when a dirty frame was serviced (the
+// caller then refreshes the tail cache).
+bool SynthEngine::serviceFxDirtyFrame (int p, Part& part, FxChain& chain, FxPartCache& cache)
+{
+
+// ---- 1. Service staged FX state (single-threaded on the AT) ----
+// (a) Install any staged type swaps FIRST (a staged swap is its own
+//     reason to service -- it must land before this block's process,
+//     regardless of the dirty flag). Pointer moves only: the processor
+//     was built + prepared on the message thread (audit F1; the old
+//     in-service createFxProcessor + ~512 KB free ran inside
+//     processBlock).
+chain.servicePendingTypeSwaps();
+
+// (b) Read the MT-staged fxState frame (published by fxDirty_ release-
+//     store) into the AT cache + push topology/order/enabled to the
+//     chain. Slot TYPES were consumed above.
+if (! part.fxState.fxDirty_.exchange (false, std::memory_order_acq_rel))
+    return false;
+    chain.setTopology (static_cast<FxTopology> (part.fxState.topology.load (std::memory_order_relaxed)));
+    chain.setOrder (fxOrderPermutation (part.fxState.orderIdx.load (std::memory_order_relaxed)));
+
+    for (int s = 0; s < kNumFxSlots; ++s)
+    {
+        const uint8_t newType = part.fxState.slotType[(size_t) s].load (std::memory_order_relaxed);
+        chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
+        cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
+        for (int k = 0; k < kNumFxSlotParams; ++k)
+            cache.baseParam[(size_t) s][(size_t) k] = (float) part.fxState.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
+        // On a type change the param MEANINGS change entirely — snap the
+        // smoothed base to the new values so it does not ramp through the
+        // old effect's stale param values (which would be audibly wrong).
+        if (newType != prevSlotType_[(size_t) p][(size_t) s])
+        {
+            for (int k = 0; k < kNumFxSlotParams; ++k)
+                smoothedBase_[(size_t) p][(size_t) s][(size_t) k] = cache.baseParam[(size_t) s][(size_t) k];
+            prevSlotType_[(size_t) p][(size_t) s] = newType;
+        }
+    }
+    for (int m = 0; m < kNumFxMatrixSlots; ++m)
+    {
+        cache.modSrc[(size_t) m] = part.fxState.modSource[(size_t) m].load (std::memory_order_relaxed);
+        cache.modDst[(size_t) m] = part.fxState.modDest  [(size_t) m].load (std::memory_order_relaxed);
+        cache.modAmt[(size_t) m] = part.fxState.modAmount[(size_t) m].load (std::memory_order_relaxed);
+    }
+    // Master-section frame (v3): push global mix + the 3-band master EQ
+    // to this part's chain. (Tail retention is now unconditional inside
+    // FxChain.)
+    const uint8_t fxMixV       = part.fxState.mix.load (std::memory_order_relaxed);
+    const uint8_t fxEqLowV     = part.fxState.eqLow.load (std::memory_order_relaxed);
+    const uint8_t fxEqMidV     = part.fxState.eqMid.load (std::memory_order_relaxed);
+    const uint8_t fxEqHighV    = part.fxState.eqHigh.load (std::memory_order_relaxed);
+    chain.setMasterMix    ((float) fxMixV / 127.0f);
+    chain.setMasterEqLow  (fxEqLowV);
+    chain.setMasterEqMid  (fxEqMidV);
+    chain.setMasterEqHigh (fxEqHighV);
+return true;
+}
+
+// Stage 2 + 2b: build this Part's mono FX input in fxMonoScratch_. Sums the
+// Part's owned voicecard buffers per partCardMask_, then applies the safety
+// ceiling. Returns the scratch buffer's write pointer.
+float* SynthEngine::sumPartMono (int p, int numSamples)
+{
+    auto& part = parts_[(size_t) p];
+
+// ---- 2. Per-part mono sum of this Part's voicecard buffers ----
+// (voiceCardBuffers_ holds the full block after renderNextBlock.)
+// Sum each OWNED card's buffer exactly once, per the bitmask resolved by
+// rebuildVoiceAllocation (partCardMask_). Indexing voiceCardBuffers_ by
+// the pool voice index instead (as this loop once did) is only correct
+// in the default single-part layout where pool index == card index.
+// With per-part voice slots or custom card bitmasks it cross-bleeds
+// other Parts' cards into this Part's FX input and leaves later Parts'
+// FX silent (pool slices >= kNumParts). Mask 0 => silence (a disabled
+// Part), which is correct.
+#ifndef NDEBUG
+{
+    // Debug consistency check: recomputing the owned-card mask from the
+    // voices themselves must equal the persisted rebuild result.
+    uint8_t recompute = 0;
+    for (int vi : part.voiceIndices)
+        if (auto* av = getAmbikaVoice (vi))
+            recompute = static_cast<uint8_t> (recompute | (1u << juce::jlimit (0, kNumParts - 1, av->getVoiceCard())));
+    jassert (recompute == partCardMask_[(size_t) p]);
+}
+#endif
+float* mono = fxMonoScratch_.getWritePointer (0);
+juce::FloatVectorOperations::clear (mono, numSamples);
+for (int vc = 0; vc < kNumParts; ++vc)
+    if (partCardMask_[(size_t) p] & (1u << vc))
+        juce::FloatVectorOperations::add (mono, voiceCardBuffers_[(size_t) vc].getReadPointer (0), numSamples);
+
+// ---- 2b. Chain-input safety ceiling ----
+// The mono voicecard sum is UNCLAMPED polyphony: up to 16 voices per
+// part, each with resonant filter peaks above unity, and the whole
+// chain (Wavefolder 6x SRC, Diffuser, WSOLA...) is gain-staged for
+// roughly unity-per-voice levels. A SoftLimit knee (unity-gain mapping
+// 8 * SoftLimit(s/8)) keeps ordinary playing TRANSPARENT (measured:
+// -0.04 dB at |s|=1, -0.35 dB at |s|=3 — a loud chord; -2.2 dB at |s|=8)
+// while it progressively limits runaway sums. The hard jlimit (+/-16)
+// is the final ceiling for pathological input (|s| >= ~100). The pair
+// guarantees downstream processors never see unbounded levels — the
+// class of over-range input that fed the Wavefolder LUT overrun (fixed
+// at the lookup itself too; this is defense in depth, finding 8).
+for (int i = 0; i < numSamples; ++i)
+{
+    const float s = mono[i];
+    mono[i] = juce::jlimit (-16.0f, 16.0f,
+                            8.0f * stmlib::SoftLimit (s * 0.125f));
+}
+
+    return mono;
+}
+
+// Stage 3: pick the representative voice of this Part. Among the active
+// voices, the one with the highest triggerSeq() (the most recent note).
+// Arms the source crossfade on a voice identity change. Reports the pick
+// through @p newestIdx / @p newestSeq and the live ring entry count.
+AmbikaVoice* SynthEngine::pickRepresentativeVoice (int p, int& newestIdx, uint64_t& newestSeq,
+                                                   int& ringCount)
+{
+    auto& part = parts_[(size_t) p];
+
+// ---- 3. Representative voice = the MOST-RECENTLY-TRIGGERED active voice ----
+// ---- + crossfade on any voice change.                                  ----
+// The mod sources advance once per 40-sample internal block inside each
+// voice (980 Hz); fillInternalBlock pushes them into a per-voice ring.
+// The FX stage is per-part but sources are per-voice, so we sample ONE
+// voice per part: among the part's active voices, the one with the
+// highest triggerSeq() (the "last" note). A monotonic seq makes the pick
+// STABLE between note-on events (no churn). It follows the latest note-
+// on automatically, and on a release it falls back to the next-most-
+// recent active voice. On any voice IDENTITY change a short (~5 ms)
+// crossfade bridges the old voice's last effective source values
+// (lastModSources_) to the new voice's live values, so per-voice sources
+// (VELOCITY / NOTE / per-note MPE) glide instead of clicking. Global /
+// part-global sources are identical across voices so the crossfade is a
+// no-op there. When no voice is active we hold the last snapshot so
+// tails still modulate.
+AmbikaVoice* repVoice = nullptr;
+newestIdx = -1;
+newestSeq = 0;
+for (int vi : part.voiceIndices)
+{
+    auto* av = getAmbikaVoice (vi);
+    if (av == nullptr || ! av->isVoiceActive()) continue;
+    const uint64_t s = av->triggerSeq();
+    if (repVoice == nullptr || s > newestSeq)
+    {
+        repVoice = av; newestIdx = vi; newestSeq = s;
+    }
+}
+if (repVoice != nullptr && newestIdx != fxTrackedVoice_[(size_t) p])
+{
+    // Identity changed (a new note-on landed on a different voice, or
+    // the tracked voice released and another active voice is now the
+    // most recent). Arm the crossfade from the last effective values.
+    // The very first selection (fxTrackedVoice_ < 0) has no prior values
+    // to fade from, so the crossfade stays settled and the new voice is
+    // used live directly (no fade-in from zero).
+    if (fxTrackedVoice_[(size_t) p] >= 0)
+    {
+        fxFadeStart_[(size_t) p] = lastModSources_[(size_t) p];
+        fxFadePhase_[(size_t) p] = 0.0f;
+    }
+    fxTrackedVoice_[(size_t) p] = newestIdx;
+}
+ringCount = repVoice != nullptr ? repVoice->modRingCount() : 0;
+debugLastFxRingCount_[(size_t) p] = ringCount;
+    return repVoice;
+}
+
+// Stage 4 + 5: the sub-chunk loop. Splits the host block at internal-block
+// boundaries (~980 Hz), reads each internal block's mod sources, evaluates the
+// FX mod matrix, pushes effective dryWet/param values and runs the chain per
+// sub-chunk. Also appends the telemetry history for the tracked part.
+void SynthEngine::runFxSubChunkLoop (int p, float* mono, int numSamples, AmbikaVoice* repVoice,
+                                     int newestIdx, uint64_t newestSeq, int ringCount,
+                                     bool uiTelTrack)
+{
+    auto& part  = parts_[(size_t) p];
+    auto& chain = fxChains_[(size_t) p];
+    auto& cache = fxCached_[(size_t) p];
+
+// ---- 4–5. Sub-chunk the host block at internal-block boundaries ----
+// An internal block (40 samples @ 39216 Hz) spans 40*sr/39216 host
+// samples (non-integer). A drift-free fractional phase tracks the
+// boundary across blocks so the ~980 Hz cadence is exact over time. For
+// each sub-chunk: read this internal block's mod sources (ring entry, or
+// held lastModSources_), evaluate the 16-slot FX mod matrix, push the
+// effective dryWet/param, and run the chain on just that sub-chunk.
+// Because every FX processor is block-size-invariant (state carries
+// across calls), this is bit-identical to one full-block call when the
+// params are constant.
+const double step = 40.0 * getSampleRate() / ambika::dsp::kInternalSampleRate;
+double nextBoundary = fxSubPhase_[(size_t) p];
+auto& out = fxOutputBuffers_[(size_t) p];
+float* outL = out.getWritePointer (0);
+float* outR = out.getWritePointer (1);
+
+int written = 0;
+int ringIdx = 0;
+while (written < numSamples)
+{
+    int sub = (int) (nextBoundary - (double) written);
+    if (sub <= 0) sub = 1;                                   // rounding guard
+    if (sub > numSamples - written) sub = numSamples - written;
+
+    // Mod sources for THIS internal block: the tracked voice's live
+    // ring entry (or the held lastModSources_ when no voice is active /
+    // the ring is empty), CROSSFADED from fxFadeStart_ when a voice
+    // change is in progress. The lerp is a no-op for global/part-global
+    // sources (identical across voices) and only blends the per-voice
+    // ones (VELOCITY / NOTE / per-note MPE) so they glide on a switch.
+    const uint8_t* liveSrcs = (ringCount > 0)
+        ? repVoice->modRingEntry (juce::jmin (ringIdx, ringCount - 1))
+        : lastModSources_[(size_t) p].data();
+    const float fade = fxFadePhase_[(size_t) p];
+    uint8_t effSrcs[ambika::dsp::MOD_SRC_LAST];
+    if (fade >= 1.0f)
+    {
+        // Settled (the steady-state path): copy live directly, no lerp.
+        for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+            effSrcs[src] = liveSrcs[src];
+    }
+    else
+    {
+        const auto& start = fxFadeStart_[(size_t) p];
+        for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+        {
+            const float v = juce::jmap (fade,
+                static_cast<float> (start[(size_t) src]),
+                static_cast<float> (liveSrcs[src]));
+            effSrcs[src] = static_cast<uint8_t> (juce::jlimit (0.0f, 255.0f, v));
+        }
+    }
+    const uint8_t* srcs = effSrcs;
+    // Mirror EFFECTIVE into lastModSources_ so held tails / later
+    // sub-chunks keep the freshest value AND a later voice change
+    // crossfades from here.
+    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+        lastModSources_[(size_t) p][(size_t) src] = effSrcs[src];
+    // UI telemetry: decimated history append of THIS internal block's
+    // sources — ALWAYS (2026-08-21 always-on contract, user request:
+    // strips start at zero, keep scrolling, and show the modulator's
+    // ACTUAL state; a released/idle part no longer freezes in place).
+    // PURE OBSERVATION.
+    //
+    // STICKY VOICE (2026-08-21 — the "jumpy slow envelope" fix): while
+    // a voice sounds, appends follow ONE voice per note, NOT the FX
+    // representative (the rep voice switches to the NEWEST note on
+    // every strike, so a slow release tail interleaved with fresh
+    // attacks read as noise). The telemetry pick sticks to its voice
+    // while that exact trigger is still active (slot + triggerSeq
+    // identify it) and only re-picks when it stops. When NOTHING is
+    // active the IDLE row carries the actual state: persisted
+    // controllers (bend/wheels/expression) + literal constants, zeros
+    // for the per-voice generators (LFO/ENV/... only run inside active
+    // voices here — not running = zero, the user's LFO example).
+    if (uiTelTrack)
+    {
+        // Sticky alive check: the exact trigger must still be sounding
+        // (slot active + seq match; a recycled slot never masquerades).
+        auto* sticky = (uiTelVoiceSlot_ >= 0)
+            ? getAmbikaVoice (uiTelVoiceSlot_) : nullptr;
+        const bool stickyAlive = sticky != nullptr
+            && sticky->isVoiceActive()
+            && sticky->triggerSeq() == uiTelVoiceSeq_;
+        if (! stickyAlive)
+        {
+            uiTelVoiceSlot_ = newestIdx;   // re-pick: the newest active trigger
+            uiTelVoiceSeq_  = newestSeq;
+            sticky = (uiTelVoiceSlot_ >= 0)
+                ? getAmbikaVoice (uiTelVoiceSlot_) : nullptr;
+        }
+        if (sticky != nullptr && sticky->isVoiceActive()
+            && sticky->triggerSeq() == uiTelVoiceSeq_)
+        {
+            const int telRing = sticky->modRingCount();
+            if (telRing > 0)
+                uiTelAppendHistory (
+                    sticky->modRingEntry (juce::jmin (ringIdx, telRing - 1)),
+                    part.seq);
+            uiTelLiveSeen_ = true;      // live truth seen; the next idle transition re-seeds
+            uiTelIdleSeeded_ = false;
+        }
+        else
+        {
+            // IDLE (no active voice): the actual-state row — with a
+            // DRAG-OUT (2026-08-22 user request): the per-voice
+            // generators do not SNAP to zero on release (that read as
+            // the pill suddenly speeding). Their row values fall
+            // linearly at the strip's own scroll pace — 2 bytes per
+            // append = a full-scale 255->0 fall across exactly one
+            // history window (256 appends ~ 3.1 s), the same speed the
+            // trace itself progresses. Persisted controllers keep their true
+            // value: WHEEL/WHEEL_2/EXPRESSION from the PART'S VOICE TABLE
+            // (handleController CC1/2/4 writes them to every voice,
+            // sounding AND idle); PITCH_BEND from the standing-bend
+            // LATCH (see the override below); constants literal.
+            // uiTelIdlePrev_ seeds from the last effective row on the
+            // active->idle transition and decays only on real appends
+            // (the append's own decimation gate).
+            uint8_t idleRow[ambika::dsp::MOD_SRC_LAST];
+            buildIdleTelemetryRow (p, idleRow);
+
+            const bool appended = uiTelAppendHistory (idleRow, part.seq,
+                                                      uiTelNoteSeqLast_);
+            if (appended)
+            {
+                constexpr uint8_t kFall = 1;   // 255->0 in ~256 appends = one window
+                for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+                    if (! parvati::telemetrySourcePersistsWhenIdle (src))
+                        uiTelIdlePrev_[(size_t) src] = (uiTelIdlePrev_[(size_t) src] > kFall)
+                            ? static_cast<uint8_t> (uiTelIdlePrev_[(size_t) src] - kFall)
+                            : uint8_t { 0 };
+                uiTelNoteSeqLast_ = (uiTelNoteSeqLast_ > kFall)
+                    ? static_cast<uint8_t> (uiTelNoteSeqLast_ - kFall) : uint8_t { 0 };
+            }
+            uiTelVoiceSlot_ = -1;   // the pick is gone; re-pick on the next note
+        }
+    }
+    // Advance the crossfade phase for the next sub-chunk (drift-free:
+    // tau in seconds => sample-rate independent).
+    if (fade < 1.0f)
+        fxFadePhase_[(size_t) p] = juce::jmin (1.0f, fade
+            + static_cast<float> (sub)
+                / static_cast<float> (kFxCrossfadeTauSec * getSampleRate()));
+
+    // ---- FX mod matrix (per sub-chunk) ----
+    // modOffset[dest] += amount/63 * norm (dest = slot*(kNumFxSlotParams+1)
+    // + field: 0=dryWet, 1..kNumFxSlotParams=param 0..N-1). AC/DC coupling
+    // mirrors the SYNTH voice mod matrix (voice.cpp ProcessModulationMatrix):
+    // LFO_1..4 / PITCH_BEND / NOTE are AC-coupled (128 = neutral, bipolar ±1);
+    // all other sources are DC-coupled (0 = neutral, unipolar 0..1). Without
+    // the AC branch an LFO/bend/note at rest (128) injected a static
+    // +0.126 offset (at amount 63) instead of zero modulation.
+    constexpr int kFxFields = kNumFxSlotParams + 1;   // 1 dry/wet + N params per slot
+    float modOffset[kNumFxSlots * kFxFields] {};
+    for (int m = 0; m < kNumFxMatrixSlots; ++m)
+    {
+        const int8_t amt = cache.modAmt[(size_t) m];
+        if (amt == 0) continue;
+        const int dst = (int) cache.modDst[(size_t) m];
+        if (dst < 0 || dst >= (int) (sizeof (modOffset) / sizeof (float))) continue;
+        const uint8_t sIdx = cache.modSrc[(size_t) m];
+        if (sIdx >= ambika::dsp::MOD_SRC_LAST) continue;
+        const bool ac = (sIdx >= ambika::dsp::MOD_SRC_LFO_1 && sIdx <= ambika::dsp::MOD_SRC_LFO_4)
+                     || sIdx == ambika::dsp::MOD_SRC_PITCH_BEND
+                     || sIdx == ambika::dsp::MOD_SRC_NOTE;
+        const float norm = ac
+            ? ((static_cast<float> (srcs[sIdx]) - 128.0f) * (1.0f / 128.0f))
+            :  (static_cast<float> (srcs[sIdx]) * (1.0f / 255.0f));
+        modOffset[dst] += ((float) amt / 63.0f) * norm;
+    }
+
+    // De-click coefficient for the BASE param (N-adaptive: computed from
+    // the sub-chunk size so the 3 ms tau is correct at any block size).
+    const float dcPc = 1.0f - std::exp (-static_cast<float> (sub)
+        / static_cast<float> (kBaseDeClickTauSec * getSampleRate()));
+
+    // Effective slot values = SMOOTHED base + RAW mod, clamped 0..1.
+    // The base is one-pole-smoothed (de-clicks knob/preset jumps); the
+    // mod-matrix offset passes through RAW (no slew on LFO/env/seq
+    // modulation — audio-rate parity with the synth voice path). dryWet
+    // keeps its own per-sample smoother in FxChain (smoothCoef_, 20 ms).
+    for (int s = 0; s < kNumFxSlots; ++s)
+    {
+        chain.setSlotDryWet (s, juce::jlimit (0.0f, 1.0f,
+            cache.baseDryWet[(size_t) s] + modOffset[s * kFxFields + 0]));
+        for (int k = 0; k < kNumFxSlotParams; ++k)
+        {
+            float& sb = smoothedBase_[(size_t) p][(size_t) s][(size_t) k];
+            sb += (cache.baseParam[(size_t) s][(size_t) k] - sb) * dcPc;
+            const float eff = juce::jlimit (0.0f, 1.0f,
+                sb + modOffset[s * kFxFields + 1 + k]);
+            chain.setSlotParam (s, k, eff);
+            if (debugEffParamTracking_ && s == 0 && k == 0)
+            {
+                // Read what FxChain actually stored (params_), not the
+                // local eff — so a smoother injected between eff and the
+                // DSP (engine-side or via setSlotParam) IS caught.
+                const float pv = chain.debugGetParam (0, 0);
+                debugEffParamMin_[(size_t) p] = juce::jmin (debugEffParamMin_[(size_t) p], pv);
+                debugEffParamMax_[(size_t) p] = juce::jmax (debugEffParamMax_[(size_t) p], pv);
+            }
+        }
+    }
+
+    // Run the chain on this sub-chunk (params_ is pushed raw at ~980 Hz).
+    chain.process (mono + written, mono + written,
+                   outL + written, outR + written, sub);
+
+    written += sub;
+    nextBoundary += step;
+    if (ringIdx < ringCount - 1) ++ringIdx;   // hold last entry for any extra sub-chunks
+}
+fxSubPhase_[(size_t) p] = nextBoundary - (double) numSamples;   // drift-free carry
+}
+
+// Builds the IDLE telemetry row for the tracked Part: persisted controllers
+// and constants keep their true value; per-voice generators decay from the
+// last live row (uiTelIdlePrev_). Reads the standing-bend latch for
+// PITCH_BEND. Called by runFxSubChunkLoop when no sticky voice is active.
+void SynthEngine::buildIdleTelemetryRow (int p, uint8_t* idleRow)
+{
+    auto& part = parts_[(size_t) p];
+
+    if (uiTelLiveSeen_ && ! uiTelIdleSeeded_)
+    {
+        // Seed ONLY on a genuine active->idle transition: after
+        // a telemetry wipe (fresh zero buffer) lastModSources_
+        // still holds the pre-wipe live row — FX-tail state the
+        // wipe deliberately does not clear — and seeding from
+        // it would resurrect stale motion into the fresh
+        // window ([3] reset contract).
+        std::copy (lastModSources_[(size_t) p].begin(),
+                   lastModSources_[(size_t) p].end(),
+                   uiTelIdlePrev_.begin());
+        uiTelIdleSeeded_ = true;
+    }
+    for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
+    {
+        if (src >= 24)   // CONSTANT_*: a constant's state IS its value
+            idleRow[(size_t) src] = parvati::telemetryConstantByte (src);
+        else if (parvati::telemetrySourcePersistsWhenIdle (src))
+            idleRow[(size_t) src] = lastModSources_[(size_t) p][(size_t) src];
+        else
+            idleRow[(size_t) src] = uiTelIdlePrev_[(size_t) src];
+    }
+    if (! part.voiceIndices.empty())
+        if (auto* gv = getAmbikaVoice (part.voiceIndices[0]))
+            for (int src = ambika::dsp::MOD_SRC_WHEEL;
+                 src <= ambika::dsp::MOD_SRC_EXPRESSION; ++src)
+                idleRow[(size_t) src] = gv->getModulationSource (
+                    static_cast<uint8_t> (src));
+    // PITCH_BEND from the standing-bend LATCH (pre-existing
+    // bug fixed 2026-08-23): lastModSources_ is only written
+    // from a SOUNDING voice's ring. So at startup / after a
+    // telemetry wipe — before any note — the idle row carried
+    // 0 and the Pitch Bend pill strip scrolled from the FLOOR
+    // although the wheel rests at 128 = mid = 50%. The latch
+    // (lastWheel_, initialized to the centre, per MIDI channel,
+    // written by handlePitchWheel) IS the idle truth; the byte
+    // mapping mirrors the voice side (applyMpeToVoice:
+    // 128 + norm*127 — the bend-range factor cancels, so the
+    // host wheel maps linearly 0..16383 -> 1..255 about 128).
+    // An Omni part (channel 0) has no single channel: read the
+    // global master channel 1 latch, where a non-MPE wheel
+    // arrives.
+    {
+        const uint8_t pch = parts_[(size_t) p].midiChannel.load (std::memory_order_relaxed);
+        const int bendCh = (pch >= 1 && pch <= 16) ? (int) pch : 1;
+        const int wheel = lastWheel_[(size_t) bendCh].load (std::memory_order_relaxed);
+        const float bendNorm = juce::jlimit (-1.0f, 1.0f,
+            (static_cast<float> (wheel) - 8192.0f) * (1.0f / 8192.0f));
+        idleRow[(size_t) ambika::dsp::MOD_SRC_PITCH_BEND] =
+            static_cast<uint8_t> (juce::jlimit (0, 255,
+                juce::roundToInt (128.0f + bendNorm * 127.0f)));
+    }
 }
 
 //==========================================================================
