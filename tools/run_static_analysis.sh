@@ -32,12 +32,14 @@ if [ -z "$BUILD" ]; then
 fi
 if [ -z "$BUILD" ] || [ ! -f "$BUILD/compile_commands.json" ]; then
     echo "No compile_commands.json found. Configure a build first, e.g.:" >&2
-    echo "  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH=~/JUCE" >&2
+    echo "  cmake -S . -B build_unified -DCMAKE_BUILD_TYPE=Debug" >&2
     exit 2
 fi
 
-CLANG_TIDY="${CLANG_TIDY:-/opt/homebrew/opt/llvm/bin/clang-tidy}"
-RUN_CLANG_TIDY="${RUN_CLANG_TIDY:-/opt/homebrew/opt/llvm/bin/run-clang-tidy}"
+# PATH first, Homebrew fallback second: Linux and Intel-Mac installs put
+# clang-tidy on PATH, not under /opt/homebrew.
+CLANG_TIDY="${CLANG_TIDY:-$(command -v clang-tidy || echo /opt/homebrew/opt/llvm/bin/clang-tidy)}"
+RUN_CLANG_TIDY="${RUN_CLANG_TIDY:-$(command -v run-clang-tidy || echo /opt/homebrew/opt/llvm/bin/run-clang-tidy)}"
 CPPCHECK="${CPPCHECK:-cppcheck}"
 
 echo "=== Parvati static analysis ==="

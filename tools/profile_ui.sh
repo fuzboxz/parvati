@@ -40,6 +40,17 @@ build_dir="${1:-build_release}"
 app="$build_dir/Parvati_artefacts/Release/Standalone/Parvati.app"
 binary="$app/Contents/MacOS/Parvati"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Fail fast with the exact configure line: build_release is a release-workflow
+# dir, not part of a fresh clone. build_unified is Debug-only and cannot serve
+# this Release measurement.
+prof_cache="$repo_root/$build_dir/CMakeCache.txt"
+case "$build_dir" in /*) prof_cache="$build_dir/CMakeCache.txt";; esac
+if [ ! -f "$prof_cache" ]; then
+    echo "No configured build dir at '$build_dir'. This script measures a Release build." >&2
+    echo "Configure it first:  cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release" >&2
+    exit 2
+fi
 helper_src="$repo_root/tools/ui_drag_helper.swift"
 helper_bin="${TMPDIR:-/tmp}/parvati_ui_drag_helper"
 

@@ -45,7 +45,12 @@ set -uo pipefail
 JUCE="${JUCE:-$HOME/JUCE}"
 REPEAT="${REPEAT:-3}"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+# Linux has no hw.ncpu sysctl; macOS has no nproc. Try both, then fall back.
+JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+# Per-invocation log names under TMPDIR: two CI users on one host must not
+# overwrite each other's /tmp logs.
+LOGDIR="${TMPDIR:-/tmp}"
+LOGTAG="$$"
 UNIFIED=parvati_unified_tests
 fail=0
 
@@ -77,17 +82,20 @@ validate_names () {
 # sanitizer dirs build no plugin-format bundles (see header note).
 build_config () {
     local dir="$1" label="$2"; shift 2
+    # -DCMAKE_OSX_ARCHITECTURES is an Apple-only configure flag.
+    local os_arch_flag=""
+    [ "$(uname -s)" = "Darwin" ] && os_arch_flag="-DCMAKE_OSX_ARCHITECTURES=arm64"
     echo "--- configuring + building $label ($dir) ---"
     cmake -S "$SRC" -B "$dir" -G "Unix Makefiles" \
         -DCMAKE_BUILD_TYPE=Debug -DJUCE_GLOBAL_PATH="$JUCE" \
-        -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        $os_arch_flag \
         -DPARVATI_FORMATS= -DPARVATI_BUILD_CLAP=OFF \
         "$@" \
-        > "/tmp/parvati_cmake_$(basename "$dir").log" 2>&1 \
-        || { tail -20 "/tmp/parvati_cmake_$(basename "$dir").log"; exit 2; }
+        > "$LOGDIR/parvati_cmake_$(basename "$dir").$LOGTAG.log" 2>&1 \
+        || { tail -20 "$LOGDIR/parvati_cmake_$(basename "$dir").$LOGTAG.log"; exit 2; }
     cmake --build "$dir" --target "$UNIFIED" -j "$JOBS" \
-        > "/tmp/parvati_build_$(basename "$dir").log" 2>&1 \
-        || { tail -30 "/tmp/parvati_build_$(basename "$dir").log"; exit 2; }
+        > "$LOGDIR/parvati_build_$(basename "$dir").$LOGTAG.log" 2>&1 \
+        || { tail -30 "$LOGDIR/parvati_build_$(basename "$dir").$LOGTAG.log"; exit 2; }
 }
 
 # Run the unified binary in $1=build dir under $2=label. Any remaining args are
@@ -95,7 +103,7 @@ build_config () {
 # caller so both configs share this path.
 run_suite () {
     local dir="$1" label="$2"; shift 2
-    local log="/tmp/parvati_san_${label}.log"
+    local log="$LOGDIR/parvati_san_${label}.$LOGTAG.log"
     local what="all tests"
     if [ $# -gt 0 ]; then what="test(s): $*"; fi
     echo "  running $what under $label..."
@@ -135,12 +143,12 @@ if [ "${SKIP_TSAN:-0}" != "1" ]; then
         for ((i = 1; i <= REPEAT; ++i)); do
             if TSAN_OPTIONS="halt_on_error=1" \
                 "$SRC/build_san_tsan/$UNIFIED" concurrency_test \
-                > "/tmp/parvati_san_conc_${i}.log" 2>&1; then
+                > "$LOGDIR/parvati_san_conc_${i}.$LOGTAG.log" 2>&1; then
                 echo "    concurrency_test TSan run $i/$REPEAT: PASS"
             else
                 echo "    concurrency_test TSan run $i/$REPEAT: FAIL"
                 grep -m3 -iE "WARNING: ThreadSanitizer|SUMMARY:" \
-                    "/tmp/parvati_san_conc_${i}.log" | sed 's/^/        /'
+                    "$LOGDIR/parvati_san_conc_${i}.$LOGTAG.log" | sed 's/^/        /'
                 fail=1
             fi
         done
@@ -151,6 +159,6 @@ echo ""
 if [ "$fail" -eq 0 ]; then
     echo "=== SANITIZER SWEEP: ALL CLEAN ==="
 else
-    echo "=== SANITIZER SWEEP: FAILURES (see /tmp/parvati_san_*.log) ==="
+    echo "=== SANITIZER SWEEP: FAILURES (see $LOGDIR/parvati_san_*.$LOGTAG.log) ==="
 fi
 exit "$fail"
