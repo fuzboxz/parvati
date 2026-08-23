@@ -383,6 +383,16 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   overhead; inert macro on older toolchains.
 
 ### Changed
+- **Matrix depth sliders unified on the slim 4pt track (2026-08-23).** The
+  modulation-matrix depth sliders in the synth matrix and the FX matrix drew
+  two different geometries: the synth matrix used a 7pt track with a fixed
+  15pt thumb, while the FX matrix used a slimmer 4pt track with a
+  proportional thumb. Both matrices now draw the FX geometry: the 4pt track
+  and the proportional thumb (minimum 3pt radius, scaling with the row
+  band). The synth matrix depth sliders therefore look leaner; the FX matrix
+  is unchanged. No test pinned the old 7pt geometry, so no test needed a
+  re-pin; the shared drawing code now lives in one place
+  (`MatrixViewBase`).
 - **Memory-safe C++ migration of the DSP layer (2026-08-22).** The
   first-party DSP code now makes its buffer/index contracts un-breakable by
   construction, with zero runtime cost and bit-identical audio (validated by

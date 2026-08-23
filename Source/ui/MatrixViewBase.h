@@ -65,15 +65,6 @@ constexpr int kMatrixIndexLabelW = 20;
 }  // namespace parvati::matrixview
 
 //==============================================================================
-// Depth-slider geometry for the local bipolar LookAndFeel. trackHeight is the
-// slider track height in pt. thumbProportional selects the thumb radius:
-// true -> jmax (3.0f, height * 0.30f); false -> a fixed 7.5f radius.
-struct MatrixSliderGeometry
-{
-    float trackHeight     = 4.0f;
-    bool  thumbProportional = true;
-};
-
 // Every structural difference between the two matrix views. The base reads
 // this table; it never tests the view type. Add a field only for a real
 // difference, and give both views their TODAY value.
@@ -122,9 +113,6 @@ struct MatrixViewConfig
     // ---- addSlot defaults ----
     int addDefaultSource;           // MOD_SRC_* enum of the default source
     int addDefaultDest;             // dest enum of the default target
-
-    // ---- depth-slider look ----
-    MatrixSliderGeometry sliderGeometry;
 };
 
 //==============================================================================

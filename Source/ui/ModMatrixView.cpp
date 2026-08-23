@@ -36,9 +36,6 @@ MatrixViewConfig makeSynthConfig()
     cfg.rejectDestAtOrAbove = parvati::ModDestMap::kFxModDstOffset;   // synth rejects FX dests
     cfg.addDefaultSource = ambika::dsp::MOD_SRC_ENV_1;
     cfg.addDefaultDest   = ambika::dsp::MOD_DST_FILTER_CUTOFF;   // a visible, classic routing
-    // Depth-slider geometry (pre-unification synth value): the 7pt track and
-    // the fixed 15pt-diameter thumb from 2026-08-20.
-    cfg.sliderGeometry = { 7.0f, false };
     return cfg;
 }
 }  // namespace

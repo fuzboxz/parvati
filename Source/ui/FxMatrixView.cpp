@@ -40,9 +40,6 @@ MatrixViewConfig makeFxConfig()
     cfg.rejectDestAtOrAbove = std::numeric_limits<int>::max();     // raw FX_DST_* indices only
     cfg.addDefaultSource = ambika::dsp::MOD_SRC_ENV_1;
     cfg.addDefaultDest   = 0;   // FX_DST_FX1_DRYWET (the first makeFxDests() entry)
-    // Depth-slider geometry: the FX matrix's 4pt track with the
-    // proportional thumb (the shared historical FX value).
-    cfg.sliderGeometry = { 4.0f, true };
     return cfg;
 }
 

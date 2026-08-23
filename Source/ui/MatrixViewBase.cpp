@@ -48,12 +48,13 @@ juce::Font appFontOr (const juce::Component& c, float height)
 // Local bipolar depth-slider LookAndFeel: a thin track, a fill drawn FROM the
 // CENTRE to the value (row colour right of centre, dimmed left of centre), a
 // centre zero-detent tick and a thumb. Self-contained. It never touches the
-// shared ParvatiLookAndFeel. MatrixSliderGeometry seeds the per-view values.
+// shared ParvatiLookAndFeel. Both matrix views share one geometry: the 4pt
+// track and the proportional thumb (unified 2026-08-23; the synth matrix's
+// former 7pt track / fixed 15pt thumb was the drift this replaced).
 class MatrixViewBase::BipolarSliderLNF : public juce::LookAndFeel_V4
 {
 public:
-    BipolarSliderLNF (ThemeManager& tm, const MatrixSliderGeometry& geometry)
-        : themeManager_ (tm), geometry_ (geometry) {}
+    explicit BipolarSliderLNF (ThemeManager& tm) : themeManager_ (tm) {}
 
     void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
@@ -78,7 +79,7 @@ public:
         const juce::Colour thumbCol = t.textPrimary;
 
         const float cy      = static_cast<float> (y) + static_cast<float> (height) * 0.5f;
-        const float trackH  = geometry_.trackHeight;
+        const float trackH  = 4.0f;
         const float radius  = trackH * 0.5f;
         const float left    = static_cast<float> (x);
         const float right   = static_cast<float> (x + width);
@@ -106,10 +107,9 @@ public:
         g.setColour (thumbCol.withAlpha (slider.isEnabled() ? 0.9f : 0.4f));
         g.fillRect (juce::Rectangle<float> (centreX - 0.5f, cy - trackH, 1.0f, trackH * 2.0f));
 
-        // Flat solid circle thumb (no 3D/gradient / no outline ring).
-        const float tr = geometry_.thumbProportional
-                             ? juce::jmax (3.0f, static_cast<float> (height) * 0.30f)
-                             : 7.5f;
+        // Flat solid circle thumb (no 3D/gradient / no outline ring). The
+        // radius is proportional to the band, with a 3pt floor.
+        const float tr = juce::jmax (3.0f, static_cast<float> (height) * 0.30f);
         const auto  thumbRect = juce::Rectangle<float> (tr * 2.0f, tr * 2.0f).withCentre (juce::Point<float> (sp, cy));
         g.setColour (slider.isEnabled() ? thumbCol : thumbCol.withAlpha (0.4f));
         g.fillEllipse (thumbRect);
@@ -117,7 +117,6 @@ public:
 
 private:
     ThemeManager& themeManager_;
-    MatrixSliderGeometry geometry_;
 };
 
 //==============================================================================
@@ -492,7 +491,7 @@ MatrixViewBase::MatrixViewBase (ParvatiAudioProcessor& processor, ThemeManager& 
 {
     jassert (config_.numSlots >= 1 && config_.numSlots <= 16);
 
-    bipolarLnf_ = std::make_unique<BipolarSliderLNF> (themeManager_, config_.sliderGeometry);
+    bipolarLnf_ = std::make_unique<BipolarSliderLNF> (themeManager_);
 
     headerLabel_.setText ("0 " + TRANS (config_.usedSuffixKey), juce::dontSendNotification);
     headerLabel_.setJustificationType (juce::Justification::centredLeft);
