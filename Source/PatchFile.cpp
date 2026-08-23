@@ -164,6 +164,65 @@ void writeName16 (std::vector<uint8_t>& b, const juce::String& name)
         name16[15] = '\0';
     b.insert (b.end(), name16, name16 + 16);
 }
+
+// One MBKS "obj " chunk: a 4-byte type prefix plus a fixed payload.
+struct MbksObjectChunk
+{
+    uint32_t typePrefix;
+    const uint8_t* data;
+    size_t size;
+};
+
+// Serialize and write one MBKS (RIFF) file: the header, the name chunk, then
+// the object chunks in order. The body size is computed from the chunk list;
+// for the program layout below it evaluates to the same 248 the firmware
+// writes. The write is atomic via a temp file (safe even if the target file is
+// open elsewhere).
+bool writeMbksFile (const juce::File& file, const juce::String& name,
+                    const std::vector<MbksObjectChunk>& objects)
+{
+    size_t total = 12u + (8u + 16u);   // RIFF+MBKS header + name chunk
+    for (const auto& o : objects)
+        total += 8u + 4u + o.size;
+    std::vector<uint8_t> b;
+    b.reserve (total);
+
+    const auto push4 = [&b] (const char* tag) { b.insert (b.end(), tag, tag + 4); };
+    const auto le32  = [&b] (uint32_t x) {
+        b.push_back (static_cast<uint8_t> (x));
+        b.push_back (static_cast<uint8_t> (x >> 8));
+        b.push_back (static_cast<uint8_t> (x >> 16));
+        b.push_back (static_cast<uint8_t> (x >> 24));
+    };
+
+    // RIFF / MBKS header. The body size covers everything after the 8-byte
+    // "RIFF"+size header: the "MBKS" form type plus every chunk.
+    push4 ("RIFF");
+    le32 (static_cast<uint32_t> (total - 8u));
+    push4 ("MBKS");
+
+    // NAME chunk: 16-byte ASCII name, space-padded (matches trimName on parse).
+    push4 ("name");
+    le32 (16u);
+    writeName16 (b, name);
+
+    for (const auto& o : objects)
+    {
+        push4 ("obj ");
+        le32 (static_cast<uint32_t> (o.size + 4u));
+        le32 (o.typePrefix);
+        b.insert (b.end(), o.data, o.data + o.size);
+    }
+
+    juce::TemporaryFile temp (file);
+    {
+        juce::FileOutputStream out (temp.getFile());
+        if (! out.openedOk() || ! out.write (b.data(), b.size()))
+            return false;
+        out.flush();
+    }
+    return temp.overwriteTargetFileWithTemporary();
+}
 }  // namespace
 
 bool writeAmbikaProgramFile (const juce::File& file, const AmbikaProgram& prog)
@@ -182,50 +241,9 @@ bool writeAmbikaProgramFile (const juce::File& file, const AmbikaProgram& prog)
     //   PartData = STORAGE_OBJECT_PART(4)+1 = 5 (alias 0 for a single program).
     //   parseAmbikaProgram identifies Patch/Part purely by payload length, so this
     //   round-trips exactly. All chunk sizes here are even, so no RIFF padding.
-    std::vector<uint8_t> b;
-    b.reserve (256);
-
-    const auto push4 = [&b] (const char* tag) { b.insert (b.end(), tag, tag + 4); };
-    const auto le32  = [&b] (uint32_t x) {
-        b.push_back (static_cast<uint8_t> (x));
-        b.push_back (static_cast<uint8_t> (x >> 8));
-        b.push_back (static_cast<uint8_t> (x >> 16));
-        b.push_back (static_cast<uint8_t> (x >> 24));
-    };
-
-    // RIFF / MBKS header.
-    push4 ("RIFF");
-    le32 (248u);
-    push4 ("MBKS");
-
-    // NAME chunk: 16-byte ASCII name, space-padded (matches trimName on parse).
-    push4 ("name");
-    le32 (16u);
-    {
-        writeName16 (b, prog.name);
-    }
-
-    // Patch object (type prefix 0x00000001).
-    push4 ("obj ");
-    le32 (112u + 4u);
-    le32 (0x00000001u);
-    b.insert (b.end(), prog.patch.begin(), prog.patch.end());
-
-    // PartData object (type prefix 0x00000005).
-    push4 ("obj ");
-    le32 (84u + 4u);
-    le32 (0x00000005u);
-    b.insert (b.end(), prog.part.begin(), prog.part.end());
-
-    // Atomic write via a temp file (safe even if the target is open elsewhere).
-    juce::TemporaryFile temp (file);
-    {
-        juce::FileOutputStream out (temp.getFile());
-        if (! out.openedOk() || ! out.write (b.data(), b.size()))
-            return false;
-        out.flush();
-    }
-    return temp.overwriteTargetFileWithTemporary();
+    return writeMbksFile (file, prog.name,
+        { { 0x00000001u, prog.patch.data(), prog.patch.size() },
+          { 0x00000005u, prog.part.data(),  prog.part.size() } });
 }
 
 //==============================================================================
@@ -245,7 +263,6 @@ bool parseAmbikaMulti (const void* data, size_t size, AmbikaMulti& out)
             // type prefix = (partIndex_1based << 8) | objectType.
             // 0x01 = Patch, 0x05 = PartData, 0x04 = MultiData (part 0).
             const uint32_t partIdx1 = (typePrefix >> 8) & 0xFFu;
-            const uint32_t objType  = typePrefix & 0xFFu;
 
             if (partIdx1 == 0 && payloadLen == 56)   // MultiData
             {
@@ -270,7 +287,6 @@ bool parseAmbikaMulti (const void* data, size_t size, AmbikaMulti& out)
                     out.parts[(size_t) idx].hasPart = true;
                 }
             }
-            (void) objType;
         });
 
     out.ok = out.hasMultiData;
@@ -307,70 +323,21 @@ bool writeAmbikaMultiFile (const juce::File& file, const AmbikaMulti& multi)
     //   PartData = (i<<8)|0x05. parseAmbikaMulti routes by partIdx1 (high byte)
     //   and identifies Patch/Part by payload length, so this round-trips exactly.
     //   All chunk sizes are even, so no RIFF word-padding is needed.
-    std::vector<uint8_t> b;
-    b.reserve (1424);
-
-    const auto push4 = [&b] (const char* tag) { b.insert (b.end(), tag, tag + 4); };
-    const auto le32  = [&b] (uint32_t x) {
-        b.push_back (static_cast<uint8_t> (x));
-        b.push_back (static_cast<uint8_t> (x >> 8));
-        b.push_back (static_cast<uint8_t> (x >> 16));
-        b.push_back (static_cast<uint8_t> (x >> 24));
-    };
-
-    // Compute the RIFF body size up front (everything after the 8-byte
-    // "RIFF"+size header): the "MBKS" form type + every chunk (8-byte header +
-    // payload).
-    const uint32_t bodySize = 4u     // "MBKS" form type
-                           + (8u + 16u)                  // name chunk
-                           + (8u + 4u + 56u)             // MultiData obj
-                           + 6u * (8u + 4u + 112u)       // 6 x Patch obj
-                           + 6u * (8u + 4u + 84u);       // 6 x PartData obj
-
-    // RIFF / MBKS header.
-    push4 ("RIFF");
-    le32 (bodySize);
-    push4 ("MBKS");
-
-    // NAME chunk: 16-byte ASCII name, space-padded (matches trimName on parse).
-    push4 ("name");
-    le32 (16u);
-    {
-        writeName16 (b, multi.name);
-    }
+    std::vector<MbksObjectChunk> objects;
+    objects.reserve (1u + 2u * 6u);
 
     // MultiData object (type prefix 0x00000004, part 0). Always written: a
     // zeroed MultiData keeps the file well-formed (loadMultiFile needs it) and a
     // reference .MUL always carries it, so the round-trip is exact.
-    push4 ("obj ");
-    le32 (56u + 4u);
-    le32 (0x00000004u);
-    b.insert (b.end(), multi.multiData.begin(), multi.multiData.end());
+    objects.push_back ({ 0x00000004u, multi.multiData.data(), multi.multiData.size() });
 
     // Six Parts (1-based index in the type prefix), each an interleaved Patch +
     // PartData object.
     for (uint32_t i = 1; i <= 6u; ++i)  // NOLINT(bugprone-infinite-loop): ++i ends it; clang-tidy FP on the uint counter
     {
         const auto& p = multi.parts[i - 1u];
-
-        push4 ("obj ");
-        le32 (112u + 4u);
-        le32 ((i << 8) | 0x00000001u);
-        b.insert (b.end(), p.patch.begin(), p.patch.end());
-
-        push4 ("obj ");
-        le32 (84u + 4u);
-        le32 ((i << 8) | 0x00000005u);
-        b.insert (b.end(), p.part.begin(), p.part.end());
+        objects.push_back ({ (i << 8) | 0x00000001u, p.patch.data(), p.patch.size() });
+        objects.push_back ({ (i << 8) | 0x00000005u, p.part.data(),  p.part.size() });
     }
-
-    // Atomic write via a temp file (safe even if the target is open elsewhere).
-    juce::TemporaryFile temp (file);
-    {
-        juce::FileOutputStream out (temp.getFile());
-        if (! out.openedOk() || ! out.write (b.data(), b.size()))
-            return false;
-        out.flush();
-    }
-    return temp.overwriteTargetFileWithTemporary();
+    return writeMbksFile (file, multi.name, objects);
 }
