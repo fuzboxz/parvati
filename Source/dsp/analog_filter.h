@@ -6,7 +6,7 @@
 // 2-bit filter mode and sends them to a DAC + parallel port. This module
 // emulates that analog filter in software using juce::dsp, fresh-written.
 //
-// Four voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
+// Five voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
 //   * 4-pole Ladder                 -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
 //                                   controllable Drive scales the saturator -> bass-drop at high Q).
 //   * 4-pole SSM2164 ("4P")       -> TWO juce::dsp::StateVariableTPTFilter (lowpass) IN SERIES,
@@ -18,6 +18,16 @@
 //                                   error, datasheet 2Vt knee (52 mV normalized), loop-gain-
 //                                   normalised resonance with its own VCA soft clip. NOT a
 //                                   component-level SPICE model.
+//   * 2-pole Polivoks SVF          -> custom ZDF SVF model (this repo), NOT juce::dsp. The Soviet
+//                                   Polivoks form: an op-amp character layer on the exact
+//                                   R = 2*(1-res) skeleton (char-poly proof in the .cpp):
+//                                   asymmetric hard-shoulder rails (even harmonics), a harder
+//                                   diode-style limiter on the resonance return, Q-dependent
+//                                   damping sag, input offset, asymmetric rate-limited outputs,
+//                                   supply clamp on the states. LP + BP outputs. Documented-
+//                                   behaviour-derived calibration: no reference schematic exists
+//                                   in the tree (a Formanta community card, not an Ambika
+//                                   voicecard).
 
 #pragma once
 
@@ -30,7 +40,8 @@ enum class FilterTopology {
     FOUR_POLE_LADDER,   // 4-pole Ladder.  juce::dsp::LadderFilter LPF24 (tanh saturation; Drive control). Self-oscillating.
     FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, cutoff+resonance linked. Linear baseline. Always LP.
     TWO_POLE_SVF,       // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
-    FOUR_POLE_OTA       // 4-pole SMR4 OTA cascade (custom model). Four tanh OTA stages, 2Vt knee, normalised resonance VCA. Always LP. Self-oscillates at resonance 1.0.
+    FOUR_POLE_OTA,      // 4-pole SMR4 OTA cascade (custom model). Four tanh OTA stages, 2Vt knee, normalised resonance VCA. Always LP. Self-oscillates at resonance 1.0.
+    TWO_POLE_POLIVOKS   // 2-pole Polivoks SVF (custom model). Op-amp character layer: asymmetric hard-shoulder rails, diode-style resonance limiting, Q-dependent damping sag, input offset, rate-limited outputs. LP + BP. HP/Notch clamp to LP. Self-oscillates at resonance 1.0.
 };
 
 // Local filter-mode enum. Values match common/patch.h FilterMode
@@ -98,9 +109,16 @@ public:
     void setResonance (float newResonance);
 
     // Saturation drive. Scales the tanh saturator of the Ladder card (1.2 ==
-    // the juce::dsp::LadderFilter default) and the OTA knee of the SMR4 card
-    // (knee = 2Vt / drive). Cached; applied on the next commit().
+    // the juce::dsp::LadderFilter default), the OTA knee of the SMR4 card
+    // (knee = 2Vt / drive), and the clip and rate limits of the Polivoks
+    // card (more drive clips lower and slews slower). Cached; applied on the
+    // next commit().
     void setDrive (float newDrive) { drive_ = newDrive; dirty_ = true; }
+
+    // TEST-ONLY: bypass the Polivoks character layer. The filter then runs
+    // the pure linear skeleton. The character tests render this reference.
+    // No audio path sets it.
+    void setTestLinearBypass (bool b) { pvTestLinear_ = b; }
 
     // Pushes cached cutoff/resonance/mode/topology into the active juce::dsp
     // filter(s). Call ONCE per 40-sample control block.
@@ -198,10 +216,85 @@ private:
     // Resonance-VCA soft clip: unit-slope form kfb*2Vt*tanh(y4/2Vt).
     float kfbVca_ = 0.0f;
     // 2Vt of the LM13700 in normalized units (52 mV at 1.0 == 1 V full scale).
+    // The Polivoks reuses the same normalized knee scale: its op-amp
+    // saturation uses the same behavioural constant, scaled by Filter Drive.
     static constexpr float kTwoVt = 0.052f;
     static constexpr float kInvTwoVt = 1.0f / 0.052f;
     // Hard cap on kfb_ (numeric guard only; kOnset <= ~4 keeps kfb small).
     static constexpr double kKfbHardMax = 1.0e12;
+
+    // ---- 2-pole Polivoks SVF --------------------------------------------------
+    // One sample of the Polivoks model. x = input. Returns LP or BP per mode.
+    float processPolivoksSample (float x) noexcept;
+    // Integrator states: pvS1_ = bandpass, pvS2_ = lowpass.
+    float pvS1_ = 0.0f, pvS2_ = 0.0f;
+    // Rate-limited node values from the previous sample. The op-amp output
+    // nodes track the solved values with a per-sample rate cap.
+    float pvPrevBp_ = 0.0f, pvPrevLp_ = 0.0f;
+    // True when the active mode is Bandpass (set in applyParams). Highpass and
+    // Notch clamp to LP: the real card has no such outputs.
+    bool pvBandpass_ = false;
+    // TEST-ONLY hook: run the pure linear skeleton (no shapers, no sag, no
+    // offset, no rate limit). The character tests measure against this
+    // reference. No audio path sets it.
+    bool pvTestLinear_ = false;
+
+    // C1 saturating shaper, one signal polarity. Slope 1 below the knee, a
+    // cubic ease to slope s across width w, a hard shoulder of length sh at
+    // slope s, a cubic ease to slope 0 across railT, then a flat rail at
+    // value phi3. The flat rail models the supply clamp of an op-amp output
+    // stage and gives the solver a closed bracket.
+    struct PvShaper
+    {
+        float knee = 1.0f, w = 0.25f, sh = 0.5f, railT = 0.04f, s = 0.08f;
+        float phi1 = 0.0f, phi2 = 0.0f, phi3 = 1.0f;   // region boundary values
+        // Computes w, sh, railT, phi1..phi3 from knee and s (double math).
+        void setup (double kneeIn, double sIn) noexcept;
+        // v >= 0. Returns the shaper value.
+        float eval (float v) const noexcept;
+        // v >= 0. Returns the shaper slope in [0, 1].
+        float slope (float v) const noexcept;
+    };
+    // Op-amp stage shapers (asymmetric: the negative side clips lower).
+    PvShaper pvShapeP_, pvShapeN_;
+    // Resonance-return shaper. Harder and lower: the diode-limited feedback
+    // path of the resonance control breaks up before the stages clip.
+    PvShaper pvReturnP_, pvReturnN_;
+    // Signed shaper helpers (positive side uses the P constants).
+    float pvPhi (float v) const noexcept;
+    float pvPhiSlope (float v) const noexcept;
+    float pvReturn (float v) const noexcept;
+    float pvReturnSlope (float v) const noexcept;
+
+    // Coefficients, recomputed in applyParams() (double math), stored as float:
+    //   pvGLin_ exact TPT integrator conductance tan(pi*fc/fs).
+    //   pvR_    linear damping R = 2*(1 - res). R = 0 at res = 1.0 is the EXACT
+    //           self-oscillation onset of the linearised loop at every cutoff
+    //           (proof in the .cpp). Analog Q = 1/R: res 0 -> Q 0.5 (damped),
+    //           res -> 1 -> Q -> infinity (onset).
+    //   pvKrg_  sagged damping R*(1 - sag*res^2), sag = 0.12. High resonance
+    //           removes damping beyond the linear map, so the loop breaks up
+    //           into clipping instead of a clean limit cycle. At res = 1.0 the
+    //           sag multiplies R = 0, so the onset does not move.
+    //   pvInvDen_     1/(1 + g*kR + g*g): linearised solve with the sagged R.
+    //   pvInvDenLin_  1/(1 + g*R + g*g): pure linear solve (test reference).
+    //   pvDc_   input offset, 0.8 percent of the positive knee. Op-amp bias
+    //           current. The asymmetric rails turn it into drift and thump.
+    //   pvSlewP_ positive per-sample rate cap at unity drive. The negative
+    //           cap is 75 percent of it. Both divide by the drive factor, so
+    //           more drive lowers the cap. A signal inside the linear zone
+    //           sees a cap pvSlewFloor_ times wider (the gate holds at 0.12).
+    float pvGLin_ = 0.0f, pvR_ = 2.0f, pvKrg_ = 2.0f, pvInvDen_ = 1.0f, pvInvDenLin_ = 1.0f;
+    float pvDc_ = 0.0f, pvSlewP_ = 1.0f;
+    float pvKneeP_ = 1.0f, pvInvTwoKneeP_ = 0.5f, pvKneeN_ = 1.0f, pvInvTwoKneeN_ = 0.5f;
+    // Supply clamp on both integrator states: a fixed absolute value. The
+    // drive moves the shaper knees, not the supply. See the .cpp step 5.
+    static constexpr float pvNodeClamp_ = 4.0f;
+    static constexpr float pvSlewFloor_ = 0.12f;
+    static constexpr float pvSlewDown_ = 0.75f;
+    // Newton iteration cap. The bracket [s1 - g*|satN|, s1 + g*satP] halves
+    // per fallback step, so 24 iterations reach the float noise floor.
+    static constexpr int kPvMaxIters = 24;
 };
 
 } // namespace ambika::dsp

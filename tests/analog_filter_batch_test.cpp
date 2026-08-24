@@ -117,7 +117,7 @@ void runLadderEquivalence (const char* label,
 }
 
 // Sanity (not equivalence) for the non-ladder topologies' per-sample path.
-void runTopologySanity (const char* label, ambika::dsp::FilterTopology topo, int mode, float res = 0.5f)
+void runTopologySanity (const char* label, ambika::dsp::FilterTopology topo, int mode, float res = 0.5f, float drive = -1.0f)
 {
     ambika::dsp::AnalogFilter f;
     f.prepare (kRate, 64);
@@ -125,6 +125,8 @@ void runTopologySanity (const char* label, ambika::dsp::FilterTopology topo, int
     f.setMode (mode);
     f.setCutoffHz (1200.0f);
     f.setResonance (res);
+    if (drive > 0.0f)
+        f.setDrive (drive);
     f.commit ();
     bool finite = true;
     double peak = 0.0;
@@ -196,6 +198,19 @@ TEST(analog_filter_batch_test)
         // (setResonance clamps 1.2 -> 1.0 internally; the tanh stages bound it).
         runTopologySanity ("4-pole OTA at resonance onset", ambika::dsp::FilterTopology::FOUR_POLE_OTA, 0, 1.0f);
         runTopologySanity ("4-pole OTA past onset (clamped)", ambika::dsp::FilterTopology::FOUR_POLE_OTA, 0, 1.2f);
+        runTopologySanity ("2-pole Polivoks lowpass",   ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0);
+        runTopologySanity ("2-pole Polivoks bandpass",   ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 1);
+        // Highpass/Notch clamp to LP on the Polivoks card (the real card has
+        // no such outputs); the clamp must render like the lowpass mode.
+        runTopologySanity ("2-pole Polivoks highpass clamps to LP", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 2);
+        runTopologySanity ("2-pole Polivoks notch clamps to LP",    ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 3);
+        runTopologySanity ("2-pole Polivoks at resonance onset", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0, 1.0f);
+        runTopologySanity ("2-pole Polivoks past onset (clamped)", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0, 1.2f);
+        // The character layer at its drive extremes: the lowest and highest
+        // Filter Drive values, both taps, at and past the resonance onset.
+        runTopologySanity ("2-pole Polivoks drive 1.0 at onset", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0, 1.0f, 1.0f);
+        runTopologySanity ("2-pole Polivoks drive 12 at onset", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0, 1.0f, 12.0f);
+        runTopologySanity ("2-pole Polivoks drive 12 bandpass", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 1, 0.9f, 12.0f);
     }
 
     std::printf ("\n%s (%d failure%s)\n",

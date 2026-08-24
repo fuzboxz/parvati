@@ -129,6 +129,12 @@ void AnalogFilter::commit()
             case FilterTopology::FOUR_POLE_OTA:
                 otaState_[0] = otaState_[1] = otaState_[2] = otaState_[3] = 0.0f;
                 break;
+            case FilterTopology::TWO_POLE_POLIVOKS:
+                pvS1_ = 0.0f;
+                pvS2_ = 0.0f;
+                pvPrevBp_ = 0.0f;
+                pvPrevLp_ = 0.0f;
+                break;
             case FilterTopology::FOUR_POLE_LADDER:
             default:
                 ladder_.reset();
@@ -211,6 +217,76 @@ void AnalogFilter::applyParams()
         kfbVca_      = static_cast<float> (kfb * double (kTwoVt));
         invOnePlusR_ = static_cast<float> (1.0 / (1.0 + r));
     }
+    else if (topology_ == FilterTopology::TWO_POLE_POLIVOKS)
+    {
+        // Polivoks SVF coefficients. All math in double; stored as float.
+        // The resonance cap kMaxResonance does NOT apply here: the model is
+        // bounded by its rails, and resonance 1.0 lands exactly at the
+        // self-oscillation onset by design (R = 0).
+        const double nyq    = 0.49 * sampleRate_;
+        const double fc     = juce::jlimit (double (kMinHz), juce::jmin (double (kMaxHz), nyq), double (cutoffHz_));
+        const double pi     = juce::MathConstants<double>::pi;
+        const double gLin   = std::tan (pi * fc / sampleRate_);   // exact TPT integrator conductance
+        // Damping map: R = 2*(1 - res). The constant is EXACT, not a fit:
+        //   * linearised loop: u = x - R*ybp - ylp; ybp = s1 + g*u; ylp = s2 + g*ybp
+        //     gives the analog H_lp = w^2/(s^2 + R*w*s + w^2) and H_bp = w*s/(...),
+        //     so analog Q = 1/R: res 0 -> Q 0.5, res -> 1 -> Q -> infinity;
+        //   * discrete: the trapezoid stage is g*(z+1)/(z-1); on |z| = 1 it is
+        //     -j*g*cot(theta/2). The char poly 1 + R*I + I^2 = 0 becomes
+        //     (1 - a^2) - j*R*a = 0 with a = g*cot(theta/2). Roots need a = 1
+        //     (oscillation at EXACTLY fc) AND R = 0. So R = 0 (res = 1.0) is
+        //     the exact onset at every cutoff, and roots sit strictly inside
+        //     the unit circle for every R > 0 (verified to machine precision
+        //     against the quadratic (z-1)^2 + R*g*(z+1)(z-1) + g^2*(z+1)^2).
+        // The character layer sits on this linear skeleton. Every shaper has
+        // slope 1 at the origin, so small-signal tuning is unchanged.
+        const double resEff = juce::jlimit (0.0, 1.0, double (resonance_));
+        const double R      = 2.0 * (1.0 - resEff);
+        // Damping sag: kR = R*(1 - 0.12*res^2). High resonance removes damping
+        // beyond the linear map, so the loop breaks up into clipping instead
+        // of a clean limit cycle. At res = 1.0 the sag scales R = 0, so the
+        // onset stays exact.
+        const double kR     = R * (1.0 - 0.12 * resEff * resEff);
+
+        // Character constants. The drive factor maps Filter Drive 1.2 to
+        // unity. More drive lowers every clip point and every rate limit.
+        const double driveNorm = juce::jmax (0.05 / 1.2, double (drive_) / 1.2);
+        // Stage shapers: op-amp output rails. The negative side clips 22
+        // percent lower and holds a steeper shoulder: real parts are not
+        // symmetric, and the asymmetry makes even harmonics.
+        const double kneeP = 0.90 / driveNorm;
+        const double kneeN = 0.78 * kneeP;
+        pvShapeP_.setup (kneeP, 0.08);
+        pvShapeN_.setup (kneeN, 0.12);
+        // Return shapers: the diode-limited resonance path. They clip at half
+        // the stage knee with a harder shoulder, so the resonance breaks up
+        // before the stages rail. This makes the low-cutoff growl.
+        pvReturnP_.setup (0.50 * kneeP, 0.05);
+        pvReturnN_.setup (0.50 * kneeN, 0.08);
+        // Input offset: op-amp bias current into the first integrator.
+        const double dc = 0.008 * kneeP;
+        // Output rate caps at unity drive, in units per sample. Calibration:
+        // a full-rail ring at 1 kHz and 48 kHz demands 2*pi*f/fs = 0.131 per
+        // sample, so 0.05 limits mid-cutoff resonance mildly; hot high-
+        // frequency content and rail corners engage it hard.
+        const double slewP = (0.05 * 48000.0 / sampleRate_) / driveNorm;
+
+        pvGLin_       = static_cast<float> (gLin);
+        pvR_          = static_cast<float> (R);
+        pvKrg_        = static_cast<float> (kR);
+        pvInvDen_     = static_cast<float> (1.0 / (1.0 + gLin * kR + gLin * gLin));
+        pvInvDenLin_  = static_cast<float> (1.0 / (1.0 + gLin * R + gLin * gLin));
+        pvDc_         = static_cast<float> (dc);
+        pvSlewP_      = static_cast<float> (slewP);
+        pvKneeP_      = static_cast<float> (kneeP);
+        pvKneeN_      = static_cast<float> (kneeN);
+        pvInvTwoKneeP_ = static_cast<float> (0.5 / kneeP);
+        pvInvTwoKneeN_ = static_cast<float> (0.5 / kneeN);
+        // The real card provides LP and BP outputs only. Highpass and Notch
+        // clamp to LP (documented in the header). The voice passes the patch
+        // mode through; the model picks its tap here.
+        pvBandpass_ = (mode_ == AnalogFilterMode::Bandpass);
+    }
     else // TWO_POLE_SVF
     {
         // JUCE's TPT SVF computes R2 = 1/resonance internally; resonance==0
@@ -257,6 +333,9 @@ float AnalogFilter::processSample (float inputValue)
 
     if (topology_ == FilterTopology::FOUR_POLE_OTA)
         return processOTASample (inputValue);
+
+    if (topology_ == FilterTopology::TWO_POLE_POLIVOKS)
+        return processPolivoksSample (inputValue);
 
     if (topology_ == FilterTopology::TWO_POLE_SVF)
     {
@@ -329,6 +408,186 @@ float AnalogFilter::processOTASample (float x) noexcept
             otaState_[i] = 0.0f;
 
     return y;
+}
+
+void AnalogFilter::PvShaper::setup (double kneeIn, double sIn) noexcept
+{
+    // Region layout, v >= 0:
+    //   [0, knee]            slope 1        (linear zone)
+    //   [knee, knee+w]       cubic ease 1 -> s
+    //   [knee+w, knee+w+sh]  shoulder, slope s (the hard shoulder)
+    //   [.., +railT]         cubic ease s -> 0
+    //   beyond               flat rail at phi3 (the supply clamp)
+    // w = 25 percent of the knee, the shoulder spans 2*w, the rail ease is
+    // 4 percent of the knee. phi1..3 are the shaper values at the region
+    // boundaries: the cubic integral of the slope across each ease region.
+    knee = static_cast<float> (kneeIn);
+    s    = static_cast<float> (sIn);
+    w    = static_cast<float> (0.25 * kneeIn);
+    sh   = static_cast<float> (0.50 * kneeIn);
+    railT = static_cast<float> (0.04 * kneeIn);
+    phi1 = static_cast<float> (kneeIn + 0.25 * kneeIn * (1.0 + sIn) * 0.5);
+    phi2 = static_cast<float> (kneeIn + 0.25 * kneeIn * (1.0 + sIn) * 0.5 + sIn * 0.50 * kneeIn);
+    phi3 = static_cast<float> (kneeIn + 0.25 * kneeIn * (1.0 + sIn) * 0.5 + sIn * 0.50 * kneeIn + sIn * 0.02 * kneeIn);
+}
+
+float AnalogFilter::PvShaper::eval (float v) const noexcept
+{
+    if (v <= knee)
+        return v;
+    const float v1 = knee + w;
+    if (v <= v1)
+    {
+        // Cubic ease of the slope from 1 to s. Integral of
+        // 1 - (1-s)*(3u^2 - 2u^3) over u in [0, 1] scaled by w.
+        const float u = (v - knee) / w;
+        return knee + w * (u - (1.0f - s) * (u * u * u - 0.5f * u * u * u * u));
+    }
+    const float v2 = v1 + sh;
+    if (v <= v2)
+        return phi1 + s * (v - v1);
+    const float v3 = v2 + railT;
+    if (v <= v3)
+    {
+        // Cubic ease of the slope from s to 0.
+        const float u = (v - v2) / railT;
+        return phi2 + railT * s * (u - (u * u * u - 0.5f * u * u * u * u));
+    }
+    return phi3;   // flat rail
+}
+
+float AnalogFilter::PvShaper::slope (float v) const noexcept
+{
+    if (v <= knee)
+        return 1.0f;
+    const float v1 = knee + w;
+    if (v <= v1)
+    {
+        const float u = (v - knee) / w;
+        const float smooth = u * u * (3.0f - 2.0f * u);
+        return 1.0f - (1.0f - s) * smooth;
+    }
+    const float v2 = v1 + sh;
+    if (v <= v2)
+        return s;
+    const float v3 = v2 + railT;
+    if (v <= v3)
+    {
+        const float u = (v - v2) / railT;
+        const float smooth = u * u * (3.0f - 2.0f * u);
+        return s * (1.0f - smooth);
+    }
+    return 0.0f;
+}
+
+float AnalogFilter::pvPhi (float v) const noexcept
+{
+    return (v >= 0.0f) ? pvShapeP_.eval (v) : -pvShapeN_.eval (-v);
+}
+
+float AnalogFilter::pvPhiSlope (float v) const noexcept
+{
+    return (v >= 0.0f) ? pvShapeP_.slope (v) : pvShapeN_.slope (-v);
+}
+
+float AnalogFilter::pvReturn (float v) const noexcept
+{
+    return (v >= 0.0f) ? pvReturnP_.eval (v) : -pvReturnN_.eval (-v);
+}
+
+float AnalogFilter::pvReturnSlope (float v) const noexcept
+{
+    return (v >= 0.0f) ? pvReturnP_.slope (v) : pvReturnN_.slope (-v);
+}
+
+float AnalogFilter::processPolivoksSample (float x) noexcept
+{
+    // Polivoks SVF with the op-amp character layer. The linear skeleton is
+    // the shipped model; the equations with the character terms:
+    //   u   = x + pvDc_ - pvKrg_*ybp - pvS2_ - pvGLin_*psi(ybp)
+    //   ybp = pvS1_ + pvGLin_*phi(u)             (implicit: u holds ybp)
+    //   ylp = pvS2_ + pvGLin_*phi(ybp)
+    //   outputs: rate-limited ybp and ylp; states track the limited values.
+    // phi = the asymmetric op-amp stage shapers; psi = the harder diode-style
+    // resonance-return shapers; pvKrg_ = the sagged damping; pvDc_ = the
+    // input offset. All shapers hold slope 1 at the origin, so the small-
+    // signal pole tuning and the exact R = 0 onset are unchanged.
+
+    if (pvTestLinear_)
+    {
+        // TEST-ONLY reference: the pure linear skeleton.
+        const float ybp = (pvS1_ + pvGLin_ * (x - pvS2_)) * pvInvDenLin_;
+        const float ylp = pvS2_ + pvGLin_ * ybp;
+        pvS1_ = 2.0f * ybp - pvS1_;
+        pvS2_ = 2.0f * ylp - pvS2_;
+        return pvBandpass_ ? ybp : ylp;
+    }
+
+    // 1) Linear warm start: the exact solve of the linearised loop with the
+    //    sagged damping, clamped into the bracket. The bracket bounds the
+    //    root because phi is flat at the rails: the root obeys
+    //    |ybp - s1| <= g*max(phi3P, phi3N).
+    const float lo = pvS1_ - pvGLin_ * juce::jmax (pvShapeP_.phi3, pvShapeN_.phi3);
+    const float hi = pvS1_ + pvGLin_ * juce::jmax (pvShapeP_.phi3, pvShapeN_.phi3);
+    float ybp = juce::jlimit (lo, hi, (pvS1_ + pvGLin_ * (x + pvDc_ - pvS2_)) * pvInvDen_);
+    float a = lo, b = hi;
+
+    // 2) Safeguarded Newton on F(ybp) = ybp - s1 - g*phi(u(ybp)).
+    //    F' = 1 + g*phi'(u)*(kR + g*psi'(ybp)) >= 1: F is strictly increasing,
+    //    every slope is in [0, 1] and kR >= 0. A step that leaves the bracket
+    //    (or is NaN) takes the bisection point instead. The ! (.. && ..)
+    //    form keeps NaN inside the fallback.
+    const float tol = 1.0e-6f * (1.0f + pvGLin_);
+    for (int it = 0; it < kPvMaxIters; ++it)
+    {
+        const float pr = pvReturn (ybp);
+        const float u  = x + pvDc_ - pvKrg_ * ybp - pvS2_ - pvGLin_ * pr;
+        const float F  = ybp - pvS1_ - pvGLin_ * pvPhi (u);
+        if (std::fabs (F) < tol)
+            break;
+        if (F > 0.0f)  b = juce::jmin (b, ybp);
+        else           a = juce::jmax (a, ybp);
+        const float dF = 1.0f + pvGLin_ * pvPhiSlope (u) * (pvKrg_ + pvGLin_ * pvReturnSlope (ybp));
+        float yn = ybp - F / dF;
+        if (! (yn > a && yn < b))
+            yn = 0.5f * (a + b);
+        ybp = yn;
+    }
+
+    // 3) Stage-2 output with the solved ybp.
+    const float pbF = pvPhi (ybp);
+    const float uF  = x + pvDc_ - pvKrg_ * ybp - pvS2_ - pvGLin_ * pvReturn (ybp);
+    const float ylp = pvS2_ + pvGLin_ * pbF;
+
+    // 4) Rate limits on both node outputs. The cap tightens with the input
+    //    overdrive of the driving stage (an input stage pushed past its
+    //    linear range recovers slowly). Inside the linear zone the gate
+    //    holds at the floor, so small signals never rate limit.
+    auto rateLimit = [] (float cur, float prev, float limUp, float limDown)
+    {
+        const float dy = cur - prev;
+        return prev + (dy > limUp ? limUp : (dy < -limDown ? -limDown : dy));
+    };
+    const float odU = juce::jlimit (pvSlewFloor_, 1.0f, (std::fabs (uF) - pvKneeP_) * pvInvTwoKneeP_);
+    const float odB = juce::jlimit (pvSlewFloor_, 1.0f, (std::fabs (ybp) - pvKneeN_) * pvInvTwoKneeN_);
+    const float limB = pvSlewP_ / odU;   // ybp node, gated by stage-1 input
+    const float limL = pvSlewP_ / odB;   // ylp node, gated by stage-2 input
+    const float ybpS = rateLimit (ybp, pvPrevBp_, limB, pvSlewDown_ * limB);
+    const float ylpS = rateLimit (ylp, pvPrevLp_, limL, pvSlewDown_ * limL);
+
+    // 5) Trapezoid state updates from the limited nodes, the supply clamp,
+    //    and the denormal flush. The clamp models the supplies: no node of a
+    //    real card swings past them. It stops the slow low-frequency drift
+    //    (motorboating) that the rate limiter's phase lag can start at high
+    //    resonance with a hot input. Small signals never reach it.
+    pvS1_ = juce::jlimit (-pvNodeClamp_, pvNodeClamp_, 2.0f * ybpS - pvS1_);
+    pvS2_ = juce::jlimit (-pvNodeClamp_, pvNodeClamp_, 2.0f * ylpS - pvS2_);
+    pvPrevBp_ = ybpS;
+    pvPrevLp_ = ylpS;
+    if (std::fabs (pvS1_) < std::numeric_limits<float>::min())  pvS1_ = 0.0f;
+    if (std::fabs (pvS2_) < std::numeric_limits<float>::min())  pvS2_ = 0.0f;
+
+    return pvBandpass_ ? ybpS : ylpS;
 }
 
 void AnalogFilter::processBlock (float* data, int numSamples)

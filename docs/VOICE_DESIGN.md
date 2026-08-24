@@ -562,6 +562,7 @@ The code models the three real voicecard filter boards that Ambika shipped:
 | SMR4 (LM13700 OTA) | 4-pole low-pass OTA cascade | Parvati models it with the Ladder card: `juce::dsp::LadderFilter`, 24 dB/oct, tanh saturation, self-oscillating (an approximation — the OTA cascade is not natively modeled) — plus a dedicated SMR4 card: custom OTA-cascade model (this repo), per-stage `gm*tanh(error/2Vt)` |
 | 4-pole SSM2164 | 4-pole cascade | a custom 4-stage one-pole cascade with feedback — "politer" than the ladder |
 | 2-pole SVF (SSM2164) | state-variable filter | `juce::dsp::StateVariableTPTFilter` — the only one that honours LP **/BP/HP/Notch** |
+| Polivoks-form SVF (Parvati extension, not an Ambika board) | 2-pole dirty SVF, LP/BP | custom ZDF model (this repo): asymmetric hard-shoulder rails (even harmonics), diode-style resonance limiting, Q-dependent damping sag, input-offset drift, asymmetric rate-limited outputs, supply clamp. Filter Drive scales the clip points and rate limits. Onset exactly at resonance 1.0. Growls at low cutoff and high resonance. |
 
 Some engineering details matter for the *character*:
 

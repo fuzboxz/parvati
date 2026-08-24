@@ -31,6 +31,25 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   design; no English key changed.
 
 ### Added
+- **New filter card: Polivoks SVF (2026-08-24).** A fifth filter card,
+  "Polivoks (SVF)", models the Soviet Polivoks form: a 2-pole state-variable
+  filter with an op-amp character layer on an exact ZDF skeleton. The
+  damping map puts the self-oscillation onset exactly at resonance 1.0.
+  The character: asymmetric hard-shoulder rails (the negative side clips
+  22 percent lower, which makes even harmonics), a harder diode-style
+  limiter on the resonance return path, Q-dependent damping sag, input
+  offset drift, asymmetric rate-limited outputs, and a supply clamp on
+  the states. Filter Drive scales every clip point and rate limit. The
+  card growls at low cutoff and high resonance: measured against a tanh
+  reference at the growl corner, it doubles the total dirt and carries 23
+  times the high-frequency dirt; the second harmonic sits 47 dB above the
+  odd-symmetric floor. Low-pass and band-pass outputs; high-pass and
+  notch clamp to low-pass. Calibration is documented-behaviour-derived:
+  no reference schematic exists in the tree (the Polivoks is a Formanta
+  community card, not an Ambika voicecard). A draft implementation was
+  provided by the user; the shipped model corrects its missing knee
+  scaling, proves its damping map exact, and adds the character layer.
+  Existing sessions and presets load unchanged (the new card is index 4).
 - **New filter card: SMR4 OTA cascade (2026-08-24).** A fourth filter card,
   "SMR4 (OTA Cascade)", models the SMR4 voicecard with a from-scratch DSP
   model. Four OTA stages each integrate `gm*tanh(error/2Vt)`: per-stage tanh
