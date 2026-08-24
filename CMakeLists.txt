@@ -1125,60 +1125,70 @@ function(parvati_install_commands out_var artefact dest)
     set(${out_var} ${_cmds} PARENT_SCOPE)
 endfunction()
 
-# Per-format composition (TARGET-guarded) so `deploy` stays generatable under
-# ANY PARVATI_FORMATS set; with no plugin format targets at all (tests-only
-# configure) no deploy target is created. Command order matches the historical
-# VST3 -> AU -> Standalone -> CLAP sequence when all formats are present.
+# One install table drives BOTH consumers below: the `deploy` target and
+# the PARVATI_INSTALL_ON_BUILD post-build steps, so the two paths can never
+# drift apart again. Fields, split on `|`:
+#   target | label | artefact under Parvati_artefacts/$<CONFIG> |
+#   destination | flags | deploy-echo tail
+# Flags, comma-separated: RESIGN re-signs the copied bundle ad-hoc; MKDIR
+# creates the destination directory first (unlike VST3/Components,
+# ~/Library/Audio/Plug-Ins/CLAP is not a stock macOS directory). The
+# Standalone also installs to /Applications: without that copy the app the
+# user runs stays stale while the plug-in formats update (the 2026-08-17
+# "standalone still crackles after deploy" miss); its RESIGN exists because
+# a plain cp invalidates JUCE's built bundle signature (`codesign -v`
+# rejects the copy, Gatekeeper may refuse it).
+# Parvati_CLAP exists only while PARVATI_BUILD_CLAP is ON, so the TARGET
+# guard below covers the option too. Rows without a live target are
+# skipped, so `deploy` stays generatable under ANY PARVATI_FORMATS set
+# (tests-only configure: no plugin targets, no deploy target). Row order
+# matches the historical VST3 -> AU -> Standalone -> CLAP install sequence.
+set(PARVATI_INSTALL_TABLE
+    "Parvati_VST3|VST3|VST3/Parvati.vst3|${_parvati_plugins_dir}/VST3/Parvati.vst3||"
+    "Parvati_AU|AU|AU/Parvati.component|${_parvati_plugins_dir}/Components/Parvati.component||"
+    "Parvati_Standalone|Standalone|Standalone/Parvati.app|/Applications/Parvati.app|RESIGN|/Applications"
+    "Parvati_CLAP|CLAP|CLAP/Parvati.clap|${_parvati_plugins_dir}/CLAP/Parvati.clap|RESIGN,MKDIR|")
+
+# Parse one PARVATI_INSTALL_TABLE row into _pi_* variables. Macro: no new
+# scope, the variables land in the caller (the foreach loops below).
+macro(parvati_parse_install_row row)
+    string(REPLACE "|" ";" _pi_fields "${row}")
+    list(GET _pi_fields 0 _pi_target)
+    list(GET _pi_fields 1 _pi_label)
+    list(GET _pi_fields 2 _pi_artefact)
+    list(GET _pi_fields 3 _pi_dest)
+    list(GET _pi_fields 4 _pi_flags)
+    list(GET _pi_fields 5 _pi_echo_tail)
+    set(_pi_resign "")
+    if(_pi_flags MATCHES "RESIGN")
+        set(_pi_resign RESIGN)
+    endif()
+endmacro()
+
 set(_parvati_deploy_depends screens)
 set(_parvati_deploy_commands "")
-if(TARGET Parvati_VST3)
+foreach(_pi_row IN LISTS PARVATI_INSTALL_TABLE)
+    parvati_parse_install_row("${_pi_row}")
+    if(NOT TARGET ${_pi_target})
+        continue()
+    endif()
     parvati_install_commands(_install_cmds
-        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3"
-        "${_parvati_plugins_dir}/VST3/Parvati.vst3")
-    list(APPEND _parvati_deploy_depends Parvati_VST3)
+        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/${_pi_artefact}"
+        "${_pi_dest}" ${_pi_resign})
+    set(_pi_echo "deploy: install ${_pi_label}")
+    if(_pi_echo_tail)
+        string(APPEND _pi_echo " -> ${_pi_echo_tail}")
+    endif()
+    list(APPEND _parvati_deploy_depends ${_pi_target})
     list(APPEND _parvati_deploy_commands
-        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install VST3"
-        ${_install_cmds})
-endif()
-if(TARGET Parvati_AU)
-    parvati_install_commands(_install_cmds
-        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component"
-        "${_parvati_plugins_dir}/Components/Parvati.component")
-    list(APPEND _parvati_deploy_depends Parvati_AU)
-    list(APPEND _parvati_deploy_commands
-        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install AU"
-        ${_install_cmds})
-endif()
-# The Standalone is BUILT above (Parvati_Standalone dep) and additionally
-# INSTALLED into /Applications — without this the .app the user actually
-# runs stays stale while the plug-in formats update (the 2026-08-17
-# "standalone still crackles after deploy" miss). Ad-hoc re-sign after the
-# copy (JUCE's built bundle signature references resources the plain cp
-# invalidates; `codesign -v` complains and Gatekeeper can refuse it).
-if(TARGET Parvati_Standalone)
-    parvati_install_commands(_install_cmds
-        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app"
-        "/Applications/Parvati.app" RESIGN)
-    list(APPEND _parvati_deploy_depends Parvati_Standalone)
-    list(APPEND _parvati_deploy_commands
-        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install Standalone -> /Applications"
-        ${_install_cmds})
-endif()
-# CLAP install steps are composed separately so `deploy` stays generatable
-# when PARVATI_BUILD_CLAP=OFF (Parvati_CLAP then simply does not exist).
-if(PARVATI_BUILD_CLAP)
-    parvati_install_commands(_install_cmds
-        "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap"
-        "${_parvati_plugins_dir}/CLAP/Parvati.clap" RESIGN)
-    list(APPEND _parvati_deploy_depends Parvati_CLAP)
-    list(APPEND _parvati_deploy_commands
-        COMMAND ${CMAKE_COMMAND} -E echo "deploy: install CLAP"
-        # Unlike VST3/Components, ~/Library/Audio/Plug-Ins/CLAP is not a stock
-        # macOS directory — create it so the cp below succeeds on a machine
-        # that never had a CLAP plugin installed.
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${_parvati_plugins_dir}/CLAP"
-        ${_install_cmds})
-endif()
+        COMMAND ${CMAKE_COMMAND} -E echo "${_pi_echo}")
+    if(_pi_flags MATCHES "MKDIR")
+        get_filename_component(_pi_dest_dir "${_pi_dest}" DIRECTORY)
+        list(APPEND _parvati_deploy_commands
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_pi_dest_dir}")
+    endif()
+    list(APPEND _parvati_deploy_commands ${_install_cmds})
+endforeach()
 if(_parvati_deploy_commands)
     add_custom_target(deploy
         ${_parvati_deploy_commands}
@@ -1198,43 +1208,25 @@ endif()
 # rules as `deploy` (shared command composition above); `deploy` remains the
 # one-shot that ALSO re-renders ./screens. Off by default; macOS desktop only.
 if(PARVATI_INSTALL_ON_BUILD)
-    if(TARGET Parvati_VST3)
+    foreach(_pi_row IN LISTS PARVATI_INSTALL_TABLE)
+        parvati_parse_install_row("${_pi_row}")
+        if(NOT TARGET ${_pi_target})
+            continue()
+        endif()
         parvati_install_commands(_install_cmds
-            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/VST3/Parvati.vst3"
-            "${_parvati_plugins_dir}/VST3/Parvati.vst3")
-        add_custom_command(TARGET Parvati_VST3 POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "install: VST3 -> ${_parvati_plugins_dir}/VST3"
+            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/${_pi_artefact}"
+            "${_pi_dest}" ${_pi_resign})
+        get_filename_component(_pi_dest_dir "${_pi_dest}" DIRECTORY)
+        set(_pi_pre "")
+        if(_pi_flags MATCHES "MKDIR")
+            set(_pi_pre COMMAND ${CMAKE_COMMAND} -E make_directory "${_pi_dest_dir}")
+        endif()
+        add_custom_command(TARGET ${_pi_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "install: ${_pi_label} -> ${_pi_dest_dir}"
+            ${_pi_pre}
             ${_install_cmds}
             VERBATIM)
-    endif()
-    if(TARGET Parvati_AU)
-        parvati_install_commands(_install_cmds
-            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/AU/Parvati.component"
-            "${_parvati_plugins_dir}/Components/Parvati.component")
-        add_custom_command(TARGET Parvati_AU POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "install: AU -> ${_parvati_plugins_dir}/Components"
-            ${_install_cmds}
-            VERBATIM)
-    endif()
-    if(TARGET Parvati_Standalone)
-        parvati_install_commands(_install_cmds
-            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/Standalone/Parvati.app"
-            "/Applications/Parvati.app" RESIGN)
-        add_custom_command(TARGET Parvati_Standalone POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "install: Standalone -> /Applications"
-            ${_install_cmds}
-            VERBATIM)
-    endif()
-    if(PARVATI_BUILD_CLAP AND TARGET Parvati_CLAP)
-        parvati_install_commands(_install_cmds
-            "${CMAKE_BINARY_DIR}/Parvati_artefacts/$<CONFIG>/CLAP/Parvati.clap"
-            "${_parvati_plugins_dir}/CLAP/Parvati.clap" RESIGN)
-        add_custom_command(TARGET Parvati_CLAP POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "install: CLAP -> ${_parvati_plugins_dir}/CLAP"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${_parvati_plugins_dir}/CLAP"
-            ${_install_cmds}
-            VERBATIM)
-    endif()
+    endforeach()
 endif()
 endif()
 
