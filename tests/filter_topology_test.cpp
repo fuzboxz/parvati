@@ -1,6 +1,6 @@
 // Filter-card topology verification for Parvati.
 // Renders a sustained saw through the full processor for each of the 3
-// selectable filter cards (4-pole LM13700 ladder / 4-pole "4P" = two series
+// selectable filter cards (4-pole Ladder / 4-pole "4P" = two series
 // StateVariableTPTFilter lowpass / 2-pole SVF) and asserts all three are
 // DISTINCT filters: their output LEVELS differ and their sample-by-sample
 // output differs pairwise (proving three different filter implementations,

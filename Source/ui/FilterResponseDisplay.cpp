@@ -60,7 +60,7 @@ float FilterResponseDisplay::fetch (const std::function<float()>& f) const
 
 float FilterResponseDisplay::magnitudeSq (float f, float fc, float K, int mode)
 {
-    // 4-pole RESONANT LADDER model (Moog-style). Closed loop of four cascaded
+    // 4-pole RESONANT LADDER model (transistor-ladder class). Closed loop of four cascaded
     // one-pole low-pass sections with negative feedback K (0 = none, -> 4 =
     // self-oscillation):
     //     H(s) = 1 / ((1+s)^4 + K),   s = jw,  w = f/fc.

@@ -20,7 +20,8 @@
 // setCategoryColour().
 //
 // Magnitude model (local math — the runtime filter in dsp/analog_filter.cpp is
-// NOT touched): a 4-pole RESONANT LADDER prototype (Moog-style) evaluated at
+// NOT touched): a 4-pole RESONANT LADDER prototype (transistor-ladder class)
+// evaluated at
 // ~64 log-spaced frequency points (20 Hz .. 16 kHz). The cutoff->Hz mapping
 // replicates AnalogFilter::cutoffByteToHz (exponential 20..16k) so the curve is
 // visually consistent with the actual filter. The ladder gives a 24 dB/oct

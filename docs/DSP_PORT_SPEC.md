@@ -306,7 +306,7 @@ There is **no firmware filter**. The voice computes `cutoff` (8-bit, 0..127 via 
 ### E.1 Topology → JUCE class
 | Voicecard | Topology | JUCE class | Modes |
 |---|---|---|---|
-| SMR4 (LM13700) / 4-pole SSM2164 | 4-pole cascaded LP | `juce::dsp::LadderFilter` (mode = LP12/LP24) | LP (24dB/oct). NOTCH/BP/HP from `mode` apply only conceptually; real 4-pole card is LP. **Use LP24 for both 4-pole types.** | 
+| SMR4 (LM13700) / 4-pole SSM2164 | 4-pole cascaded LP | `juce::dsp::LadderFilter` (mode = LP12/LP24) | LP (24dB/oct). NOTCH/BP/HP from `mode` apply only conceptually; real 4-pole card is LP. **Use LP24 for both 4-pole types.** (The UI card is named Ladder: the JUCE ladder stands in for the OTA cascade.) | 
 | SVF (SSM2164) | 2-pole state variable | `juce::dsp::StateVariableTPTFilter` | LP/BP/HP (mode 0/2/3). NOTCH (mode 3→ use HP or a notch via `band - low` — approximate). |
 
 **Decision:** expose a single `AnalogFilter` class with an enum `Topology { FOUR_POLE_LADDER, FOUR_POLE_SSM2164, TWO_POLE_SVF }` (selectable per-patch or globally). For v1, all three use LP; they differ in slope/pole-count via the chosen JUCE class. (LM13700 vs SSM2164 differ subtly in resonance drive/saturation. V1 treats both as the JUCE ladder — a follow-up enhancement can add OTA saturation.)

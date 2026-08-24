@@ -158,7 +158,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     m["vca_curve"]   = "VCA response curve: Linearized or Exponential.";
     m["part_select"] = "Selects which Part (1..6) the editor edits.";
     m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, or SVF.";
-    m["filter_drive"] = "Ladder filter saturation drive; higher values add OTA-style tanh saturation and bass drop (1.2 = JUCE default; Ladder card only).";
+    m["filter_drive"] = "Ladder filter saturation drive; higher values add tanh saturation and bass drop (1.2 = JUCE default; Ladder card only).";
 
     // ---- Per-part FX (78 = 24 slot + 6 chain/master + 48 fxmod) ----
     // Parvati-exclusive; no Ambika patch byte. Slot/fxmod entries are loop-

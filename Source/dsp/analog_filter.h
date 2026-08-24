@@ -7,7 +7,7 @@
 // emulates that analog filter in software using juce::dsp, fresh-written.
 //
 // Three voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
-//   * 4-pole LM13700 (Ladder)     -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
+//   * 4-pole Ladder                 -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
 //                                   controllable Drive scales the saturator -> bass-drop at high Q).
 //   * 4-pole SSM2164 ("4P")       -> TWO juce::dsp::StateVariableTPTFilter (lowpass) IN SERIES,
 //                                   cutoff+resonance linked — a linear 24 dB/oct baseline (NOT the
@@ -23,7 +23,7 @@ namespace ambika::dsp {
 
 // Selectable voicecard filter topology.
 enum class FilterTopology {
-    FOUR_POLE_LADDER,   // LM13700 Ladder.  juce::dsp::LadderFilter LPF24 (tanh saturation; Drive control). Self-oscillating.
+    FOUR_POLE_LADDER,   // 4-pole Ladder.  juce::dsp::LadderFilter LPF24 (tanh saturation; Drive control). Self-oscillating.
     FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, cutoff+resonance linked. Linear baseline. Always LP.
     TWO_POLE_SVF        // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
 };
@@ -137,7 +137,7 @@ private:
     bool dirty_            = true;
     bool topologyChanged_  = true;
 
-    // 4-pole LM13700 -> the JUCE ladder (LPF24, tanh saturation + Drive).
+    // 4-pole Ladder -> the JUCE ladder (LPF24, tanh saturation + Drive).
     // LadderTap exposes LadderFilter's PROTECTED per-sample hooks so the
     // per-sample path can call them directly. JUCE's public process() loops
     // `updateSmoothers(); processSample (input, ch);` once per sample — the

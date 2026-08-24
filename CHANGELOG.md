@@ -414,6 +414,12 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   sequential runner stays canonical.
 
 ### Build
+- **Filter card renamed to Ladder (2026-08-24).** The first filter card was
+  labelled "4-pole LM13700 (Ladder)". The name claimed the SMR4 OTA cascade
+  is a ladder circuit, which it is not. The JUCE ladder model approximates
+  the SMR4 saturation character; the card name now says what the code runs:
+  "Ladder (24 dB/oct)". The saved value stays the integer index, so sessions
+  and presets are unchanged. Comments and docs now state the approximation.
 - **Warnings are errors by default (2026-08-24).** `PARVATI_WARNINGS_AS_ERRORS`
   now defaults to ON after the tree reached zero warnings across every target.
   The read-only firmware oracle keeps its diagnostics visible but non-fatal:

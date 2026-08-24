@@ -559,7 +559,7 @@ The code models the three real voicecard filter boards that Ambika shipped:
 
 | Voicecard board | Filter | Parvati model |
 |-----------------|--------|---------------|
-| SMR4 (LM13700) | 4-pole low-pass ladder | `juce::dsp::LadderFilter`, 24 dB/oct, aggressive, self-oscillating |
+| SMR4 (LM13700 OTA) | 4-pole low-pass OTA cascade | Parvati models it with the Ladder card: `juce::dsp::LadderFilter`, 24 dB/oct, tanh saturation, self-oscillating (an approximation — the OTA cascade is not natively modeled) |
 | 4-pole SSM2164 | 4-pole cascade | a custom 4-stage one-pole cascade with feedback — "politer" than the ladder |
 | 2-pole SVF (SSM2164) | state-variable filter | `juce::dsp::StateVariableTPTFilter` — the only one that honours LP **/BP/HP/Notch** |
 

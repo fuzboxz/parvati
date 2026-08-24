@@ -499,7 +499,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         // ---- GLOBAL filter-card topology (one Ambika unit = one filter card) ----
         {
             static const auto kFilterCards = juce::StringArray {
-                "4-pole LM13700 (Ladder)",
+                "Ladder (24 dB/oct)",
                 "4-pole SSM2164 (Cascade)",
                 "2-pole SVF"
             };
@@ -509,7 +509,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             f.byteOffset = -1;
             f.isOption = true;
             f.choices = &kFilterCards;
-            f.defaultValue = 0;   // LM13700 (most common Ambika card)
+            f.defaultValue = 0;   // Ladder (the saturation-rich 4-pole card)
             d.push_back (std::move (f));
         }
 
