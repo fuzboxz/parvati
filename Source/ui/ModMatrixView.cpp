@@ -30,7 +30,7 @@ MatrixViewConfig makeSynthConfig()
     cfg.destComboAttached   = true;    // dest combo loads its choices from the APVTS param
     cfg.comboShrinkFallback = true;   // narrow rows squeeze the source combo first (44pt floors)
     cfg.highlightSelfOnHover = false;  // the bus round-trip highlights the hovered row
-    cfg.lampDiameter            = 15.0f;   // the FX-card enable/disable dot size
+    cfg.lampDiameter            = 18.0f;   // the FX-card enable/disable dot size
     cfg.lampCarriesCategoryColour = true; // lamp ON == the row's modulator category colour
     cfg.destBusOffset    = 0;                          // synth dests broadcast raw
     cfg.rejectDestAtOrAbove = parvati::ModDestMap::kFxModDstOffset;   // synth rejects FX dests
