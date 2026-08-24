@@ -2,9 +2,10 @@
 //
 // Fv1Engine — the shared Spin FV-1 hardware-emulation framework for the
 // Clocked Delay / Ensemble / Plate Reverb / Vinyl Compressor / Phaser FX family.
-// Header-only and DELIBERATELY JUCE-FREE (only <array>, <cmath>, <cstdint>,
-// <vector>) so every FV-1 effect and its unit test compiles standalone in
-// seconds WITHOUT the JUCE build: `clang++ -std=c++17 -I Source test.cpp fx.cpp`.
+// Header-only and DELIBERATELY JUCE-FREE (std headers plus the include-free
+// dsp/fx/LinearResamplerCore.h shard) so every FV-1 effect and its unit test
+// compiles standalone in seconds WITHOUT the JUCE build:
+// `clang++ -std=c++17 -I Source test.cpp fx.cpp`.
 //
 // It implements the FV-1 hardware constraint set the family obeys:
 //  * 24-bit fixed-point (Q.23 signed) audio path with saturation clipping.
@@ -27,6 +28,8 @@
 #include <cstdint>
 #include <limits>
 #include <vector>
+
+#include "dsp/fx/LinearResamplerCore.h"   // shared resampler transport (CRTP base, include-free)
 
 namespace parvati::fv1
 {
@@ -415,7 +418,7 @@ public:
     }
 };
 
-class RateBridge
+class RateBridge : public parvati::dsp::LinearResamplerCore<RateBridge>
 {
 public:
     static constexpr double kRate = kInternalRate;
@@ -423,17 +426,12 @@ public:
     void prepare (double hostRate, int maxBlock) noexcept
     {
         hostRate_ = hostRate > 0.0 ? hostRate : 44100.0;
-        ratio_    = static_cast<float> (kRate / hostRate_);        // internal per host
-        invRatio_ = static_cast<float> (hostRate_ / kRate);        // host per internal
-        const int worst = static_cast<int> (std::ceil (static_cast<float> (std::max (1, maxBlock)) * ratio_)) + 4;
+        const float ratio    = static_cast<float> (kRate / hostRate_);        // internal per host
+        const float invRatio = static_cast<float> (hostRate_ / kRate);        // host per internal
+        const int worst = static_cast<int> (std::ceil (static_cast<float> (std::max (1, maxBlock)) * ratio)) + 4;
         iL_.assign (static_cast<size_t> (std::max (8, worst)), 0.0f);
         iR_.assign (static_cast<size_t> (std::max (8, worst)), 0.0f);
-        maxM_ = worst;
-        m_ = 0;
-        hostWritePhase_ = 0.0f;
-        phaseStart_ = 0.0f;
-        hasTail_ = false;
-        prevL_ = prevR_ = 0.0f;
+        configure (ratio, invRatio, worst);
 
         // Steep 15 kHz BW-limit biquads (2 cascaded each -> 4th-order Butterworth).
         // CLAMP the cutoff below the host Nyquist: at host rates < ~30 kHz the
@@ -458,11 +456,7 @@ public:
     {
         std::fill (iL_.begin(), iL_.end(), 0.0f);
         std::fill (iR_.begin(), iR_.end(), 0.0f);
-        hostWritePhase_ = 0.0f;
-        phaseStart_ = 0.0f;
-        m_ = 0;
-        hasTail_ = false;
-        prevL_ = prevR_ = 0.0f;
+        parvati::dsp::LinearResamplerCore<RateBridge>::reset();
         for (int i = 0; i < 2; ++i)
         {
             inLpL_[i].clear();  inLpR_[i].clear();
@@ -472,7 +466,7 @@ public:
 
     float* internalL() noexcept { return iL_.data(); }
     float* internalR() noexcept { return iR_.data(); }
-    int internalCount() const noexcept { return m_; }
+    int internalCount() const noexcept { return count(); }
 
     // Downsample host -> internal. Returns the number of internal samples (m).
     int hostToInternal (const float* L, const float* R, int n) noexcept
@@ -485,86 +479,17 @@ public:
             float r = inLpR_[0].process (R[i]);
             hostTmpR_[static_cast<size_t> (i)] = inLpR_[1].process (r);
         }
-        // 2) Linear downsample with persistent fractional phase (drift-free).
-        phaseStart_ = hostWritePhase_;
-        const float span = static_cast<float> (n);
-        const int last = n - 1;
-        float phase = hostWritePhase_;
-        int m = 0;
-        const float* sL = hostTmpL_.data();
-        const float* sR = hostTmpR_.data();
-        while (phase < span && m < maxM_)
-        {
-            const int i0 = static_cast<int> (phase);
-            const float fr = phase - static_cast<float> (i0);
-            const int i1 = i0 < last ? i0 + 1 : i0;
-            const auto mi = static_cast<size_t> (m);
-            iL_[mi] = sL[i0] + (sL[i1] - sL[i0]) * fr;
-            iR_[mi] = sR[i0] + (sR[i1] - sR[i0]) * fr;
-            phase += invRatio_;
-            ++m;
-        }
-        hostWritePhase_ = phase - span;
-        m_ = m;
-        return m;
+        // 2) Linear downsample with persistent fractional phase (drift-free,
+        //    shared transport in LinearResamplerCore).
+        return downsample (hostTmpL_.data(), hostTmpR_.data(), n);
     }
 
     // Upsample internal -> host (and apply the output BW-limit).
     void internalToHost (float* L, float* R, int n) noexcept
     {
-        const int m = m_;
-        if (m <= 0)
-        {
-            // No internal sample was produced this call (a 1-sample sub-chunk
-            // whose phase carry did not cross an internal boundary can hit this).
-            // Zero-order-hold the last internal sample so the output is
-            // continuous instead of a full-amplitude dropout (mirrors
-            // HostRateBridge). No OOB: iL_/iR_ are untouched.
-            const float hl = hasTail_ ? prevL_ : 0.0f;
-            const float hr = hasTail_ ? prevR_ : 0.0f;
-            for (int i = 0; i < n; ++i) { L[i] = hl; R[i] = hr; }
-            return;
-        }
-        const int lastM = m - 1;
-        for (int i = 0; i < n; ++i)
-        {
-            const float vj = (static_cast<float> (i) - phaseStart_) * ratio_;
-            float a, b;
-            int j0;
-            float fr;
-            if (vj < 0.0f)
-            {
-                // Leading overlap: blend prev tail (vj=-1) with iL_[0] (vj=0).
-                fr = vj + 1.0f;
-                a = hasTail_ ? prevL_ : iL_[0];
-                b = iL_[0];
-                L[i] = a + (b - a) * fr;
-                a = hasTail_ ? prevR_ : iR_[0];
-                b = iR_[0];
-                R[i] = a + (b - a) * fr;
-            }
-            else
-            {
-                float pos = vj;
-                if (pos > static_cast<float> (lastM)) pos = static_cast<float> (lastM);
-                j0 = static_cast<int> (pos);
-                fr = pos - static_cast<float> (j0);
-                const int j1 = j0 < lastM ? j0 + 1 : j0;
-                const auto j0u = static_cast<size_t> (j0), j1u = static_cast<size_t> (j1);
-                a = iL_[j0u];
-                b = iL_[j1u];
-                L[i] = a + (b - a) * fr;
-                a = iR_[j0u];
-                b = iR_[j1u];
-                R[i] = a + (b - a) * fr;
-            }
-        }
-        if (m > 0)
-        {
-            prevL_ = iL_[static_cast<size_t> (lastM)];
-            prevR_ = iR_[static_cast<size_t> (lastM)];
-            hasTail_ = true;
-        }
+        upsample (L, R, n);
+        if (count() <= 0)
+            return;   // held-sample path (no internal sample) stays unfiltered
         // Output BW-limit (steep LP) at host rate.
         for (int i = 0; i < n; ++i)
         {
@@ -576,16 +501,20 @@ public:
     }
 
 private:
+    friend parvati::dsp::LinearResamplerCore<RateBridge>;
+
+    // ---- Internal-domain storage hooks of the shared resampler core ----
+    void storeSample (int m, float l, float r) noexcept
+    {
+        const auto mi = static_cast<size_t> (m);
+        iL_[mi] = l;
+        iR_[mi] = r;
+    }
+    float loadL (int j) const noexcept { return iL_[static_cast<size_t> (j)]; }
+    float loadR (int j) const noexcept { return iR_[static_cast<size_t> (j)]; }
+
     static constexpr double kBwCutoffHz = 15000.0;   // within [14.5, 15.5] kHz
     double hostRate_ = 44100.0;
-    float ratio_ = 0.6667f;
-    float invRatio_ = 1.5f;
-    float hostWritePhase_ = 0.0f;
-    float phaseStart_ = 0.0f;
-    int maxM_ = 0;
-    int m_ = 0;
-    bool hasTail_ = false;
-    float prevL_ = 0.0f, prevR_ = 0.0f;
     std::vector<float> iL_, iR_, hostTmpL_, hostTmpR_;
     BiquadLP inLpL_[2], inLpR_[2], outLpL_[2], outLpR_[2];
 };
