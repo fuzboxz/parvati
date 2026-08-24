@@ -34,7 +34,7 @@ void Fv1PlateReverb::setParams (const std::array<float, kNumFxSlotParams>& param
     // param[4] is UNUSED (Mix is the chain Dry/Wet — never read here).
 
     // Predelay 0..100 ms -> samples (cap at the predelay line capacity - 1).
-    int pd = static_cast<int> (std::lround (p0 * 0.1f * 32768.0f));
+    int pd = static_cast<int> (std::lround (fxlaw::platePredelaySeconds (p0) * 32768.0f));
     if (pd < 0) pd = 0;
     if (pd > kPredelayCap - 1) pd = kPredelayCap - 1;
     predelayLen_ = pd;
@@ -47,7 +47,7 @@ void Fv1PlateReverb::setParams (const std::array<float, kNumFxSlotParams>& param
     // t60 ran 5-17 MINUTES — audit/fx_review_20260819/rev_reverbs.md.)
     // The [0, 0.999] clamp is now a never-engaging stability guard (max g is
     // ~0.049 at decay=0.1 even for the SHORTEST comb).
-    const float decay = 0.1f + p1 * (4.0f - 0.1f);
+    const float decay = fxlaw::plateDecaySeconds (p1);
     for (int i = 0; i < 4; ++i)
     {
         float g = std::pow (10.0f,

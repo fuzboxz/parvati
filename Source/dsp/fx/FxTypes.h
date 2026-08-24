@@ -209,9 +209,8 @@ inline std::array<FxType, static_cast<size_t> (FxType::Count)> fxTypeDisplayOrde
 // state: unit-testable standalone. The estimate is the per-effect time to
 // decay to -60 dB (t60) after the input stops, in SECONDS, from the raw
 // normalized 0..1 slot params + the current transport BPM (tempo-synced
-// delays only). Mappings mirror the DSP setParams() implementations exactly
-// (FxProcessors.cpp / fv1/*) — when a param mapping changes there, change it
-// here too.
+// delays only). The knob laws themselves live in fxlaw (next block), shared
+// with the DSP setParams() implementations — one law, one definition.
 //
 // Feedback-decay law: a loop of period T seconds and per-pass gain g (0<g<1)
 // reaches -60 dB after n = ln(1e-3)/ln(g) passes, so t60 = T * ln(1e-3)/ln(g).
@@ -219,6 +218,63 @@ inline std::array<FxType, static_cast<size_t> (FxType::Count)> fxTypeDisplayOrde
 // caller-side cap applies.
 inline constexpr double kTailFloorSeconds = 0.2;   // floor: release/release-ish minimum for pure-synth patches
 inline constexpr double kTailCapSeconds   = 12.0;  // cap: frozen loops / near-unity feedback are formally infinite
+
+// ----------------------------------------------------------------------------
+// fxlaw — the shared FX knob laws. Each helper holds ONE law used by BOTH of
+// its consumers: the DSP setParams() call sites (float arithmetic, audio
+// path) and tailSecondsForFx (double arithmetic, host tail estimate). Every
+// helper is a template: each caller instantiates it with its own arithmetic
+// type, so float operation order, overload resolution and values at the DSP
+// sites stay bit-identical to the former local expressions. History: two
+// hand copies of one law drifted apart twice (CVerb loop length, Echo
+// ping-pong period). Add new laws here; do not copy a law beside a caller.
+// ----------------------------------------------------------------------------
+namespace fxlaw
+{
+// FV-1 Echo: Time knob 0..1 -> 10..470 ms (one decade per 47^x).
+template <typename T> T echoBaseMs (T p0) noexcept { return T (10.0) * std::pow (T (47.0), p0); }
+// Echo feedback: 0..100% knob -> 0..0.995 loop gain (100% reads as infinite).
+template <typename T> T echoFeedbackGain (T p1) noexcept { return p1 * T (0.995); }
+// Echo R-line guard: the ping-pong lines are 2 x 16K samples; each half holds
+// at most 16383 samples (one guard slot). Samples at the 32768 Hz FV-1 rate.
+inline constexpr int echoHalfLineSamples = 16383;
+
+// FV-1 Clocked Delay: Sync knob -> one of eight note divisions, then a
+// tempo-locked base delay in SECONDS: T = (4/div) * (60/bpm). Double at both
+// call sites (the DSP site converts to whole samples afterwards).
+inline double clockedDelaySeconds (double pSync, double bpm) noexcept
+{
+    constexpr double kDiv[8] = { 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0 };
+    int i = static_cast<int> (std::lround (pSync * 7.0));
+    if (i < 0) i = 0;
+    if (i > 7) i = 7;
+    const double b = (bpm > 0.0) ? bpm : 120.0;
+    return (4.0 / kDiv[static_cast<size_t> (i)]) * (60.0 / b);
+}
+
+// FV-1 modulated-delay family: loop period in seconds from the Center/Base
+// knob (Ensemble 2..25 ms, Chorus 5..25 ms, Flanger 0.15..6.0 ms).
+template <typename T> T ensembleLoopSeconds (T p2) noexcept { return (T (2.0) + p2 * T (23.0)) * T (1.0e-3); }
+template <typename T> T chorusLoopSeconds  (T p2) noexcept { return (T (5.0) + p2 * T (20.0)) * T (1.0e-3); }
+template <typename T> T flangerLoopSeconds (T p2) noexcept { return (T (0.15) + p2 * T (5.85)) * T (1.0e-3); }
+// Their loop gains: Ensemble spans -0.9..0.9 (negative feedback rings the
+// same), Chorus 0..0.5, Flanger 0..0.92.
+template <typename T> T ensembleFeedbackGain (T p3) noexcept { return T (-0.9) + p3 * T (1.8); }
+template <typename T> T chorusFeedbackGain  (T p3) noexcept { return p3 * T (0.5); }
+template <typename T> T flangerFeedbackGain (T p3) noexcept { return p3 * T (0.92); }
+
+// FV-1 reverbs: Decay knob 0..1 -> t60 in seconds (PlateReverb 0.1..4,
+// Spring 0.2..4, Room 0.1..3). PlateReverb predelay spans 0..100 ms.
+template <typename T> T plateDecaySeconds    (T p1) noexcept { return T (0.1) + p1 * (T (4.0) - T (0.1)); }
+template <typename T> T springDecaySeconds    (T p0) noexcept { return T (0.2) + p0 * T (3.8); }
+template <typename T> T roomDecaySeconds      (T p0) noexcept { return T (0.1) + p0 * T (2.9); }
+template <typename T> T platePredelaySeconds  (T p0) noexcept { return p0 * T (0.1); }
+
+// CVerb (Clouds Griesinger) tank feedback: Time knob 0..1 -> 0.30..0.95
+// recirculation. Matches juce::jmap (v, 0.30f, 0.95f) = min + v*(max-min)
+// bit-for-bit at float.
+template <typename T> T cverbTankFeedback (T p) noexcept { return T (0.30) + p * (T (0.95) - T (0.30)); }
+} // namespace fxlaw
 
 namespace tail_detail
 {
@@ -242,11 +298,11 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
         // ---- FV-1 reverbs: the Decay knob IS the t60 (g = 10^(-3/(decay*fs))
         // is defined as -60 dB per `decay` seconds) + predelay where present.
         case FxType::PlateReverb:
-            return (0.1 + (double) p1 * (4.0 - 0.1)) + (double) p0 * 0.1;  // decay 0.1..4 s + predelay 0..100 ms
+            return fxlaw::plateDecaySeconds ((double) p1) + fxlaw::platePredelaySeconds ((double) p0);  // decay 0.1..4 s + predelay 0..100 ms
         case FxType::Spring:
-            return 0.2 + (double) p0 * 3.8;                               // decay 0.2..4 s
+            return fxlaw::springDecaySeconds ((double) p0);                // decay 0.2..4 s
         case FxType::Room:
-            return 0.1 + (double) p0 * 2.9;                               // decay 0.1..3 s
+            return fxlaw::roomDecaySeconds ((double) p0);                  // decay 0.1..3 s
 
         // ---- CVerb (Clouds Griesinger/Dattorro): tank feedback =
         // jmap(time, 0.30, 0.95). The tank is CROSS-COUPLED (loop A reads
@@ -258,7 +314,7 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
         // plus the 0..200 ms predelay. (The old 8483-sample figure counted
         // one loop only -> tails under-reported ~1.8x.)
         case FxType::Reverb: {
-            const double fb = 0.30 + (double) p2 * (0.95 - 0.30);
+            const double fb = fxlaw::cverbTankFeedback ((double) p2);
             return tail_detail::feedbackTail (15353.0 / 32000.0, fb) + (double) p0 * 0.20;
         }
 
@@ -270,18 +326,16 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
         // knob). timeR is guarded to the 16383-sample half of the 2x16K
         // delay RAM — mirrored here exactly (matters at Time max + Spread).
         case FxType::Echo: {
-            const double T = 0.010 * std::pow (47.0, (double) p0);
-            const double timeR = std::min (T * (1.0 + (double) p3), 16383.0 / 32768.0);
-            return tail_detail::feedbackTail (T + timeR, (double) p1 * 0.995);
+            const double T = fxlaw::echoBaseMs ((double) p0) * 1.0e-3;
+            const double timeR = std::min (T * (1.0 + (double) p3),
+                                          (double) fxlaw::echoHalfLineSamples / 32768.0);
+            return tail_detail::feedbackTail (T + timeR, fxlaw::echoFeedbackGain ((double) p1));
         }
         // FV-1 Clocked Delay: tempo-synced T = (4/div)*(60/bpm) with div from
         // round(pSync*7) over {1,2,3,4,6,8,12,16}, clamped to the 32768-sample
         // (1.0 s @ 32768 Hz) line; feedback pFb*0.95.
         case FxType::ClockedDelay: {
-            constexpr double kDiv[8] = { 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0 };
-            int i = (int) std::lround ((double) p0 * 7.0);
-            if (i < 0) i = 0; if (i > 7) i = 7;
-            double T = (4.0 / kDiv[(size_t) i]) * (60.0 / b);
+            double T = fxlaw::clockedDelaySeconds ((double) p0, b);
             if (T > 1.0) T = 1.0;                       // kMaxDelaySamples @ 32768 Hz
             return tail_detail::feedbackTail (T, (double) p1 * 0.95);
         }
@@ -307,23 +361,23 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
         // (negative fb rings identically — decay depends on |fb|): max
         // Center + max |fb| -> ~1.64 s t60 (was the 0.2 s floor).
         case FxType::Ensemble: {
-            const double T  = (2.0 + (double) p2 * 23.0) * 1.0e-3;
-            const double fb = std::fabs (-0.9 + (double) p3 * 1.8);
+            const double T  = fxlaw::ensembleLoopSeconds ((double) p2);
+            const double fb = std::fabs (fxlaw::ensembleFeedbackGain ((double) p3));
             return tail_detail::feedbackTail (T, fb);
         }
         // Chorus: same loop topology, Center 5..25 ms, fb 0..0.5 -> max
         // 0.25 s t60 (marginal over the floor, but correct).
         case FxType::Chorus: {
-            const double T = (5.0 + (double) p2 * 20.0) * 1.0e-3;
-            return tail_detail::feedbackTail (T, (double) p3 * 0.5);
+            const double T = fxlaw::chorusLoopSeconds ((double) p2);
+            return tail_detail::feedbackTail (T, fxlaw::chorusFeedbackGain ((double) p3));
         }
         // Flanger: one line, one feedback loop through the 8 kHz damper
         // (DC gain 1, so g is the raw fb); the loop period is the
         // Manual-mapped base delay 0.15..6.0 ms (the LFO sweep averages to
         // zero around it) -> max ~0.50 s t60 at fb 0.92.
         case FxType::Flanger: {
-            const double T = (0.15 + (double) p2 * 5.85) * 1.0e-3;
-            return tail_detail::feedbackTail (T, (double) p3 * 0.92);
+            const double T = fxlaw::flangerLoopSeconds ((double) p2);
+            return tail_detail::feedbackTail (T, fxlaw::flangerFeedbackGain ((double) p3));
         }
 
         // ---- Resonator (Rings modal, NATIVE host rate): every mode decays

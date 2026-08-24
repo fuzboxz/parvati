@@ -34,7 +34,7 @@ void Fv1Room::setParams (const std::array<float, kNumFxSlotParams>& param)
     // 0.999 clamp for every decay > 0.21 s — knob inert above p0 ~= 0.038,
     // real LF t60 6-8 MINUTES (audit/fx_review_20260819/rev_reverbs.md).
     // The [0, 0.999] clamp is now a never-engaging stability guard.
-    const float decay = 0.1f + p0 * 2.9f;
+    const float decay = fxlaw::roomDecaySeconds (p0);
     for (int i = 0; i < 4; ++i)
     {
         float g = std::pow (10.0f,

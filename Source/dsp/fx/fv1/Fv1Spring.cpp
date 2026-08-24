@@ -34,7 +34,7 @@ void Fv1Spring::setParams (const std::array<float, kNumFxSlotParams>& param)
     // clamp (it needed decay > 6.93 s > the 4.0 max), so the knob was INERT
     // at every setting and chirp alone set t60 (9.3 s at Chirp 0!);
     // audit/fx_review_20260819/rev_reverbs.md.
-    const float decay = 0.2f + p0 * 3.8f;
+    const float decay = fxlaw::springDecaySeconds (p0);
     for (int s = 0; s < 2; ++s)
     {
         int dLoop = kSpringDelay[s];

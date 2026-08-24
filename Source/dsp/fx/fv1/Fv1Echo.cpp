@@ -30,13 +30,14 @@ void Fv1Echo::setParams (const std::array<float, kNumFxSlotParams>& param)
     const float p3 = std::clamp (param[3], 0.0f, 1.0f);
     // param[4] is UNUSED (Mix is the chain Dry/Wet — never read here).
 
-    const float ms = 10.0f * std::pow (47.0f, p0);            // 10..470 ms
+    const float ms = fxlaw::echoBaseMs (p0);                     // 10..470 ms
     timeTargetL_ = ms * 1.0e-3f * static_cast<float> (kInternalRate);
     timeTargetR_ = timeTargetL_ * (1.0f + p3);                 // 1..2x spread
-    if (timeTargetR_ > 16383.0f) timeTargetR_ = 16383.0f;      // ring guard
+    if (timeTargetR_ > (float) fxlaw::echoHalfLineSamples)
+        timeTargetR_ = (float) fxlaw::echoHalfLineSamples;     // ring guard
     // 0..100% knob -> 0..0.995 loop gain: "100% reads as infinite". The Q.14
     // coefficient quantizes 0.995 to 8150/8192 (-0.044 dB per repeat).
-    fb14_ = q14 (p1 * 0.995f);
+    fb14_ = q14 (fxlaw::echoFeedbackGain (p1));
     damp_.setCutoff (700.0f * std::pow (12000.0f / 700.0f, p2));
 }
 

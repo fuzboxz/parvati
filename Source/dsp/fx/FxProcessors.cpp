@@ -125,7 +125,7 @@ void FxReverb::process (float* L, float* R, int numSamples)
     // this keeps the diffuser as a single shared block, not duplicated internally.
     reverb_.set_amount (amount_);
     reverb_.set_input_gain (0.5f);                            // fixed: prevents the L+R sum clipping
-    reverb_.set_time (juce::jmap (timeParam_, 0.30f, 0.95f));
+    reverb_.set_time (fxlaw::cverbTankFeedback (timeParam_));
     // Tone -> one-pole LP coefficient. A raw 0 is a FULL MUTE, not "darkest":
     // c.Lp is `state += c*(acc-state); acc = state` with the state init 0, so
     // klp=0 freezes the state and forces the accumulator to 0 — discarding

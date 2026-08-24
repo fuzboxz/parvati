@@ -53,7 +53,7 @@ void Fv1Ensemble::setParams (const std::array<float, kNumFxSlotParams>& param)
     depthSamp_ = p1 * 15.0e-3f * static_cast<float> (kInternalRate);
 
     // Center: 2..25 ms -> samples at the internal rate.
-    centerSamp_ = (2.0f + p2 * 23.0f) * 1.0e-3f * static_cast<float> (kInternalRate);
+    centerSamp_ = fxlaw::ensembleLoopSeconds (p2) * static_cast<float> (kInternalRate);
 
     // Depth clamp: never let the sweep pin at the 1-sample read floor.
     // Center min (2 ms = 65.5) < Depth max (15 ms = 491.5), so the corner
@@ -65,7 +65,7 @@ void Fv1Ensemble::setParams (const std::array<float, kNumFxSlotParams>& param)
         depthSamp_ = centerSamp_ - 1.0f;
 
     // Feedback: -0.9..0.9, quantized to a 14-bit coefficient.
-    const float fb = -0.9f + p3 * 1.8f;
+    const float fb = fxlaw::ensembleFeedbackGain (p3);
     fb14_ = q14 (fb);
     for (auto& f : fbDampA_) f.setCutoff (5000.0f);   // regen HF damp, 4-pole (see header)
     for (auto& f : fbDampB_) f.setCutoff (5000.0f);

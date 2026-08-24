@@ -19,26 +19,18 @@ static_assert (DelayLine<32768>::capacity <= kMaxMemorySamples,
 
 namespace
 {
-// The eight clocked note divisions {1/1,1/2,1/3,1/4,1/6,1/8,1/12,1/16} expressed
-// as their denominators: delaySeconds = (4/divisor) * (60/bpm).
-constexpr double kDivisors[8] = { 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0 };
-
 // kMaxDelaySamples as a float, for the read-pointer clamp below.
 constexpr float kMaxDelayF = static_cast<float> (kMaxDelaySamples);
 
 // The tempo-synced base delay target, in whole internal samples, from the
 // cached Sync param + BPM (clamped to [1, kMaxDelaySamples]). Pure: no state.
 // Shared by recomputeDelayLen() (block-start snap) and processSampleFx()
-// (per-sample glide target), so both always agree on the same math.
+// (per-sample glide target), so both always agree on the same math. The
+// seconds law itself is fxlaw::clockedDelaySeconds (FxTypes.h), shared with
+// the tail table.
 inline int tempoDelayTargetSamples (float pSync, double bpm) noexcept
 {
-    int i = static_cast<int> (std::lround (pSync * 7.0));
-    if (i < 0) i = 0;
-    if (i > 7) i = 7;
-
-    const double b = (bpm > 0.0) ? bpm : 120.0;
-    const double delaySeconds = (4.0 / kDivisors[static_cast<size_t> (i)])
-                              * (60.0 / b);
+    const double delaySeconds = fxlaw::clockedDelaySeconds (static_cast<double> (pSync), bpm);
     long len = std::lround (delaySeconds * kInternalRate);
     if (len < 1)                len = 1;
     if (len > kMaxDelaySamples) len = kMaxDelaySamples;

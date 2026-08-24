@@ -24,7 +24,7 @@ void Fv1Chorus::setParams (const std::array<float, kNumFxSlotParams>& param)
     const float rate = 0.1f * std::pow (80.0f, p0);
     inc_ = rate / static_cast<float> (kInternalRate);
     depthSamp_  = p1 * 6.0e-3f * static_cast<float> (kInternalRate);
-    centerSamp_ = (5.0f + p2 * 20.0f) * 1.0e-3f * static_cast<float> (kInternalRate);
+    centerSamp_ = fxlaw::chorusLoopSeconds (p2) * static_cast<float> (kInternalRate);
     // Depth clamp: never let the sweep pin at the 1-sample read floor.
     // Center min (5 ms = 163.8) < Depth max (6 ms = 196.6), so the corner
     // Center=0/Depth=1 used to clamp inside readFrac for ~19% of every LFO
@@ -32,7 +32,7 @@ void Fv1Chorus::setParams (const std::array<float, kNumFxSlotParams>& param)
     // deepest read at exactly 1 sample — the sweep always moves.
     if (depthSamp_ > centerSamp_ - 1.0f)
         depthSamp_ = centerSamp_ - 1.0f;
-    fb14_ = q14 (p3 * 0.5f);
+    fb14_ = q14 (fxlaw::chorusFeedbackGain (p3));
 }
 
 void Fv1Chorus::resetInternal()
