@@ -128,6 +128,9 @@ static inline uint16_t LfoRateToIncrement(uint8_t rate, double bpm) {
 
 void Voice::Init() {
     pitch_value_ = 0;
+    // Live part-parameter retune state: a fresh voice starts un-offset.
+    live_tune_target_ = 0;
+    live_tune_offset_ = 0;
     // Mix glide resets: the first audible block snaps to the current CVs
     // (exactly the firmware's behaviour), after which CV changes glide.
     mix_glide_ready_ = false;
@@ -187,6 +190,11 @@ void Voice::TriggerEnvelope(uint8_t index, uint8_t stage) {
 
 void Voice::Trigger(uint16_t note, uint8_t velocity, uint8_t legato) {
     pitch_target_ = static_cast<int16_t>(note);
+    // A new note computes its pitch from the CURRENT part bytes (tuning,
+    // spread) at the caller; any in-flight live-retune offset would
+    // double-apply. Reset both (the firmware recompute happens at NoteOn).
+    live_tune_target_ = 0;
+    live_tune_offset_ = 0;
     if (!part_.legato || !legato) {
         gate_ = 255;
         TriggerEnvelope(ATTACK);
@@ -432,6 +440,16 @@ void Voice::UpdateDestinations() {
 // Stage 4: pitch glide + per-oscillator pitch→increment + render osc1/sub/osc2.
 // ---------------------------------------------------------------------------
 void Voice::RenderOscillators() {
+    // Advance the live part-parameter retune glide ONE step toward the
+    // target (block rate, ~980 Hz; full range ~33 ms). Static edits and
+    // fresh triggers hold offset == target == 0 and skip the add below.
+    if (live_tune_offset_ != live_tune_target_) {
+        int16_t step = static_cast<int16_t>(live_tune_target_ - live_tune_offset_);
+        if (step > kLiveTuneMaxStep) step = kLiveTuneMaxStep;
+        if (step < -kLiveTuneMaxStep) step = -kLiveTuneMaxStep;
+        live_tune_offset_ = static_cast<int16_t>(live_tune_offset_ + step);
+    }
+
     // Apply portamento.
     int16_t base_pitch = pitch_value_ + pitch_increment_;
     if ((pitch_increment_ > 0) ^ (base_pitch < pitch_target_)) {
@@ -449,6 +467,10 @@ void Voice::RenderOscillators() {
     // of the mod-matrix routing. pitch_bend_offset_ is in 1/128-semitone units
     // (same scale as pitch_value_), set via set_pitch_bend_offset().
     base_pitch += pitch_bend_offset_;
+
+    // Live part-parameter retune (tuning / spread edits on sounding voices;
+    // Parvati extension — see voice.h). Same 1/128-semitone scale.
+    base_pitch += live_tune_offset_;
 
     for (uint8_t i = 0; i < kNumOscillators; ++i) {
         int16_t pitch = base_pitch;

@@ -1206,11 +1206,12 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         // Parvati's unison size is the Part's voice count). MONO + 1 voice is
         // true single-voice mono, MONO + 16 is a 16-voice unison.
         uint8_t drift = 0;   // 14-bit units (1/128 semitone); uint8 wrap is faithful
+        int ordinal = 0;      // this voice's spread multiplier (running drift => ordinal)
         for (int vi : p.voiceIndices)
             if (auto* av = getAmbikaVoice (vi))
             {
                 av->setLegatoNext (legato);
-                av->setSpreadDrift (drift);
+                av->setSpreadDrift (drift, ordinal);
                 // Overlap on a SOUNDING voice — legato slide OR a mono
                 // retrigger of the previous note's RELEASE TAIL (monoStack
                 // back to size 1 while the tail still sounds) — re-triggers
@@ -1233,6 +1234,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
                 else
                     triggerVoice (av, sound, channel, note, velocity);
                 drift += spread;
+                ++ordinal;
             }
         return;
     }
@@ -1247,8 +1249,8 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         const int v1 = (v0 + 1 < n) ? v0 + 1 : 0;        // firmware GetNextVoice wrap
         // Firmware part.cc:703: the pair is detuned by data_.spread (2nd voice +spread).
         const uint8_t spread = p.partBytes[3];
-        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v0])) { av->setSpreadDrift (0);      triggerVoice (av, sound, channel, note, velocity); }
-        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v1])) { av->setSpreadDrift (spread); triggerVoice (av, sound, channel, note, velocity); }
+        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v0])) { av->setSpreadDrift (0,      0); triggerVoice (av, sound, channel, note, velocity); }
+        if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) v1])) { av->setSpreadDrift (spread, 1); triggerVoice (av, sound, channel, note, velocity); }
     }
     else if (p.polyphonyMode == 4 /*CHAIN*/)  // internal 2x doubling (Option A)
     {
@@ -1258,7 +1260,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         // index maps to a real same-patch voice. Drift = idx*spread (part.cc:711).
         if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) idx]))
         {
-            av->setSpreadDrift (static_cast<uint8_t> (idx * p.partBytes[3]));
+            av->setSpreadDrift (static_cast<uint8_t> (idx * p.partBytes[3]), idx);
             triggerVoice (av, sound, channel, note, velocity);
         }
     }
@@ -1268,7 +1270,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         if (idx < n)
             if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) idx]))
             {
-                av->setSpreadDrift (static_cast<uint8_t> (idx * p.partBytes[3]));
+                av->setSpreadDrift (static_cast<uint8_t> (idx * p.partBytes[3]), idx);
                 triggerVoice (av, sound, channel, note, velocity);
             }
     }
@@ -1303,11 +1305,12 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
             auto* sound = getNumSounds() > 0 ? getSound (0).get() : nullptr;
             const uint8_t spread = p.partBytes[3];   // firmware part.cc:760: retrigger drift
             uint8_t drift = 0;
+            int ordinal = 0;   // this voice's spread multiplier (running drift => ordinal)
             for (int vi : p.voiceIndices)   // every allocated voice (see MONO noteOn)
                 if (auto* av = getAmbikaVoice (vi))
                 {
                     av->setLegatoNext (true);
-                    av->setSpreadDrift (drift);
+                    av->setSpreadDrift (drift, ordinal);
                     // Legato slide-back to the prior held note on release: same
                     // no-kill retrigger (a kill would silence the legato Trigger).
                     if (av->isVoiceActive())
@@ -1315,6 +1318,7 @@ void SynthEngine::releaseNoteInPart (int part, int note, int incomingChannel)
                     else
                         triggerVoice (av, sound, channel, newNote, newVel);
                     drift += spread;
+                    ++ordinal;
                 }
         }
         return;

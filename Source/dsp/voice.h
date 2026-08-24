@@ -133,6 +133,22 @@ class Voice {
     // MPE per-note bend (0 = no bend). (Minimal hook for MPE / pitch-wheel fix.)
     void set_pitch_bend_offset(int16_t offset) { pitch_bend_offset_ = offset; }
 
+    // Stage a live pitch delta (1/128-semitone units) for a SOUNDING voice.
+    // Consecutive edits accumulate on the target. Audio-thread only (called
+    // from the staged part-byte service); the glide runs in RenderOscillators.
+    void stage_live_tune_delta(int16_t delta) {
+        int32_t t = live_tune_target_ + delta;
+        if (t > kLiveTuneMaxOffset) t = kLiveTuneMaxOffset;
+        if (t < -kLiveTuneMaxOffset) t = -kLiveTuneMaxOffset;
+        live_tune_target_ = static_cast<int16_t>(t);
+    }
+
+    // TEST-ONLY readouts (live-part-parameter pins): the current glide offset
+    // and its target, plus the raw 14-bit portamento pitch (glide-rate pins).
+    int16_t live_tune_offset() const { return live_tune_offset_; }
+    int16_t live_tune_target() const { return live_tune_target_; }
+    int16_t debug_pitch_value() const { return pitch_value_; }
+
     // ---- patch / part byte access (the firmware indexes Patch as uint8_t*) ----
     // BOUNDS-GUARDED (memory-safety migration): a malformed preset / stray host
     // write can deliver any uint8_t address; both accessors now reject
@@ -218,6 +234,18 @@ class Voice {
     // Per-voice pitch-bend offset (1/128-semitone units). Added to base_pitch
     // in RenderOscillators() (direct osc pitch, independent of the mod matrix).
     int16_t pitch_bend_offset_ {};
+
+    // Live part-parameter retune (Parvati extension; the firmware computes
+    // the 14-bit pitch only at NoteOn). A tuning/spread edit on a SOUNDING
+    // voice stages the pitch DELTA here; RenderOscillators() glides the
+    // offset toward the target at block rate. Trigger() resets both to zero:
+    // a fresh note computes the full pitch from the current bytes, so a
+    // residual offset would double-apply. Static edits (delta 0) render
+    // bit-identically to the firmware path.
+    static constexpr int16_t kLiveTuneMaxOffset = 1024;   // 8 semitones; edits stay far below
+    static constexpr int16_t kLiveTuneMaxStep   = 8;      // 14-bit units/block; full range ~33 ms
+    int16_t live_tune_target_ {};
+    int16_t live_tune_offset_ {};
 
     // Modulation matrix working storage.
     uint8_t modulation_sources_[kNumModulationSources] {};

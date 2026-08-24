@@ -381,6 +381,26 @@ Per instance i (0..2): attack(0..127), decay(0..127), sustain(0..127), release(0
 
 ### F.2 Part parameters (in scope: volume, legato, portamento)
 - part_volume (0..127), part_legato (0/1), part_portamento (0..63). (Octave/tuning/spread/raga are part-level extras — include octave (-2..2) and tuning for usability; defer raga/scale quantization.)
+- **Live application (Parvati extension, 2026-08-24).** The firmware computes
+  a voice's 14-bit pitch only at NoteOn (part.cc TuneNote) and reads legato /
+  portamento at Trigger. Parvati additionally applies Patch-page part edits to
+  SOUNDING notes of the current part:
+  * part_tuning: each sounding voice retunes by the edit DELTA, gliding at
+    block rate in dsp::Voice (`stage_live_tune_delta`; full range ~33 ms).
+    A new trigger recomputes the full pitch from the current bytes.
+  * part_spread: each sounding voice re-derives its drift as
+    `multiplier * new spread` (the same arithmetic the trigger path uses) and
+    glides the delta. The multiplier is the voice's ordinal in its note's
+    allocation (part.cc's running drift / idx assignment).
+  * part_volume: already live — the voice re-reads `part_.volume` every block
+    (LoadSources) and the VCA glide ramps the gain across the block.
+  * part_portamento / part_legato: read at the NEXT transition (firmware
+    Trigger semantics; an in-flight glide keeps its computed increment).
+  * part_octave: applies at the NEXT trigger BY DESIGN (a 12-semitone jump on
+    held notes is a setup hazard).
+  The extension is invisible to the firmware parity oracle: it never edits a
+  part parameter mid-note, so the offset stays zero and renders stay
+  byte-identical.
 
 ### F.3 Arpeggiator parameters (in scope)
 From `parameter.cc` 49-53: arp_mode, arp_direction, arp_octave(1..4), arp_pattern, arp_resolution(0..14). These live in the Part struct (controller-side). Implement an arpeggiator in `SynthEngine` that consumes these; DEFER the step-sequencer (arp_mode distinguishes ARP vs SEQ — only implement ARP modes; SEQ modes can no-op for v1).

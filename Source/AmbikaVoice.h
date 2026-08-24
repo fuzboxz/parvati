@@ -92,11 +92,32 @@ public:
     {
         voice_.set_part_data (static_cast<uint8_t> (offset), value);
         // PartData bytes 1/2 are controller-side octave/tuning (the voicecard
-        // dsp::Part struct has no such fields). Apply them here at trigger time
-        // (firmware Part::TuneNote) — both applyPartByte and pushPartBytesToVoices
-        // route through this, so live edits AND .MUL loads update the offset.
+        // dsp::Part struct has no such fields). The firmware applies both at
+        // NoteOn (Part::TuneNote). Parvati extension: a TUNING edit also
+        // retunes SOUNDING voices live — the delta glides at block rate in
+        // dsp::Voice (stage_live_tune_delta). An OCTAVE edit stays at the
+        // next trigger BY DESIGN: a 12-semitone jump on held notes is a setup
+        // hazard, and the firmware computes it at NoteOn.
+        // Both applyPartByte and pushPartBytesToVoices route through this
+        // (audio thread), so live edits AND .MUL loads update the members.
         if (offset == 1)      partOctave_  = static_cast<int8_t> (value);
-        else if (offset == 2) partTuning_ = static_cast<int8_t> (value);
+        else if (offset == 2)
+        {
+            const int newTuning = static_cast<int8_t> (value);
+            voice_.stage_live_tune_delta (static_cast<int16_t> (newTuning - partTuning_));
+            partTuning_ = newTuning;
+        }
+        else if (offset == 3)
+        {
+            // Live spread re-drift (Parvati extension): re-derive this voice's
+            // drift from ITS multiplier and the new spread (uint8 wrap, the
+            // same arithmetic the trigger path uses), then glide the delta.
+            // A voice that never triggered holds multiplier 0 => delta 0.
+            const int newDrift = static_cast<int> (
+                static_cast<uint8_t> (spreadMultiplier_ * static_cast<int> (value)));
+            voice_.stage_live_tune_delta (static_cast<int16_t> (newDrift - appliedSpreadDrift14_));
+            appliedSpreadDrift14_ = newDrift;
+        }
     }
 
     // Per-part tuning table (firmware raga preset or Parvati custom table):
@@ -255,9 +276,16 @@ public:
     }
 
     // One-shot per-voice pitch-drift hint (14-bit units, 1/128 semitone each):
-// firmware PartData.spread applied as `tuned_note + drift` at Trigger. Consumed
-    // (reset to 0) by startNote so a later default trigger has no drift.
-    void setSpreadDrift (int drift14) { spreadDrift14_ = drift14; }
+    // firmware PartData.spread applied as `tuned_note + drift` at Trigger.
+    // Consumed (reset to 0) by startNote so a later default trigger has no
+    // drift. @p multiplier is this voice's spread ordinal (part.cc assigns
+    // drift = multiplier * spread); the live spread re-drift re-derives with it.
+    void setSpreadDrift (int drift14, int multiplier = 0)
+    {
+        spreadDrift14_ = drift14;
+        spreadMultiplier_ = multiplier;
+        appliedSpreadDrift14_ = drift14;   // what the imminent trigger applies
+    }
 
     // ---- MPE / per-voice expression (MIDI Polyphonic Expression) ----
     // The engine routes pitch wheel / channel pressure / CC74 to each ACTIVE
@@ -289,6 +317,12 @@ public:
     // tests (the same SF-1 displayedNote_ pattern).
     int   getLastNote14() const noexcept { return lastNote14_.load (std::memory_order_relaxed); }
     float getMpePitchBendSemitones() const noexcept { return mpePitchBendSemitones_; }
+
+    // TEST-ONLY (live-part-parameter pins): the inner Voice's live-retune
+    // glide offset / target (1/128-semitone units). Read between renders
+    // (the audio thread owns the fields while rendering).
+    int16_t getLiveTuneOffset14() const { return voice_.live_tune_offset(); }
+    int16_t getLiveTuneTarget14() const { return voice_.live_tune_target(); }
 
     // ---- multitimbral: each voice is owned by one Part ----
     // Relaxed atomics: written on the audio thread (rebuildVoiceAllocation
@@ -424,6 +458,8 @@ private:
     int                        partOctave_ { 0 };   // PartData.octave (applied at trigger, firmware TuneNote)
     int                        partTuning_ { 0 };   // PartData.tuning (1/128-semitone units)
     int                        spreadDrift14_ { 0 }; // PartData.spread per-voice drift (1/128-semitone units)
+    int                        spreadMultiplier_ { 0 };     // spread ordinal: drift = multiplier * spread (part.cc)
+    int                        appliedSpreadDrift14_ { 0 };  // drift the last trigger applied (live re-drift base)
     int16_t                    tuneOffsets_[12] {}; // per-class tuning table (engine staging; see setTuningOffsets)
 
     // ---- MPE / per-voice expression state (audio-thread) ----

@@ -5,6 +5,14 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Patch-page part parameters now apply to sounding notes (2026-08-24).**
+  Tuning and spread edits retune the current part's sounding voices live:
+  each voice glides its pitch by the edit delta (about 33 ms full range), so
+  the user hears the change on held notes. Volume was already live (the VCA
+  re-reads it every block). Portamento and legato edits take effect at the
+  next note transition; octave applies at the next trigger by design. The
+  firmware computes pitch only at note-on, so live retuning is a documented
+  Parvati extension (docs/DSP_PORT_SPEC.md F.2).
 - **Dual-BBD Chorus, the sixteenth FX type (2026-08-24).** A new FV-1-family
   effect ports the documented Roland Juno-60/106 chorus configuration: two
   BBD lines on one shared LFO, line 2 at inverted phase, open lines with no
