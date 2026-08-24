@@ -4,6 +4,21 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **The translations checker is green again; 15 chrome strings gained
+  French and German entries (2026-08-23).** The deterministic checker
+  (`parvati_check_translations`) failed on HEAD: fourteen `TRANS()` keys sat
+  in no language table and no allowlist section. The voices tooltip on the
+  Patch page had five fragments; four of them changed wording after the
+  voice-pool rework, which stranded the old allowlist entries and left the
+  new text untranslated. All five fragments now translate as one natural
+  sentence in each language. The Visual Refresh settings row (label, Hz
+  combo items, tooltip), the seq-length stepper tooltip, the audio-load
+  status tooltip and the two thermal status hints also gained FR/DE
+  entries. Six dead allowlist entries left with the change: one translated,
+  five stale wordings that matched no key. Parameter names stay raw by
+  design; no English key changed.
+
 ### Added
 - **Docs, UI text and code comments rewritten in Simplified Technical
   English (2026-08-23).** All tooltips, UI strings, code comments and the

@@ -120,6 +120,18 @@ const juce::String& frenchChromeStrings()
         "\"Parameter Smoothing\" = \"Lissage des paramètres\"\n"
         "\"Filter Quality\" = \"Qualité du filtre\"\n"
         "\"Language\" = \"Langue\"\n"
+        // ---- Visual Refresh (live feedback animation cadence) ----
+        "\"Visual Refresh\" = \"Rafraîchissement visuel\"\n"
+        "\"Animation rate of the live modulation indicators\" = \"Fréquence d'animation des indicateurs de modulation en direct\"\n"
+        "\"10 Hz\" = \"10 Hz\"\n"
+        "\"15 Hz\" = \"15 Hz\"\n"
+        "\"30 Hz (Default)\" = \"30 Hz (par défaut)\"\n"
+        "\"60 Hz\" = \"60 Hz\"\n"
+        // ---- Seq length stepper / status strip (load + thermal hints) ----
+        "\"Set sequence length\" = \"Définir la longueur de la séquence\"\n"
+        "\"Audio-thread realtime load (current block; near 100% = dropouts/crackle).\" = \"Charge temps réel du thread audio (bloc en cours ; proche de 100 % = décrochages/craquements).\"\n"
+        "\"Thermal: reduce Filter Quality\" = \"Thermique : réduire la qualité du filtre\"\n"
+        "\"Thermal: lower Filter Quality now\" = \"Thermique : réduire la qualité du filtre dès maintenant\"\n"
         // ---- Arp Clock (manual tempo) row ----
         "\"Arp Clock\" = \"Horloge arpège\"\n"
         "\"Host tempo: \" = \"Tempo hôte : \"\n"
@@ -178,6 +190,13 @@ const juce::String& frenchChromeStrings()
         "\" as a modulation source\" = \" comme source de modulation\"\n"
         "\"Octave down (Z)\" = \"Octave en dessous (Z)\"\n"
         "\"Octave up (X)\" = \"Octave au-dessus (X)\"\n"
+        // ---- Patch page voices tooltip (suffix-key fragments; the sentence
+        // concatenates across five TRANS fragments) ----
+        "\"How many voices this part plays at once from the shared \" = \"Nombre de voix jouées à la fois par cette partie depuis la \"\n"
+        "\"96-voice pool (0-16; 0 disables the part; the pool holds 6 x 16 so \" = \"banque partagée de 96 voix (0-16 ; 0 désactive la partie ; la banque tient 6 x 16 donc \"\n"
+        "\"all parts can be maxed at the same time; the hardware voicecards \" = \"toutes les parties peuvent être saturées en même temps ; les cartes vocales du matériel \"\n"
+        "\"are shared out automatically for the individual outputs and the \" = \"sont réparties automatiquement entre les sorties individuelles et \"\n"
+        "\".MUL export).\" = \"l'export .MUL).\"\n"
         // ---- Accessibility names (row containers / wheels; suffix-key idiom so
         // the trailing slot number concatenates after the translated fragment) ----
         "\"Pitch Wheel\" = \"Molette de pitch\"\n"
@@ -313,6 +332,18 @@ const juce::String& germanChromeStrings()
         "\"Parameter Smoothing\" = \"Parameterglättung\"\n"
         "\"Filter Quality\" = \"Filterqualität\"\n"
         "\"Language\" = \"Sprache\"\n"
+        // ---- Visual Refresh (live feedback animation cadence) ----
+        "\"Visual Refresh\" = \"Visuelle Aktualisierung\"\n"
+        "\"Animation rate of the live modulation indicators\" = \"Animationsrate der Live-Modulationsanzeigen\"\n"
+        "\"10 Hz\" = \"10 Hz\"\n"
+        "\"15 Hz\" = \"15 Hz\"\n"
+        "\"30 Hz (Default)\" = \"30 Hz (Standard)\"\n"
+        "\"60 Hz\" = \"60 Hz\"\n"
+        // ---- Seq length stepper / status strip (load + thermal hints) ----
+        "\"Set sequence length\" = \"Sequenzlänge festlegen\"\n"
+        "\"Audio-thread realtime load (current block; near 100% = dropouts/crackle).\" = \"Echtzeitlast des Audio-Threads (aktueller Block; nahe 100 % = Aussetzer/Knistern).\"\n"
+        "\"Thermal: reduce Filter Quality\" = \"Temperatur: Filterqualität reduzieren\"\n"
+        "\"Thermal: lower Filter Quality now\" = \"Temperatur: Filterqualität jetzt senken\"\n"
         // ---- Arp Clock (manual tempo) row ----
         "\"Arp Clock\" = \"Arp-Takt\"\n"
         "\"Host tempo: \" = \"Host-Tempo: \"\n"
@@ -371,6 +402,13 @@ const juce::String& germanChromeStrings()
         "\" as a modulation source\" = \" als Modulationsquelle zuzuweisen\"\n"
         "\"Octave down (Z)\" = \"Oktave tiefer (Z)\"\n"
         "\"Octave up (X)\" = \"Oktave höher (X)\"\n"
+        // ---- Patch page voices tooltip (suffix-key fragments; the sentence
+        // concatenates across five TRANS fragments) ----
+        "\"How many voices this part plays at once from the shared \" = \"Wie viele Stimmen diese Part gleichzeitig aus dem gemeinsamen \"\n"
+        "\"96-voice pool (0-16; 0 disables the part; the pool holds 6 x 16 so \" = \"96-Stimmen-Pool spielt (0-16; 0 deaktiviert die Part; der Pool fasst 6 x 16, sodass \"\n"
+        "\"all parts can be maxed at the same time; the hardware voicecards \" = \"alle Parts gleichzeitig maximal ausgelastet sein können; die Hardware-Voicecards \"\n"
+        "\"are shared out automatically for the individual outputs and the \" = \"werden automatisch für die Einzelausgänge und den \"\n"
+        "\".MUL export).\" = \".MUL-Export aufgeteilt).\"\n"
         // ---- Accessibility names (row containers / wheels; suffix-key idiom so
         // the trailing slot number concatenates after the translated fragment) ----
         "\"Pitch Wheel\" = \"Pitchrad\"\n"

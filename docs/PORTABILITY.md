@@ -30,9 +30,6 @@ verified, what this machine can test, and every item left open.
   the wall-clock budgets without a code regression.
   `PARVATI_TEST_PERF_BUDGET_MULT` scales every budget on such hosts; the
   file header documents the knob.
-- `parvati_check_translations` fails at HEAD. Fourteen `TRANS()` keys sit in
-  no FR/DE table and no allowlist entry. The failure predates this pass and
-  belongs to `Source/ui/Translations.cpp` scope.
 - MSVC gets no dead-code link flag. MSVC drops unreferenced COMDAT functions
   by default; `/OPT:REF` stays untested, so the build omits it.
 - Test-file header comments still name the purged per-test binaries. The
