@@ -13,7 +13,7 @@
 // used for the state/fade checks because it responds to both DC and impulse
 // input (Diffuser passes DC unchanged) and has a long tail.
 //
-// Built by default. Run with: ./build/parvati_fx_routing_test
+// Run: ./build_unified/parvati_unified_tests fx_routing_test
 
 #include <cmath>
 #include "unified_test_runner.h"

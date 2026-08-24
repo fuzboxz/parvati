@@ -23,7 +23,7 @@
 // accepts out-of-bounds children of a Viewport on axes where the viewport has
 // non-zero maximum scroll. Everything else must stay inside.
 //
-// Built by default. Run: ./build/parvati_layout_overlap_test
+// Run: ./build_unified/parvati_unified_tests layout_overlap_test
 
 #if defined (__GNUC__) || defined (__clang__)
     #include <cxxabi.h>   // abi::__cxa_demangle (GCC/Clang ABI)

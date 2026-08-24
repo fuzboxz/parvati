@@ -6,7 +6,7 @@
 // env-time outputs depend on the firmware LUTs, so those cases assert
 // "finite + has-unit" rather than an exact float.
 //
-// Built by default. Run with: ./build/parvati_synth_paramtext_test
+// Run: ./build_unified/parvati_unified_tests parvati_synth_paramtext_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

@@ -13,7 +13,7 @@
 //   [4] CC1 (mod wheel) writes only the parts whose channel matches: a
 //       two-part split (ch1 / ch2) sees the CC land on part B's voices only.
 //
-// Built by default. Run with: ./build/parvati_cc_routing_test
+// Run: ./build_unified/parvati_unified_tests cc_routing_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

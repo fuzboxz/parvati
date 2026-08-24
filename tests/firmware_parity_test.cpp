@@ -34,9 +34,8 @@
 // catch it — proving the allowlist lock bites. Used as the tool's canary
 // during authoring; also safe to run headless in CI.
 //
-// Build/run (from the repo root):
-//   cmake --build build --target parvati_firmware_parity_test &&
-//   ./build/parvati_firmware_parity_test
+// Run (from the repo root):
+//   ./build_unified/parvati_unified_tests firmware_parity_test
 
 #include <algorithm>
 #include "unified_test_runner.h"

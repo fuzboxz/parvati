@@ -12,7 +12,7 @@
 //     with the controller init patch (osc1 = Saw), not the silent voicecard
 //     fallback, so Parts 1..5 are audible by default (correct firmware behaviour).
 //
-// Built by default. Run with: ./build/parvati_partstate_test
+// Run: ./build_unified/parvati_unified_tests partstate_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

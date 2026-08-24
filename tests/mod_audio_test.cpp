@@ -1,8 +1,8 @@
 // Diagnostic for "no sound" regression: proves whether creating the editor
 // (ModMatrixView + ring listeners + drag affordance) alters the amp-envelope
 // modulation (mod11_amount = ENV3->VCA) or renders the engine silent on a
-// FRESH processor. Not shipped; build/run manually:
-//   cmake --build build --target parvati_mod_silence_diag && ./build/parvati_mod_silence_diag
+// FRESH processor. Runs in the unified suite:
+//   ./build_unified/parvati_unified_tests mod_audio_test
 
 #include <cmath>
 #include "unified_test_runner.h"

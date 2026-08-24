@@ -43,7 +43,7 @@
 // CGEvent drag helper needs Accessibility permission, so it cannot run
 // unattended on CI runners). See CONTRIBUTING.md.
 //
-// Built by default. Run: ./build/parvati_perf_smoke_test
+// Run: ./build_unified/parvati_unified_tests perf_smoke_test
 
 // Non-Apple hosts cannot run this test: the pump drives the macOS
 // CFRunLoop directly and the CPU budget reads getrusage. The single TEST()

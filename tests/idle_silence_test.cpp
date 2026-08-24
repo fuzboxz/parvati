@@ -10,7 +10,7 @@
 // and asserts the main bus stays in the noise floor. Before the fix this
 // rumbled; with the idle-voice gate (and the master DC blocker) it is silent.
 //
-// Built by default. Run with: ./build/parvati_idle_silence_test
+// Run: ./build_unified/parvati_unified_tests idle_silence_test
 
 #include <cmath>
 #include "unified_test_runner.h"

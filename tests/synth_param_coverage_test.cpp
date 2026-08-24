@@ -16,7 +16,7 @@
 //     meaningful tolerances.
 //   * TERTIARY net: engine-state routing for arp/seq/option params.
 //
-// Built by default. Run: ./build_release/parvati_synth_param_coverage_test
+// Run: ./build_unified/parvati_unified_tests synth_param_coverage_test
 
 #include <algorithm>
 #include "unified_test_runner.h"

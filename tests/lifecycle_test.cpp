@@ -24,7 +24,7 @@
 //       dropped, patch state survives, and a NEW note still sounds after the
 //       release/prepare cycle.
 //
-// Built by default. Run: ./build/parvati_lifecycle_test
+// Run: ./build_unified/parvati_unified_tests lifecycle_test
 
 #include <cmath>
 #include "unified_test_runner.h"

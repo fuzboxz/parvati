@@ -10,7 +10,7 @@
 // in ParameterLayout.cpp this keeps the fx{N}_type choice list and the enum in
 // sync (serialization safety).
 //
-// Built by default. Run with: ./build/parvati_clouds_fx_test
+// Run: ./build_unified/parvati_unified_tests parvati_clouds_fx_test
 
 #include <array>
 #include <cmath>

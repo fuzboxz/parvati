@@ -9,7 +9,7 @@
 // plus the on-screen readout through a REAL constructed control, and the
 // midiNoteName edges it renders with.
 //
-// Built by default. Run with: ./build/parvati_note_step_control_test
+// Run: ./build_unified/parvati_unified_tests note_step_control_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

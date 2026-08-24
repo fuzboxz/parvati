@@ -14,7 +14,7 @@
 //   [3e] Tail-cache TEMPO-MOVE invalidation (ClockedDelay halving at 4x BPM;
 //       the <=0.25 BPM jitter gate does not recompute).
 //
-// Built by default. Run with: ./build/parvati_render_quality_test
+// Run: ./build_unified/parvati_unified_tests render_quality_test
 
 #include <array>
 #include <cmath>

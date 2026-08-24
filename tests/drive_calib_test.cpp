@@ -24,7 +24,7 @@
 //     the 1-sample read floor (near-copy fraction small) and the Flanger's
 //     max reachable delay collapses to the clamped range (was ~152 samples).
 //
-// Built by default. Run with: ./build/parvati_drive_calib_test
+// Run: ./build_unified/parvati_unified_tests drive_calib_test
 
 #include <array>
 #include <algorithm>

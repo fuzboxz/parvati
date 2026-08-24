@@ -25,7 +25,7 @@
 //   [5] Layout sanity across every ACTIVE row: X is the rightmost child, lamp
 //       is the leftmost interactive child, both 44pt-wide HIG targets.
 //
-// Built by default. Run: ./build/parvati_mod_matrix_ui_test
+// Run: ./build_unified/parvati_unified_tests mod_matrix_ui_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

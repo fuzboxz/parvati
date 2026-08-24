@@ -31,7 +31,7 @@
 //       constant with no modulation; departs from the baseline under a strong
 //       env-2 -> cutoff (filter_env) modulation
 //
-// Built by default. Run with: ./build/parvati_ui_telemetry_test
+// Run: ./build_unified/parvati_unified_tests ui_telemetry_test
 
 #include <cmath>
 #include "unified_test_runner.h"

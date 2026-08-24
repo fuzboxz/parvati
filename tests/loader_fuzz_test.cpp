@@ -36,7 +36,7 @@
 // Rollback exemptions on false==identical: NONE. A violating input is a REAL
 // bug — do not weaken the assertion; report the case label + first-diff offset.
 //
-// Built by default. Run with: ./build_release/parvati_loader_fuzz_test
+// Run: ./build_unified/parvati_unified_tests loader_fuzz_test
 
 #include <atomic>
 #include "unified_test_runner.h"

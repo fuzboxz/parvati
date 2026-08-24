@@ -29,7 +29,7 @@
 //
 // Deterministic: fixed pollution values (chosen against the fresh-engine
 // values read at runtime, never wall-clock/random), a handful of blocks.
-// Built by default. Run with: ./build_release/parvati_shadow_state_test
+// Run: ./build_unified/parvati_unified_tests shadow_state_test
 
 #include <cstdint>
 #include "unified_test_runner.h"

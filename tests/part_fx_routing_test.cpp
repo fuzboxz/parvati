@@ -28,7 +28,7 @@
 //       level-dependent, so the correct contract is knee(sum), pinned here
 //       (the same honest-calibration approach as the mix_fuzz ZCR check).
 //
-// Built by default. Run with: ./build/parvati_part_fx_routing_test
+// Run: ./build_unified/parvati_unified_tests part_fx_routing_test
 
 #include <cmath>
 #include "unified_test_runner.h"

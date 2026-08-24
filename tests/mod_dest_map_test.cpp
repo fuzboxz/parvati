@@ -2,8 +2,8 @@
 // per-slot modulation-amount aggregation helpers (aggregateAmount /
 // slotsForDest) used by the modulation-ring, hover-highlight, and drag-and-drop
 // features. Drives a real ParvatiAudioProcessor APVTS so the raw-value paths
-// are exercised exactly as the UI will call them. Built by default.
-// Run with: ./build/parvati_mod_dest_map_test
+// are exercised exactly as the UI will call them.
+// Run: ./build_unified/parvati_unified_tests mod_dest_map_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

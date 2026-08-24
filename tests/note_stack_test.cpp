@@ -17,7 +17,7 @@
 // when default-init desynced the pool from the sorted array — hence the
 // fresh-construction checks at the top.
 //
-// Built by default. Run with: ./build/parvati_note_stack_test
+// Run: ./build_unified/parvati_unified_tests note_stack_test
 
 #include <cstdint>
 #include "unified_test_runner.h"

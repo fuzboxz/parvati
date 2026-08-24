@@ -2,7 +2,7 @@
 // multiple distinct note pitches over time when the transport is playing and
 // keys are held, and that note-offs occur between steps.
 //
-// Run: cmake --build build --target parvati_arp_test && ./build/parvati_arp_test
+// Run: ./build_unified/parvati_unified_tests arp_test
 
 #include <algorithm>
 #include "unified_test_runner.h"

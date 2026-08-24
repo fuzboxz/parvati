@@ -47,7 +47,7 @@
 // Determinism: no RNG, no wall clock beyond the watchdog budget; every
 // document is a fixed string.
 //
-// Built by default. Run with: ./build_release/parvati_load_invariants_test
+// Run: ./build_unified/parvati_unified_tests load_invariants_test
 
 #include <atomic>
 #include "unified_test_runner.h"

@@ -19,7 +19,7 @@
 //       effective param settles at the new velocity; the crossfade phase is
 //       observed to arm (< 1) on the switch and settle (== 1) afterwards.
 //
-// Built by default. Run with: ./build/parvati_fx_voice_mod_test
+// Run: ./build_unified/parvati_unified_tests parvati_fx_voice_mod_test
 
 #include <cmath>
 #include "unified_test_runner.h"

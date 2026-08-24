@@ -21,7 +21,7 @@
 // the SHARED static helper (PresetBrowser::importIntoUserTree) is driven
 // directly, which is the exact code the iOS path calls.
 //
-// Built by default. Run: ./build/parvati_ios_file_flow_test
+// Run: ./build_unified/parvati_unified_tests ios_file_flow_test
 
 #include <chrono>
 #include "unified_test_runner.h"

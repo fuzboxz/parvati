@@ -6,7 +6,7 @@
 // exponential VCA survives a .parvati save+load intact, whereas a .PRO of the
 // same state reverts them.
 //
-// Built by default. Run with: ./build/parvati_preset_test
+// Run: ./build_unified/parvati_unified_tests parvati_preset_test
 
 #include <cmath>
 #include "unified_test_runner.h"

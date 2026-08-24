@@ -45,7 +45,7 @@
 // explicit poll call replaces the 30 Hz tick; file loads use the checked-in
 // preset corpus). Runs in seconds.
 //
-// Built by default. Run with: ./build_release/parvati_ui_mirror_test
+// Run: ./build_unified/parvati_unified_tests ui_mirror_test
 
 #include <algorithm>
 #include "unified_test_runner.h"

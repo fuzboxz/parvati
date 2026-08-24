@@ -7,7 +7,7 @@
 // IDs. A new descriptor without help (the historical state of the whole FX
 // family) fails here instead of shipping silent tooltips.
 //
-// Built by default. Run with: ./build/parvati_paramhelp_parity_test
+// Run: ./build_unified/parvati_unified_tests paramhelp_parity_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

@@ -10,7 +10,7 @@
 //       clockTick's defensive else-branch self-cleans when the note-block guard
 //       goes false (key released / length 0 / mode != NOTE).
 //
-// Run: cmake --build build --target parvati_arp_seq_timing_test && ./build/parvati_arp_seq_timing_test
+// Run: ./build_unified/parvati_unified_tests parvati_arp_seq_timing_test
 
 #include <cstdint>
 #include "unified_test_runner.h"

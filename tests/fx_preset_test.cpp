@@ -6,7 +6,7 @@
 // Ambika .PRO/.MUL byte formats (which know nothing about FX). Mirrors the
 // shape of parvati_preset_test.cpp.
 //
-// Built by default. Run with: ./build/parvati_fx_preset_test
+// Run: ./build_unified/parvati_unified_tests fx_preset_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

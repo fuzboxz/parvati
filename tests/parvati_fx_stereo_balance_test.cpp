@@ -13,7 +13,7 @@
 // We also feed UNCORRELATED stereo noise (inL != inR) to check whether Spectral
 // collapses/narrows a genuine stereo image.
 //
-// Built by default. Run with: ./build_release/parvati_fx_stereo_balance_test
+// Run: ./build_unified/parvati_unified_tests parvati_fx_stereo_balance_test
 
 #include <cmath>
 #include "unified_test_runner.h"

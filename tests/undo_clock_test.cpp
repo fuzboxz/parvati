@@ -14,7 +14,7 @@
 //       manual bpm; the setter clamps to 40..300 (restored state is never
 //       trusted raw).
 //
-// Built by default. Run: ./build/parvati_undo_clock_test
+// Run: ./build_unified/parvati_unified_tests undo_clock_test
 
 #include <cmath>
 #include "unified_test_runner.h"

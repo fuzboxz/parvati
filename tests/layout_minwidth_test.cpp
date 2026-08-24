@@ -41,7 +41,7 @@
 // and the historical 38-of-50 squeeze, and must PASS a compliant layout — a
 // checker that cannot fail cannot gate anything.
 //
-// Built by default. Run: ./build/parvati_layout_minwidth_test
+// Run: ./build_unified/parvati_unified_tests layout_minwidth_test
 
 #include <cxxabi.h>
 #include "unified_test_runner.h"

@@ -18,7 +18,7 @@
 // 4-pole SSM2164 cascade) for output sanity (finite, non-trivial), since they
 // share processSample's call contract.
 //
-// Built by default. Run with: ./build/parvati_analog_filter_batch_test
+// Run: ./build_unified/parvati_unified_tests analog_filter_batch_test
 
 #include <cmath>
 #include "unified_test_runner.h"

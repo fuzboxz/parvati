@@ -6,7 +6,7 @@
 // the host state carried only the current Part's APVTS values, so Parts 1..5
 // (patch / arp / seq / routing) reverted to init on every DAW project reload.
 //
-// Built by default. Run with: ./build/parvati_host_state_test
+// Run: ./build_unified/parvati_unified_tests host_state_test
 
 #include <cmath>
 #include "unified_test_runner.h"

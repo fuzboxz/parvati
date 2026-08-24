@@ -12,7 +12,7 @@
 //
 // Each controller is routed to MOD_DST_FILTER_CUTOFF (amount 63) so a controller
 // move changes the cutoff -> a measurable RMS change on a sustaining note.
-// Built by default. Run with: ./build/parvati_controller_mod_test
+// Run: ./build_unified/parvati_unified_tests controller_mod_test
 
 #include <cmath>
 #include "unified_test_runner.h"

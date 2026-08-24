@@ -28,7 +28,7 @@
 //   [2] The NoteStepControl lane (seqnote step slider) defers the same way.
 //   [3] The processor itself keeps functioning (render still finite).
 //
-// Built by default. Run: ./build/parvati_param_thread_test
+// Run: ./build_unified/parvati_unified_tests param_thread_test
 
 #include <atomic>
 #include "unified_test_runner.h"

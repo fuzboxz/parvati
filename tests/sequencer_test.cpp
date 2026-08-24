@@ -6,7 +6,7 @@
 //      sequence value into every voice's modulation_sources_[MOD_SRC_SEQ_1]
 //      each block; value varies as steps advance).
 //
-// Run: cmake --build build --target parvati_sequencer_test && ./build/parvati_sequencer_test
+// Run: ./build_unified/parvati_unified_tests sequencer_test
 
 #include <algorithm>
 #include "unified_test_runner.h"

@@ -16,7 +16,7 @@
 // consumeStagedOversampling) of a SUSTAINED note — a held voice is the only
 // deterministic consumer (idle voices install on their next note).
 //
-// Built by default. Run with: ./build/parvati_os_reaper_test
+// Run: ./build_unified/parvati_unified_tests os_reaper_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

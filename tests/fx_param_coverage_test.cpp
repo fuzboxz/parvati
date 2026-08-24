@@ -28,7 +28,7 @@
 //                             "Wavemangler") with the choice INDEX order unchanged
 //                             (presets store the index, so renames are safe).
 //
-// Built by default. Run with: ./build_release/parvati_fx_param_coverage_test
+// Run: ./build_unified/parvati_unified_tests fx_param_coverage_test
 
 #include <algorithm>
 #include "unified_test_runner.h"

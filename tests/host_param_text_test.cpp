@@ -24,7 +24,7 @@
 //   [6] part_select stays non-automatable (regression: the grouping rewrite
 //       must keep .withAutomatable(false)).
 //
-// Built by default. Run with: ./build/parvati_host_param_text_test
+// Run: ./build_unified/parvati_unified_tests host_param_text_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

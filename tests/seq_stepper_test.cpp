@@ -15,7 +15,7 @@
 //   [4] a live theme switch re-resolves the colour (the lookAndFeelChanged
 //       path — the "colour read before theme attach" trap).
 //
-// Built by default. Run with: ./build/parvati_seq_stepper_test
+// Run: ./build_unified/parvati_unified_tests seq_stepper_test
 
 #include <cmath>
 #include "unified_test_runner.h"

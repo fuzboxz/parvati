@@ -12,7 +12,7 @@
 // (NaN/Inf from a bad ramp / divider / filter state). The render-time vs
 // audio-time ratio is PRINTED as a CPU indicator but NOT asserted (it is
 // machine/CI-dependent and would be flaky; a Debug build is expected to exceed
-// realtime). Built by default. Run with: ./build/parvati_realtime_test
+// realtime). Run: ./build_unified/parvati_unified_tests realtime_test
 
 #include <chrono>
 #include "unified_test_runner.h"

@@ -4,8 +4,7 @@
 // that drifts a constant fails CI here. Asserted STATIC (compile-time) AND
 // mirrored as runtime checks.
 //
-//   cmake --build build --target parvati_ipad_hig_sizing_test
-//   ./build/parvati_ipad_hig_sizing_test
+//   ./build_unified/parvati_unified_tests ipad_hig_sizing_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

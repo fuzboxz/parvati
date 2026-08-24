@@ -10,7 +10,7 @@
 //       "Clear"/"M" labels remains anywhere in a row; and the ACTIONS still
 //       fire through the same view seams (X clears the slot, lamp toggles
 //       the session mute).
-// Built by default. Run: ./build/parvati_workspace_padding_test
+// Run: ./build_unified/parvati_unified_tests workspace_padding_test
 
 #include <array>
 #include <cstdio>

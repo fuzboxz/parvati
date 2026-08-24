@@ -10,7 +10,7 @@
 //       (1..512) without NaN/crash — the guarantee the sub-chunking relies on.
 //   (C) the dry path (all FX disabled) is still an exact copy at any N.
 //
-// Built by default. Run with: ./build/parvati_fx_modrate_test
+// Run: ./build_unified/parvati_unified_tests parvati_fx_modrate_test
 
 #include <cmath>
 #include "unified_test_runner.h"

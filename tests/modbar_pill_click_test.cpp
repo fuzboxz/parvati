@@ -28,7 +28,7 @@
 // nothing even to a plain juce::TextButton in a temporary desktop window).
 // Hit-testing, the other half of real event delivery, is covered by [1].
 //
-// Built by default. Run: ./build/parvati_modbar_click_test
+// Run: ./build_unified/parvati_unified_tests modbar_pill_click_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

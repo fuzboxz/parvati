@@ -47,7 +47,7 @@
 //   — seeded float artifacts vs loadPartIntoApvts's canonical values —
 //   cannot occur within one instance).
 //
-// Run with: ./build_release/parvati_undo_property_test
+// Run: ./build_unified/parvati_unified_tests undo_property_test
 
 #include <cstdint>
 #include "unified_test_runner.h"

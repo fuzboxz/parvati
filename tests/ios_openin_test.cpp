@@ -18,7 +18,7 @@
 //   [4] Idempotence/route failures: a nonexistent preset file routes nowhere
 //       (invalid File), a hostile extension never touches the trees.
 //
-// Built by default. Run: ./build/parvati_ios_openin_test
+// Run: ./build_unified/parvati_unified_tests ios_openin_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

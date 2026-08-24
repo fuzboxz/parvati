@@ -10,7 +10,7 @@
 //       processor -> assert per-part channel/keyrange/voice-allocation match
 //       AND the current part's APVTS raw values match.
 //
-// Built by default. Run with: ./build/parvati_roundtrip_test
+// Run: ./build_unified/parvati_unified_tests roundtrip_test
 
 #include <cmath>
 #include "unified_test_runner.h"

@@ -14,7 +14,7 @@
 //     were 15/17pt — the user-visible "seq dropdown font too big").
 // [3] A live theme switch keeps the title tier (setTheme re-colours the L&F).
 //
-// Built by default. Run with: ./build/parvati_ui_typography_test
+// Run: ./build_unified/parvati_unified_tests ui_typography_test
 
 #include <cmath>
 #include "unified_test_runner.h"

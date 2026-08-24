@@ -12,7 +12,7 @@
 //   7. standing-bend pickup on newly triggered voices
 //   8. .MUL round-trip of the raga byte (PartData byte 4)
 //
-// Built by default. Run with: ./build/parvati_tuning_test
+// Run: ./build_unified/parvati_unified_tests tuning_test
 
 #include <cmath>
 #include "unified_test_runner.h"

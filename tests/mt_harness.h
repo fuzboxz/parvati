@@ -16,13 +16,13 @@
 // arp/seq/part_select parameter writes back to the message thread), so this
 // stays within the real plugin's threading contract.
 //
-// Run under the sanitizers to surface bugs:
+// Run under the sanitizers to surface bugs (tools/run_sanitizers.sh builds
+// the tests-only trees on demand):
 //   ThreadSanitizer  -> message<->audio data races:
-//     cmake -B build_tsan -DPARVATI_ENABLE_TSAN=ON && cmake --build build_tsan -j8
-//     ./build_tsan/parvati_concurrency_test
+//     ./build_san_tsan/parvati_unified_tests concurrency_test
 //   AddressSanitizer + UBSan -> OOB reads/writes, use-after-free, UB:
-//     cmake -B build_asan -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
-//   Races/bugs are timing-dependent -> run a few times (see tools/run_sanitizers.sh).
+//     ./build_san_asan/parvati_unified_tests concurrency_test
+//   Races/bugs are timing-dependent -> run a few times.
 
 #ifndef PARVATI_MT_HARNESS_H_
 #define PARVATI_MT_HARNESS_H_

@@ -16,7 +16,7 @@
 //   - advance() never spins: ticks <= numSamples
 //   - reset() zeroes the fractional phase
 //
-// Built by default. Run with: ./build/parvati_transport_clock_test
+// Run: ./build_unified/parvati_unified_tests transport_clock_test
 
 #include <cstdlib>
 #include "unified_test_runner.h"
