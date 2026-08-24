@@ -107,6 +107,9 @@ std::vector<float> renderFx (FxType type, int paramIdx, const std::vector<float>
 
 const char* fxName (FxType t)
 {
+    // Named types carry cases; the default names the rest.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
     switch (t)
     {
         case FxType::Diffuser:         return "Diffuser";
@@ -115,6 +118,7 @@ const char* fxName (FxType t)
         case FxType::Resonator:        return "Resonator";
         default: return "?";
     }
+#pragma clang diagnostic pop
 }
 
 // Test one FX/param: step with square-wave, assert pop ratio is low.

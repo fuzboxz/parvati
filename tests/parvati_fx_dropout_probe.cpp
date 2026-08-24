@@ -84,7 +84,7 @@ Metrics analyze (const std::vector<float>& out, int from)
     return m;
 }
 
-void render (ParvatiAudioProcessor& proc, double sr, int bufSize,
+void render (ParvatiAudioProcessor& proc, [[maybe_unused]] double sr, int bufSize,
              std::vector<float>& capL, std::vector<float>& capR)
 {
     const int total = (int) capL.size();
@@ -251,11 +251,11 @@ TEST(parvati_fx_dropout_probe)
                     for (int k = 1; k <= 5; ++k)
                         setInt (p2, ("fx" + std::to_string (slot) + "_param" + std::to_string (k)).c_str(), 127);
                 }
-                const int total2 = (int) (dur * sr);
-                std::vector<float> pre ((size_t) total2, 0.0f), preR ((size_t) total2, 0.0f);
+                const int preSamples = (int) (dur * sr);
+                std::vector<float> pre ((size_t) preSamples, 0.0f), preR ((size_t) preSamples, 0.0f);
                 render (p2, sr, bufSize, pre, preR);
                 double peak = 0, rms = 0; int cnt = 0;
-                for (int i = (int) (0.3 * sr); i < total2; ++i)
+                for (int i = (int) (0.3 * sr); i < preSamples; ++i)
                 { const double v = std::fabs (pre[(size_t) i]); if (v > peak) peak = v; rms += v * v; ++cnt; }
                 std::printf ("    shaper INPUT (delay+rev only): peak=%.3f rms=%.4f\n",
                              peak, std::sqrt (rms / cnt));

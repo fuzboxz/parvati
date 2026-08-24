@@ -35,7 +35,7 @@ struct Census { int count; double worst; };
 Census census (const std::vector<float>& x)
 {
     const int n = (int) x.size ();
-    std::vector<float> d (n, 0.f);
+    std::vector<float> d (static_cast<size_t> (n), 0.f);
     for (int i = 1; i < n; ++i) d[(size_t) i] = std::fabs (x[(size_t) i] - x[(size_t) i - 1]);
     Census c { 0, 0.0 };
     for (int i = 65; i < n; ++i)

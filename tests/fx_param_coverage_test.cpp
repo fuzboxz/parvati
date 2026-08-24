@@ -55,6 +55,10 @@
 #include "SynthEngine.h"
 #include "ParameterLayout.h"          // makeFxTypes (FX-type choice display labels)
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 namespace
 {
 int g_failures = 0;

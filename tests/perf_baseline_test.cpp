@@ -173,7 +173,7 @@ RenderOutcome renderOnce (const PerfScenario& sc)
         written += n;
     }
     const auto t1 = std::chrono::steady_clock::now();
-    out.micros = std::chrono::duration_cast<std::chrono::microseconds> (t1 - t0).count();
+    out.micros = static_cast<double> (std::chrono::duration_cast<std::chrono::microseconds> (t1 - t0).count());
     return out;
 }
 

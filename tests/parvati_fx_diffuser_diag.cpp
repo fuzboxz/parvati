@@ -47,11 +47,6 @@ void fillInput (std::vector<float>& d, Input in)
     }
 }
 
-const char* inName (Input in)
-{
-    return in == Input::Silence ? "silence" : in == Input::Tone220 ? "220Hz" : "noise";
-}
-
 // Isolated-spike detector: a sample where |Δout[i]| > k * max(|Δout[i-1]|,|Δout[i+1]|).
 // Catches impulsive discontinuities regardless of steady signal level.
 std::vector<int> detectSpikes (const std::vector<float>& out, int start, int end, double k = 4.0)

@@ -40,6 +40,10 @@
 #include "test_utils.h"              // shared setInt/setChoice (host-path helpers)
 #include "dsp/patch.h"  // MOD_SRC_* / MOD_DST_* / kNumSyncedLfoRates enum constants
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 namespace
 {
 int g_failures = 0;
@@ -134,7 +138,7 @@ double detectPitchHz (const std::vector<float>& x, double fs,
     const int minLag = static_cast<int> (fs / fMax);
     const int maxLag = static_cast<int> (fs / fMin);
     if (maxLag >= static_cast<int> (x.size())) return 0.0;
-    std::vector<double> acf (maxLag + 2, 0.0);
+    std::vector<double> acf (static_cast<size_t> (maxLag + 2), 0.0);
     double globalMax = 0.0;
     for (int lag = minLag; lag <= maxLag; ++lag)
     {

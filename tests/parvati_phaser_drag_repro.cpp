@@ -29,7 +29,6 @@ TEST(parvati_phaser_drag_repro)
     setInt (proc, "fx1_param3", 127);         // Feedback 100%
     const int total = (int) (3.0 * sr);
     std::vector<float> capL ((size_t) total, 0.f);
-    int centerVal = 0;
     bool on = false;
     for (int w = 0; w < total; )
     {

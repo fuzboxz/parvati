@@ -17,7 +17,7 @@
 namespace
 {
 
-void render (ParvatiAudioProcessor& proc, double sr, int bufSize,
+void render (ParvatiAudioProcessor& proc, [[maybe_unused]] double sr, int bufSize,
              std::vector<float>& capL)
 {
     const int total = (int) capL.size();

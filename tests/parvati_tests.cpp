@@ -30,6 +30,10 @@
 #include "dsp/patch.h"
 #include "dsp/voice.h"
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 using ambika::dsp::Voice;
 using ambika::dsp::Patch;
 using ambika::dsp::kAudioBlockSize;
@@ -38,6 +42,10 @@ using ambika::dsp::kInternalSampleRate;
 namespace {
 
 int g_failures = 0;
+
+// This file keeps its own CHECK macro: it wins over the runner copy.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmacro-redefined"
 
 #define CHECK(cond, ...)                                                          \
     do {                                                                          \
@@ -50,6 +58,7 @@ int g_failures = 0;
             std::printf ("\n");                                                   \
         }                                                                         \
     } while (0)
+#pragma clang diagnostic pop
 
 double midiFreq (int midi) { return 440.0 * std::pow (2.0, (midi - 69) / 12.0); }
 
@@ -95,7 +104,7 @@ bool toolAvailable (const char* name)
 
 // Set osc[0].shape (byte 0 of the Patch) so the voice produces a real tone.
 // Everything else stays at the faithful init patch defaults.
-void loadSawPatch (Voice& v)
+static void loadSawPatch (Voice& v)
 {
     v.Init();
     v.set_patch_data (0, static_cast<uint8_t> (ambika::dsp::WAVEFORM_SAW));
@@ -105,7 +114,7 @@ void loadSawPatch (Voice& v)
 
 // Idle warm-up: run a few blocks with no note so Update() populates the
 // envelope stage increments before a note is triggered (matches hardware).
-void warmUp (Voice& v, int blocks = 4)
+static void warmUp (Voice& v, int blocks = 4)
 {
     for (int b = 0; b < blocks; ++b)
         v.ProcessBlock();
@@ -126,14 +135,14 @@ std::vector<float> renderVoice (Voice& v, int midi, uint8_t velocity, int numBlo
         v.ProcessBlock();
         const uint8_t* buf = v.output().data();
         for (int i = 0; i < kAudioBlockSize; ++i)
-            out.push_back ((static_cast<int> (buf[static_cast<size_t> (i)]) - 128) / 128.0f);
+            out.push_back (static_cast<float> (static_cast<int> (buf[static_cast<size_t> (i)]) - 128) / 128.0f);
     }
     return out;
 }
 
 // Zero-crossing-rate frequency estimate (octave-robust). Counts sign changes of
 // (sample - mean); freq = crossings / 2 / duration.
-double zcrFreq (const std::vector<float>& x, double fs)
+static double zcrFreq (const std::vector<float>& x, double fs)
 {
     const size_t N = x.size();
     if (N < 4) return -1.0;
@@ -156,7 +165,7 @@ double zcrFreq (const std::vector<float>& x, double fs)
 // the first local peak above 0.5x the global max. This picks the fundamental
 // period (correct octave) rather than the global max, which can lock onto a
 // sub-harmonic on bright/bandlimited waveforms. Parabolic interpolation refines.
-double acfPitch (const std::vector<float>& x, double fs, double fMin, double fMax)
+static double acfPitch (const std::vector<float>& x, double fs, double fMin, double fMax)
 {
     const size_t N = x.size();
     if (N < 128) return -1.0;
@@ -208,14 +217,14 @@ double acfPitch (const std::vector<float>& x, double fs, double fMin, double fMa
 
 // For this engine a single first-peak ACF pass over a wide band is sufficient
 // and octave-robust. ZCR is reported alongside as an independent cross-check.
-double estimatePitch (const std::vector<float>& x, double fs, double* rawAcf)
+static double estimatePitch (const std::vector<float>& x, double fs, double* rawAcf)
 {
     const double p = acfPitch (x, fs, 150.0, 2000.0);
     if (rawAcf) *rawAcf = p;
     return p;
 }
 
-bool hasNaNorInf (const std::vector<float>& x)
+static bool hasNaNorInf (const std::vector<float>& x)
 {
     for (float v : x)
         if (std::isnan (v) || std::isinf (v)) return true;

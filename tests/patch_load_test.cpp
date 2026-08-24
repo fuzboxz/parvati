@@ -140,7 +140,7 @@ TEST(patch_load_test)
                 ++diffs;
         char m[128];
         std::snprintf (m, sizeof (m), "crush materially alters the waveform (%d/%zu samples differ)", diffs, a.size());
-        check (diffs > a.size() / 4, m);
+        check (diffs > static_cast<int> (a.size() / 4), m);
     }
 
     // ---------------------------------------------------------------------

@@ -93,7 +93,6 @@ double worstImpulse (const std::vector<float>& x, int from, int to)
 std::vector<Ev> makeEvents (int kind, double durSec)
 {
     std::vector<Ev> ev;
-    const int total = (int) (durSec * kSr);
     const auto on = [&] (double t, int n) { ev.push_back ({ (int) (t * kSr), true,  n }); };
     const auto off = [&] (double t, int n) { ev.push_back ({ (int) (t * kSr), false, n }); };
     switch (kind)

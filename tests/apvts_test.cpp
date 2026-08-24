@@ -105,7 +105,7 @@ double detectPitchHz (const std::vector<float>& x, double fs,
         return 0.0;
 
     // Normalise + compute the autocorrelation, tracking the global max.
-    std::vector<double> acf (maxLag + 2, 0.0);
+    std::vector<double> acf (static_cast<size_t> (maxLag + 2), 0.0);
     double globalMax = 0.0;
     for (int lag = minLag; lag <= maxLag; ++lag)
     {

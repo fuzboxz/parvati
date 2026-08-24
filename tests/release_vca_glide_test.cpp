@@ -73,10 +73,10 @@ double zohSawMag (const std::vector<float>& x, size_t s0, size_t n, double f0,
         {
             double frac = (double) ((int) i + off) * ratioHostToInternal / 40.0;
             frac -= std::floor (frac);
-            const double saw = 2.0 * (frac - 0.5);   // -1..1 ramp per internal block
+            const double sawPh = 2.0 * (frac - 0.5);   // -1..1 ramp per internal block
             const double ph = 2.0 * 3.14159265358979323846 * f0 * (double) i / kSr;
-            zre += x[s0 + i] * saw * std::cos (ph);
-            zim -= x[s0 + i] * saw * std::sin (ph);
+            zre += x[s0 + i] * sawPh * std::cos (ph);
+            zim -= x[s0 + i] * sawPh * std::sin (ph);
         }
         best = std::max (best, std::sqrt (zre * zre + zim * zim) / (double) n);
     }
@@ -136,11 +136,11 @@ TEST(release_vca_glide_test)
 
     const double f0 = 329.63;
     double fund = 0.0;
-    const double saw = zohSawMag (cap, s0, n, f0, fund);
-    const double ratio = fund > 1e-9 ? saw / fund : 999.0;
+    const double sawMag = zohSawMag (cap, s0, n, f0, fund);
+    const double ratio = fund > 1e-9 ? sawMag / fund : 999.0;
 
     std::printf ("fundamental mag %.5f | ZOH-saw matched-filter mag %.6f | ratio %.5f\n",
-                 fund, saw, ratio);
+                 fund, sawMag,ratio);
 
     // Host-block-rate (172.3 Hz) leakage guard: a CV accidentally applied at
     // HOST block rate (256-sample host blocks) instead of the internal rate

@@ -67,7 +67,7 @@ struct StubPlayhead final : public juce::AudioPlayHead
 }  // namespace
 
 //==============================================================================
-int testFixedUndoBound()
+static int testFixedUndoBound()
 {
     std::printf ("[fixed-size undo history]\n");
     int fails = g_failures;
@@ -114,7 +114,7 @@ int testFixedUndoBound()
 }
 
 //==============================================================================
-int testManualClock()
+static int testManualClock()
 {
     std::printf ("[manual arp-clock fallback]\n");
     int fails = g_failures;
@@ -216,7 +216,7 @@ int testManualClock()
 }
 
 //==============================================================================
-int testSettingsPanelDegradation()
+static int testSettingsPanelDegradation()
 {
     std::printf ("[settings panel R3 degradation (Arp Clock rows)]\n");
     int fails = g_failures;

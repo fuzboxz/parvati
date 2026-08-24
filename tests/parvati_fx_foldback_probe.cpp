@@ -114,7 +114,7 @@ void runFlanger (const char* label, float inPeak, float fb,
 }
 } // namespace
 
-void runEngine (const char* label, int fxType, double sr, int dummy = 0, float fb = -1.0f)
+static void runEngine (const char* label, int fxType, double sr, int dummy = 0, float fb = -1.0f)
 {
     ParvatiAudioProcessor proc;
     proc.prepareToPlay (sr, 512);
@@ -181,7 +181,6 @@ void runEngine (const char* label, int fxType, double sr, int dummy = 0, float f
         {
             // Wet check: does part 0's FX-output differ from its raw voicecard sum?
             const auto& fx = proc.getEngine().getFxOutputBuffers()[(size_t) 0];
-            const auto& vc = proc.getEngine().getVoiceCardBuffers();
             double fxRms = 0.0;
             int nCmp = std::min (256, fx.getNumSamples());
             for (int i = 0; i < nCmp; ++i) fxRms += std::fabs (fx.getSample (0, i));
@@ -198,7 +197,7 @@ void runEngine (const char* label, int fxType, double sr, int dummy = 0, float f
     }
 }
 
-int probeMain()
+static int probeMain()
 {
     runEngine ("Overdrv max ", 16, 44100.0, 64);   // ENGAGEMENT SANITY: must differ wildly
     runEngine ("no-FX       ", 0,  44100.0, 64);

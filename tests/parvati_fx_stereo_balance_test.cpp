@@ -109,8 +109,8 @@ BalanceResult measureBalance (FxChain& chain,
         }
     }
 
-    r.rmsL = std::sqrt (sumL / std::max (1L, count));
-    r.rmsR = std::sqrt (sumR / std::max (1L, count));
+    r.rmsL = std::sqrt (sumL / static_cast<double> (std::max (1L, count)));
+    r.rmsR = std::sqrt (sumR / static_cast<double> (std::max (1L, count)));
     r.ratio = (r.rmsL > 1.0e-12) ? r.rmsR / r.rmsL : 0.0;
     r.ratioDb = (r.ratio > 0.0) ? 20.0 * std::log10 (r.ratio) : -999.0;
     return r;
@@ -263,15 +263,15 @@ TEST(parvati_fx_stereo_balance_test)
     std::printf ("--- CONTROL effects (mono-correlated) ---\n");
     {
         float pDiff[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        const BalanceResult rDiff = measureMono (FxType::Diffuser, pDiff, mono, "Diffuser");
+        measureMono (FxType::Diffuser, pDiff, mono, "Diffuser");
 
         // Resonator: position 0.25 (both odd+even active) vs 0.5 (R/even null).
         float pRes25[4] = { 0.5f, 0.5f, 0.5f, 0.25f };
-        const BalanceResult rRes25 = measureMono (FxType::Resonator, pRes25, mono, "Resonator pos0.25");
+        measureMono (FxType::Resonator, pRes25, mono, "Resonator pos0.25");
         float pRes50[4] = { 0.5f, 0.5f, 0.5f, 0.50f };
-        const BalanceResult rRes50 = measureMono (FxType::Resonator, pRes50, mono, "Resonator pos0.50");
+        measureMono (FxType::Resonator, pRes50, mono, "Resonator pos0.50");
         float pRes75[4] = { 0.5f, 0.5f, 0.5f, 0.75f };
-        const BalanceResult rRes75 = measureMono (FxType::Resonator, pRes75, mono, "Resonator pos0.75");
+        measureMono (FxType::Resonator, pRes75, mono, "Resonator pos0.75");
 
         std::printf ("  >> Diffuser expected ~symmetric; Resonator pos0.50 expected R/even -> null.\n\n");
     }
@@ -291,7 +291,7 @@ TEST(parvati_fx_stereo_balance_test)
             sumR += (double) indepR[static_cast<size_t> (i)] * (double) indepR[static_cast<size_t> (i)];
             ++cnt;
         }
-        const double inRL = std::sqrt (sumR / std::max (1L, cnt)) / std::sqrt (sumL / std::max (1L, cnt));
+        const double inRL = std::sqrt (sumR / static_cast<double> (std::max (1L, cnt))) / std::sqrt (sumL / static_cast<double> (std::max (1L, cnt)));
         std::printf ("  input (uncorrelated) R/L = %.4f (%.2f dB)\n",
                      inRL, 20.0 * std::log10 (inRL));
 

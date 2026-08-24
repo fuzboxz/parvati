@@ -24,6 +24,10 @@
 #include "dsp/fx/FxChain.h"
 #include "ui/FxSlotLabels.h"
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 namespace
 {
 int g_failures = 0;
@@ -580,16 +584,16 @@ TEST(parvati_clouds_fx_test)
         {
             if (off == stabilise)
                 chain.setSlotEnabled (0, false);   // start fade-out
-            chain.process (&inBuf[off], &inBuf[off], &outBuf[off], &outBuf[off], kBlock);
+            chain.process (inBuf.data() + off, inBuf.data() + off,
+                       outBuf.data() + off, outBuf.data() + off, kBlock);
         }
 
         float steadyStep = 0.0f, maxStep = 0.0f;
-        int maxIdx = 0;
         for (int i = 1; i < N; ++i)
         {
-            const float step = std::fabs (outBuf[static_cast[static_cast<size_t> (i - 1)]> (i)] - outBuf[i - 1]);
+            const float step = std::fabs (outBuf[static_cast<size_t> (i)] - outBuf[static_cast<size_t> (i - 1)]);
             if (i < stabilise) steadyStep = std::fmax (steadyStep, step);
-            if (step > maxStep) { maxStep = step; maxIdx = i; }
+            if (step > maxStep) maxStep = step;
         }
         check (maxStep < steadyStep * 3.0f,
                "N2: bypassing an OS slot produces no click (max step within 3x steady)");
