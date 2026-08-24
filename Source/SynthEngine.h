@@ -121,7 +121,7 @@ public:
 
     // ---- Arpeggiator / Sequencer config (CURRENT part) ----
     // All staged in pendingConfig_ + configDirty_; applied on the audio thread
-    // in processTransport before the clock loop (see servicePendingConfig).
+    // in serviceDeferredState before the clock loop (processTransport).
     void setArpMode (uint8_t mode);
     void setArpDirection (uint8_t dir)  { parts_[(size_t) currentPart_].writePendingConfig ([dir] (auto& c)  { c.arpDirection = dir;  }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); }
     void setArpOctave (uint8_t oct)     { parts_[(size_t) currentPart_].writePendingConfig ([oct] (auto& c) { c.arpOctave = oct;     }); parts_[(size_t) currentPart_].configDirty_.store (true, std::memory_order_release); }
@@ -844,6 +844,17 @@ private:
 
     // Push the current SEQ_1/2 values into each Part's own voices.
     void injectSequencerModulation();
+
+    // Service every deferred (staged) state change ON THE AUDIO THREAD, at
+    // the top of processTransport: full voice resets, per-part frame writes,
+    // global options, voice allocation, arp/seq config and generated-note
+    // kills. Pure code motion from processTransport; order unchanged.
+    void serviceDeferredState();
+
+    // Re-route the incoming MIDI block per Part (arp-held vs direct), swapping
+    // @p midi in place (stripped events removed). Pure code motion from
+    // processTransport; MIDI semantics unchanged.
+    void routeIncomingMidi (juce::MidiBuffer& midi, bool isPlaying);
 
     // juce::Synthesiser routing hooks (noteOn/noteOff are virtual; handleNoteOn
     // is not, in JUCE 9).

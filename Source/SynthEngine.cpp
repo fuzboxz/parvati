@@ -181,7 +181,7 @@ void SynthEngine::prepare (double sampleRate, int blockSize)
             parts_[(size_t) p].partBytes[15] = 1;     // polyphony_mode = POLY
             // Mirror the init arp/seq config into BOTH the live objects AND
             // pendingConfig_ (the message-thread-authoritative config the audio
-            // thread applies via servicePendingConfig, and that serialize /
+            // thread applies via serviceDeferredState, and that serialize /
             // loadPartIntoApvts read). Seeding pendingConfig_ here keeps it in
             // sync with the live objects. Thus a later live edit (which stages
             // only its own field into pendingConfig_ + flags configDirty_)
@@ -297,7 +297,7 @@ void SynthEngine::setParameterSmoothing (bool smoothing)
 
 void SynthEngine::setArpMode (uint8_t mode)
 {
-    // Stage only; the audio thread applies (servicePendingConfig in
+    // Stage only; the audio thread applies (serviceDeferredState in
     // processTransport) so the live arp/seq objects + the active->inactive
     // transition (arp.stop() + killGeneratedNotes_) never race the clock loop.
     parts_[(size_t) currentPart_].writePendingConfig ([mode] (auto& c) { c.arpMode = mode; });
@@ -317,7 +317,7 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
         return;
     auto& p  = parts_[(size_t) part];
     // Stage under the pendingConfig_ seqlock so the audio-thread reader
-    // (servicePendingConfig) never sees a torn snapshot.
+    // (serviceDeferredState) never sees a torn snapshot.
     p.writePendingConfig ([&] (Part::PendingConfig& pc) {
         // CLAMP to the firmware parameter ranges: these bytes arrive RAW from
         // .MUL loads / host-state blobs (never through the APVTS, which
@@ -1688,8 +1688,7 @@ void SynthEngine::handleController (int midiChannel, int controllerNumber, int c
 }
 
 //==========================================================================
-void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
-                                    double bpm, bool isPlaying)
+void SynthEngine::serviceDeferredState()
 {
     // Service a deferred full voice reset (patch switch) ON THE AUDIO THREAD --
     // stopNote(.,false) must not run on the message thread while a voice is
@@ -1822,35 +1821,10 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
                     av->stopNote (0.0f, false);
         }
     }
+}
 
-    transport_.setTempo (bpm);
-    applyTempo (bpm);
-
-    // Tempo-synced delay tails (ClockedDelay) scale with the tempo: refresh the
-    // tail cache when the tempo moves materially (>0.25 BPM — ignores jitter,
-    // catches any real tempo change / ramp). Pure math + one atomic store.
-    if (std::abs (bpm - tailBpmCache_.load (std::memory_order_relaxed)) > 0.25)
-    {
-        tailBpmCache_.store (bpm, std::memory_order_relaxed);
-        recomputeTailCache();
-    }
-
-    // Push transport to every per-part FX chain so tempo-aware effects (the FV-1
-    // Clocked Delay) can sync to the host. Polled once per block; the chain fans
-    // it out to each slot's processor (default no-op).
-    for (int p = 0; p < kNumParts; ++p)
-        fxChains_[(size_t) p].setTempo (bpm, isPlaying);
-
-    if (isPlaying && ! wasPlaying_)
-    {  // NOLINT(bugprone-branch-clone): the true-branch starts arp+seq, the else stops arp -- different bodies, clang-tidy FP
-        for (auto& part : parts_) { part.arp.start(); part.seq.start(); }
-    }
-    else if (! isPlaying && wasPlaying_)
-    {
-        for (auto& part : parts_) { part.arp.stop(); part.seq.stop(); }
-    }
-    wasPlaying_ = isPlaying;
-
+void SynthEngine::routeIncomingMidi (juce::MidiBuffer& midi, bool isPlaying)
+{
     // Per-Part: route note on/off into a Part's held-key stack when that Part's
     // arp/sequencer is active (strip them so renderNextBlock does not also play
     // the raw held key). Non-arp Parts pass through to handleNoteOn/Off.
@@ -1950,6 +1924,45 @@ void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
         }
     }
     midi.swapWith (processedMidi_);
+}
+
+void SynthEngine::processTransport (juce::MidiBuffer& midi, int numSamples,
+                                    double bpm, bool isPlaying)
+{
+    // One audio-block pass: service staged state, then tempo + transport
+    // edges, then re-route the MIDI block for the arp/seq parts, then run
+    // the shared clock. Each stage is its own function (see the headers).
+    serviceDeferredState();
+
+    transport_.setTempo (bpm);
+    applyTempo (bpm);
+
+    // Tempo-synced delay tails (ClockedDelay) scale with the tempo: refresh the
+    // tail cache when the tempo moves materially (>0.25 BPM — ignores jitter,
+    // catches any real tempo change / ramp). Pure math + one atomic store.
+    if (std::abs (bpm - tailBpmCache_.load (std::memory_order_relaxed)) > 0.25)
+    {
+        tailBpmCache_.store (bpm, std::memory_order_relaxed);
+        recomputeTailCache();
+    }
+
+    // Push transport to every per-part FX chain so tempo-aware effects (the FV-1
+    // Clocked Delay) can sync to the host. Polled once per block; the chain fans
+    // it out to each slot's processor (default no-op).
+    for (int p = 0; p < kNumParts; ++p)
+        fxChains_[(size_t) p].setTempo (bpm, isPlaying);
+
+    if (isPlaying && ! wasPlaying_)
+    {  // NOLINT(bugprone-branch-clone): the true-branch starts arp+seq, the else stops arp -- different bodies, clang-tidy FP
+        for (auto& part : parts_) { part.arp.start(); part.seq.start(); }
+    }
+    else if (! isPlaying && wasPlaying_)
+    {
+        for (auto& part : parts_) { part.arp.stop(); part.seq.stop(); }
+    }
+    wasPlaying_ = isPlaying;
+
+    routeIncomingMidi (midi, isPlaying);
 
     // Advance the shared 24-PPQN clock; each Part's arp self-prescales (own
     // clockCounter_/resolution) and drives its own arp + sequencer. The arp's
