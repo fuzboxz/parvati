@@ -17,7 +17,7 @@ namespace parvati
 inline int popcount8 (uint8_t x) noexcept
 {
     int n = 0;
-    for (; x != 0; x >>= 1) n += x & 1;
+    while (x != 0) { n += x & 1; x >>= 1; }
     return n;
 }
 
