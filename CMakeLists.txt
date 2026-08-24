@@ -180,9 +180,9 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ------------------------------------------------------------------------------
-# Developer tooling options (all OFF by default; opt-in). Enable as needed:
+# Developer tooling options. Sanitizers stay OFF by default (opt-in):
 #   -DPARVATI_ENABLE_ASAN=ON   -DPARVATI_ENABLE_UBSAN=ON
-#   -DPARVATI_ENABLE_TSAN=ON   -DPARVATI_WARNINGS_AS_ERRORS=ON
+#   -DPARVATI_ENABLE_TSAN=ON
 # Sanitizers apply to the whole build (JUCE + Parvati + tests) so they catch
 # bugs across the full call graph; reconfigure from a clean build dir when
 # toggling them. (AddressSanitizer and ThreadSanitizer are mutually exclusive.)
@@ -190,7 +190,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(PARVATI_ENABLE_ASAN            "Enable AddressSanitizer"            OFF)
 option(PARVATI_ENABLE_UBSAN           "Enable UndefinedBehaviorSanitizer"  OFF)
 option(PARVATI_ENABLE_TSAN            "Enable ThreadSanitizer"             OFF)
-option(PARVATI_WARNINGS_AS_ERRORS     "Treat compiler warnings as errors"  OFF)
+option(PARVATI_WARNINGS_AS_ERRORS     "Treat compiler warnings as errors"  ON)
 option(PARVATI_TEST_EXAMPLES          "Register the 8 example_* demo tests in parvati_unified_tests (example_failing_test deliberately fails; default run stays green without them)" OFF)
 option(PARVATI_INSTALL_ON_BUILD       "macOS release convenience: install every built plug-in bundle + the Standalone app as a POST-BUILD step of its own format target (same destinations as `deploy`, minus the screen renders). Opt in per build dir — build_release uses it; build_unified / sanitizer trees stay plain." OFF)
 
@@ -926,11 +926,13 @@ target_include_directories(parvati_unified_tests SYSTEM PRIVATE Source/dsp/cloud
 # headers (the contract the pre-unification standalone parity harness had);
 # Source/tests stay AHEAD of the shim so the rest of the suite keeps resolving
 # same-named headers (parameter.h, op.h, midi_dispatcher.h, ...) from Source.
+# ambika_reference is listed SYSTEM below (NOT here): CMake appends SYSTEM
+# include dirs after these, so the shadow order is unchanged while the
+# vendored headers get standard system-header warning suppression.
 target_include_directories(parvati_unified_tests PRIVATE
     Source
     tests
     tests/firmware_shim
-    ambika_reference
 )
 # Narrowing suppression: Clang and GCC spell the flag differently. GCC drops
 # unknown -Wno-* options silently. The Clang spelling then turns the
@@ -940,6 +942,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 elseif(NOT MSVC)
     target_compile_options(parvati_unified_tests PRIVATE -Wno-c++11-narrowing)
 endif()
+# Vendored-tree warnings under PARVATI_WARNINGS_AS_ERRORS=ON (the default):
+# the firmware oracle is READ-ONLY (see the header comment) and its intentional
+# int<->uint8 arithmetic trips -Wimplicit-int-conversion/-Wsign-conversion & co.
+# Two scoped escapes keep -Werror live for ALL editable code:
+#   1) the ambika_reference include dir is SYSTEM below, so warnings from its
+#      HEADERS are suppressed in the ~15 test TUs that include them;
+#   2) the nine vendored .cc files compiled as MAIN files keep their warnings
+#      VISIBLE but non-fatal (-Wno-error per source).
+target_include_directories(parvati_unified_tests SYSTEM PRIVATE ambika_reference)
+set_source_files_properties(${PARVATI_AMBIKA_FIRMWARE_SOURCES} PROPERTIES
+    COMPILE_OPTIONS "-Wno-error")
+
 # Dead-code strip. It drops the firmware's never-called MonoModeOn and
 # PolyModeOn; they reference TouchVoiceAllocation, which the firmware tree
 # never defines. -Wl,-dead_strip works on Apple ld64 only. GNU ld and lld

@@ -414,6 +414,11 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   sequential runner stays canonical.
 
 ### Build
+- **Warnings are errors by default (2026-08-24).** `PARVATI_WARNINGS_AS_ERRORS`
+  now defaults to ON after the tree reached zero warnings across every target.
+  The read-only firmware oracle keeps its diagnostics visible but non-fatal:
+  its include directory is marked SYSTEM and its nine compiled sources get a
+  per-file `-Wno-error`. Editable code compiles under full `-Werror`.
 - **libc++ hardened mode FAST in optimized builds (2026-08-22).**
   `_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST` for Clang/
   RelWithDebInfo/Release configs (skipped under sanitizers/Debug): the
