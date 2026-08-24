@@ -479,30 +479,12 @@ void AmbikaVoice::fillInternalBlock()
         // un-smoothed engine.
         filter_.setCutoffHz (ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff()));
         filter_.setResonance (static_cast<float> (voice_.resonance()) / 255.0f);
-        // 4-pole cards are lowpass-only (hardware); the SVF honours LP/BP/HP/NOTCH.
-        {
-            const auto topo = filter_.getTopology();
-            const bool fourPole = (topo == ambika::dsp::FilterTopology::FOUR_POLE_LADDER
-                                || topo == ambika::dsp::FilterTopology::FOUR_POLE_SSM2164);
-            filter_.setMode (fourPole ? 0 : static_cast<int> (voice_.mode()));
-        }
+        applyFilterModeFromVoice();
         filter_.commit();
 
-        // VCA: the firmware VCA is analog, post-DSP; apply its gain here. Two
-        // response curves (mirrors the firmware log/lin jumper):
-        //  - Linearized: gain = vca/255 (the lut_res_vca_linearization mode, where
-        //    the table pre-warps the OTA so the output is linear).
-        //  - Exponential: ~60 dB OTA taper (the raw VCA response, linear-CV mode).
-        float vcaGainTarget;
-        if (vcaExponential_)
-        {
-            const float n = static_cast<float> (voice_.vca()) / 255.0f;
-            vcaGainTarget = exponentialVcaGain (n);  // 60 dB OTA taper, makeup-compensated
-        }
-        else
-        {
-            vcaGainTarget = static_cast<float> (voice_.vca()) / 255.0f;
-        }
+        // VCA: the firmware VCA is analog, post-DSP; apply its gain here (the
+        // response-curve notes live in vcaGainTargetFromVoice).
+        const float vcaGainTarget = vcaGainTargetFromVoice();
 
         // VCA glide (2026-08-22 release-noise fix): linearly ramp the gain
         // from the LAST APPLIED gain to this block's target across the 40
@@ -533,18 +515,9 @@ void AmbikaVoice::fillInternalBlock()
     // — resonance shares the same commit() as cutoff at no extra cost).
     const float targetCutoff = ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff());
     const float targetReso   = static_cast<float> (voice_.resonance()) / 255.0f;
-    const float vcaNorm      = static_cast<float> (voice_.vca()) / 255.0f;
-    const float targetGain   = vcaExponential_
-        ? exponentialVcaGain (vcaNorm)   // ~60 dB OTA taper, makeup-compensated
-        : vcaNorm;
+    const float targetGain   = vcaGainTargetFromVoice();
 
-    // 4-pole cards are lowpass-only (hardware); the SVF honours LP/BP/HP/NOTCH.
-    {
-        const auto topo = filter_.getTopology();
-        const bool fourPole = (topo == ambika::dsp::FilterTopology::FOUR_POLE_LADDER
-                            || topo == ambika::dsp::FilterTopology::FOUR_POLE_SSM2164);
-        filter_.setMode (fourPole ? 0 : static_cast<int> (voice_.mode()));
-    }
+    applyFilterModeFromVoice();
 
     // Snap to the current targets on the first block after enabling, so the
     // smoother never ramps up from a stale/zero value (re-enable is click-free).
@@ -578,108 +551,122 @@ void AmbikaVoice::fillInternalBlock()
     {
         // ---- Oversampling path (osFactor_ > 1) ----
         // The oscillator stays at the FIXED internal rate (39216 Hz); only the
-        // analog filter MODEL runs at osFactor_*that rate to reduce its digital
-        // aliasing for higher fidelity. Flow: render 40 raw floats -> upsample
-        // N× -> filter at N×39216 -> downsample to 40 -> VCA (internal rate,
-        // linear so no aliasing) -> FIFO.
-        float raw[ambika::dsp::kAudioBlockSize];
+        // analog filter MODEL runs at osFactor_*that rate. See
+        // fillOversampledBlock (pure code motion from here).
+        fillOversampledBlock (*out);
+    }
+}
+
+void AmbikaVoice::applyFilterModeFromVoice()
+{
+    // 4-pole cards are lowpass-only (hardware); the SVF honours
+    // LP/BP/HP/NOTCH.
+    const auto topo = filter_.getTopology();
+    const bool fourPole = (topo == ambika::dsp::FilterTopology::FOUR_POLE_LADDER
+                        || topo == ambika::dsp::FilterTopology::FOUR_POLE_SSM2164);
+    filter_.setMode (fourPole ? 0 : static_cast<int> (voice_.mode()));
+}
+
+float AmbikaVoice::vcaGainTargetFromVoice() const
+{
+    // The firmware VCA is analog, post-DSP. Two response curves (mirrors the
+    // firmware log/lin jumper):
+    //  - Linearized: gain = vca/255 (the lut_res_vca_linearization mode, where
+    //    the table pre-warps the OTA so the output is linear).
+    //  - Exponential: ~60 dB OTA taper (the raw VCA response, linear-CV mode).
+    const float n = static_cast<float> (voice_.vca()) / 255.0f;
+    return vcaExponential_ ? exponentialVcaGain (n) : n;
+}
+
+void AmbikaVoice::fillOversampledBlock (const std::array<uint8_t, ambika::dsp::kAudioBlockSize>& out)
+{
+    // Flow: render 40 raw floats -> upsample N× -> filter at N×39216 ->
+    // downsample to 40 -> VCA (internal rate, linear so no aliasing) -> FIFO.
+    float raw[ambika::dsp::kAudioBlockSize];
+    for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
+        raw[i] = static_cast<float> (static_cast<int> (out[i]) - 128) / 128.0f;
+
+    // Upsample 40 -> 40*N into the Oversampling internal buffer.
+    const float* inChannels[1] = { raw };
+    juce::dsp::AudioBlock<const float> inBlock (inChannels, 1u,
+        static_cast<size_t> (ambika::dsp::kAudioBlockSize));
+    auto osBlock = filterOS_->processSamplesUp (inBlock);
+
+    applyFilterModeFromVoice();
+
+    float* d = osBlock.getChannelPointer (0);
+    const size_t osN = osBlock.getNumSamples();   // == 40 * osFactor_
+
+    if (! smoothingEnabled_)
+    {
+        smoothingActive_ = false;
+        // Control-rate CV applied once per block (matches the 1x path).
+        filter_.setCutoffHz (ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff()));
+        filter_.setResonance (static_cast<float> (voice_.resonance()) / 255.0f);
+        filter_.commit();
+        for (size_t i = 0; i < osN; ++i)
+            d[i] = filter_.processSample (d[i]);
+    }
+    else
+    {
+        // Smooth cutoff / resonance / VCA per INTERNAL sample (20 ms). The OS
+        // buffer holds osFactor_ sub-samples per internal sample, so the
+        // smoothers advance at each internal-sample boundary -> 40 steps per
+        // block, matching the 1x path (keeps smoother state consistent when
+        // OS is toggled mid-note).
+        const float targetCutoff = ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff());
+        const float targetReso   = static_cast<float> (voice_.resonance()) / 255.0f;
+        const float targetGain   = vcaGainTargetFromVoice();
+
+        if (! smoothingActive_)
+        {
+            smoothedCutoffHz_.setCurrentAndTargetValue (targetCutoff);
+            smoothedResonance_.setCurrentAndTargetValue (targetReso);
+            smoothedVcaGain_.setCurrentAndTargetValue (targetGain);
+            smoothingActive_ = true;
+        }
+        else
+        {
+            smoothedCutoffHz_.setTargetValue (targetCutoff);
+            smoothedResonance_.setTargetValue (targetReso);
+            smoothedVcaGain_.setTargetValue (targetGain);
+        }
+
+        const size_t step = static_cast<size_t> (osFactor_);
+        for (size_t i = 0; i < osN; ++i)
+        {
+            if ((i % step) == 0u)
+            {
+                filter_.setCutoffHz (smoothedCutoffHz_.getNextValue());
+                filter_.setResonance (smoothedResonance_.getNextValue());
+                filter_.commit();
+            }
+            d[i] = filter_.processSample (d[i]);
+        }
+    }
+
+    // Downsample 40*N -> 40 (back into raw).
+    float* outChannels[1] = { raw };
+    juce::dsp::AudioBlock<float> downBlock (outChannels, 1u,
+        static_cast<size_t> (ambika::dsp::kAudioBlockSize));
+    filterOS_->processSamplesDown (downBlock);
+
+    // VCA at the internal rate (linear gain -> no aliasing) + push to FIFO.
+    // Same VCA glide as the 1x default path: ramp from the last applied
+    // gain to the target across the block (see the note there).
+    if (! smoothingEnabled_)
+    {
+        const float vcaGainTarget = vcaGainTargetFromVoice();
+        const float g0 = vcaGlideGain_;
+        const float gStep = (vcaGainTarget - g0) / static_cast<float> (ambika::dsp::kAudioBlockSize);
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
-            raw[i] = static_cast<float> (static_cast<int> ((*out)[i]) - 128) / 128.0f;
-
-        // Upsample 40 -> 40*N into the Oversampling internal buffer.
-        const float* inChannels[1] = { raw };
-        juce::dsp::AudioBlock<const float> inBlock (inChannels, 1u,
-            static_cast<size_t> (ambika::dsp::kAudioBlockSize));
-        auto osBlock = filterOS_->processSamplesUp (inBlock);
-
-        // 4-pole cards are lowpass-only (hardware); the SVF honours LP/BP/HP/NOTCH.
-        {
-            const auto topo = filter_.getTopology();
-            const bool fourPole = (topo == ambika::dsp::FilterTopology::FOUR_POLE_LADDER
-                                || topo == ambika::dsp::FilterTopology::FOUR_POLE_SSM2164);
-            filter_.setMode (fourPole ? 0 : static_cast<int> (voice_.mode()));
-        }
-
-        float* d = osBlock.getChannelPointer (0);
-        const size_t osN = osBlock.getNumSamples();   // == 40 * osFactor_
-
-        if (! smoothingEnabled_)
-        {
-            smoothingActive_ = false;
-            // Control-rate CV applied once per block (matches the 1x path).
-            filter_.setCutoffHz (ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff()));
-            filter_.setResonance (static_cast<float> (voice_.resonance()) / 255.0f);
-            filter_.commit();
-            for (size_t i = 0; i < osN; ++i)
-                d[i] = filter_.processSample (d[i]);
-        }
-        else
-        {
-            // Smooth cutoff / resonance / VCA per INTERNAL sample (20 ms). The OS
-            // buffer holds osFactor_ sub-samples per internal sample, so the
-            // smoothers advance at each internal-sample boundary -> 40 steps per
-            // block, matching the 1x path (keeps smoother state consistent when
-            // OS is toggled mid-note).
-            const float targetCutoff = ambika::dsp::AnalogFilter::cutoffByteToHz (voice_.cutoff());
-            const float targetReso   = static_cast<float> (voice_.resonance()) / 255.0f;
-            const float vcaNorm      = static_cast<float> (voice_.vca()) / 255.0f;
-            const float targetGain   = vcaExponential_
-                ? exponentialVcaGain (vcaNorm)
-                : vcaNorm;
-
-            if (! smoothingActive_)
-            {
-                smoothedCutoffHz_.setCurrentAndTargetValue (targetCutoff);
-                smoothedResonance_.setCurrentAndTargetValue (targetReso);
-                smoothedVcaGain_.setCurrentAndTargetValue (targetGain);
-                smoothingActive_ = true;
-            }
-            else
-            {
-                smoothedCutoffHz_.setTargetValue (targetCutoff);
-                smoothedResonance_.setTargetValue (targetReso);
-                smoothedVcaGain_.setTargetValue (targetGain);
-            }
-
-            const size_t step = static_cast<size_t> (osFactor_);
-            for (size_t i = 0; i < osN; ++i)
-            {
-                if ((i % step) == 0u)
-                {
-                    filter_.setCutoffHz (smoothedCutoffHz_.getNextValue());
-                    filter_.setResonance (smoothedResonance_.getNextValue());
-                    filter_.commit();
-                }
-                d[i] = filter_.processSample (d[i]);
-            }
-        }
-
-        // Downsample 40*N -> 40 (back into raw).
-        float* outChannels[1] = { raw };
-        juce::dsp::AudioBlock<float> downBlock (outChannels, 1u,
-            static_cast<size_t> (ambika::dsp::kAudioBlockSize));
-        filterOS_->processSamplesDown (downBlock);
-
-        // VCA at the internal rate (linear gain -> no aliasing) + push to FIFO.
-        // Same VCA glide as the 1x default path: ramp from the last applied
-        // gain to the target across the block (see the note there).
-        if (! smoothingEnabled_)
-        {
-            const float vcaNorm = static_cast<float> (voice_.vca()) / 255.0f;
-            const float vcaGainTarget = vcaExponential_
-                ? exponentialVcaGain (vcaNorm)
-                : vcaNorm;
-            const float g0 = vcaGlideGain_;
-            const float gStep = (vcaGainTarget - g0) / static_cast<float> (ambika::dsp::kAudioBlockSize);
-            for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
-                fifo_.push_back (raw[i] * (g0 + gStep * static_cast<float> (i)));
-            vcaGlideGain_ = vcaGainTarget;
-        }
-        else
-        {
-            for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
-                fifo_.push_back (raw[i] * smoothedVcaGain_.getNextValue());
-        }
+            fifo_.push_back (raw[i] * (g0 + gStep * static_cast<float> (i)));
+        vcaGlideGain_ = vcaGainTarget;
+    }
+    else
+    {
+        for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
+            fifo_.push_back (raw[i] * smoothedVcaGain_.getNextValue());
     }
 }
 

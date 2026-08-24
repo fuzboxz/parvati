@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <memory>
@@ -353,6 +354,21 @@ private:
     void parkRetiredOversampling (juce::dsp::Oversampling<float>* old) noexcept;
 
     void fillInternalBlock();
+
+    // Filter-mode decode shared by every fillInternalBlock path: 4-pole
+    // cards are lowpass-only (hardware); the SVF honours LP/BP/HP/NOTCH.
+    void applyFilterModeFromVoice();
+
+    // VCA gain target for this block from the voice's VCA byte: the
+    // linearized curve (vca/255) or the ~60 dB OTA taper, per the
+    // vcaExponential_ curve flag (mirrors the firmware log/lin jumper).
+    float vcaGainTargetFromVoice() const;
+
+    // The osFactor_ > 1 arm of fillInternalBlock: upsample the crushed
+    // block, run the analog filter model at the oversampled rate, downsample,
+    // apply the VCA (glide or smoothing), push the FIFO. Pure code motion
+    // from fillInternalBlock; statement order and float math stay identical.
+    void fillOversampledBlock (const std::array<uint8_t, ambika::dsp::kAudioBlockSize>& out);
 
     // (Re)prepares the analog filter at the rate implied by osFactor_ (the
     // oversampled rate when OS is on, else kInternalSampleRate). Keeps the
