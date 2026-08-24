@@ -1334,6 +1334,17 @@ add_test(NAME parvati_check_translations
          COMMAND ${PARVATI_PYTHON3} tools/check_translations.py --self-test-and-scan
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Firmware-oracle integrity pin: ambika_reference/ is READ-ONLY upstream
+# Ambika firmware (see NOTICES.md). firmware_parity_test asserts parity
+# against it, so an unverified edit silently weakens the oracle. The check
+# hashes every content file (excludes .git/, .DS_Store, ._* noise) and
+# compares with the pinned manifest tools/reference_integrity.sha256.
+# Re-pinning is deliberate and needs an intended upstream sync:
+#   PARVATI_PIN=1 tools/check_reference_integrity.sh
+add_test(NAME parvati_check_reference_integrity
+         COMMAND bash tools/check_reference_integrity.sh
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 # One build target that runs every static scanner in sequence (tools 5/6/10)
 # so a single `cmake --build --target parvati_static_checks` gates them in
 # CI without needing ctest. Fails (non-zero) if any scanner fails.

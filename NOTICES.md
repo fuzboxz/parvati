@@ -30,6 +30,13 @@ relicensed). GPL-3.0 is compatible with this project's AGPL-3.0. The
 `ambika_reference/` tree (kept locally, not part of the tracked source) is the
 original GPL-3.0 firmware used as the porting reference.
 
+Integrity pin: `tools/check_reference_integrity.sh` checks a SHA-256 manifest
+of every content file in this tree. The manifest lives at
+`tools/reference_integrity.sha256`; the ctest `parvati_check_reference_integrity`
+runs the check in every configured tree. Re-pinning is deliberate. Run
+`PARVATI_PIN=1 tools/check_reference_integrity.sh` only for an intended
+upstream sync. Re-pinning after an accidental edit destroys the parity oracle.
+
 The controller-side scale ("raga") tuning tables in `Source/TuningTables.cpp`
 are likewise vendored verbatim from the Ambika controller firmware
 (`controller/resources.cc`, GPL-3.0, upstream-derived) — a mechanical
