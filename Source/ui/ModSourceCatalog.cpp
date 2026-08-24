@@ -23,6 +23,23 @@ const SourceEntry& entryFor (int modSrcEnum)
     return kAllSources.front();
 }
 
+std::optional<Cluster> clusterForSourceName (const juce::String& name)
+{
+    // Prefix matching (the historical matrix/tint test, kept verbatim so
+    // every displayed name keeps its exact colour). "Wheel" also covers
+    // "Wheel 2"; "LFO" misses "Voice LFO", so that exact name is listed.
+    if (name.startsWith ("Env"))                                     return Cluster::Env;
+    if (name.startsWith ("LFO") || name == "Voice LFO")              return Cluster::Lfo;
+    if (name.startsWith ("Seq") || name.startsWith ("Arp"))          return Cluster::SeqArp;
+    if (name.startsWith ("Op"))                                      return Cluster::Mod;
+    if (name.startsWith ("Const"))                                   return Cluster::Const;
+    if (name == "Velocity" || name == "Aftertouch" || name == "Pitch Bend"
+        || name.startsWith ("Wheel") || name == "Expression" || name == "Note")
+                                                                       return Cluster::Perf;
+    if (name == "Gate" || name == "Noise" || name == "Random")       return Cluster::Util;
+    return std::nullopt;
+}
+
 juce::Colour clusterAccent (Cluster c, const ParvatiTheme& theme)
 {
     switch (c)

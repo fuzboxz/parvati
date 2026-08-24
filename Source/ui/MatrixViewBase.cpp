@@ -7,6 +7,7 @@
 #include "ModMatrixHighlight.h"   // hover / slot-select / assign bus
 #include "ModDestMap.h"           // isFxDest / kFxModDstOffset (FX dest domain)
 #include "PluginProcessor.h"      // ParvatiAudioProcessor (complete type)
+#include "ModSourceCatalog.h"   // parvati::clusterForSourceName / clusterAccent
 #include "ThemeManager.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachments + AudioParameterChoice
@@ -16,18 +17,12 @@ namespace parvati::matrixview
 {
 juce::Colour sourceCategoryColour (const ParvatiTheme& t, const juce::String& sourceName)
 {
-    if (sourceName.startsWith ("Env"))                                 return t.catEnv;   // Envelopes (teal)
-    if (sourceName.startsWith ("LFO") || sourceName == "Voice LFO")    return t.catLfo;   // LFOs (magenta)
-    if (sourceName.startsWith ("Seq"))                                 return t.catSeq;   // Sequencer (mint)
-    if (sourceName.startsWith ("Arp"))                                 return t.catArp;   // Arpeggiator (mint — sequencer family)
-    if (sourceName.startsWith ("Op"))                                  return t.catMod;   // Modifier outputs M1-4 (purple)
-    if (sourceName.startsWith ("Const"))                               return t.catConst; // Constants C4..C255 (indigo)
-    if (sourceName == "Velocity" || sourceName == "Aftertouch"
-        || sourceName == "Pitch Bend" || sourceName.startsWith ("Wheel")
-        || sourceName == "Expression" || sourceName == "Note")         return t.catPerf;  // keyboard / performance (amber)
-    if (sourceName == "Gate" || sourceName == "Noise" || sourceName == "Random")
-                                                                       return t.catUtil;  // utility (orange)
-    return {};   // transparent (alpha 0) => no tint
+    // The name-to-family test lives in the catalogue (one authority); the
+    // theme supplies the colour. An unmatched name keeps the transparent
+    // no-tint result, exactly as before.
+    const auto cluster = parvati::clusterForSourceName (sourceName);
+    return cluster.has_value() ? parvati::clusterAccent (*cluster, t)
+                               : juce::Colour {};   // transparent (alpha 0) => no tint
 }
 
 juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourceName)

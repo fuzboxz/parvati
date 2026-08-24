@@ -697,12 +697,14 @@ juce::Colour ParamControl::categoryColourForSourceName (const juce::String& name
                                                         const ParvatiTheme& theme)
 {
     // One consistent source-name -> category-colour mapping (shared by the
-    // mod-source combo tint and the per-source modulation ring). A source whose
-    // name matches no category resolves to the neutral `accent`.
-    if (name.startsWith ("Env"))                                return theme.catEnv;
-    if (name.startsWith ("LFO") || name == "Voice LFO")         return theme.catLfo;
-    if (name.startsWith ("Seq"))                                return theme.catSeq;
-    if (name.startsWith ("Arp"))                                return theme.catArp;
+    // mod-source combo tint and the per-source modulation ring). The
+    // name-to-family test lives in the catalogue; this tint carries only the
+    // Env / LFO / SeqArp families, and every other source name resolves to
+    // the neutral `accent` (unchanged policy).
+    const auto cluster = parvati::clusterForSourceName (name);
+    if (cluster == parvati::Cluster::Env || cluster == parvati::Cluster::Lfo
+        || cluster == parvati::Cluster::SeqArp)
+        return parvati::clusterAccent (*cluster, theme);
     return theme.accentPrimary;   // Op/Const/Velocity/etc => neutral
 }
 

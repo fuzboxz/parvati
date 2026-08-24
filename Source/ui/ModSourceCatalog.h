@@ -17,6 +17,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #include <juce_gui_basics/juce_gui_basics.h>   // juce::Colour
 
@@ -141,6 +142,14 @@ inline constexpr std::array<SourceEntry, 32> kAllSources =
 // (which now includes the -1 sentinel) finds both; on an unknown value it
 // asserts. Returns a stable reference into kAllSources.
 const SourceEntry& entryFor (int modSrcEnum);
+
+// The cluster a mod-source DISPLAY NAME belongs to (the names the host
+// choice lists and the matrix rows show, e.g. "Env 1", "Voice LFO",
+// "Arp Step", "Const 64"), or nullopt when the name matches no family.
+// This is the ONE name-to-family test; the colour mapping resolves through
+// clusterAccent(). Both the matrix rows and the ParamControl tint read here,
+// so a new family needs exactly one edit.
+std::optional<Cluster> clusterForSourceName (const juce::String& name);
 
 // The accent colour for a cluster, resolved from the active theme.
 juce::Colour clusterAccent (Cluster c, const ParvatiTheme& theme);
