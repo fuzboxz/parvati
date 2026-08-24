@@ -1717,13 +1717,14 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // autosaves are NOT message-thread), while the setters run on the message
     // thread. juce::String is refcounted — a torn copy is a UAF class.
     juce::String theme, language;
-    double zoom; bool tooltips, smoothing; int oversampling, refreshHz, fontMode, manualBpm;
+    double zoom; bool tooltips, smoothing, modLampCat; int oversampling, refreshHz, fontMode, manualBpm;
     {
         const std::lock_guard<std::mutex> l (uiPrefsLock_);
         theme        = uiThemeName_;
         zoom         = uiZoom_;
         tooltips     = uiTooltips_;
         smoothing    = uiSmoothing_;
+        modLampCat   = uiModLampCategory_;
         oversampling = uiOversampling_;
         refreshHz    = uiRefreshHz_;
         fontMode     = uiFontMode_;
@@ -1733,6 +1734,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_theme", theme, nullptr);
     tree.setProperty ("ui_zoom", zoom, nullptr);
     tree.setProperty ("ui_tooltips", tooltips, nullptr);
+    tree.setProperty ("ui_mod_lamp_category", modLampCat, nullptr);   // mod-matrix lamp colour policy
     tree.setProperty ("ui_smoothing", smoothing, nullptr);
     tree.setProperty ("ui_oversampling", oversampling, nullptr);
     tree.setProperty ("ui_refresh_hz", refreshHz, nullptr);   // live mod-feedback animation cadence (docs/LIVE_MOD_FEEDBACK_DESIGN.md)
@@ -1767,6 +1769,9 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
             juce::String rTheme   = tree.getProperty ("ui_theme", "Carbon").toString();
             const double rZoom    = static_cast<double> (tree.getProperty ("ui_zoom", 1.0));
             const bool rTooltips  = static_cast<bool> (tree.getProperty ("ui_tooltips", true));
+            // Mod-lamp colour policy: absent in older states -> true (the
+            // category colour, the richer default).
+            const bool rModLampCat = static_cast<bool> (tree.getProperty ("ui_mod_lamp_category", true));
             const bool rSmoothing = static_cast<bool> (tree.getProperty ("ui_smoothing", false));
             // Fallback default 2: the 2026-08 default change (1x -> 2x). A
             // state that PERSISTED the property keeps its stored factor
@@ -1801,6 +1806,7 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 uiThemeName_   = std::move (rTheme);
                 uiZoom_        = rZoom;
                 uiTooltips_    = rTooltips;
+                uiModLampCategory_ = rModLampCat;
                 uiSmoothing_   = rSmoothing;
                 uiOversampling_ = rOversampling;
                 uiRefreshHz_    = rRefreshHz;

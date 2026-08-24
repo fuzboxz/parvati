@@ -15,7 +15,8 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
                               std::function<void (bool)> onSmoothingChanged,
                               std::function<void (int)> onOversamplingChanged,
                               std::function<void (const juce::String&)> onLanguageChanged,
-                              std::function<void (int)> onRefreshChanged)
+                              std::function<void (int)> onRefreshChanged,
+              std::function<void (bool)> onModLampChanged)
     : proc_ (proc),
       themeManager_ (themeManager),
       onZoomChanged_ (std::move (onZoomChanged)),
@@ -23,7 +24,8 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
       onSmoothingChanged_ (std::move (onSmoothingChanged)),
       onOversamplingChanged_ (std::move (onOversamplingChanged)),
       onLanguageChanged_ (std::move (onLanguageChanged)),
-      onRefreshChanged_ (std::move (onRefreshChanged))
+      onRefreshChanged_ (std::move (onRefreshChanged)),
+      onModLampChanged_ (std::move (onModLampChanged))
 {
     // ---- Theme ----
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
@@ -89,6 +91,19 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
             onTooltipsChanged_ (b);
     };
     addAndMakeVisible (tooltipsToggle_);
+
+    // ---- Mod Lamp Colours ----
+    // ON: every matrix row lamp lights in the row's modulator category
+    // colour. OFF: the lamps stay the theme accent. Affects both matrices.
+    modLampToggle_.setButtonText (TRANS ("Mod Lamp Colours"));
+    modLampToggle_.setToggleState (proc_.getUiModLampCategory(), juce::dontSendNotification);
+    modLampToggle_.onClick = [this] {
+        const bool b = modLampToggle_.getToggleState();
+        proc_.setUiModLampCategory (b);
+        if (onModLampChanged_)
+            onModLampChanged_ (b);
+    };
+    addAndMakeVisible (modLampToggle_);
 
     // ---- Parameter Smoothing ----
     // Reduces zipper noise on continuous knob turns / automation of cutoff,
@@ -327,6 +342,7 @@ void SettingsPanel::refreshLanguage()
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
     zoomLabel_.setText (TRANS ("Zoom"), juce::dontSendNotification);
     tooltipsToggle_.setButtonText (TRANS ("Tooltips"));
+    modLampToggle_.setButtonText (TRANS ("Mod Lamp Colours"));
     smoothingToggle_.setButtonText (TRANS ("Parameter Smoothing"));
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
@@ -426,6 +442,7 @@ void SettingsPanel::resized()
 
     // Tooltips row.
     rowOrHide (&tooltipsToggle_, takeRow (comboRowH));
+    rowOrHide (&modLampToggle_, takeRow (comboRowH));
     takeRow (gap);
 
     // Parameter Smoothing row.

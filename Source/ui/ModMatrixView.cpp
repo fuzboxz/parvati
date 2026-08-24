@@ -28,10 +28,8 @@ MatrixViewConfig makeSynthConfig()
     cfg.matrixFullKey    = "Matrix Full (14/14)";
     cfg.rowA11yPrefix    = "Mod ";
     cfg.destComboAttached   = true;    // dest combo loads its choices from the APVTS param
-    cfg.comboShrinkFallback = true;   // narrow rows squeeze the source combo first (44pt floors)
     cfg.highlightSelfOnHover = false;  // the bus round-trip highlights the hovered row
-    cfg.lampDiameter            = 18.0f;   // the FX-card enable/disable dot size
-    cfg.lampCarriesCategoryColour = true; // lamp ON == the row's modulator category colour
+    cfg.lampDiameter            = 18.0f;   // both matrices share one lamp size
     cfg.destBusOffset    = 0;                          // synth dests broadcast raw
     cfg.rejectDestAtOrAbove = parvati::ModDestMap::kFxModDstOffset;   // synth rejects FX dests
     cfg.addDefaultSource = ambika::dsp::MOD_SRC_ENV_1;

@@ -373,6 +373,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         if (pg.s == Section::ModMatrix)
         {
             modMatrixView_ = std::make_unique<ModMatrixView> (processorRef_, themeManager_);
+            modMatrixView_->setLampCategoryColour (processorRef_.getUiModLampCategory());
             synthWorkspace_->setModMatrixView (modMatrixView_.get());
             continue;
         }
@@ -643,6 +644,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // The FX mod matrix (editor-owned, NON-owned host of the FX workspace).
     fxMatrixView_ = std::make_unique<FxMatrixView> (processorRef_, themeManager_);
+    fxMatrixView_->setLampCategoryColour (processorRef_.getUiModLampCategory());
     fxWorkspace_->setFxMatrixView (fxMatrixView_.get());
 
     // ---- Central Modulation Bar wiring (Phase 2, BOTH workspaces) ----
@@ -1051,7 +1053,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // the shared applier so the hub + both mod bars re-time IMMEDIATELY
         // (timerCallback's shadow check would otherwise pick it up within one
         // ~30 Hz tick — that poll covers restores / out-of-band writes).
-        [this] (int hz) { applyLiveFeedbackRefreshRate (hz); });
+        [this] (int hz) { applyLiveFeedbackRefreshRate (hz); },
+        // Mod Lamp Colours: push the global policy to BOTH matrices and
+        // repaint. The views re-run their row theme pass, so only the lamp
+        // ON colour flips.
+        [this] (bool useCategory) {
+            if (modMatrixView_ != nullptr)
+                modMatrixView_->setLampCategoryColour (useCategory);
+            if (fxMatrixView_ != nullptr)
+                fxMatrixView_->setLampCategoryColour (useCategory);
+        });
     // 2026-08-21: the drawer SCROLLS. The panel's full row budget (theme,
     // zoom, toggles, arp clock, refresh, filter, language) exceeds many host
     // panes (a compact AUv3 drawer / short desktop window) — the old R3

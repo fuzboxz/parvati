@@ -48,7 +48,8 @@ public:
                    std::function<void (bool)>   onSmoothingChanged,
                    std::function<void (int)>    onOversamplingChanged,
                    std::function<void (const juce::String&)> onLanguageChanged,
-                   std::function<void (int)>    onRefreshChanged = {});
+                   std::function<void (int)>    onRefreshChanged = {},
+                   std::function<void (bool)>   onModLampChanged = {});
 
     ~SettingsPanel() override = default;
 
@@ -113,6 +114,7 @@ private:
     std::function<void (int)>    onOversamplingChanged_;
     std::function<void (const juce::String&)> onLanguageChanged_;
     std::function<void (int)>    onRefreshChanged_;
+    std::function<void (bool)>   onModLampChanged_;
 
     juce::Label     themeLabel_, zoomLabel_, osLabel_, langLabel_;
     juce::Label     clockLabel_, clockStatusLabel_;   // Arp Clock caption + live source line
@@ -132,6 +134,9 @@ private:
     juce::Slider    bpmSlider_;                       // manual arp-clock tempo (40..300 BPM)
     juce::ToggleButton tooltipsToggle_ { "Tooltips" };
     juce::ToggleButton smoothingToggle_ { "Parameter Smoothing" };
+    // Mod-matrix lamp colour policy: category colour (on) vs theme accent
+    // (off). Affects BOTH matrices at once.
+    juce::ToggleButton modLampToggle_ { "Mod Lamp Colours" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsPanel)
 };

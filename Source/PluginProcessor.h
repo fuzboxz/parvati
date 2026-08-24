@@ -130,6 +130,11 @@ public:
     // Editor chrome language code ("auto" / "en" / "fr"). "auto" defers to the
     // OS locale. Persisted so the chosen language survives host save/restore.
     juce::String getUiLanguage() const             { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiLanguage_; }
+    // Mod-matrix lamp colour policy (both matrices at once). True: the lamp
+    // ON colour follows the row's modulator category colour. False: the lamp
+    // stays the theme accent. Persisted so the choice survives host
+    // save/restore. Default true.
+    bool         getUiModLampCategory() const      { const std::lock_guard<std::mutex> l (uiPrefsLock_); return uiModLampCategory_; }
     void setUiTheme (juce::String name)           { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiThemeName_ = std::move (name); }
     void setUiZoom (double z)                     { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiZoom_ = z; }
 
@@ -157,6 +162,7 @@ public:
     void setUiOversampling (int n)                { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiOversampling_ = n; }
     void setUiRefreshHz (int hz)                  { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiRefreshHz_ = juce::jlimit (5, 60, hz); }   // clamped: an out-of-range restored state never drives an absurd timer
     void setUiLanguage (juce::String code)        { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiLanguage_ = std::move (code); }
+    void setUiModLampCategory (bool b)            { const std::lock_guard<std::mutex> l (uiPrefsLock_); uiModLampCategory_ = b; }
 
     // ---- Thermal-state awareness (F-ios-perf-2, iOS hunt 2026-08-19) ----
     // Sustained 6-part multitimbral play keeps an iPad core near its budget;
@@ -518,6 +524,7 @@ private:
     juce::String uiThemeName_ { "Carbon" };
     double       uiZoom_ { 1.0 };
     bool         uiTooltips_ { true };
+    bool         uiModLampCategory_ { true };   // global mod-lamp colour policy
     bool         uiSmoothing_ { false };   // default OFF -> bit-identical audio
     int          uiOversampling_ { 2 };    // 1 / 2 / 4 / 8; default 2x (1 = bit-identical path)
     int          uiRefreshHz_ { 30 };       // live mod-feedback animation rate, 5..60 Hz (see getUiRefreshHz; docs/LIVE_MOD_FEEDBACK_DESIGN.md)

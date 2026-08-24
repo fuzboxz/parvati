@@ -82,22 +82,18 @@ struct MatrixViewConfig
     bool destComboAttached;
 
     // ---- row layout ----
-    // True: apply the two-stage squeeze. Narrow rows shrink the source combo
-    // first, then hard-floor both combos at 44pt (synth). False: plain
-    // clamped caps (FX keeps its historical layout).
-    bool comboShrinkFallback;
+    // The two-stage squeeze always applies. Narrow rows shrink the source
+    // combo first, then hard-floor both combos at 44pt. The 44pt floor is
+    // the HIG minimum for a touch target. Both matrices share this rule.
 
     // ---- hover emphasis ----
     // True: a hovered row highlights itself besides the bus broadcast (FX).
     bool highlightSelfOnHover;
 
     // ---- mute lamp ----
-    // Drawn dot diameter. A value <= 0 keeps the theme default. The synth
-    // rows pin the FX-card size (15pt). The FX rows keep the default.
+    // Drawn dot diameter. A value <= 0 keeps the theme default. Both
+    // matrices pin 18pt.
     float lampDiameter;
-    // True: the lamp ON colour follows the row's modulator category colour.
-    // False: the lamp ON colour stays the theme accent (FX).
-    bool lampCarriesCategoryColour;
 
     // ---- dest-domain encoding on the highlight bus ----
     // 0 for the synth view. kFxModDstOffset for the FX view.
@@ -136,6 +132,13 @@ public:
     // ---- Accessors used by the rows and the wiring step ----
     ParvatiAudioProcessor& processor() const noexcept { return processor_; }
     ThemeManager&          themeManager() const noexcept { return themeManager_; }
+
+    // ---- mute-lamp colour policy (global setting, both matrices) ----
+    // True: the lamp ON colour follows the row's modulator category colour.
+    // False: the lamp stays the theme accent. Persisted in the plugin state
+    // as a UI preference. The editor seeds it and updates it on change.
+    bool lampCategoryColour() const noexcept { return lampCategoryColour_; }
+    void setLampCategoryColour (bool useCategory);
 
     // Slot state, 0-based (slot 0 == "Mod 1").
     int  amountForSlot (int slot) const;             // raw int -63..+63 from the APVTS
@@ -227,6 +230,7 @@ private:
     ParvatiAudioProcessor& processor_;
     ThemeManager&          themeManager_;
     const MatrixViewConfig config_;   // by value: views build theirs in a local factory
+    bool lampCategoryColour_ { true };   // global setting; seeded by the editor
 
     juce::Viewport viewport_;
 

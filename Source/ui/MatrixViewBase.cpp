@@ -336,8 +336,8 @@ struct MatrixRow : public juce::Component,
         // row's routing-source FAMILY. The DEST combo gets NO tag.
         const juce::Colour famCol = parvati::matrixview::rowCategoryColour (t, owner_.sourceNameForSlot (slot_));
         // Lamp ON colour: the row's modulator category colour, or the theme
-        // accent when the view keeps the lamp neutral (FX).
-        if (owner_.config().lampCarriesCategoryColour)
+        // accent when the global setting keeps the lamp neutral.
+        if (owner_.lampCategoryColour())
             muteLamp_->setOnColour (famCol);
         sourceCombo_.getProperties().set ("parvatiComboTag", (int) famCol.getARGB());
         sourceCombo_.removeColour (juce::ComboBox::backgroundColourId);
@@ -436,16 +436,13 @@ struct MatrixRow : public juce::Component,
         const int comboBudget = juce::jmax (0, rowW - sliderFloor - 14 - 8);
         int srcW = juce::jmax (56, juce::jmin (comboBudget * 5 / 9, 130));
         int dstW = juce::jmax (60, juce::jmin (comboBudget - 14 - srcW, 150));
-        if (owner_.config().comboShrinkFallback)
-        {
-            // When even the floors cannot fit, shrink the SOURCE first (the
-            // narrower semantic: the fixed source list), then hard-floor
-            // both at 44: the HIG minimum for a functional combo on touch.
-            if (srcW + 14 + dstW > comboBudget)
-                srcW = juce::jmax (44, comboBudget - 14 - dstW);
-            if (srcW + 14 + dstW > comboBudget)
-                dstW = juce::jmax (44, comboBudget - 14 - srcW);
-        }
+        // When even the floors cannot fit, shrink the SOURCE first (the
+        // narrower semantic: the fixed source list), then hard-floor
+        // both at 44: the HIG minimum for a functional combo on touch.
+        if (srcW + 14 + dstW > comboBudget)
+            srcW = juce::jmax (44, comboBudget - 14 - dstW);
+        if (srcW + 14 + dstW > comboBudget)
+            dstW = juce::jmax (44, comboBudget - 14 - srcW);
         sourceCombo_.setBounds (b.removeFromLeft (srcW));
         b.removeFromLeft (14);   // arrow gap
         destCombo_.setBounds (b.removeFromLeft (dstW));
@@ -891,6 +888,16 @@ void MatrixViewBase::resized()
     const int cw = juce::jmax (0, viewport_.getWidth() - viewport_.getScrollBarThickness());
     content_.setSize (cw, content_.getHeight());
     rebuildLayout();
+}
+
+void MatrixViewBase::setLampCategoryColour (bool useCategory)
+{
+    if (lampCategoryColour_ == useCategory)
+        return;
+    lampCategoryColour_ = useCategory;
+    // The rows paint the lamp ON colour in their theme pass. Re-run it, then
+    // repaint. No layout change: only the colour policy flips.
+    applyThemeColors();
 }
 
 void MatrixViewBase::applyThemeColors()

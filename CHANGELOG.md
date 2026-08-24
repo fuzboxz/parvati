@@ -411,6 +411,13 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   overhead; inert macro on older toolchains.
 
 ### Changed
+- **Mod-lamp colours setting and one combo rule (2026-08-24).** A new
+  Settings toggle, Mod Lamp Colours, controls the mute/bypass lamp ON colour
+  for BOTH matrices at once: on, each lamp lights in the row's modulator
+  category colour; off, the lamps stay the theme accent. The choice persists
+  in the plugin state. Both matrices now also share the two-stage combo
+  squeeze with the 44pt touch floor. The FX matrix previously used plain
+  clamped caps. Narrow layouts keep HIG-safe targets in both matrices.
 - **Smaller matrix thumbs and one lamp size (2026-08-23).** The matrix
   depth-slider thumb shrinks: the radius now scales at 22 percent of the
   row band (was 30 percent, 3pt floor unchanged). The mute/bypass lamp of

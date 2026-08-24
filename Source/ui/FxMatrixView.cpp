@@ -32,10 +32,8 @@ MatrixViewConfig makeFxConfig()
     cfg.matrixFullKey    = "Matrix Full (16/16)";
     cfg.rowA11yPrefix    = "FX Mod ";
     cfg.destComboAttached   = false;   // dest combo is manually index-bound (dynamic labels)
-    cfg.comboShrinkFallback = false;  // plain clamped combo caps (historical FX layout)
     cfg.highlightSelfOnHover = true;   // a hovered row highlights itself besides the broadcast
     cfg.lampDiameter            = 18.0f;  // same lamp size as the synth matrix
-    cfg.lampCarriesCategoryColour = false; // lamp ON == theme accent
     cfg.destBusOffset    = parvati::ModDestMap::kFxModDstOffset;   // FX dests broadcast offset-encoded
     cfg.rejectDestAtOrAbove = std::numeric_limits<int>::max();     // raw FX_DST_* indices only
     cfg.addDefaultSource = ambika::dsp::MOD_SRC_ENV_1;
