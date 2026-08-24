@@ -6,14 +6,18 @@
 // 2-bit filter mode and sends them to a DAC + parallel port. This module
 // emulates that analog filter in software using juce::dsp, fresh-written.
 //
-// Three voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
+// Four voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
 //   * 4-pole Ladder                 -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
 //                                   controllable Drive scales the saturator -> bass-drop at high Q).
 //   * 4-pole SSM2164 ("4P")       -> TWO juce::dsp::StateVariableTPTFilter (lowpass) IN SERIES,
-//                                   cutoff+resonance linked — a linear 24 dB/oct baseline (NOT the
-//                                   discrete OTA cascade). SMR4/Polivoks OTA cards are out of scope:
-//                                   their saturation profiles are not natively modeled by JUCE.
+//                                   cutoff+resonance linked — a linear 24 dB/oct baseline.
 //   * 2-pole SVF (SSM2164)        -> juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high)
+//   * 4-pole OTA ("SMR4")          -> custom OTA-cascade model (this repo), NOT juce::dsp. Four
+//                                   LM13700-style stages; each integrates gm*tanh(error/2Vt).
+//                                   Circuit-informed behavioural model: per-stage tanh on the OTA
+//                                   error, datasheet 2Vt knee (52 mV normalized), loop-gain-
+//                                   normalised resonance with its own VCA soft clip. NOT a
+//                                   component-level SPICE model.
 
 #pragma once
 
@@ -25,7 +29,8 @@ namespace ambika::dsp {
 enum class FilterTopology {
     FOUR_POLE_LADDER,   // 4-pole Ladder.  juce::dsp::LadderFilter LPF24 (tanh saturation; Drive control). Self-oscillating.
     FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, cutoff+resonance linked. Linear baseline. Always LP.
-    TWO_POLE_SVF        // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
+    TWO_POLE_SVF,       // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
+    FOUR_POLE_OTA       // 4-pole SMR4 OTA cascade (custom model). Four tanh OTA stages, 2Vt knee, normalised resonance VCA. Always LP. Self-oscillates at resonance 1.0.
 };
 
 // Local filter-mode enum. Values match common/patch.h FilterMode
@@ -92,8 +97,9 @@ public:
     // Resonance in 0..1. Capped internally at kMaxResonance for stability.
     void setResonance (float newResonance);
 
-    // Ladder saturation drive (scales the tanh saturator). 1.2 == the JUCE
-    // LadderFilter default. Cached; applied on the next commit(). Ladder only.
+    // Saturation drive. Scales the tanh saturator of the Ladder card (1.2 ==
+    // the juce::dsp::LadderFilter default) and the OTA knee of the SMR4 card
+    // (knee = 2Vt / drive). Cached; applied on the next commit().
     void setDrive (float newDrive) { drive_ = newDrive; dirty_ = true; }
 
     // Pushes cached cutoff/resonance/mode/topology into the active juce::dsp
@@ -131,6 +137,7 @@ private:
     float             resonance_ = 0.0f;
     // Ladder saturation drive. Default 1.2 == the juce::dsp::LadderFilter ctor
     // default, so the pre-control sound is preserved when Drive is untouched.
+    // The OTA card maps drive to the inverse knee (2Vt / drive).
     float             drive_     = 1.2f;
 
     // Param / topology dirtiness tracking for the control-rate commit() contract.
@@ -164,6 +171,37 @@ private:
     //     is approximate; this stays entirely within juce::dsp::StateVariableTPTFilter.)
     juce::dsp::StateVariableTPTFilter<float> svf_;
     juce::dsp::StateVariableTPTFilter<float> svfNotch_; // fixed highpass, used only for notch
+
+    // ---- 4-pole OTA cascade (SMR4) -------------------------------------------
+    // One sample of the OTA model. x = input. Returns the 4th stage output.
+    float processOTASample (float x) noexcept;
+    // Stage states = capacitor voltages (one per OTA pole).
+    float otaState_[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Coefficients, recomputed in commit()/applyParams() (double math), stored
+    // as float for the per-sample path:
+    //   gLin_  exact TPT pole conductance tan(pi*fc/fs). Small-signal slope of
+    //          every stage tanh is normalised to exactly this (unit-slope form
+    //          gk*tanh(v/knee) with gk = gLin*knee), so the cutoff tuning is
+    //          exact and knee only sets the saturation threshold.
+    //   G_     gLin/(1+gLin): linearised one-pole gain used by the feedback solve.
+    //   G2..4  powers of G for the sigma sum.
+    //   gk_    gLin*knee: the coefficient that multiplies the tanh.
+    //   knee_  2Vt normalized (0.052) / drive. invKnee_ is its reciprocal.
+    //   kfb_   resonance feedback gain: kfb = res * 4.0. The factor 4 is the
+    //          EXACT self-oscillation onset of four identical bilinear
+    //          one-pole stages (Routh on the analog quartic, preserved by the
+    //          bilinear transform — see the .cpp proof). The onset therefore
+    //          sits exactly at resonance 1.0 for every cutoff.
+    //   invOnePlusR_  1/(1 + kfb*G^4) for the linearised delay-free-loop solve.
+    float gLin_ = 0.0f, G_ = 0.0f, G2_ = 0.0f, G3_ = 0.0f, G4_ = 0.0f;
+    float gk_ = 0.0f, knee_ = 1.0f, invKnee_ = 1.0f, kfb_ = 0.0f, invOnePlusR_ = 1.0f;
+    // Resonance-VCA soft clip: unit-slope form kfb*2Vt*tanh(y4/2Vt).
+    float kfbVca_ = 0.0f;
+    // 2Vt of the LM13700 in normalized units (52 mV at 1.0 == 1 V full scale).
+    static constexpr float kTwoVt = 0.052f;
+    static constexpr float kInvTwoVt = 1.0f / 0.052f;
+    // Hard cap on kfb_ (numeric guard only; kOnset <= ~4 keeps kfb small).
+    static constexpr double kKfbHardMax = 1.0e12;
 };
 
 } // namespace ambika::dsp

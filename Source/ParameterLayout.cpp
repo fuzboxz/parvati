@@ -501,7 +501,8 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             static const auto kFilterCards = juce::StringArray {
                 "Ladder (24 dB/oct)",
                 "4-pole SSM2164 (Cascade)",
-                "2-pole SVF"
+                "2-pole SVF",
+                "SMR4 (OTA Cascade)"
             };
             PatchParamDescriptor f;
             f.paramID = "filter_card";

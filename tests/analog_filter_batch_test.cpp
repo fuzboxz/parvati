@@ -117,14 +117,14 @@ void runLadderEquivalence (const char* label,
 }
 
 // Sanity (not equivalence) for the non-ladder topologies' per-sample path.
-void runTopologySanity (const char* label, ambika::dsp::FilterTopology topo, int mode)
+void runTopologySanity (const char* label, ambika::dsp::FilterTopology topo, int mode, float res = 0.5f)
 {
     ambika::dsp::AnalogFilter f;
     f.prepare (kRate, 64);
     f.setTopology (topo);
     f.setMode (mode);
     f.setCutoffHz (1200.0f);
-    f.setResonance (0.5f);
+    f.setResonance (res);
     f.commit ();
     bool finite = true;
     double peak = 0.0;
@@ -191,6 +191,11 @@ TEST(analog_filter_batch_test)
         runTopologySanity ("2-pole SVF highpass", ambika::dsp::FilterTopology::TWO_POLE_SVF, 2);
         runTopologySanity ("2-pole SVF notch",    ambika::dsp::FilterTopology::TWO_POLE_SVF, 3);
         runTopologySanity ("4-pole SSM2164 cascade", ambika::dsp::FilterTopology::FOUR_POLE_SSM2164, 0);
+        runTopologySanity ("4-pole OTA cascade",      ambika::dsp::FilterTopology::FOUR_POLE_OTA, 0);
+        // The OTA model stays bounded at and past the self-oscillation onset
+        // (setResonance clamps 1.2 -> 1.0 internally; the tanh stages bound it).
+        runTopologySanity ("4-pole OTA at resonance onset", ambika::dsp::FilterTopology::FOUR_POLE_OTA, 0, 1.0f);
+        runTopologySanity ("4-pole OTA past onset (clamped)", ambika::dsp::FilterTopology::FOUR_POLE_OTA, 0, 1.2f);
     }
 
     std::printf ("\n%s (%d failure%s)\n",

@@ -990,14 +990,14 @@ static void testOptions (ParvatiAudioProcessor& proc)
     check (std::fabs (expRatio - linRatio) > 1e-3 || peakOf (lin) != peakOf (expc),
            "vca_curve exp vs linearized changes the amplitude shape");
 
-    // filter_card: 3 topologies accepted + sound different at high resonance.
+    // filter_card: 4 topologies accepted + sound different at high resonance.
     setChoice (proc, "vca_curve", 0);
     setInt (proc, "filter1_reso", 50);
     setInt (proc, "filter1_cutoff", 90);
     proc.syncAllParamsToEngine();
-    double topoPeaks[3];
+    double topoPeaks[4];
     bool topoFinite = true;
-    for (int t = 0; t < 3; ++t)
+    for (int t = 0; t < 4; ++t)
     {
         setChoice (proc, "filter_card", t);
         proc.syncAllParamsToEngine();
@@ -1005,15 +1005,17 @@ static void testOptions (ParvatiAudioProcessor& proc)
         topoPeaks[t] = peakOf (x);
         if (! audioFinite (x)) topoFinite = false;
     }
-    std::printf ("     filter_card peaks: ladder=%.4f ssm2164=%.4f svf=%.4f\n",
-                 topoPeaks[0], topoPeaks[1], topoPeaks[2]);
-    check (topoFinite, "all 3 filter_card topologies render finite");
+    std::printf ("     filter_card peaks: ladder=%.4f ssm2164=%.4f svf=%.4f ota=%.4f\n",
+                 topoPeaks[0], topoPeaks[1], topoPeaks[2], topoPeaks[3]);
+    check (topoFinite, "all 4 filter_card topologies render finite");
     // At least two of the three topologies should produce measurably different
     // output at high resonance (they are genuinely different filter designs).
     const bool differ01 = std::fabs (topoPeaks[0] - topoPeaks[1]) > 1e-3;
     const bool differ02 = std::fabs (topoPeaks[0] - topoPeaks[2]) > 1e-3;
     const bool differ12 = std::fabs (topoPeaks[1] - topoPeaks[2]) > 1e-3;
-    check (differ01 || differ02 || differ12, "filter_card topologies produce different audio");
+    const bool differ03 = std::fabs (topoPeaks[0] - topoPeaks[3]) > 1e-3;
+    check (differ01 || differ02 || differ12 || differ03, "filter_card topologies produce different audio");
+    check (differ03, "OTA card (index 3) sounds different from the Ladder card");
 
     // filter_drive: index 0 (1.0) vs index 7 (12.0) on the Ladder card with a
     // hot input -> saturation differs. Use a high note + high reso to push level.

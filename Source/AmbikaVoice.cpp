@@ -563,7 +563,8 @@ void AmbikaVoice::applyFilterModeFromVoice()
     // LP/BP/HP/NOTCH.
     const auto topo = filter_.getTopology();
     const bool fourPole = (topo == ambika::dsp::FilterTopology::FOUR_POLE_LADDER
-                        || topo == ambika::dsp::FilterTopology::FOUR_POLE_SSM2164);
+                        || topo == ambika::dsp::FilterTopology::FOUR_POLE_SSM2164
+                        || topo == ambika::dsp::FilterTopology::FOUR_POLE_OTA);
     filter_.setMode (fourPole ? 0 : static_cast<int> (voice_.mode()));
 }
 

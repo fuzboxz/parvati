@@ -31,6 +31,15 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   design; no English key changed.
 
 ### Added
+- **New filter card: SMR4 OTA cascade (2026-08-24).** A fourth filter card,
+  "SMR4 (OTA Cascade)", models the SMR4 voicecard with a from-scratch DSP
+  model. Four OTA stages each integrate `gm*tanh(error/2Vt)`: per-stage tanh
+  on the error, datasheet 52 mV knee, trapezoidal integration with a
+  one-step Newton solve. The resonance loop is gain-normalised, so the
+  self-oscillation onset tracks the resonance knob; the resonance VCA adds
+  its own soft clip. Filter Drive scales the saturation knee. The model is
+  circuit-informed behavioural, not component-level. Existing sessions and
+  presets load unchanged (the new card is index 3).
 - **`perf_baseline_test`: normalized render-time regression gate
   (2026-08-23).** Seven fixed offline render scenarios (idle pool, one
   voice, six parts at sixteen voices, oversampled filter path, Diffuser

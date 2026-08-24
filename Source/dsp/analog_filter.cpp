@@ -4,6 +4,7 @@
 #include "dsp/analog_filter.h"
 
 #include <cmath>
+#include <limits>
 
 namespace ambika::dsp {
 
@@ -125,6 +126,9 @@ void AnalogFilter::commit()
                 svf_.reset (0.0f);
                 svfNotch_.reset (0.0f);
                 break;
+            case FilterTopology::FOUR_POLE_OTA:
+                otaState_[0] = otaState_[1] = otaState_[2] = otaState_[3] = 0.0f;
+                break;
             case FilterTopology::FOUR_POLE_LADDER:
             default:
                 ladder_.reset();
@@ -158,6 +162,54 @@ void AnalogFilter::applyParams()
             svf4p_[i].setCutoffFrequency (cutoffHz_);
             svf4p_[i].setResonance (svfRes);
         }
+    }
+    else if (topology_ == FilterTopology::FOUR_POLE_OTA)
+    {
+        // SMR4 OTA cascade coefficients. All math in double; stored as float.
+        // The resonance cap kMaxResonance does NOT apply here: the OTA model
+        // is bounded by its tanh stages, and resonance 1.0 lands exactly at
+        // the self-oscillation onset by design (kfb*G^4 == res).
+        const double nyq    = 0.49 * sampleRate_;
+        const double fc     = juce::jlimit (double (kMinHz), juce::jmin (double (kMaxHz), nyq), double (cutoffHz_));
+        const double pi     = juce::MathConstants<double>::pi;
+        const double gLin   = std::tan (pi * fc / sampleRate_);   // exact TPT pole conductance
+        const double G      = gLin / (1.0 + gLin);
+        // knee = 2Vt / drive: higher drive lowers the knee, so the OTA
+        // saturates earlier. Drive reuses the Filter Drive setting.
+        const double knee   = double (kTwoVt) / juce::jmax (0.05, double (drive_));
+        // Loop-gain normalisation. The self-oscillation onset of four
+        // identical bilinear one-pole stages with gain feedback is EXACTLY
+        // kfb = 4.0, at every cutoff:
+        //   * analog: (1 + s/w0)^4 + k = s^4/w0^4 + 4s^3/w0^3 + 6s^2/w0^2 +
+        //     4s/w0 + (1 + k) is jw-axis marginal at k = 4 (Routh condition
+        //     a3a2a1 = a3^2 a0 + a1^2 evaluates to 96 = 16(1+k) + 16);
+        //   * the TPT stage is the exact bilinear image of the analog one-pole
+        //     (pole 1-2G, zero at Nyquist), so the discrete onset equals the
+        //     analog one: the char roots of (z-(1-2G))^4 + kfb*G^4*(z+1)^4 = 0
+        //     touch |z| = 1 exactly at kfb = 4 (verified to machine precision
+        //     against a polynomial-root solve).
+        // kfb = res * 4.0 therefore puts the onset exactly at res = 1.0 for
+        // every cutoff: the knob tracks the onset. (The task draft already
+        // carried res*4.0; the constant is exact, not an approximation.)
+        const double resEff = juce::jlimit (0.0, 1.0, double (resonance_));
+        double kfb          = resEff * 4.0;
+        kfb                 = juce::jmin (kfb, kKfbHardMax);   // numeric guard (vestigial: kfb <= 4)
+        const double r      = kfb * G * G * G * G;              // linear-solve denominator term
+
+        gLin_        = static_cast<float> (gLin);
+        G_           = static_cast<float> (G);
+        G2_          = static_cast<float> (G * G);
+        G3_          = static_cast<float> (G * G * G);
+        G4_          = static_cast<float> (G * G * G * G);
+        gk_          = static_cast<float> (gLin * knee);
+        knee_        = static_cast<float> (knee);
+        invKnee_     = static_cast<float> (1.0 / knee);
+        kfb_         = static_cast<float> (kfb);
+        // VCA soft-clip pair: kfbVca_ = kfb * 2Vt with the fixed VCA knee
+        // 2Vt (the resonance path has its own OTA; its knee does not follow
+        // the Filter Drive knob, which shapes the four pole stages).
+        kfbVca_      = static_cast<float> (kfb * double (kTwoVt));
+        invOnePlusR_ = static_cast<float> (1.0 / (1.0 + r));
     }
     else // TWO_POLE_SVF
     {
@@ -203,6 +255,9 @@ float AnalogFilter::processSample (float inputValue)
         return svf4p_[1].processSample (0, a);
     }
 
+    if (topology_ == FilterTopology::FOUR_POLE_OTA)
+        return processOTASample (inputValue);
+
     if (topology_ == FilterTopology::TWO_POLE_SVF)
     {
         // NOTE: juce::dsp::StateVariableTPTFilter::processSample(channel, input).
@@ -223,6 +278,57 @@ float AnalogFilter::processSample (float inputValue)
     // block/context construction.
     ladder_.updateSmoothers();
     return ladder_.processSample (inputValue, 0);
+}
+
+float AnalogFilter::processOTASample (float x) noexcept
+{
+    // SMR4 OTA cascade: four stages, each an OTA (gm*tanh on the error) into an
+    // integrating capacitor. The model solves each stage with one Newton step
+    // (the linear warm start makes one step sufficient in both the linear and
+    // the saturated zone), and closes the resonance loop with a linearised
+    // delay-free-loop solve plus a resonance-VCA tanh.
+    //
+    // Stage equation (implicit trapezoid):  y = s + gk*tanh((x - y)/knee)
+    // Linearised stage (the feedback solve): y = (1 - G)*s + G*x
+
+    // 1) Linearised delay-free-loop solve. sigma carries the (1 - G) state
+    //    weights: y4_lin = (G^4*x + sigma) / (1 + kfb*G^4). The draft dropped
+    //    the (1 - G) weights; the exact form keeps the resonance prediction
+    //    accurate across the cutoff range.
+    const float sigma = (1.0f - G_) * (G3_ * otaState_[0] + G2_ * otaState_[1]
+                                     +  G_  * otaState_[2] +      otaState_[3]);
+    const float y4lin = (G4_ * x + sigma) * invOnePlusR_;
+
+    // 2) Resonance feedback through its own VCA soft clip. The SMR4 routes
+    //    the resonance signal through OTA/VCA sections (the spare LM13700
+    //    sections on the schematic). The VCA tanh uses the UNIT-SLOPE form
+    //    kfb*2Vt*tanh(y4/2Vt): its small-signal gain is exactly kfb, so the
+    //    loop gain stays res (the plain kfb*tanh(y4/knee) form would scale
+    //    the loop by 1/knee = ~23 and move the onset to res ~ 0.05).
+    const float u = x - kfbVca_ * std::tanh (y4lin * kInvTwoVt);
+
+    // 3) Four OTA stages. Each: linear warm start, one Newton step on
+    //    F(y) = y - s - gk*tanh((x-y)/knee), then the trapezoid state update
+    //    s' = 2y - s (F(y) = 0 implies s' = y + gk*tanh = 2y - s).
+    float y = u;
+    for (int i = 0; i < 4; ++i)
+    {
+        const float s   = otaState_[i];
+        const float y0  = s + G_ * (y - s);                  // linear warm start
+        const float t0  = std::tanh ((y - y0) * invKnee_);   // tanh at the warm start
+        const float F   = y0 - s - gk_ * t0;
+        const float dF  = 1.0f + gLin_ * (1.0f - t0 * t0);   // F'(y) = 1 + (gk/knee)*(1-t^2)
+        y               = y0 - F / dF;
+        otaState_[i]    = 2.0f * y - s;
+    }
+
+    // Denormal flush: a decaying tail drives the capacitor states into the
+    // subnormal range, where CPUs stall. Zero them (inaudible: below -290 dB).
+    for (int i = 0; i < 4; ++i)
+        if (std::fabs (otaState_[i]) < std::numeric_limits<float>::min())
+            otaState_[i] = 0.0f;
+
+    return y;
 }
 
 void AnalogFilter::processBlock (float* data, int numSamples)
