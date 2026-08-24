@@ -902,6 +902,20 @@ add_executable(parvati_unified_tests
     tests/firmware_shim/voicecard_oracle_closure.cc
     ${PARVATI_AMBIKA_FIRMWARE_SOURCES}
 )
+if(NOT MSVC AND PARVATI_ENABLE_UBSAN)
+    # UBSan return-checker vs the vendored firmware oracle: the AVR firmware
+    # declares `uint8_t TransientGenerator::Trigger()` but returns nothing
+    # (ambika_reference/voicecard/transient_generator.h:53). No caller reads
+    # the value. The checker aborts the oracle on first trigger, so
+    # firmware_parity_test cannot finish section 10. Scope the checker away
+    # from the three oracle TUs only. Parvati's port declares `void Trigger()`
+    # (Source/dsp/transient_generator.h) and stays checked.
+    set_property(SOURCE
+        tests/firmware_shim/shims.cc
+        tests/firmware_shim/voicecard_oracle.cc
+        tests/firmware_shim/voicecard_oracle_closure.cc
+        APPEND PROPERTY COMPILE_OPTIONS "-fno-sanitize=return")
+endif()
 target_link_libraries(parvati_unified_tests PRIVATE Parvati parvati_factory_presets)
 target_compile_features(parvati_unified_tests PRIVATE cxx_std_17)
 target_compile_definitions(parvati_unified_tests PRIVATE PARVATI_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
