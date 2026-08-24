@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "VectorTrace.h"
+#include "ParvatiLookAndFeel.h"   // themeFor + the fallback colour constants
 #include "dsp/resources/resources.h"   // lut_res_env_portamento_increments (time-honest ADSR spans)
 
 //==============================================================================
@@ -272,13 +273,12 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     // Read the active theme from the component's LookAndFeel (null-safe: a few
     // sensible fallback colours are used if there is no ParvatiLookAndFeel, so
     // the component also renders correctly in a plain host / test harness).
-    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-    const ParvatiTheme* t = lnf ? lnf->getTheme() : nullptr;
+    const ParvatiTheme* t = parvati::themeFor (*this);
 
-    const auto panelBg = t ? t->backgroundPanel : juce::Colour (0xff24242e);
-    const auto outline = t ? t->outline         : juce::Colour (0xff3c3c4a);
+    const auto panelBg = t ? t->backgroundPanel : parvati::kFallbackPanel;
+    const auto outline = t ? t->outline         : parvati::kFallbackOutline;
     const auto accent  = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
-    const auto textDim = t ? t->textSecondary         : juce::Colour (0xff9a9aa8);
+    const auto textDim = t ? t->textSecondary         : parvati::kFallbackTextSecondary;
     // The waveform trace + its gradient fill adopt a category hue (cyan ENV /
     // magenta LFO) when set; otherwise the live theme accent. The neutral clean
     // grid backdrop uses the theme divider token so the graph reads on any theme.
@@ -298,8 +298,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
 
     // Title (top-left).
     g.setColour (textDim);
-    g.setFont (lnf ? lnf->appFont (13.0f, juce::Font::plain)
-                   : juce::Font (juce::FontOptions (13.0f)));
+    g.setFont (parvati::appFontFor (*this, 13.0f));
     g.drawText (title_,
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
                 juce::Justification::topLeft);
@@ -370,8 +369,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                               plot.getX(), plot.getRight());
 
         g.setColour (textDim);
-        g.setFont (lnf ? lnf->appFont (11.0f, juce::Font::plain)
-                       : juce::Font (juce::FontOptions (11.0f)));
+        g.setFont (parvati::appFontFor (*this, 11.0f));
         g.drawText ("(LFO)",
                     bounds.reduced (9.0f, 4.0f).removeFromTop (16).removeFromRight (50),
                     juce::Justification::topRight);

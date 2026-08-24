@@ -97,10 +97,8 @@ private:
     // container-fill rounded tile (mirrors ModSourceDragGrip::buildDragImage).
     juce::Image buildDragImage() const
     {
-        const auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel());
-        const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme() : nullptr;
-        const juce::Font f = (lnf != nullptr) ? lnf->appFont (13.0f, juce::Font::plain)
-                                              : juce::Font (juce::FontOptions (13.0f));
+        const ParvatiTheme* t = parvati::themeFor (*this);
+        const juce::Font f = parvati::appFontFor (*this, 13.0f);
 
         const juce::String name = getButtonText();
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, name);

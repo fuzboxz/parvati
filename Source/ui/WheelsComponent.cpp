@@ -49,18 +49,16 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
 
     void paint (juce::Graphics& g) override
     {
-        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-        const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
+        const ParvatiTheme* t = parvati::themeFor (*this);
         // Match the surrounding label text (e.g. the keyboard's key labels use
         // the bright `text` token) rather than the dim caption token.
-        g.setColour (t != nullptr ? t->textPrimary : juce::Colour (0xffe0e0e0));
+        g.setColour (t != nullptr ? t->textPrimary : parvati::kFallbackTextSoft);
         // Same app typeface as all other UI text (appFont uses the system
-        // default sans-serif). The explicit fallback guarantees the FACE even
-        // if this child's LookAndFeel is not yet resolved, so the caption never
-        // silently renders in a different font than the surrounding labels.
-        g.setFont (lnf != nullptr ? lnf->appFont (9.0f, juce::Font::plain)
-                                  : juce::Font (juce::FontOptions (juce::Font::getDefaultSansSerifFontName(),
-                                                                   9.0f, juce::Font::plain)));
+        // default sans-serif). The shared resolver's default-font fallback
+        // keeps the FACE even if this child's LookAndFeel is not yet resolved,
+        // so the caption never silently renders in a different font than the
+        // surrounding labels.
+        g.setFont (parvati::appFontFor (*this, 9.0f));
         g.drawText (label_, getLocalBounds(), juce::Justification::centredTop);
     }
 
@@ -89,13 +87,11 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
     // A small themed chip (mirrors the CentralModBar mod-pill drag image).
     juce::Image buildDragImage() const
     {
-        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-        const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
-        const juce::Colour fill = (t != nullptr) ? t->containerFill : juce::Colour (0xff202028);
-        const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : juce::Colour (0xffe0e0e0);
+        const ParvatiTheme* t = parvati::themeFor (*this);
+        const juce::Colour fill = (t != nullptr) ? t->containerFill : parvati::kFallbackContainerFill;
+        const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : parvati::kFallbackTextSoft;
         const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : parvati::parvatiFallbackAccent;
-        const juce::Font f = (lnf != nullptr) ? lnf->appFont (13.0f, juce::Font::plain)
-                                              : juce::Font (juce::FontOptions (13.0f));
+        const juce::Font f = parvati::appFontFor (*this, 13.0f);
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, label_);
         const int w = juce::jmax (48, 12 + 8 + textW + 10);
         const int h = 22;
@@ -178,11 +174,10 @@ void WheelsComponent::paint (juce::Graphics& g)
     // Read the active theme through the inherited ParvatiLookAndFeel (same
     // pattern as KeyboardView). Re-applied each paint so a live theme switch
     // recolours the wheels, and the label font follows the font mode.
-    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-    const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
+    const ParvatiTheme* t = parvati::themeFor (*this);
 
-    const juce::Colour bg    = (t != nullptr) ? t->backgroundBase : juce::Colour (0xff141419);
-    const juce::Colour track = (t != nullptr) ? t->outline          : juce::Colour (0xff3a3a44);
+    const juce::Colour bg    = (t != nullptr) ? t->backgroundBase : parvati::kFallbackBase;
+    const juce::Colour track = (t != nullptr) ? t->outline          : parvati::kFallbackOutlineSoft;
     const juce::Colour thumb = (t != nullptr) ? t->accentPrimary           : parvati::parvatiFallbackAccent;
 
     g.fillAll (bg);

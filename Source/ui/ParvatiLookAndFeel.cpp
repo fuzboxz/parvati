@@ -1081,13 +1081,11 @@ void ParvatiLookAndFeel::drawTextUncurtained (juce::Graphics& g, const juce::Str
 // when ON, textDisabled grey when OFF, outline ring brightening on hover.
 void ParvatiModuleLamp::paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown)
 {
-    const ParvatiTheme* t = nullptr;
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        t = lnf->getTheme();
+    const ParvatiTheme* t = parvati::themeFor (*this);
 
     const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
-    const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
-    const juce::Colour grey   = t ? t->textDisabled  : juce::Colour (0xff6b7280);
+    const juce::Colour text   = t ? t->textPrimary   : parvati::kFallbackTextPrimary;
+    const juce::Colour grey   = t ? t->textDisabled  : parvati::kFallbackTextDisabled;
     const juce::Colour ring   = t ? t->outline       : text.withAlpha (0.45f);
 
     const bool on = getToggleState() || isButtonDown;
@@ -1141,9 +1139,7 @@ float ParvatiModuleLamp::dotDiameterFor (juce::Rectangle<int> bounds)
 
 juce::Colour ParvatiModuleLamp::resolvedOnColourForTest() const
 {
-    const ParvatiTheme* t = nullptr;
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        t = lnf->getTheme();
+    const ParvatiTheme* t = parvati::themeFor (*this);
     const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
     return onColour_.isTransparent() ? accent : onColour_;
 }

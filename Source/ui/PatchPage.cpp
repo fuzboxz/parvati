@@ -1213,8 +1213,8 @@ public:
     public:
         void paint (juce::Graphics& g) override
         {
-            const auto* lh = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel());
-            g.setColour (lh != nullptr ? lh->getTheme()->textSecondary
+            const ParvatiTheme* t = parvati::themeFor (*this);
+            g.setColour (t != nullptr ? t->textSecondary
                                        : juce::Colours::lightgrey.withAlpha (0.85f));
             g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
             const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;

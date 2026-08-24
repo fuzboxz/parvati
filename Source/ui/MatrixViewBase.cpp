@@ -31,12 +31,6 @@ juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourc
     return cat.isTransparent() ? t.accentPrimary : cat;
 }
 
-juce::Font appFontOr (const juce::Component& c, float height)
-{
-    if (const auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&c.getLookAndFeel()))
-        return lnf->appFont (height, juce::Font::plain);
-    return juce::Font (juce::FontOptions (height));
-}
 }  // namespace parvati::matrixview
 
 //==============================================================================
@@ -330,7 +324,7 @@ struct MatrixRow : public juce::Component,
     void applyThemeColors()
     {
         const auto& t = owner_.themeManager().getCurrentTheme();
-        const juce::Font f = parvati::matrixview::appFontOr (*this, 12.0f);
+        const juce::Font f = parvati::appFontFor (*this, 12.0f);
         indexLabel_.setFont (f);
         valueLabel_.setFont (f);
         indexLabel_.setColour (juce::Label::textColourId, t.textSecondary);
@@ -362,7 +356,6 @@ struct MatrixRow : public juce::Component,
 
     void paint (juce::Graphics& g) override
     {
-        using parvati::matrixview::appFontOr;
         using parvati::matrixview::rowCategoryColour;
         using parvati::matrixview::sourceCategoryColour;
         const auto& t = owner_.themeManager().getCurrentTheme();
@@ -401,7 +394,7 @@ struct MatrixRow : public juce::Component,
 
         // Arrow glyph between the source and dest combos.
         g.setColour (t.textSecondary);
-        g.setFont (appFontOr (*this, 13.0f));
+        g.setFont (parvati::appFontFor (*this, 13.0f));
         const int arrowX = sourceCombo_.getBounds().getRight() + 4;
         g.drawText (TRANS (">"),
                     juce::Rectangle<int> (arrowX, 0, 10, getHeight()),
@@ -490,7 +483,7 @@ MatrixViewBase::MatrixViewBase (ParvatiAudioProcessor& processor, ThemeManager& 
 
     headerLabel_.setText ("0 " + TRANS (config_.usedSuffixKey), juce::dontSendNotification);
     headerLabel_.setJustificationType (juce::Justification::centredLeft);
-    headerLabel_.setFont (parvati::matrixview::appFontOr (*this, 13.0f));
+    headerLabel_.setFont (parvati::appFontFor (*this, 13.0f));
     addAndMakeVisible (headerLabel_);
 
     addButton_ = std::make_unique<juce::TextButton> (TRANS ("+ Add Modulation"));
@@ -904,7 +897,7 @@ void MatrixViewBase::applyThemeColors()
 {
     const auto& t = themeManager_.getCurrentTheme();
     headerLabel_.setColour (juce::Label::textColourId, t.textPrimary);
-    headerLabel_.setFont (parvati::matrixview::appFontOr (*this, 13.0f));
+    headerLabel_.setFont (parvati::appFontFor (*this, 13.0f));
 
     addButton_->setColour (juce::TextButton::buttonColourId, t.containerFill);
     addButton_->setColour (juce::TextButton::buttonOnColourId, t.accentPrimary);

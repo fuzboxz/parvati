@@ -1064,9 +1064,7 @@ const ParvatiTheme& CentralModBar::theme() const
 juce::Font CentralModBar::pillFont() const
 {
     const float size = 14.0f;   // proportional with the ~1.5x bigger pills
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        return lnf->appFont (size, juce::Font::plain);
-    return juce::Font (juce::FontOptions (size));
+    return parvati::appFontFor (*this, size);
 }
 
 // ---- TEST-ONLY paint-split accessors (see the header) ----

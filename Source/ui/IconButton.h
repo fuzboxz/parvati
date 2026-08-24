@@ -58,10 +58,8 @@ public:
 
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
-        const ParvatiTheme* t = nullptr;
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            t = lnf->getTheme();
-        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
+        const ParvatiTheme* t = parvati::themeFor (*this);
+        const juce::Colour text   = t ? t->textPrimary   : parvati::kFallbackTextPrimary;
         const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
 
         juce::Colour c = text;

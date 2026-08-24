@@ -145,9 +145,8 @@ void SeqLengthStepper::applyNumberLabelStyle()
 {
     if (numberLabel_ == nullptr)
         return;
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        if (const ParvatiTheme* t = lnf->getTheme())
-            numberLabel_->setColour (juce::Label::textColourId, t->textPrimary);
+    if (const ParvatiTheme* t = parvati::themeFor (*this))
+        numberLabel_->setColour (juce::Label::textColourId, t->textPrimary);
 }
 
 void SeqLengthStepper::lookAndFeelChanged()
@@ -182,8 +181,7 @@ void SeqLengthStepper::paint (juce::Graphics& g)
     if (field.getWidth() < 24 || field.getHeight() < 14)
         return;   // degenerate cell (host squeeze): keep the bare number
 
-    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-    const ParvatiTheme* t = (lnf != nullptr) ? lnf->getTheme() : nullptr;
+    const ParvatiTheme* t = parvati::themeFor (*this);
     const juce::Colour baseFill = (t != nullptr && t->isDark)
                                     ? t->backgroundBase
                                     : juce::Colour (0xff2A2E35);   // light-theme dark-dropdown tone

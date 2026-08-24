@@ -231,11 +231,10 @@ void FilterResponseDisplay::timerCallback()
 //==============================================================================
 void FilterResponseDisplay::paint (juce::Graphics& g)
 {
-    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-    const ParvatiTheme* t = lnf ? lnf->getTheme() : nullptr;
+    const ParvatiTheme* t = parvati::themeFor (*this);
 
-    const auto panelBg  = t ? t->backgroundPanel : juce::Colour (0xff24242e);
-    const auto outline  = t ? t->outline         : juce::Colour (0xff3c3c4a);
+    const auto panelBg  = t ? t->backgroundPanel : parvati::kFallbackPanel;
+    const auto outline  = t ? t->outline         : parvati::kFallbackOutline;
     const auto accent   = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
     const auto trace    = hasCategoryColour_ ? categoryColour_ : accent;
     const auto gridCol  = t ? t->divider.withAlpha (0.10f) : accent.withAlpha (0.06f);

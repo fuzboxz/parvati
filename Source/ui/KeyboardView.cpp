@@ -2,6 +2,7 @@
 
 #include "KeyboardView.h"
 
+#include "ParvatiLookAndFeel.h"   // themeFor (component/L&F resolution)
 #include "ParvatiTheme.h"
 
 #include <algorithm>
@@ -48,9 +49,7 @@ namespace
 //==============================================================================
 KeyboardView::KeyboardColours KeyboardView::resolveColours (const juce::LookAndFeel& lnf)
 {
-    const ParvatiTheme* t = nullptr;
-    if (const auto* p = dynamic_cast<const ParvatiLookAndFeel*> (&lnf))
-        t = p->getTheme();
+    const ParvatiTheme* t = parvati::themeFor (lnf);
     if (t == nullptr)
         t = &carbonTheme();   // pre-L&F fallback: Carbon's own tokens (never literals)
 

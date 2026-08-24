@@ -251,6 +251,45 @@ private:
 };
 
 //==============================================================================
+// Shared component→LookAndFeel/font/theme resolution (single source). A
+// component painted under the app LookAndFeel resolves the app font and the
+// live theme; a component in a plain host or test harness falls back to the
+// default font / nullptr theme, and the paint site pairs that nullptr with
+// the parvati:: fallback colour constants from ParvatiTheme.h. Every
+// former inline dynamic_cast copy now calls these.
+namespace parvati
+{
+
+// @p owner's app font at @p height (ParvatiLookAndFeel installed), or the
+// default font when another LookAndFeel is installed.
+inline juce::Font appFontFor (const juce::Component& owner, float height,
+                             int styleFlags = juce::Font::plain)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->appFont (height, styleFlags);
+    return juce::Font (juce::FontOptions (height, styleFlags));
+}
+
+// @p owner's live theme (nullptr when another LookAndFeel or no theme is set).
+inline const ParvatiTheme* themeFor (const juce::Component& owner)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->getTheme();
+    return nullptr;
+}
+
+// Same resolution for a bare LookAndFeel reference (callers that receive
+// getLookAndFeel() instead of a component).
+inline const ParvatiTheme* themeFor (const juce::LookAndFeel& lnf)
+{
+    if (auto* p = dynamic_cast<const ParvatiLookAndFeel*> (&lnf))
+        return p->getTheme();
+    return nullptr;
+}
+
+}   // namespace parvati
+
+//==============================================================================
 // Shared fit-to-text ComboBox measurement (single source). Previously
 // ParamControl::maxChoiceTextWidth and FxSlotCard's maxComboItemWidth each
 // carried their own copy of the font resolution and the widest-item loop, so
@@ -262,9 +301,7 @@ private:
 // LookAndFeel is installed.
 inline juce::Font comboListFont (const juce::Component& owner)
 {
-    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
-        return lnf->appFont (14.0f, juce::Font::plain);
-    return juce::Font (juce::FontOptions (14.0f));
+    return parvati::appFontFor (owner, 14.0f, juce::Font::plain);
 }
 
 // The widest string among @p combo's own items, @p extraChoices, and the

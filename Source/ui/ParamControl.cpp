@@ -639,8 +639,7 @@ void ParamControl::applyCategoryArcColour()
         return;
     // Resolve the category hue from the CURRENT theme via the component's L&F
     // (zero hardcoded hues; every value comes from a theme token).
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        if (const auto* theme = lnf->getTheme())
+    if (const auto* theme = parvati::themeFor (*this))
         {
             slider_->setColour (juce::Slider::rotarySliderFillColourId,
                                 categoryColourForSection (*theme, sectionForId (paramIDStr_)));
@@ -671,8 +670,7 @@ void ParamControl::applyModSourceTint()
         sourceName = (*desc_.choices) [idx];
     }
 
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        if (const auto* theme = lnf->getTheme())
+    if (const auto* theme = parvati::themeFor (*this))
         {
             // The category colour is resolved by the shared helper. Neutral
             // sources (Op/Const/Velocity/etc) resolve to `accent`; only the
@@ -727,9 +725,7 @@ void ParamControl::refreshModRing()
     // uses). If the theme is not yet reachable (pre-reparent construction) defer
     // — the per-source props get pushed on reparent (parentHierarchyChanged /
     // lookAndFeelChanged) as today, so clear them here to avoid a stale render.
-    const ParvatiTheme* theme = nullptr;
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        theme = lnf->getTheme();
+    const ParvatiTheme* theme = parvati::themeFor (*this);
 
     auto clearAll = [&]
     {

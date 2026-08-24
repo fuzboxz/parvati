@@ -33,7 +33,7 @@
 #include <array>
 #include <memory>
 
-#include "ParvatiLookAndFeel.h"   // ParvatiLookAndFeel (appFontOr), ParvatiModuleLamp
+#include "ParvatiLookAndFeel.h"   // parvati::appFontFor / themeFor (component resolution)
 #include "ParvatiTheme.h"         // ParvatiTheme (category colour tokens)
 
 class ParvatiAudioProcessor;
@@ -52,10 +52,6 @@ juce::Colour sourceCategoryColour (const ParvatiTheme& t, const juce::String& so
 // unknown name falls back to the neutral accent. The result is never
 // transparent. The row tint, the slider fill and the combo tag use it.
 juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourceName);
-
-// Resolve the app font through the inherited editor L&F when present, else
-// the JUCE default. Keeps the view usable before it joins the editor tree.
-juce::Font appFontOr (const juce::Component& c, float height);
 
 // Row-index label width. JUCE Label draws a default 5px border per side, so
 // an 18pt label leaves an 8px text box. The two-digit '16' needs 13px at the

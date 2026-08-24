@@ -84,6 +84,22 @@ namespace parvati
 // (0xffe8b84b-class literals) is gone so no indicator can render amber by
 // DEFAULT; amber now appears only where a THEME deliberately defines it.
 inline const juce::Colour parvatiFallbackAccent { 0xff5b8db8 };
+
+// No-LookAndFeel fallback colours for components that paint in a plain host
+// or test harness (no ParvatiLookAndFeel installed). These are STATIC safety
+// defaults, NOT theme tokens: they keep a component readable until the app
+// LookAndFeel attaches. Each value matches the literal the paint code
+// historically carried, so pixels stay identical. One named constant per
+// role; do not add new spellings of the same role.
+inline const juce::Colour kFallbackTextPrimary   { 0xffe8e8ee };  // textPrimary role
+inline const juce::Colour kFallbackTextSoft      { 0xffe0e0e0 };  // wheels chip text (its own historical value)
+inline const juce::Colour kFallbackTextSecondary { 0xff9a9aa8 };  // textSecondary role
+inline const juce::Colour kFallbackTextDisabled  { 0xff6b7280 };  // textDisabled role
+inline const juce::Colour kFallbackPanel         { 0xff24242e };  // backgroundPanel role
+inline const juce::Colour kFallbackOutline       { 0xff3c3c4a };  // outline role
+inline const juce::Colour kFallbackContainerFill { 0xff202028 };  // containerFill role
+inline const juce::Colour kFallbackBase          { 0xff141419 };  // backgroundBase role (wheels bay)
+inline const juce::Colour kFallbackOutlineSoft   { 0xff3a3a44 };  // wheels track outline
 }   // namespace parvati
 
 //==============================================================================

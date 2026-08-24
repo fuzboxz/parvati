@@ -42,8 +42,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-        const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme() : nullptr;
+        const ParvatiTheme* t = parvati::themeFor (*this);
         const juce::Colour rule (t != nullptr ? t->textSecondary
                                               : juce::Colours::darkgrey);
         constexpr int kShadowH = kRuleShadowH;

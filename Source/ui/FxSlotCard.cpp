@@ -40,10 +40,8 @@ public:
 
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
-        const ParvatiTheme* t = nullptr;
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-            t = lnf->getTheme();
-        const juce::Colour text   = t ? t->textPrimary   : juce::Colour (0xffe8e8ee);
+        const ParvatiTheme* t = parvati::themeFor (*this);
+        const juce::Colour text   = t ? t->textPrimary   : parvati::kFallbackTextPrimary;
         const juce::Colour dim    = t ? t->textDisabled   : text.withAlpha (0.45f);
         const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
 
@@ -771,17 +769,16 @@ void FxSlotCard::resized()
 //==============================================================================
 void FxSlotCard::paint (juce::Graphics& g)
 {
-    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel ());
-    const ParvatiTheme* t = lnf != nullptr ? lnf->getTheme () : nullptr;
+    const ParvatiTheme* t = parvati::themeFor (*this);
 
-    const juce::Colour panel   = t ? t->containerFill   : juce::Colour (0xff202028);
+    const juce::Colour panel   = t ? t->containerFill   : parvati::kFallbackContainerFill;
     // HEADER COLOUR PARITY (user feedback 2026-08-20): the synth page's
     // module headers are GroupComponent titles painted by the L&F in
     // textPrimary (GroupComponent::textColourId == theme.textPrimary after
     // setTheme). The FX card title previously used textSecondary — the
     // mismatch the user reported. Same token now; re-resolved per paint so a
     // theme switch re-colours both paths together.
-    const juce::Colour title   = t ? t->textPrimary     : juce::Colour (0xffe8e8ee);
+    const juce::Colour title   = t ? t->textPrimary     : parvati::kFallbackTextPrimary;
 
     const auto r = getLocalBounds ().toFloat ();
 
@@ -795,8 +792,7 @@ void FxSlotCard::paint (juce::Graphics& g)
     //      child) + title text following it — the header reads [lamp][FX1]
     //      left-to-right. BOLD + UPPERCASE (14px), mirroring the synth card
     //      GroupComponent header. ----
-    juce::Font font = lnf != nullptr ? lnf->appFont (14.0f, juce::Font::bold)
-                                    : juce::Font (juce::FontOptions (14.0f, juce::Font::bold));
+    juce::Font font = parvati::appFontFor (*this, 14.0f, juce::Font::bold);
     const juce::String name = "FX" + juce::String (slot_ + 1);   // "FX1" (uppercase)
     // kLampTitleGap right of the 15pt lamp sits the title text. (The old
     // accent tick between the lamp and the title went away with the lamp
@@ -823,10 +819,9 @@ juce::Colour FxSlotCard::headerTitleColourForTest() const
 {
     // (getLookAndFeel() returns LookAndFeel& even on a const Component — JUCE
     // semantics — so the cast targets the non-const type.)
-    if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
-        if (const ParvatiTheme* t = lnf->getTheme())
-            return t->textPrimary;
-    return juce::Colour (0xffe8e8ee);   // paint()'s no-L&F fallback
+    if (const ParvatiTheme* t = parvati::themeFor (*this))
+        return t->textPrimary;
+    return parvati::kFallbackTextPrimary;   // paint()'s no-L&F fallback
 }
 
 ParvatiModuleLamp* FxSlotCard::powerLampForTest() const
