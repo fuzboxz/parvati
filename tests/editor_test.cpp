@@ -170,6 +170,8 @@ TEST(editor_test)
               juce::Colour (0xff009696), juce::Colour (0xffE5B55C), juce::Colour (0xffA8C69F) },
             { "Swedish Red", swedishRedTheme(), true,  juce::Colour (0xff9BE24A),
               juce::Colour (0xff57E05C), juce::Colour (0xff2FD98C), juce::Colour (0xffD6D2C4) },
+            { "Y2K",          y2kTheme(),         true,  juce::Colour (0xffE6F0FF),
+              juce::Colour (0xffFF3EB5), juce::Colour (0xffB478FF), juce::Colour (0xff5EF03C) },
         };
 
         char buf[160];

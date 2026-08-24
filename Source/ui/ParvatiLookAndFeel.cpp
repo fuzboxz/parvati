@@ -2,6 +2,39 @@
 
 #include "ParvatiLookAndFeel.h"
 
+namespace
+{
+// True when the active theme opts into the Y2K era chrome. The gate is the
+// theme NAME, so every other theme keeps its exact rendering path. The Y2K
+// branches add Win98 bevels, a glossy panel sheen, chrome knob bezels and
+// chrome tabs (see ParvatiTheme.cpp y2kTheme).
+bool isY2kChrome (const ParvatiTheme* theme) noexcept
+{
+    return theme != nullptr && theme->name == "Y2K";
+}
+
+// Win98-class raised bevel on a rounded card: a light edge on the top half,
+// a dark edge on the bottom half. The two clipped strokes meet at the
+// horizontal centre line and read as one moulded plastic rim.
+void drawY2kBevel (juce::Graphics& g, const juce::Rectangle<float>& r, float corner,
+                   juce::Colour light, juce::Colour dark, float weight)
+{
+    juce::Path rim;
+    rim.addRoundedRectangle (r, corner);
+    const auto half = r.withHeight (r.getHeight() * 0.5f).toNearestInt();
+    g.saveState();
+    g.reduceClipRegion (half);
+    g.setColour (light);
+    g.strokePath (rim, juce::PathStrokeType (weight));
+    g.restoreState();
+    g.saveState();
+    g.reduceClipRegion (r.withTop (r.getY() + r.getHeight() * 0.5f).toNearestInt());
+    g.setColour (dark);
+    g.strokePath (rim, juce::PathStrokeType (weight));
+    g.restoreState();
+}
+}   // namespace
+
 ParvatiLookAndFeel::ParvatiLookAndFeel()
 {
     // Default to Carbon so theme_ is never null and every colour ID is set
@@ -393,10 +426,26 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
 
     if (front)
     {
-        g.setColour (theme_->tabSelectedBg);
-        g.fillPath (tabShape);
-        g.setColour (catColour.withMultipliedAlpha (0.22f));
-        g.fillPath (tabShape);
+        if (isY2kChrome (theme_))
+        {
+            // Y2K only: the liquid-chrome tab. A vertical silver gradient fills
+            // the active segment; the label flips to deep navy so text stays
+            // readable on the metal. The category underline still applies.
+            juce::ColourGradient chromeGrad (theme_->accentPrimary.brighter (0.30f),
+                                             activeArea.getCentreX(), activeArea.getY(),
+                                             theme_->accentPrimary.darker (0.12f),
+                                             activeArea.getCentreX(), activeArea.getBottom(),
+                                             false);
+            g.setGradientFill (chromeGrad);
+            g.fillPath (tabShape);
+        }
+        else
+        {
+            g.setColour (theme_->tabSelectedBg);
+            g.fillPath (tabShape);
+            g.setColour (catColour.withMultipliedAlpha (0.22f));
+            g.fillPath (tabShape);
+        }
     }
     else
     {
@@ -412,6 +461,8 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     // Label (ALL CAPS), centred; reserve room at the bottom for the active
     // underline.
     juce::Colour textCol = front ? theme_->textPrimary : theme_->textSecondary;
+    if (front && isY2kChrome (theme_))
+        textCol = theme_->backgroundBase;   // navy on the chrome tab
     if (hover)
         textCol = textCol.brighter (0.20f);
 
@@ -469,8 +520,31 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     // The card reads purely by its tonal step above the window background.
     if (theme_ != nullptr)
     {
-        g.setColour (theme_->containerFill.withMultipliedAlpha (alpha));
-        g.fillRoundedRectangle (cardBounds, corner);
+        if (isY2kChrome (theme_))
+        {
+            // Y2K only: the glossy-plastic card. A vertical gradient lightens
+            // the top third (the injection-moulded sheen), then the Win98
+            // raised rim closes the card. Tokens stay the base colours.
+            juce::ColourGradient gloss (theme_->containerFill.brighter (0.14f),
+                                        cardBounds.getCentreX(), cardBounds.getY(),
+                                        theme_->containerFill,
+                                        cardBounds.getCentreX(),
+                                        cardBounds.getY() + cardBounds.getHeight() * 0.45f,
+                                        false);
+            g.setColour (theme_->containerFill.withMultipliedAlpha (alpha));
+            g.fillRoundedRectangle (cardBounds, corner);
+            g.setGradientFill (gloss);
+            g.fillRoundedRectangle (cardBounds, corner);
+            drawY2kBevel (g, cardBounds, corner,
+                          theme_->outline.brighter (0.35f).withMultipliedAlpha (alpha),
+                          theme_->outline.darker (0.45f).withMultipliedAlpha (alpha),
+                          2.0f);
+        }
+        else
+        {
+            g.setColour (theme_->containerFill.withMultipliedAlpha (alpha));
+            g.fillRoundedRectangle (cardBounds, corner);
+        }
     }
 
     // Bold bright section header, left-aligned within the card's top band
@@ -585,6 +659,28 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
                             rotaryStartAngle, rotaryEndAngle, true);
     g.strokePath (trackArc, juce::PathStrokeType (arcWidth, juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
+
+    if (isY2kChrome (theme_))
+    {
+        // Y2K only: the chrome track lining. A thin bright line runs along the
+        // top half of the track groove, a dim steel line along the bottom —
+        // one polished bezel, lit from above. Sits UNDER the value fill arc.
+        const auto dialRect = bounds.toNearestInt();
+        const float chromeW = juce::jmax (1.0f, arcWidth * 0.35f);
+        const juce::Colour chrome = modLocked ? lockedGrey : fill;
+        g.saveState();
+        g.reduceClipRegion (dialRect.withHeight (dialRect.getHeight() / 2));
+        g.setColour (chrome.withMultipliedAlpha (0.9f));
+        g.strokePath (trackArc, juce::PathStrokeType (chromeW, juce::PathStrokeType::curved,
+                                                      juce::PathStrokeType::rounded));
+        g.restoreState();
+        g.saveState();
+        g.reduceClipRegion (dialRect.withY (dialRect.getY() + dialRect.getHeight() / 2));
+        g.setColour (chrome.darker (0.55f).withMultipliedAlpha (0.9f));
+        g.strokePath (trackArc, juce::PathStrokeType (chromeW, juce::PathStrokeType::curved,
+                                                      juce::PathStrokeType::rounded));
+        g.restoreState();
+    }
 
     // Fill arc — start angle -> value angle, bright accent. Skipped for disabled
     // knobs so they read as inactive. While a mod-source drag hovers this knob
@@ -1005,6 +1101,20 @@ void ParvatiLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& 
     }
     g.setColour (fill);
     g.fillRoundedRectangle (r, corner);   // flat, borderless
+
+    if (isY2kChrome (theme_))
+    {
+        // Y2K only: the Win98 raised button rim. A light top edge and a dark
+        // bottom edge sit on the tonal fill. Press inverts the rim (the
+        // sunken feel); toggled-on keeps the raised chrome pill look.
+        const bool sunken = down && ! on;
+        drawY2kBevel (g, r, corner,
+                      (sunken ? fill.darker (0.45f) : fill.brighter (0.45f))
+                          .withMultipliedAlpha (enabledAlpha),
+                      (sunken ? fill.brighter (0.45f) : fill.darker (0.45f))
+                          .withMultipliedAlpha (enabledAlpha),
+                      1.5f);
+    }
 
     // OUTLINED chrome (2026-08-23, Patch-page export buttons): a button
     // carrying the "parvatiButtonOutlined" component property also

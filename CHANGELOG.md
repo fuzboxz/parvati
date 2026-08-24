@@ -5,6 +5,15 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Y2K theme: liquid chrome on glossy desktop azure (2026-08-24).** The
+  eighth built-in theme is a joy theme, not a corporate theme. The window is
+  the 1999 desktop blue; the brand accent is a chrome-silver gleam and the
+  complement is a hot aqua. The modulation families go full candy: hot pink,
+  electric purple, lime, tangerine, candy yellow, aqua, periwinkle. Four era
+  effects render for this theme only: Win98 raised button bevels, a glossy
+  plastic sheen on panel cards, a two-tone chrome lining in knob tracks, and
+  chrome-gradient active tabs with navy text. Every other theme keeps its
+  exact previous rendering.
 - **Patch-page part parameters now apply to sounding notes (2026-08-24).**
   Tuning and spread edits retune the current part's sounding voices live:
   each voice glides its pitch by the edit delta (about 33 ms full range), so

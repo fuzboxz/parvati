@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ParvatiTheme — the 7 built-in themes. The factories initialise ParvatiTheme
+// ParvatiTheme — the 8 built-in themes. The factories initialise ParvatiTheme
 // POSITIONALLY in field order (see ParvatiTheme.h), so a missed / extra / mis-
 // ordered value silently misaligns every later field with NO compile error.
 // Keep this list and every factory in lockstep with the struct, and keep the
@@ -287,6 +287,51 @@ const ParvatiTheme& swedishRedTheme()
 }
 
 //==============================================================================
+const ParvatiTheme& y2kTheme()
+{
+    // Y2K — a joy theme, not a corporate theme. The base is the glossy desktop
+    // azure of a 1999 default wallpaper. The accent family is LIQUID CHROME:
+    // the brand accent is a bright silver gleam, the complementary accent is a
+    // hot aqua. The flat colour tokens imply chrome through luminance steps:
+    // near-white gleam reads as a polished highlight, the steel-navy outline
+    // reads as the shaded chrome edge. ParvatiLookAndFeel adds era chrome to
+    // this theme ONLY: Win98 bevels, a glossy panel sheen, chrome knob bezels
+    // and chrome tabs (name-gated; every other theme renders bit-identical).
+    // The routing palette goes full candy: one saturated tone per family, the
+    // MSN-Messenger / Winamp-skin colour-picker school. Dark theme.
+    static const ParvatiTheme t {
+        "Y2K",
+        // Layer 1 — BASE: glossy desktop azure, frosted-blue cards, glossier
+        // input wells and a lighter hover (the plastic step of the era).
+        juce::Colour (0xff0A246A), juce::Colour (0xff174A8F), juce::Colour (0xff1E57A4),
+        juce::Colour (0xff2666B8),
+        // Layer 2 — INFORMATION: chrome gleam values, pale-cyan labels, the
+        // Win98 50-percent disabled grey, a recessed navy empty track.
+        juce::Colour (0xffF2F8FF), juce::Colour (0xff9BD4E4), juce::Colour (0xff8A93A6),
+        juce::Colour (0xff16386E),
+        // Layer 3 — ACTION: liquid-chrome silver brand / hot aqua complement.
+        juce::Colour (0xffE6F0FF), juce::Colour (0xff00E5EE),
+        // auxiliary: outline (steel chrome edge), divider, containerFill,
+        // tabUnselectedBg (recessed navy), tabSelectedBg (glossy azure),
+        // keyWhite (pearl-blue naturals), keyBlack (near-black-blue sharps)
+        juce::Colour (0xff3D6EB5), juce::Colour (0xff1C3F7A), juce::Colour (0xff17468C),
+        juce::Colour (0xff122F63), juce::Colour (0xff2E72D6), juce::Colour (0xffC9DCF5),
+        juce::Colour (0xff0A1830),
+        // modulation routing palette — the candy colour-picker: Audio adopts
+        // the chrome brand (per the every-theme rule), Env=HOT PINK, Lfo=
+        // ELECTRIC PURPLE, Seq/Arp=LIME (the sequencer family share).
+        juce::Colour (0xffE6F0FF), juce::Colour (0xffFF3EB5), juce::Colour (0xffB478FF),
+        juce::Colour (0xff5EF03C), juce::Colour (0xff5EF03C),
+        // catPerf, catUtil, catMod, catConst: TANGERINE, CANDY YELLOW, AQUA,
+        // PERIWINKLE (one saturated tone per family, the era school).
+        juce::Colour (0xffFFB032), juce::Colour (0xffFFE83C), juce::Colour (0xff00E5EE),
+        juce::Colour (0xff6FA8FF),
+        true
+    };
+    return t;
+}
+
+//==============================================================================
 const std::vector<ParvatiTheme>& getBuiltinThemes()
 {
     static const std::vector<ParvatiTheme> v {
@@ -296,7 +341,8 @@ const std::vector<ParvatiTheme>& getBuiltinThemes()
         paperTheme(),
         crimsonTheme(),
         immutableTheme(),
-        swedishRedTheme()
+        swedishRedTheme(),
+        y2kTheme()
     };
     return v;
 }

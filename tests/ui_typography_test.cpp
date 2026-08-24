@@ -98,6 +98,7 @@ TEST(ui_typography_test)
         { "Crimson",     crimsonTheme()     },
         {"Immutable",   immutableTheme()      },
         { "Swedish Red", swedishRedTheme()  },
+        { "Y2K",          y2kTheme()          },
     };
 
     // ---- [1] Module-header tier + contrast (the reported dim headers) -------
