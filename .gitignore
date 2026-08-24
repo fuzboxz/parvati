@@ -59,6 +59,10 @@ asio_profiler_output/
 *.tmp
 *.bak
 
+# Machine-local performance baseline (harvested per host; see
+# tests/perf_baseline_test.cpp) ---
+tests/perf_baseline.local.json
+
 # --- Generated menu screenshots (tools/menu_shots.cpp) ---
 screens/
 __pycache__/

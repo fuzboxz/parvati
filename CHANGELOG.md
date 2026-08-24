@@ -20,6 +20,19 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   design; no English key changed.
 
 ### Added
+- **`perf_baseline_test`: normalized render-time regression gate
+  (2026-08-23).** Seven fixed offline render scenarios (idle pool, one
+  voice, six parts at sixteen voices, oversampled filter path, Diffuser
+  and Echo FX chains through the rate bridge) measure per-render wall
+  time with one warmup and nine repeats. The scenario score divides the
+  minimum render time by the minimum of a normalizer loop, so the score
+  does not track machine speed. The minimum of nine repeats keeps the
+  run-to-run drift near one percent. The default suite run executes one
+  smoke pass and never gates on timing, so the suite stays green on any
+  host. A strict gate runs only when a machine-local baseline file exists
+  (`tests/perf_baseline.local.json`, gitignored; fail above 1.20x,
+  warn above 1.10x; Debug and Release keep separate baselines).
+  `PARVATI_PERF_HARVEST=1` prints and writes a paste-ready baseline.
 - **Docs, UI text and code comments rewritten in Simplified Technical
   English (2026-08-23).** All tooltips, UI strings, code comments and the
   documentation were rewritten in ASD-STE100 Simplified Technical English.
