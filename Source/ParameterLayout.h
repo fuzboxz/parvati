@@ -108,3 +108,40 @@ constexpr std::optional<ambika::dsp::ArpSeqField> arpSeqFieldForID (std::string_
             return e.field;
     return std::nullopt;
 }
+
+// ---------------------------------------------------------------------------
+// FX parameter ID decoder. The ONE grammar for every FX paramID
+// (fx{1..3}_type/enabled/drywet/param{1..5}, fx_topo, fx_order, fx_mix,
+// fx_eq_*, fxmod{1..16}_source/dest/amount). The dispatch that used to be
+// hand-parsed in four places (applyFxParameter, loadPartIntoApvts, the
+// preset partRaw reader, the multi-load FX stager) now shares this decoder.
+// The decoder only splits the ID; every caller keeps its own range clamps.
+// ---------------------------------------------------------------------------
+struct FxParamId
+{
+    enum Kind
+    {
+        None = 0,          // the ID names no FX parameter
+        SlotType,          // fx{s}_type      -> slot
+        SlotEnabled,       // fx{s}_enabled   -> slot
+        SlotDryWet,        // fx{s}_drywet    -> slot
+        SlotParam,         // fx{s}_param{k}  -> slot + paramIdx
+        Topology,          // fx_topo
+        Order,             // fx_order
+        Mix,               // fx_mix
+        EqLow,             // fx_eq_low
+        EqMid,             // fx_eq_mid
+        EqHigh,            // fx_eq_high
+        ModSource,         // fxmod{m}_source -> slot (0-based matrix row)
+        ModDest,           // fxmod{m}_dest   -> slot
+        ModAmount          // fxmod{m}_amount -> slot
+    };
+
+    Kind kind = None;
+    int slot = -1;      // fx{s}: 0..2 ; fxmod{m}: 0..kNumFxMatrixSlots-1 ; else -1
+    int paramIdx = -1;  // SlotParam: 0..kNumFxSlotParams-1 ; else -1
+};
+
+// Decode one FX parameter ID (see FxParamId). Unknown or out-of-range IDs
+// return kind == None. Indices are 0-based.
+FxParamId parseFxParamId (const juce::String& id);

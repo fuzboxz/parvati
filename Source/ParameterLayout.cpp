@@ -691,19 +691,68 @@ juce::String unsignedPctOf (double v, double max)
 
 // "fx{1..3}_param{1..5}" -> true + slot/paramIdx (1-based). @p paramIdx is the
 // UI's generic param index (paramLabel/paramValueText idx 0..4 = paramIdx-1).
+// Thin wrapper over the ONE shared FX id decoder (parseFxParamId).
 bool parseFxSlotParam (const juce::String& id, int& slot, int& paramIdx)
 {
-    if (! (id.startsWith ("fx") && id.contains ("_param")))
+    const FxParamId fx = parseFxParamId (id);
+    if (fx.kind != FxParamId::SlotParam)
         return false;
-    const int s = id.substring (2).upToFirstOccurrenceOf ("_", false, false).getIntValue();
-    const int k = id.fromFirstOccurrenceOf ("_param", false, false).getIntValue();
-    if (s < 1 || s > 3 || k < 1 || k > 5)
-        return false;
-    slot = s;
-    paramIdx = k;
+    slot = fx.slot + 1;
+    paramIdx = fx.paramIdx + 1;
     return true;
 }
 }  // namespace
+
+//==========================================================================
+// The ONE FX paramID decoder (see ParameterLayout.h). Splits the id into
+// kind + indices. Every caller owns its range clamps.
+FxParamId parseFxParamId (const juce::String& id)
+{
+    FxParamId r;
+    // Per-slot ids: fx{1..3}_type/enabled/drywet/param{1..5}. The id[2]
+    // digit check keeps fx_topo / fx_order / fx_mix / fx_eq_* / fxmod* out.
+    if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+    {
+        const int slot = id[2] - '1';
+        const juce::String suffix = id.substring (4);
+        if      (suffix == "type")    { r.kind = FxParamId::SlotType;    r.slot = slot; return r; }
+        else if (suffix == "enabled") { r.kind = FxParamId::SlotEnabled; r.slot = slot; return r; }
+        else if (suffix == "drywet")  { r.kind = FxParamId::SlotDryWet;  r.slot = slot; return r; }
+        else if (suffix.startsWith ("param"))
+        {
+            const int k = suffix.substring (5).getIntValue();
+            if (k >= 1 && k <= kNumFxSlotParams)
+            {
+                r.kind = FxParamId::SlotParam;
+                r.slot = slot;
+                r.paramIdx = k - 1;
+            }
+            return r;
+        }
+        return r;
+    }
+    // Scalar FX ids. The slot branch above rejects them: id[2] is not a digit.
+    if      (id == "fx_topo")    { r.kind = FxParamId::Topology; return r; }
+    else if (id == "fx_order")   { r.kind = FxParamId::Order;    return r; }
+    else if (id == "fx_mix")     { r.kind = FxParamId::Mix;      return r; }
+    else if (id == "fx_eq_low")  { r.kind = FxParamId::EqLow;    return r; }
+    else if (id == "fx_eq_mid")  { r.kind = FxParamId::EqMid;    return r; }
+    else if (id == "fx_eq_high") { r.kind = FxParamId::EqHigh;   return r; }
+    // FX mod matrix ids: fxmod{1..16}_source/_dest/_amount.
+    else if (id.startsWith ("fxmod") && id.contains ("_"))
+    {
+        const int under = id.indexOf ("_");   // first '_' after "fxmod{m}"
+        const int m = id.substring (5, under).getIntValue();
+        if (m >= 1 && m <= kNumFxMatrixSlots)
+        {
+            const juce::String field = id.substring (under + 1);
+            if      (field == "source") { r.kind = FxParamId::ModSource; r.slot = m - 1; }
+            else if (field == "dest")   { r.kind = FxParamId::ModDest;   r.slot = m - 1; }
+            else if (field == "amount") { r.kind = FxParamId::ModAmount; r.slot = m - 1; }
+        }
+    }
+    return r;
+}
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout()
 {

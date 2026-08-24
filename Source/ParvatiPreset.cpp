@@ -448,41 +448,27 @@ float partRaw (SynthEngine& engine, int partIndex, const PatchParamDescriptor& d
         // so it is returned directly (no patch-byte decode). Regression guard:
         // without this branch the Patch/Part byte read below would index
         // patchBytes[-1] (byteOffset=-1) and crash on .parvati multi save.
-        const juce::String id (d.paramID);
+        // The ONE shared id decoder splits the id; this reader only maps.
         const auto& fx = part.fxState;
-        if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+        const FxParamId fxid = parseFxParamId (juce::String (d.paramID));
+        switch (fxid.kind)
         {
-            const int slot = id[2] - '1';
-            const juce::String sfx = id.substring (4);
-            if (sfx == "type")              return (float) fx.slotType    [(size_t) slot].load();
-            if (sfx == "enabled")           return (float) fx.slotEnabled [(size_t) slot].load();
-            if (sfx == "drywet")            return (float) fx.slotDryWet  [(size_t) slot].load();
-            if (sfx.startsWith ("param"))
-            {
-                const int k = sfx.substring (5).getIntValue();
-                if (k >= 1 && k <= kNumFxSlotParams)
-                    return (float) fx.slotParam[(size_t) slot][(size_t) (k - 1)].load();
-            }
-            return 0.0f;
-        }
-        if (id == "fx_topo")               return (float) fx.topology.load();
-        if (id == "fx_order")              return (float) fx.orderIdx.load();
-        // Master section (v3).
-        if (id == "fx_mix")        return (float) fx.mix.load();
-        if (id == "fx_eq_low")     return (float) fx.eqLow.load();
-        if (id == "fx_eq_mid")     return (float) fx.eqMid.load();
-        if (id == "fx_eq_high")    return (float) fx.eqHigh.load();
-        if (id.startsWith ("fxmod") && id.contains ("_"))
-        {
-            const int under = id.indexOf ("_");
-            const int m = id.substring (5, under).getIntValue();
-            if (m >= 1 && m <= kNumFxMatrixSlots)
-            {
-                const juce::String sfx = id.substring (under + 1);
-                if (sfx == "source")       return (float) fx.modSource [(size_t) (m - 1)].load();
-                if (sfx == "dest")         return (float) fx.modDest   [(size_t) (m - 1)].load();
-                if (sfx == "amount")       return (float) fx.modAmount [(size_t) (m - 1)].load();
-            }
+            case FxParamId::SlotType:    return (float) fx.slotType    [(size_t) fxid.slot].load();
+            case FxParamId::SlotEnabled: return (float) fx.slotEnabled [(size_t) fxid.slot].load();
+            case FxParamId::SlotDryWet:  return (float) fx.slotDryWet  [(size_t) fxid.slot].load();
+            case FxParamId::SlotParam:   return (float) fx.slotParam[(size_t) fxid.slot][(size_t) fxid.paramIdx].load();
+            case FxParamId::Topology:    return (float) fx.topology.load();
+            case FxParamId::Order:       return (float) fx.orderIdx.load();
+            // Master section (v3).
+            case FxParamId::Mix:         return (float) fx.mix.load();
+            case FxParamId::EqLow:       return (float) fx.eqLow.load();
+            case FxParamId::EqMid:       return (float) fx.eqMid.load();
+            case FxParamId::EqHigh:      return (float) fx.eqHigh.load();
+            case FxParamId::ModSource:   return (float) fx.modSource [(size_t) fxid.slot].load();
+            case FxParamId::ModDest:     return (float) fx.modDest   [(size_t) fxid.slot].load();
+            case FxParamId::ModAmount:   return (float) fx.modAmount [(size_t) fxid.slot].load();
+            case FxParamId::None:
+            default: break;
         }
         return 0.0f;
     }
@@ -805,15 +791,14 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                     // -- no patch-byte encode (byteOffset=-1 would index
                     // patchBytes[-1]). Mirror the partRaw reader. fxDirty_ is staged
                     // ONCE after the per-part loop so the audio thread services a
-                    // complete fxState snapshot.
-                    const juce::String id (d->paramID);
+                    // complete fxState snapshot. The ONE shared id decoder splits
+                    // the id; the range clamps stay HERE.
                     const int v = juce::jlimit (0, 255, (int) raw);
                     auto& fx = part.fxState;
-                    if (id.length() >= 4 && id[0] == 'f' && id[1] == 'x' && id[2] >= '1' && id[2] <= '3' && id[3] == '_')
+                    const FxParamId fxid = parseFxParamId (juce::String (d->paramID));
+                    switch (fxid.kind)
                     {
-                        const int slot = id[2] - '1';
-                        const juce::String sfx = id.substring (4);
-                        if (sfx == "type")
+                        case FxParamId::SlotType:
                         {
                             // Slot TYPES need message-thread chain staging (the
                             // AT's fxDirty_ service pushes params/enabled/etc.
@@ -824,37 +809,28 @@ bool applyParvatiMulti (ParvatiAudioProcessor& proc, const juce::String& yaml)
                             // absent (fresh engine) or played the previous
                             // effect. stagePartFxSlotType = atomic + staging +
                             // the same fxDirty_ publish the loop tail makes.
-                            engine.stagePartFxSlotType (i, slot, v);
+                            engine.stagePartFxSlotType (i, fxid.slot, v);
+                            stagedFx = true;
+                            break;
                         }
-                        else if (sfx == "enabled")      fx.slotEnabled [(size_t) slot].store ((uint8_t) (v != 0 ? 1 : 0), std::memory_order_relaxed);
-                        else if (sfx == "drywet")       fx.slotDryWet  [(size_t) slot].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed);
-                        else if (sfx.startsWith ("param"))
-                        {
-                            const int k = sfx.substring (5).getIntValue();
-                            if (k >= 1 && k <= kNumFxSlotParams)
-                                fx.slotParam[(size_t) slot][(size_t) (k - 1)].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed);
-                        }
-                        stagedFx = true;
-                    }
-                    else if (id == "fx_topo")  { fx.topology.store ((uint8_t) juce::jlimit (0, 2, v), std::memory_order_relaxed); stagedFx = true; }
-                    else if (id == "fx_order") { fx.orderIdx.store  ((uint8_t) juce::jlimit (0, 5, v), std::memory_order_relaxed); stagedFx = true; }
-                    // Master section (v3): global wet/dry + 3-band EQ.
-                    else if (id == "fx_mix")        { fx.mix.store       ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
-                    else if (id == "fx_eq_low")     { fx.eqLow.store     ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
-                    else if (id == "fx_eq_mid")     { fx.eqMid.store     ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
-                    else if (id == "fx_eq_high")    { fx.eqHigh.store    ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; }
-                    else if (id.startsWith ("fxmod") && id.contains ("_"))
-                    {
-                        const int under = id.indexOf ("_");
-                        const int m = id.substring (5, under).getIntValue();
-                        if (m >= 1 && m <= kNumFxMatrixSlots)
-                        {
-                            const juce::String sfx = id.substring (under + 1);
-                            if (sfx == "source")      fx.modSource [(size_t) (m - 1)].store ((uint8_t) v, std::memory_order_relaxed);
-                            else if (sfx == "dest")   fx.modDest   [(size_t) (m - 1)].store ((uint8_t) v, std::memory_order_relaxed);
-                            else if (sfx == "amount") fx.modAmount [(size_t) (m - 1)].store ((int8_t) juce::jlimit (-63, 63, (int) raw), std::memory_order_relaxed);
-                        }
-                        stagedFx = true;
+                        case FxParamId::SlotEnabled: fx.slotEnabled [(size_t) fxid.slot].store ((uint8_t) (v != 0 ? 1 : 0), std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::SlotDryWet:  fx.slotDryWet  [(size_t) fxid.slot].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::SlotParam:   fx.slotParam[(size_t) fxid.slot][(size_t) fxid.paramIdx].store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; break;
+
+                        case FxParamId::Topology: fx.topology.store ((uint8_t) juce::jlimit (0, 2, v), std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::Order:    fx.orderIdx.store  ((uint8_t) juce::jlimit (0, 5, v), std::memory_order_relaxed); stagedFx = true; break;
+                        // Master section (v3): global wet/dry + 3-band EQ.
+                        case FxParamId::Mix:      fx.mix.store   ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::EqLow:    fx.eqLow.store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::EqMid:    fx.eqMid.store ((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::EqHigh:   fx.eqHigh.store((uint8_t) juce::jlimit (0, 127, v), std::memory_order_relaxed); stagedFx = true; break;
+
+                        case FxParamId::ModSource: fx.modSource [(size_t) fxid.slot].store ((uint8_t) v, std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::ModDest:   fx.modDest   [(size_t) fxid.slot].store ((uint8_t) v, std::memory_order_relaxed); stagedFx = true; break;
+                        case FxParamId::ModAmount: fx.modAmount [(size_t) fxid.slot].store ((int8_t) juce::jlimit (-63, 63, (int) raw), std::memory_order_relaxed); stagedFx = true; break;
+
+                        case FxParamId::None:
+                        default: break;
                     }
                 }
                 else
