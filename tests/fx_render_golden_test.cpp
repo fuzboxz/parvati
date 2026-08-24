@@ -23,11 +23,19 @@
 // digest changes when one sample shifts by one ulp. An energy guard stops
 // a silent render from ever being pinned.
 //
-// The goldens are pinned to the Debug build of build_unified on arm64
-// macOS (CLAUDE.md build policy). A Release or sanitizer build may change
-// code generation and therefore float results; Release pinning stays open.
-// To update a digest after an APPROVED change: run this test, copy the
-// printed digest and anchors from the failure line, and paste them here.
+// Two digest tables, selected at compile time: Debug codegen (asserts
+// on, the build_unified binary) and Release codegen (NDEBUG, the
+// tests-only Release tree of tools/run_release_goldens.sh). Release
+// codegen may contract float expressions, so the two configs pin
+// different digests. NDEBUG splits the families: the sanitizer trees
+// stay Debug and keep the Debug table.
+// To harvest a table after an APPROVED change, run this test with
+// PARVATI_GOLDEN_HARVEST=1: it prints paste-ready rows and skips only
+// the golden compare (canary, determinism and energy still gate).
+// tools/run_release_goldens.sh does this for Release and then verifies
+// the pasted table. In the default mode a mismatch prints the computed
+// digest and anchors, so an approved change updates one row in one
+// paste.
 //
 // Unified runner. Run with:
 //   ./build_unified/parvati_unified_tests fx_render_golden_test
@@ -35,6 +43,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -64,14 +73,31 @@ struct Scenario
 
 const std::vector<Scenario>& scenarios()
 {
-    // Goldens generated from the build_unified Debug binary (arm64 macOS,
-    // 2026-08-23). Update them only after an approved DSP change.
+    // Update a row only after an approved DSP change. Then re-harvest the
+    // OTHER table too: both configs follow the source but pin different
+    // codegen.
+#ifdef NDEBUG
+    // Release goldens: tests-only Release tree of build_release, arm64
+    // macOS, 2026-08-23. tools/run_release_goldens.sh verifies this table.
+    // First harvest: identical to the Debug digests (this toolchain keeps
+    // the render paths bit-stable across -O3/NDEBUG). The split table stays:
+    // a future toolchain may diverge the configs, and then only this table
+    // needs a re-harvest.
     static const std::vector<Scenario> s = {
         { "clouds-bridge-48000",   48000.0, 1,  "f6d961053c9444543df30dae735d847f" },
         { "clouds-identity-32000", 32000.0, 1,  "b5c44857f68bc34d7f29b4017cdcdb62" },
         { "fv1-bridge-44100",      44100.0, 17, "f28284dba5acf9e9f4474219a8a2b3b9" },
         { "fv1-native-32768",      32768.0, 22, "c4b1b3801d2e725c2cc5c5261e0d9d35" },
     };
+#else
+    // Debug goldens: build_unified Debug binary, arm64 macOS, 2026-08-23.
+    static const std::vector<Scenario> s = {
+        { "clouds-bridge-48000",   48000.0, 1,  "f6d961053c9444543df30dae735d847f" },
+        { "clouds-identity-32000", 32000.0, 1,  "b5c44857f68bc34d7f29b4017cdcdb62" },
+        { "fv1-bridge-44100",      44100.0, 17, "f28284dba5acf9e9f4474219a8a2b3b9" },
+        { "fv1-native-32768",      32768.0, 22, "c4b1b3801d2e725c2cc5c5261e0d9d35" },
+    };
+#endif
     return s;
 }
 
@@ -210,6 +236,12 @@ TEST(fx_render_golden_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
+    // Harvest mode (PARVATI_GOLDEN_HARVEST=1): print paste-ready rows and
+    // skip only the golden compare. Canary, determinism and energy checks
+    // still gate the run, so a broken render cannot be harvested.
+    const char* const harvestEnv = std::getenv ("PARVATI_GOLDEN_HARVEST");
+    const bool harvest = harvestEnv != nullptr && *harvestEnv != '\0';
+
     // The canary proves the digest reacts to a one-ulp change. A digest that
     // ignores a sample change pins nothing.
     {
@@ -260,6 +292,15 @@ TEST(fx_render_golden_test)
         // Golden compare. On mismatch the line prints the computed digest
         // and anchors, so an approved change updates the table in one paste.
         const juce::String digest = digestOf (run1);
+        if (harvest)
+        {
+            char row[160];
+            std::snprintf (row, sizeof (row),
+                           "{ \"%s\", %.1f, %d, \"%s\" },",
+                           sc.label, sc.sampleRate, sc.fxType, digest.toRawUTF8());
+            std::printf ("HARVEST %s\n", row);
+            continue;
+        }
         {
             const size_t n = run1.l.size();
             char m[512];

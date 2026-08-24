@@ -8,7 +8,7 @@ verified, what this machine can test, and every item left open.
 
 | Platform | Status | Notes |
 |---|---|---|
-| macOS | Green, tested here. | Full suite passes 123/123 (`tools/run_tests_parallel.sh`). Sanitizer trees and release flow work. |
+| macOS | Green, tested here. | Full suite passes 124/124 (`tools/run_tests_parallel.sh`). Sanitizer trees and the release flow work. The FX render goldens pin Debug and Release codegen (`tools/run_release_goldens.sh`). |
 | iOS | Configures and builds per the documented Xcode invocation. Not exercised in this pass. | The audit touched no iOS block. `build_ios` regenerates from source on demand. The suite keeps its iOS guards (`parvati_tests.cpp` SDK-level check). |
 | Linux | Not compiled here. Build-file and test-source blockers fixed at guard level. | `-Wl,-dead_strip`, the narrowing flag spelling and the CoreMIDI tool guard now match Linux conventions. The test binary compiles from guarded sources: the runner falls back to in-process mode, `perf_smoke_test` compiles a skip stub, POSIX headers and calls sit behind guards. A Linux CI build must confirm the result. Headless runners need `xvfb-run` (see Known gaps). |
 | Windows | Not compiled here. Build-file and test-source blockers fixed at guard level. | The test binary takes no Apple-only link flag under MSVC, and the ctest scanners resolve `python.exe` via `find_package(Python3)`. The runner uses `_putenv_s` and in-process execution, `layout_overlap_test` skips demangling, `build_policy_test` skips the exec-bit check, and `parvati_tests.cpp` probes tools with `where`. Per-test fork isolation stays lost on Windows (see Known gaps). JUCE lists Windows prerequisites in `README.md`. |
@@ -17,6 +17,10 @@ verified, what this machine can test, and every item left open.
 
 - Linux and Windows never compiled in this pass. No cross toolchain exists
   here, so every fix is a spelling or guard change verified on macOS only.
+- `build_release` now serves the Release golden pin. The script configures
+  it as a tests-only Release tree, so a plugin-format configure of that
+  dir is replaced. Restore the release workflow with:
+  `cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release`.
 - Windows runs the unified suite in-process. `fork()`/`waitpid()` have no
   MSVC equivalent, so `runTestIsolated` calls the in-process path there. A
   `CreateProcess`-based runner would restore per-test isolation; that work
@@ -32,9 +36,6 @@ verified, what this machine can test, and every item left open.
   file header documents the knob.
 - MSVC gets no dead-code link flag. MSVC drops unreferenced COMDAT functions
   by default; `/OPT:REF` stays untested, so the build omits it.
-- Test-file header comments still name the purged per-test binaries. The
-  build files no longer reference those targets; the comment sweep stays
-  open for the tests scope.
 - `tools/release/sign_and_notarize.sh` and `tools/profile_ui.sh` stay
   macOS-only by design. Both state the scope in their headers.
 - AU or AUv3 in a `PARVATI_FORMATS` override on a non-Apple host relies on
