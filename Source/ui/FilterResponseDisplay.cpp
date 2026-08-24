@@ -329,13 +329,6 @@ void FilterResponseDisplay::paint (juce::Graphics& g)
         return fc;
     };
 
-    // Normalized log-frequency column (0..1) of an fc tick x position.
-    auto fcColumn = [] (float fc) -> float
-    {
-        return juce::jlimit (0.0f, 1.0f,
-                (fc > kMinHz) ? std::log (fc / kMinHz) / std::log (kMaxHz / kMinHz) : 0.0f);
-    };
-
     // ---- ONE curve at a time (2026-08-21 user request) ----
     // While the filter is being modulated the STATIC base curve is hidden —
     // the live overlay renders with the base recipe (gradient fill + stroke)

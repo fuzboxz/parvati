@@ -2294,9 +2294,12 @@ void ParvatiEditor::paint (juce::Graphics& g)
             g.setColour (theme.textPrimary);
             // Draw each character at its tracked x, baseline-centred in the
             // band (optical middle ~= band centre + ~0.3 of the font height).
-            float x = block.getX() + (subW - markW) * 0.5f;   // centred OVER THE SUBTITLE SPAN
-            if (x < block.getX()) x = block.getX();
-            const float baseline = band.getCentre().y + kLogoTextHeight * 0.30f;
+            // Rectangle<int> accessors cast to float explicitly: the block
+            // coordinates drive float paint maths below.
+            const float blockX = static_cast<float> (block.getX());
+            float x = blockX + (subW - markW) * 0.5f;   // centred OVER THE SUBTITLE SPAN
+            if (x < blockX) x = blockX;
+            const float baseline = static_cast<float> (band.getCentre().y) + kLogoTextHeight * 0.30f;
             for (int i = 0; i < mark.length(); ++i)
             {
                 const auto ch = mark.substring (i, i + 1);

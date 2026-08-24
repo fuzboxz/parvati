@@ -2165,43 +2165,43 @@ chain.servicePendingTypeSwaps();
 //     chain. Slot TYPES were consumed above.
 if (! part.fxState.fxDirty_.exchange (false, std::memory_order_acq_rel))
     return false;
-    chain.setTopology (static_cast<FxTopology> (part.fxState.topology.load (std::memory_order_relaxed)));
-    chain.setOrder (fxOrderPermutation (part.fxState.orderIdx.load (std::memory_order_relaxed)));
+chain.setTopology (static_cast<FxTopology> (part.fxState.topology.load (std::memory_order_relaxed)));
+chain.setOrder (fxOrderPermutation (part.fxState.orderIdx.load (std::memory_order_relaxed)));
 
-    for (int s = 0; s < kNumFxSlots; ++s)
+for (int s = 0; s < kNumFxSlots; ++s)
+{
+    const uint8_t newType = part.fxState.slotType[(size_t) s].load (std::memory_order_relaxed);
+    chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
+    cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
+    for (int k = 0; k < kNumFxSlotParams; ++k)
+        cache.baseParam[(size_t) s][(size_t) k] = (float) part.fxState.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
+    // On a type change the param MEANINGS change entirely — snap the
+    // smoothed base to the new values so it does not ramp through the
+    // old effect's stale param values (which would be audibly wrong).
+    if (newType != prevSlotType_[(size_t) p][(size_t) s])
     {
-        const uint8_t newType = part.fxState.slotType[(size_t) s].load (std::memory_order_relaxed);
-        chain.setSlotEnabled (s, part.fxState.slotEnabled[(size_t) s].load (std::memory_order_relaxed) != 0);
-        cache.baseDryWet[(size_t) s] = (float) part.fxState.slotDryWet[(size_t) s].load (std::memory_order_relaxed) / 127.0f;
         for (int k = 0; k < kNumFxSlotParams; ++k)
-            cache.baseParam[(size_t) s][(size_t) k] = (float) part.fxState.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
-        // On a type change the param MEANINGS change entirely — snap the
-        // smoothed base to the new values so it does not ramp through the
-        // old effect's stale param values (which would be audibly wrong).
-        if (newType != prevSlotType_[(size_t) p][(size_t) s])
-        {
-            for (int k = 0; k < kNumFxSlotParams; ++k)
-                smoothedBase_[(size_t) p][(size_t) s][(size_t) k] = cache.baseParam[(size_t) s][(size_t) k];
-            prevSlotType_[(size_t) p][(size_t) s] = newType;
-        }
+            smoothedBase_[(size_t) p][(size_t) s][(size_t) k] = cache.baseParam[(size_t) s][(size_t) k];
+        prevSlotType_[(size_t) p][(size_t) s] = newType;
     }
-    for (int m = 0; m < kNumFxMatrixSlots; ++m)
-    {
-        cache.modSrc[(size_t) m] = part.fxState.modSource[(size_t) m].load (std::memory_order_relaxed);
-        cache.modDst[(size_t) m] = part.fxState.modDest  [(size_t) m].load (std::memory_order_relaxed);
-        cache.modAmt[(size_t) m] = part.fxState.modAmount[(size_t) m].load (std::memory_order_relaxed);
-    }
-    // Master-section frame (v3): push global mix + the 3-band master EQ
-    // to this part's chain. (Tail retention is now unconditional inside
-    // FxChain.)
-    const uint8_t fxMixV       = part.fxState.mix.load (std::memory_order_relaxed);
-    const uint8_t fxEqLowV     = part.fxState.eqLow.load (std::memory_order_relaxed);
-    const uint8_t fxEqMidV     = part.fxState.eqMid.load (std::memory_order_relaxed);
-    const uint8_t fxEqHighV    = part.fxState.eqHigh.load (std::memory_order_relaxed);
-    chain.setMasterMix    ((float) fxMixV / 127.0f);
-    chain.setMasterEqLow  (fxEqLowV);
-    chain.setMasterEqMid  (fxEqMidV);
-    chain.setMasterEqHigh (fxEqHighV);
+}
+for (int m = 0; m < kNumFxMatrixSlots; ++m)
+{
+    cache.modSrc[(size_t) m] = part.fxState.modSource[(size_t) m].load (std::memory_order_relaxed);
+    cache.modDst[(size_t) m] = part.fxState.modDest  [(size_t) m].load (std::memory_order_relaxed);
+    cache.modAmt[(size_t) m] = part.fxState.modAmount[(size_t) m].load (std::memory_order_relaxed);
+}
+// Master-section frame (v3): push global mix + the 3-band master EQ
+// to this part's chain. (Tail retention is now unconditional inside
+// FxChain.)
+const uint8_t fxMixV       = part.fxState.mix.load (std::memory_order_relaxed);
+const uint8_t fxEqLowV     = part.fxState.eqLow.load (std::memory_order_relaxed);
+const uint8_t fxEqMidV     = part.fxState.eqMid.load (std::memory_order_relaxed);
+const uint8_t fxEqHighV    = part.fxState.eqHigh.load (std::memory_order_relaxed);
+chain.setMasterMix    ((float) fxMixV / 127.0f);
+chain.setMasterEqLow  (fxEqLowV);
+chain.setMasterEqMid  (fxEqMidV);
+chain.setMasterEqHigh (fxEqHighV);
 return true;
 }
 
@@ -2840,7 +2840,7 @@ void SynthEngine::recomputeTailCache() noexcept
             const auto t = static_cast<FxType> (fx.slotType[(size_t) s].load (std::memory_order_relaxed));
             std::array<float, kNumFxSlotParams> param {};
             for (int k = 0; k < kNumFxSlotParams; ++k)
-                param[k] = (float) fx.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
+                param[(size_t) k] = (float) fx.slotParam[(size_t) s][(size_t) k].load (std::memory_order_relaxed) / 127.0f;
             const double t60 = tailSecondsForFx (t, param, bpm);
             if (t60 > worst) worst = t60;
         }

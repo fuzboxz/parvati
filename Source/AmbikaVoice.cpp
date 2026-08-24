@@ -460,9 +460,9 @@ void AmbikaVoice::fillInternalBlock()
             if (++crushSampleCounter_ >= static_cast<int> (crush))
             {
                 crushSampleCounter_ = 0;
-                crushHeldSample_ = (*out)[i];
+                crushHeldSample_ = (*out)[static_cast<size_t> (i)];
             }
-            crushed[i] = crushHeldSample_;
+            crushed[static_cast<size_t> (i)] = crushHeldSample_;
         }
         out = &crushed;   // shadow: all downstream paths read the held samples
     }
@@ -499,7 +499,7 @@ void AmbikaVoice::fillInternalBlock()
         for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
         {
             // 8-bit (centred 128) -> float. Keep the (128 vs 127) asymmetry exact.
-            float s = static_cast<float> (static_cast<int> ((*out)[i]) - 128) / 128.0f;
+            float s = static_cast<float> (static_cast<int> ((*out)[static_cast<size_t> (i)]) - 128) / 128.0f;
             s = filter_.processSample (s);
             s *= g0 + gStep * static_cast<float> (i);
             fifo_.push_back (s);
@@ -538,7 +538,7 @@ void AmbikaVoice::fillInternalBlock()
     for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
     {
         // 8-bit (centred 128) -> float. Keep the (128 vs 127) asymmetry exact.
-        float s = static_cast<float> (static_cast<int> ((*out)[i]) - 128) / 128.0f;
+        float s = static_cast<float> (static_cast<int> ((*out)[static_cast<size_t> (i)]) - 128) / 128.0f;
         filter_.setCutoffHz (smoothedCutoffHz_.getNextValue());
         filter_.setResonance (smoothedResonance_.getNextValue());
         filter_.commit();
@@ -584,7 +584,7 @@ void AmbikaVoice::fillOversampledBlock (const std::array<uint8_t, ambika::dsp::k
     // downsample to 40 -> VCA (internal rate, linear so no aliasing) -> FIFO.
     float raw[ambika::dsp::kAudioBlockSize];
     for (int i = 0; i < ambika::dsp::kAudioBlockSize; ++i)
-        raw[i] = static_cast<float> (static_cast<int> (out[i]) - 128) / 128.0f;
+        raw[i] = static_cast<float> (static_cast<int> (out[static_cast<size_t> (i)]) - 128) / 128.0f;
 
     // Upsample 40 -> 40*N into the Oversampling internal buffer.
     const float* inChannels[1] = { raw };

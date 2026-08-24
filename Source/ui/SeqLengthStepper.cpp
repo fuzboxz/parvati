@@ -194,7 +194,7 @@ void SeqLengthStepper::paint (juce::Graphics& g)
     // identical to every real dropdown on the page.
     const auto chevronCol = (t != nullptr && t->isDark) ? t->textPrimary
                                                         : juce::Colour (0xfff6f6fa);
-    const float cy = field.getCentreY() - 0.5f;
+    const float cy = static_cast<float> (field.getCentreY()) - 0.5f;
     const float cx = static_cast<float> (field.getRight()) - 10.0f;
     constexpr float s = 5.0f;
     juce::Path chevron;

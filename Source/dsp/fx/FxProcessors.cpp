@@ -452,7 +452,7 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     const int os = numSamples * 6;
     for (int i = 0; i < os; ++i)
     {
-        const float dl = osL_[i] * drive;
+        const float dl = osL_[static_cast<size_t> (i)] * drive;
         const float sl = (dl + x2 + dl * x2 * 0.25f) * gain;
         // The fold LUT covers |sl| <= 2048/kScale ~= 2.295; the drive pre-gain
         // (up to 4x) plus the unclamped polyphonic chain input can exceed that
@@ -462,11 +462,11 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
         // SIGSEGV). Clamp to the valid domain: the fold saturates there by
         // construction (bipolar fold tables converge), so the clamp is
         // inaudible at the extremes.
-        osL_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
+        osL_[static_cast<size_t> (i)] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
                                        juce::jlimit (-2.29f, 2.29f, sl), kScale);
-        const float dr = osR_[i] * drive;
+        const float dr = osR_[static_cast<size_t> (i)] * drive;
         const float sr = (dr + x2 + dr * x2 * 0.25f) * gain;
-        osR_[i] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
+        osR_[static_cast<size_t> (i)] = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
                                        juce::jlimit (-2.29f, 2.29f, sr), kScale);
     }
     srcDown_[0].Process (osL_.data(), L, static_cast<size_t> (os));   // n*6 % 6 == 0
@@ -490,8 +490,8 @@ void FxWavefolder::process (float* L, float* R, int numSamples)
     // EXACTLY, statelessly (no filter transient — the RAW-param contract the
     // HARDEN-2b check pins — and no audio-phase shift).
     {
-        const float x2   = (biasParam_ - 0.5f) * 0.4f;
-        const float gain = 0.02f + foldParam_;
+        // x2/gain reuse the wet-path locals above: the SAME expressions, so
+        // the reference is the offset the wet path carries.
         constexpr float kScale2 = 2048.0f / ((1.0f + 1.0f + 0.25f) * 1.02f);
         const float dcRef = stmlib::Interpolate (warps::lut_bipolar_fold + 2048,
                                                  juce::jlimit (-2.29f, 2.29f, x2 * gain), kScale2);
@@ -579,8 +579,8 @@ void FxFrequencyShifter::process (float* L, float* R, int numSamples)
         qtL_.Process (modL, &iL, &qL);   // single-sample Hilbert I/Q split
         qtR_.Process (modR, &iR, &qR);
 
-        const float ci = carrierI_[i];
-        const float cq = carrierQ_[i];
+        const float ci = carrierI_[static_cast<size_t> (i)];
+        const float cq = carrierQ_[static_cast<size_t> (i)];
         const float upL   = ci * iL - cq * qL;   // upper sideband (+shift), L
         const float upR   = ci * iR - cq * qR;   // upper sideband, R
         const float downR = ci * iR + cq * qR;   // lower sideband (-shift), R
@@ -679,7 +679,7 @@ void FxRingModulator::process (float* L, float* R, int numSamples)
     const int os = numSamples * 6;
     for (int i = 0; i < os; ++i)
     {
-        const float c = carrierOs_[i] * 2.0f;
+        const float c = carrierOs_[static_cast<size_t> (i)] * 2.0f;
         // Input-domain clamp (Wavefolder precedent, :477-482): warpsDiode
         // grows QUADRATICALLY past its dead zone and SoftLimit is NOT
         // bounded (x/9 for large x), so an unclamped high-level chain input makes
@@ -689,10 +689,10 @@ void FxRingModulator::process (float* L, float* R, int numSamples)
         // contract in the oversampled domain. Everything at or below nominal
         // full scale is bit-identical; the clamped path peaks ~2.95 at max
         // amount (the same corner in-range audio already reaches).
-        const float xl = juce::jlimit (-1.0f, 1.0f, osL_[i]);
-        const float xr = juce::jlimit (-1.0f, 1.0f, osR_[i]);
-        osL_[i] = stmlib::SoftLimit (gain * (warpsDiode (xl + c) + warpsDiode (xl - c)));
-        osR_[i] = stmlib::SoftLimit (gain * (warpsDiode (xr + c) + warpsDiode (xr - c)));
+        const float xl = juce::jlimit (-1.0f, 1.0f, osL_[static_cast<size_t> (i)]);
+        const float xr = juce::jlimit (-1.0f, 1.0f, osR_[static_cast<size_t> (i)]);
+        osL_[static_cast<size_t> (i)] = stmlib::SoftLimit (gain * (warpsDiode (xl + c) + warpsDiode (xl - c)));
+        osR_[static_cast<size_t> (i)] = stmlib::SoftLimit (gain * (warpsDiode (xr + c) + warpsDiode (xr - c)));
     }
     srcDown_[0].Process (osL_.data(), L, static_cast<size_t> (os));   // n*6 % 6 == 0
     srcDown_[1].Process (osR_.data(), R, static_cast<size_t> (os));
@@ -765,7 +765,7 @@ void FxResonator::process (float* L, float* R, int numSamples)
     const auto n = static_cast<size_t> (numSamples);
     // Sum L+R to mono at -6 dB to avoid doubling, then feed one resonator.
     for (int i = 0; i < numSamples; ++i)
-        inMono_[i] = 0.5f * (L[i] + R[i]);
+        inMono_[static_cast<size_t> (i)] = 0.5f * (L[i] + R[i]);
 
     // Rings-native stereo: out (odd modes) -> L, aux (even modes) -> R.
     // Position rebalances odd vs even, acting as pickup position + stereo width.
@@ -777,8 +777,8 @@ void FxResonator::process (float* L, float* R, int numSamples)
     limiter_.Process (wetL_.data(), wetR_.data(), n, kResonatorDrive);
     for (int i = 0; i < numSamples; ++i)
     {
-        L[i] = wetL_[i];
-        R[i] = wetR_[i];
+        L[i] = wetL_[static_cast<size_t> (i)];
+        R[i] = wetR_[static_cast<size_t> (i)];
     }
 }
 

@@ -619,7 +619,6 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
     // band + 52px dial), shrunk only if the grid region is shorter than 2*kCellH.
     // The block centres VERTICALLY in the region.
     constexpr int cols        = kGridCols;   // 3
-    constexpr int rows        = 2;
     constexpr int kDryWetCell = 5;           // bottom-right of the 3x2 grid
 
     // FIXED cell geometry: the cell height is the CONSTANT kCellH — it is NOT
@@ -634,7 +633,6 @@ void FxSlotCard::layoutParamGrid (const juce::Rectangle<int>& gridArea)
     // symmetrically — the dials never scale.
     const int cellH  = kCellH;
     const int cellW  = gridArea.getWidth() / cols;
-    const int blockH = rows * cellH;
     // TOP-PINNED grid (2026-08-23 user follow-up — "work just like the synth
     // page's controls"): the grid flows from the TOP of the card body
     // (header -> type row -> grid), exactly how a synth ParamPage group lays

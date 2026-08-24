@@ -242,7 +242,7 @@ std::array<juce::Rectangle<int>, PartTableColumns::kCount> partColumnRects (
     for (int i = 0; i < PartTableColumns::kCount; ++i)
         if (visibleMask[i])
         {
-            r[i].setBounds (x, b.getY(), widths[i], b.getHeight());
+            r[(size_t) i].setBounds (x, b.getY(), widths[i], b.getHeight());
             x += widths[i] + kPartColGap;
         }
     return r;
@@ -1143,7 +1143,6 @@ public:
         // flex minimums still fill it), so nothing shrinks. Rows/header also
         // centre internally from their own bounds (idempotent) so a direct
         // bounds set cannot de-centre them. ----
-        const bool* mask = tabStrip_.getCurrentTabIndex() == 1 ? kMidiTabMask : kVoiceTabMask;
         const int bandW  = b.getWidth();
         // TAB-INDEPENDENT band (2026-08-23): the clamp is the UNION of the
         // two tabs' content widths (== the Voice tab's — see
@@ -1232,7 +1231,7 @@ public:
             // test hook use.
             for (int i = 0; i < PartTableColumns::kCount; ++i)
                 if (mask[i])
-                    g.drawText (captionForColumn (i), c[i],
+                    g.drawText (captionForColumn (i), c[(size_t) i],
                                 juce::Justification::centredLeft, true);
         }
 
@@ -1247,7 +1246,7 @@ public:
                 if (mask[i])
                 {
                     if (i == col)
-                        return labels_[static_cast<size_t> (vi)];
+                        return labels_[vi];
                     ++vi;
                 }
             return {};

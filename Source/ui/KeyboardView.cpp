@@ -214,7 +214,7 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         // Softly rounded key-front (bottom corners only, the small card-radius
         // idiom): adjacent naturals read as individually seated keys while the
         // top edge stays contiguous under the sharps. Cosmetic only.
-        const float frontCorner = juce::jlimit (1.0f, 2.0f, ir.getWidth() * 0.08f);
+        const float frontCorner = juce::jlimit (1.0f, 2.0f, static_cast<float> (ir.getWidth()) * 0.08f);
         juce::Path key;
         key.addRoundedRectangle ((float) ir.getX(), (float) ir.getY(),
                                  (float) ir.getWidth(), (float) ir.getHeight(),

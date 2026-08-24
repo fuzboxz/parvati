@@ -258,6 +258,10 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
 {
     const double p = value0to127 / 127.0;
 
+    // Only the types with parameter text have cases. The default covers
+    // the parameterless types, so the switch stays exhaustive.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
     switch (t)
     {
         case FxType::Resonator:
@@ -456,6 +460,7 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
         default:
             break;
     }
+#pragma clang diagnostic pop
 
     // Default: dimensionless param -> 0..100%
     return juce::String (juce::roundToInt (p * 100.0)) + "%";

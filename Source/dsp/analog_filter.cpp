@@ -77,8 +77,13 @@ void AnalogFilter::setCutoffHz (float newCutoffHz)
     const float cap  = juce::jmin (kMaxHz, nyq);
     newCutoffHz      = juce::jlimit (kMinHz, cap, newCutoffHz);
 
+    // Exact equal is the change test: an unchanged value keeps the cached
+    // coefficients.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
     if (newCutoffHz == cutoffHz_)
         return;
+#pragma clang diagnostic pop
 
     cutoffHz_ = newCutoffHz;
     dirty_    = true;
@@ -87,8 +92,12 @@ void AnalogFilter::setCutoffHz (float newCutoffHz)
 void AnalogFilter::setResonance (float newResonance)
 {
     newResonance = juce::jlimit (0.0f, 1.0f, newResonance);
+    // Exact equal is the change test.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
     if (newResonance == resonance_)
         return;
+#pragma clang diagnostic pop
 
     resonance_ = newResonance;
     dirty_     = true;

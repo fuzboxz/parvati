@@ -314,9 +314,13 @@ void FxChain::setSlotDryWet (int slot, float dw) noexcept
     if (slot >= 0 && slot < kNumFxSlots)
     {
         const float v = juce::jlimit (0.0f, 1.0f, dw);
+        // Exact equal is the change test.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
         if (dryWet_[(size_t) slot] != v)
         {
             dryWet_[(size_t) slot] = v;
+#pragma clang diagnostic pop
             resetSilenceGate();
         }
     }
@@ -329,9 +333,13 @@ void FxChain::setSlotParam (int slot, int idx, float v) noexcept
     if (slot >= 0 && slot < kNumFxSlots && idx >= 0 && idx < kNumFxSlotParams)
     {
         const float c = juce::jlimit (0.0f, 1.0f, v);
+        // Exact equal is the change test.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
         if (params_[(size_t) slot][(size_t) idx] != c)
         {
             params_[(size_t) slot][(size_t) idx] = c;
+#pragma clang diagnostic pop
             resetSilenceGate();
         }
     }
@@ -371,8 +379,12 @@ void FxChain::setTempo (double bpm, bool isPlaying) noexcept
     // tempo change can alter tempo-synced slot behaviour (and a start flushes
     // frozen state), so the chain re-enters the full render path for the
     // debounce window rather than staying frozen through the change.
+    // Exact equal is the change test.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
     if (lastTempoBpm_ == bpm && lastTempoPlaying_ == isPlaying)
         return;
+#pragma clang diagnostic pop
     lastTempoBpm_ = bpm;
     lastTempoPlaying_ = isPlaying;
     resetSilenceGate();
@@ -386,7 +398,11 @@ void FxChain::setMasterMix (float g01) noexcept
     // VALUE-GUARDED silence-gate reset (2026-08-23): the fxDirty_ frame
     // re-pushes masterMix on every dirty frame; only a real move disarms.
     const float v = juce::jlimit (0.0f, 1.0f, g01);
+    // Exact equal is the change test.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
     if (masterMix_ == v) return;
+#pragma clang diagnostic pop
     masterMix_ = v;
     resetSilenceGate();
 }

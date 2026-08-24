@@ -331,7 +331,9 @@ struct CentralModBar::ModPill : public juce::Component,
         }
 
         ModPill& pill_;
-        juce::Font cachedFont_;
+        // FontOptions ctor: the default Font ctor is deprecated in JUCE 9.
+        // refreshFont() overwrites this before the first paint.
+        juce::Font cachedFont_ { juce::FontOptions {} };
         bool fontCached_ = false;
         int paintCountForTest_ = 0;   // TEST-ONLY: real paints of the label
     };
@@ -636,7 +638,7 @@ struct CentralModBar::ModPill : public juce::Component,
         // invisible), and everything clips to the strip rect.
         constexpr int kWindowAppends = parvati::ModTelemetrySnapshot::kHistoryLen;
         const float pxPerAppend = (x1 - x0) / (float) kWindowAppends;
-        const float shiftPx = owner_.telemetryAppendsSinceFetch() * pxPerAppend;
+        const float shiftPx = static_cast<float> (owner_.telemetryAppendsSinceFetch()) * pxPerAppend;
         // Point caches for the MIN-MAX band (see updateStripFromHistory):
         // pyMax/pyMin are the per-point amplitude envelope edges. The window
         // is CONSTANT (the full pre-zeroed ring), so points spread
@@ -792,7 +794,8 @@ struct CentralModBar::ModPill : public juce::Component,
             return;   // no DragAndDropContainer ancestor (e.g. a headless test)
 
         dragStarted_ = true;
-        ddc->startDragging ("parvatiModSrc:" + juce::String (enumValue_), this, buildDragImage(), true);
+        ddc->startDragging ("parvatiModSrc:" + juce::String (enumValue_), this,
+                            juce::ScaledImage (buildDragImage()), true);
     }
 
     void mouseUp (const juce::MouseEvent& e) override

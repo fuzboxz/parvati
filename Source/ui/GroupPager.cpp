@@ -60,7 +60,8 @@ public:
             return;                        // no DragAndDropContainer ancestor (e.g. a headless test)
 
         dragStarted_ = true;
-        ddc->startDragging ("parvatiModSrc:" + juce::String (src), this, buildDragImage(), true);
+        ddc->startDragging ("parvatiModSrc:" + juce::String (src), this,
+                            juce::ScaledImage (buildDragImage()), true);
     }
 
     // The base TabBarButton::clicked(mods) switches the tab. Suppress it when
