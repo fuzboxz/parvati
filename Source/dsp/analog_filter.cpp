@@ -127,6 +127,7 @@ void AnalogFilter::commit()
                 svfNotch_.reset (0.0f);
                 break;
             case FilterTopology::FOUR_POLE_OTA:
+            case FilterTopology::FOUR_POLE_IR3109:
                 otaState_[0] = otaState_[1] = otaState_[2] = otaState_[3] = 0.0f;
                 break;
             case FilterTopology::TWO_POLE_POLIVOKS:
@@ -169,20 +170,27 @@ void AnalogFilter::applyParams()
             svf4p_[i].setResonance (svfRes);
         }
     }
-    else if (topology_ == FilterTopology::FOUR_POLE_OTA)
+    else if (topology_ == FilterTopology::FOUR_POLE_OTA || topology_ == FilterTopology::FOUR_POLE_IR3109)
     {
-        // SMR4 OTA cascade coefficients. All math in double; stored as float.
-        // The resonance cap kMaxResonance does NOT apply here: the OTA model
-        // is bounded by its tanh stages, and resonance 1.0 lands exactly at
-        // the self-oscillation onset by design (kfb*G^4 == res).
-        const double nyq    = 0.49 * sampleRate_;
-        const double fc     = juce::jlimit (double (kMinHz), juce::jmin (double (kMaxHz), nyq), double (cutoffHz_));
-        const double pi     = juce::MathConstants<double>::pi;
-        const double gLin   = std::tan (pi * fc / sampleRate_);   // exact TPT pole conductance
-        const double G      = gLin / (1.0 + gLin);
-        // knee = 2Vt / drive: higher drive lowers the knee, so the OTA
-        // saturates earlier. Drive reuses the Filter Drive setting.
-        const double knee   = double (kTwoVt) / juce::jmax (0.05, double (drive_));
+        // OTA-cascade family coefficients (SMR4 / IR3109): SAME structure,
+        // per-card constants. All math in double; stored as float.
+        // The resonance cap kMaxResonance does NOT apply here: both models are
+        // bounded by their tanh stages. The SMR4 lands resonance 1.0 exactly
+        // at the self-oscillation onset by design (kfb*G^4 == res). The
+        // IR3109 caps kfb at 3.4, BELOW the 4.0 onset: the factory-capped
+        // Juno character. The card never self-oscillates at any setting.
+        const bool   ir3109  = (topology_ == FilterTopology::FOUR_POLE_IR3109);
+        const double nyq     = 0.49 * sampleRate_;
+        const double fc      = juce::jlimit (double (kMinHz), juce::jmin (double (kMaxHz), nyq), double (cutoffHz_));
+        const double pi      = juce::MathConstants<double>::pi;
+        const double gLin    = std::tan (pi * fc / sampleRate_);   // exact TPT pole conductance
+        const double G       = gLin / (1.0 + gLin);
+        // Stage knee = the card knee base / drive: higher drive lowers the
+        // knee, so the OTA saturates earlier. The SMR4 uses the LM13700 2Vt
+        // (0.052); the IR3109 runs 0.10 (the cleaner Juno headroom). Drive
+        // reuses the Filter Drive setting.
+        const double kneeBase = ir3109 ? kIr3109TwoVt : double (kTwoVt);
+        const double knee     = kneeBase / juce::jmax (0.05, double (drive_));
         // Loop-gain normalisation. The self-oscillation onset of four
         // identical bilinear one-pole stages with gain feedback is EXACTLY
         // kfb = 4.0, at every cutoff:
@@ -194,11 +202,15 @@ void AnalogFilter::applyParams()
         //     analog one: the char roots of (z-(1-2G))^4 + kfb*G^4*(z+1)^4 = 0
         //     touch |z| = 1 exactly at kfb = 4 (verified to machine precision
         //     against a polynomial-root solve).
-        // kfb = res * 4.0 therefore puts the onset exactly at res = 1.0 for
-        // every cutoff: the knob tracks the onset. (The task draft already
-        // carried res*4.0; the constant is exact, not an approximation.)
+        // kfb = res * kfbMax therefore puts the SMR4 onset exactly at res = 1.0
+        // for every cutoff: the knob tracks the onset. (The task draft already
+        // carried res*4.0; the constant is exact, not an approximation.) The
+        // IR3109 caps kfbMax at 3.4: 85 percent of the onset. The seeded ring
+        // at res = 1.0 decays with a few-ms time constant — the famous
+        // factory cap, this card never screams.
         const double resEff = juce::jlimit (0.0, 1.0, double (resonance_));
-        double kfb          = resEff * 4.0;
+        const double kfbMax = ir3109 ? kIr3109KfbMax : 4.0;
+        double kfb          = resEff * kfbMax;
         kfb                 = juce::jmin (kfb, kKfbHardMax);   // numeric guard (vestigial: kfb <= 4)
         const double r      = kfb * G * G * G * G;              // linear-solve denominator term
 
@@ -211,10 +223,18 @@ void AnalogFilter::applyParams()
         knee_        = static_cast<float> (knee);
         invKnee_     = static_cast<float> (1.0 / knee);
         kfb_         = static_cast<float> (kfb);
-        // VCA soft-clip pair: kfbVca_ = kfb * 2Vt with the fixed VCA knee
-        // 2Vt (the resonance path has its own OTA; its knee does not follow
-        // the Filter Drive knob, which shapes the four pole stages).
-        kfbVca_      = static_cast<float> (kfb * double (kTwoVt));
+        // VCA soft-clip pair: kfbVca_ = kfb * vcaKnee with the fixed VCA knee
+        // (the resonance path has its own OTA; its knee does not follow the
+        // Filter Drive knob, which shapes the four pole stages). SMR4: the
+        // VCA clips at its own 2Vt. IR3109: kIr3109VcaKnee*2Vt, a milder
+        // feedback path (the thinner Juno high-Q character). The unit-slope
+        // form keeps the small-signal loop gain exactly kfb on both cards.
+        const double vcaKnee = ir3109 ? (kIr3109VcaKnee * double (kTwoVt)) : double (kTwoVt);
+        kfbVca_      = static_cast<float> (kfb * vcaKnee);
+        vcaKnee_     = static_cast<float> (vcaKnee);
+        // SMR4 keeps the exact constexpr reciprocal (kInvTwoVt) so its audio
+        // path stays bit-identical to the pre-IR3109 build.
+        invVcaKnee_  = ir3109 ? static_cast<float> (1.0 / vcaKnee) : kInvTwoVt;
         invOnePlusR_ = static_cast<float> (1.0 / (1.0 + r));
     }
     else if (topology_ == FilterTopology::TWO_POLE_POLIVOKS)
@@ -331,7 +351,7 @@ float AnalogFilter::processSample (float inputValue)
         return svf4p_[1].processSample (0, a);
     }
 
-    if (topology_ == FilterTopology::FOUR_POLE_OTA)
+    if (topology_ == FilterTopology::FOUR_POLE_OTA || topology_ == FilterTopology::FOUR_POLE_IR3109)
         return processOTASample (inputValue);
 
     if (topology_ == FilterTopology::TWO_POLE_POLIVOKS)
@@ -361,11 +381,13 @@ float AnalogFilter::processSample (float inputValue)
 
 float AnalogFilter::processOTASample (float x) noexcept
 {
-    // SMR4 OTA cascade: four stages, each an OTA (gm*tanh on the error) into an
-    // integrating capacitor. The model solves each stage with one Newton step
-    // (the linear warm start makes one step sufficient in both the linear and
-    // the saturated zone), and closes the resonance loop with a linearised
-    // delay-free-loop solve plus a resonance-VCA tanh.
+    // OTA-cascade family (SMR4 / IR3109): four stages, each an OTA
+    // (gm*tanh on the error) into an integrating capacitor. The two cards
+    // share this sample code; only the coefficients differ (see applyParams).
+    // The model solves each stage with one Newton step (the linear warm start
+    // makes one step sufficient in both the linear and the saturated zone),
+    // and closes the resonance loop with a linearised delay-free-loop solve
+    // plus a resonance-VCA tanh.
     //
     // Stage equation (implicit trapezoid):  y = s + gk*tanh((x - y)/knee)
     // Linearised stage (the feedback solve): y = (1 - G)*s + G*x
@@ -381,10 +403,11 @@ float AnalogFilter::processOTASample (float x) noexcept
     // 2) Resonance feedback through its own VCA soft clip. The SMR4 routes
     //    the resonance signal through OTA/VCA sections (the spare LM13700
     //    sections on the schematic). The VCA tanh uses the UNIT-SLOPE form
-    //    kfb*2Vt*tanh(y4/2Vt): its small-signal gain is exactly kfb, so the
-    //    loop gain stays res (the plain kfb*tanh(y4/knee) form would scale
-    //    the loop by 1/knee = ~23 and move the onset to res ~ 0.05).
-    const float u = x - kfbVca_ * std::tanh (y4lin * kInvTwoVt);
+    //    kfb*vcaKnee*tanh(y4/vcaKnee): its small-signal gain is exactly kfb,
+    //    so the loop gain stays res (the plain kfb*tanh(y4/knee) form would
+    //    scale the loop by 1/knee = ~23 and move the onset to res ~ 0.05).
+    //    The IR3109 runs the same form with vcaKnee = 3*2Vt: a milder clip.
+    const float u = x - kfbVca_ * std::tanh (y4lin * invVcaKnee_);
 
     // 3) Four OTA stages. Each: linear warm start, one Newton step on
     //    F(y) = y - s - gk*tanh((x-y)/knee), then the trapezoid state update

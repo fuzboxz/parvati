@@ -14,6 +14,12 @@
 // local tanh reference, the even harmonics from the asymmetric rails, the
 // duty-cycle shift, the distinctness from the SMR4, and long-render
 // stability at the extremes.
+// Sections [20]-[25] verify the 6th card, the IR3109 (Juno-60/106-class)
+// OTA cascade: the same topology family as the SMR4, so the pins target the
+// CALIBRATION deltas — the never-screams resonance cap (the inverse of the
+// SMR4's sustain pin), the cleaner stage knee (lower 3rd harmonic at matched
+// settings), the 24 dB/oct slope, the plane stability, the processor wiring
+// as a 6th distinct card, and long-render boundedness.
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -44,15 +50,17 @@ double rms (const std::vector<float>& v)
     return std::sqrt (s / double (v.size()));
 }
 
-// Steady-state gain of the OTA model at one sine frequency: renders a small
-// (linear-zone) sine through a fresh filter and returns out-RMS / in-RMS from
-// the second half of the render (first half = settling).
-double otaSineGain (double hz, double sineHz, float res, float drive, float amp)
+// Steady-state gain of the OTA-cascade models at one sine frequency: renders a
+// small (linear-zone) sine through a fresh filter and returns out-RMS / in-RMS
+// from the second half of the render (first half = settling). Serves both the
+// SMR4 (default) and the IR3109 (topology argument).
+double otaSineGain (double hz, double sineHz, float res, float drive, float amp,
+                    ambika::dsp::FilterTopology topo = ambika::dsp::FilterTopology::FOUR_POLE_OTA)
 {
     ambika::dsp::AnalogFilter f;
     constexpr double kFs = 48000.0;
     f.prepare (kFs, 64);
-    f.setTopology (ambika::dsp::FilterTopology::FOUR_POLE_OTA);
+    f.setTopology (topo);
     f.setMode (0);
     f.setCutoffHz (static_cast<float> (hz));
     f.setResonance (res);
@@ -875,6 +883,221 @@ TEST(filter_topology_test)
         check (allFinite, "Polivoks stays finite through every extreme corner");
         check (allBounded, "Polivoks stays bounded (< 8, the supply clamp) through every extreme corner");
         check (allDcStable, "Polivoks DC operating point converges at every corner (last-second drift < 0.05)");
+    }
+
+    std::printf ("\n[20] IR3109 model: finite and bounded across the cutoff/resonance plane\n");
+    {
+        // Impulse + step + hot sine blend at both drives. The resonance
+        // values run past the knob range (1.2 clamps to 1.0 inside
+        // setResonance): the factory cap must hold everywhere.
+        bool allFinite = true, allBounded = true;
+        for (double hz : { 30.0, 100.0, 500.0, 2000.0, 8000.0, 18000.0 })
+        {
+            for (float res : { 0.0f, 0.5f, 0.99f, 1.0f, 1.2f })
+            {
+                for (float drv : { 1.2f, 12.0f })
+                {
+                    ambika::dsp::AnalogFilter f;
+                    f.prepare (48000.0, 64);
+                    f.setTopology (ambika::dsp::FilterTopology::FOUR_POLE_IR3109);
+                    f.setMode (0);
+                    f.setCutoffHz (static_cast<float> (hz));
+                    f.setResonance (res);
+                    f.setDrive (drv);
+                    f.commit();
+                    double peak = 0.0;
+                    for (int i = 0; i < 4000; ++i)
+                    {
+                        if ((i % 40) == 0)
+                            f.commit();
+                        float x = 0.0f;
+                        if (i == 0) x = 1.0f;
+                        else if (i == 40) x = 0.5f;
+                        else if ((i % 97) == 0) x = 0.7f;
+                        else if (i > 2000) x = 0.6f * std::sin (2.0f * juce::MathConstants<float>::pi * 220.0f * float (i) / 48000.0f);
+                        const float y = f.processSample (x);
+                        if (! std::isfinite (y)) allFinite = false;
+                        peak = std::max (peak, double (std::fabs (y)));
+                    }
+                    if (peak > 32.0) allBounded = false;
+                }
+            }
+        }
+        check (allFinite, "IR3109 renders finite at 30 Hz..18 kHz x resonance 0..1.2 x drive 1.2/12");
+        check (allBounded, "IR3109 output stays below the documented bound (32) everywhere");
+    }
+
+    std::printf ("\n[21] IR3109 model: 24 dB/oct lowpass slope\n");
+    {
+        // Linear-zone measurement, same method as [5]. The IR3109 shares the
+        // SMR4 stage structure, so the small-signal cascade must roll off at
+        // the same 24 dB/oct.
+        const auto topo = ambika::dsp::FilterTopology::FOUR_POLE_IR3109;
+        const double g2k = otaSineGain (1000.0, 2000.0, 0.0f, 1.0f, 0.002f, topo);
+        const double g8k = otaSineGain (1000.0, 8000.0, 0.0f, 1.0f, 0.002f, topo);
+        const double db = 20.0 * std::log10 (g8k / juce::jmax (1e-30, g2k));
+        std::printf ("     gain 2k=%.6f  8k=%.6f  slope=%.1f dB/2oct (expect ~ -48)\n", g2k, g8k, db);
+        char msg[128];
+        std::snprintf (msg, sizeof (msg), "IR3109 slope -42..-54 dB per 2 octaves (got %.1f)", db);
+        check (db < -42.0 && db > -54.0, msg);
+    }
+
+    std::printf ("\n[22] IR3109 model: NEVER self-oscillates — the factory cap (inverse of the SMR4 pin)\n");
+    {
+        // THE card-defining pin. Seed one impulse, then silence, at the knob
+        // maximum. The SMR4 (section [7]) SUSTAINS at res = 1.0: its kfb cap
+        // IS the exact 4.0 onset. The IR3109 caps kfb at 3.4, 15 percent
+        // below the onset: the seeded ring must DECAY. This is the Juno
+        // character — the resonance never screams at any setting.
+        const auto renderRing = [] (float res, std::vector<float>& out)
+        {
+            ambika::dsp::AnalogFilter f;
+            f.prepare (48000.0, 64);
+            f.setTopology (ambika::dsp::FilterTopology::FOUR_POLE_IR3109);
+            f.setMode (0);
+            f.setCutoffHz (1000.0f);
+            f.setResonance (res);
+            f.setDrive (1.2f);
+            f.commit();
+            const int kN = 3 * 48000;
+            out.clear();
+            out.reserve (static_cast<size_t> (kN));
+            for (int i = 0; i < kN; ++i)
+            {
+                if ((i % 40) == 0)
+                    f.commit();
+                const float x = (i == 0) ? 0.5f : 0.0f;
+                out.push_back (f.processSample (x));
+            }
+        };
+        auto thirdMaxAbs = [] (const std::vector<float>& v, int third)
+        {
+            const size_t n = v.size() / 3;
+            double m = 0.0;
+            for (size_t i = size_t (third) * n; i < size_t (third + 1) * n && i < v.size(); ++i)
+                m = std::max (m, std::fabs (double (v[i])));
+            return m;
+        };
+        std::vector<float> ring10;
+        renderRing (1.0f, ring10);
+        const double m1 = thirdMaxAbs (ring10, 0);
+        const double m3 = thirdMaxAbs (ring10, 2);
+        std::printf ("     res 1.00: third1=%.6f third3=%.6f (full decay)\n", m1, m3);
+        char msg[128];
+        std::snprintf (msg, sizeof (msg), "IR3109 ring ENGAGES at res 1.0 (seeded ring present, %.2e)", m1);
+        check (m1 > 1e-9, msg);
+        std::snprintf (msg, sizeof (msg), "IR3109 ring DECAYS at res 1.0 — never screams (%.2e vs %.2e)", m3, m1);
+        check (m3 < 1e-3 * m1, msg);
+        // Contrast, pinned: the SMR4 sibling SUSTAINS the same ring ([7]).
+        // A shared regression that raises the IR3109 cap to 4.0 makes this
+        // pin fail while [7] still passes: the two cards keep distinct
+        // self-oscillation semantics.
+    }
+
+    std::printf ("\n[23] IR3109 character: cleaner stages than the SMR4 (3rd harmonic)\n");
+    {
+        // Matched settings, only the card differs: mid cutoff, Q = 0.7,
+        // default drive, small sine. The amplitude sits in the WEAK
+        // saturation zone (signal/knee ~ 0.5: SMR4 0.93 at the knee edge,
+        // IR3109 0.48): the knee ratio (IR3109 0.10 vs SMR4 0.052, both over
+        // drive 1.2) then sets the 3rd harmonic directly. In the deep zone
+        // (amp >> knee) both tanh saturate fully and the cards converge; the
+        // calibration point for 'cleaner stages' is the weak zone, where the
+        // small-signal distortion obeys h3/h1 ~ (a/knee)^2.
+        constexpr double kFs = 48000.0;
+        constexpr int kN = 1 << 17;
+        const double f0 = 1000.0;
+        const float amp = 0.02f;
+        auto render3rd = [&] (ambika::dsp::FilterTopology topo, double& h3db)
+        {
+            ambika::dsp::AnalogFilter f;
+            f.prepare (kFs, 64);
+            f.setTopology (topo);
+            f.setMode (0);
+            f.setCutoffHz (static_cast<float> (f0));
+            f.setResonance (0.7f);
+            f.setDrive (1.2f);
+            f.commit();
+            std::vector<float> out;
+            out.reserve (kN);
+            for (int i = 0; i < kN; ++i)
+            {
+                if ((i % 40) == 0) f.commit();
+                const float x = amp * std::sin (2.0f * juce::MathConstants<float>::pi * float (f0) * float (i) / 48000.0f);
+                const float y = f.processSample (x);
+                if (i >= kN / 4) out.push_back (y);
+            }
+            const double h1 = harmonicAmp (out, f0, 1, kFs);
+            const double h3 = harmonicAmp (out, f0, 3, kFs);
+            h3db = 20.0 * std::log10 (juce::jmax (1e-30, h3) / juce::jmax (1e-30, h1));
+        };
+        double dbSMR4 = 0.0, dbIR = 0.0;
+        render3rd (ambika::dsp::FilterTopology::FOUR_POLE_OTA, dbSMR4);
+        render3rd (ambika::dsp::FilterTopology::FOUR_POLE_IR3109, dbIR);
+        std::printf ("     3rd harmonic: SMR4=%.1f dB  IR3109=%.1f dB  (delta %.1f dB)\n", dbSMR4, dbIR, dbSMR4 - dbIR);
+        char msg[160];
+        std::snprintf (msg, sizeof (msg), "IR3109 3rd harmonic at least 6 dB below the SMR4 (%.1f vs %.1f)", dbIR, dbSMR4);
+        check (dbSMR4 - dbIR > 6.0, msg);
+    }
+
+    std::printf ("\n[24] IR3109 card (filter_card=5) through the processor: a 6th distinct filter\n");
+    {
+        std::vector<float> ir;
+        const double rIR = renderCard (proc, 5, ir);
+        std::printf ("     RMS  IR3109=%.5f\n", rIR);
+        const double d0 = diffRms (ladder, ir);
+        const double d1 = diffRms (ssm, ir);
+        const double d2 = diffRms (svf, ir);
+        std::vector<float> ota, pv;
+        renderCard (proc, 3, ota);
+        renderCard (proc, 4, pv);
+        const double d3 = diffRms (ota, ir);
+        const double d4 = diffRms (pv, ir);
+        std::printf ("     diff RMS  IR-Ladder=%.5f  IR-4P=%.5f  IR-SVF=%.5f  IR-SMR4=%.5f  IR-Polivoks=%.5f\n", d0, d1, d2, d3, d4);
+        check (d0 > 1e-3 && d1 > 1e-3 && d2 > 1e-3 && d3 > 1e-3 && d4 > 1e-3, "IR3109 card differs from all 5 existing cards");
+        check (rIR > 1e-3, "IR3109 card carries energy");
+    }
+
+    std::printf ("\n[25] IR3109 character: long-render stability at the extremes\n");
+    {
+        // 5-second sustained renders at the extreme corners. The IR3109
+        // never self-oscillates, so every corner must settle to a bounded
+        // steady state (the tanh stages bound the loop; the numeric guard
+        // is 32 as in [20]).
+        constexpr double kFs = 48000.0;
+        constexpr int kN = 5 * 48000;
+        bool allFinite = true, allBounded = true;
+        for (double hz : { 30.0, 110.0, 1000.0, 8000.0 })
+        {
+            for (float res : { 0.5f, 0.95f, 1.0f })
+            {
+                for (float drv : { 1.2f, 12.0f })
+                {
+                    ambika::dsp::AnalogFilter f;
+                    f.prepare (kFs, 64);
+                    f.setTopology (ambika::dsp::FilterTopology::FOUR_POLE_IR3109);
+                    f.setMode (0);
+                    f.setCutoffHz (static_cast<float> (hz));
+                    f.setResonance (res);
+                    f.setDrive (drv);
+                    f.commit();
+                    double peak = 0.0;
+                    for (int i = 0; i < kN; ++i)
+                    {
+                        if ((i % 40) == 0) f.commit();
+                        const float x = testSaw (110.0, 24, 0.8f, i, kFs);
+                        const float y = f.processSample (x);
+                        if (! std::isfinite (y)) { allFinite = false; break; }
+                        peak = std::max (peak, double (std::fabs (y)));
+                    }
+                    if (peak > 32.0)
+                        std::printf ("     corner hz=%.0f res=%.2f drv=%.2f peak=%.3f\n", hz, res, drv, peak);
+                    if (peak > 32.0) allBounded = false;
+                }
+            }
+        }
+        check (allFinite, "IR3109 stays finite through every extreme corner (5 s each)");
+        check (allBounded, "IR3109 stays bounded (< 32) through every extreme corner");
     }
 
     std::printf ("\n%s (%d failures)\n",

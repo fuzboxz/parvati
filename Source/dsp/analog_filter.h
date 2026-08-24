@@ -6,7 +6,7 @@
 // 2-bit filter mode and sends them to a DAC + parallel port. This module
 // emulates that analog filter in software using juce::dsp, fresh-written.
 //
-// Five voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
+// Six voicecard topologies (see docs/DSP_PORT_SPEC.md section E):
 //   * 4-pole Ladder                 -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
 //                                   controllable Drive scales the saturator -> bass-drop at high Q).
 //   * 4-pole SSM2164 ("4P")       -> TWO juce::dsp::StateVariableTPTFilter (lowpass) IN SERIES,
@@ -28,6 +28,15 @@
 //                                   behaviour-derived calibration: no reference schematic exists
 //                                   in the tree (a Formanta community card, not an Ambika
 //                                   voicecard).
+//   * 4-pole IR3109 ("Juno-60/106-class") -> the SAME OTA-cascade structure as the SMR4 card: a
+//                                   calibrated SIBLING, not a new structure. Three character
+//                                   deltas: a higher stage knee (0.10: the filter stays polite
+//                                   until driven), a milder resonance-feedback clip (3x the
+//                                   knee), and kfb capped at 3.4 — BELOW the exact 4.0 onset —
+//                                   so this card never self-oscillates (the factory-capped
+//                                   Juno character). Honest note: the Juno sound also owes
+//                                   much to its BBD chorus, which a filter card cannot carry
+//                                   (a chorus FX is possible future work).
 
 #pragma once
 
@@ -41,7 +50,8 @@ enum class FilterTopology {
     FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, cutoff+resonance linked. Linear baseline. Always LP.
     TWO_POLE_SVF,       // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
     FOUR_POLE_OTA,      // 4-pole SMR4 OTA cascade (custom model). Four tanh OTA stages, 2Vt knee, normalised resonance VCA. Always LP. Self-oscillates at resonance 1.0.
-    TWO_POLE_POLIVOKS   // 2-pole Polivoks SVF (custom model). Op-amp character layer: asymmetric hard-shoulder rails, diode-style resonance limiting, Q-dependent damping sag, input offset, rate-limited outputs. LP + BP. HP/Notch clamp to LP. Self-oscillates at resonance 1.0.
+    TWO_POLE_POLIVOKS,  // 2-pole Polivoks SVF (custom model). Op-amp character layer: asymmetric hard-shoulder rails, diode-style resonance limiting, Q-dependent damping sag, input offset, rate-limited outputs. LP + BP. HP/Notch clamp to LP. Self-oscillates at resonance 1.0.
+    FOUR_POLE_IR3109    // 4-pole IR3109 (Juno-60/106-class) OTA cascade. Same structure as the SMR4, calibrated sibling: higher knee (0.10), milder resonance clip, kfb capped at 3.4 below the 4.0 onset. Never self-oscillates. Always LP.
 };
 
 // Local filter-mode enum. Values match common/patch.h FilterMode
@@ -190,8 +200,9 @@ private:
     juce::dsp::StateVariableTPTFilter<float> svf_;
     juce::dsp::StateVariableTPTFilter<float> svfNotch_; // fixed highpass, used only for notch
 
-    // ---- 4-pole OTA cascade (SMR4) -------------------------------------------
+    // ---- 4-pole OTA cascade family (SMR4 / IR3109) ----------------------------
     // One sample of the OTA model. x = input. Returns the 4th stage output.
+    // The two cards share this code; only the coefficients differ.
     float processOTASample (float x) noexcept;
     // Stage states = capacitor voltages (one per OTA pole).
     float otaState_[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -204,17 +215,22 @@ private:
     //   G_     gLin/(1+gLin): linearised one-pole gain used by the feedback solve.
     //   G2..4  powers of G for the sigma sum.
     //   gk_    gLin*knee: the coefficient that multiplies the tanh.
-    //   knee_  2Vt normalized (0.052) / drive. invKnee_ is its reciprocal.
-    //   kfb_   resonance feedback gain: kfb = res * 4.0. The factor 4 is the
+    //   knee_  the card knee base divided by drive. SMR4: 2Vt (0.052).
+    //          IR3109: 0.10 (higher headroom). invKnee_ is its reciprocal.
+    //   kfb_   resonance feedback gain: kfb = res * kfbMax. For the SMR4 the
+    //          factor 4 is the
     //          EXACT self-oscillation onset of four identical bilinear
     //          one-pole stages (Routh on the analog quartic, preserved by the
     //          bilinear transform — see the .cpp proof). The onset therefore
-    //          sits exactly at resonance 1.0 for every cutoff.
+    //          sits exactly at resonance 1.0 for every cutoff. The IR3109
+    //          caps the factor at 3.4, BELOW the onset: the factory-capped
+    //          Juno character (the card never self-oscillates).
     //   invOnePlusR_  1/(1 + kfb*G^4) for the linearised delay-free-loop solve.
     float gLin_ = 0.0f, G_ = 0.0f, G2_ = 0.0f, G3_ = 0.0f, G4_ = 0.0f;
     float gk_ = 0.0f, knee_ = 1.0f, invKnee_ = 1.0f, kfb_ = 0.0f, invOnePlusR_ = 1.0f;
-    // Resonance-VCA soft clip: unit-slope form kfb*2Vt*tanh(y4/2Vt).
-    float kfbVca_ = 0.0f;
+    // Resonance-VCA soft clip: unit-slope form kfb*vcaKnee*tanh(y4/vcaKnee).
+    // vcaKnee_ = 2Vt on the SMR4; kIr3109VcaKnee*2Vt on the IR3109 (milder).
+    float kfbVca_ = 0.0f, vcaKnee_ = 1.0f, invVcaKnee_ = 1.0f;
     // 2Vt of the LM13700 in normalized units (52 mV at 1.0 == 1 V full scale).
     // The Polivoks reuses the same normalized knee scale: its op-amp
     // saturation uses the same behavioural constant, scaled by Filter Drive.
@@ -222,6 +238,18 @@ private:
     static constexpr float kInvTwoVt = 1.0f / 0.052f;
     // Hard cap on kfb_ (numeric guard only; kOnset <= ~4 keeps kfb small).
     static constexpr double kKfbHardMax = 1.0e12;
+    // IR3109 (Juno-60/106-class) calibration. The card shares the OTA-cascade
+    // structure with the SMR4; these constants make the character:
+    //   kIr3109TwoVt   0.10: a higher stage knee than the SMR4's 0.052. The
+    //                  stages hold more headroom, so the filter stays polite
+    //                  until driven.
+    //   kIr3109KfbMax  3.4: the resonance factor cap, BELOW the exact 4.0
+    //                  onset. The factory cap: this card never screams.
+    //   kIr3109VcaKnee 3.0: the feedback clip knee in units of 2Vt. A milder
+    //                  resonance path: the high-Q character reads thinner.
+    static constexpr double kIr3109TwoVt   = 0.10;
+    static constexpr double kIr3109KfbMax  = 3.4;
+    static constexpr double kIr3109VcaKnee = 3.0;
 
     // ---- 2-pole Polivoks SVF --------------------------------------------------
     // One sample of the Polivoks model. x = input. Returns LP or BP per mode.

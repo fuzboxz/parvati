@@ -157,8 +157,8 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     // ---- Options (3) ----
     m["vca_curve"]   = "VCA response curve: Linearized or Exponential.";
     m["part_select"] = "Selects which Part (1..6) the editor edits.";
-    m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, SVF, SMR4, or Polivoks.";
-    m["filter_drive"] = "Clip and rate-limit drive for the Ladder, SMR4, and Polivoks cards; higher values clip lower and growl harder (1.2 = default).";
+    m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, SVF, SMR4, Polivoks, or IR3109.";
+    m["filter_drive"] = "Clip and rate-limit drive for the Ladder, SMR4, IR3109, and Polivoks cards; higher values clip lower (1.2 = default).";
 
     // ---- Per-part FX (78 = 24 slot + 6 chain/master + 48 fxmod) ----
     // Parvati-exclusive; no Ambika patch byte. Slot/fxmod entries are loop-

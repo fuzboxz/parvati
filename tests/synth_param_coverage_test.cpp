@@ -990,14 +990,14 @@ static void testOptions (ParvatiAudioProcessor& proc)
     check (std::fabs (expRatio - linRatio) > 1e-3 || peakOf (lin) != peakOf (expc),
            "vca_curve exp vs linearized changes the amplitude shape");
 
-    // filter_card: 5 topologies accepted + sound different at high resonance.
+    // filter_card: 6 topologies accepted + sound different at high resonance.
     setChoice (proc, "vca_curve", 0);
     setInt (proc, "filter1_reso", 50);
     setInt (proc, "filter1_cutoff", 90);
     proc.syncAllParamsToEngine();
-    double topoPeaks[5];
+    double topoPeaks[6];
     bool topoFinite = true;
-    for (int t = 0; t < 5; ++t)
+    for (int t = 0; t < 6; ++t)
     {
         setChoice (proc, "filter_card", t);
         proc.syncAllParamsToEngine();
@@ -1005,9 +1005,9 @@ static void testOptions (ParvatiAudioProcessor& proc)
         topoPeaks[t] = peakOf (x);
         if (! audioFinite (x)) topoFinite = false;
     }
-    std::printf ("     filter_card peaks: ladder=%.4f ssm2164=%.4f svf=%.4f ota=%.4f polivoks=%.4f\n",
-                 topoPeaks[0], topoPeaks[1], topoPeaks[2], topoPeaks[3], topoPeaks[4]);
-    check (topoFinite, "all 5 filter_card topologies render finite");
+    std::printf ("     filter_card peaks: ladder=%.4f ssm2164=%.4f svf=%.4f ota=%.4f polivoks=%.4f ir3109=%.4f\n",
+                 topoPeaks[0], topoPeaks[1], topoPeaks[2], topoPeaks[3], topoPeaks[4], topoPeaks[5]);
+    check (topoFinite, "all 6 filter_card topologies render finite");
     // At least two of the topologies should produce measurably different
     // output at high resonance (they are genuinely different filter designs).
     const bool differ01 = std::fabs (topoPeaks[0] - topoPeaks[1]) > 1e-3;

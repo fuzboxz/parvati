@@ -873,7 +873,8 @@ void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d,
     {
         using FT = ambika::dsp::FilterTopology;
         const int v = static_cast<int> (rawValue);
-        const FT t = (v == 4) ? FT::TWO_POLE_POLIVOKS
+        const FT t = (v == 5) ? FT::FOUR_POLE_IR3109
+                    : (v == 4) ? FT::TWO_POLE_POLIVOKS
                     : (v == 3) ? FT::FOUR_POLE_OTA
                     : (v == 2) ? FT::TWO_POLE_SVF
                     : (v == 1) ? FT::FOUR_POLE_SSM2164

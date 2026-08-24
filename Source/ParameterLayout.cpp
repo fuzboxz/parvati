@@ -503,7 +503,8 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
                 "4-pole SSM2164 (Cascade)",
                 "2-pole SVF",
                 "SMR4 (OTA Cascade)",
-                "Polivoks (SVF)"
+                "Polivoks (SVF)",
+                "IR3109 (Cascade)"
             };
             PatchParamDescriptor f;
             f.paramID = "filter_card";

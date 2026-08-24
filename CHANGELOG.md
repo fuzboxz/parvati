@@ -31,6 +31,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   design; no English key changed.
 
 ### Added
+- **New filter card: IR3109 cascade, Juno-60/106 class (2026-08-24).** A
+  sixth filter card, "IR3109 (Cascade)", models the Roland-class IR3109/
+  80017A 4-pole OTA cascade. Honest framing: the topology is the SAME as the
+  SMR4 card — a calibrated sibling, not a new structure. Three character
+  deltas, all test-pinned. First, the resonance factor is capped at 3.4,
+  below the exact 4.0 self-oscillation onset: the famous factory cap. This
+  card never screams; the seeded ring at resonance 1.0 fully decays (the
+  inverse of the SMR4 pin, which sustains). Second, the stage knee runs
+  0.10 against the SMR4's 0.052: in the weak-saturation zone the card
+  measures 10 dB less 3rd harmonic at matched settings — the filter stays
+  polite until driven. Third, the resonance-feedback clip is milder (3x
+  the knee), so the high-Q character reads thinner. Low-pass only. Filter
+  Drive reuses the shared knob. A user draft provided the structure and
+  independently stated the 4.0 onset; the shipped card reuses the
+  machine-precision-verified SMR4 engine with per-card constants. The Juno
+  sound also owes much to its BBD chorus, which a filter card cannot carry.
 - **New filter card: Polivoks SVF (2026-08-24).** A fifth filter card,
   "Polivoks (SVF)", models the Soviet Polivoks form: a 2-pole state-variable
   filter with an op-amp character layer on an exact ZDF skeleton. The

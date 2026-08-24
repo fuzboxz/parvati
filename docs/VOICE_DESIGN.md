@@ -563,6 +563,7 @@ The code models the three real voicecard filter boards that Ambika shipped:
 | 4-pole SSM2164 | 4-pole cascade | a custom 4-stage one-pole cascade with feedback — "politer" than the ladder |
 | 2-pole SVF (SSM2164) | state-variable filter | `juce::dsp::StateVariableTPTFilter` — the only one that honours LP **/BP/HP/Notch** |
 | Polivoks-form SVF (Parvati extension, not an Ambika board) | 2-pole dirty SVF, LP/BP | custom ZDF model (this repo): asymmetric hard-shoulder rails (even harmonics), diode-style resonance limiting, Q-dependent damping sag, input-offset drift, asymmetric rate-limited outputs, supply clamp. Filter Drive scales the clip points and rate limits. Onset exactly at resonance 1.0. Growls at low cutoff and high resonance. |
+| IR3109 (Juno-60/106 class; Parvati extension, not an Ambika board) | 4-pole OTA cascade | custom model (this repo): the SAME structure as the SMR4 card, a calibrated sibling. Higher stage knee (0.10 — cleaner until driven), milder resonance-feedback clip, and the resonance factor capped at 3.4 BELOW the exact 4.0 onset: this card never self-oscillates (the factory-capped Juno character). The Juno sound also owes much to its BBD chorus, which a filter card cannot carry. |
 
 Some engineering details matter for the *character*:
 

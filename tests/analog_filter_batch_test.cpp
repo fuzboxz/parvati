@@ -211,6 +211,13 @@ TEST(analog_filter_batch_test)
         runTopologySanity ("2-pole Polivoks drive 1.0 at onset", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0, 1.0f, 1.0f);
         runTopologySanity ("2-pole Polivoks drive 12 at onset", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 0, 1.0f, 12.0f);
         runTopologySanity ("2-pole Polivoks drive 12 bandpass", ambika::dsp::FilterTopology::TWO_POLE_POLIVOKS, 1, 0.9f, 12.0f);
+        // The IR3109 (Juno-class OTA cascade): same structure as the SMR4,
+        // kfb capped at 3.4 BELOW the 4.0 onset. The res-1.0 row proves the
+        // cap: the model stays bounded and never reaches self-oscillation.
+        runTopologySanity ("4-pole IR3109 cascade", ambika::dsp::FilterTopology::FOUR_POLE_IR3109, 0);
+        runTopologySanity ("4-pole IR3109 at resonance 1.0 (capped, no self-osc)", ambika::dsp::FilterTopology::FOUR_POLE_IR3109, 0, 1.0f);
+        runTopologySanity ("4-pole IR3109 past onset (clamped)", ambika::dsp::FilterTopology::FOUR_POLE_IR3109, 0, 1.2f);
+        runTopologySanity ("4-pole IR3109 drive 12 at res 1.0", ambika::dsp::FilterTopology::FOUR_POLE_IR3109, 0, 1.0f, 12.0f);
     }
 
     std::printf ("\n%s (%d failure%s)\n",
