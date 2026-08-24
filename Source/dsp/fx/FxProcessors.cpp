@@ -17,6 +17,7 @@
 #include "dsp/fx/fv1/Fv1Compressor.h"
 #include "dsp/fx/fv1/Fv1Gate.h"
 #include "dsp/fx/fv1/Fv1Chorus.h"
+#include "dsp/fx/fv1/Fv1JunoChorus.h"
 #include "dsp/fx/fv1/Fv1Flanger.h"
 #include "dsp/fx/fv1/Fv1Echo.h"
 #include "dsp/fx/fv1/Fv1Room.h"
@@ -825,6 +826,9 @@ std::unique_ptr<FxProcessor> createFxProcessor (FxType t)
         case FxType::Echo:            return std::make_unique<parvati::fv1::Fv1Echo>();
         case FxType::Room:            return std::make_unique<parvati::fv1::Fv1Room>();
         case FxType::Spring:          return std::make_unique<parvati::fv1::Fv1Spring>();
+        // Dual-BBD Chorus (2026-08-24): the documented Juno-60/106 chorus
+        // configuration ported into the FV-1 family.
+        case FxType::JunoChorus:       return std::make_unique<parvati::fv1::Fv1JunoChorus>();
         case FxType::None:
         case FxType::Count:   break;
     }

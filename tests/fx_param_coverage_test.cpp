@@ -145,7 +145,7 @@ void makeTone (float* L, float* R, int n, float amp = 0.4f, double freq = 220.0)
 
 // The full 24 non-None effect list (in FxType order) with display names.
 struct EffectEntry { FxType type; const char* name; };
-const std::array<EffectEntry, 24> kEffects = {{
+const std::array<EffectEntry, 25> kEffects = {{
     { FxType::Diffuser,        "Diffuser" },
     { FxType::PitchShifter,    "PitchShifter" },
     { FxType::Reverb,          "Reverb" },
@@ -170,6 +170,7 @@ const std::array<EffectEntry, 24> kEffects = {{
     { FxType::Echo,            "Echo" },
     { FxType::Room,            "Room" },
     { FxType::Spring,          "Spring" },
+    { FxType::JunoChorus,      "JunoChorus" },
 }};
 }  // namespace
 
@@ -194,7 +195,7 @@ static void testFxTable()
             check (fx->type() == e.type,
                    std::string (e.name) + ": type() matches enum");
     }
-    check (nonNull == 24, "all 24 non-None effects build via the factory");
+    check (nonNull == 25, "all 25 non-None effects build via the factory");
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +396,7 @@ static void testPerEffectParamSweep()
                                        c.base[0] = 0.3f; c.base[2] = 0.0f; break;
             // Modulated delays: tank/line fill.
             case FxType::Chorus:
+            case FxType::JunoChorus:
             case FxType::Flanger:      c.warmup = 40; break;
             // Echo: the baseline Time (~68 ms) needs ~90 blocks to fill before
             // the feedback comb can differentiate the waveform.
@@ -1178,6 +1180,12 @@ static void testFxReadoutBudget()
         { FxType::FrequencyShifter,"FrequencyShifter",0,   0, "-2k0"  },
         // Rates: no space ("8.00Hz").
         { FxType::Ensemble,        "Ensemble",        0, 127, "8.00Hz" },
+        // Dual-BBD Chorus: mode, trim multiplier, depth percentage.
+        { FxType::JunoChorus,      "JunoChorus",      0, 127, "II"    },
+        { FxType::JunoChorus,      "JunoChorus",      0,   0, "I"     },
+        { FxType::JunoChorus,      "JunoChorus",      1, 127, "2.00x" },
+        { FxType::JunoChorus,      "JunoChorus",      1,   0, "0.50x" },   // trim law endpoints are exact
+        { FxType::JunoChorus,      "JunoChorus",      2, 127, "200%"  },
         // Percentages: no space.
         { FxType::ClockedDelay,    "ClockedDelay",    1, 127, "95%"   },
         // Bit crush: 6 chars, at budget.

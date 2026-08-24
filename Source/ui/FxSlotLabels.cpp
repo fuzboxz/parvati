@@ -40,6 +40,7 @@ int activeParamCount (FxType t) noexcept
         case FxType::Compressor:      return 4;
         case FxType::Gate:            return 4;
         case FxType::Chorus:          return 4;
+        case FxType::JunoChorus:       return 4;
         case FxType::Flanger:         return 4;
         case FxType::Echo:            return 4;
         case FxType::Room:            return 4;
@@ -177,6 +178,12 @@ const char* paramLabel (FxType t, int idx) noexcept
             if (idx == 1) return "Depth";
             if (idx == 2) return "Manual";
             if (idx == 3) return "Feedback";
+            break;
+        case FxType::JunoChorus:
+            if (idx == 0) return "Mode";
+            if (idx == 1) return "Rate";
+            if (idx == 2) return "Depth";
+            if (idx == 3) return "Mix";
             break;
         case FxType::Echo:
             if (idx == 0) return "Time";
@@ -430,6 +437,15 @@ juce::String paramValueText (FxType t, int idx, double value0to127)
             if (idx == 2)   // Center -> 5..25 ms
                 return formatMs (5.0 + p * 20.0, 1);
             break;
+
+        case FxType::JunoChorus:
+            if (idx == 0)   // Mode -> Chorus I / Chorus II (one setting pair)
+                return p < 0.5 ? "I" : "II";
+            if (idx == 1)   // Rate -> the trim multiplier (the mode sets the base)
+                return juce::String (fxlaw::junoRateTrim ((float) p), 2) + "x";   // "0.50x".."2.00x"
+            if (idx == 2)   // Depth -> 0..200% of the stock sweep
+                return juce::String (juce::roundToInt (p * 200.0)) + "%";
+            break;   // Mix falls to the default percent readout
 
         case FxType::Flanger:
             if (idx == 0)   // Rate -> 0.05..3 Hz (log)

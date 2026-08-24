@@ -38,6 +38,9 @@ enum class FxType : uint8_t {
     // set. APPEND-ONLY (same serialization rule as above).
     Overdrive = 16, LutDistortion = 17, Compressor = 18, Gate = 19,
     Chorus = 20, Flanger = 21, Echo = 22, Room = 23, Spring = 24,
+    // Dual-BBD Chorus (2026-08-24): the documented Roland Juno-60/106 chorus
+    // configuration ported into the FV-1 family. APPEND-ONLY (same rule).
+    JunoChorus = 25,
     Count
 };
 // choice list string: { "None", "Diffuser", "Pitch Shifter", "CVerb",
@@ -47,7 +50,8 @@ enum class FxType : uint8_t {
 //                       "Clocked Delay", "Ensemble", "Plate",
 //                       "Vinyl Compressor", "Phaser",
 //                       "Overdrive", "LUT", "Compressor", "Gate",
-//                       "Chorus", "Flanger", "Digital Echo", "Room", "Spring" }
+//                       "Chorus", "Flanger", "Digital Echo", "Room", "Spring",
+//                       "Dual-BBD Chorus" }
 //   (Diffuser / PitchShifter / Reverb are ports of the Mutable Instruments
 //    Clouds `dsp/fx` chain; LoopingDelay / WSOLAStretch / Spectral are the Clouds
 //    looping / WSOLA / phase-vocoder modes; Wavefolder / FrequencyShifter /
@@ -166,6 +170,7 @@ inline FxCategory fxCategoryOf (FxType t) noexcept
         case FxType::Compressor:      return FxCategory::Dynamics;
         case FxType::Gate:            return FxCategory::Dynamics;
         case FxType::Chorus:          return FxCategory::Mod;
+        case FxType::JunoChorus:       return FxCategory::Mod;
         case FxType::Flanger:         return FxCategory::Mod;
         case FxType::Echo:            return FxCategory::Delay;
         case FxType::Room:            return FxCategory::Reverb;
@@ -193,7 +198,7 @@ inline std::array<FxType, static_cast<size_t> (FxType::Count)> fxTypeDisplayOrde
         // Dynamics
         FxType::Compressor, FxType::Gate, FxType::VinylCompressor,
         // Mod
-        FxType::Chorus, FxType::Ensemble, FxType::Flanger, FxType::FrequencyShifter,
+        FxType::Chorus, FxType::JunoChorus, FxType::Ensemble, FxType::Flanger, FxType::FrequencyShifter,
         FxType::Phaser, FxType::RingModulator,
         // Pitch/Time
         FxType::PitchShifter, FxType::Resonator, FxType::Spectral, FxType::WSOLAStretch,
@@ -262,6 +267,18 @@ template <typename T> T flangerLoopSeconds (T p2) noexcept { return (T (0.15) + 
 template <typename T> T ensembleFeedbackGain (T p3) noexcept { return T (-0.9) + p3 * T (1.8); }
 template <typename T> T chorusFeedbackGain  (T p3) noexcept { return p3 * T (0.5); }
 template <typename T> T flangerFeedbackGain (T p3) noexcept { return p3 * T (0.92); }
+
+// Dual-BBD Chorus (Juno port): mode constants and trims. ONE law serves the
+// DSP setParams, the slot-card readout and the tail estimate. The mode
+// rates/depths are the documented consensus midpoints (see Fv1JunoChorus.cpp
+// for the source table); the center delay is the 1024-stage line at the
+// documented ~20 kHz clock.
+template <typename T> T junoCenterSeconds    () noexcept { return T (25.6e-3); }
+template <typename T> T junoModeRateHz      (bool modeII) noexcept { return modeII ? T (1.13) : T (0.56); }
+template <typename T> T junoModeDepthSeconds (bool modeII) noexcept { return (modeII ? T (4.0) : T (2.5)) * T (1.0e-3); }
+// Rate trim: 0.5x..2x, log law, center 1.0x. Depth trim: 0..2x stock.
+template <typename T> T junoRateTrim  (T p1) noexcept { return std::pow (T (2.0), (p1 - T (0.5)) * T (2.0)); }
+template <typename T> T junoDepthTrim (T p2) noexcept { return p2 * T (2.0); }
 
 // FV-1 reverbs: Decay knob 0..1 -> t60 in seconds (PlateReverb 0.1..4,
 // Spring 0.2..4, Room 0.1..3). PlateReverb predelay spans 0..100 ms.
@@ -379,6 +396,12 @@ inline double tailSecondsForFx (FxType type, const std::array<float, kNumFxSlotP
             const double T = fxlaw::flangerLoopSeconds ((double) p2);
             return tail_detail::feedbackTail (T, fxlaw::flangerFeedbackGain ((double) p3));
         }
+        // Dual-BBD Chorus (Juno port): OPEN lines, no feedback loop (the
+        // source hardware mixes dry + wet with no regeneration). The tail is
+        // the line delay itself (25.6 ms center + up to 4 ms sweep); the
+        // caller-side floor covers the voice release.
+        case FxType::JunoChorus:
+            return fxlaw::junoCenterSeconds<double>() + fxlaw::junoModeDepthSeconds<double> (true);
 
         // ---- Resonator (Rings modal, NATIVE host rate): every mode decays
         // ~pi/q per sample with q = 500*10^(4*damping) (resonator.cc:63;

@@ -100,8 +100,8 @@ TEST(parvati_clouds_fx_test)
     constexpr double kRate = 48000.0;
 
     // Enum sanity: None + 6 Clouds + 3 Warps + 1 Rings + 14 FV-1 == 25.
-    check (static_cast<int> (FxType::Count) == 25,
-           "FxType::Count == 25 (None + 6 Clouds + 3 Warps + 1 Rings + 14 FV-1)");
+    check (static_cast<int> (FxType::Count) == 26,
+           "FxType::Count == 26 (None + 6 Clouds + 3 Warps + 1 Rings + 15 FV-1)");
 
     // A non-trivial input: a decaying 220 Hz tone burst on both channels so every
     // module has broadband energy to act on (repeats each block so a multi-block

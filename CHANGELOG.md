@@ -4,6 +4,15 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **Dual-BBD Chorus, the sixteenth FX type (2026-08-24).** A new FV-1-family
+  effect ports the documented Roland Juno-60/106 chorus configuration: two
+  BBD lines on one shared LFO, line 2 at inverted phase, open lines with no
+  feedback, mode I slow and shallow, mode II faster, deeper and brighter.
+  The knob laws live in the shared fxlaw block; the effect carries its own
+  internal dry/wet mix because the source chorus sums dry and wet inside
+  the unit. Existing types are untouched; the new type appends to the list.
+
 ### Fixed
 - **The last 29 untranslated chrome strings gained French and German
   entries (2026-08-24).** Every key in the translations allowlist section

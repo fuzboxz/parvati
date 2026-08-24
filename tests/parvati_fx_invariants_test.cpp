@@ -44,6 +44,7 @@
 #include "dsp/fx/fv1/Fv1Spring.h"
 #include "dsp/fx/fv1/Fv1Chorus.h"
 #include "dsp/fx/fv1/Fv1Ensemble.h"
+#include "dsp/fx/fv1/Fv1JunoChorus.h"
 #include "dsp/fx/fv1/Fv1LutDistortion.h"
 #include "dsp/fx/fv1/Fv1Overdrive.h"
 
@@ -56,6 +57,7 @@ using parvati::fv1::Fv1Room;
 using parvati::fv1::Fv1Spring;
 using parvati::fv1::Fv1Chorus;
 using parvati::fv1::Fv1Ensemble;
+using parvati::fv1::Fv1JunoChorus;
 using parvati::fv1::Fv1LutDistortion;
 using parvati::fv1::Fv1Overdrive;
 
@@ -157,6 +159,7 @@ TEST(parvati_fx_invariants_test)
             { "Echo        ", 0 }, { "ClockedDelay", 1 }, { "Flanger     ", 2 },
             { "Phaser      ", 3 }, { "Plate       ", 4 },  { "Room        ", 5 },
             { "Spring      ", 6 }, { "Chorus      ", 7 },  { "Ensemble    ", 8 },
+            { "Dual-BBD    ", 9 },
         };
         for (const auto& r : rows)
         {
@@ -175,6 +178,7 @@ TEST(parvati_fx_invariants_test)
                 case 6: { Fv1Spring f;       out = render (f, all, 2.0); break; }
                 case 7: { Fv1Chorus f;       out = render (f, all, 2.0, 0.95f); break; }
                 case 8: { Fv1Ensemble f;     out = render (f, all, 2.0, 0.95f); break; }
+                case 9: { Fv1JunoChorus f;   out = render (f, all, 2.0, 0.95f); break; }
             }
             char msg[96];
             const double ratio = dcRatio (out, 0.4);

@@ -272,7 +272,8 @@ juce::StringArray makeFxTypes()
              "Clocked Delay", "Ensemble", "Plate",
              "Vinyl Compressor", "Phaser",
              "Overdrive", "Wavemangler", "Compressor", "Gate",
-             "Chorus", "Flanger", "Digital Echo", "Room", "Spring" };
+             "Chorus", "Flanger", "Digital Echo", "Room", "Spring",
+             "Dual-BBD Chorus" };
 }
 
 const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()

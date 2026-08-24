@@ -237,6 +237,7 @@ FxTypeDefaults fxTypeDefaults (FxType t) noexcept
         case FxType::Echo:            return { 1, 80, { 55, 50, 70, 30, 0 } }; // Time(~250 ms) / Feedback(0.48) / Tone(~4 kHz) / Spread(1.3x)
         case FxType::Room:            return { 1, 60, { 55, 60, 80, 80, 0 } }; // Decay(~1.6 s) / Damp(~3 kHz) / Width(stereo) / Tone(bright)
         case FxType::Spring:          return { 1, 60, { 45, 55, 65, 90, 0 } }; // Decay(~1.3 s) / Damp(~2.4 kHz) / Chirp(~0.74) / Width(stereo)
+        case FxType::JunoChorus:       return { 1, 70, {  0, 64, 64, 89, 0 } }; // Mode(I) / Rate(1.0x) / Depth(stock) / Mix(~0.7 stock point)
         case FxType::None:
         case FxType::Count:   break;
     }

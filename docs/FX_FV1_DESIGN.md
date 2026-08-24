@@ -263,6 +263,33 @@ The "super digital" wavetable distortion: 16 stepped weird shapes.
   applied to all six stages. The feedback path has a hard-clip saturation
   block.
 
+### 15. Dual-BBD Chorus — labels {"Mode","Rate","Depth","Mix"} (2026-08-24)
+* Ports the documented Roland Juno-60/106 chorus configuration into the
+  family. The full source table (values, ranges, citations and honest
+  deviations) lives in `Fv1JunoChorus.cpp`.
+* TWO delay lines (the BBD pair), ONE shared sine LFO, line 2 at INVERTED
+  phase (the source signature: the I/II settings are two settings of one
+  stereo dual-line chorus). NO feedback path — the source lines are open.
+* Line delay `25.6 ms` (1024 stages at the documented ~20 kHz clock;
+  center + sweep well inside the 2x2048-sample rings).
+* **Mode (p0):** `< 0.5` = Chorus I (`0.56 Hz`, `2.5 ms` sweep, wet LP `9
+  kHz`), else Chorus II (`1.13 Hz`, `4.0 ms` sweep, wet LP `13 kHz` — the
+  documented brighter II).
+* **Rate (p1):** trim `0.5x..2x`, log law, center `1.0x`.
+* **Depth (p2):** trim `0..2x` the mode depth (`0.5` = the stock sweep).
+* **Mix (p3):** internal dry/wet law — a deliberate FAMILY-CONTRACT
+  DEVIATION (every other member emits wet only and the chain blends). The
+  source chorus sums dry + both lines INSIDE the effect, so the stock ratio
+  lives inside it: `dry = 1-0.65*m`, each line `0.325*m` (coherent peak sums
+  to unity at Mix 1; at the stock point `m=0.7` the wet sum sits below the
+  dry, matching the documented fixed-wet output stage). At Mix 0 the output
+  is a dry passthrough to 14-bit precision.
+* Post-BBD treatment per line: 2-pole LP (mode brightness) + a `30 Hz`
+  clock-leak high-pass. Subtle: this is a clean ensemble effect, not a dirt
+  effect. Charge-packet quantization of the real BBD is NOT modeled.
+* Tail: open lines, no loop — `junoCenterSeconds + max sweep`; the caller
+  floor covers it.
+
 ## Wiring (foundation touches these central files)
 
 * `dsp/fx/FxTypes.h` — append enum values 11..15 (APPEND-ONLY; stored as
