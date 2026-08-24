@@ -5,6 +5,17 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Fixed
+- **The last 29 untranslated chrome strings gained French and German
+  entries (2026-08-24).** Every key in the translations allowlist section
+  for known gaps is now translated: the mod-matrix rows and add button,
+  the tap-to-assign status fragments (armed, exit hint, entry hints),
+  the FX routing bar (Dry/Wet caption, global wet/dry, master EQ, both
+  topology buttons), the preset browser submenus and placeholder, the
+  page-switch tooltips, the zoom buttons, the parameter context-menu
+  items and the virtual-keyboard tooltip fragments. Eighteen dead
+  allowlist entries left with the change: those wordings matched no key
+  in the source tree. The known-gaps section is now empty; the checker
+  fails on any new omission. Parameter names stay raw by design.
 - **The translations checker is green again; 15 chrome strings gained
   French and German entries (2026-08-23).** The deterministic checker
   (`parvati_check_translations`) failed on HEAD: fourteen `TRANS()` keys sat

@@ -29,50 +29,5 @@ SYNTH
 Synth
 
 ## known-missing
- — tap a destination knob ([MOD] to exit)
-(select a patch)
-+ Add Modulation
-.MUL hardware export.
-0 of 14 Used
-0 of 16 Used
-Assign the next free slot
-Assigned
-Clear
-Clear this modulation (free the slot)
-Custom scale, per note class. Steps of 1/128 semitone (≈ 0.78 ¢). Double-click a row to reset it.
-Decrease sequence length
-Done
-Drag onto a knob to assign this modulation
-Dry/Wet
-FX master EQ 
-FX page
-Factory
-Global FX wet/dry
-Increase sequence length
-Keyboard: octave 
-MOD assign armed: 
-Matrix Full (14/14)
-Matrix Full (16/16)
-Mod Matrix full
-Mute / bypass this modulation
-Next FX topology
-Previous FX topology
-Reset Zoom
-Reset this parameter to its default value
-Reset zoom
-Set this parameter to a random value
-Synth page
-Tap a mod source first
-Tap a mod source, then a knob
-Tap-to-assign modulation
-Toggle the modulation pill bar
-Toggle virtual keyboard
-Tuning
-User
-Zoom In
-Zoom Out
-Zoom in
-Zoom out
-of 14 Used
-of 16 Used
-velocity
+# (empty since 2026-08-24: every tracked key is translated. Stale entries
+#  with no tree reference were removed with the same pass.)

@@ -42,6 +42,8 @@ const juce::String& frenchChromeStrings()
         // ---- top-bar button tooltips (shortcut hints) ----
         "\"Load a patch (Cmd/Ctrl+O)\" = \"Charger un programme (Cmd/Ctrl+O)\"\n"
         "\"Save the current patch (Cmd/Ctrl+S)\" = \"Enregistrer le programme (Cmd/Ctrl+S)\"\n"
+        "\"Synth page\" = \"Page synthé\"\n"
+        "\"FX page\" = \"Page FX\"\n"
         // ---- top-bar captions ----
         "\"Patch:\" = \"Programme :\"\n"
         "\"Part:\" = \"Partie :\"\n"
@@ -116,6 +118,9 @@ const juce::String& frenchChromeStrings()
         // ---- Settings panel labels / toggles ----
         "\"Theme\" = \"Thème\"\n"
         "\"Zoom\" = \"Zoom\"\n"
+        "\"Zoom in\" = \"Zoom avant\"\n"
+        "\"Zoom out\" = \"Zoom arrière\"\n"
+        "\"Reset zoom\" = \"Réinitialiser le zoom\"\n"
         "\"Tooltips\" = \"Info-bulles\"\n"
         "\"Mod Lamp Colours\" = \"Couleurs de lampe par catégorie\"\n"
         "\"Parameter Smoothing\" = \"Lissage des paramètres\"\n"
@@ -164,6 +169,8 @@ const juce::String& frenchChromeStrings()
         // ---- context menu / Multi page / dialogs ----
         "\"Reset to default\" = \"Réinitialiser\"\n"
         "\"Randomize\" = \"Aléatoire\"\n"
+        "\"Reset this parameter to its default value\" = \"Réinitialiser ce paramètre à sa valeur par défaut\"\n"
+        "\"Set this parameter to a random value\" = \"Mettre ce paramètre à une valeur aléatoire\"\n"
         "\"Omni\" = \"Omni\"\n"
         "\"Multi\" = \"Multi\"\n"
         "\"Part\" = \"Partie\"\n"
@@ -178,6 +185,29 @@ const juce::String& frenchChromeStrings()
         "\"Save Ambika Multi (.MUL)\" = \"Enregistrer le multi Ambika (.MUL)\"\n"
         "\"Could not save file:\" = \"Impossible d'enregistrer le fichier :\"\n"
         "\"Could not load file:\" = \"Impossible de charger le fichier :\"\n"
+        // ---- FX routing bar (global dry/wet, master EQ, topology buttons) ----
+        "\"Dry/Wet\" = \"Dry/Wet\"\n"          // gear-standard term — kept, cf. "Off"/"On"
+        "\"Global FX wet/dry\" = \"Mix wet/dry global des FX\"\n"
+        "\"FX master EQ \" = \"Égaliseur principal FX \"\n"
+        "\"Previous FX topology\" = \"Topologie FX précédente\"\n"
+        "\"Next FX topology\" = \"Topologie FX suivante\"\n"
+        // ---- preset browser (submenus + name placeholder) ----
+        "\"Factory\" = \"Usine\"\n"
+        "\"User\" = \"Utilisateur\"\n"
+        "\"(select a patch)\" = \"(sélectionner un patch)\"\n"
+        // ---- mod matrix rows / tap-to-assign status strip ----
+        "\"+ Add Modulation\" = \"+ Ajouter une modulation\"\n"
+        "\"Assign the next free slot\" = \"Assigne le prochain emplacement libre\"\n"
+        "\"Mute / bypass this modulation\" = \"Couper / bypasser cette modulation\"\n"
+        "\"Assigned\" = \"Assignée\"\n"
+        "\"Mod Matrix full\" = \"Matrice de modulation pleine\"\n"
+        "\"Tap-to-assign modulation\" = \"Assignation de modulation au toucher\"\n"
+        "\"Toggle the modulation pill bar\" = \"Afficher/masquer la barre de pastilles de modulation\"\n"
+        // Suffix-key fragments: the source name and the exit hint follow.
+        "\"MOD assign armed: \" = \"Assignation MOD armée : \"\n"
+        "\" — tap a destination knob ([MOD] to exit)\" = \" — touchez un potentiomètre de destination ([MOD] pour quitter)\"\n"
+        "\"Tap a mod source first\" = \"Touchez d'abord une source de modulation\"\n"
+        "\"Tap a mod source, then a knob\" = \"Touchez une source de modulation, puis un potentiomètre\"\n"
         // ---- FX slot cards / wheels / export preview (suffix-key fragments) ----
         // The FX number / source label stays OUTSIDE the fragments ( untranslated
         // proper nouns); the keys carry their leading/trailing spaces so the
@@ -204,6 +234,9 @@ const juce::String& frenchChromeStrings()
         "\"Mod Wheel\" = \"Molette de modulation\"\n"
         "\"Mod \" = \"Mod \"\n"
         "\"FX Mod \" = \"Mod FX \"\n"
+        "\"Toggle virtual keyboard\" = \"Afficher/masquer le clavier virtuel\"\n"
+        "\"Keyboard: octave \" = \"Clavier : octave \"\n"
+        "\"velocity\" = \"vélocité\"\n"
         "\"(this file)\" = \"(ce fichier)\"\n"
         // ---- MulExportDialog (Save Multi fallback dialog) ----
         "\"This setup uses more voices than one Ambika has (6 voicecards).\" = \"Cette configuration utilise plus de voix qu'un Ambika n'en possède (6 cartes vocales).\"\n"
@@ -255,6 +288,8 @@ const juce::String& germanChromeStrings()
         // ---- top-bar button tooltips (shortcut hints) ----
         "\"Load a patch (Cmd/Ctrl+O)\" = \"Programm laden (Cmd/Ctrl+O)\"\n"
         "\"Save the current patch (Cmd/Ctrl+S)\" = \"Programm speichern (Cmd/Ctrl+S)\"\n"
+        "\"Synth page\" = \"Synth-Seite\"\n"
+        "\"FX page\" = \"FX-Seite\"\n"
         // ---- top-bar captions ----
         "\"Patch:\" = \"Programm:\"\n"
         "\"Part:\" = \"Part:\"\n"
@@ -329,6 +364,9 @@ const juce::String& germanChromeStrings()
         // ---- Settings panel labels / toggles ----
         "\"Theme\" = \"Design\"\n"
         "\"Zoom\" = \"Zoom\"\n"
+        "\"Zoom in\" = \"Vergrößern\"\n"
+        "\"Zoom out\" = \"Verkleinern\"\n"
+        "\"Reset zoom\" = \"Zoom zurücksetzen\"\n"
         "\"Tooltips\" = \"Quickinfo\"\n"
         "\"Mod Lamp Colours\" = \"Kategorienfarben der Lampen\"\n"
         "\"Parameter Smoothing\" = \"Parameterglättung\"\n"
@@ -377,6 +415,8 @@ const juce::String& germanChromeStrings()
         // ---- context menu / Multi page / dialogs ----
         "\"Reset to default\" = \"Zurücksetzen\"\n"
         "\"Randomize\" = \"Zufall\"\n"
+        "\"Reset this parameter to its default value\" = \"Diesen Parameter auf den Standardwert zurücksetzen\"\n"
+        "\"Set this parameter to a random value\" = \"Diesen Parameter auf einen Zufallswert setzen\"\n"
         "\"Omni\" = \"Omni\"\n"
         "\"Multi\" = \"Multi\"\n"
         "\"Part\" = \"Part\"\n"
@@ -391,6 +431,29 @@ const juce::String& germanChromeStrings()
         "\"Save Ambika Multi (.MUL)\" = \"Ambika-Multi (.MUL) speichern\"\n"
         "\"Could not save file:\" = \"Datei konnte nicht gespeichert werden:\"\n"
         "\"Could not load file:\" = \"Datei konnte nicht geladen werden:\"\n"
+        // ---- FX routing bar (global dry/wet, master EQ, topology buttons) ----
+        "\"Dry/Wet\" = \"Dry/Wet\"\n"          // gear-standard term — kept
+        "\"Global FX wet/dry\" = \"Globales FX-Dry/Wet\"\n"
+        "\"FX master EQ \" = \"FX-Master-EQ \"\n"
+        "\"Previous FX topology\" = \"Vorherige FX-Topologie\"\n"
+        "\"Next FX topology\" = \"Nächste FX-Topologie\"\n"
+        // ---- preset browser (submenus + name placeholder) ----
+        "\"Factory\" = \"Werk\"\n"
+        "\"User\" = \"Benutzer\"\n"
+        "\"(select a patch)\" = \"(Patch auswählen)\"\n"
+        // ---- mod matrix rows / tap-to-assign status strip ----
+        "\"+ Add Modulation\" = \"+ Modulation hinzufügen\"\n"
+        "\"Assign the next free slot\" = \"Weist den nächsten freien Platz zu\"\n"
+        "\"Mute / bypass this modulation\" = \"Diese Modulation stummschalten / umgehen\"\n"
+        "\"Assigned\" = \"Zugewiesen\"\n"
+        "\"Mod Matrix full\" = \"Mod-Matrix voll\"\n"
+        "\"Tap-to-assign modulation\" = \"Modulation per Tipp zuweisen\"\n"
+        "\"Toggle the modulation pill bar\" = \"Modulationsleiste ein-/ausblenden\"\n"
+        // Suffix-key fragments: the source name and the exit hint follow.
+        "\"MOD assign armed: \" = \"MOD-Zuweisung aktiv: \"\n"
+        "\" — tap a destination knob ([MOD] to exit)\" = \" — Ziel-Drehregler antippen ([MOD] zum Beenden)\"\n"
+        "\"Tap a mod source first\" = \"Zuerst eine Modulationsquelle antippen\"\n"
+        "\"Tap a mod source, then a knob\" = \"Zuerst eine Modulationsquelle, dann einen Drehregler antippen\"\n"
         // ---- FX slot cards / wheels / export preview (suffix-key fragments) ----
         // The FX number / source label stays OUTSIDE the fragments ( untranslated
         // proper nouns); the keys carry their leading/trailing spaces so the
@@ -417,6 +480,9 @@ const juce::String& germanChromeStrings()
         "\"Mod Wheel\" = \"Modulationsrad\"\n"
         "\"Mod \" = \"Mod \"\n"
         "\"FX Mod \" = \"FX-Mod. \"\n"
+        "\"Toggle virtual keyboard\" = \"Virtuelle Tastatur ein-/ausblenden\"\n"
+        "\"Keyboard: octave \" = \"Tastatur: Oktave \"\n"
+        "\"velocity\" = \"Anschlagstärke\"\n"
         "\"(this file)\" = \"(diese Datei)\"\n"
         // ---- MulExportDialog (Save Multi fallback dialog) ----
         "\"This setup uses more voices than one Ambika has (6 voicecards).\" = \"Dieses Setup benötigt mehr Stimmen als ein Ambika hat (6 Voicecards).\"\n"
