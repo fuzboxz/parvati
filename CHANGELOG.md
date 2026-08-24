@@ -398,6 +398,11 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   overhead; inert macro on older toolchains.
 
 ### Changed
+- **Smaller matrix thumbs and one lamp size (2026-08-23).** The matrix
+  depth-slider thumb shrinks: the radius now scales at 22 percent of the
+  row band (was 30 percent, 3pt floor unchanged). The mute/bypass lamp of
+  the FX matrix now uses the fixed 15pt size of the synth matrix lamp (was
+  the larger theme-proportional dot), so both matrices show the same lamp.
 - **Matrix depth sliders unified on the slim 4pt track (2026-08-23).** The
   modulation-matrix depth sliders in the synth matrix and the FX matrix drew
   two different geometries: the synth matrix used a 7pt track with a fixed

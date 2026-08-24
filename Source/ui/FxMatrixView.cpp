@@ -34,7 +34,7 @@ MatrixViewConfig makeFxConfig()
     cfg.destComboAttached   = false;   // dest combo is manually index-bound (dynamic labels)
     cfg.comboShrinkFallback = false;  // plain clamped combo caps (historical FX layout)
     cfg.highlightSelfOnHover = true;   // a hovered row highlights itself besides the broadcast
-    cfg.lampDiameter            = -1.0f;  // theme default (proportional dot)
+    cfg.lampDiameter            = 15.0f;  // same lamp size as the synth matrix
     cfg.lampCarriesCategoryColour = false; // lamp ON == theme accent
     cfg.destBusOffset    = parvati::ModDestMap::kFxModDstOffset;   // FX dests broadcast offset-encoded
     cfg.rejectDestAtOrAbove = std::numeric_limits<int>::max();     // raw FX_DST_* indices only

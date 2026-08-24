@@ -109,7 +109,7 @@ public:
 
         // Flat solid circle thumb (no 3D/gradient / no outline ring). The
         // radius is proportional to the band, with a 3pt floor.
-        const float tr = juce::jmax (3.0f, static_cast<float> (height) * 0.30f);
+        const float tr = juce::jmax (3.0f, static_cast<float> (height) * 0.22f);
         const auto  thumbRect = juce::Rectangle<float> (tr * 2.0f, tr * 2.0f).withCentre (juce::Point<float> (sp, cy));
         g.setColour (slider.isEnabled() ? thumbCol : thumbCol.withAlpha (0.4f));
         g.fillEllipse (thumbRect);
