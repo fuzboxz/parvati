@@ -1,0 +1,16 @@
+# Editor configuration for clangd.
+# It points the language server at the canonical build directory. The
+# directory holds the compile database. The database carries every JUCE
+# include path and define. Without it, clangd reports false "file not
+# found" errors for every JUCE header.
+#
+# A fresh clone must configure build_unified first:
+#   cmake -B build_unified -DCMAKE_BUILD_TYPE=Debug
+# See CONTRIBUTING.md for the full flow.
+CompileFlags:
+  CompilationDatabase: build_unified
+
+# Index the code base in the background. It speeds up navigation and
+# cross-references. The index lives in .cache/clangd (gitignored).
+Index:
+  Background: Build

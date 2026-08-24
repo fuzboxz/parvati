@@ -33,6 +33,15 @@ and CGEvents).
 We develop and test against **Debug builds only**. Do not rely on a Release
 build for verification.
 
+### Editor / IDE support
+
+The repo ships a `.clangd` config. It points the clangd language server at
+`build_unified/compile_commands.json`, so JUCE includes and defines resolve
+correctly in the editor. Configure the canonical build dir first
+(`cmake -B build_unified -DCMAKE_BUILD_TYPE=Debug`); without it, clangd
+reports false "file not found" errors. clangd writes its background index to
+`.cache/`, which stays gitignored.
+
 ## Running the tests
 
 All tests live in **one** binary, `parvati_unified_tests` (built by default).
