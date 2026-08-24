@@ -124,10 +124,10 @@ TEST(arp_test)
 
     double meanEnergy = 0.0;
     for (double e : blockEnergies) meanEnergy += e;
-    meanEnergy /= blockEnergies.size();
+    meanEnergy /= static_cast<double> (blockEnergies.size());
     double variance = 0.0;
     for (double e : blockEnergies) variance += (e - meanEnergy) * (e - meanEnergy);
-    double stddev = std::sqrt (variance / blockEnergies.size());
+    double stddev = std::sqrt (variance / static_cast<double> (blockEnergies.size()));
 
     std::printf ("[arp_test] energy mean=%.5f stddev=%.5f\n", meanEnergy, stddev);
     check (stddev > 0.001, "arp energy varies over time (note on/off dynamics)");

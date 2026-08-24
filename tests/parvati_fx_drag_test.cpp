@@ -119,7 +119,7 @@ double dragArtifact (int fxType, const char* dragParam, int drywet,
     }
     if (getenv ("PARVATI_SPIKE_DUMP") != nullptr && ! spk.empty ())
     {
-        std::sort (spk.begin(), spk.end (), [] (const Spk& a, const Spk& b) { return a.mag > b.mag; });
+        std::sort (spk.begin(), spk.end (), [] (const Spk& s1, const Spk& s2) { return s1.mag > s2.mag; });
         std::printf ("    top spikes (pos-in-window, mag): ");
         for (size_t i = 0; i < std::min<size_t> (12, spk.size()); ++i)
             std::printf ("[%d %.3f] ", spk[i].pos - from, spk[i].mag);

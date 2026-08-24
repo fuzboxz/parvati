@@ -190,7 +190,7 @@ void runEngine (const char* label, int fxType, double sr, int dummy = 0, float f
         double fund = goertzelHann (seg, f0, sr);
         double rms = 0.0;
         for (float v : seg) rms += (double) v * v;
-        rms = std::sqrt (rms / seg.size());
+        rms = std::sqrt (rms / static_cast<double> (seg.size()));
         std::printf ("engine %-10s @%.0fk : inharm %6.1f dB below f0 | fund=%.3e rms=%.4f peak=%.4f\n",
                      label, sr / 1000.0, foldbackScore (seg, f0, sr), fund, rms,
                      *std::max_element (seg.begin(), seg.end(), [] (float a, float b)

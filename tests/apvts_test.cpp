@@ -111,8 +111,8 @@ double detectPitchHz (const std::vector<float>& x, double fs,
     {
         double c = 0.0;
         for (int i = 0; i + lag < static_cast<int> (x.size()); ++i)
-            c += static_cast<double> (x[i]) * static_cast<double> (x[i + lag]);
-        acf[lag] = c;
+            c += static_cast<double> (x[static_cast<size_t> (i)]) * static_cast<double> (x[static_cast<size_t> (i + lag)]);
+        acf[static_cast<size_t> (lag)] = c;
         if (c > globalMax) globalMax = c;
     }
     if (globalMax <= 0.0)
@@ -123,17 +123,17 @@ double detectPitchHz (const std::vector<float>& x, double fs,
     int bestLag = 0;
     for (int lag = minLag + 1; lag < maxLag; ++lag)
     {
-        if (acf[lag] >= threshold && acf[lag] > acf[lag - 1] && acf[lag] >= acf[lag + 1])
+        if (acf[static_cast<size_t> (lag)] >= threshold && acf[static_cast<size_t> (lag)] > acf[static_cast<size_t> (lag - 1)] && acf[static_cast<size_t> (lag)] >= acf[static_cast<size_t> (lag + 1)])
         { bestLag = lag; break; }
     }
     if (bestLag == 0)
         return 0.0;
 
     // Parabolic interpolation around the peak.
-    const double denom = (acf[bestLag - 1] - 2.0 * acf[bestLag] + acf[bestLag + 1]);
+    const double denom = (acf[static_cast<size_t> (bestLag - 1)] - 2.0 * acf[static_cast<size_t> (bestLag)] + acf[static_cast<size_t> (bestLag + 1)]);
     double offset = 0.0;
     if (std::fabs (denom) > 1e-9)
-        offset = std::clamp (0.5 * (acf[bestLag - 1] - acf[bestLag + 1]) / denom, -1.0, 1.0);
+        offset = std::clamp (0.5 * (acf[static_cast<size_t> (bestLag - 1)] - acf[static_cast<size_t> (bestLag + 1)]) / denom, -1.0, 1.0);
     return fs / (bestLag + offset);
 }
 }  // namespace

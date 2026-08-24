@@ -94,9 +94,9 @@ TEST(fv1_plate_reverb_test)
         {
             const float w = 6.28318530718f * 220.0f * static_cast<float> (i) / 48000.0f;
             const float v = 0.5f * std::sin (w);
-            in[i] = v;
-            L[i] = v;
-            R[i] = v;
+            in[static_cast<size_t> (i)] = v;
+            L[static_cast<size_t> (i)] = v;
+            R[static_cast<size_t> (i)] = v;
         }
         processChunked (fx, L.data(), R.data(), N);
         check (allFinite (L.data(), N) && allFinite (R.data(), N), "sine: outputs finite");
@@ -115,8 +115,8 @@ TEST(fv1_plate_reverb_test)
         {
             const bool click = (i < 512) && ((i % 64) == 0);
             const float v = click ? 0.8f : 0.0f;
-            L[i] = v;
-            R[i] = v;
+            L[static_cast<size_t> (i)] = v;
+            R[static_cast<size_t> (i)] = v;
         }
         processChunked (fx, L.data(), R.data(), N);
         check (allFinite (L.data(), N) && allFinite (R.data(), N), "impulse train: outputs finite");
@@ -140,7 +140,7 @@ TEST(fv1_plate_reverb_test)
         {
             // Broadband clicks (every 32 samples) for ~21 ms, then silence.
             const bool click = (i < 1024) && ((i % 32) == 0);
-            in[i] = click ? 0.5f : 0.0f;
+            in[static_cast<size_t> (i)] = click ? 0.5f : 0.0f;
         }
 
         fx.reset();
@@ -182,11 +182,11 @@ TEST(fv1_plate_reverb_test)
             if (i < 300)
             {
                 const float w = 6.28318530718f * 330.0f * static_cast<float> (i) / 48000.0f;
-                in[i] = 0.4f * std::sin (w);
+                in[static_cast<size_t> (i)] = 0.4f * std::sin (w);
             }
             else
             {
-                in[i] = 0.0f;
+                in[static_cast<size_t> (i)] = 0.0f;
             }
         }
 
@@ -222,8 +222,8 @@ TEST(fv1_plate_reverb_test)
             {
                 const float w = 6.28318530718f * 110.0f * static_cast<float> (i) / 48000.0f;
                 const float s = 0.5f * std::sin (w);
-                L[i] = s;
-                R[i] = s;
+                L[static_cast<size_t> (i)] = s;
+                R[static_cast<size_t> (i)] = s;
             }
             processChunked (fx, L.data(), R.data(), N);
             char msg[64];

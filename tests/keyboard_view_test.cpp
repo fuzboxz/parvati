@@ -48,6 +48,10 @@
 #include "ui/ParvatiLookAndFeel.h"
 #include "ui/ParvatiTheme.h"
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 namespace
 {
 int g_failures = 0;
@@ -409,18 +413,18 @@ TEST(keyboard_view_test)
         check (pitchSlider != nullptr && modSlider != nullptr,
                "wheels expose a pitch (-1..1) and a mod (0..1) slider");
 
-        const auto source = juce::Desktop::getInstance().getMainMouseSource();
-        auto wheelOn = [&] (juce::Slider* s)
+        const auto mouseSrc = juce::Desktop::getInstance().getMainMouseSource();
+        auto wheelOn = [&] (juce::Slider* sl)
         {
-            const auto centre = s->getLocalBounds().getCentre().toFloat();
-            const auto me = juce::MouseEvent (source, centre,
+            const auto centre = sl->getLocalBounds().getCentre().toFloat();
+            const auto me = juce::MouseEvent (mouseSrc, centre,
                                               juce::ModifierKeys().withFlags (juce::ModifierKeys::noModifiers),
                                               juce::MouseInputSource::defaultPressure,
                                               juce::MouseInputSource::defaultOrientation,
                                               juce::MouseInputSource::defaultRotation,
                                               juce::MouseInputSource::defaultTiltX,
                                               juce::MouseInputSource::defaultTiltY,
-                                              s, s,
+                                              sl, sl,
                                               juce::Time::getCurrentTime(), centre,
                                               juce::Time::getCurrentTime(), 1, false);
             juce::MouseWheelDetails wheel;
@@ -429,7 +433,7 @@ TEST(keyboard_view_test)
             wheel.isSmooth = false;
             wheel.isReversed = false;
             for (int k = 0; k < 4; ++k)
-                s->mouseWheelMove (me, wheel);
+                sl->mouseWheelMove (me, wheel);
         };
 
         if (pitchSlider != nullptr)

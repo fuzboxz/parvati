@@ -142,20 +142,8 @@ TEST(workspace_padding_test)
         ThemeManager themeManager;
 
         const juce::String prefix = "fx1_";
-        const PatchParamDescriptor *p1 = nullptr, *p2 = nullptr, *p3 = nullptr,
-                                   *p4 = nullptr, *p5 = nullptr, *dw = nullptr;
-        for (const auto& d : getPatchParamDescriptors())
-        {
-            if (! (d.isFx && juce::String (d.paramID).startsWith (prefix)))
-                continue;
-            if      (d.paramID == prefix + "param1") p1 = &d;
-            else if (d.paramID == prefix + "param2") p2 = &d;
-            else if (d.paramID == prefix + "param3") p3 = &d;
-            else if (d.paramID == prefix + "param4") p4 = &d;
-            else if (d.paramID == prefix + "param5") p5 = &d;
-            else if (d.paramID == prefix + "drywet") dw = &d;
-        }
-
+        // The fx1_ descriptor lookup this block once held moved into
+        // FxWorkspace/FxSlotCard; the pointers were set and never read.
         FxWorkspace fx (themeManager);
         auto routing = std::make_unique<FxRoutingBar> (proc, themeManager);
         fx.setFxRoutingBar (routing.get());

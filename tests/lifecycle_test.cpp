@@ -180,7 +180,7 @@ TEST(lifecycle_test)
             {
                 ++zeroExtent;
                 std::printf ("     zero-extent focusable: %s (%dx%d)\n",
-                             c->getName().toUTF8(), c->getWidth(), c->getHeight());
+                             c->getName().toRawUTF8(), c->getWidth(), c->getHeight());
             }
         char msg[96];
         std::snprintf (msg, sizeof (msg),

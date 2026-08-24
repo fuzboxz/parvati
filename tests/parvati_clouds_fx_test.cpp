@@ -563,7 +563,7 @@ TEST(parvati_clouds_fx_test)
         const int N = 512 * kBlock;   // 131072: block-aligned (~2.7 s @ 48k): enough for the 0.30 s fade + deactivation
         std::vector<float> inBuf (N), outBuf (N);
         for (int i = 0; i < N; ++i)
-            inBuf[i] = 0.2f * std::sin (2.0f * 3.14159265f * 1500.0f
+            inBuf[static_cast<size_t> (i)] = 0.2f * std::sin (2.0f * 3.14159265f * 1500.0f
                                        * (float) i / (float) kRate);
 
         FxChain chain;
@@ -587,7 +587,7 @@ TEST(parvati_clouds_fx_test)
         int maxIdx = 0;
         for (int i = 1; i < N; ++i)
         {
-            const float step = std::fabs (outBuf[i] - outBuf[i - 1]);
+            const float step = std::fabs (outBuf[static_cast[static_cast<size_t> (i - 1)]> (i)] - outBuf[i - 1]);
             if (i < stabilise) steadyStep = std::fmax (steadyStep, step);
             if (step > maxStep) { maxStep = step; maxIdx = i; }
         }

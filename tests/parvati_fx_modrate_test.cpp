@@ -51,20 +51,13 @@ bool allBounded (const float* d, int n, float limit)
     return true;
 }
 
-bool nonSilent (const float* d, int n)
-{
-    for (int i = 0; i < n; ++i)
-        if (d[i] != 0.0f)
-            return true;
-    return false;
-}
-
+// (nonSilent removed: no caller since the 2026-08-24 warning sweep.)
 // A periodic impulse train + low sine so every effect has energy to process.
 void fillInput (float* d, int n, double sr)
 {
     for (int i = 0; i < n; ++i)
     {
-        const float sine = 0.4f * std::sin (2.0 * 3.14159265 * 220.0 * i / sr);
+        const float sine = static_cast<float> (0.4f * std::sin (2.0 * 3.14159265 * 220.0 * i / sr));
         const float impulse = (i % 32 == 0) ? 0.5f : 0.0f;
         d[i] = sine + impulse;
     }
@@ -189,11 +182,16 @@ static void testDryPath()
         char msg[128];
         std::snprintf (msg, sizeof (msg), "dry @N=%d: L == inL", sz);
         bool okL = true, okR = true;
+        // Bit-exact dry passthrough is the assertion: exact compare is
+        // deliberate here.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
         for (int i = 0; i < sz; ++i)
         {
             if (outL[i] != inL[i]) okL = false;
             if (outR[i] != inR[i]) okR = false;
         }
+#pragma clang diagnostic pop
         check (okL, msg);
         std::snprintf (msg, sizeof (msg), "dry @N=%d: R == inR", sz);
         check (okR, msg);
@@ -236,7 +234,7 @@ static void testAudioRateModulation()
             ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (rate)));
     };
 
-    auto renderPeak = [sr, block] (ParvatiAudioProcessor& p, int blocks) -> double
+    auto renderPeak = [] (ParvatiAudioProcessor& p, int blocks) -> double
     {
         juce::AudioBuffer<float> buf (2, block);
         juce::MidiBuffer midi;

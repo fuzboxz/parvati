@@ -227,9 +227,13 @@ TEST(reverb_decay_test)
             fx.process (L.data() + off, R.data() + off, c);
             off += c;
         }
+        // Bit-exact mono is the assertion: exact compare is deliberate.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
         bool monoExact = true;
         for (int i = 0; i < N; ++i)
             if (L[static_cast<size_t> (i)] != R[static_cast<size_t> (i)]) { monoExact = false; break; }
+#pragma clang diagnostic pop
         check (monoExact, "spring: Width=0 -> L==R bit-exact (TRUE mono)");
 
         setP5 (p, 0.5f, 0.5f, 0.5f, 1.0f);   // width 1

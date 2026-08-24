@@ -87,7 +87,7 @@ TEST(fv1_ensemble_test)
         for (int e = 0; e < 2; ++e)
         {
             fx.reset();
-            fx.setParams (extremes[e]);
+            fx.setParams (extremes[static_cast<size_t> (e)]);
             run (fx, inBuf, n, L, R);
             bool finite = true;
             for (int i = 0; i < n; ++i)

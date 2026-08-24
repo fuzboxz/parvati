@@ -200,7 +200,7 @@ TEST(parvati_fx_invariants_test)
             {
                 std::array<float, kNumFxSlotParams> p;
                 for (int k = 0; k < 5; ++k)
-                    p[k] = (trial == 0) ? 1.0f : next01() * 0.5f + 0.5f;   // extreme half
+                    p[static_cast<size_t> (k)] = (trial == 0) ? 1.0f : next01() * 0.5f + 0.5f;   // extreme half
                 std::vector<float> out;
                 switch (r.kind)
                 {
@@ -260,7 +260,7 @@ TEST(parvati_fx_invariants_test)
             std::vector<float> in ((size_t) n, 0.f);
             for (int i = 0; i < n; ++i)
                 in[(size_t) i] = (float) (0.05 * std::sin (6.283185307 * 15900.0 * i / kSr));
-            auto runFx = [n, &in, &out] (auto& f)
+            auto runFx = [&in, &out] (auto& f)
             {
                 for (int i = 0; i < n; ++i)
                 {

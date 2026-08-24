@@ -148,19 +148,19 @@ TEST(fv1_vinyl_compressor_test)
         {
             for (int i = 0; i < M; ++i) { l[i] = amp; r[i] = amp; }
         };
-        float inL[M], inR[M], oL[M], oR[M];
-        steady (inL, inR, 0.9f);
+        float bufL[M], bufR[M], obufL[M], obufR[M];
+        steady (bufL, bufR, 0.9f);
         fx.reset();
-        runSetting (fx, 1.0f, 0.0f, 0.0f, 0.0f, inL, inR, M, oL, oR);   // Age bright
+        runSetting (fx, 1.0f, 0.0f, 0.0f, 0.0f, bufL, bufR, M, obufL, obufR);   // Age bright
         float outLoud = 0.0f;
-        for (int i = M - 200; i < M; ++i) outLoud += std::fabs (oL[i]);
+        for (int i = M - 200; i < M; ++i) outLoud += std::fabs (obufL[i]);
         outLoud /= 200.0f;
 
-        steady (inL, inR, 0.06f);
+        steady (bufL, bufR, 0.06f);
         fx.reset();
-        runSetting (fx, 1.0f, 0.0f, 0.0f, 0.0f, inL, inR, M, oL, oR);
+        runSetting (fx, 1.0f, 0.0f, 0.0f, 0.0f, bufL, bufR, M, obufL, obufR);
         float outQuiet = 0.0f;
-        for (int i = M - 200; i < M; ++i) outQuiet += std::fabs (oL[i]);
+        for (int i = M - 200; i < M; ++i) outQuiet += std::fabs (obufL[i]);
         outQuiet /= 200.0f;
 
         check (outQuiet > 0.06f * 1.5f,
@@ -184,27 +184,27 @@ TEST(fv1_vinyl_compressor_test)
     {
         fx.reset();
         constexpr double dur = 6.0;                       // > 2 wow periods
-        const int M = static_cast<int> (dur * 48000.0);
-        std::vector<float> inL (static_cast<size_t> (M)), inR (static_cast<size_t> (M));
-        std::vector<float> oL (static_cast<size_t> (M)), oR (static_cast<size_t> (M));
-        for (int i = 0; i < M; ++i)
+        const int durSamples = static_cast<int> (dur * 48000.0);
+        std::vector<float> bufL (static_cast<size_t> (durSamples)), bufR (static_cast<size_t> (durSamples));
+        std::vector<float> obufL (static_cast<size_t> (durSamples)), obufR (static_cast<size_t> (durSamples));
+        for (int i = 0; i < durSamples; ++i)
         {
             const float v = 0.5f * std::sin (6.28318530718f * 1000.0f
                                              * static_cast<float> (i) / 48000.0f);
-            inL[static_cast<size_t> (i)] = v;
-            inR[static_cast<size_t> (i)] = v;
+            bufL[static_cast<size_t> (i)] = v;
+            bufR[static_cast<size_t> (i)] = v;
         }
-        runSetting (fx, 0.0f, 1.0f, 0.0f, 1.0f, inL.data(), inR.data(), M,
-                    oL.data(), oR.data());   // compress off / wow full / crackle off / age bright
+        runSetting (fx, 0.0f, 1.0f, 0.0f, 1.0f, bufL.data(), bufR.data(), durSamples,
+                    obufL.data(), obufR.data());   // compress off / wow full / crackle off / age bright
 
         // Rising zero crossings (linear-interpolated) after the delay fills
         // (~2400 host samples); periods = successive crossing spacings.
         std::vector<float> periods;
         float prevX = -1.0f;
-        for (int i = 1; i < M; ++i)
+        for (int i = 1; i < durSamples; ++i)
         {
-            const float a = oL[static_cast<size_t> (i - 1)];
-            const float b = oL[static_cast<size_t> (i)];
+            const float a = obufL[static_cast<size_t> (i - 1)];
+            const float b = obufL[static_cast<size_t> (i)];
             if (a <= 0.0f && b > 0.0f)
             {
                 const float x = static_cast<float> (i - 1) - a / (b - a);   // crossing pos
@@ -270,14 +270,15 @@ TEST(fv1_vinyl_compressor_test)
             maxNoCrackle = std::max (maxNoCrackle, std::fabs (o0[i]));
 
         runSetting (fx, 0.0f, 0.0f, 1.0f, 1.0f, silL, silR, M, o1, o1); // full crackle
-        float maxCrackle = 0.0f, sumSq = 0.0f;
+        float maxCrackle = 0.0f;
+        double sumSq = 0.0;   // double accumulator: the products are double
         int ticks = 0;
         for (int i = 1; i < M; ++i)
         {
             const float a0 = std::fabs (o1[i - 1]);
             const float a = std::fabs (o1[i]);
             if (a > maxCrackle) maxCrackle = a;
-            sumSq += static_cast<double> (o1[i]) * o1[i];
+            sumSq += static_cast<double> (o1[static_cast<size_t> (i)]) * o1[static_cast<size_t> (i)];
             if (a > 0.01f && a0 <= 0.01f) ++ticks;   // rising edge above the hiss floor
         }
 

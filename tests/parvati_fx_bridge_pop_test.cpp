@@ -43,6 +43,9 @@ void check (bool cond, const char* msg)
 
 const char* fxTypeName (FxType t)
 {
+    // Only named types carry cases; the default names the rest.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
     switch (t)
     {
         case FxType::Diffuser:        return "Diffuser";
@@ -192,11 +195,11 @@ TEST(parvati_fx_bridge_pop_test)
     {
         const double sr = 96000.0;
         const int    N  = 256 * 150;
-        auto renderTone = [sr, N] (double freq) {
+        auto renderTone = [sr] (double freq) {
             std::vector<float> inL (static_cast<size_t> (N)), inR (static_cast<size_t> (N));
             std::vector<float> outL (static_cast<size_t> (N)), outR (static_cast<size_t> (N));
             for (int i = 0; i < N; ++i)
-                inL[i] = inR[i] = static_cast<float> (0.5 * std::sin (2.0 * 3.14159265 * freq * static_cast<double> (i) / sr));
+                inL[static_cast<size_t> (i)] = inR[static_cast<size_t> (i)] = static_cast<float> (0.5 * std::sin (2.0 * 3.14159265 * freq * static_cast<double> (i) / sr));
             FxChain chain;
             chain.prepare (sr, 256);
             chain.setTopology (FxTopology::Series);

@@ -107,14 +107,6 @@ bool noSubnormal (const float* d, int n)
     return true;
 }
 
-float maxAbs (const float* d, int n)
-{
-    float m = 0.0f;
-    for (int i = 0; i < n; ++i)
-        m = std::fmax (m, std::fabs (d[i]));
-    return m;
-}
-
 double rms (const float* d, int n)
 {
     double s = 0.0;
@@ -225,7 +217,7 @@ static void testPerEffectFinite()
             auto fx = createFxProcessor (e.type);
             fx->prepare (kRate, kBlock);
             fx->reset();
-            fx->setParams (paramSets[ps]);
+            fx->setParams (paramSets[static_cast<size_t> (ps)]);
             if (e.type == FxType::ClockedDelay)
                 fx->setTransport (120.0, true);
 
@@ -263,7 +255,11 @@ static void testPerEffectWetDiffers()
     // is unambiguously engaged).
     auto neutral = [] (FxType t, std::array<float, kNumFxSlotParams> p)
     {
-        for (int i = 0; i < 5; ++i) p[i] = 0.5f;
+        for (int i = 0; i < 5; ++i) p[static_cast<size_t> (i)] = 0.5f;
+        // Only the types needing a special neutral carry cases; the default
+        // covers the rest.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
         switch (t)
         {
             case FxType::PitchShifter: p[0] = 0.62f; break;          // +~1.5 st
@@ -273,6 +269,7 @@ static void testPerEffectWetDiffers()
             case FxType::Reverb: p[2] = 0.6f; break;                  // time -> tail
             default: break;
         }
+#pragma clang diagnostic pop
     };
 
     for (const auto& e : kEffects)
@@ -362,6 +359,10 @@ static void testPerEffectParamSweep()
     auto cfgFor = [&] (FxType t) -> EffCfg
     {
         EffCfg c { toneL, toneR, { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f }, 16 };
+        // Only the effects needing a special config carry cases; the default
+        // covers the rest.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
         switch (t)
         {
             // Buffer-based: read head near the (recently recorded) head, long
@@ -399,6 +400,7 @@ static void testPerEffectParamSweep()
             case FxType::Spring:       c.warmup = 90; break;
             default: break;
         }
+#pragma clang diagnostic pop
         return c;
     };
     constexpr int measure = 6;     // measurement blocks captured for the waveform
@@ -454,7 +456,7 @@ static void testPerEffectParamSweep()
             {
                 std::array<float, kNumFxSlotParams> pv;
                 pv = cfg.base;   // std::array copy (was memcpy into a raw array)
-                pv[k] = v;
+                pv[static_cast<size_t> (k)] = v;
                 measureWaveform (e.type, pv, cfg.inL, cfg.inR, cfg.warmup, trialWave);
                 for (size_t i = 0; i < baseWave.size(); ++i)
                     maxDev = std::fmax (maxDev, std::fabs (trialWave[i] - baseWave[i]));
@@ -997,7 +999,7 @@ static void testConditionDependentParams()
         std::array<float, kNumFxSlotParams> meas;
         meas = recBase;   // std::array copy (was memcpy into a raw array)
         meas[3] = 1.0f;                       // freeze ON
-        meas[sweepIdx] = sweepVal;
+        meas[static_cast<size_t> (sweepIdx)] = sweepVal;
         fx->setParams (meas);
         std::vector<float> wave;
         wave.assign (static_cast<size_t> (2 * kBlock * 8), 0.0f);

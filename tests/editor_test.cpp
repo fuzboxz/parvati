@@ -44,6 +44,10 @@
 #include "ui/PresetBrowser.h"          // [17] the scan-cache seams (W10)
 #include "ui/ThemeManager.h"
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 namespace
 {
 int g_failures = 0;

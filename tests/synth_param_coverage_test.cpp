@@ -140,21 +140,21 @@ double detectPitchHz (const std::vector<float>& x, double fs,
     {
         double c = 0.0;
         for (int i = 0; i + lag < static_cast<int> (x.size()); ++i)
-            c += static_cast<double> (x[i]) * x[i + lag];
-        acf[lag] = c;
+            c += static_cast<double> (x[static_cast<size_t> (i)]) * x[static_cast<size_t> (i + lag)];
+        acf[static_cast<size_t> (lag)] = c;
         if (c > globalMax) globalMax = c;
     }
     if (globalMax <= 0.0) return 0.0;
     const double threshold = 0.8 * globalMax;
     int bestLag = 0;
     for (int lag = minLag + 1; lag < maxLag; ++lag)
-        if (acf[lag] >= threshold && acf[lag] > acf[lag - 1] && acf[lag] >= acf[lag + 1])
+        if (acf[static_cast<size_t> (lag)] >= threshold && acf[static_cast<size_t> (lag)] > acf[static_cast<size_t> (lag - 1)] && acf[static_cast<size_t> (lag)] >= acf[static_cast<size_t> (lag + 1)])
         { bestLag = lag; break; }
     if (bestLag == 0) return 0.0;
-    const double denom = (acf[bestLag - 1] - 2.0 * acf[bestLag] + acf[bestLag + 1]);
+    const double denom = (acf[static_cast<size_t> (bestLag - 1)] - 2.0 * acf[static_cast<size_t> (bestLag)] + acf[static_cast<size_t> (bestLag + 1)]);
     double offset = 0.0;
     if (std::fabs (denom) > 1e-9)
-        offset = std::clamp (0.5 * (acf[bestLag - 1] - acf[bestLag + 1]) / denom, -1.0, 1.0);
+        offset = std::clamp (0.5 * (acf[static_cast<size_t> (bestLag - 1)] - acf[static_cast<size_t> (bestLag + 1)]) / denom, -1.0, 1.0);
     return fs / (bestLag + offset);
 }
 
@@ -658,9 +658,9 @@ static void testLfos (ParvatiAudioProcessor& proc)
         for (size_t i = 0; i + 1024 <= x.size(); i += 1024)
             wrms.push_back (rmsOf (x, i, i + 1024));
         if (wrms.size() < 3) return 0.0;
-        double mean = 0.0; for (double v : wrms) mean += v; mean /= wrms.size();
+        double mean = 0.0; for (double v : wrms) mean += v; mean /= static_cast<double> (wrms.size());
         double var = 0.0; for (double v : wrms) var += (v - mean) * (v - mean);
-        return var / wrms.size();
+        return var / static_cast<double> (wrms.size());
     };
 
     const double varSlow = envLfoModulationVariance (ambika::dsp::kNumSyncedLfoRates + 20);   // slow free
@@ -687,9 +687,9 @@ static void testLfos (ParvatiAudioProcessor& proc)
             wrms.push_back (rmsOf (vlfo, i, i + 1024));
         if (wrms.size() >= 3)
         {
-            double mean = 0.0; for (double v : wrms) mean += v; mean /= wrms.size();
+            double mean = 0.0; for (double v : wrms) mean += v; mean /= static_cast<double> (wrms.size());
             for (double v : wrms) vlfoVar += (v - mean) * (v - mean);
-            vlfoVar /= wrms.size();
+            vlfoVar /= static_cast<double> (wrms.size());
         }
     }
     std::printf ("     voice_lfo->cutoff windowed-RMS variance=%.3e\n", vlfoVar);

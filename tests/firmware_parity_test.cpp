@@ -946,7 +946,7 @@ void scenarioMixGainGlideAudio()
     pv.set_patch_data (static_cast<uint8_t> (offBalance), 24);
     pv.Trigger (60 << 7, 100, 0);
 
-    const auto hex = [kBlockBytes] (const uint8_t* p) {
+    const auto hex = [] (const uint8_t* p) {
         std::string s;
         s.reserve (static_cast<size_t> (kBlockBytes) * 3);
         char b[4];
@@ -967,11 +967,11 @@ void scenarioMixGainGlideAudio()
         fw_voicecard::ProcessBlock (fwBlock);
         return hex (fwBlock);
     };
-    const auto pvRender = [&pv, &hex, &anySignal, kBlockBytes]() {
+    const auto pvRender = [&pv, &hex, &anySignal]() {
         pv.ProcessBlock();
         const auto& out = pv.output();   // raw pointer (HEAD) or std::array —
         for (int i = 0; i < kBlockBytes; ++i)   // indexable either way
-            if (out[i] != 128) { anySignal = true; break; }
+            if (out[static_cast<size_t> (i)] != 128) { anySignal = true; break; }
         return hex (&out[0]);
     };
 

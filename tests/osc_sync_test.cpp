@@ -31,11 +31,16 @@ using namespace ambika::dsp;
 
 static int g_failures = 0;
 
+// This file keeps its own CHECK macro: it wins over the runner copy.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmacro-redefined"
+
 #define CHECK(cond, msg)                                            \
     do {                                                            \
         if (cond) { printf("  ok  : %s\n", msg); }                  \
         else { printf("  FAIL: %s\n", msg); ++g_failures; }         \
     } while (0)
+#pragma clang diagnostic pop
 
 static uint24_t inc24 (uint16_t integral)
 {
@@ -188,12 +193,12 @@ TEST(osc_sync_test)
                 const unsigned s = (m * 255) >> 8;   // sub-osc amount 0 (1/256 dry attenuation)
                 const unsigned n = (s * 255) >> 8;   // noise amount 0
                 const unsigned a = (n * 255) >> 8;   // fuzz 0
-                if (voice.output()[i] != a)
+                if (voice.output()[static_cast<size_t> (i)] != a)
                 {
                     allEqual = false;
                     if (++mismatches <= 3)
                         printf ("      block %d sample %d: voice %u vs expected %u\n",
-                                block, i, voice.output()[i], a);
+                                block, i, voice.output()[static_cast<size_t> (i)], a);
                 }
             }
         }
@@ -217,7 +222,7 @@ TEST(osc_sync_test)
             sum.ProcessBlock();
             synced.ProcessBlock();
             for (int i = 0; i < kAudioBlockSize; ++i)
-                differs = differs || sum.output()[i] != synced.output()[i];
+                differs = differs || sum.output()[static_cast<size_t> (i)] != synced.output()[static_cast<size_t> (i)];
         }
         CHECK (differs, "OP_SYNC vs OP_SUM renders differ (sync routing actually engages)");
     }

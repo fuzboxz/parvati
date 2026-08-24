@@ -24,6 +24,10 @@
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 
+// Exact float comparison is deliberate: these asserts pin values,
+// not ranges.
+#pragma clang diagnostic ignored "-Wfloat-equal"
+
 #ifndef PARVATI_SOURCE_DIR
 #define PARVATI_SOURCE_DIR "."
 #endif
@@ -65,11 +69,11 @@ TEST(multi_load_test)
     check (parseAmbikaMultiFile (f, m), "parse 000.MUL succeeds (MultiData found)");
     check (m.hasMultiData, "000.MUL has a MultiData (56B) chunk");
     check (m.name.isNotEmpty(), "000.MUL name is non-empty");
-    std::printf ("     multi name = '%s'\n", m.name.toUTF8());
+    std::printf ("     multi name = '%s'\n", m.name.toRawUTF8());
 
     int partsWithPatch = 0;
     for (int i = 0; i < 6; ++i)
-        if (m.parts[i].hasPatch) ++partsWithPatch;
+        if (m.parts[static_cast<size_t> (i)].hasPatch) ++partsWithPatch;
     std::printf ("     parts with a Patch: %d/6\n", partsWithPatch);
     check (partsWithPatch >= 2, "at least 2 parts carry a Patch");
 
@@ -176,10 +180,10 @@ TEST(multi_load_test)
                     allocOk = false;
                 if ((int) got.size() >= 2) sawMultiCard = true;
             }
-            char msg[160];
-            std::snprintf (msg, sizeof (msg), "voice allocation matches stored bitmasks (voices %d expected / %d actual)",
+            char allocMsg[160];
+            std::snprintf (allocMsg, sizeof (allocMsg), "voice allocation matches stored bitmasks (voices %d expected / %d actual)",
                            totalExpected, totalActual);
-            check (allocOk, msg);
+            check (allocOk, allocMsg);
             if (sawMultiCard)
                 check (true, "a part claiming >=2 voicecards owns >=2 Parvati voices");
             else
@@ -189,8 +193,8 @@ TEST(multi_load_test)
             bool arpOk = true;
             for (int i = 0; i < 6; ++i)
             {
-                if (! m.parts[i].hasPart) continue;
-                const uint8_t modeByte = m.parts[i].part[7];  // arp_sequencer_mode
+                if (! m.parts[static_cast<size_t> (i)].hasPart) continue;
+                const uint8_t modeByte = m.parts[static_cast<size_t> (i)].part[7];  // arp_sequencer_mode
                 if (engine.getPart (i).arp.getMode() != modeByte) arpOk = false;
                 if (engine.getPart (i).seq.getMode() != modeByte) arpOk = false;
             }

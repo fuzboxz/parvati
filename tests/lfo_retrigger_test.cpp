@@ -16,11 +16,16 @@ using namespace ambika::dsp;
 
 static int g_failures = 0;
 
+// This file keeps its own CHECK macro: it wins over the runner copy.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmacro-redefined"
+
 #define CHECK(cond, msg)                                            \
     do {                                                            \
         if (cond) { std::printf ("  ok  : %s\n", msg); }            \
         else { std::printf ("  FAIL: %s\n", msg); ++g_failures; }   \
     } while (0)
+#pragma clang diagnostic pop
 
 // env_lfo[0] is at Patch byte offset 24:
 //   attack24, decay25, sustain26, release27, shape28, rate29, padding30, retrigger_mode31

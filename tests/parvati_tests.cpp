@@ -126,7 +126,7 @@ std::vector<float> renderVoice (Voice& v, int midi, uint8_t velocity, int numBlo
         v.ProcessBlock();
         const uint8_t* buf = v.output().data();
         for (int i = 0; i < kAudioBlockSize; ++i)
-            out.push_back ((static_cast<int> (buf[i]) - 128) / 128.0f);
+            out.push_back ((static_cast<int> (buf[static_cast<size_t> (i)]) - 128) / 128.0f);
     }
     return out;
 }

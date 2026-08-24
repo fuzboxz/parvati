@@ -367,7 +367,7 @@ static void testEchoGlide()
 
     // For each probe: the largest |L-sample| in (probe+25ms, probe+100ms) is
     // the echo; its offset from the probe is the tap delay at that moment.
-    auto echoDelayMs = [&outL, n] (double tp) -> float
+    auto echoDelayMs = [&outL] (double tp) -> float
     {
         const int p = static_cast<int> (tp * kRate);
         const int lo = p + static_cast<int> (0.025 * kRate);

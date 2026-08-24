@@ -16,11 +16,16 @@ using namespace ambika::dsp;  // enum constants
 
 static int g_failures = 0;
 
+// This file keeps its own CHECK macro: it wins over the runner copy.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmacro-redefined"
+
 #define CHECK(cond, msg)                                            \
     do {                                                            \
         if (cond) { printf("  ok  : %s\n", msg); }                  \
         else { printf("  FAIL: %s\n", msg); ++g_failures; }         \
     } while (0)
+#pragma clang diagnostic pop
 
 // Render `calls` successive block-slices of a Trigger()'d generator into a
 // 280-byte arena (fresh TransientGenerator per call to keep cases isolated),

@@ -121,7 +121,7 @@ TEST(fv1_newfamily_test)
         bool allDiffer = true, corners = true;
         for (int s = 0; s < 16; ++s)
         {
-            const float sp = (s + 0.5f) / 16.0f;
+            const float sp = (static_cast<float> (s) + 0.5f) / 16.0f;
             runFx (fx, 0.5f, sp, 0.3f, 0.7f, inL.data(), inR.data(), kN, oL.data(), oR.data());
             if (! allFinite (oL.data(), kN)) corners = false;
             if (s == 0)
@@ -130,7 +130,7 @@ TEST(fv1_newfamily_test)
             {
                 bool differs = false;
                 for (int i = 0; i < kN; ++i)
-                    if (std::fabs (oL[i] - ref[i]) > 1e-4f) { differs = true; break; }
+                    if (std::fabs (oL[static_cast<size_t> (i)] - ref[static_cast<size_t> (i)]) > 1e-4f) { differs = true; break; }
                 if (! differs) allDiffer = false;
             }
         }
@@ -141,7 +141,7 @@ TEST(fv1_newfamily_test)
         runFx (fx, 0.5f, 0.0f, 1.0f, 0.7f, inL.data(), inR.data(), kN, oL.data(), oR.data());
         bool jitDiffers = false;
         for (int i = 0; i < kN; ++i)
-            if (std::fabs (oL[i] - ref[i]) > 1e-4f) { jitDiffers = true; break; }
+            if (std::fabs (oL[static_cast<size_t> (i)] - ref[static_cast<size_t> (i)]) > 1e-4f) { jitDiffers = true; break; }
         check (jitDiffers, "LUT Distortion: Jitter audibly wobbles the read");
         // Shape-switch click: swapping the active wavetable pointer instantly
         // jumps between two transfer curves at the same sample value (Clip vs
@@ -200,7 +200,7 @@ TEST(fv1_newfamily_test)
                     while (fired < nSw && n1 + fired * swStep <= i)
                     {
                         shape = shape == 0 ? 8 : 0;
-                        prm[1] = (shape + 0.5f) / 16.0f;
+                        prm[1] = (static_cast<float> (shape) + 0.5f) / 16.0f;
                         fx.setParams (prm);
                         at[static_cast<size_t> (fired++)] = i;
                     }
