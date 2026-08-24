@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "dsp/fx/LinearResamplerCore.h"   // shared resampler transport (CRTP base, include-free)
+#include "dsp/fx/RbjBiquad.h"           // shared DF2T biquad kernel (kRbjTwoPi, df2tProcessSample)
 
 namespace parvati::fv1
 {
@@ -389,7 +390,7 @@ public:
     // Design a Butterworth (Q=0.7071) low-pass at fc Hz for sample rate fs.
     void design (double fc, double fs) noexcept
     {
-        const double w0 = 6.283185307179586 * fc / fs;
+        const double w0 = parvati::dsp::kRbjTwoPi * fc / fs;
         const double cw = std::cos (w0), sw = std::sin (w0);
         const double alpha = sw / (2.0 * 0.7071067811865476);
         const double a0 = 1.0 + alpha;
@@ -401,9 +402,7 @@ public:
     }
     float process (float x) noexcept
     {
-        const float y = b0 * x + z1;
-        z1 = b1 * x - a1 * y + z2;
-        z2 = b2 * x - a2 * y;
+        const float y = parvati::dsp::df2tProcessSample (x, b0, b1, b2, a1, a2, z1, z2);
         // Denormal flush: a stable IIR fed silence (a reverb/delay tail, a
         // paused track, or the gap between notes) decays its z-state toward 0
         // but never reaches it in finite steps, passing through the subnormal

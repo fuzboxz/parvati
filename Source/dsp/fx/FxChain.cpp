@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "dsp/fx/FxProcessors.h"   // createFxProcessor
+#include "dsp/fx/RbjBiquad.h"       // shared DF2T biquad kernel (kRbjTwoPi, df2tProcessSample)
 
 FxChain::FxChain()
 {
@@ -420,14 +421,11 @@ void FxChain::setMasterEqHigh (uint8_t v) noexcept
 void FxChain::EqBiquad::process (float* io, int numSamples) noexcept
 {
     // Direct Form II Transposed (numerically well-behaved, allocation-free).
+    // The kernel itself is shared (dsp/fx/RbjBiquad.h). No denormal flush
+    // here: the master EQ sits in the wet path after the mix blend and the
+    // chain silence gate zeroes the frame before it reaches silence.
     for (int i = 0; i < numSamples; ++i)
-    {
-        const float x = io[i];
-        const float y = b0 * x + z1;
-        z1 = b1 * x - a1 * y + z2;
-        z2 = b2 * x - a2 * y;
-        io[i] = y;
-    }
+        io[i] = parvati::dsp::df2tProcessSample (io[i], b0, b1, b2, a1, a2, z1, z2);
 }
 
 void FxChain::blendSlotWetFade (float* outL, float* outR, int numSamples, int s) noexcept
@@ -561,7 +559,7 @@ void FxChain::updateEqCoeffs() noexcept
     // Nyquist with margin), mirroring the FV-1 RateBridge BW clamp
     // (Fv1Engine.h: min(15k, 0.49*hostRate)). No-op at any sane rate.
     const double r = rate_ > 0.0 ? rate_ : 44100.0;
-    constexpr double kTwoPi = 6.28318530717958647692;
+    constexpr double kTwoPi = parvati::dsp::kRbjTwoPi;
     const double maxEqFreq = 0.45 * r;
 
     auto assign = [] (EqBiquad& b, double b0, double b1, double b2,
