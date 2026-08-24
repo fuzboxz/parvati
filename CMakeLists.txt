@@ -882,6 +882,7 @@ add_executable(parvati_unified_tests
     # tracked but never compiled/registered; now part of the unified target)
     tests/parvati_retrig_probe.cpp
 # Unified test sources (keep alphabetical-ish; new_test.sh appends here)
+    tests/fx_render_golden_test.cpp
     tests/modbar_pill_paint_split_test.cpp
     tests/osc_preview_live_test.cpp
     tests/theme_switch_preview_test.cpp
