@@ -67,6 +67,11 @@ Section sectionForId (const juce::String& id)
 // shares one consistent mapping and a theme switch re-resolves automatically.
 juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
 {
+    // Y2K: ONE accent — the LCD green carries every knob arc (the category
+    // rainbow vibrated on the chrome world). Other themes keep the
+    // per-section hues.
+    if (theme.name == "Y2K")
+        return theme.accentPrimary;
     // Only Envelopes/LFOs/Sequencer/Arp carry a distinct hue; every other
     // section shares the theme's "audio" brand accent (catAudio). (if-chain, not switch, so the
     // remaining categories fall through to the neutral default without a
@@ -653,6 +658,12 @@ void ParamControl::applyThemeFonts()
         {
             label_->setFont (lnf->labelFont (10.0f,
                                              seqLengthBold ? juce::Font::bold : juce::Font::plain));
+            // On-card captions stay WHITE on the dark-steel chrome (the
+            // near-black Label default serves the silver drawer, not the
+            // cards). Promoted from the grey tier — the grey-on-steel read
+            // as grey-on-grey.
+            label_->setColour (juce::Label::textColourId,
+                               parvati::onCardText (theme, theme->textSecondary));
             return;
         }
     }

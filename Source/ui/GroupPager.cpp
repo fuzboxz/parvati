@@ -190,7 +190,10 @@ GroupPager::GroupPager (ThemeManager& tm, ParamPage* page, std::vector<Subset> s
 void GroupPager::paint (juce::Graphics& g)
 {
     // Void-free fill behind the bar + page (transparent children sit on this).
-    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
+    // Y2K: NO fill — the liquid-chrome WINDOW sweep shows through (the tabs
+    // and their L&F fills paint over it).
+    if (! parvati::isY2kTheme (&themeManager_.getCurrentTheme()))
+        g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
 void GroupPager::resized()

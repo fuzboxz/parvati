@@ -1067,6 +1067,11 @@ const ParvatiTheme& CentralModBar::theme() const
 juce::Font CentralModBar::pillFont() const
 {
     const float size = 14.0f;   // proportional with the ~1.5x bigger pills
+    // Y2K: the pill label is a CAPTION (PT Sans). Every other theme keeps
+    // the legacy appFont resolution (byte-identical rendering).
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (parvati::isY2kTheme (lnf->getTheme()))
+            return lnf->labelFont (size, juce::Font::plain);
     return parvati::appFontFor (*this, size);
 }
 
@@ -1114,7 +1119,11 @@ void CentralModBar::paint (juce::Graphics& g)
     // applyThemeColors() ends with a full repaint(), so theme switches
     // re-skin the fill. The pills, segment tabs, nav tiles and the top rule
     // paint OVER it as children / higher-z siblings.
-    g.fillAll (theme().backgroundBase);
+    // Y2K: the bar is a RECESSED DARK TRAY (the input-well tone) — the
+    // light pill text and the LCD-green indicators read on it; silver
+    // read as grey-on-grey.
+    g.fillAll (parvati::isY2kTheme (&theme()) ? theme().backgroundInput
+                                               : theme().backgroundBase);
 }
 
 void CentralModBar::resized()
@@ -1514,8 +1523,9 @@ void CentralModBar::paintSegments (juce::Graphics& g) const
     const auto& t = theme();
 
     // Fill the scrolled content with the bar background so the gaps between /
-    // around the cluster tabs read as one continuous bar.
-    g.fillAll (t.backgroundBase);
+    // around the cluster tabs read as one continuous bar. Y2K: the same
+    // recessed dark tray as the bar itself.
+    g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundInput : t.backgroundBase);
 
     // One small COLOURED LABEL TAB header per cluster (its family colour + short
     // label), sitting above the pills — replaces the former full-height 'cube'.

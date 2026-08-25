@@ -92,8 +92,8 @@ public:
         // below touch readability. The FX-slot labels already degrade to a
         // bare digit when the block is too narrow, and IN/OUT are sized to
         // their glyphs at these sizes, so nothing overflows its block.
-        const juce::Font blockFont (juce::FontOptions (12.0f, juce::Font::bold));
-        const juce::Font endFont   (juce::FontOptions (10.0f, juce::Font::bold));   // IN/OUT (smaller utility label)
+        const juce::Font blockFont (parvati::labelFontExactFor (*this, 12.0f, juce::Font::bold));
+        const juce::Font endFont   (parvati::labelFontExactFor (*this, 10.0f, juce::Font::bold));   // IN/OUT (smaller utility label)
 
         auto nodeRect = [&] (float cx, float bcY, float w) -> juce::Rectangle<float>
         {
@@ -271,7 +271,7 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     //      identical to the Mixer / Oscillator knobs). ----
     mixLabel_.setText (TRANS ("Dry/Wet"), juce::dontSendNotification);
     mixLabel_.setJustificationType (juce::Justification::centred);
-    mixLabel_.setFont (juce::FontOptions (12.0f));
+    mixLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
     mixLabel_.setColour (juce::Label::textColourId, parvati::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
     addAndMakeVisible (mixLabel_);
 
@@ -300,7 +300,7 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     {
         eqLabels_[i].setText (TRANS (eqNames[i]), juce::dontSendNotification);
         eqLabels_[i].setJustificationType (juce::Justification::centred);
-        eqLabels_[i].setFont (juce::FontOptions (12.0f));
+        eqLabels_[i].setFont (parvati::labelFontExactFor (*this, 12.0f));
         eqLabels_[i].setColour (juce::Label::textColourId, parvati::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
         addAndMakeVisible (eqLabels_[i]);
 

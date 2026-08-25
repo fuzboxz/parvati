@@ -58,7 +58,9 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         // keeps the FACE even if this child's LookAndFeel is not yet resolved,
         // so the caption never silently renders in a different font than the
         // surrounding labels.
-        g.setFont (parvati::appFontFor (*this, 9.0f));
+        g.setFont (parvati::isY2kTheme (t)
+                       ? parvati::labelFontFor (*this, 9.0f)
+                       : parvati::appFontFor (*this, 9.0f));
         g.drawText (label_, getLocalBounds(), juce::Justification::centredTop);
     }
 
@@ -91,7 +93,9 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
         const juce::Colour fill = (t != nullptr) ? t->containerFill : parvati::kFallbackContainerFill;
         const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : parvati::kFallbackTextSoft;
         const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : parvati::parvatiFallbackAccent;
-        const juce::Font f = parvati::appFontFor (*this, 13.0f);
+        const juce::Font f = parvati::isY2kTheme (t)
+                                 ? parvati::labelFontFor (*this, 13.0f)
+                                 : parvati::appFontFor (*this, 13.0f);
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, label_);
         const int w = juce::jmax (48, 12 + 8 + textW + 10);
         const int h = 22;

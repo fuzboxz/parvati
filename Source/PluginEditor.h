@@ -175,6 +175,18 @@ public:
     bool selectThemeForTest (const juce::String& name)
     { return themeManager_.selectByName (name); }
 
+    // Test-only: the SYNCHRONOUS variant of selectThemeForTest — delivers the
+    // change broadcast inline (selectByName only POSTS the async message, which
+    // a headless single-shot renderer never pumps). Headless probes (the
+    // screenshot tool) use this so every capture renders the requested theme.
+    bool switchThemeSynchronousForTest (const juce::String& name)
+    {
+        if (! themeManager_.selectByName (name))
+            return false;
+        themeManager_.sendSynchronousChangeMessage();
+        return true;
+    }
+
     // Test-only (settings drawer regression): opens the settings SidePanel
     // exactly as the gear button does (showOrHide + the toggle-state sync the
     // button's onClick does), so a probe can drive the REAL drawer path

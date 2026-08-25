@@ -62,7 +62,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
                                   ? partNames[(size_t) p].toStdString()
                                   : std::string());
 
-    heading_.setFont (juce::FontOptions (15.0f, juce::Font::bold));
+    heading_.setFont (parvati::headerFontExactFor (*this, 15.0f));
     heading_.setJustificationType (juce::Justification::centredLeft);
     // Two single-line TRANS fragments (not one \n literal): the tables are
     // LocalisedStrings line-parsed, so a raw newline inside a key can never
@@ -74,7 +74,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     addAndMakeVisible (heading_);
 
     strategyCaption_.setText (TRANS ("How to fit it"), juce::dontSendNotification);
-    strategyCaption_.setFont (juce::FontOptions (11.0f));
+    strategyCaption_.setFont (parvati::labelFontExactFor (*this, 11.0f));
     strategyCaption_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (strategyCaption_);
 
@@ -92,7 +92,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
 
     // Always-visible plain-language description of the selected strategy
     // (under the combo — a tooltip would be invisible on touch).
-    descriptionLabel_.setFont (juce::FontOptions (12.0f));
+    descriptionLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
     descriptionLabel_.setJustificationType (juce::Justification::topLeft);
     descriptionLabel_.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (descriptionLabel_);
@@ -100,12 +100,12 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     // The outcome in one line (e.g. "Fits on one Ambika. Only 6 of your 24
     // voices will play at once on the hardware.") — the honest cost up front,
     // above the per-part detail.
-    summaryLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    summaryLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
     summaryLabel_.setJustificationType (juce::Justification::topLeft);
     summaryLabel_.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (summaryLabel_);
 
-    previewLabel_.setFont (juce::FontOptions (12.0f));
+    previewLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f));
     previewLabel_.setJustificationType (juce::Justification::topLeft);
     previewLabel_.setMinimumHorizontalScale (1.0f);
     // The preview scrolls inside a Viewport (a 4-unit chain summary far

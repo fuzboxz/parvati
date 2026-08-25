@@ -243,8 +243,14 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         {
             auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
             g.setColour (fill.contrasting ());
-            g.setFont (lnf ? lnf->appFont (juce::jmin (11.0f, area.getWidth() * 0.6f), juce::Font::plain)
-                           : parvati::labelFontFor (*this, 11.0f));
+            // Y2K: the caption role face (PT Sans). Other themes keep the
+            // app font through the same L&F call as before.
+            g.setFont (lnf != nullptr && parvati::isY2kTheme (lnf->getTheme())
+                           ? lnf->labelFont (juce::jmin (11.0f, area.getWidth() * 0.6f),
+                                             juce::Font::plain)
+                           : (lnf != nullptr
+                                  ? lnf->appFont (juce::jmin (11.0f, area.getWidth() * 0.6f), juce::Font::plain)
+                                  : parvati::labelFontFor (*this, 11.0f)));
             g.drawText (text, area.withTrimmedLeft (1.0f).withTrimmedBottom (2.0f),
                         juce::Justification::centredBottom, false);
         }

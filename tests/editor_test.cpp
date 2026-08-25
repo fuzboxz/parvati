@@ -170,8 +170,8 @@ TEST(editor_test)
               juce::Colour (0xff009696), juce::Colour (0xffE5B55C), juce::Colour (0xffA8C69F) },
             { "Swedish Red", swedishRedTheme(), true,  juce::Colour (0xff9BE24A),
               juce::Colour (0xff57E05C), juce::Colour (0xff2FD98C), juce::Colour (0xffD6D2C4) },
-            { "Y2K",          y2kTheme(),         false, juce::Colour (0xff00FFFF),
-              juce::Colour (0xffFF00FF), juce::Colour (0xffCCFF00), juce::Colour (0xff0000FF) },
+            { "Y2K",          y2kTheme(),         false, juce::Colour (0xff3FBF3F),
+              juce::Colour (0xffC45AB8), juce::Colour (0xffD9A441), juce::Colour (0xff5577CC) },
         };
 
         char buf[160];

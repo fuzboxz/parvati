@@ -2,6 +2,7 @@
 
 #include "SettingsPanel.h"
 
+#include "ParvatiLookAndFeel.h"   // parvati::labelFontExactFor / dataFontExactFor (role fonts)
 #include "ParvatiTheme.h"
 #include "PluginProcessor.h"
 #include "ThemeManager.h"
@@ -29,7 +30,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
 {
     // ---- Theme ----
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
-    themeLabel_.setFont (juce::FontOptions (14.0f));
+    themeLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     themeLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (themeLabel_);
 
@@ -49,7 +50,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // clamp the editor's applyZoom uses; the value persists through
     // proc_.setUiZoom exactly like the old slider did. ----
     zoomLabel_.setText (TRANS ("Zoom"), juce::dontSendNotification);
-    zoomLabel_.setFont (juce::FontOptions (14.0f));
+    zoomLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     zoomLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (zoomLabel_);
 
@@ -76,7 +77,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     addAndMakeVisible (zoomInBt_);
     addAndMakeVisible (zoomResetBt_);
 
-    zoomValueLabel_.setFont (juce::FontOptions (14.0f));
+    zoomValueLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     zoomValueLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (zoomValueLabel_);
     refreshZoomReadout();
@@ -126,7 +127,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // (1/2/4/8). Default "High" (2x); "Standard" (1x) keeps the audio path
     // bit-identical.
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
-    osLabel_.setFont (juce::FontOptions (14.0f));
+    osLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     osLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (osLabel_);
 
@@ -147,7 +148,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // the stored code ("auto"/"en"/"fr") is round-tripped, not the label, so a
     // localized label never leaks into persistence.
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
-    langLabel_.setFont (juce::FontOptions (14.0f));
+    langLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     langLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (langLabel_);
 
@@ -179,11 +180,11 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // state). The status line shows which source is driving the clock right
     // now (2 Hz refresh — the source can only change when audio runs).
     clockLabel_.setText (TRANS ("Arp Clock"), juce::dontSendNotification);
-    clockLabel_.setFont (juce::FontOptions (14.0f));
+    clockLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     clockLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (clockLabel_);
 
-    clockStatusLabel_.setFont (juce::FontOptions (12.0f));
+    clockStatusLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
     clockStatusLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (clockStatusLabel_);
 
@@ -211,7 +212,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // the nearest step while the processor keeps its exact value until the
     // user actually changes the combo.
     refreshLabel_.setText (TRANS ("Visual Refresh"), juce::dontSendNotification);
-    refreshLabel_.setFont (juce::FontOptions (14.0f));
+    refreshLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
     refreshLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (refreshLabel_);
 
@@ -363,6 +364,26 @@ void SettingsPanel::refreshLanguage()
     refreshCombo_.setSelectedId (refreshId != 0 ? refreshId : 30, juce::dontSendNotification);
 
     repaint();
+}
+
+void SettingsPanel::applyRoleFonts()
+{
+    // The 8 row labels (Theme / Zoom / value readout / Filter Quality /
+    // Language / Arp Clock / clock status / Visual Refresh). The zoom value
+    // is a DATA readout (VT323 on Y2K); the rest are captions (PT Sans).
+    themeLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    zoomLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    zoomValueLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
+    osLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    langLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    clockLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    clockStatusLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f));
+    refreshLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+}
+
+void SettingsPanel::lookAndFeelChanged()
+{
+    applyRoleFonts();
 }
 
 void SettingsPanel::paint (juce::Graphics& g)

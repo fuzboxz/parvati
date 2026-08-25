@@ -5,6 +5,24 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Y2K theme polish round two (2026-08-25).** The accent system now
+  carries ONE accent: a calm LCD green (0x3FBF3F) drives every knob arc,
+  mod pill, tab indicator strip and data readout. The bipolar negative
+  halves take a dim teal (0x2FB8C9). The category rainbow stays off the
+  indicators. The routing table keeps its calm fallback hues (soft magenta,
+  amber, steel blue, rust, olive, teal, light grey) — the pure neon hex
+  went away. The window itself is liquid chrome now: a subtle silver sweep
+  (bright brushed top, settled mid, darker bottom pooling) shows through
+  the transparent workspaces; the module cards keep a stronger steel sweep
+  so they pop. The matrix, the patch table, the waveform and envelope
+  screens and the mod-pill bar are dark data screens (matrix green or
+  near-black trays) with light text. Labels on the silver surfaces flip
+  near-black. The role fonts now reach the remaining sites: the settings
+  drawer, the status strip, the patch table, the export dialog, the wheel
+  chips, the routing diagram and the keyboard captions (Michroma headers,
+  PT Sans captions, VT323 readouts; every other theme keeps its exact
+  legacy font construction). The screenshot tool gained a theme override
+  (PARVATI_SHOT_THEME) with a synchronous switch.
 - **Y2K theme restyled to the hardware look (2026-08-24).** The window is
   now flat silver; module panels are dark grey with a subtle metal sheen;
   data wells and knob tracks are near-black; the routing palette is pure

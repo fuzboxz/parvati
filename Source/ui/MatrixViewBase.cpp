@@ -871,7 +871,10 @@ void MatrixViewBase::rebuildLayout()
 //==============================================================================
 void MatrixViewBase::paint (juce::Graphics& g)
 {
-    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
+    // Y2K: the whole matrix is a DATA SCREEN (matrix-green fill); the light
+    // row labels read on it. Other themes keep the window tone.
+    const auto& t = themeManager_.getCurrentTheme();
+    g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
 }
 
 void MatrixViewBase::resized()
@@ -911,7 +914,7 @@ void MatrixViewBase::applyThemeColors()
     addButton_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
     addButton_->setColour (juce::TextButton::textColourOnId, t.backgroundBase);
 
-    content_.bg = t.backgroundBase;
+    content_.bg = parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase;
     content_.setOpaque (true);
     content_.repaint();
     for (int i = 0; i < config_.numSlots; ++i)

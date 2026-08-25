@@ -270,7 +270,12 @@ public:
         : owner_ (owner), partIndex_ (partIndex), engine_ (owner.proc_.getEngine())
     {
         // ---- chrome ----
-        partLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        partLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
+        // Y2K: the table is a DATA SCREEN (matrix-green) — the part name
+        // stays LIGHT there (the near-black Label default serves the silver
+        // drawer, not this table).
+        if (const auto* t = parvati::themeFor (*this); t != nullptr && t->name == "Y2K")
+            partLabel_.setColour (juce::Label::textColourId, t->textPrimary);
         partLabel_.setJustificationType (juce::Justification::centredLeft);
         // Editable part name/alias (Parvati extension): click (desktop) or tap
         // (touch) to rename -- "Kick", "Lead", ... Empty reverts to "Part N".
@@ -297,7 +302,7 @@ public:
         };
         addAndMakeVisible (partLabel_);
 
-        // Viewport safety net (T4): a TOUCH drag that starts anywhere on this
+    // Viewport safety net (T4): a TOUCH drag that starts anywhere on this
         // row must not ALSO scroll the enclosing Viewport — the ignore-drag
         // flag covers the row's combos/knobs/labels too, exactly like the
         // ParamControl cells. Mouse drags never scroll-on-drag anyway (the
@@ -471,6 +476,17 @@ public:
     // knobs are dials in 44pt-tall tap bands centred on the full row height
     // (36pt wide for the Vol/Fine/Spr trio — the L&F squares via jmin(w,h);
     // three 44pt-wide cells would not fit; see the width comment above).
+    // Y2K data-screen colour for the part name (called by the page's
+    // applyThemeColors on every theme switch). A transparent colour lets the
+    // L&F Label default apply (every non-Y2K theme).
+    void setPartNameColour (juce::Colour c)
+    {
+        if (c.isTransparent())
+            partLabel_.removeColour (juce::Label::textColourId);
+        else
+            partLabel_.setColour (juce::Label::textColourId, c);
+    }
+
     void resized() override
     {
         // The ACTIVE table tab drives the mask: only its columns are laid out
@@ -1061,7 +1077,9 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (owner_.themeManager_.getCurrentTheme().backgroundBase);
+        // Y2K: the patch table is a DATA SCREEN (matrix-green fill).
+        const auto& t = owner_.themeManager_.getCurrentTheme();
+        g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
     }
 
 private:
@@ -1215,7 +1233,7 @@ public:
             const ParvatiTheme* t = parvati::themeFor (*this);
             g.setColour (t != nullptr ? t->textSecondary
                                        : juce::Colours::lightgrey.withAlpha (0.85f));
-            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            g.setFont (parvati::labelFontExactFor (*this, 11.0f, juce::Font::bold));
             const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
             // SAME inset band the rows use (kTableContentInset): the caption
             // x-positions are then exactly the cell x-positions (pinned by
@@ -1450,13 +1468,26 @@ PatchPage::~PatchPage() = default;
 
 void PatchPage::paint (juce::Graphics& g)
 {
-    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
+    // Y2K: the patch page is a DATA SCREEN (matrix-green fill) — the light
+    // table text reads on it.
+    const auto& t = themeManager_.getCurrentTheme();
+    g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
 }
 
 void PatchPage::applyThemeColors()
 {
     // Export buttons re-skin with the (possibly new) accent.
     applyExportButtonChrome();
+    // Part names: the Y2K data-screen fill needs the light colour set
+    // explicitly (the Label default flips near-black on Y2K for the silver
+    // drawer); re-apply per row so a theme switch re-skins the table.
+    for (auto& row : rows_)
+        if (row != nullptr)
+        {
+            const auto& t = themeManager_.getCurrentTheme();
+            row->setPartNameColour (parvati::isY2kTheme (&t) ? t.textPrimary
+                                                             : juce::Colour {});
+        }
     repaint();
 }
 

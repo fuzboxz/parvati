@@ -37,7 +37,7 @@ SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
     // the largest text on the SEQ page, reading oversized next to the 12pt
     // knob labels and ~12-14pt knob readouts). Bold is retained — the lone
     // numeral is the cell's value readout on the bright tier.
-    numberLabel_->setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    numberLabel_->setFont (parvati::dataFontExactFor (*this, 14.0f, juce::Font::bold));
     numberLabel_->setInterceptsMouseClicks (false, false);   // the CELL is the button
     // VISIBILITY FIX (UI hunt 2026-08-20): the number was INVISIBLE in every
     // theme. resized() gives tapBtn_ the full cell and — being created AFTER

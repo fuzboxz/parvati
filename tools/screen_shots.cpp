@@ -166,6 +166,16 @@ int main (int argc, char** argv)
         return 1;
     }
 
+    // Optional theme override: PARVATI_SHOT_THEME="Y2K" renders every shot
+    // in that theme through the REAL selection path (the Settings combo's
+    // seam — selectThemeForTest), so a theme can be reviewed headlessly.
+    // Unset (or unknown name) keeps the DEFAULT theme: the canonical
+    // 40-screen byte-identity baseline is untouched.
+    if (const char* themeName = std::getenv ("PARVATI_SHOT_THEME"); themeName != nullptr)
+        if (auto* editor = dynamic_cast<ParvatiEditor*> (ed); editor != nullptr)
+            if (! editor->switchThemeSynchronousForTest (juce::String { themeName }))
+                std::printf ("WARN: unknown PARVATI_SHOT_THEME '%s' (using the default)\n", themeName);
+
     auto* workspace = findFirst<SynthWorkspace> (ed);
 
     std::printf ("Rendering screens @ %.0fx -> %s\n", (double) scale, outDir.getFullPathName().toRawUTF8());

@@ -56,6 +56,15 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Re-applies the ROLE fonts (Y2K: PT Sans). The constructor runs before
+    // the panel is parented into the editor tree, so the L&F (and its theme)
+    // is not attached yet — the ctor-time conversion falls back to the exact
+    // legacy font. This hook re-runs once the L&F arrives and on every theme
+    // switch (sendLookAndFeelChange).
+    void lookAndFeelChanged() override;
+
+    void applyRoleFonts();
+
     // Full no-scroll height of every settings row + margins — the height the
     // scrolling drawer (the editor's settingsScroll_ Viewport) sizes this
     // panel to; pinned to resized()'s row budget (see its comment).

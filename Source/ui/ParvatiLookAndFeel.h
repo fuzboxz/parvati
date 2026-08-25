@@ -217,7 +217,7 @@ public:
     // Data readouts (Hz / ms / % values, combo text, matrix values): VT323,
     // the pixel/terminal face. The Y2K path scales the height up ~1.2x
     // because VT323 metrics run small.
-    juce::Font dataFont (float height) const;
+    juce::Font dataFont (float height, int styleFlags = juce::Font::plain) const;
 
     // ToggleButton text is drawn by the L&F with a hardcoded default font; the
     // override routes the button text through appFont() so the "Tooltips" and
@@ -289,8 +289,15 @@ bool isY2kTheme (const ParvatiTheme* t) noexcept;
 void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
                       float corner, const ParvatiTheme* t, float alpha = 1.0f);
 
-// Text token for labels sitting ON a module card. Chrome cards are bright
-// metal, so Y2K flips to near-black; other themes keep the theme token.
+// The Y2K window chrome: a subtle full-window silver sweep (brighter top,
+// settled mid, faint darker bottom pooling). Non-Y2K falls back to a flat
+// backgroundBase fill, so callers can branch-free use it.
+void paintChromeWindow (juce::Graphics& g, const juce::Rectangle<float>& r,
+                        const ParvatiTheme* t);
+
+// Text token for labels sitting ON a module card. The Y2K cards are
+// dark-steel chrome, so the grey caption tier promotes to white there;
+// other themes keep the theme token.
 juce::Colour onCardText (const ParvatiTheme* t, juce::Colour themeToken) noexcept;
 
 
@@ -320,11 +327,48 @@ inline juce::Font labelFontFor (const juce::Component& owner, float height,
         return lnf->labelFont (height, styleFlags);
     return juce::Font (juce::FontOptions (height, styleFlags));
 }
-inline juce::Font dataFontFor (const juce::Component& owner, float height)
+inline juce::Font dataFontFor (const juce::Component& owner, float height,
+                              int styleFlags = juce::Font::plain)
 {
     if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
-        return lnf->dataFont (height);
-    return juce::Font (juce::FontOptions (height, juce::Font::plain));
+        return lnf->dataFont (height, styleFlags);
+    return juce::Font (juce::FontOptions (height, styleFlags));
+}
+
+// ---- EXACT-fallback role fonts ------------------------------------------------
+// Conversions of legacy `setFont (juce::FontOptions (h, style))` sites. The
+// Y2K branch returns the ROLE face; every OTHER theme constructs the EXACT
+// SAME default FontOptions the site used before. (An appFont re-resolve
+// rasterises bold small-size glyphs differently — the 40-screen byte-identity
+// proof caught that once; these helpers keep the proof green by contract.)
+inline juce::Font labelFontExactFor (const juce::Component& owner, float height,
+                                     int styleFlags = juce::Font::plain)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        if (parvati::isY2kTheme (lnf->getTheme()))
+            return lnf->labelFont (height, styleFlags);
+    return juce::Font (juce::FontOptions (height, styleFlags));
+}
+
+// Header role; the legacy sites were bold by construction, so the exact
+// fallback is bold.
+inline juce::Font headerFontExactFor (const juce::Component& owner, float height)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        if (parvati::isY2kTheme (lnf->getTheme()))
+            return lnf->headerFont (height);
+    return juce::Font (juce::FontOptions (height, juce::Font::bold));
+}
+
+// Data role; the legacy sites were plain by construction unless a style
+// flag is passed.
+inline juce::Font dataFontExactFor (const juce::Component& owner, float height,
+                                    int styleFlags = juce::Font::plain)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        if (parvati::isY2kTheme (lnf->getTheme()))
+            return lnf->dataFont (height, styleFlags);
+    return juce::Font (juce::FontOptions (height, styleFlags));
 }
 
 // @p owner's live theme (nullptr when another LookAndFeel or no theme is set).

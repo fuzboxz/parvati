@@ -312,8 +312,10 @@ const ParvatiTheme& y2kTheme()
         // labels, the era disabled grey, SOLID BLACK knob empty tracks.
         juce::Colour (0xffFFFFFF), juce::Colour (0xffC8C8C8), juce::Colour (0xff6E6E6E),
         juce::Colour (0xff000000),
-        // Layer 3 — ACTION: electric cyan brand / magenta complement.
-        juce::Colour (0xff00FFFF), juce::Colour (0xffFF00FF),
+        // Layer 3 — ACTION: accentPrimary is THE LCD GREEN (the one accent
+        // every Y2K indicator carries: knob arcs, pills, readouts, tab strips).
+        // accentSecondary is a DIM CYAN-TEAL (bipolar / negative halves).
+        juce::Colour (0xff3FBF3F), juce::Colour (0xff2FB8C9),
         // auxiliary: outline (dark steel), divider, containerFill (the
         // module-panel grey; #565656 keeps white headers at the 7:1 tier),
         // tabUnselectedBg / tabSelectedBg — DESATURATED: tabs are STRUCTURE,
@@ -323,13 +325,17 @@ const ParvatiTheme& y2kTheme()
         juce::Colour (0xff404040), juce::Colour (0xff505050), juce::Colour (0xff565656),
         juce::Colour (0xff3A3A3A), juce::Colour (0xff6E6E6E), juce::Colour (0xffE8E8E8),
         juce::Colour (0xff101010),
-        // modulation routing palette — PURE saturated hex, the LED colour
-        // school: Audio=CYAN, Env=MAGENTA, Lfo=ACID YELLOW, Seq/Arp=PURE BLUE.
-        juce::Colour (0xff00FFFF), juce::Colour (0xffFF00FF), juce::Colour (0xffCCFF00),
-        juce::Colour (0xff0000FF), juce::Colour (0xff0000FF),
-        // catPerf, catUtil, catMod, catConst: RED, GREEN, MAGENTA, WHITE.
-        juce::Colour (0xffFF0000), juce::Colour (0xff00FF00), juce::Colour (0xffFF00FF),
-        juce::Colour (0xffFFFFFF),
+        // modulation routing palette — the CALM family (2026-08-25: the
+        // pure-hex neon vibrated; hue identity kept, chroma dropped). Y2K
+        // routes most accents through the LCD green, so this table is the
+        // documented fallback: Audio=LCD GREEN, Env=SOFT MAGENTA,
+        // Lfo=AMBER, Seq/Arp=STEEL BLUE, Perf=RUST, Util=OLIVE, Mod=TEAL,
+        // Const=LIGHT GREY.
+        juce::Colour (0xff3FBF3F), juce::Colour (0xffC45AB8), juce::Colour (0xffD9A441),
+        juce::Colour (0xff5577CC), juce::Colour (0xff5577CC),
+        // catPerf, catUtil, catMod, catConst.
+        juce::Colour (0xffC4705A), juce::Colour (0xff8F9F5F), juce::Colour (0xff2FB8C9),
+        juce::Colour (0xffD9D9D9),
         false
     };
     return t;

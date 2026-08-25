@@ -6,6 +6,7 @@
 #include "SeqLengthStepper.h"    // sequencer length cells (buildGroups)
 #include "ParvatiTheme.h"   // ParvatiTheme (getCurrentTheme return type)
 #include "SynthParamLabels.h"    // parvati::paramValueTextSynth (step readouts)
+#include "ParvatiLookAndFeel.h"   // parvati::isY2kTheme (Y2K window-chrome transparency)
 #include "ThemeManager.h"   // themeManager_.getCurrentTheme()
 
 
@@ -863,7 +864,10 @@ void ParamPage::refreshLanguage()
 void ParamPage::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
-    g.fillAll (theme.backgroundBase);
+    // Y2K: NO fill — the liquid-chrome WINDOW sweep shows through; the
+    // module cards (dark-steel chrome) pop off it.
+    if (! parvati::isY2kTheme (&theme))
+        g.fillAll (theme.backgroundBase);
 
     // Sub-section dividers inside a sectioned panel (merged Mixer):
     // a 1px muted line in each inter-section gap, drawn from the theme divider

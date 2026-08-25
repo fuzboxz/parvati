@@ -6,6 +6,7 @@
 #include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
 #include "ParamPage.h"        // ParamPage complete type (ParamControl statics via it)
 #include "ThemeManager.h"
+#include "ParvatiLookAndFeel.h"   // parvati::isY2kTheme (Y2K window-chrome transparency)
 
 //==============================================================================
 GeneratorHostWorkspace::GeneratorHostWorkspace (ThemeManager& tm)
@@ -184,7 +185,10 @@ void GeneratorHostWorkspace::reflowActiveEditor()
 //==============================================================================
 void GeneratorHostWorkspace::paint (juce::Graphics& g)
 {
-    g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
+    // Y2K: NO fill — the editor's liquid-chrome WINDOW sweep shows through
+    // (the module cards and trays paint over it).
+    if (! parvati::isY2kTheme (&themeManager_.getCurrentTheme()))
+        g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
 GeneratorHostWorkspace::RowHeights

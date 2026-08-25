@@ -996,7 +996,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // ---- Bottom status strip: compact active-voice count + tooltip bar ----
     statusCountLabel_.setJustificationType (juce::Justification::centred);
-    statusCountLabel_.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    statusCountLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
     statusCountLabel_.setColour (juce::Label::textColourId, theme.accentPrimary);
     statusCountLabel_.setText (
         juce::String (currentPartActiveVoiceCount()) + "/" + juce::String (
@@ -1011,15 +1011,21 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Pure read of the processor's atomic (message thread). Fixed tooltip —
     // no interaction on the label.
     statusLoadLabel_.setJustificationType (juce::Justification::centred);
-    statusLoadLabel_.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-    statusLoadLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
+    statusLoadLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f, juce::Font::bold));
+    // Y2K: the strip sits on the chrome WINDOW — dark text (the grey tier
+    // read as grey-on-silver). The count keeps the LCD-green accent.
+    statusLoadLabel_.setColour (juce::Label::textColourId,
+                                parvati::isY2kTheme (&theme) ? juce::Colour (0xff141C30)
+                                                             : theme.textSecondary);
     statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
     statusLoadLabel_.setTooltip (TRANS ("Audio-thread realtime load (current block; "
                                        "near 100% = dropouts/crackle)."));
     addAndMakeVisible (statusLoadLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
-    statusTooltipLabel_.setFont (juce::FontOptions (12.0f));
-    statusTooltipLabel_.setColour (juce::Label::textColourId, theme.textSecondary);
+    statusTooltipLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
+    statusTooltipLabel_.setColour (juce::Label::textColourId,
+                                   parvati::isY2kTheme (&theme) ? juce::Colour (0xff141C30)
+                                                                : theme.textSecondary);
     addAndMakeVisible (statusTooltipLabel_);
 
     // ---- Phase 4a: settings side panel (right side, always-on-top) ----
@@ -1888,6 +1894,23 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // (crucially) makes each ParamControl::lookAndFeelChanged() re-push its
     // category arc / mod tint once the editor's ParvatiLookAndFeel is attached.
     sendLookAndFeelChange();
+    // Status strip: the fonts and the Y2K dark-on-chrome colours are set at
+    // construction only — re-apply here so a theme switch re-skins the strip
+    // (the labels are editor-owned, so no lookAndFeelChanged hook reaches
+    // their fonts).
+    {
+        const auto& t = themeManager_.getCurrentTheme();
+        statusCountLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
+        statusCountLabel_.setColour (juce::Label::textColourId, t.accentPrimary);
+        statusLoadLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f, juce::Font::bold));
+        statusLoadLabel_.setColour (juce::Label::textColourId,
+                                    parvati::isY2kTheme (&t) ? juce::Colour (0xff141C30)
+                                                             : t.textSecondary);
+        statusTooltipLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
+        statusTooltipLabel_.setColour (juce::Label::textColourId,
+                                       parvati::isY2kTheme (&t) ? juce::Colour (0xff141C30)
+                                                                : t.textSecondary);
+    }
     // (2026-08-22) The settings-drawer scrollbar override is REMOVED: it
     // muted the thumb to backgroundInput — which read as an unthemed gray
     // bar (the reported "give the scrollbar a theme-appropriate color").
@@ -2257,7 +2280,12 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // The whole UI (header included) is one flat windowBackground — no tinted
     // band. The chrome separators are ChromeRule CHILD components (the editor's
     // own paint is overdrawn by the content children — see ChromeRule).
-    g.fillAll (theme.backgroundBase);
+    // Y2K: the window is the LIQUID-CHROME sweep (brighter brushed silver
+    // top, settled mid, faint darker bottom pooling — see paintChromeWindow).
+    if (parvati::isY2kTheme (&theme))
+        parvati::paintChromeWindow (g, getLocalBounds().toFloat(), &theme);
+    else
+        g.fillAll (theme.backgroundBase);
 
     // Header logo cluster: [brand icon] [gap] [white "Parvati" text], painted
     // into the reserved left logo block (the version label sits inline to its
