@@ -42,6 +42,12 @@ std::optional<Cluster> clusterForSourceName (const juce::String& name)
 
 juce::Colour clusterAccent (Cluster c, const ParvatiTheme& theme)
 {
+    // Y2K: every indicator and mod pill carries ONE accent — the LCD green
+    // of the data screens (#39FF14). The multi-neon category rainbow stays
+    // off the indicators (visual-vibration fix); other themes keep their
+    // per-cluster colours.
+    if (theme.name == "Y2K")
+        return juce::Colour (0xff39FF14);
     switch (c)
     {
         case Cluster::Env:    return theme.catEnv;

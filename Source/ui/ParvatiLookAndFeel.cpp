@@ -136,25 +136,27 @@ void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
         return;
     }
     // The LIQUID-CHROME CARD on the hardware world: the module panel is the
-    // dark grey containerFill; a SUBTLE metal sheen sweeps the card (full
-    // height, smooth stops — no banding). The amplitude stays SMALL so white
-    // text keeps ~7:1 across the whole sweep (the typography tier's surface
-    // contract). The raised rim closes the metal; accents stay accent.
-    const auto chromeHi  = t->containerFill.brighter (0.05f).withMultipliedAlpha (alpha);
-    const auto chromeMid = t->containerFill.darker (0.12f).withMultipliedAlpha (alpha);
-    const auto chromeBot = t->containerFill.brighter (0.05f).withMultipliedAlpha (alpha);
+    // dark grey containerFill; a metal sheen sweeps the card (full height,
+    // smooth stops — no banding). The bright top makes the chrome READ on
+    // the dark panels; the sweep spends most of its run at mid steel so
+    // white text keeps ~7:1 across the card body (the typography tier's
+    // surface contract). The raised rim closes the metal; accents stay
+    // accent.
+    const auto panelBase = t->containerFill.withMultipliedAlpha (alpha);
+    const auto chromeHi  = panelBase.brighter (0.55f);
+    const auto chromeMid = panelBase.brighter (0.15f);
+    const auto chromeLo  = panelBase.darker (0.10f);
     juce::ColourGradient metal (chromeHi,
                                 r.getCentreX(), r.getY(),
                                 chromeMid,
-                                r.getCentreX(), r.getBottom(),
+                                r.getCentreX(), r.getHeight() * 0.55f,
                                 false);
-    metal.addColour (0.82, chromeMid.darker (0.02f));
-    metal.addColour (1.00, chromeBot);
+    metal.addColour (1.00, chromeLo);
     g.setGradientFill (metal);
     g.fillRoundedRectangle (r, corner);
     drawY2kBevel (g, r, corner,
                   juce::Colours::white.withAlpha (0.55f * alpha),
-                  chromeMid.darker (0.25f).withMultipliedAlpha (alpha),
+                  chromeLo.darker (0.25f).withMultipliedAlpha (alpha),
                   1.5f);
 }
 
@@ -408,6 +410,15 @@ juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
 {
     // Y2K: the dropdown VALUE text is a data readout — VT323 with the LED
     // green set by the caller's colour id ( ComboBox::textColourId ).
+    if (isY2kChrome (theme_))
+        return dataFont (14.0f);
+    return appFont (14.0f, juce::Font::plain);
+}
+
+juce::Font ParvatiLookAndFeel::getComboListFontPublic() const
+{
+    // Measurement twin of getComboBoxFont (const, for the header-inline
+    // comboListFont helper): Y2K VT323, otherwise the 14 pt app sans.
     if (isY2kChrome (theme_))
         return dataFont (14.0f);
     return appFont (14.0f, juce::Font::plain);

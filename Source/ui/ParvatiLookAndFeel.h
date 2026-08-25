@@ -116,6 +116,10 @@ public:
     // one UI family. The ASCII "PARVATI" logo keeps its own monospaced font
     // (see ParvatiEditor::paint) and is NOT routed through appFont().
     juce::Font getComboBoxFont   (juce::ComboBox&) override;
+
+    // Const measurement twin of getComboBoxFont for the header-inline
+    // comboListFont helper (fit-to-text width measurement).
+    juce::Font getComboListFontPublic() const;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getPopupMenuFont  () override;
 
@@ -354,6 +358,11 @@ inline const ParvatiTheme* themeFor (const juce::LookAndFeel& lnf)
 // LookAndFeel is installed.
 inline juce::Font comboListFont (const juce::Component& owner)
 {
+    // Measurement twin of the rendered combo font (Y2K: VT323 LED readout;
+    // otherwise the 14 pt app sans). The measurement must match what
+    // positionComboBoxText renders, or fit-to-text combos clip on theme fonts.
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->getComboListFontPublic();
     return parvati::appFontFor (owner, 14.0f, juce::Font::plain);
 }
 
