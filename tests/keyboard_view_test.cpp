@@ -371,7 +371,7 @@ TEST(keyboard_view_test)
         kb.setLookAndFeel (&lnf);
         lnf.setTheme (carbonTheme());
         const auto before = KeyboardView::resolveColours (kb.getLookAndFeel());
-        lnf.setTheme (paperTheme());
+        lnf.setTheme (immutableTheme());
         kb.refresh();
         const auto after = KeyboardView::resolveColours (kb.getLookAndFeel());
         check (before.natural.getARGB() != after.natural.getARGB()

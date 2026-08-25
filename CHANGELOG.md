@@ -4,6 +4,56 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Changed
+- **HELLCAT wordmark in Michroma on every theme (2026-08-26).** The header
+  brand text reads HELLCAT, 22pt Michroma (the Y2K header face) with tight
+  tracking on EVERY theme, not only Y2K. A new wordmarkFont() resolves the
+  embedded Michroma payload theme-independently; the fallback stays the bold
+  app font. The header band grew 44 to 52px so the 22pt wordmark and the
+  border stack fit (the 44pt HIG touch strip is unchanged).
+- **Y2K is a flat gunmetal world (2026-08-26).** The liquid-chrome gradients
+  are retired: window, cards, header band and status band are FLAT fills
+  (gunmetal #808080 desktop, card steel #565656). The top header and the
+  bottom status band take the card steel and run edge-to-edge through their
+  border lines. The mod-pill bar is one straight flat rectangle (no rounded
+  corner, no bevel). The Y2K background is gunmetal (the Win98 silver is
+  retired).
+- **Header border with a cast shadow under it, every theme (2026-08-26).**
+  The top header ends in a 1px black border at the band's bottom edge; a dark
+  shadow starts UNDER the border and fades into the content below. ChromeRule
+  gains a dark-shadow mode (black gradient, explicit black line). The synth
+  page's cards/bottom-row separator gets the same treatment (shadow above the
+  line on the cards panel).
+- **Bigger knob captions, all themes (2026-08-26).** Knob labels render at
+  13pt (was 12) on every theme; Y2K captions 11pt Michroma (was 10) and
+  combo captions 10pt (was 9). The label band grew to 16px so the knob area
+  does not shrink.
+- **Redesigned mod-bar nav buttons (2026-08-26).** The `<` / `>` scrollers
+  are circular recessed wells (theme input fill + thin rim) with a stroked
+  chevron glyph — always visible at rest, hover lifts the well, press turns
+  the chevron the theme accent. Was a bare text glyph, invisible at rest.
+- **Obsidian, Paper and Crimson themes removed (2026-XX-XX).** The built-in
+  theme set is now five themes: Carbon, Midnight, Immutable, Swedish Red and
+  Y2K. The settings Theme combo lists only these themes. A persisted theme
+  name that no longer exists falls back to Carbon (the default) on the next
+  open.
+- **Knob captions follow the theme's light/dark tone on every switch
+  (2026-XX-XX).** A ParamControl caption (Shape, Param, Attack, Decay) kept
+  the explicit WHITE colour that the Y2K pass set after a switch to a
+  light theme, so light themes (e.g. Immutable) showed white captions on
+  a light card. applyThemeFonts now re-resolves the caption colour on every
+  theme apply (light themes = dark text, dark themes = light text) instead
+  of only on Y2K, clearing any residual colour.
+- **VT323 console font retired; data readouts use the default font
+  (2026-XX-XX).** The pixel/terminal "console" face (VT323) is gone from
+  Y2K. Every data readout — combo / dropdown text, matrix values, Hz / ms /
+  % readouts, envelope and LFO display text, the settings drawer captions
+  and the seq-length readout — now uses the shared default app font on
+  EVERY theme, Y2K included. Y2K keeps its own special typeface (Michroma)
+  for module headers and card labels only. The embedded VT323 font is
+  removed from the binary (see NOTICES). All non-Y2K themes render
+  unchanged.
+
 ### Added
 - **Y2K closed-dropdown readout font (2026-08-25).** The closed combo text
   now reliably renders in the VT323 console face on Y2K. ComboBox only
@@ -71,6 +121,30 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   the unit. Existing types are untouched; the new type appends to the list.
 
 ### Fixed
+- **Stale previous-theme background after a theme switch (2026-08-26).**
+  Two independent causes, both fixed. (1) The TabbedComponent's per-tab
+  content backgrounds are component-level colours pinned at construction
+  (addTab with the then-current backgroundBase); they never followed the L&F,
+  so a persisted Swedish Red kept a red content area under every theme.
+  applyAllColoursFromTheme now re-resolves every tab background on each
+  switch. (2) The mod-bar's OPAQUE pill content kept its last-painted fill
+  after a switch (a parent repaint never redraws an opaque child); it is now
+  repainted explicitly, and the opaque oscillator previews repaint via
+  lookAndFeelChanged.
+- **Scrollbar 1px gap at the chrome bands, all themes (2026-08-26).** The
+  scrollbar track was inset 1px top/bottom; it now spans edge-to-edge so it
+  butts the header and the status strip exactly.
+- **Y2K mod matrix gap (2026-08-26).** The synth-page mod matrix carries a
+  6px inset from its flush joint (Y2K only), applied on resize AND on theme
+  selection (idempotent from the stored flush bounds).
+- **Y2K dial readout face + module knob sizing (2026-08-25).** On Y2K the
+  knob value readout now draws in the Michroma label face in white (it
+  previously rendered in the VT323 console face in the LCD green). The module
+  knob dials grew to 60 px on the synth pages (Oscillators, Mixer, Filter,
+  Envelopes, LFOs, Arp, Global) and on the FX cards, so synth and FX match.
+  The dial = cell height - 22, so the module cell heights rose to 82 and the
+  diameter cap to 64. Dense grids (Sequencer, Mod, Modifier) keep smaller
+  dials.
 - **Y2K round 3 — fonts, one accent, chrome surfaces (2026-08-25).** The
   closed dropdown and the dial value readouts render in VT323 now (they
   bypassed the data font). The envelope, LFO and filter previews collapse to

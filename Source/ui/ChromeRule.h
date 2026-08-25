@@ -35,7 +35,18 @@ class ChromeRule : public juce::Component
 {
 public:
     explicit ChromeRule (bool shadowBelow)
-        : shadowBelow_ (shadowBelow)
+        : shadowBelow_ (shadowBelow), dark_ (false), strongestAtLine_ (true)
+    {
+        setInterceptsMouseClicks (false, false);
+    }
+
+    // DARK drop-shadow variant: the falloff is BLACK (a true shadow, ~50%
+    // alpha) instead of the rule-colour veil. strongestAtLine picks the depth
+    // direction: true = darkest AT the line, fading away (a recessed groove
+    // under a raised band); false = darkest at the FAR edge of the falloff
+    // (the band above), fading TO the line (a cast shadow from the band).
+    ChromeRule (bool shadowBelow, bool darkShadow, bool strongestAtLine)
+        : shadowBelow_ (shadowBelow), dark_ (darkShadow), strongestAtLine_ (strongestAtLine)
     {
         setInterceptsMouseClicks (false, false);
     }
@@ -53,22 +64,30 @@ public:
             g.fillAll (rule);   // degenerate (no shadow room): plain rule
             return;
         }
-        juce::ColourGradient grad (rule.withMultipliedAlpha (0.35f), 0.0f, 0.0f,
-                                   rule.withMultipliedAlpha (0.0f),  0.0f, (float) kShadowH,
+        const juce::Colour veil  = dark_ ? juce::Colours::black : rule;
+        const float       vAlpha = dark_ ? 0.50f : 0.35f;
+        // The dark variant's LINE is explicitly black (the border); the veil
+        // variant keeps the rule colour.
+        if (dark_)
+            g.setColour (juce::Colours::black);
+        juce::ColourGradient grad (veil.withMultipliedAlpha (vAlpha), 0.0f, 0.0f,
+                                   veil.withMultipliedAlpha (0.0f),  0.0f, (float) kShadowH,
                                    false);
         if (shadowBelow_)
         {
             g.fillRect (0, 0, w, 1);                       // the rule
-            grad.point1 = { 0.0f, 1.0f };
-            grad.point2 = { 0.0f, 1.0f + (float) kShadowH };
+            grad.point1 = { 0.0f, strongestAtLine_ ? 1.0f : 1.0f + (float) kShadowH };
+            grad.point2 = { 0.0f, strongestAtLine_ ? 1.0f + (float) kShadowH : 1.0f };
             g.setGradientFill (grad);
             g.fillRect (0, 1, w, kShadowH);                // falloff below
         }
         else
         {
             g.fillRect (0, h - 1, w, 1);                   // the rule
-            grad.point1 = { 0.0f, (float) (h - 1) };
-            grad.point2 = { 0.0f, (float) (h - 1 - kShadowH) };
+            const float lineY = (float) (h - 1);
+            const float farY  = (float) (h - 1 - kShadowH);
+            grad.point1 = { 0.0f, strongestAtLine_ ? lineY : farY };
+            grad.point2 = { 0.0f, strongestAtLine_ ? farY : lineY };
             g.setGradientFill (grad);
             g.fillRect (0, h - 1 - kShadowH, w, kShadowH); // falloff above
         }
@@ -76,5 +95,7 @@ public:
 
 private:
     bool shadowBelow_;
+    bool dark_;
+    bool strongestAtLine_;
 };
 }  // namespace parvati

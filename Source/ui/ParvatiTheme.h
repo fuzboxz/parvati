@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Parvati.
 //
-// ParvatiTheme — a self-contained colour-palette struct plus the 8 built-in
-// themes (Carbon, Midnight, Obsidian, Paper, Crimson, Immutable, Swedish Red,
-// Y2K). The palette is a clean
+// ParvatiTheme — a self-contained colour-palette struct plus the 5 built-in
+// themes (Carbon, Midnight, Immutable, Swedish Red, Y2K). The palette is a clean
 // 3-layer semantic scheme so every LookAndFeel / paint call reads its colours
 // from a single ParvatiTheme (switching themes is one pointer change):
 //
@@ -62,7 +61,7 @@ struct ParvatiTheme
     // The STRICT family palette: teal=Envelope, magenta=LFO, amber=keyboard/perf,
     // mint=sequencer (Seq+Arp), orange=utility, purple=modifier, indigo=constant.
     // Control arcs/graphs + mod-bar pills + matrix rows tinted by function group:
-    juce::Colour catAudio;            // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (NOT a mod-source family; section headers). Adopts the theme's BRAND ACCENT in every theme — never the family amber, so knob rings/previews follow the accent (Carbon/Immutable: primary; Midnight/Paper: secondary — their primaries collide with the Env teal / amber families; Obsidian/Crimson: primary; Swedish Red: the theme's deliberately-defined display hues — see the factory). The mod-source family hues below are unaffected and stay uniform across themes.
+    juce::Colour catAudio;            // Audio: Oscillators, Sub-Osc, Noise, Filter, Mixer (NOT a mod-source family; section headers). Adopts the theme's BRAND ACCENT in every theme — never the family amber, so knob rings/previews follow the accent (Carbon/Immutable/Y2K: primary; Midnight: secondary — its primary teal collides with the Env teal family; Swedish Red: the theme's deliberately-defined display hue — see the factory). The mod-source family hues below are unaffected and stay uniform across themes.
     juce::Colour catEnv;              // Envelopes (TEAL)
     juce::Colour catLfo;              // LFOs (MAGENTA)
     juce::Colour catSeq;              // Sequencer (MINT GREEN)
@@ -104,22 +103,19 @@ inline const juce::Colour kFallbackOutlineSoft   { 0xff3a3a44 };  // wheels trac
 }   // namespace parvati
 
 //==============================================================================
-// Stable builtin list order: Carbon(0), Midnight(1), Obsidian(2), Paper(3),
-// Crimson(4), Immutable(5), Swedish Red(6), Y2K(7). Each factory returns a reference to a
+// Stable builtin list order: Carbon(0), Midnight(1), Immutable(2),
+// Swedish Red(3), Y2K(4). Each factory returns a reference to a
 // function-local static, so
 // the theme objects live for the whole program and are safe to hold pointers to.
 
 // All built-in themes, in the order above. Stable for the program's lifetime.
 const std::vector<ParvatiTheme>& getBuiltinThemes();
 
-// Number of built-in themes (== 8).
+// Number of built-in themes (== 5).
 int kNumBuiltinThemes();
 
 const ParvatiTheme& carbonTheme();     // default = current look (dark / cyan)
 const ParvatiTheme& midnightTheme();   // dark blue / teal
-const ParvatiTheme& obsidianTheme();   // near-black / violet
-const ParvatiTheme& paperTheme();      // light
-const ParvatiTheme& crimsonTheme();    // dark red
 const ParvatiTheme& immutableTheme();  // light gray / magenta (reference adoption)
 const ParvatiTheme& swedishRedTheme(); // red chassis / grey-black cards / green LCD displays
 const ParvatiTheme& y2kTheme();         // glossy desktop azure / liquid chrome / candy routing colours

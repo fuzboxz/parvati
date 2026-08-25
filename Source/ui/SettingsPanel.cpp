@@ -368,12 +368,11 @@ void SettingsPanel::refreshLanguage()
 
 void SettingsPanel::applyRoleFonts()
 {
-    // The settings drawer reads as an LCD control panel: every row caption
-    // (Theme / Zoom / Filter Quality / Language / Arp Clock / Visual Refresh)
-    // is the VT323 console face on Y2K -- the caption belongs to its control
-    // the way a dropdown's label does, and the user wants them all in the LCD
-    // readout look. The value readouts stay the same console face. Y2K-gated;
-    // all other themes keep the legacy caption face.
+    // The settings drawer reads as a control panel. The row captions (Theme /
+    // Zoom / Filter Quality / Language / Arp Clock / Visual Refresh) use the
+    // shared default data face via dataFontExactFor (the former Y2K VT323
+    // console face is retired) so the captions and value readouts match the
+    // active theme. All other themes keep their legacy caption face.
     themeLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
     zoomLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
     zoomValueLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));

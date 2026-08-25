@@ -87,5 +87,19 @@ private:
     // BOTTOM-RIGHT: the editor-owned ModMatrixView (direct-hosted, non-owned).
     ModMatrixView* modMatrixView_ = nullptr;
 
+    // The matrix bounds BEFORE the Y2K 6px gap (set by resized). Kept so the
+    // gap applies from the flush joint every time — never re-reduced.
+    juce::Rectangle<int> matrixFlushBounds_;
+
+    // SYNTH-ONLY bottom seam rule (parvati::ChromeRule): the 1px border at
+    // the bottom row's top edge — between the cards panel and the mod-matrix
+    // page. Held as unique_ptr<Component> (the ChromeRule.h include stays in
+    // the .cpp), exactly like the base class's barRule_.
+    std::unique_ptr<juce::Component> bottomRule_;
+
+    // Y2K only: inset the mod matrix 6px from its flush joint. Other themes
+    // keep the flush bounds unchanged. Idempotent via matrixFlushBounds_.
+    void applyY2kMatrixGap();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SynthWorkspace)
 };

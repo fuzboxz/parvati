@@ -112,9 +112,6 @@ TEST(seq_stepper_test)
     std::vector<std::pair<const char*, const ParvatiTheme&>> themes {
         { "Carbon",      carbonTheme()      },
         { "Midnight",    midnightTheme()    },
-        { "Obsidian",    obsidianTheme()    },
-        { "Paper",       paperTheme()       },
-        { "Crimson",     crimsonTheme()     },
         {"Immutable",   immutableTheme()      },
         { "Swedish Red", swedishRedTheme()  },
     };
@@ -250,14 +247,14 @@ TEST(seq_stepper_test)
             {
                 check (number->findColour (juce::Label::textColourId) == carbonTheme().textPrimary,
                        "initial (Carbon) colour is Carbon textPrimary");
-                lnf.setTheme (paperTheme());        // dark -> light switch
+                lnf.setTheme (immutableTheme());    // dark -> light switch
                 host.sendLookAndFeelChange();
-                check (number->findColour (juce::Label::textColourId) == paperTheme().textPrimary,
-                       "after switch: colour is Paper textPrimary (re-resolved)");
-                lnf.setTheme (obsidianTheme());
+                check (number->findColour (juce::Label::textColourId) == immutableTheme().textPrimary,
+                       "after switch: colour is Immutable textPrimary (re-resolved)");
+                lnf.setTheme (midnightTheme());
                 host.sendLookAndFeelChange();
-                check (number->findColour (juce::Label::textColourId) == obsidianTheme().textPrimary,
-                       "after switch: colour is Obsidian textPrimary (re-resolved)");
+                check (number->findColour (juce::Label::textColourId) == midnightTheme().textPrimary,
+                       "after switch: colour is Midnight textPrimary (re-resolved)");
             }
             else
                 check (false, "number label for switch test");

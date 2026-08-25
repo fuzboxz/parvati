@@ -85,105 +85,6 @@ const ParvatiTheme& midnightTheme()
     return t;
 }
 
-const ParvatiTheme& obsidianTheme()
-{
-    // Near-black / violet — modernised flat palette (lighter panel cards, no
-    // skeuomorphic shadows/outlines).
-    static const ParvatiTheme t {
-        "Obsidian",
-        // Layer 1 — BASE
-        juce::Colour (0xff131318), juce::Colour (0xff1C1C26), juce::Colour (0xff252532),
-        juce::Colour (0xff2D2D3B),
-        // Layer 2 — INFORMATION
-        juce::Colour (0xfff0ecfa), juce::Colour (0xff9a92b0), juce::Colour (0xff6C6878),
-        juce::Colour (0xff3B3B49),
-        // Layer 3 — ACTION: violet / fuchsia
-        juce::Colour (0xff8b5cf6), juce::Colour (0xffd946ef),
-        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
-        // keyWhite (violet-slate naturals), keyBlack (near-black recessed)
-        juce::Colour (0xff2C2C3C), juce::Colour (0xff262634), juce::Colour (0xff1C1C26),
-        juce::Colour (0xff181820), juce::Colour (0xff252532), juce::Colour (0xff4D4864),
-        juce::Colour (0xff0F0F16),
-        // modulation routing palette — catAudio adopts the VIOLET brand accent
-        // (was the shared family amber) so osc/filter previews match the accent.
-        // Env=TEAL, LFO=MAGENTA, Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE,
-        // Const=INDIGO (family palette unchanged; the Mod pills keep PURPLE).
-        juce::Colour (0xff8b5cf6), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
-        juce::Colour (0xff34D399), juce::Colour (0xff34D399),
-        juce::Colour (0xffFBBF24), juce::Colour (0xffFB923C), juce::Colour (0xffA78BFA),
-        juce::Colour (0xff818CF8),
-        true
-    };
-    return t;
-}
-
-const ParvatiTheme& paperTheme()
-{
-    // Light theme. isDark = false so L&F can adapt contrast / focus rings.
-    // Modernised flat palette: panel cards slightly DARKER than the page (tonal
-    // contrast inverts on light themes); no skeuomorphic shadows/outlines. On a
-    // light surface an input hover DARKENS (the opposite of the dark themes).
-    static const ParvatiTheme t {
-        "Paper",
-        // Layer 1 — BASE
-        juce::Colour (0xfff7f6f2), juce::Colour (0xffeceae4), juce::Colour (0xffe2dfd7),
-        juce::Colour (0xffd8d4ca),
-        // Layer 2 — INFORMATION: darkest primary text, mid gray secondary,
-        // lighter disabled (less contrast on the light bg).
-        juce::Colour (0xff11100e), juce::Colour (0xff6b6862), juce::Colour (0xff8a8780),
-        juce::Colour (0xffD5D1C7),
-        // Layer 3 — ACTION: deep amber / blue
-        juce::Colour (0xffb45309), juce::Colour (0xff2563eb),
-        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
-        // keyWhite (neutral near-white — NOT warm bone), keyBlack (warm charcoal)
-        juce::Colour (0xffc2beb3), juce::Colour (0xffdedbd1), juce::Colour (0xffeceae4),
-        juce::Colour (0xffe0ddd3), juce::Colour (0xffece9e0), juce::Colour (0xffFDFDFB),
-        juce::Colour (0xff33302B),
-        // modulation routing palette — catAudio adopts the BLUE accent (600-tier
-        // for light-bg contrast; the primary is itself amber). Env=TEAL, LFO=MAGENTA,
-        // Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
-        // (family palette unchanged, darker 600-tier hues retained)
-        juce::Colour (0xff2563eb), juce::Colour (0xff0D9488), juce::Colour (0xffC026D3),
-        juce::Colour (0xff059669), juce::Colour (0xff059669),
-        juce::Colour (0xffD97706), juce::Colour (0xffEA580C), juce::Colour (0xff7C3AED),
-        juce::Colour (0xff4F46E5),
-        false
-    };
-    return t;
-}
-
-const ParvatiTheme& crimsonTheme()
-{
-    // Dark red — modernised flat palette (lighter panel cards, no skeuomorphic
-    // shadows/outlines).
-    static const ParvatiTheme t {
-        "Crimson",
-        // Layer 1 — BASE
-        juce::Colour (0xff1A0E0E), juce::Colour (0xff2A1818), juce::Colour (0xff341E1E),
-        juce::Colour (0xff3C2424),
-        // Layer 2 — INFORMATION
-        juce::Colour (0xfff9eded), juce::Colour (0xffb08a8a), juce::Colour (0xff8A6E6E),
-        juce::Colour (0xff4C3232),
-        // Layer 3 — ACTION: crimson / blue
-        juce::Colour (0xffe5484d), juce::Colour (0xff3b82f6),
-        // auxiliary: outline, divider, containerFill, tabUnselectedBg, tabSelectedBg,
-        // keyWhite (rosy-taupe naturals), keyBlack (near-black red recessed)
-        juce::Colour (0xff3E2424), juce::Colour (0xff2E1818), juce::Colour (0xff2A1818),
-        juce::Colour (0xff201212), juce::Colour (0xff341E1E), juce::Colour (0xff5F4448),
-        juce::Colour (0xff120808),
-        // modulation routing palette — catAudio adopts the CRIMSON brand accent
-        // (was a harmonized amber-orange). Env=TEAL, LFO=MAGENTA,
-        // Seq/Arp=MINT, Perf=AMBER, Util=ORANGE, Mod=PURPLE, Const=INDIGO
-        // (same vivid family hues as the other dark themes; palette unchanged)
-        juce::Colour (0xffe5484d), juce::Colour (0xff2DD4BF), juce::Colour (0xffE879F9),
-        juce::Colour (0xff34D399), juce::Colour (0xff34D399),
-        juce::Colour (0xffFBBF24), juce::Colour (0xffFB923C), juce::Colour (0xffA78BFA),
-        juce::Colour (0xff818CF8),
-        true
-    };
-    return t;
-}
-
 const ParvatiTheme& immutableTheme()
 {
     // Immutable — a flat, matte LIGHT interface adopted from a reference module's
@@ -212,8 +113,8 @@ const ParvatiTheme& immutableTheme()
     //    LFO and Performance slots share the orange-gold (outside the first-five
     //    distinctness guard); catAudio/magenta stays DISTINCT from catLfo/gold so
     //    the positional-init guard holds.
-    // Light-theme tonal steps follow paperTheme(): panel darker than the page and
-    // an input hover DARKENS (opposite of the dark themes).
+    // Light-theme tonal steps: panel darker than the page and an input hover
+    // DARKENS (opposite of the dark themes).
     static const ParvatiTheme t {
         "Immutable",
         // Layer 1 — BASE
@@ -289,13 +190,15 @@ const ParvatiTheme& swedishRedTheme()
 //==============================================================================
 const ParvatiTheme& y2kTheme()
 {
-    // Y2K — the HARDWARE restyle (2026-08-24): a silver desktop, dark module
-    // panels, black data screens and LED readouts. The base is FLAT SILVER
-    // (the Win98 chrome desktop #C0C0C0). Module panels sit mid-grey #808080
-    // with the subtle liquid-chrome sweep from paintChromeCard. Data wells
+    // Y2K — the HARDWARE restyle (2026-08-24): a gunmetal desktop, dark module
+    // panels, black data screens and LED readouts. The base is FLAT GUNMETAL
+    // (#808080 — the brushed-steel desktop that matches the chrome cards;
+    // the former Win98 silver #C0C0C0 is retired). Module panels sit the
+    // card steel #565656. Data wells
     // are near-black; knob tracks are solid black; the routing palette is
-    // PURE saturated hex on the dark surfaces. Type: Michroma headers, PT Sans
-    // labels, VT323 LED data text (all OFL, see assets/fonts).
+    // PURE saturated hex on the dark surfaces. Type: Michroma headers and
+    // labels (all OFL, see assets/fonts). The former VT323 data face is
+    // retired; every data readout uses the default app font.
     // isDark = FALSE (audited): every isDark consumer is the dark-dropdown /
     // dark-text convention (drawComboBox fill+chevron, ComboBox::textColourId,
     // SeqLengthStepper) — the false branch gives the fixed near-black
@@ -304,9 +207,10 @@ const ParvatiTheme& y2kTheme()
     // SHARPS on the grey panel (correct: the pearl naturals sit on silver).
     static const ParvatiTheme t {
         "Y2K",
-        // Layer 1 — BASE: flat silver desktop; module panels mid-grey;
-        // recessed data wells near-black with a one-notch hover lift.
-        juce::Colour (0xffC0C0C0), juce::Colour (0xff051A05), juce::Colour (0xff1A1A1A),
+        // Layer 1 — BASE: flat gunmetal desktop (matches the chrome cards);
+        // module panels the card steel; recessed data wells near-black with
+        // a one-notch hover lift.
+        juce::Colour (0xff808080), juce::Colour (0xff051A05), juce::Colour (0xff1A1A1A),
         juce::Colour (0xff262626),
         // Layer 2 — INFORMATION: white values on the dark panels, light grey
         // labels, the era disabled grey, SOLID BLACK knob empty tracks.
@@ -347,9 +251,6 @@ const std::vector<ParvatiTheme>& getBuiltinThemes()
     static const std::vector<ParvatiTheme> v {
         carbonTheme(),
         midnightTheme(),
-        obsidianTheme(),
-        paperTheme(),
-        crimsonTheme(),
         immutableTheme(),
         swedishRedTheme(),
         y2kTheme()

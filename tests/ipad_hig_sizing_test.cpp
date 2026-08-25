@@ -33,7 +33,11 @@ void check (bool cond, const char* msg)
 
 // ---- Compile-time contract (the primary guard) ----
 // Unified values (iOS style is the default on ALL platforms).
-static_assert (ParvatiEditor::kHeaderH   == 44, "header height must be 44 (HIG)");
+// kHeaderH grew 44 -> 48 -> 52: room for the 22pt wordmark + the border
+// stack (the dark cast shadow now falls BELOW the border into the content
+// clearance). The 44pt HIG target lives in kBarHeight (the control strip
+// stays 44); the band chrome adds 8px of depth.
+static_assert (ParvatiEditor::kHeaderH   == 52, "header height must be 52 (44pt HIG strip + 8px chrome depth)");
 static_assert (ParvatiEditor::kBarHeight == 44, "header icon strip must be 44 (HIG targets)");
 static_assert (ParamPage::kMargin        == 8,  "page margin must be 8 (HIG spacing)");
 static_assert (CentralModBar::kBarHeight == 86, "mod-bar height must be 86 (8px sep clearance + label tab 14 + gap 4 + 56pt pills + 4px bottom inset, 2026-08-21)");
@@ -54,7 +58,7 @@ TEST(ipad_hig_sizing_test)
 {
     std::printf ("[HIG sizing contract] unified UI (single style, all platforms)\n");
 
-    check (ParvatiEditor::kHeaderH    == 44, "header height == 44");
+    check (ParvatiEditor::kHeaderH    == 52, "header height == 52 (44 HIG strip + chrome depth)");
     check (ParvatiEditor::kBarHeight  == 44, "header icon strip == 44");
     check (ParamPage::kMargin         == 8,  "page margin == 8");
     check (CentralModBar::kBarHeight  == 86, "mod-bar height == 86");

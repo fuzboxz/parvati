@@ -41,11 +41,6 @@ juce::Typeface::Ptr y2kHeaderTypeface()
     static const juce::Typeface::Ptr tf = loadEmbeddedFont ("MichromaRegular_ttf");
     return tf;
 }
-juce::Typeface::Ptr y2kDataTypeface()
-{
-    static const juce::Typeface::Ptr tf = loadEmbeddedFont ("VT323Regular_ttf");
-    return tf;
-}
 juce::Typeface::Ptr y2kLabelTypeface (bool bold)
 {
     static const juce::Typeface::Ptr regular = loadEmbeddedFont ("PT_SansWebRegular_ttf");
@@ -85,20 +80,23 @@ juce::Font ParvatiLookAndFeel::labelFont (float height, int styleFlags) const
     return appFont (height, styleFlags);
 }
 
+juce::Font ParvatiLookAndFeel::wordmarkFont (float height) const
+{
+    // The brand wordmark on EVERY theme: Michroma — the SAME payload the Y2K
+    // header face uses (user request). Falls back to the app font when the
+    // embedded payload fails to load, so the wordmark always renders.
+    if (const auto tf = y2kHeaderTypeface(); tf != nullptr)
+        return juce::Font (juce::FontOptions (tf).withHeight (juce::jmax (8.0f, height)));
+    return appFont (height, juce::Font::bold);
+}
+
 juce::Font ParvatiLookAndFeel::dataFont (float height, int styleFlags) const
 {
-    // Y2K: VT323 (pixel/terminal face), scaled up 1.2x because its metrics
-    // run small at the same point size. VT323 has no bold face; the style
-    // FLAG is still set (isBold() reports it; hosts may synthesise), so
-    // value-tier pins hold. Other themes keep the app font at the requested
-    // style.
-    if (isY2kChrome (theme_))
-        if (const auto tf = y2kDataTypeface(); tf != nullptr)
-        {
-            auto f = juce::Font (juce::FontOptions (tf).withHeight (juce::jmax (11.0f, height * 1.2f)));
-            f.setStyleFlags (styleFlags);
-            return f;
-        }
+    // The VT323 console face is RETIRED (2026-XX-XX): every data readout
+    // (values, combo text, matrix numbers, dropdown lists) uses the shared
+    // shared default app font on EVERY theme, Y2K included. Y2K keeps ONLY
+    // its own special face (Michroma) for headers and labels; the terminal
+    // console readout face is gone.
     return appFont (height, styleFlags);
 }
 namespace
@@ -164,32 +162,11 @@ void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
         }
         return;
     }
-    // The LIQUID-CHROME CARD on the hardware world: a thin SPECULAR edge at
-    // the very top of the card (the bright reflection line of poured metal,
-    // confined to the first ~4% where no text sits) falls to the brushed
-    // mid steel that carries the whole card body, then pools darker at the
-    // bottom edge. Five stops keep the fall smooth (no banding). The
-    // caption zone (y >= 8px) sits at or below +19% over the panel base —
-    // white text keeps >= 4.5:1 there (measured; the typography tier).
-    const auto panelBase = t->containerFill.withMultipliedAlpha (alpha);
-    const auto specular  = panelBase.brighter (0.62f);   // reflection edge line
-    const auto hi        = panelBase.brighter (0.19f);   // caption-zone steel
-    const auto chromeMid = panelBase.brighter (0.10f);   // brushed body
-    const auto chromeLo  = panelBase.darker (0.10f);     // bottom pooling
-    juce::ColourGradient metal (specular,
-                                r.getCentreX(), r.getY(),
-                                hi,
-                                r.getCentreX(), juce::jmax (4.0f, r.getHeight() * 0.04f),
-                                false);
-    metal.addColour (0.35, chromeMid);
-    metal.addColour (0.85, chromeMid.darker (0.04f));
-    metal.addColour (1.00, chromeLo);
-    g.setGradientFill (metal);
+    // FLAT CARD on the hardware world: the former liquid-chrome gradient
+    // and bevel are retired. The card is one flat fill of the card body tone
+    // (containerFill). White text keeps its contrast on the solid steel.
+    g.setColour (t->containerFill.withMultipliedAlpha (alpha));
     g.fillRoundedRectangle (r, corner);
-    drawY2kBevel (g, r, corner,
-                  juce::Colours::white.withAlpha (0.55f * alpha),
-                  chromeLo.darker (0.25f).withMultipliedAlpha (alpha),
-                  1.5f);
 }
 
 void paintChromeWindow (juce::Graphics& g, const juce::Rectangle<float>& r,
@@ -202,32 +179,13 @@ void paintChromeWindow (juce::Graphics& g, const juce::Rectangle<float>& r,
     // angle, not a flat vertical fade). Dark text on the bottom strip keeps
     // contrast: the pooling stays within 14% of the base silver. The CARD
     // sweep is stronger still (the dark cards pop off the silver window).
-    // Non-Y2K callers never reach here (the editor fills backgroundBase).
-    if (! isY2kChrome (t))
-    {
-        if (t != nullptr)
-            g.fillAll (t->backgroundBase);
-        return;
-    }
-    const auto base  = t->backgroundBase;
-    const auto hi    = base.brighter (0.26f);     // polished silver band
-    const auto hiMid = base.brighter (0.12f);     // brushed steel
-    const auto mid   = base;                      // settled base
-    const auto low   = base.darker (0.08f);       // lower steel
-    const auto lo    = base.darker (0.14f);       // bottom pooling
-    // Diagonal: the gradient runs top-LEFT bright to bottom-RIGHT dark (a
-    // shallow skew — ~10 deg from vertical; enough to read as poured metal).
-    const auto skew = r.getWidth() * 0.12f;
-    juce::ColourGradient sweep (hi,
-                                r.getX() + skew, r.getY(),
-                                lo,
-                                r.getRight() - skew, r.getBottom(),
-                                false);
-    sweep.addColour (0.22, hiMid);
-    sweep.addColour (0.50, mid);
-    sweep.addColour (0.80, low);
-    g.setGradientFill (sweep);
-    g.fillRect (r);
+    // The window is a FLAT base fill: the former poured-metal sweep is
+    // retired. Dark text keeps its contrast on the solid silver base.
+    if (t != nullptr)
+        g.fillAll (t->backgroundBase);
+    else
+        g.fillAll (juce::Colour (0xff808080));
+    (void) r;
 }
 
 }   // namespace parvati
@@ -261,10 +219,10 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     setColour (juce::ComboBox::outlineColourId,                juce::Colour (0x00000000));   // borderless (drawComboBox draws no outline)
     // ComboBox text is always LIGHT: drawComboBox fills every dropdown with a
     // uniform dark gray, so the inline text reads crisp white. On the dark
-    // themes that is exactly textPrimary; on the light Paper theme (whose
-    // textPrimary is dark for its light surfaces) a fixed light value keeps the
+    // themes that is exactly textPrimary; on a light theme (whose textPrimary
+    // is dark for its light surfaces) a fixed light value keeps the
     // closed-dropdown text legible on the dark fill. Y2K: the dropdown VALUE
-    // is a data readout — the neon LED green (VT323 renders it).
+    // is a data readout — the neon LED green.
     if (isY2kChrome (&t))
         setColour (juce::ComboBox::textColourId, t.accentPrimary);
     else
@@ -276,7 +234,7 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
 
     // ---- PopupMenu (used by every ComboBox's drop-down) ----
     setColour (juce::PopupMenu::backgroundColourId,            t.backgroundInput);
-    // Y2K: the open dropdown list is the LED data surface (VT323) — the LCD
+    // Y2K: the open dropdown list is the LED data surface — the LCD
     // green on the near-black popup fill. The selection highlight is the
     // dim teal with near-black text (dark reads on the mid-teal fill).
     setColour (juce::PopupMenu::textColourId,
@@ -430,15 +388,11 @@ void ParvatiLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scro
                                         int thumbStartPosition, int thumbSize,
                                         bool isMouseOver, bool isMouseDown)
 {
-    // Faint track behind the thumb — inset 1px top/bottom (vertical) or
-    // left/right (horizontal) so the track never butts the viewport edge: the
-    // little whitespace reads as padding and keeps neighbouring chrome (the
-    // separator rules) visually distinct from the scrollbar.
+    // Faint track behind the thumb — SPANS the bar edge to edge. The former
+    // 1px top/bottom inset left a visible gap against the chrome bands (the
+    // header above, the status strip below); the track now butts them exactly.
     g.setColour (scrollbar.findColour (juce::ScrollBar::trackColourId));
-    if (isVertical)
-        g.fillRect (x, y + 1, width, juce::jmax (0, height - 2));
-    else
-        g.fillRect (x + 1, y, juce::jmax (0, width - 2), height);
+    g.fillRect (x, y, width, height);
 
     if (thumbSize <= 0)
         return;
@@ -483,19 +437,16 @@ juce::Font ParvatiLookAndFeel::appFont (float height, int styleFlags) const
 
 juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
 {
-    // Y2K: the dropdown VALUE text is a data readout — VT323 with the LED
-    // green set by the caller's colour id ( ComboBox::textColourId ).
-    if (isY2kChrome (theme_))
-        return dataFont (14.0f);
+    // The dropdown VALUE text renders in the default app font on every theme
+    // (the VT323 console readout face is retired). The colour is set by the
+    // caller's ComboBox::textColourId.
     return appFont (14.0f, juce::Font::plain);
 }
 
 juce::Font ParvatiLookAndFeel::getComboListFontPublic() const
 {
     // Measurement twin of getComboBoxFont (const, for the header-inline
-    // comboListFont helper): Y2K VT323, otherwise the 14 pt app sans.
-    if (isY2kChrome (theme_))
-        return dataFont (14.0f);
+    // comboListFont helper): the 14 pt app sans on every theme.
     return appFont (14.0f, juce::Font::plain);
 }
 
@@ -516,11 +467,8 @@ juce::Font ParvatiLookAndFeel::getPopupMenuFont()
     // this routes it through the app sans-serif. 14pt — the SAME height as
     // getComboBoxFont/getTextButtonFont so a combo's inline text and its
     // open list match (was 15pt; UI feedback 2026-08-20: the seq length
-    // picker read noticeably larger than every other dropdown text).
-    // Y2K: the open list is a data readout surface — VT323, same as the
-    // closed combo text (see getComboBoxFont).
-    if (isY2kChrome (theme_))
-        return dataFont (14.0f);
+    // picker read noticeably larger than every other dropdown text). Same
+    // default app face on every theme (the VT323 console face is retired).
     return appFont (14.0f, juce::Font::plain);
 }
 
@@ -547,9 +495,9 @@ juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
     // A ComboBox's inline (closed) value label draws through getLabelFont:
     // JUCE's default drawLabel calls getLabelFont (not the label's stored
     // font), so without this branch the closed dropdown text would render in
-    // the generic caption face (Michroma on Y2K) instead of the console
-    // readout. Defer those labels to getComboBoxFont, which is the same face
-    // the open list uses (VT323 on Y2K) and re-resolves on every paint.
+    // the generic caption face (Michroma on Y2K) instead of the shared
+    // control face. Defer those labels to getComboBoxFont, which is the same
+    // face the open list uses and re-resolves on every paint.
     if (auto* combo = dynamic_cast<juce::ComboBox*> (label.getParentComponent()))
         return getComboBoxFont (*combo);
 
@@ -940,10 +888,12 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     {
         const juce::String valueText = slider.getTextFromValue (slider.getValue());
         const float maxTextW = radius * 2.0f;
-        // Y2K: the dial readout is a data surface — VT323, matching the
-        // dropdown readouts. Every other theme keeps the app sans.
+        // Y2K: the dial readout uses the LABEL face (Michroma) in WHITE — the
+        // same family as the captions, so the value reads as part of the label
+        // tier, not a separate data readout. Every other theme keeps the app
+        // sans.
         auto vfFor = [this] (float h)
-        { return isY2kChrome (theme_) ? dataFont (h) : appFont (h, juce::Font::plain); };
+        { return isY2kChrome (theme_) ? labelFont (h, juce::Font::plain) : appFont (h, juce::Font::plain); };
         juce::Font vf = vfFor (juce::jmax (11.0f, radius * 0.52f));
         const int textW = juce::GlyphArrangement::getStringWidthInt (vf, valueText);
         if ((float) textW > maxTextW && textW > 0)
@@ -953,9 +903,14 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
             // rather than becoming unreadably small.
             vf = vfFor (juce::jmax (11.0f, vf.getHeight() * maxTextW / (float) textW));
 
+        // Y2K: the readout is WHITE (the label tier), not the LCD green the
+        // data screens use elsewhere.
+        const juce::Colour readoutCol = isY2kChrome (theme_)
+            ? juce::Colour (0xffffffff)
+            : valueCol;
         const auto textRect = bounds.toNearestInt().withSizeKeepingCentre (
             juce::roundToInt (maxTextW), juce::roundToInt (vf.getHeight() * 1.7f));
-        drawTextUncurtained (g, valueText, vf, textRect.toFloat(), valueCol,
+        drawTextUncurtained (g, valueText, vf, textRect.toFloat(), readoutCol,
                              juce::Justification::centred);
     }
 
@@ -1216,8 +1171,8 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
 
     // DARK DROPDOWN (flat, opaque, no bevel): a UNIFORM solid dark-gray fill so
     // crisp WHITE text reads fully legible over any row tint. The fill is the
-    // darkest chassis tone on the dark themes (backgroundBase); on the light
-    // Paper theme a neutral dark gray keeps the same dark-dropdown look (the
+    // darkest chassis tone on the dark themes (backgroundBase); on a light
+    // theme a neutral dark gray keeps the same dark-dropdown look (the
     // per-combo background colour is intentionally ignored — every combo is the
     // same dark field). A small tonal lift on hover / while open stays dark.
     const bool hover = box.isMouseOver() || isButtonDown;
@@ -1308,9 +1263,10 @@ void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label&
     const int y = (box.getHeight() - visualH) / 2;
     label.setBounds (6, y + 1, box.getWidth() - 24, visualH - 2);
     // The INLINE (closed) text uses the SAME data font as the open list
-    // (getComboBoxFont): VT323 LED readout on Y2K, the app sans everywhere
-    // else. lookAndFeelChanged re-calls this on a theme switch, so the
-    // closed value re-resolves with the theme (juce::Label caches fonts).
+    // (getComboBoxFont): the app sans on every theme (the VT323 console
+    // readout face is retired). lookAndFeelChanged re-calls this on a theme
+    // switch, so the closed value re-resolves with the theme (juce::Label
+    // caches fonts).
     label.setFont (getComboBoxFont (box));
 }
 

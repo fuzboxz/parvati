@@ -102,7 +102,7 @@ TEST(parvati_settings_probe)
     {
         const char* label = "default634";
         if (scenario == 1) { label = "short500";   ed->setSize (1280, 500); pump (0.20); }
-        if (scenario == 2) { label = "short-theme"; proc->setUiTheme ("Paper"); proc->syncAllParamsToEngine(); pump (0.25); }
+        if (scenario == 2) { label = "short-theme"; proc->setUiTheme ("Immutable"); proc->syncAllParamsToEngine(); pump (0.25); }
         if (scenario == 3) { label = "reopen500";  ed->openSettingsForTest(); ed->openSettingsForTest(); pump (0.20); }
         // (re)open the drawer for every scenario through the REAL path
         ed->openSettingsForTest();

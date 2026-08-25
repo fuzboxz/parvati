@@ -130,6 +130,12 @@ public:
 
     void paint (juce::Graphics&) override;
 
+    // OPAQUE + theme-aware: a parent repaint() never redraws an opaque child,
+    // so re-paint here on every L&F / theme change (sendLookAndFeelChange on
+    // a switch fires this on every child). Without it the old theme's panel
+    // fill stayed on screen until the next value change.
+    void lookAndFeelChanged() override { repaint(); }
+
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
 private:

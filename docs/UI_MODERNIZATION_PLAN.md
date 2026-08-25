@@ -112,9 +112,9 @@ struct ParvatiTheme {
     bool isDark = true;
 };
 ```
-Built-in themes: **Carbon** (current dark/gold), **Midnight** (dark
-blue/teal), **Obsidian** (near-black/violet), **Paper** (light), **Crimson**
-(dark/red).
+Built-in themes: **Carbon** (default dark), **Midnight** (dark blue/teal),
+**Immutable** (light gray/magenta), **Swedish Red** (red chassis, green LCD),
+**Y2K** (silver desktop, neon).
 
 ### Scaling approach
 Use `juce::Desktop::getInstance().setGlobalScaleFactor(zoom)` for the
@@ -169,7 +169,7 @@ integrates. This keeps one writer per shared file at all times.
 ---
 
 ## 6. Baked-in Defaults (override if you disagree)
-- **Themes:** Carbon, Midnight, Obsidian, Paper, Crimson (Carbon = default =
+- **Themes:** Carbon, Midnight, Immutable, Swedish Red, Y2K (Carbon = default =
   the current look, preserved).
 - **Zoom:** 0.75–2.0, default 1.0, slider in settings panel + keyboard
   `+`/`-`.
@@ -203,7 +203,7 @@ the standalone launches).
 
 | Phase | Delivered | New/edited files |
 |-------|-----------|------------------|
-| **1a** Theme system | `ParvatiTheme` (5 themes: Carbon/Midnight/Obsidian/Paper/Crimson), `ThemeManager` (ChangeBroadcaster, name/index select, ValueTree persistence) | `Source/ui/ParvatiTheme.{h,cpp}`, `Source/ui/ThemeManager.{h,cpp}` |
+| **1a** Theme system | `ParvatiTheme` (5 themes: Carbon/Midnight/Immutable/Swedish Red/Y2K), `ThemeManager` (ChangeBroadcaster, name/index select, ValueTree persistence) | `Source/ui/ParvatiTheme.{h,cpp}`, `Source/ui/ThemeManager.{h,cpp}` |
 | **1b** Tooltips | `ParamHelp` map — **183/183 params covered** (119 curated + 64 generated seq steps, runtime-verified) | `Source/ui/ParamHelp.{h,cpp}` |
 | **2a** LookAndFeel + wiring | `ParvatiLookAndFeel` (centralized, drives all stock widget colours from theme); removed legacy `col::`; `TooltipWindow`; `setZoom`; `ChangeListener` theme refresh | `Source/ui/ParvatiLookAndFeel.{h,cpp}`, `Source/PluginEditor.{h,cpp}` |
 | **2b** Responsive layout | Grouped panels (`groupForId` → bordered `GroupComponent`s); FlexBox-style reflow to window width; dense Mod-Matrix/Sequencer handling; viewport reflow contract | `Source/PluginEditor.{h,cpp}` |

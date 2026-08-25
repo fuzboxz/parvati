@@ -107,8 +107,9 @@ constexpr int kNaturalPatchW   = 64;    // globalW
 constexpr int kNaturalPartW    = 88;    // partComboW
 constexpr int kNaturalModeW    = 50;    // modeW ([Synth]/[FX])
 
-// The header strip: kHeaderH (44) + the chrome-rule clearance below it.
-constexpr int kHeaderStripH = 50;
+// The header strip: kHeaderH (52) + the border/shadow clearance below it
+// (kChromeRuleGap + 1 = 6: the line row + its 5px cast shadow).
+constexpr int kHeaderStripH = 58;
 
 //==============================================================================
 // Component plumbing.

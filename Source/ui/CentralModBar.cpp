@@ -98,12 +98,12 @@ namespace
     }
 
     // Quiet nav scrollers: the `<` / `>` buttons are CHROME, not pills — no
-    // tile, no accent bands. A bare chevron in dim text (textSecondary) at
-    // rest, lifting to textPrimary on hover and the theme accent on press;
-    // a hover/press shows only a faint rounded fill so the hit area is
-    // discoverable without visual weight. Disabled dims to 40%. (Was drawn
-    // exactly like a mod pill — filled tile + top accent band + underline —
-    // which competed with the pills it flanks.)
+    // accent bands, no underline. Each is a CIRCULAR RECESSED WELL (the
+    // theme's input fill + a thin outline rim) with a crisp stroked chevron
+    // glyph — an arrow key, not a text caption. The glyph stays dim
+    // (textSecondary) at rest, lifts to textPrimary on hover and the theme
+    // accent on press; the well brightens on hover and darkens on press.
+    // Disabled dims to 40%. (Was a bare text glyph, invisible at rest.)
     class NavButtonLnf : public ParvatiLookAndFeel
     {
     public:
@@ -117,17 +117,27 @@ namespace
                                    bool isMouseOverButton, bool isButtonDown) override
         {
             const ParvatiTheme* t = getTheme();
-            if (t == nullptr || (! isMouseOverButton && ! isButtonDown))
-                return;   // borderless at rest — the glyph alone
+            if (t == nullptr)
+                return;
 
-            const float alpha = b.isEnabled() ? 1.0f : 0.4f;
-            const juce::Rectangle<float> r = b.getLocalBounds().toFloat().reduced (0.5f);
+            const float alpha = b.isEnabled() ? 1.0f : 0.40f;
+            const auto area = b.getLocalBounds().toFloat();
+            const float d = juce::jmin (area.getWidth(), area.getHeight()) - 8.0f;
+            if (d <= 8.0f)
+                return;
+            const auto well = area.withSizeKeepingCentre (d, d);
 
-            juce::Colour fill = t->tabUnselectedBg;
-            if (isButtonDown)  fill = fill.brighter (0.25f);
-            else               fill = fill.brighter (0.10f);
+            // The well: the recessed input fill, quiet at rest. Hover lifts
+            // it one notch; press sinks it darker.
+            juce::Colour fill = t->backgroundInput;
+            if (isButtonDown)          fill = fill.darker (0.20f);
+            else if (isMouseOverButton) fill = fill.brighter (0.18f);
             g.setColour (fill.withMultipliedAlpha (alpha));
-            g.fillRoundedRectangle (r, 4.0f);
+            g.fillEllipse (well);
+
+            // A thin rim reads as a moulded edge on every bar surface.
+            g.setColour (t->outline.withMultipliedAlpha (0.60f * alpha));
+            g.drawEllipse (well.reduced (0.5f), 1.0f);
         }
 
         void drawButtonText (juce::Graphics& g, juce::TextButton& b,
@@ -136,13 +146,32 @@ namespace
             const ParvatiTheme* t = getTheme();
             if (t == nullptr)
                 return;
-            const float alpha = b.isEnabled() ? 1.0f : 0.4f;
+            const float alpha = b.isEnabled() ? 1.0f : 0.40f;
             const juce::Colour c = isButtonDown ? t->accentPrimary
                                  : isMouseOverButton ? t->textPrimary
                                                      : t->textSecondary;
+
+            // A CRISP CHEVRON (a stroked path), not the text glyph: direction
+            // comes from the button text ('<' / '>'), so the accessible name
+            // stays. Rounded joins keep the points soft at small sizes.
+            const auto area = b.getLocalBounds().toFloat();
+            const float d = juce::jmin (area.getWidth(), area.getHeight()) - 8.0f;
+            if (d <= 8.0f)
+                return;
+            const float cx = area.getCentreX(), cy = area.getCentreY();
+            const float ch = d * 0.20f;   // chevron half-height
+            const float cw = d * 0.15f;   // chevron half-width
+            const bool right = b.getButtonText() == ">";
+            const float dir = right ? 1.0f : -1.0f;
+            juce::Path chevron;
+            chevron.startNewSubPath (cx - dir * cw, cy - ch);
+            chevron.lineTo (cx + dir * cw, cy);
+            chevron.lineTo (cx - dir * cw, cy + ch);
             g.setColour (c.withMultipliedAlpha (alpha));
-            g.setFont (getTextButtonFont (b, b.getHeight()));
-            g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred, true);
+            g.strokePath (chevron,
+                          juce::PathStrokeType (2.2f,
+                                                juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
         }
     };
 }  // namespace
@@ -1050,6 +1079,12 @@ void CentralModBar::applyThemeColors()
         navNext_->setColour (juce::TextButton::textColourOffId, t.textSecondary);
         navNext_->repaint();
     }
+    // pillContent_ is OPAQUE: a parent repaint() never redraws an opaque
+    // child, so it must be repainted EXPLICITLY. Without this, a live theme
+    // switch kept the OLD theme's paintSegments fill (e.g. the Swedish Red
+    // chassis red) in the pill strip until a resize or scroll.
+    if (pillContent_ != nullptr)
+        pillContent_->repaint();
     repaint();
 }
 
@@ -1119,12 +1154,12 @@ void CentralModBar::paint (juce::Graphics& g)
     // applyThemeColors() ends with a full repaint(), so theme switches
     // re-skin the fill. The pills, segment tabs, nav tiles and the top rule
     // paint OVER it as children / higher-z siblings.
-    // Y2K: the bar is a MODULE SURFACE again (round 2 made it a dark tray —
-    // too far): the shared chrome card body. The pills stay dark data cells
-    // on top of it; their light text and the LCD-green indicators read on
-    // the pill fills, not on the bar.
+    // Y2K: the bar is one straight primitive rectangle — a flat fill of the
+    // card body tone, no rounded corner and no chrome bevel. The pills stay
+    // dark data cells on top of it; their light text and the LCD-green
+    // indicators read on the pill fills, not on the bar.
     if (parvati::isY2kTheme (&theme()))
-        parvati::paintChromeCard (g, getLocalBounds().toFloat(), 7.0f, &theme());
+        g.fillAll (theme().containerFill);
     else
         g.fillAll (theme().backgroundBase);
 }

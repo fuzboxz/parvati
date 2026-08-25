@@ -148,8 +148,8 @@ TEST(editor_test)
         // Per-theme EXACT expected category hues (full-strength positional guard
         // for every theme, including the palette-deviating ones): audio, env,
         // lfo, seq. The dark spec themes share the family hues (teal / magenta /
-        // mint); Paper uses its darker 600-tier variants; Immutable adopts the
-        // reference module's hues wholesale; Swedish Red drives its DISPLAY
+        // mint); Immutable adopts the reference module's hues wholesale;
+        // Swedish Red drives its DISPLAY
         // families with monochrome LCD greens (the green-screen theme identity).
         // catArp is always the seq hue (the sequencer family share).
         struct ThemeCheck
@@ -162,10 +162,6 @@ TEST(editor_test)
         const ThemeCheck themes[] = {
             { "Carbon",      carbonTheme(),      true,  juce::Colour (0xff38BDF8), specEnv, specLfo, specSeq },
             { "Midnight",    midnightTheme(),    true,  juce::Colour (0xff5b9bd5), specEnv, specLfo, specSeq },
-            { "Obsidian",    obsidianTheme(),    true,  juce::Colour (0xff8b5cf6), specEnv, specLfo, specSeq },
-            { "Paper",       paperTheme(),       false, juce::Colour (0xff2563eb),
-              juce::Colour (0xff0D9488), juce::Colour (0xffC026D3), juce::Colour (0xff059669) },
-            { "Crimson",     crimsonTheme(),     true,  juce::Colour (0xffe5484d), specEnv, specLfo, specSeq },
             { "Immutable",   immutableTheme(),   false, juce::Colour (0xffC8216A),
               juce::Colour (0xff009696), juce::Colour (0xffE5B55C), juce::Colour (0xffA8C69F) },
             { "Swedish Red", swedishRedTheme(), true,  juce::Colour (0xff9BE24A),

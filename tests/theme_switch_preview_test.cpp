@@ -99,7 +99,7 @@ TEST(theme_switch_preview_test)
     // the user drives it (theme combo lives in the drawer), then closed ----
     ed->openSettingsForTest();
     pump (0.5);
-    CHECK(ed->selectThemeForTest ("Paper"), "theme switched to Paper (drawer open)");
+    CHECK(ed->selectThemeForTest ("Immutable"), "theme switched to Immutable (drawer open)");
     pump (0.5);
     ed->openSettingsForTest();   // toggle closed (the gear button path)
     pump (0.5);

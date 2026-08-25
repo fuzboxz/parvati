@@ -3,8 +3,6 @@ the SIL Open Font License, Version 1.1, reproduced below):
 
 Michroma:      Copyright 2011 The Michroma Project Authors
                (https://github.com/googlefonts/Michroma-font)
-VT323:         Copyright 2011 The VT323 Project Authors
-               (peter.hull@oikoi.com)
 PT Sans:       Copyright  2010 ParaType Ltd. All rights reserved.
 
 -----------------------------------------------------------

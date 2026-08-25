@@ -62,13 +62,13 @@ bool nativeDialogsSuppressed()
 // The embedded parvati_logo.svg is true vector art (outlined <path>/<g>, no
 // raster); it is parsed once into logoDrawable_ via JUCE's SVG renderer and
 // drawn as-is (brand colours, NOT theme-tinted). The "Parvati" wordmark is
-// painted in the theme `text` token (theme-aware near-white; dark on Paper)
+// painted in the theme `text` token (theme-aware near-white; dark on a light theme)
 // so it re-colours on theme switch. The logo block width is measured in
 // resized() with the SAME font paint() uses so the logo/version/centre/right
 // header cluster stays byte-stable.
-constexpr const char* kLogoText       = "PARVATI";   // 2026-08-23: ALL CAPS wordmark
-constexpr float       kLogoTextHeight = 17.0f;   // 2026-08-23: smaller + letter-spaced + plain ("remove the boldness", lighter read)
-constexpr float       kLogoTracking  = 3.0f;    // extra px BETWEEN characters (the airy wordmark look)
+constexpr const char* kLogoText       = "HELLCAT";   // ALL CAPS wordmark (Michroma on every theme)
+constexpr float       kLogoTextHeight = 22.0f;   // BIG + BOLD read (Michroma has no bold cut — the size carries the weight)
+constexpr float       kLogoTracking  = 1.0f;    // tight: Michroma is wide at 22pt; keeps the brand block on the min-width budget
 
 // Letter-spaced wordmark width: the sum of the glyph advances plus
 // @p tracking between characters. paint() and resized() both measure the
@@ -341,8 +341,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         { Section::ModMatrix,   2, 164, 72 },
         { Section::Modifiers,   3, 300, 64 },   // cellH overridden per-group (configureGroupLayouts); ref only
         { Section::Sequencer,   6, 150, 80 },
-        { Section::Arp,         3, 214, 76 },
-        { Section::Global,      3, 214, 76 },
+        { Section::Arp,         3, 214, 82 },
+        { Section::Global,      3, 214, 82 },
     };
 
     // Generator pages captured by section during the loop, then registered with
@@ -1127,7 +1127,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     //      5px below the header (end-to-end) and 5px above the status strip
     //      (~95% width, centred). Positioned in resized() from the bands. See
     //      ChromeRule for why these are components. ----
-    headerRule_ = std::make_unique<parvati::ChromeRule> (true);   // shadow falls below
+    headerRule_ = std::make_unique<parvati::ChromeRule> (true, true, true);  // line AT the band bottom; dark CAST shadow starts UNDER the border, fading into the content
     statusRule_ = std::make_unique<parvati::ChromeRule> (false);  // shadow falls above
     // Keyboard-overlay top rule: the keyboard strip is chrome raised over the
     // content it covers, so the 1px rule sits at its TOP edge with the depth
@@ -1889,11 +1889,23 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // re-syncs its internal label's text colour (ComboBox::textColourId) in
     // colourChanged()/lookAndFeelChanged(), which a plain L&F colour change
     // does NOT trigger — so a combo themed under a dark theme would otherwise
-    // keep near-white label text after switching to the light Paper theme.
+    // keep near-white label text after switching to a light theme.
     // This also re-applies the per-widget fonts (combo/button/tab/popup) and
     // (crucially) makes each ParamControl::lookAndFeelChanged() re-push its
     // category arc / mod tint once the editor's ParvatiLookAndFeel is attached.
     sendLookAndFeelChange();
+
+    // The TabbedComponent's PER-TAB content backgrounds are component-level
+    // colours pinned at addTab() time — they do NOT follow the L&F on a theme
+    // switch. Without this re-resolve, the content area kept the
+    // construction-time theme's base (e.g. a persisted Swedish Red chassis
+    // showing red behind every other theme — the "red background" report).
+    {
+        const auto& t = themeManager_.getCurrentTheme();
+        for (int i = pageSelector_.getNumTabs(); --i >= 0; )
+            pageSelector_.setTabBackgroundColour (i, t.backgroundBase);
+    }
+
     // Status strip: the fonts and the Y2K dark-on-chrome colours are set at
     // construction only — re-apply here so a theme switch re-skins the strip
     // (the labels are editor-owned, so no lookAndFeelChanged hook reaches
@@ -2295,10 +2307,28 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // The whole UI (header included) is one flat windowBackground — no tinted
     // band. The chrome separators are ChromeRule CHILD components (the editor's
     // own paint is overdrawn by the content children — see ChromeRule).
-    // Y2K: the window is the LIQUID-CHROME sweep (brighter brushed silver
-    // top, settled mid, faint darker bottom pooling — see paintChromeWindow).
+    // Y2K: the window is one flat silver base (paintChromeWindow). The TOP
+    // header band and the BOTTOM status band take the module-card fill (the
+    // same steel as the cards), each spanning the full editor width and height
+    // so the card color covers the whole band edge to edge.
     if (parvati::isY2kTheme (&theme))
+    {
         parvati::paintChromeWindow (g, getLocalBounds().toFloat(), &theme);
+        const juce::Colour steel = theme.containerFill;
+        // The bands extend THROUGH their separator-rule lines so the card
+        // color reaches each line fully — no base-colour gap before the
+        // border. Header: through the line AT the band's bottom edge.
+        // Status: through the line 5px above the strip. The rules paint
+        // over the steel (children overdraw the parent paint).
+        const int headerBottom = headerBand_.isEmpty() ? kHeaderH : headerBand_.getBottom();
+        g.setColour (steel);
+        g.fillRect (0.0f, 0.0f, (float) getWidth(), (float) (headerBottom + 1));
+        const int statusPad = kChromeRuleGap + parvati::kRuleShadowH + 1;
+        const int statusTop = statusBand_.isEmpty() ? getHeight() - kVoiceStripH
+                                                    : statusBand_.getY();
+        g.fillRect (0.0f, (float) (statusTop - statusPad),
+                    (float) getWidth(), (float) (statusPad + kVoiceStripH));
+    }
     else
         g.fillAll (theme.backgroundBase);
 
@@ -2322,7 +2352,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
             gs.addLineOfText (subFont, subText, 0.0f, 0.0f);
             const float subW = gs.getBoundingBox (0, gs.getNumGlyphs(), true).getWidth();
 
-            const juce::Font markFont = lnf_.appFont (kLogoTextHeight, juce::Font::plain);
+            const juce::Font markFont = lnf_.wordmarkFont (kLogoTextHeight);
             const juce::String mark (kLogoText);
             const float markW = trackedTextWidth (markFont, mark, kLogoTracking);
 
@@ -2552,7 +2582,7 @@ void ParvatiEditor::resized()
     // (equal 6px gaps; text width measured with the SAME font paint() uses).
     {
         bar.removeFromLeft (8);   // extra left edge whitespace (6 from bar.reduced + 8 = ~14px)
-        const juce::Font textFont = lnf_.appFont (kLogoTextHeight, juce::Font::plain);   // SAME weight/size paint() uses
+        const juce::Font textFont = lnf_.wordmarkFont (kLogoTextHeight);   // SAME face/size paint() uses
         const int textW = juce::roundToInt (trackedTextWidth (textFont, kLogoText, kLogoTracking));
         // ---- Version/patch separation (user feedback: "more distance between
         //      the version and the patch indicator") ----
@@ -2573,8 +2603,10 @@ void ParvatiEditor::resized()
         const int subW = juce::roundToInt (gaSub.getBoundingBox (0, gaSub.getNumGlyphs(), true).getWidth());
         const int brandW = juce::jmax (textW, subW);
         // logoArea_ carries the breathing-room slack for the left-aligned
-        // preset dropdown that follows it.
-        logoArea_ = bar.removeFromLeft (brandW + 18);
+        // preset dropdown that follows it (12px: kept tight so the wider
+        // 22pt wordmark does not squeeze the preset dropdown at the minimum
+        // frame — the header budget comment).
+        logoArea_ = bar.removeFromLeft (brandW + 12);
 
     }
 
@@ -2641,7 +2673,7 @@ void ParvatiEditor::resized()
     //      ABOVE the status rule (5 gap + 1 rule on each side), so nothing —
     //      including the workspace's top-row scrollbar — starts above/behind
     //      the rules, and the chrome reads as an evenly inset frame. ----
-    area = area.withTrimmedTop (kChromeRuleGap + 1)
+    area = area.withTrimmedTop (kChromeRuleGap + 1)   // the border line + its 5px cast shadow live in this clearance below the header
                .withTrimmedBottom (kChromeRuleGap + 1);
 
     // ---- Page selector [SYNTH] + integrated content (no void) ----
@@ -2702,13 +2734,13 @@ void ParvatiEditor::resized()
     }
 
     // ---- Chrome separator rules (components; geometry from the bands):
-    //      LAST in resized() so the bands are final. Header rule: 1px rule +
-    //      a 5px depth falloff BELOW it (bounds include the shadow room);
-    //      status rule: 1px rule + a 5px falloff ABOVE it. The rules sit 5px
-    //      from their bands; the falloff extends into the already-reserved
-    //      kChromeRuleGap+1 content clearance, so nothing is overlapped. ----
+    //      LAST in resized() so the bands are final. Header rule: the 1px
+    //      BORDER sits directly at the header band's bottom edge (no gap),
+    //      and the dark cast shadow starts UNDER it — darkest at the line,
+    //      fading down into the reserved clearance. Status rule: unchanged
+    //      (line 5px above the strip, veil falloff above it). ----
     if (headerRule_ != nullptr)
-        headerRule_->setBounds (headerBand_.getX(), headerBand_.getBottom() + kChromeRuleGap,
+        headerRule_->setBounds (headerBand_.getX(), headerBand_.getBottom(),
                                 headerBand_.getWidth(), 1 + kChromeShadowH);
     if (statusRule_ != nullptr)
     {

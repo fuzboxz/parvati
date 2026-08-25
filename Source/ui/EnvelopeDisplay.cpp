@@ -296,9 +296,9 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     g.setColour (outline);
     g.drawRect (bounds.reduced (0.5f), 1.0f);
 
-    // Title (top-left). Y2K: the display is a data screen — its TEXT is the
-    // VT323 readout face in the LCD green (the trace colour). Other themes
-    // keep the caption tier and the dim text token exactly as before.
+    // Title (top-left). Y2K: the display is a data screen — its TEXT uses the
+    // shared default data face in the LCD green (the trace colour). Other
+    // themes keep the caption tier and the dim text token exactly as before.
     if (const auto* th = parvati::themeFor (*this); th != nullptr && parvati::isY2kTheme (th))
     {
         g.setColour (th->accentPrimary);

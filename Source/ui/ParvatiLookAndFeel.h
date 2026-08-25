@@ -214,10 +214,15 @@ public:
     // Small UI labels (knob captions: Shape, Cutoff, Attack): PT Sans — the
     // OFL-safe Tahoma-class face. The Y2K path clamps the height to 10 px.
     juce::Font labelFont (float height, int styleFlags) const;
-    // Data readouts (Hz / ms / % values, combo text, matrix values): VT323,
-    // the pixel/terminal face. The Y2K path scales the height up ~1.2x
-    // because VT323 metrics run small.
+    // Data readouts (Hz / ms / % values, combo text, matrix values): the
+    // shared default app font on every theme. The former Y2K VT323
+    // "console" face is RETIRED: Y2K keeps its special face only for
+    // headers/labels (headerFont / labelFont), never for data readouts.
     juce::Font dataFont (float height, int styleFlags = juce::Font::plain) const;
+    // The BRAND WORDMARK face on EVERY theme: the same Michroma payload the
+    // Y2K headers use (the wide techno face), not only on Y2K. Falls back to
+    // the app font when the payload fails to load.
+    juce::Font wordmarkFont (float height) const;
 
     // ToggleButton text is drawn by the L&F with a hardcoded default font; the
     // override routes the button text through appFont() so the "Tooltips" and
@@ -408,8 +413,8 @@ inline const ParvatiTheme* themeFor (const juce::LookAndFeel& lnf)
 // LookAndFeel is installed.
 inline juce::Font comboListFont (const juce::Component& owner)
 {
-    // Measurement twin of the rendered combo font (Y2K: VT323 LED readout;
-    // otherwise the 14 pt app sans). The measurement must match what
+    // Measurement twin of the rendered combo font (the 14 pt app sans on
+    // every theme after the VT323 console face was retired). The measurement must match what
     // positionComboBoxText renders, or fit-to-text combos clip on theme fonts.
     if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
         return lnf->getComboListFontPublic();

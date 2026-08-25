@@ -249,7 +249,7 @@ void ParamPage::configureGroupLayouts()
         {
             g.internalCols = juce::jmax (1, n);
             g.cellW = 150;
-            g.cellH = 76;   // was 64: dial 36px -> 48px (matches ARP/Global; ~68px slack vs 262 budget)
+            g.cellH = 82;   // dial = 82 - 22 = 60 px (the module-knob size)
         }
         // Mixer column (narrow 20%): ONE merged "Mixer" panel holds
         // all 8 mix controls, laid out in 3 logical sub-sections (one row each)
@@ -261,7 +261,7 @@ void ParamPage::configureGroupLayouts()
             g.sectioned    = true;
             g.internalCols = 3;   // widest sub-section (Mixer/Noise = 3 knobs)
             g.cellW = 60;         // floor: 3-col natural = 196px; the R3 clamp compresses knobs slightly at the 1024 floor
-            g.cellH = 64;         // full-arc knobs (matches Filter)
+            g.cellH = 82;         // dial = 82 - 22 = 60 px (the module-knob size)
         }
         // Filter column (40%): Filter (3 knobs) + Filter Mod (2 amounts) + a
         // magnitude-response curve decoration under Filter. cellW sized so the
@@ -272,7 +272,7 @@ void ParamPage::configureGroupLayouts()
         {
             g.internalCols = generalCols (n);
             g.cellW = 130;  // 3-col group = 406px; the R3 clamp compresses knobs slightly at the 1024 floor
-            g.cellH = 64;   // 2 stacked single-row groups + curve fit the main-row half (R3 clamps at the 1024 floor)
+            g.cellH = 82;   // dial = 82 - 22 = 60 px (the module-knob size)
         }
         // Oscillators (40% column): Shape combo + INLINE waveform preview + the
         // other 3 knobs (param/range/detune), all in ONE row so both "Osc 1" +
@@ -287,7 +287,7 @@ void ParamPage::configureGroupLayouts()
         {
             g.internalCols = 5;
             g.cellW = 80;
-            g.cellH = 64;
+            g.cellH = 82;   // dial = 82 - 22 = 60 px (the module-knob size)
         }
         else
         {

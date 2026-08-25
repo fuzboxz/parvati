@@ -640,17 +640,17 @@ juce_add_binary_data(parvati_logo_assets
     SOURCES parvati_logo.svg)
 target_link_libraries(Parvati PRIVATE parvati_logo_assets)
 
-# Y2K-theme typefaces (Michroma / VT323 / PT Sans), all SIL Open Font License
+# Y2K-theme typefaces (Michroma / PT Sans), all SIL Open Font License
 # 1.1 — commercial use, embedding and redistribution are permitted (see
 # assets/fonts/OFL.txt and NOTICES.md). Embedded as a dedicated binary-data
 # target (NAMESPACE ParvatiFonts) and resolved via getNamedResource() in
 # ParvatiLookAndFeel.cpp — the same forward-declaration pattern as
 # parvati_logo_assets above (two other binary-data targets also generate a
-# BinaryData.h, so a direct include would be ambiguous).
+# BinaryData.h, so a direct include would be ambiguous). The former VT323
+# "console" face was retired 2026-XX-XX (data readouts use the default font).
 juce_add_binary_data(parvati_font_assets
     NAMESPACE ParvatiFonts
     SOURCES assets/fonts/Michroma-Regular.ttf
-            assets/fonts/VT323-Regular.ttf
             assets/fonts/PT_Sans-Web-Regular.ttf
             assets/fonts/PT_Sans-Web-Bold.ttf)
 target_link_libraries(Parvati PRIVATE parvati_font_assets)

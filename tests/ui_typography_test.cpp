@@ -93,9 +93,6 @@ TEST(ui_typography_test)
     std::vector<std::pair<const char*, const ParvatiTheme&>> themes {
         { "Carbon",      carbonTheme()      },
         { "Midnight",    midnightTheme()    },
-        { "Obsidian",    obsidianTheme()    },
-        { "Paper",       paperTheme()       },
-        { "Crimson",     crimsonTheme()     },
         {"Immutable",   immutableTheme()      },
         { "Swedish Red", swedishRedTheme()  },
         { "Y2K",          y2kTheme()          },
@@ -140,9 +137,9 @@ TEST(ui_typography_test)
         // [3] a live theme switch keeps the tier (the L&F re-colours).
         lnf.setTheme (carbonTheme());
         const auto before = group.findColour (juce::GroupComponent::textColourId);
-        lnf.setTheme (paperTheme());
+        lnf.setTheme (immutableTheme());
         const auto after = group.findColour (juce::GroupComponent::textColourId);
-        check (before == carbonTheme().textPrimary && after == paperTheme().textPrimary,
+        check (before == carbonTheme().textPrimary && after == immutableTheme().textPrimary,
                "theme switch re-resolves the title tier on both dark + light");
     }
 

@@ -2,13 +2,23 @@
 
 #include "SynthWorkspace.h"
 
+#include "ChromeRule.h"         // parvati::ChromeRule (the bottom-row seam rule)
 #include "ModMatrixView.h"
 #include "ParamPage.h"        // ParamPage complete type
+#include "ParvatiLookAndFeel.h"   // parvati::isY2kTheme / themeFor (the Y2K matrix gap)
 
 //==============================================================================
 SynthWorkspace::SynthWorkspace (ThemeManager& themeManager)
     : GeneratorHostWorkspace (themeManager)
 {
+    // The synth-page bottom seam: a 1px rule at the BOTTOM row's top edge —
+    // the border between the cards panel above and the bottom page that
+    // hosts the mod matrix. The falloff falls ABOVE the line (onto the cards
+    // panel), so the bottom row reads raised. SYNTH ONLY (the FX workspace
+    // keeps no seam) and on EVERY theme; same ChromeRule family as the
+    // editor chrome rules.
+    bottomRule_ = std::make_unique<parvati::ChromeRule> (false, true, true);
+    addAndMakeVisible (*bottomRule_);
 }
 
 //==============================================================================
@@ -139,6 +149,35 @@ void SynthWorkspace::resized()
     // ---- Middle seam + bottom row: the shared helpers (GeneratorHost.h) ----
     layoutBarSeam (barRow);
     layoutBottomRow (bottomRow, modMatrixView_);
+
+    // The bottom seam rule: full workspace width at the bottom row's top
+    // edge. shadowBelow=false puts the 1px line AT the seam and the falloff
+    // ABOVE it (onto the cards panel); the bounds start kRuleShadowH higher
+    // so the line row is unchanged. toFront(false) keeps it above the row's
+    // children (the editor host + the matrix view are added later).
+    if (bottomRule_ != nullptr)
+    {
+        bottomRule_->setBounds (bottomRow.getX(), bottomRow.getY() - parvati::kRuleShadowH,
+                                bottomRow.getWidth(), 1 + parvati::kRuleShadowH);
+        bottomRule_->toFront (false);
+    }
+
+    // Y2K: the 3px gap around the mod matrix (see applyY2kMatrixGap).
+    if (modMatrixView_ != nullptr)
+    {
+        matrixFlushBounds_ = modMatrixView_->getBounds();
+        applyY2kMatrixGap();
+    }
+}
+
+void SynthWorkspace::applyY2kMatrixGap()
+{
+    if (modMatrixView_ == nullptr || matrixFlushBounds_.isEmpty())
+        return;
+    if (parvati::isY2kTheme (parvati::themeFor (*this)))
+        modMatrixView_->setBounds (matrixFlushBounds_.reduced (6));
+    else
+        modMatrixView_->setBounds (matrixFlushBounds_);
 }
 
 //==============================================================================
@@ -147,6 +186,10 @@ void SynthWorkspace::applyThemeColors()
     if (mainOscPage_   != nullptr) mainOscPage_->applyThemeColors();
     if (mainLeftPage_  != nullptr) mainLeftPage_->applyThemeColors();
     if (mainRightPage_ != nullptr) mainRightPage_->applyThemeColors();
+
+    // A theme switch re-resolves the Y2K matrix gap (applyThemeColors runs on
+    // the selection, not only on a resize).
+    applyY2kMatrixGap();
 
     if (modBar_ != nullptr)
         modBar_->applyThemeColors();

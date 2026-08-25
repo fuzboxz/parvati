@@ -104,17 +104,20 @@ vendored CLAP SDK and clap-helpers).
   MIT) — compatible with AGPL-3.0. Pinned to a specific upstream commit in
   `CMakeLists.txt` (see the `PARVATI_CLAP_EXTENSIONS_PATH` / fetch block).
 
-## Y2K theme fonts (Michroma / VT323 / PT Sans, embedded)
+## Y2K theme fonts (Michroma / PT Sans, embedded)
 
-The Y2K theme embeds three typefaces under `assets/fonts/` via the
-`parvati_font_assets` binary-data target (headers, LED data readouts and
-small UI labels respectively). All three are **SIL Open Font License 1.1** —
-commercial use, bundling and redistribution are permitted; the license text
-ships as `assets/fonts/OFL.txt`.
+The Y2K theme embeds two typefaces under `assets/fonts/` via the
+`parvati_font_assets` binary-data target (module headers and small UI
+labels respectively). Both are **SIL Open Font License 1.1** —
+commercial use, bundling and redistribution are permitted; the license
+text ships as `assets/fonts/OFL.txt`.
 
 - Michroma — <https://github.com/google/fonts/raw/main/ofl/michroma/Michroma-Regular.ttf> (Vernon Adams)
-- VT323 — <https://github.com/google/fonts/raw/main/ofl/vt323/VT323-Regular.ttf> (Peter Hull)
 - PT Sans — <https://github.com/google/fonts/raw/main/ofl/ptsans/PT_Sans-Web-Regular.ttf> and `PT_Sans-Web-Bold.ttf` (ParaType Ltd.)
+
+The former VT323 "console" face (`assets/fonts/VT323-Regular.ttf`, Peter
+Hull) was retired; shipped binaries no longer embed it — every data
+readout uses the system default sans-serif instead.
 
 ## GNU Unifont (embedded font)
 

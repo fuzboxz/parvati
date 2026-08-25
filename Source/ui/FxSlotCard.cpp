@@ -262,7 +262,10 @@ constexpr int kComboH      = 44;     // 44pt-tall combo (picker tap target)
 constexpr int kComboChrome = 26;     // fit-to-text chrome: pad + amber chevron + slack
 constexpr int kComboMinW   = 80;     // dropdown floor width
 constexpr int kGridCols    = 3;      // knob grid column count (Mixer parity)
-constexpr int kCellH       = 70;     // knob cell height (bigger, more visible dials + tighter spacing)
+constexpr int kCellH       = 82;     // knob cell height == the synth module cell height (82).
+                                     // The dial = cellH - 22 (label band), so 82 yields a 60px
+                                     // dial — the same 60px the synth module pages render.
+                                     // (70 -> 48 and 76 -> 52 were both smaller versions.)
 // Bypass affordance: a bypassed slot's live controls (knobs + type
 // combo) are recessed to this alpha so the slot reads as inactive at a glance
 // (0.5 matches the synth GroupComponent / knob disabled alpha).

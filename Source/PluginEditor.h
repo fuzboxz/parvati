@@ -496,7 +496,7 @@ private:
     // contract test can static_assert these values per platform.
 public:
     static constexpr int kBarHeight   = 44;   // full-height icon strip (44pt targets)
-    static constexpr int kHeaderH     = 44;   // header height (unified)
+    static constexpr int kHeaderH     = 52;   // header height (grown 44 -> 52: 44pt HIG strip + wordmark air + the border/shadow stack; the shadow casts BELOW the border into the content clearance)
     static constexpr int kDesktopTopPad = 5;   // non-iOS: air between the window's top edge and the header
     static constexpr int kChromeRuleGap = 5;   // gap between a chrome band and its separator rule (rule is 1px)
     static constexpr int kChromeShadowH = 5;   // depth-falloff height beside a chrome rule (see ChromeRule)

@@ -317,7 +317,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
             // label hidden (the group header "Sequencer n" identifies them) and
             // are dimmed when past the active length (refreshStepEnabled).
             label_->setText (TRANS ("Length"), juce::dontSendNotification);
-            label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
+            label_->setFont (juce::FontOptions (13.0f, juce::Font::bold));
             // Re-resolve the theme role face (Y2K PT Sans bold; a no-op
             // restore of the same FontOptions everywhere else).
             applyThemeFonts();
@@ -643,7 +643,7 @@ juce::String ParamControl::tickTransientStatus()
 
 void ParamControl::applyThemeFonts()
 {
-    // The caption label: PT Sans at 10 px on Y2K; every other theme keeps the
+    // The caption label: the role fonts on Y2K; every other theme keeps the
     // EXACT original FontOptions face (a same-family re-resolve through
     // appFont still rasterises bold glyphs differently — the screen-diff
     // proof demanded byte-identical non-Y2K rendering).
@@ -652,31 +652,38 @@ void ParamControl::applyThemeFonts()
     const auto* theme = parvati::themeFor (*this);
     const bool seqLengthBold = desc_.isSequencer
                                && juce::String (desc_.paramID).startsWith ("seq_length_");
+
+    // Caption colour is resolved against the ACTIVE theme on every apply
+    // (not only on Y2K): light themes get their dark token, dark themes their
+    // light token, and Y2K the white-on-chrome. Re-applying the colour always
+    // is what clears the explicit white a Y2K pass left behind — without it, a
+    // switch to a light theme (e.g. Immutable) keeps white captions on a light
+    // card (unreadable). Light themes = dark text, dark themes = light text.
+    if (theme != nullptr)
+        label_->setColour (juce::Label::textColourId,
+                           parvati::onCardText (theme, theme->textSecondary));
+
     if (theme != nullptr && theme->name == "Y2K")
     {
         if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         {
-            // COMBO-MODE captions belong to the dropdown (they are its LCD
+            // COMBO-MODE captions belong to the dropdown (they are its
             // readout header, not a standalone label): render them in the
-            // VT323 console face. KNOB-mode captions stay the plain Michroma
+            // shared default data face. KNOB-mode captions stay the Michroma
             // label (user: the label and the dropdown belong together as one
-            // component).
+            // component). The former VT323 console readout face is retired.
             const juce::Font cap = (comboBox_ != nullptr)
-                ? lnf->dataFont (9.0f, seqLengthBold ? juce::Font::bold : juce::Font::plain)
-                : juce::Font (lnf->labelFont (10.0f,
+                ? lnf->dataFont (10.0f, seqLengthBold ? juce::Font::bold : juce::Font::plain)
+                : juce::Font (lnf->labelFont (11.0f,
                                               seqLengthBold ? juce::Font::bold
                                                             : juce::Font::plain));
             label_->setFont (cap);
-            // On-card captions stay WHITE on the dark-steel chrome (the
-            // near-black Label default serves the silver drawer, not the
-            // cards). Promoted from the grey tier — the grey-on-steel read
-            // as grey-on-grey.
-            label_->setColour (juce::Label::textColourId,
-                               parvati::onCardText (theme, theme->textSecondary));
             return;
         }
     }
-    label_->setFont (juce::FontOptions (12.0f,
+    // 13pt (was 12): the knob caption grew for readability; the label band in
+    // resized() grew with it (label budget unchanged — see resized()).
+    label_->setFont (juce::FontOptions (13.0f,
                                         seqLengthBold ? juce::Font::bold : juce::Font::plain));
 }
 
@@ -952,18 +959,20 @@ void ParamControl::resized()
     auto b = getLocalBounds().reduced (2);
     // Reserve the label band for non-sequencer controls AND for the marked
     // length control (which shows "Length"); plain step cells hide the label.
+    // Band 16 + gap 2 (was 15 + 3): the caption font grew to 13pt, and the
+    // total label+gap budget stays 18 so the knob area does not shrink.
     if (! desc_.isSequencer || paramIDStr_.startsWith ("seq_length_"))
     {
-        label_->setBounds (b.removeFromTop (15));
-        b.removeFromTop (3);
+        label_->setBounds (b.removeFromTop (16));
+        b.removeFromTop (2);
     }
 
     if (slider_)
     {
-        // CAP only — the real dial height is min(this, cellH-28), so raising
+        // CAP only — the real dial height is min(this, cellH-22), so raising
         // this constant alone is a no-op. To grow the dials, raise the group /
         // page cellH (configureGroupLayouts / PageInfo), NOT this cap.
-        constexpr int kKnobDiameterCap = 52;
+        constexpr int kKnobDiameterCap = 64;
         // Diameter respects BOTH cell axes: a compacted column can make cells
         // narrower than the cap, and a fixed 52px dial in a narrower cell would
         // paint over the neighbouring control (the R3 overlap class).
