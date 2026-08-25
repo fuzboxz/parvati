@@ -1119,11 +1119,14 @@ void CentralModBar::paint (juce::Graphics& g)
     // applyThemeColors() ends with a full repaint(), so theme switches
     // re-skin the fill. The pills, segment tabs, nav tiles and the top rule
     // paint OVER it as children / higher-z siblings.
-    // Y2K: the bar is a RECESSED DARK TRAY (the input-well tone) — the
-    // light pill text and the LCD-green indicators read on it; silver
-    // read as grey-on-grey.
-    g.fillAll (parvati::isY2kTheme (&theme()) ? theme().backgroundInput
-                                               : theme().backgroundBase);
+    // Y2K: the bar is a MODULE SURFACE again (round 2 made it a dark tray —
+    // too far): the shared chrome card body. The pills stay dark data cells
+    // on top of it; their light text and the LCD-green indicators read on
+    // the pill fills, not on the bar.
+    if (parvati::isY2kTheme (&theme()))
+        parvati::paintChromeCard (g, getLocalBounds().toFloat(), 7.0f, &theme());
+    else
+        g.fillAll (theme().backgroundBase);
 }
 
 void CentralModBar::resized()
@@ -1523,9 +1526,9 @@ void CentralModBar::paintSegments (juce::Graphics& g) const
     const auto& t = theme();
 
     // Fill the scrolled content with the bar background so the gaps between /
-    // around the cluster tabs read as one continuous bar. Y2K: the same
-    // recessed dark tray as the bar itself.
-    g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundInput : t.backgroundBase);
+    // around the cluster tabs read as one continuous bar. Y2K: the card BODY
+    // tone (flat mid steel) matching the chrome bar above.
+    g.fillAll (parvati::isY2kTheme (&t) ? t.containerFill : t.backgroundBase);
 
     // One small COLOURED LABEL TAB header per cluster (its family colour + short
     // label), sitting above the pills — replaces the former full-height 'cube'.

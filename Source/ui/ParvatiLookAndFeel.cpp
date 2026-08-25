@@ -119,6 +119,16 @@ namespace parvati
 
 bool isY2kTheme (const ParvatiTheme* t) noexcept { return isY2kChrome (t); }
 
+juce::Colour indicatorFor (const ParvatiTheme& t, juce::Colour categoryColour) noexcept
+{
+    // Y2K: ONE accent — the LCD green — carries every indicator (the data
+    // screens, the traces, the dial arcs). The category rainbow stays on the
+    // light themes, where it encodes function without vibrating.
+    if (isY2kChrome (&t))
+        return t.accentPrimary;
+    return categoryColour;
+}
+
 juce::Colour onCardText (const ParvatiTheme* t, juce::Colour themeToken) noexcept
 {
     // Text ON a chrome module card. The Y2K cards are DARK-STEEL chrome
@@ -143,21 +153,25 @@ void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
         }
         return;
     }
-    // The LIQUID-CHROME CARD on the hardware world: the module panel is the
-    // dark grey containerFill; a metal sheen sweeps the card (full height,
-    // smooth stops — no banding). The peak brightening is capped at +35% so
-    // WHITE text keeps >= 4.5:1 everywhere on the card (the captions and
-    // headers stay white on Y2K — see onCardText). The raised rim closes
-    // the metal; accents stay accent.
+    // The LIQUID-CHROME CARD on the hardware world: a thin SPECULAR edge at
+    // the very top of the card (the bright reflection line of poured metal,
+    // confined to the first ~4% where no text sits) falls to the brushed
+    // mid steel that carries the whole card body, then pools darker at the
+    // bottom edge. Five stops keep the fall smooth (no banding). The
+    // caption zone (y >= 8px) sits at or below +19% over the panel base —
+    // white text keeps >= 4.5:1 there (measured; the typography tier).
     const auto panelBase = t->containerFill.withMultipliedAlpha (alpha);
-    const auto chromeHi  = panelBase.brighter (0.35f);
-    const auto chromeMid = panelBase.brighter (0.10f);
-    const auto chromeLo  = panelBase.darker (0.10f);
-    juce::ColourGradient metal (chromeHi,
+    const auto specular  = panelBase.brighter (0.62f);   // reflection edge line
+    const auto hi        = panelBase.brighter (0.19f);   // caption-zone steel
+    const auto chromeMid = panelBase.brighter (0.10f);   // brushed body
+    const auto chromeLo  = panelBase.darker (0.10f);     // bottom pooling
+    juce::ColourGradient metal (specular,
                                 r.getCentreX(), r.getY(),
-                                chromeMid,
-                                r.getCentreX(), r.getHeight() * 0.55f,
+                                hi,
+                                r.getCentreX(), juce::jmax (4.0f, r.getHeight() * 0.04f),
                                 false);
+    metal.addColour (0.35, chromeMid);
+    metal.addColour (0.85, chromeMid.darker (0.04f));
     metal.addColour (1.00, chromeLo);
     g.setGradientFill (metal);
     g.fillRoundedRectangle (r, corner);
@@ -170,12 +184,13 @@ void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
 void paintChromeWindow (juce::Graphics& g, const juce::Rectangle<float>& r,
                         const ParvatiTheme* t)
 {
-    // The Y2K WINDOW chrome: a SUBTLE vertical sweep over the flat silver
-    // desktop (#C0C0C0) — brighter brushed silver at the top, settled steel
-    // at mid-height, a faint darker pooling at the very bottom edge. The
-    // stops stay inside +/-14% of the base tone so light text on the bottom
-    // strip keeps contrast and the sweep never bands. The CARD sweep is
-    // STRONGER than this one (the dark cards pop off the silver window).
+    // The Y2K WINDOW chrome: a POURED-METAL sweep over the silver desktop.
+    // A bright silver band at the top settles through brushed steel to a
+    // darker pooling at the bottom edge — five stops, amplitude ~+26%/-14%
+    // of the base tone, with a slight DIAGONAL skew (the metal pours at an
+    // angle, not a flat vertical fade). Dark text on the bottom strip keeps
+    // contrast: the pooling stays within 14% of the base silver. The CARD
+    // sweep is stronger still (the dark cards pop off the silver window).
     // Non-Y2K callers never reach here (the editor fills backgroundBase).
     if (! isY2kChrome (t))
     {
@@ -184,15 +199,22 @@ void paintChromeWindow (juce::Graphics& g, const juce::Rectangle<float>& r,
         return;
     }
     const auto base  = t->backgroundBase;
-    const auto hi    = base.brighter (0.11f);
-    const auto mid   = base.darker (0.07f);
-    const auto lo    = base.darker (0.14f);
+    const auto hi    = base.brighter (0.26f);     // polished silver band
+    const auto hiMid = base.brighter (0.12f);     // brushed steel
+    const auto mid   = base;                      // settled base
+    const auto low   = base.darker (0.08f);       // lower steel
+    const auto lo    = base.darker (0.14f);       // bottom pooling
+    // Diagonal: the gradient runs top-LEFT bright to bottom-RIGHT dark (a
+    // shallow skew — ~10 deg from vertical; enough to read as poured metal).
+    const auto skew = r.getWidth() * 0.12f;
     juce::ColourGradient sweep (hi,
-                                r.getCentreX(), r.getY(),
-                                mid,
-                                r.getCentreX(), r.getHeight() * 0.55f,
+                                r.getX() + skew, r.getY(),
+                                lo,
+                                r.getRight() - skew, r.getBottom(),
                                 false);
-    sweep.addColour (1.00, lo);
+    sweep.addColour (0.22, hiMid);
+    sweep.addColour (0.50, mid);
+    sweep.addColour (0.80, low);
     g.setGradientFill (sweep);
     g.fillRect (r);
 }
@@ -899,14 +921,18 @@ void ParvatiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y,
     {
         const juce::String valueText = slider.getTextFromValue (slider.getValue());
         const float maxTextW = radius * 2.0f;
-        juce::Font vf = appFont (juce::jmax (11.0f, radius * 0.52f), juce::Font::plain);
+        // Y2K: the dial readout is a data surface — VT323, matching the
+        // dropdown readouts. Every other theme keeps the app sans.
+        auto vfFor = [this] (float h)
+        { return isY2kChrome (theme_) ? dataFont (h) : appFont (h, juce::Font::plain); };
+        juce::Font vf = vfFor (juce::jmax (11.0f, radius * 0.52f));
         const int textW = juce::GlyphArrangement::getStringWidthInt (vf, valueText);
         if ((float) textW > maxTextW && textW > 0)
             // Auto-shrink for long values, floored at 11pt (T15, iPadOS audit:
             // was 9pt — below arm's-length touch readability). An over-long
             // value that cannot fit at 11pt simply draws past the dial edge
             // rather than becoming unreadably small.
-            vf = appFont (juce::jmax (11.0f, vf.getHeight() * maxTextW / (float) textW), juce::Font::plain);
+            vf = vfFor (juce::jmax (11.0f, vf.getHeight() * maxTextW / (float) textW));
 
         const auto textRect = bounds.toNearestInt().withSizeKeepingCentre (
             juce::roundToInt (maxTextW), juce::roundToInt (vf.getHeight() * 1.7f));
@@ -1246,7 +1272,11 @@ void ParvatiLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label&
                             : box.getHeight();
     const int y = (box.getHeight() - visualH) / 2;
     label.setBounds (6, y + 1, box.getWidth() - 24, visualH - 2);
-    label.setFont (appFont (14.0f, juce::Font::plain));
+    // The INLINE (closed) text uses the SAME data font as the open list
+    // (getComboBoxFont): VT323 LED readout on Y2K, the app sans everywhere
+    // else. lookAndFeelChanged re-calls this on a theme switch, so the
+    // closed value re-resolves with the theme (juce::Label caches fonts).
+    label.setFont (getComboBoxFont (box));
 }
 
 void ParvatiLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,

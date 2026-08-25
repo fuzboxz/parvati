@@ -871,10 +871,15 @@ void MatrixViewBase::rebuildLayout()
 //==============================================================================
 void MatrixViewBase::paint (juce::Graphics& g)
 {
-    // Y2K: the whole matrix is a DATA SCREEN (matrix-green fill); the light
-    // row labels read on it. Other themes keep the window tone.
+    // Y2K: the matrix is a MODULE SURFACE, not a data screen — the shared
+    // liquid-chrome card body (paintChromeCard) so it matches the synth / FX
+    // cards. The ROW interiors stay dark data cells (MatrixRow paints its
+    // own recessed wells); other themes keep the window tone.
     const auto& t = themeManager_.getCurrentTheme();
-    g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
+    if (parvati::isY2kTheme (&t))
+        parvati::paintChromeCard (g, getLocalBounds().toFloat(), 7.0f, &t);
+    else
+        g.fillAll (t.backgroundBase);
 }
 
 void MatrixViewBase::resized()
@@ -914,7 +919,10 @@ void MatrixViewBase::applyThemeColors()
     addButton_->setColour (juce::TextButton::textColourOffId, t.textPrimary);
     addButton_->setColour (juce::TextButton::textColourOnId, t.backgroundBase);
 
-    content_.bg = parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase;
+    // Y2K: the scrolled surface is the card BODY tone (flat mid steel) so the
+    // gaps between the dark data-cell rows read as the chrome card; every
+    // other theme keeps the window tone.
+    content_.bg = parvati::isY2kTheme (&t) ? t.containerFill : t.backgroundBase;
     content_.setOpaque (true);
     content_.repaint();
     for (int i = 0; i < config_.numSlots; ++i)

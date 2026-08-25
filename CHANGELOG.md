@@ -57,6 +57,16 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   the unit. Existing types are untouched; the new type appends to the list.
 
 ### Fixed
+- **Y2K round 3 — fonts, one accent, chrome surfaces (2026-08-25).** The
+  closed dropdown and the dial value readouts render in VT323 now (they
+  bypassed the data font). The envelope, LFO and filter previews collapse to
+  the one LCD green; the category rainbow no longer drives them. The mod bar
+  and the mod matrix read as chrome module surfaces again, with dark data
+  cells on top. The window sweep pours diagonally with a wider range, and
+  the cards carry a bright specular edge above brushed steel. The header
+  buttons are solid steel hardware buttons; the active page lights in LCD
+  green with near-black text. Every change is Y2K-only; all other themes
+  render byte-identical.
 - **The last 29 untranslated chrome strings gained French and German
   entries (2026-08-24).** Every key in the translations allowlist section
   for known gaps is now translated: the mod-matrix rows and add button,

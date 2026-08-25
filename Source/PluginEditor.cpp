@@ -420,7 +420,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 liveEnvDisplays_.push_back (disp.get());
                 // Cyan trace from the Envelopes category token (re-resolved live
                 // on theme change via the binding registered below).
-                disp->setCategoryColour (theme.catEnv);
+                disp->setCategoryColour (parvati::indicatorFor (theme, theme.catEnv));
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                            &ParvatiTheme::catEnv);
                 page->setGroupDecoration (envLabels[i], std::move (disp));
@@ -447,7 +447,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 // first-frame waveform while the mod pill (always-on bar timer)
                 // tracks every change — the reported "LFO stuck on S&H" bug.
                 liveEnvDisplays_.push_back (disp.get());
-                disp->setCategoryColour (theme.catLfo);   // magenta trace
+                disp->setCategoryColour (parvati::indicatorFor (theme, theme.catLfo));
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                            &ParvatiTheme::catLfo);
                 page->setGroupDecoration ("LFO " + juce::String (i + 1), std::move (disp));
@@ -459,7 +459,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 std::function<float()> {}, std::function<float()> {},
                 [norm] { return norm ("voice_lfo_shape"); });
             vdisp->setPreviewMode (1);
-            vdisp->setCategoryColour (theme.catLfo);   // magenta trace
+            vdisp->setCategoryColour (parvati::indicatorFor (theme, theme.catLfo));
             // Same status-tick poll re-assert as the LFO displays above.
             liveEnvDisplays_.push_back (vdisp.get());
             bindGraph ([gp = vdisp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
@@ -481,7 +481,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     labels[i] + " Wave",
                     [norm, o] { return norm (o + "_shape"); },
                     [norm, o] { return norm (o + "_param"); });
-                disp->setCategoryColour (theme.catAudio);   // amber trace
+                disp->setCategoryColour (parvati::indicatorFor (theme, theme.catAudio));
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                            &ParvatiTheme::catAudio);
                 // Live modulation overlay (2026-08-23 parity pass — same
@@ -530,7 +530,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             // Register for the status tick's poll re-assert (same lifetime
             // rule as liveEnvDisplays_ / graphCategoryBindings_).
             liveFilterDisplay_ = disp.get();
-            disp->setCategoryColour (theme.catAudio);   // amber trace
+            disp->setCategoryColour (parvati::indicatorFor (theme, theme.catAudio));
             bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
                        &ParvatiTheme::catAudio);
             page->setGroupDecoration ("Filter", std::move (disp));
@@ -1967,13 +1967,26 @@ void ParvatiEditor::applyHeaderButtonChrome()
     // over the L&F defaults by design; this helper re-resolves from the
     // ACTIVE theme on every switch (called from applyAllColoursFromTheme).
     const auto& t = themeManager_.getCurrentTheme();
-    const auto wash = t.accentSecondary.withAlpha ((juce::uint8) 0x2A);   // 42/255 ~= 16%
+    // Y2K: the header buttons are CHROME HARDWARE — a solid mid-steel fill
+    // (the card body tone) with near-black text on the bright metal, and
+    // the LCD-green ACTIVE state handled by drawButtonBackground's on-fill
+    // (buttonOnColourId = accent). The former teal veil washed out.
+    const bool y2k = parvati::isY2kTheme (&t);
+    const auto wash = y2k ? t.containerFill
+                          : t.accentSecondary.withAlpha ((juce::uint8) 0x2A);   // 42/255 ~= 16%
+    // The steel fill keeps the WHITE text tier (7.3:1 on #565656).
+    const auto btnText = t.textPrimary;
     for (auto* b : { &synthModeButton_, &fxModeButton_, &globalButton_,
                      &kbdToggleButton_, &modBarToggleButton_, &modAssignButton_,
                      &loadButton_, &saveButton_, &zoomOverflowButton_ })
     {
         b->setColour (juce::TextButton::buttonColourId, wash);
-        b->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+        b->setColour (juce::TextButton::textColourOffId, btnText);
+        // ON state = the LCD-green accent fill; NEAR-BLACK text reads on it
+        // (white-on-green measures ~2.4:1 — under the tier).
+        if (y2k)
+            b->setColour (juce::TextButton::textColourOnId,
+                          juce::Colour (0xff101418));
     }
     // The patch indicator: PresetBrowser's name button (its only child
     // TextButton) gets the same treatment + the brighter text tier (user
@@ -1982,7 +1995,7 @@ void ParvatiEditor::applyHeaderButtonChrome()
         if (auto* pb = dynamic_cast<juce::TextButton*> (presetBrowser_->getChildComponent (0)))
         {
             pb->setColour (juce::TextButton::buttonColourId, wash);
-            pb->setColour (juce::TextButton::textColourOffId, t.textPrimary);
+            pb->setColour (juce::TextButton::textColourOffId, btnText);
         }
 }
 
@@ -1999,9 +2012,11 @@ void ParvatiEditor::reapplyGraphCategoryColours()
 {
     // Re-resolve each graph preview's category token from the current theme and
     // re-push it (a snapshot Colour would otherwise freeze on the old theme).
+    // Y2K: indicatorFor collapses every category to the LCD green, so the
+    // envelope / LFO / filter previews read as one instrument family.
     const auto& theme = themeManager_.getCurrentTheme();
     for (auto& binding : graphCategoryBindings_)
-        binding.first (theme.*binding.second);
+        binding.first (parvati::indicatorFor (theme, theme.*binding.second));
 }
 
 void ParvatiEditor::setZoom (double zoom)

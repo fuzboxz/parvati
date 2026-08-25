@@ -99,7 +99,7 @@ private:
     juce::Image buildDragImage() const
     {
         const ParvatiTheme* t = parvati::themeFor (*this);
-        const juce::Font f = parvati::appFontFor (*this, 13.0f);
+        const juce::Font f = parvati::labelFontFor (*this, 13.0f, juce::Font::plain);
 
         const juce::String name = getButtonText();
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, name);

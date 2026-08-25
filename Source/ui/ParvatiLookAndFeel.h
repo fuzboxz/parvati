@@ -282,6 +282,12 @@ namespace parvati
 // cards query this to swap their on-chrome colours (dark text, aqua fills).
 bool isY2kTheme (const ParvatiTheme* t) noexcept;
 
+// The INDICATOR colour for a functional category token (catEnv/catLfo/
+// catAudio/...): Y2K collapses every category to the ONE LCD green (the
+// data-screen accent) so previews, traces and graphs read as one instrument
+// family; every other theme keeps its category colour.
+juce::Colour indicatorFor (const ParvatiTheme& t, juce::Colour categoryColour) noexcept;
+
 // The Y2K liquid-chrome card body: a subtle full-height vertical metal
 // gradient plus the raised rim. No-op (flat panel fill) for other themes.
 // Shared by the synth GroupComponent cards, the FX slot cards and the FX
