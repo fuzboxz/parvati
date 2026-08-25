@@ -368,17 +368,20 @@ void SettingsPanel::refreshLanguage()
 
 void SettingsPanel::applyRoleFonts()
 {
-    // The 8 row labels (Theme / Zoom / value readout / Filter Quality /
-    // Language / Arp Clock / clock status / Visual Refresh). The zoom value
-    // is a DATA readout (VT323 on Y2K); the rest are captions (PT Sans).
-    themeLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
-    zoomLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    // The settings drawer reads as an LCD control panel: every row caption
+    // (Theme / Zoom / Filter Quality / Language / Arp Clock / Visual Refresh)
+    // is the VT323 console face on Y2K -- the caption belongs to its control
+    // the way a dropdown's label does, and the user wants them all in the LCD
+    // readout look. The value readouts stay the same console face. Y2K-gated;
+    // all other themes keep the legacy caption face.
+    themeLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
+    zoomLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
     zoomValueLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    osLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
-    langLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
-    clockLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    osLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
+    langLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
+    clockLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
     clockStatusLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f));
-    refreshLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    refreshLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
 }
 
 void SettingsPanel::lookAndFeelChanged()
