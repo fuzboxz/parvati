@@ -656,8 +656,17 @@ void ParamControl::applyThemeFonts()
     {
         if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
         {
-            label_->setFont (lnf->labelFont (10.0f,
-                                             seqLengthBold ? juce::Font::bold : juce::Font::plain));
+            // COMBO-MODE captions belong to the dropdown (they are its LCD
+            // readout header, not a standalone label): render them in the
+            // VT323 console face. KNOB-mode captions stay the plain Michroma
+            // label (user: the label and the dropdown belong together as one
+            // component).
+            const juce::Font cap = (comboBox_ != nullptr)
+                ? lnf->dataFont (9.0f, seqLengthBold ? juce::Font::bold : juce::Font::plain)
+                : juce::Font (lnf->labelFont (10.0f,
+                                              seqLengthBold ? juce::Font::bold
+                                                            : juce::Font::plain));
+            label_->setFont (cap);
             // On-card captions stay WHITE on the dark-steel chrome (the
             // near-black Label default serves the silver drawer, not the
             // cards). Promoted from the grey tier — the grey-on-steel read
