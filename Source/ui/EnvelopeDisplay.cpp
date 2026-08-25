@@ -296,9 +296,19 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     g.setColour (outline);
     g.drawRect (bounds.reduced (0.5f), 1.0f);
 
-    // Title (top-left).
-    g.setColour (textDim);
-    g.setFont (parvati::labelFontFor (*this, 13.0f, juce::Font::plain));
+    // Title (top-left). Y2K: the display is a data screen — its TEXT is the
+    // VT323 readout face in the LCD green (the trace colour). Other themes
+    // keep the caption tier and the dim text token exactly as before.
+    if (const auto* th = parvati::themeFor (*this); th != nullptr && parvati::isY2kTheme (th))
+    {
+        g.setColour (th->accentPrimary);
+        g.setFont (parvati::dataFontFor (*this, 13.0f));
+    }
+    else
+    {
+        g.setColour (textDim);
+        g.setFont (parvati::labelFontFor (*this, 13.0f, juce::Font::plain));
+    }
     g.drawText (title_,
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
                 juce::Justification::topLeft);
@@ -368,8 +378,17 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         g.drawHorizontalLine (juce::roundToInt (plot.getCentre().y),
                               plot.getX(), plot.getRight());
 
-        g.setColour (textDim);
-        g.setFont (parvati::labelFontFor (*this, 11.0f, juce::Font::plain));
+        // (LFO) tag: same Y2K data-screen treatment as the title.
+        if (const auto* th = parvati::themeFor (*this); th != nullptr && parvati::isY2kTheme (th))
+        {
+            g.setColour (th->accentPrimary);
+            g.setFont (parvati::dataFontFor (*this, 11.0f));
+        }
+        else
+        {
+            g.setColour (textDim);
+            g.setFont (parvati::labelFontFor (*this, 11.0f, juce::Font::plain));
+        }
         g.drawText ("(LFO)",
                     bounds.reduced (9.0f, 4.0f).removeFromTop (16).removeFromRight (50),
                     juce::Justification::topRight);

@@ -66,11 +66,22 @@ juce::Font ParvatiLookAndFeel::headerFont (float height) const
 
 juce::Font ParvatiLookAndFeel::labelFont (float height, int styleFlags) const
 {
-    // Y2K: PT Sans at a 10 px cap (the era's compact UI-label size). Other
-    // themes keep the app font at the caller's height.
+    // Y2K: Michroma (round 4, 2026-08-25) — the LABEL face is the module-HEADER
+    // face, so one type family carries every caption on the card (user
+    // request: labels read as the headers do). Height stays at the 10-11 px
+    // compact band; Michroma runs ~1.55x wider than the former PT Sans, and
+    // juce::Label's 0.7 minimum-horizontal-scale absorbs the widest captions
+    // (a mild squeeze, no ellipsis at the 10 px floor). PT Sans drops to the
+    // FALLBACK role (still embedded under its OFL obligation) and serves
+    // only when the Michroma payload fails to load. Other themes keep the
+    // app font at the caller's height.
     if (isY2kChrome (theme_))
-        if (const auto tf = y2kLabelTypeface ((styleFlags & juce::Font::bold) != 0); tf != nullptr)
+    {
+        if (const auto tf = y2kHeaderTypeface(); tf != nullptr)
             return juce::Font (juce::FontOptions (tf).withHeight (juce::jlimit (10.0f, 11.0f, height)));
+        if (const auto fb = y2kLabelTypeface ((styleFlags & juce::Font::bold) != 0); fb != nullptr)
+            return juce::Font (juce::FontOptions (fb).withHeight (juce::jlimit (10.0f, 11.0f, height)));
+    }
     return appFont (height, styleFlags);
 }
 
@@ -490,9 +501,11 @@ juce::Font ParvatiLookAndFeel::getComboListFontPublic() const
 
 juce::Font ParvatiLookAndFeel::getTextButtonFont (juce::TextButton&, int)
 {
-    // Y2K: button labels are small UI labels — PT Sans.
+    // Y2K: button labels are the module-HEADER face (Michroma) — labelFont
+    // resolves to it, so the top-row [SYNTH]/[FX]/[GLOBAL] buttons, the
+    // generator pills and every TextButton carry the header typography.
     if (isY2kChrome (theme_))
-        return labelFont (14.0f, juce::Font::plain);
+        return labelFont (14.0f, juce::Font::bold);
     return appFont (14.0f, juce::Font::plain);
 }
 
