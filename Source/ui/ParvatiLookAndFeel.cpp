@@ -459,7 +459,10 @@ juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
     // Preserve each label's own height/style and only swap the family to the
     // app sans-serif (juce::Label caches its font, so getLabelFont re-resolves
     // the family whenever the label is laid out).
+    // Y2K: labels become PT Sans globally — the hardware-panel caption face.
     const auto f = label.getFont();
+    if (isY2kChrome (theme_))
+        return labelFont (f.getHeight(), f.getStyleFlags());
     return appFont (f.getHeight(), f.getStyleFlags());
 }
 
@@ -467,6 +470,10 @@ juce::Font ParvatiLookAndFeel::getTabButtonFont (juce::TabBarButton&, float heig
 {
     // +40% over the legacy factor (0.33) so the redesigned button tabs are
     // prominent and easy to click; the family is the app sans-serif.
+    // Y2K: tab text becomes the PT Sans caption face (neon carries the state,
+    // not the typography).
+    if (isY2kChrome (theme_))
+        return labelFont (height * 0.46f, juce::Font::bold);
     return appFont (height * 0.46f, juce::Font::plain);
 }
 
@@ -572,12 +579,29 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
                                   roundTR ? 1.0f : 0.0f,   // top-right
                                   0.0f, 0.0f);             // square bottom (flush)
 
-    if (front)
+    if (isY2kChrome (theme_))
     {
-        // Y2K hardware world: the ACTIVE tab is the pure-blue selection
-        // segment (#0000FF, white text — the Win98 selection school) via
-        // the standard tabSelectedBg path; the former chrome-gradient
-        // special case retired with the bright-chrome world.
+        // Y2K: STRUCTURE stays neutral; the neon is an INDICATOR, never a
+        // fill. Active = neutral steel segment + a 2 px category-neon strip
+        // along the tab TOP + near-white text. Inactive = dark steel, dim
+        // text, no neon. This kills the full-block neon vibration.
+        if (front)
+        {
+            g.setColour (theme_->tabSelectedBg);
+            g.fillPath (tabShape);
+            g.setColour (catColour);
+            g.fillRect (juce::Rectangle<float> (activeArea.getX(), activeArea.getY(),
+                                                activeArea.getWidth(), 2.0f));
+        }
+        else
+        {
+            g.setColour (hover ? theme_->tabUnselectedBg.brighter (0.10f)
+                               : theme_->tabUnselectedBg);
+            g.fillPath (tabShape);
+        }
+    }
+    else if (front)
+    {
         g.setColour (theme_->tabSelectedBg);
         g.fillPath (tabShape);
         g.setColour (catColour.withMultipliedAlpha (0.22f));
@@ -613,14 +637,16 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
 
     // Per-tab CATEGORY underline: the ACTIVE tab gets a prominent full-width
     // line in its category hue; INACTIVE tabs get the same line dimmed (0.32
-    // alpha) so every tab carries its function colour at a glance even when not
-    // selected. Sits on top of the bottom rule, marking the segment's lower
-    // edge. (Keeps the contiguous segmented shape — still no per-tab vertical
-    // outlines between adjacent tabs.)
-    g.setColour (front ? catColour : catColour.withMultipliedAlpha (0.32f));
-    g.fillRect (juce::Rectangle<float> (activeArea.getX(),
-                                        activeArea.getBottom() - 2.0f,
-                                        activeArea.getWidth(), 2.0f));
+    // alpha). Y2K keeps only the TOP indicator strip on the active tab: the
+    // bottom underline draws for every OTHER theme and is skipped on Y2K so
+    // the neon stays scarce (structure neutral, indicators only).
+    if (! isY2kChrome (theme_))
+    {
+        g.setColour (front ? catColour : catColour.withMultipliedAlpha (0.32f));
+        g.fillRect (juce::Rectangle<float> (activeArea.getX(),
+                                            activeArea.getBottom() - 2.0f,
+                                            activeArea.getWidth(), 2.0f));
+    }
 }
 
 void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width, int height,

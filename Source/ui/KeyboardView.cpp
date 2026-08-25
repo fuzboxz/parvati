@@ -244,7 +244,7 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
             auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
             g.setColour (fill.contrasting ());
             g.setFont (lnf ? lnf->appFont (juce::jmin (11.0f, area.getWidth() * 0.6f), juce::Font::plain)
-                           : juce::Font (juce::FontOptions (11.0f)));
+                           : parvati::labelFontFor (*this, 11.0f));
             g.drawText (text, area.withTrimmedLeft (1.0f).withTrimmedBottom (2.0f),
                         juce::Justification::centredBottom, false);
         }

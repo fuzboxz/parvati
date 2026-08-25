@@ -298,7 +298,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
 
     // Title (top-left).
     g.setColour (textDim);
-    g.setFont (parvati::appFontFor (*this, 13.0f));
+    g.setFont (parvati::labelFontFor (*this, 13.0f, juce::Font::plain));
     g.drawText (title_,
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
                 juce::Justification::topLeft);
@@ -369,7 +369,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                               plot.getX(), plot.getRight());
 
         g.setColour (textDim);
-        g.setFont (parvati::appFontFor (*this, 11.0f));
+        g.setFont (parvati::labelFontFor (*this, 11.0f, juce::Font::plain));
         g.drawText ("(LFO)",
                     bounds.reduced (9.0f, 4.0f).removeFromTop (16).removeFromRight (50),
                     juce::Justification::topRight);

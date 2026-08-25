@@ -1519,7 +1519,7 @@ void CentralModBar::paintSegments (juce::Graphics& g) const
 
     // One small COLOURED LABEL TAB header per cluster (its family colour + short
     // label), sitting above the pills — replaces the former full-height 'cube'.
-    const juce::Font tabFont = juce::Font (juce::FontOptions (9.0f)).boldened();
+    const juce::Font tabFont = parvati::labelFontFor (*this, 9.0f, juce::Font::bold);
     for (int i = 0; i < segmentRects_.size(); ++i)
     {
         const auto& seg = segmentRects_.getReference (i);   // the tab rect (top of the cluster column)

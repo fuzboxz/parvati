@@ -315,12 +315,13 @@ const ParvatiTheme& y2kTheme()
         // Layer 3 — ACTION: electric cyan brand / magenta complement.
         juce::Colour (0xff00FFFF), juce::Colour (0xffFF00FF),
         // auxiliary: outline (dark steel), divider, containerFill (the
-        // module-panel grey; #565656 not the spec's #808080 — the mandated
-        // 7:1 header tier pins it: white on #808080 reaches only 3.95:1),
-        // tabUnselectedBg (matrix-green screen), tabSelectedBg (pure blue),
-        // keyWhite (pearl), keyBlack (near-black)
+        // module-panel grey; #565656 keeps white headers at the 7:1 tier),
+        // tabUnselectedBg / tabSelectedBg — DESATURATED: tabs are STRUCTURE,
+        // so their fills go neutral (unselected dark steel, selected the
+        // panel grey); the neon lives in the active-state INDICATOR strip the
+        // L&F draws, never in a full-block fill (visual-vibration fix).
         juce::Colour (0xff404040), juce::Colour (0xff505050), juce::Colour (0xff565656),
-        juce::Colour (0xff051A05), juce::Colour (0xff0000FF), juce::Colour (0xffE8E8E8),
+        juce::Colour (0xff3A3A3A), juce::Colour (0xff6E6E6E), juce::Colour (0xffE8E8E8),
         juce::Colour (0xff101010),
         // modulation routing palette — PURE saturated hex, the LED colour
         // school: Audio=CYAN, Env=MAGENTA, Lfo=ACID YELLOW, Seq/Arp=PURE BLUE.
