@@ -544,10 +544,16 @@ void ParvatiLookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bo
 
 juce::Font ParvatiLookAndFeel::getLabelFont (juce::Label& label)
 {
-    // Preserve each label's own height/style and only swap the family to the
-    // app sans-serif (juce::Label caches its font, so getLabelFont re-resolves
-    // the family whenever the label is laid out).
-    // Y2K: labels become PT Sans globally — the hardware-panel caption face.
+    // A ComboBox's inline (closed) value label draws through getLabelFont:
+    // JUCE's default drawLabel calls getLabelFont (not the label's stored
+    // font), so without this branch the closed dropdown text would render in
+    // the generic caption face (Michroma on Y2K) instead of the console
+    // readout. Defer those labels to getComboBoxFont, which is the same face
+    // the open list uses (VT323 on Y2K) and re-resolves on every paint.
+    if (auto* combo = dynamic_cast<juce::ComboBox*> (label.getParentComponent()))
+        return getComboBoxFont (*combo);
+
+    // Other labels preserve their own height/style and only swap the family.
     const auto f = label.getFont();
     if (isY2kChrome (theme_))
         return labelFont (f.getHeight(), f.getStyleFlags());
