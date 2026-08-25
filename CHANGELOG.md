@@ -5,6 +5,12 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Y2K closed-dropdown readout font (2026-08-25).** The closed combo text
+  now reliably renders in the VT323 console face on Y2K. ComboBox only
+  re-resolves its inline text inside resized(), which bails while a combo
+  is zero-sized, so a not-yet-laid-out combo kept the system face until it
+  was resized later. A paint-time self-heal in drawComboBox now re-points
+  the child label at the console font on every painted combo. Y2K-only.
 - **Y2K theme typography unified (2026-08-25).** Labels and the top-row
   buttons now use the same Michroma face as the module headers, so every
   caption on a card reads as a header. PT Sans stays embedded under its
