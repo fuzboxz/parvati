@@ -1192,6 +1192,22 @@ void ParvatiLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
         return;
     }
 
+    // SELF-HEAL the closed-combo readout font (Y2K, 2026-08-25): ComboBox
+    // only re-resolves its inline text via positionComboBoxText() inside
+    // resized(), and resized() bails when the combo is still zero-sized, so a
+    // combo that was not yet laid out at theme-switch time keeps the default
+    // face until it is resized later. Painting is the reliable trigger every
+    // combo reaches, so here we re-point the child Label at the current
+    // getComboBoxFont(). The guard makes it a one-time stabilise (no loop).
+    if (isY2kChrome (theme_))
+        for (auto* child : box.getChildren())
+            if (auto* lab = dynamic_cast<juce::Label*> (child))
+                if (lab->getFont().getTypefaceName() != getComboBoxFont (box).getTypefaceName())
+                {
+                    lab->setFont (getComboBoxFont (box));
+                    break;
+                }
+
     // DARK DROPDOWN (flat, opaque, no bevel): a UNIFORM solid dark-gray fill so
     // crisp WHITE text reads fully legible over any row tint. The fill is the
     // darkest chassis tone on the dark themes (backgroundBase); on the light
