@@ -251,7 +251,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     label_ = std::make_unique<juce::Label> (d.paramID + "_lbl",
                                             displayLabelFor (d.paramID, d.label));
     label_->setJustificationType (juce::Justification::centred);
-    label_->setFont (juce::FontOptions (12.0f));
+    applyThemeFonts();
     // Label / combo / slider colours all come from the editor-wide
     // ParvatiLookAndFeel (inherited through the component tree).
     addAndMakeVisible (*label_);
@@ -313,6 +313,9 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
             // are dimmed when past the active length (refreshStepEnabled).
             label_->setText (TRANS ("Length"), juce::dontSendNotification);
             label_->setFont (juce::FontOptions (12.0f, juce::Font::bold));
+            // Re-resolve the theme role face (Y2K PT Sans bold; a no-op
+            // restore of the same FontOptions everywhere else).
+            applyThemeFonts();
         }
         else if (d.isSequencer)
         {
@@ -633,6 +636,30 @@ juce::String ParamControl::tickTransientStatus()
     return {};
 }
 
+void ParamControl::applyThemeFonts()
+{
+    // The caption label: PT Sans at 10 px on Y2K; every other theme keeps the
+    // EXACT original FontOptions face (a same-family re-resolve through
+    // appFont still rasterises bold glyphs differently — the screen-diff
+    // proof demanded byte-identical non-Y2K rendering).
+    if (label_ == nullptr)
+        return;
+    const auto* theme = parvati::themeFor (*this);
+    const bool seqLengthBold = desc_.isSequencer
+                               && juce::String (desc_.paramID).startsWith ("seq_length_");
+    if (theme != nullptr && theme->name == "Y2K")
+    {
+        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        {
+            label_->setFont (lnf->labelFont (10.0f,
+                                             seqLengthBold ? juce::Font::bold : juce::Font::plain));
+            return;
+        }
+    }
+    label_->setFont (juce::FontOptions (12.0f,
+                                        seqLengthBold ? juce::Font::bold : juce::Font::plain));
+}
+
 void ParamControl::applyCategoryArcColour()
 {
     if (slider_ == nullptr)
@@ -862,6 +889,7 @@ void ParamControl::reapplyCategoryColours()
     // re-reads the APVTS depth + the new theme tokens).
     for (auto* c : paramControlRegistry())
     {
+        c->applyThemeFonts();   // Y2K swaps the caption face (juce::Label caches its font)
         c->applyCategoryArcColour();
         c->applyModSourceTint();
         c->refreshModRing();

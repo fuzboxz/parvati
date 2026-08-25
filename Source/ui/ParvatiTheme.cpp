@@ -289,44 +289,47 @@ const ParvatiTheme& swedishRedTheme()
 //==============================================================================
 const ParvatiTheme& y2kTheme()
 {
-    // Y2K — a joy theme, not a corporate theme. The base is the glossy desktop
-    // azure of a 1999 default wallpaper. The accent family is LIQUID CHROME:
-    // the brand accent is a bright silver gleam, the complementary accent is a
-    // hot aqua. The flat colour tokens imply chrome through luminance steps:
-    // near-white gleam reads as a polished highlight, the steel-navy outline
-    // reads as the shaded chrome edge. ParvatiLookAndFeel adds era chrome to
-    // this theme ONLY: Win98 bevels, a glossy panel sheen, chrome knob bezels
-    // and chrome tabs (name-gated; every other theme renders bit-identical).
-    // The routing palette goes full candy: one saturated tone per family, the
-    // MSN-Messenger / Winamp-skin colour-picker school. Dark theme.
+    // Y2K — the HARDWARE restyle (2026-08-24): a silver desktop, dark module
+    // panels, black data screens and LED readouts. The base is FLAT SILVER
+    // (the Win98 chrome desktop #C0C0C0). Module panels sit mid-grey #808080
+    // with the subtle liquid-chrome sweep from paintChromeCard. Data wells
+    // are near-black; knob tracks are solid black; the routing palette is
+    // PURE saturated hex on the dark surfaces. Type: Michroma headers, PT Sans
+    // labels, VT323 LED data text (all OFL, see assets/fonts).
+    // isDark = FALSE (audited): every isDark consumer is the dark-dropdown /
+    // dark-text convention (drawComboBox fill+chevron, ComboBox::textColourId,
+    // SeqLengthStepper) — the false branch gives the fixed near-black
+    // dropdown with light text, which is exactly the recessed-well look this
+    // world wants. The LIGHT branch of keyboard_view_test then checks the
+    // SHARPS on the grey panel (correct: the pearl naturals sit on silver).
     static const ParvatiTheme t {
         "Y2K",
-        // Layer 1 — BASE: glossy desktop azure, frosted-blue cards, glossier
-        // input wells and a lighter hover (the plastic step of the era).
-        juce::Colour (0xff0A246A), juce::Colour (0xff174A8F), juce::Colour (0xff1E57A4),
-        juce::Colour (0xff2666B8),
-        // Layer 2 — INFORMATION: chrome gleam values, pale-cyan labels, the
-        // Win98 50-percent disabled grey, a recessed navy empty track.
-        juce::Colour (0xffF2F8FF), juce::Colour (0xff9BD4E4), juce::Colour (0xff8A93A6),
-        juce::Colour (0xff16386E),
-        // Layer 3 — ACTION: liquid-chrome silver brand / hot aqua complement.
-        juce::Colour (0xffE6F0FF), juce::Colour (0xff00E5EE),
-        // auxiliary: outline (steel chrome edge), divider, containerFill,
-        // tabUnselectedBg (recessed navy), tabSelectedBg (glossy azure),
-        // keyWhite (pearl-blue naturals), keyBlack (near-black-blue sharps)
-        juce::Colour (0xff3D6EB5), juce::Colour (0xff1C3F7A), juce::Colour (0xff17468C),
-        juce::Colour (0xff122F63), juce::Colour (0xff2E72D6), juce::Colour (0xffC9DCF5),
-        juce::Colour (0xff0A1830),
-        // modulation routing palette — the candy colour-picker: Audio adopts
-        // the chrome brand (per the every-theme rule), Env=HOT PINK, Lfo=
-        // ELECTRIC PURPLE, Seq/Arp=LIME (the sequencer family share).
-        juce::Colour (0xffE6F0FF), juce::Colour (0xffFF3EB5), juce::Colour (0xffB478FF),
-        juce::Colour (0xff5EF03C), juce::Colour (0xff5EF03C),
-        // catPerf, catUtil, catMod, catConst: TANGERINE, CANDY YELLOW, AQUA,
-        // PERIWINKLE (one saturated tone per family, the era school).
-        juce::Colour (0xffFFB032), juce::Colour (0xffFFE83C), juce::Colour (0xff00E5EE),
-        juce::Colour (0xff6FA8FF),
-        true
+        // Layer 1 — BASE: flat silver desktop; module panels mid-grey;
+        // recessed data wells near-black with a one-notch hover lift.
+        juce::Colour (0xffC0C0C0), juce::Colour (0xff051A05), juce::Colour (0xff1A1A1A),
+        juce::Colour (0xff262626),
+        // Layer 2 — INFORMATION: white values on the dark panels, light grey
+        // labels, the era disabled grey, SOLID BLACK knob empty tracks.
+        juce::Colour (0xffFFFFFF), juce::Colour (0xffC8C8C8), juce::Colour (0xff6E6E6E),
+        juce::Colour (0xff000000),
+        // Layer 3 — ACTION: electric cyan brand / magenta complement.
+        juce::Colour (0xff00FFFF), juce::Colour (0xffFF00FF),
+        // auxiliary: outline (dark steel), divider, containerFill (the
+        // module-panel grey; #565656 not the spec's #808080 — the mandated
+        // 7:1 header tier pins it: white on #808080 reaches only 3.95:1),
+        // tabUnselectedBg (matrix-green screen), tabSelectedBg (pure blue),
+        // keyWhite (pearl), keyBlack (near-black)
+        juce::Colour (0xff404040), juce::Colour (0xff505050), juce::Colour (0xff565656),
+        juce::Colour (0xff051A05), juce::Colour (0xff0000FF), juce::Colour (0xffE8E8E8),
+        juce::Colour (0xff101010),
+        // modulation routing palette — PURE saturated hex, the LED colour
+        // school: Audio=CYAN, Env=MAGENTA, Lfo=ACID YELLOW, Seq/Arp=PURE BLUE.
+        juce::Colour (0xff00FFFF), juce::Colour (0xffFF00FF), juce::Colour (0xffCCFF00),
+        juce::Colour (0xff0000FF), juce::Colour (0xff0000FF),
+        // catPerf, catUtil, catMod, catConst: RED, GREEN, MAGENTA, WHITE.
+        juce::Colour (0xffFF0000), juce::Colour (0xff00FF00), juce::Colour (0xffFF00FF),
+        juce::Colour (0xffFFFFFF),
+        false
     };
     return t;
 }

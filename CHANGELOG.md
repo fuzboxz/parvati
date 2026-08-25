@@ -5,7 +5,15 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
-- **Y2K theme: liquid chrome on glossy desktop azure (2026-08-24).** The
+- **Y2K theme restyled to the hardware look (2026-08-24).** The window is
+  now flat silver; module panels are dark grey with a subtle metal sheen;
+  data wells and knob tracks are near-black; the routing palette is pure
+  saturated hex (cyan, magenta, acid yellow, pure blue). Data text is neon
+  LED green. Three OFL typefaces embed for the theme: Michroma headers,
+  VT323 readouts and PT Sans labels. The licenses permit commercial use.
+  The module-panel grey is 0x565656, not the requested 0x808080: the 7-to-1
+  header contrast tier pins it.
+- **Y2K theme, liquid chrome on glossy desktop azure (2026-08-24).** The
   eighth built-in theme is a joy theme, not a corporate theme. The window is
   the 1999 desktop blue; the brand accent is a chrome-silver gleam and the
   complement is a hot aqua. The modulation families go full candy: hot pink,

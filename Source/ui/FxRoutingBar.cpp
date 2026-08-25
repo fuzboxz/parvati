@@ -349,8 +349,9 @@ void FxRoutingBar::paint (juce::Graphics& g)
     // Section header "FX ROUTING" — the SAME typography as the OSC 1 / MIXER
     // GroupComponent headers (bold 14px, UPPERCASE, textSecondary), drawn here
     // rather than via a Label so it is byte-identical to the synth card titles.
-    const juce::Font headerFont = parvati::appFontFor (*this, 14.0f, juce::Font::bold);
-    g.setColour (t.textSecondary);
+    // Y2K: the header role font (Michroma) on the on-chrome label colour.
+    const juce::Font headerFont = parvati::headerFontFor (*this, 14.0f);
+    g.setColour (parvati::onCardText (&t, t.textSecondary));
     g.setFont (headerFont);
     g.drawText (TRANS ("FX ROUTING").toUpperCase(),
                 juce::Rectangle<int> (kPad + 2, kPad, getWidth() - 2 * kPad, kHeaderH),

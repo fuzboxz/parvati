@@ -787,7 +787,10 @@ void FxSlotCard::paint (juce::Graphics& g)
     //      child) + title text following it — the header reads [lamp][FX1]
     //      left-to-right. BOLD + UPPERCASE (14px), mirroring the synth card
     //      GroupComponent header. ----
-    juce::Font font = parvati::appFontFor (*this, 14.0f, juce::Font::bold);
+    // Y2K: module headers render in the Michroma header role (the L&F's
+    // headerFont resolves the family; the fallback matches the old look on
+    // every other theme).
+    juce::Font font = parvati::headerFontFor (*this, 14.0f);
     const juce::String name = "FX" + juce::String (slot_ + 1);   // "FX1" (uppercase)
     // kLampTitleGap right of the 15pt lamp sits the title text. (The old
     // accent tick between the lamp and the title went away with the lamp

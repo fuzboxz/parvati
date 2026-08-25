@@ -216,6 +216,12 @@ private:
     // when there is no theme yet. The numeric value readout stays neutral
     // (textBoxTextColourId is never touched).
     void applyCategoryArcColour();
+
+    // Re-resolve the caption LABEL font for the active theme (Y2K uses the
+    // PT Sans label role at 10 px; every other theme uses the default 12 px
+    // app sans). Called at construction and from reapplyCategoryColours()
+    // on every theme switch — juce::Label caches its font.
+    void applyThemeFonts();
     // Resolve a mod SOURCE's functional CATEGORY colour from its (human) name:
     // Env -> catEnv, LFO / "Voice LFO" -> catLfo, Seq -> catSeq, Arp -> catArp;
     // every other source (Op/Const/Velocity/etc) resolves to the neutral `accent`.

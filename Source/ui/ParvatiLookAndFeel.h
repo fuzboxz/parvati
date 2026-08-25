@@ -201,6 +201,20 @@ public:
     // Label font (juce::Label caches its font, so a repaint alone is not enough).
     juce::Font appFont (float height, int styleFlags) const;
 
+    // ---- Y2K theme role fonts (OFL-embedded; every other theme resolves to
+    // appFont and renders bit-identical) ----
+    // Module headers (OSC 1, MIXER, FILTER, FX n, FX ROUTING): Michroma — the
+    // wide geometric techno class. All caps with tracking happens at the
+    // drawing sites; this only resolves the family.
+    juce::Font headerFont (float height) const;
+    // Small UI labels (knob captions: Shape, Cutoff, Attack): PT Sans — the
+    // OFL-safe Tahoma-class face. The Y2K path clamps the height to 10 px.
+    juce::Font labelFont (float height, int styleFlags) const;
+    // Data readouts (Hz / ms / % values, combo text, matrix values): VT323,
+    // the pixel/terminal face. The Y2K path scales the height up ~1.2x
+    // because VT323 metrics run small.
+    juce::Font dataFont (float height) const;
+
     // ToggleButton text is drawn by the L&F with a hardcoded default font; the
     // override routes the button text through appFont() so the "Tooltips" and
     // "Parameter Smoothing" toggles (and the Multi page voice-allocation bits)
@@ -284,6 +298,29 @@ inline juce::Font appFontFor (const juce::Component& owner, float height,
     if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
         return lnf->appFont (height, styleFlags);
     return juce::Font (juce::FontOptions (height, styleFlags));
+}
+
+// Role-font variants (header / label / data). Non-Y2K themes resolve to the
+// app font, so adopting them at a drawing site changes NOTHING on those
+// themes (the strict bit-identical gate for the Y2K restyle).
+inline juce::Font headerFontFor (const juce::Component& owner, float height)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->headerFont (height);
+    return juce::Font (juce::FontOptions (height, juce::Font::bold));
+}
+inline juce::Font labelFontFor (const juce::Component& owner, float height,
+                                int styleFlags = juce::Font::plain)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->labelFont (height, styleFlags);
+    return juce::Font (juce::FontOptions (height, styleFlags));
+}
+inline juce::Font dataFontFor (const juce::Component& owner, float height)
+{
+    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&owner.getLookAndFeel()))
+        return lnf->dataFont (height);
+    return juce::Font (juce::FontOptions (height, juce::Font::plain));
 }
 
 // @p owner's live theme (nullptr when another LookAndFeel or no theme is set).

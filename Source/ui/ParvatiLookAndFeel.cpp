@@ -11,6 +11,78 @@ static bool isY2kChrome (const ParvatiTheme* theme) noexcept
     return theme != nullptr && theme->name == "Y2K";
 }
 
+// The Y2K theme's three OFL typefaces, embedded via juce_add_binary_data
+// (NAMESPACE ParvatiFonts, see CMakeLists.txt). Resolved through the generated
+// getNamedResource() instead of #include "BinaryData.h": parvati_logo_assets
+// and parvati_factory_presets also generate a BinaryData.h, so a direct
+// include would be ambiguous (the ParvatiLogo pattern). Each Typeface::Ptr is
+// built ONCE and cached: createSystemTypefaceFor parses the TTF every call.
+namespace ParvatiFonts
+{
+    const char* getNamedResource (const char* resourceNameUTF8, int& dataSizeInBytes);
+}
+
+namespace
+{
+juce::Typeface::Ptr loadEmbeddedFont (const char* resourceName)
+{
+    int size = 0;
+    const char* data = ParvatiFonts::getNamedResource (resourceName, size);
+    jassert (data != nullptr && size > 0);   // the binary-data target ships every listed resource
+    if (data == nullptr || size <= 0)
+        return {};   // defensive: fall back to the default family
+    return juce::Typeface::createSystemTypefaceFor (data, static_cast<size_t> (size));
+}
+
+// Cached Y2K typefaces (null until first Y2K use; a nullptr theme never
+// reaches them).
+juce::Typeface::Ptr y2kHeaderTypeface()
+{
+    static const juce::Typeface::Ptr tf = loadEmbeddedFont ("MichromaRegular_ttf");
+    return tf;
+}
+juce::Typeface::Ptr y2kDataTypeface()
+{
+    static const juce::Typeface::Ptr tf = loadEmbeddedFont ("VT323Regular_ttf");
+    return tf;
+}
+juce::Typeface::Ptr y2kLabelTypeface (bool bold)
+{
+    static const juce::Typeface::Ptr regular = loadEmbeddedFont ("PT_SansWebRegular_ttf");
+    static const juce::Typeface::Ptr boldFace = loadEmbeddedFont ("PT_SansWebBold_ttf");
+    return bold ? boldFace : regular;
+}
+}   // namespace
+
+juce::Font ParvatiLookAndFeel::headerFont (float height) const
+{
+    // Y2K: Michroma (wide geometric techno face, OFL). Other themes resolve
+    // to the shared app font so their rendering is bit-identical.
+    if (isY2kChrome (theme_))
+        if (const auto tf = y2kHeaderTypeface(); tf != nullptr)
+            return juce::Font (juce::FontOptions (tf).withHeight (juce::jmax (8.0f, height)));
+    return appFont (height, juce::Font::bold);
+}
+
+juce::Font ParvatiLookAndFeel::labelFont (float height, int styleFlags) const
+{
+    // Y2K: PT Sans at a 10 px cap (the era's compact UI-label size). Other
+    // themes keep the app font at the caller's height.
+    if (isY2kChrome (theme_))
+        if (const auto tf = y2kLabelTypeface ((styleFlags & juce::Font::bold) != 0); tf != nullptr)
+            return juce::Font (juce::FontOptions (tf).withHeight (juce::jlimit (10.0f, 11.0f, height)));
+    return appFont (height, styleFlags);
+}
+
+juce::Font ParvatiLookAndFeel::dataFont (float height) const
+{
+    // Y2K: VT323 (pixel/terminal face), scaled up 1.2x because its metrics
+    // run small at the same point size. Other themes keep the app font.
+    if (isY2kChrome (theme_))
+        if (const auto tf = y2kDataTypeface(); tf != nullptr)
+            return juce::Font (juce::FontOptions (tf).withHeight (juce::jmax (11.0f, height * 1.2f)));
+    return appFont (height, juce::Font::plain);
+}
 namespace
 {
 // Win98-class raised bevel on a rounded card: a light edge on the top half,
@@ -42,10 +114,11 @@ bool isY2kTheme (const ParvatiTheme* t) noexcept { return isY2kChrome (t); }
 
 juce::Colour onCardText (const ParvatiTheme* t, juce::Colour themeToken) noexcept
 {
-    // Chrome cards are bright metal: near-black text reads on them. Every
-    // other theme keeps its theme token unchanged.
-    if (isY2kChrome (t))
-        return juce::Colour (0xff141c30);
+    // The hardware restyle (2026-08-24) made the module panels DARK grey, so
+    // the theme tokens read on them directly. The former Y2K near-black flip
+    // (built for the bright chrome cards) is retired; the helper stays as the
+    // documented on-card resolution point for future light-panel themes.
+    juce::ignoreUnused (t);
     return themeToken;
 }
 
@@ -62,26 +135,26 @@ void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
         }
         return;
     }
-    // The LIQUID-CHROME CARD. One SUBTLE vertical metal gradient spans the
-    // FULL card height: bright silver at the very top settles gently to
-    // mid steel, and a faint gleam returns at the bottom edge. The stop
-    // positions keep the sweep smooth (no banding, no flat tail). The
-    // raised rim closes the metal.
-    const auto chromeHi  = t->accentPrimary.withMultipliedAlpha (alpha);
-    const auto chromeMid = chromeHi.darker (0.16f);
-    const auto chromeBot = chromeHi.darker (0.06f);
+    // The LIQUID-CHROME CARD on the hardware world: the module panel is the
+    // dark grey containerFill; a SUBTLE metal sheen sweeps the card (full
+    // height, smooth stops — no banding). The amplitude stays SMALL so white
+    // text keeps ~7:1 across the whole sweep (the typography tier's surface
+    // contract). The raised rim closes the metal; accents stay accent.
+    const auto chromeHi  = t->containerFill.brighter (0.05f).withMultipliedAlpha (alpha);
+    const auto chromeMid = t->containerFill.darker (0.12f).withMultipliedAlpha (alpha);
+    const auto chromeBot = t->containerFill.brighter (0.05f).withMultipliedAlpha (alpha);
     juce::ColourGradient metal (chromeHi,
                                 r.getCentreX(), r.getY(),
                                 chromeMid,
                                 r.getCentreX(), r.getBottom(),
                                 false);
-    metal.addColour (0.82, chromeMid.darker (0.03f));
+    metal.addColour (0.82, chromeMid.darker (0.02f));
     metal.addColour (1.00, chromeBot);
     g.setGradientFill (metal);
     g.fillRoundedRectangle (r, corner);
     drawY2kBevel (g, r, corner,
-                  juce::Colours::white.withAlpha (0.65f * alpha),
-                  chromeMid.darker (0.22f).withMultipliedAlpha (alpha),
+                  juce::Colours::white.withAlpha (0.55f * alpha),
+                  chromeMid.darker (0.25f).withMultipliedAlpha (alpha),
                   1.5f);
 }
 
@@ -100,13 +173,15 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     theme_ = &t;
 
     // ---- Slider (rotary + text box) ----
-    // Y2K: the chrome-silver brand accent vanishes on the chrome card metal,
-    // so slider fills/thumbs swap to the hot-aqua secondary there.
+    // Y2K: the knob fill arcs take the MAGENTA secondary (the cyan brand is
+    // reserved for the Audio category + focus rings), and the VALUE readout
+    // is an LED data text — neon green on the near-black well.
     const juce::Colour sliderAccent = isY2kChrome (&t) ? t.accentSecondary : t.accentPrimary;
     setColour (juce::Slider::rotarySliderFillColourId,        sliderAccent);        // knob fill arc (theme brand accent)
     setColour (juce::Slider::rotarySliderOutlineColourId,      t.trackEmpty);      // rotary background track (recedes)
     setColour (juce::Slider::thumbColourId,                    sliderAccent);
-    setColour (juce::Slider::textBoxTextColourId,              t.textPrimary);  // bright knob centre readout (the knob's primary readout)
+    setColour (juce::Slider::textBoxTextColourId,
+               isY2kChrome (&t) ? juce::Colour (0xff39FF14) : t.textPrimary);
     setColour (juce::Slider::textBoxBackgroundColourId,        t.backgroundInput);
     setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
     setColour (juce::Slider::textBoxHighlightColourId,         t.accentSecondary);
@@ -118,16 +193,23 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     // uniform dark gray, so the inline text reads crisp white. On the dark
     // themes that is exactly textPrimary; on the light Paper theme (whose
     // textPrimary is dark for its light surfaces) a fixed light value keeps the
-    // closed-dropdown text legible on the dark fill.
-    setColour (juce::ComboBox::textColourId,
-               t.isDark ? t.textPrimary : juce::Colour (0xfff6f6fa));
+    // closed-dropdown text legible on the dark fill. Y2K: the dropdown VALUE
+    // is a data readout — the neon LED green (VT323 renders it).
+    if (isY2kChrome (&t))
+        setColour (juce::ComboBox::textColourId, juce::Colour (0xff39FF14));
+    else
+        setColour (juce::ComboBox::textColourId,
+                   t.isDark ? t.textPrimary : juce::Colour (0xfff6f6fa));
     setColour (juce::ComboBox::arrowColourId,                  t.accentPrimary);
     setColour (juce::ComboBox::buttonColourId,                 t.accentPrimary);
     setColour (juce::ComboBox::focusedOutlineColourId,         t.accentPrimary);
 
     // ---- PopupMenu (used by every ComboBox's drop-down) ----
     setColour (juce::PopupMenu::backgroundColourId,            t.backgroundInput);
-    setColour (juce::PopupMenu::textColourId,                  t.textPrimary);
+    // Y2K: the open dropdown list is the LED data surface (VT323) — neon
+    // green on the near-black popup fill (12.8:1).
+    setColour (juce::PopupMenu::textColourId,
+               isY2kChrome (&t) ? juce::Colour (0xff39FF14) : t.textPrimary);
     setColour (juce::PopupMenu::headerTextColourId,            t.accentPrimary);
     setColour (juce::PopupMenu::highlightedBackgroundColourId, t.accentSecondary);
     setColour (juce::PopupMenu::highlightedTextColourId,       t.textPrimary);
@@ -138,11 +220,6 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     // overrides (e.g. the version/status labels, section headings) still set a
     // specific colour.
     setColour (juce::Label::textColourId,                      t.textSecondary);
-    // Y2K knob captions sit on bright chrome cards: flip them near-black so
-    // they read on the metal. Labels elsewhere set their own colours (the
-    // matrix rows, the routing bar), so the L&F default only feeds the cards.
-    if (isY2kChrome (&t))
-        setColour (juce::Label::textColourId, parvati::onCardText (&t, t.textSecondary));
     setColour (juce::Label::backgroundColourId,                juce::Colour (0x00000000)); // transparent (preserve default)
     setColour (juce::Label::outlineColourId,                   juce::Colour (0x00000000)); // borderless
 
@@ -329,11 +406,18 @@ juce::Font ParvatiLookAndFeel::appFont (float height, int styleFlags) const
 
 juce::Font ParvatiLookAndFeel::getComboBoxFont (juce::ComboBox&)
 {
+    // Y2K: the dropdown VALUE text is a data readout — VT323 with the LED
+    // green set by the caller's colour id ( ComboBox::textColourId ).
+    if (isY2kChrome (theme_))
+        return dataFont (14.0f);
     return appFont (14.0f, juce::Font::plain);
 }
 
 juce::Font ParvatiLookAndFeel::getTextButtonFont (juce::TextButton&, int)
 {
+    // Y2K: button labels are small UI labels — PT Sans.
+    if (isY2kChrome (theme_))
+        return labelFont (14.0f, juce::Font::plain);
     return appFont (14.0f, juce::Font::plain);
 }
 
@@ -345,6 +429,10 @@ juce::Font ParvatiLookAndFeel::getPopupMenuFont()
     // getComboBoxFont/getTextButtonFont so a combo's inline text and its
     // open list match (was 15pt; UI feedback 2026-08-20: the seq length
     // picker read noticeably larger than every other dropdown text).
+    // Y2K: the open list is a data readout surface — VT323, same as the
+    // closed combo text (see getComboBoxFont).
+    if (isY2kChrome (theme_))
+        return dataFont (14.0f);
     return appFont (14.0f, juce::Font::plain);
 }
 
@@ -486,26 +574,14 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
 
     if (front)
     {
-        if (isY2kChrome (theme_))
-        {
-            // Y2K only: the liquid-chrome tab. A vertical silver gradient fills
-            // the active segment; the label flips to deep navy so text stays
-            // readable on the metal. The category underline still applies.
-            juce::ColourGradient chromeGrad (theme_->accentPrimary.brighter (0.30f),
-                                             activeArea.getCentreX(), activeArea.getY(),
-                                             theme_->accentPrimary.darker (0.12f),
-                                             activeArea.getCentreX(), activeArea.getBottom(),
-                                             false);
-            g.setGradientFill (chromeGrad);
-            g.fillPath (tabShape);
-        }
-        else
-        {
-            g.setColour (theme_->tabSelectedBg);
-            g.fillPath (tabShape);
-            g.setColour (catColour.withMultipliedAlpha (0.22f));
-            g.fillPath (tabShape);
-        }
+        // Y2K hardware world: the ACTIVE tab is the pure-blue selection
+        // segment (#0000FF, white text — the Win98 selection school) via
+        // the standard tabSelectedBg path; the former chrome-gradient
+        // special case retired with the bright-chrome world.
+        g.setColour (theme_->tabSelectedBg);
+        g.fillPath (tabShape);
+        g.setColour (catColour.withMultipliedAlpha (0.22f));
+        g.fillPath (tabShape);
     }
     else
     {
@@ -521,8 +597,6 @@ void ParvatiLookAndFeel::drawTabButton (juce::TabBarButton& button, juce::Graphi
     // Label (ALL CAPS), centred; reserve room at the bottom for the active
     // underline.
     juce::Colour textCol = front ? theme_->textPrimary : theme_->textSecondary;
-    if (front && isY2kChrome (theme_))
-        textCol = theme_->backgroundBase;   // navy on the chrome tab
     if (hover)
         textCol = textCol.brighter (0.20f);
 
@@ -590,12 +664,10 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     // parvati_ui_typography_test for the per-theme contrast table).
     const juce::Font f = appFont (textH, juce::Font::bold);
     const juce::String displayText = text.toUpperCase();
-    // Y2K flips the card header to near-black on the bright chrome metal
-    // (every other theme keeps its theme text colour on the flat card).
-    const juce::Colour titleCol = (theme_ != nullptr && isY2kChrome (theme_))
-                                      ? juce::Colour (0xff1a2438).withMultipliedAlpha (alpha)
-                                      : group.findColour (juce::GroupComponent::textColourId)
-                                            .withMultipliedAlpha (alpha);
+    // The module panels went DARK grey in the Y2K hardware restyle, so the
+    // standard textPrimary tier (white on Y2K) reads directly — no flip.
+    const juce::Colour titleCol = group.findColour (juce::GroupComponent::textColourId)
+                                      .withMultipliedAlpha (alpha);
     drawHeadingText (g, displayText, f,
                      juce::Rectangle<float> (titleLeftPad, titleTopPad,
                                              (float) width - titleLeftPad * 2.0f, textH),
@@ -1185,6 +1257,37 @@ void ParvatiLookAndFeel::drawHeadingText (juce::Graphics& g, const juce::String&
     // re-resolved through appFont so the heading always uses the UI family.)
     // Routed through drawTextUncurtained so the LAST glyph is never silently
     // dropped by Graphics::drawText's internal wordWrapWidth curtailment.
+    //
+    // Y2K: module headers render in MICHROMA with wide letter-spacing (the
+    // era's techno-panel look). JUCE has no tracking API, so the glyphs are
+    // placed one by one with the tracking gap between them (the same
+    // technique as the editor wordmark's trackedTextWidth).
+    if (isY2kChrome (theme_))
+    {
+        constexpr float kHeaderTracking = 2.0f;   // px between glyphs (Michroma is already wide)
+        const juce::Font hf = headerFont (juce::jmin (font.getHeight(), 13.0f));
+        juce::GlyphArrangement ga;
+        float x = area.getX();
+        const float y = area.getY();
+        for (int i = 0; i < text.length(); ++i)
+        {
+            ga.addLineOfText (hf, text.substring (i, i + 1), x, y);
+            juce::GlyphArrangement measure;
+            measure.addLineOfText (hf, text.substring (i, i + 1), 0.0f, 0.0f);
+            x += measure.getBoundingBox (0, measure.getNumGlyphs(), true).getWidth() + kHeaderTracking;
+        }
+        // Vertically centre the drawn glyphs in the area (addLineOfText uses
+        // the baseline; shift by the measured bounds delta).
+        const auto bb = ga.getBoundingBox (0, ga.getNumGlyphs(), true);
+        const float dy = area.getY() - bb.getY()
+                         + (area.getHeight() - bb.getHeight()) * 0.5f;
+        g.saveState();
+        g.addTransform (juce::AffineTransform::translation (0.0f, dy));
+        g.setColour (colour);
+        ga.draw (g);
+        g.restoreState();
+        return;
+    }
     drawTextUncurtained (g, text, appFont (font.getHeight(), juce::Font::bold),
                          area, colour, juce::Justification::centredLeft);
 }
