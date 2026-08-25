@@ -5,6 +5,14 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Added
+- **Y2K theme typography unified (2026-08-25).** Labels and the top-row
+  buttons now use the same Michroma face as the module headers, so every
+  caption on a card reads as a header. PT Sans stays embedded under its
+  OFL obligation and becomes the fallback only when Michroma cannot load.
+  The Envelope and LFO display text became a VT323 readout in the LCD
+  green, matching their green traces. The closed dropdown already used
+  the VT323 readout in round three. All changes are Y2K-only; the default
+  theme renders byte-identical.
 - **Y2K theme polish round two (2026-08-25).** The accent system now
   carries ONE accent: a calm LCD green (0x3FBF3F) drives every knob arc,
   mod pill, tab indicator strip and data readout. The bipolar negative
