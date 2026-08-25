@@ -260,6 +260,22 @@ private:
 namespace parvati
 {
 
+// True when the theme carries the Y2K liquid-chrome treatment. Controls and
+// cards query this to swap their on-chrome colours (dark text, aqua fills).
+bool isY2kTheme (const ParvatiTheme* t) noexcept;
+
+// The Y2K liquid-chrome card body: a subtle full-height vertical metal
+// gradient plus the raised rim. No-op (flat panel fill) for other themes.
+// Shared by the synth GroupComponent cards, the FX slot cards and the FX
+// routing bar so every module card matches.
+void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
+                      float corner, const ParvatiTheme* t, float alpha = 1.0f);
+
+// Text token for labels sitting ON a module card. Chrome cards are bright
+// metal, so Y2K flips to near-black; other themes keep the theme token.
+juce::Colour onCardText (const ParvatiTheme* t, juce::Colour themeToken) noexcept;
+
+
 // @p owner's app font at @p height (ParvatiLookAndFeel installed), or the
 // default font when another LookAndFeel is installed.
 inline juce::Font appFontFor (const juce::Component& owner, float height,

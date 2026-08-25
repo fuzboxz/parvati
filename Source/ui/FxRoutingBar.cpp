@@ -272,7 +272,7 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     mixLabel_.setText (TRANS ("Dry/Wet"), juce::dontSendNotification);
     mixLabel_.setJustificationType (juce::Justification::centred);
     mixLabel_.setFont (juce::FontOptions (12.0f));
-    mixLabel_.setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
+    mixLabel_.setColour (juce::Label::textColourId, parvati::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
     addAndMakeVisible (mixLabel_);
 
     mixKnob_.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
@@ -301,7 +301,7 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
         eqLabels_[i].setText (TRANS (eqNames[i]), juce::dontSendNotification);
         eqLabels_[i].setJustificationType (juce::Justification::centred);
         eqLabels_[i].setFont (juce::FontOptions (12.0f));
-        eqLabels_[i].setColour (juce::Label::textColourId, themeManager_.getCurrentTheme().textSecondary);
+        eqLabels_[i].setColour (juce::Label::textColourId, parvati::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
         addAndMakeVisible (eqLabels_[i]);
 
         eqKnobs_[i].setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
@@ -341,11 +341,10 @@ void FxRoutingBar::paint (juce::Graphics& g)
 {
     const auto& t = themeManager_.getCurrentTheme();
 
-    // Sibling-card panel: solid containerFill, 7px corners, NO outline (matches
-    // the FX-slot cards + the synth GroupComponent cards — depth by tonal lift
-    // over the page backgroundBase only).
-    g.setColour (t.containerFill);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), kCorner);
+    // Sibling-card panel: the shared module-card painter — flat tonal lift on
+    // every theme, liquid chrome on Y2K (matches the synth cards and the
+    // FX-slot cards).
+    parvati::paintChromeCard (g, getLocalBounds().toFloat(), kCorner, &t);
 
     // Section header "FX ROUTING" — the SAME typography as the OSC 1 / MIXER
     // GroupComponent headers (bold 14px, UPPERCASE, textSecondary), drawn here
@@ -437,9 +436,9 @@ void FxRoutingBar::resized()
 void FxRoutingBar::applyThemeColors()
 {
     const auto& t = themeManager_.getCurrentTheme();
-    mixLabel_.setColour (juce::Label::textColourId, t.textSecondary);
+    mixLabel_.setColour (juce::Label::textColourId, parvati::onCardText (&t, t.textSecondary));
     for (auto& l : eqLabels_)
-        l.setColour (juce::Label::textColourId, t.textSecondary);
+        l.setColour (juce::Label::textColourId, parvati::onCardText (&t, t.textSecondary));
 
     if (flowDiagram_ != nullptr)
         flowDiagram_->repaint();   // re-resolve trace/block colours from the new theme

@@ -2,17 +2,17 @@
 
 #include "ParvatiLookAndFeel.h"
 
-namespace
-{
 // True when the active theme opts into the Y2K era chrome. The gate is the
 // theme NAME, so every other theme keeps its exact rendering path. The Y2K
 // branches add Win98 bevels, a glossy panel sheen, chrome knob bezels and
 // chrome tabs (see ParvatiTheme.cpp y2kTheme).
-bool isY2kChrome (const ParvatiTheme* theme) noexcept
+static bool isY2kChrome (const ParvatiTheme* theme) noexcept
 {
     return theme != nullptr && theme->name == "Y2K";
 }
 
+namespace
+{
 // Win98-class raised bevel on a rounded card: a light edge on the top half,
 // a dark edge on the bottom half. The two clipped strokes meet at the
 // horizontal centre line and read as one moulded plastic rim.
@@ -35,6 +35,58 @@ void drawY2kBevel (juce::Graphics& g, const juce::Rectangle<float>& r, float cor
 }
 }   // namespace
 
+namespace parvati
+{
+
+bool isY2kTheme (const ParvatiTheme* t) noexcept { return isY2kChrome (t); }
+
+juce::Colour onCardText (const ParvatiTheme* t, juce::Colour themeToken) noexcept
+{
+    // Chrome cards are bright metal: near-black text reads on them. Every
+    // other theme keeps its theme token unchanged.
+    if (isY2kChrome (t))
+        return juce::Colour (0xff141c30);
+    return themeToken;
+}
+
+void paintChromeCard (juce::Graphics& g, const juce::Rectangle<float>& r,
+                      float corner, const ParvatiTheme* t, float alpha)
+{
+    // Non-Y2K themes keep the flat tonal-lift card.
+    if (! isY2kChrome (t))
+    {
+        if (t != nullptr)
+        {
+            g.setColour (t->containerFill.withMultipliedAlpha (alpha));
+            g.fillRoundedRectangle (r, corner);
+        }
+        return;
+    }
+    // The LIQUID-CHROME CARD. One SUBTLE vertical metal gradient spans the
+    // FULL card height: bright silver at the very top settles gently to
+    // mid steel, and a faint gleam returns at the bottom edge. The stop
+    // positions keep the sweep smooth (no banding, no flat tail). The
+    // raised rim closes the metal.
+    const auto chromeHi  = t->accentPrimary.withMultipliedAlpha (alpha);
+    const auto chromeMid = chromeHi.darker (0.16f);
+    const auto chromeBot = chromeHi.darker (0.06f);
+    juce::ColourGradient metal (chromeHi,
+                                r.getCentreX(), r.getY(),
+                                chromeMid,
+                                r.getCentreX(), r.getBottom(),
+                                false);
+    metal.addColour (0.82, chromeMid.darker (0.03f));
+    metal.addColour (1.00, chromeBot);
+    g.setGradientFill (metal);
+    g.fillRoundedRectangle (r, corner);
+    drawY2kBevel (g, r, corner,
+                  juce::Colours::white.withAlpha (0.65f * alpha),
+                  chromeMid.darker (0.22f).withMultipliedAlpha (alpha),
+                  1.5f);
+}
+
+}   // namespace parvati
+
 ParvatiLookAndFeel::ParvatiLookAndFeel()
 {
     // Default to Carbon so theme_ is never null and every colour ID is set
@@ -48,9 +100,12 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     theme_ = &t;
 
     // ---- Slider (rotary + text box) ----
-    setColour (juce::Slider::rotarySliderFillColourId,        t.accentPrimary);   // knob fill arc (theme brand accent)
+    // Y2K: the chrome-silver brand accent vanishes on the chrome card metal,
+    // so slider fills/thumbs swap to the hot-aqua secondary there.
+    const juce::Colour sliderAccent = isY2kChrome (&t) ? t.accentSecondary : t.accentPrimary;
+    setColour (juce::Slider::rotarySliderFillColourId,        sliderAccent);        // knob fill arc (theme brand accent)
     setColour (juce::Slider::rotarySliderOutlineColourId,      t.trackEmpty);      // rotary background track (recedes)
-    setColour (juce::Slider::thumbColourId,                    t.accentPrimary);
+    setColour (juce::Slider::thumbColourId,                    sliderAccent);
     setColour (juce::Slider::textBoxTextColourId,              t.textPrimary);  // bright knob centre readout (the knob's primary readout)
     setColour (juce::Slider::textBoxBackgroundColourId,        t.backgroundInput);
     setColour (juce::Slider::textBoxOutlineColourId,           juce::Colour (0x00000000)); // borderless text box
@@ -83,6 +138,11 @@ void ParvatiLookAndFeel::setTheme (const ParvatiTheme& t)
     // overrides (e.g. the version/status labels, section headings) still set a
     // specific colour.
     setColour (juce::Label::textColourId,                      t.textSecondary);
+    // Y2K knob captions sit on bright chrome cards: flip them near-black so
+    // they read on the metal. Labels elsewhere set their own colours (the
+    // matrix rows, the routing bar), so the L&F default only feeds the cards.
+    if (isY2kChrome (&t))
+        setColour (juce::Label::textColourId, parvati::onCardText (&t, t.textSecondary));
     setColour (juce::Label::backgroundColourId,                juce::Colour (0x00000000)); // transparent (preserve default)
     setColour (juce::Label::outlineColourId,                   juce::Colour (0x00000000)); // borderless
 
@@ -518,34 +578,10 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
 
     // Solid card fill only — no outline, no skeuomorphic containerShadow ring.
     // The card reads purely by its tonal step above the window background.
-    if (theme_ != nullptr)
-    {
-        if (isY2kChrome (theme_))
-        {
-            // Y2K only: the glossy-plastic card. A vertical gradient lightens
-            // the top third (the injection-moulded sheen), then the Win98
-            // raised rim closes the card. Tokens stay the base colours.
-            juce::ColourGradient gloss (theme_->containerFill.brighter (0.14f),
-                                        cardBounds.getCentreX(), cardBounds.getY(),
-                                        theme_->containerFill,
-                                        cardBounds.getCentreX(),
-                                        cardBounds.getY() + cardBounds.getHeight() * 0.45f,
-                                        false);
-            g.setColour (theme_->containerFill.withMultipliedAlpha (alpha));
-            g.fillRoundedRectangle (cardBounds, corner);
-            g.setGradientFill (gloss);
-            g.fillRoundedRectangle (cardBounds, corner);
-            drawY2kBevel (g, cardBounds, corner,
-                          theme_->outline.brighter (0.35f).withMultipliedAlpha (alpha),
-                          theme_->outline.darker (0.45f).withMultipliedAlpha (alpha),
-                          2.0f);
-        }
-        else
-        {
-            g.setColour (theme_->containerFill.withMultipliedAlpha (alpha));
-            g.fillRoundedRectangle (cardBounds, corner);
-        }
-    }
+    // Y2K swaps that for the shared liquid-chrome card body (see
+    // parvati::paintChromeCard — the FX cards and routing bar use the same
+    // painter, so every module card matches).
+    parvati::paintChromeCard (g, cardBounds, corner, theme_, alpha);
 
     // Bold bright section header, left-aligned within the card's top band
     // (GroupComponent::textColourId == theme_->textPrimary after setTheme —
@@ -554,8 +590,12 @@ void ParvatiLookAndFeel::drawGroupComponentOutline (juce::Graphics& g, int width
     // parvati_ui_typography_test for the per-theme contrast table).
     const juce::Font f = appFont (textH, juce::Font::bold);
     const juce::String displayText = text.toUpperCase();
-    const juce::Colour titleCol = group.findColour (juce::GroupComponent::textColourId)
-                                      .withMultipliedAlpha (alpha);
+    // Y2K flips the card header to near-black on the bright chrome metal
+    // (every other theme keeps its theme text colour on the flat card).
+    const juce::Colour titleCol = (theme_ != nullptr && isY2kChrome (theme_))
+                                      ? juce::Colour (0xff1a2438).withMultipliedAlpha (alpha)
+                                      : group.findColour (juce::GroupComponent::textColourId)
+                                            .withMultipliedAlpha (alpha);
     drawHeadingText (g, displayText, f,
                      juce::Rectangle<float> (titleLeftPad, titleTopPad,
                                              (float) width - titleLeftPad * 2.0f, textH),

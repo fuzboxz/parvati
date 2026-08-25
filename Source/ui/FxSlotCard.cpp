@@ -770,22 +770,18 @@ void FxSlotCard::paint (juce::Graphics& g)
 {
     const ParvatiTheme* t = parvati::themeFor (*this);
 
-    const juce::Colour panel   = t ? t->containerFill   : parvati::kFallbackContainerFill;
-    // HEADER COLOUR PARITY (user feedback 2026-08-20): the synth page's
-    // module headers are GroupComponent titles painted by the L&F in
-    // textPrimary (GroupComponent::textColourId == theme.textPrimary after
-    // setTheme). The FX card title previously used textSecondary — the
-    // mismatch the user reported. Same token now; re-resolved per paint so a
-    // theme switch re-colours both paths together.
-    const juce::Colour title   = t ? t->textPrimary     : parvati::kFallbackTextPrimary;
+
+    // On-chrome text tokens: the Y2K chrome cards are bright metal, so the
+    // title and label greys flip near-black there (every other theme keeps
+    // the theme token).
+    const juce::Colour title   = parvati::onCardText (t, t ? t->textPrimary : parvati::kFallbackTextPrimary);
 
     const auto r = getLocalBounds ().toFloat ();
 
-    // ---- Card panel: BORDERLESS (synth GroupComponent parity). Depth comes from
-    //      the tonal lift of containerFill over the page backgroundBase — no
-    //      outline, no under-header divider (the title band alone separates). ----
-    g.setColour (panel);
-    g.fillRoundedRectangle (r, kCorner);
+    // ---- Card panel: the shared module-card painter (flat tonal lift on
+    //      every theme; liquid chrome on Y2K — same as the synth cards and
+    //      the routing bar, so every module card matches). ----
+    parvati::paintChromeCard (g, r, kCorner, t);
 
     // ---- Title "FX N" header: LAMP (top-left, drawn by the PowerToggle
     //      child) + title text following it — the header reads [lamp][FX1]
