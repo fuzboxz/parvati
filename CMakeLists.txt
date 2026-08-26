@@ -897,6 +897,7 @@ add_executable(hellcat_unified_tests
     # tracked but never compiled/registered; now part of the unified target)
     tests/hellcat_retrig_probe.cpp
 # Unified test sources (keep alphabetical-ish; new_test.sh appends here)
+    tests/fx_slot_tooltip_test.cpp
     tests/a11y_smoke_test.cpp
     tests/filter_loudness_test.cpp
     tests/live_part_params_test.cpp

@@ -564,6 +564,22 @@ void ParamControl::setDisplayLabel (const juce::String& label)
     }
 }
 
+void ParamControl::setHelpTextOverride (const juce::String& help)
+{
+    // Module help override (FxSlotCard installs one sentence per ACTIVE
+    // FX-slot param of the loaded algorithm). An EMPTY string reverts to the
+    // descriptor ParamHelp text. The new text must reach every surface the
+    // ctor seeds: the child tooltips (applyTooltipState) and the cell /
+    // child accessibility descriptions.
+    helpOverride_ = help;
+    helpText_ = helpOverride_.isNotEmpty() ? helpOverride_
+                                           : getParamHelp (desc_.paramID);
+    applyTooltipState();
+    setDescription (helpText_);
+    if (slider_   != nullptr) slider_->setDescription (helpText_);
+    if (comboBox_ != nullptr) comboBox_->setDescription (helpText_);
+}
+
 void ParamControl::setDisplayValuePercent (bool percent)
 {
     // Display-only: converts the stored 0..127 value to a 0..100% readout via the
@@ -960,10 +976,11 @@ void ParamControl::reapplyCategoryColours()
 
 juce::String ParamControl::getTooltip()
 {
-    // When tooltips are disabled (Settings panel toggle), return an empty String
-    // so the editor's TooltipWindow shows nothing. Cleaner than recreating the
-    // window or toggling its visibility.
-    return tooltipsEnabled_ ? getParamHelp (desc_.paramID) : juce::String();
+    // Return the ACTIVE help text (ParamHelp text, or the module override
+    // from setHelpTextOverride). When tooltips are disabled (Settings panel
+    // toggle), return an empty String so the editor's TooltipWindow shows
+    // nothing. The children carry the same text (applyTooltipState).
+    return tooltipsEnabled_ ? helpText_ : juce::String();
 }
 
 void ParamControl::lookAndFeelChanged()

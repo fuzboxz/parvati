@@ -85,8 +85,9 @@ public:
     // setLookAndFeel, not on inheritance via reparent).
     void parentHierarchyChanged() override;
 
-    // juce::TooltipClient — per-parameter help text (ParamHelp.h). Queried only
-    // for the bare ~2px cell border; the interactive children carry their own
+    // juce::TooltipClient — the active help text (ParamHelp.h, or the
+    // module override installed by setHelpTextOverride). Queried only for the
+    // bare ~2px cell border; the interactive children carry their own
     // setTooltip() (see applyTooltipState) because JUCE's TooltipWindow only
     // queries the leaf component under the cursor.
     juce::String getTooltip() override;
@@ -182,6 +183,11 @@ public:
     // descriptor-derived label (displayLabelFor). Stored even when the control
     // has no visible label so a later re-show honours it.
     void setDisplayLabel (const juce::String& label);
+    // Override the help text shown by the tooltip and the accessibility
+    // description (used by FxSlotCard so an active FX-slot param shows help
+    // for the loaded module). An EMPTY string reverts to the descriptor
+    // ParamHelp text. Pushes the new text onto the interactive children.
+    void setHelpTextOverride (const juce::String& help);
     // Display the knob value as 0..100% (from stored 0..127). FX slot knobs use
     // this for a friendlier readout. Display-only; stored value unchanged.
     void setDisplayValuePercent (bool percent);
@@ -309,7 +315,8 @@ private:
     // showContextMenu, destroyed in the menu's async close callback.
     std::unique_ptr<juce::TooltipWindow> popupTooltipWindow_;
 
-    juce::String helpText_;         // cached getParamHelp(paramID); set in ctor
+    juce::String helpText_;         // active help text; the ctor seeds it from ParamHelp
+    juce::String helpOverride_;     // non-empty => helpText_ holds this module text instead
     static bool tooltipsEnabled_;   // toggled from the Settings panel
     static bool modDragActive_;     // true while a parvatiModSrc drag is active
     static bool tapAssignActive_;       // [MOD] toggle ON -> reuse the drop-zone affordance

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxSlotCard.h.
 
 #include "FxSlotCard.h"
+#include "FxSlotHelp.h"     // fxParamHelp — module help for the active params
 #include "FxSlotLabels.h"   // activeParamCount/paramLabel — defined in FxSlotLabels.cpp
 
 #include "HellcatLookAndFeel.h"
@@ -503,6 +504,12 @@ void FxSlotCard::refreshFromType()
         // Relabel to the active algorithm's semantic name (or revert to the
         // descriptor label for an inactive param so a future show is correct).
         pc->setDisplayLabel (i < active ? juce::String (paramLabel (t, i)) : juce::String());
+        // Install the module help as the tooltip (or revert an inactive param
+        // to the generic ParamHelp text). refreshFromType is the ONE seam for
+        // every type change: a user pick, a replacement, host automation and
+        // a preset load all pass through here (parameterChanged -> async).
+        pc->setHelpTextOverride (i < active ? fxParamHelp (t, slot_ + 1, i)
+                                            : juce::String());
         // Re-install the per-param value formatter for the NEW type (the param
         // index i is fixed, but the unit depends on the type).
         pc->setDisplayValueText ([t, i] (double v) { return paramValueText (t, i, v); });

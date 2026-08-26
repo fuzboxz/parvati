@@ -5,6 +5,13 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
++- **FX-slot tooltips follow the loaded module (2026-08-27).** An FX-slot
+  param knob now shows help for the loaded algorithm: the tooltip names the
+  slot, the semantic parameter (Time, Predelay, Decay, ...) and its range.
+  The text changes when the user picks a module, replaces one, automates the
+  type or loads a preset. An inactive param, a None slot and a Diffuser slot
+  keep the generic help text. The dry/wet knob keeps its generic help text.
+  The accessibility descriptions follow the same text.
 +- **Harmonized filter-card names; SMR4 is card 0 and the default
   (2026-08-26).** The cards use the historical Ambika voicecard names with
   one label scheme: SMR4 (4-pole), 4P (4-pole), SVF (2-pole), Ladder
