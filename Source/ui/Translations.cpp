@@ -195,7 +195,7 @@ const juce::String& frenchChromeStrings()
         "\"Previous FX topology\" = \"Topologie FX précédente\"\n"
         "\"Next FX topology\" = \"Topologie FX suivante\"\n"
         // ---- preset browser (submenus + name placeholder) ----
-        "\"Factory\" = \"Usine\"\n"
+        "\"Ambika Factory\" = \"Usine Ambika\"\n"
         "\"User\" = \"Utilisateur\"\n"
         "\"(select a patch)\" = \"(sélectionner un patch)\"\n"
         // ---- mod matrix rows / tap-to-assign status strip ----
@@ -444,7 +444,7 @@ const juce::String& germanChromeStrings()
         "\"Previous FX topology\" = \"Vorherige FX-Topologie\"\n"
         "\"Next FX topology\" = \"Nächste FX-Topologie\"\n"
         // ---- preset browser (submenus + name placeholder) ----
-        "\"Factory\" = \"Werk\"\n"
+        "\"Ambika Factory\" = \"Ambika-Werk\"\n"
         "\"User\" = \"Benutzer\"\n"
         "\"(select a patch)\" = \"(Patch auswählen)\"\n"
         // ---- mod matrix rows / tap-to-assign status strip ----

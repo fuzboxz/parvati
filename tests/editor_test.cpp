@@ -500,10 +500,10 @@ TEST(editor_test)
             // leave resolvedTuningMode at 0 and the row must show it.
             {
                 const juce::File factDir = juce::File::getCurrentWorkingDirectory()
-                                               .getChildFile ("presets/FACTORY/A");
+                                               .getChildFile ("presets/AFACTORY/A");
                 juce::Array<juce::File> pros = factDir.findChildFiles (
                     juce::File::findFiles, false, "*.pro");   // case-insensitive
-                check (! pros.isEmpty(), "factory .PRO bank present (presets/FACTORY/A)");
+                check (! pros.isEmpty(), "factory .PRO bank present (presets/AFACTORY/A)");
                 if (! pros.isEmpty())
                 {
                     AmbikaProgram expect;
@@ -978,9 +978,9 @@ TEST(editor_test)
         auto mkDir = [] (const juce::File& d) { d.createDirectory(); return d; };
         const auto templatesDir = mkDir (tmp.getChildFile ("TEMPLATES"));
         const auto userDir      = mkDir (tmp.getChildFile ("USER"));
-        const auto factoryDir   = mkDir (tmp.getChildFile ("FACTORY"));
+        const auto factoryDir   = mkDir (tmp.getChildFile ("AFACTORY"));
         const auto factoryA     = mkDir (factoryDir.getChildFile ("A"));
-        const auto multiDir     = mkDir (tmp.getChildFile ("FACTORY_MULTI"));
+        const auto multiDir     = mkDir (tmp.getChildFile ("AFACTORY_MULTI"));
         check (userDir.getChildFile ("zeta.yml").replaceWithText ("format: hellcat-multi\nparts: []\n"),
                "test setup: user preset file written");
         check (factoryA.getChildFile ("000.PRO").replaceWithText ("not-a-pro", false),
@@ -1084,8 +1084,8 @@ TEST(editor_test)
                                .getChildFile ("hellcat_preset_step_test");
         tmp18.deleteRecursively();
         auto mkDir18 = [] (const juce::File& d) { d.createDirectory(); return d; };
-        const auto factoryA18  = mkDir18 (tmp18.getChildFile ("FACTORY/A"));
-        const auto multiDir18  = mkDir18 (tmp18.getChildFile ("FACTORY_MULTI"));
+        const auto factoryA18  = mkDir18 (tmp18.getChildFile ("AFACTORY/A"));
+        const auto multiDir18  = mkDir18 (tmp18.getChildFile ("AFACTORY_MULTI"));
         const auto userDir18   = mkDir18 (tmp18.getChildFile ("USER"));
         const auto tplDir18    = mkDir18 (tmp18.getChildFile ("TEMPLATES"));
         check (factoryA18.getChildFile ("a1.PRO").replaceWithText ("x", false), "setup: A/a1");
@@ -1095,7 +1095,7 @@ TEST(editor_test)
         check (tplDir18.getChildFile ("t1.yml").replaceWithText ("x"), "setup: template");
 
         juce::Array<juce::File> steppedFiles;   // every file onSelect delivers
-        PresetBrowser stepper (tplDir18, userDir18, tmp18.getChildFile ("FACTORY"),
+        PresetBrowser stepper (tplDir18, userDir18, tmp18.getChildFile ("AFACTORY"),
                                multiDir18, [&steppedFiles] (const juce::File& f) { steppedFiles.add (f); });
         const juce::File first = stepper.selectNext();   // not-anchored -> FIRST leaf
         check (first.getFileName() == "a1.PRO", "step(next) unanchored starts at Factory A leaf 0");
@@ -1136,7 +1136,7 @@ TEST(editor_test)
         const auto tmp18b = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                 .getChildFile ("hellcat_preset_step_multibank");
         tmp18b.deleteRecursively();
-        const auto fact18b = mkDir18 (tmp18b.getChildFile ("FACTORY"));
+        const auto fact18b = mkDir18 (tmp18b.getChildFile ("AFACTORY"));
         const char* const kBankNames18b[] = { "A", "B", "F", "S" };
         bool bankSetupOk = true;
         for (const char* bank : kBankNames18b)
@@ -1147,7 +1147,7 @@ TEST(editor_test)
                 bankSetupOk = false;
         }
         check (bankSetupOk, "setup: one .PRO per factory bank (A/B/F/S)");
-        const auto multi18b  = mkDir18 (tmp18b.getChildFile ("FACTORY_MULTI"));
+        const auto multi18b  = mkDir18 (tmp18b.getChildFile ("AFACTORY_MULTI"));
         const auto user18b   = mkDir18 (tmp18b.getChildFile ("USER"));
         const auto tpl18b    = mkDir18 (tmp18b.getChildFile ("TEMPLATES"));
         check (multi18b.getChildFile ("m1.MUL").replaceWithText ("x"), "setup: multi");
@@ -1198,7 +1198,7 @@ TEST(editor_test)
             // was installed to app-data by the processor ctor — deterministic,
             // non-empty). Anchor first via a real drop, then step.
             const juce::File repoFactA = juce::File::getCurrentWorkingDirectory()
-                                            .getChildFile ("presets/FACTORY/A");
+                                            .getChildFile ("presets/AFACTORY/A");
             juce::Array<juce::File> repoPros = repoFactA.findChildFiles (
                 juce::File::findFiles, false, "*.pro");
             if (! repoPros.isEmpty())
@@ -1215,7 +1215,7 @@ TEST(editor_test)
             }
             else
             {
-                check (false, "presets/FACTORY/A present (editor step assertions)");
+                check (false, "presets/AFACTORY/A present (editor step assertions)");
             }
 
             // Part select: Cmd/Ctrl+1..6 through the partCombo_ seam. Part 3

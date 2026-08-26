@@ -5,7 +5,17 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
-+- **FX-slot tooltips follow the loaded module (2026-08-27).** An FX-slot
+- **Preset category "Factory" renamed to "Ambika Factory" (2026-08-26).**
+  The preset browser menu now labels the factory bank submenu "Ambika
+  Factory". This marks the stock Ambika banks as factory content. The
+  French and German labels follow ("Usine Ambika", "Ambika-Werk").
+  The disk layout follows: the factory roots are now AFACTORY/ and
+  AFACTORY_MULTI/ (repository presets/ tree and installed app-data tree).
+  The "A" prefix holds the stock Ambika banks. A future Hellcat bank set
+  installs under its own root. The bank order does not change. An already
+  installed tree re-extracts to the new roots on the next launch; the
+  installer removes the old FACTORY/FACTORY_MULTI directories.
+- **FX-slot tooltips follow the loaded module (2026-08-27).** An FX-slot
   param knob now shows help for the loaded algorithm: the tooltip names the
   slot, the semantic parameter (Time, Predelay, Decay, ...) and its range.
   The text changes when the user picks a module, replaces one, automates the

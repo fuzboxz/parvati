@@ -386,7 +386,7 @@ TEST(hellcat_preset_test)
             // field) — the whole-setup load must CLEAR the aliases instead of
             // labelling an unrelated multi's parts with drum names.
             const juce::File mul = juce::File::getCurrentWorkingDirectory()
-                                       .getChildFile ("presets/FACTORY_MULTI/000.MUL");
+                                       .getChildFile ("presets/AFACTORY_MULTI/000.MUL");
             if (mul.existsAsFile())
             {
                 check (p.loadMultiFile (mul), "T5: factory .MUL loads");
@@ -406,7 +406,7 @@ TEST(hellcat_preset_test)
             // A SINGLE-patch load (.PRO into the current part) KEEPS the part
             // alias: the name is user metadata about the track, not the patch.
             const juce::File pro = juce::File::getCurrentWorkingDirectory()
-                                       .getChildFile ("presets/FACTORY/A/000.PRO");
+                                       .getChildFile ("presets/AFACTORY/A/000.PRO");
             if (pro.existsAsFile())
             {
                 check (p.loadProgramFile (pro), "T5: .PRO loads into part 0");

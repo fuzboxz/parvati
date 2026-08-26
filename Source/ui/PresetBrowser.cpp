@@ -104,7 +104,7 @@ void PresetBrowser::buildMenu (juce::PopupMenu& menu)
 {
     if (! cacheValid_ || watchedDirsChanged())
         scanInto (cachedTree_);
-    menu = juce::PopupMenu();   // order: Factory (banks + Multi), User, Templates
+    menu = juce::PopupMenu();   // order: Ambika Factory (banks + Multi), User, Templates
     juce::PopupMenu factorySub;
     static const char* const kBanks[] = { "A", "B", "F", "S" };   // actual Ambika bank dirs
     for (size_t b = 0; b < sizeof (kBanks) / sizeof (kBanks[0]); ++b)
@@ -113,7 +113,7 @@ void PresetBrowser::buildMenu (juce::PopupMenu& menu)
     // Factory multis (.MUL) nest at the bottom of Factory.
     addSubIfAny (factorySub, TRANS ("Multi"), menuFromNode (cachedTree_.subs[4]));
     if (factorySub.getNumItems() > 0)
-        menu.addSubMenu (TRANS ("Factory"), factorySub);
+        menu.addSubMenu (TRANS ("Ambika Factory"), factorySub);
 
     addSubIfAny (menu, TRANS ("User"), menuFromNode (cachedTree_.subs[5]));
     addSubIfAny (menu, TRANS ("Templates"), menuFromNode (cachedTree_.subs[6]));

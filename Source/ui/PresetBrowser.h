@@ -4,7 +4,7 @@
 // HIERARCHICAL juce::PopupMenu, replacing the flat patch ComboBox. Categories:
 //   Templates ▸ (.yml templates)
 //   User ▸ (recursively scanned nested folders; .PRO/.MUL/.yml)
-//   Factory ▸ A / B / F / S ▸ (.PRO patches per bank)
+//   Ambika Factory ▸ A / B / F / S ▸ (.PRO patches per bank)
 //   Multi ▸ (factory .MUL multis)
 // The menu tree is rebuilt from a disk CACHE (W10, lane-A finding 5): the
 // scan + the per-.PRO name parse run at most once per GENERATION — the editor

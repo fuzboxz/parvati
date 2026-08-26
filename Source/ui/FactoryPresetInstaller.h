@@ -19,9 +19,10 @@
 namespace hellcat
 {
 // Extract every embedded factory preset into @p factoryDir (*.PRO, organized as
-// FACTORY/<bank>/), @p factoryMultiDir (*.MUL, FACTORY_MULTI/), and @p templatesDir
+// AFACTORY/<bank>/), @p factoryMultiDir (*.MUL, AFACTORY_MULTI/), and @p templatesDir
 // (full-fidelity *.yml multis, TEMPLATES/), and make sure @p userDir (USER/)
-// exists for user saves. Factory banks are written only if missing; the stock
+// exists for user saves. The "A" roots hold the stock Ambika banks; a later
+// Hellcat bank set installs under its own root. Factory banks are written only if missing; the stock
 // TEMPLATES set is SYNCED every run (writes new/changed templates and removes a
 // local *.yml no longer in the embedded set) so renames/removals propagate
 // to an already-installed tree. Returns the number of files (re)written.

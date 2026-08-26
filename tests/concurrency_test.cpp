@@ -75,14 +75,14 @@ const juce::File srcDir()        { return juce::File (HELLCAT_SOURCE_DIR); }
 // temporary would dangle. Capture the array, return a copy.
 juce::File findFactoryMulti()
 {
-    const auto d = srcDir().getChildFile ("presets/FACTORY_MULTI");
+    const auto d = srcDir().getChildFile ("presets/AFACTORY_MULTI");
     if (! d.exists()) return {};
     auto f = d.findChildFiles (juce::File::findFiles, false, "*.MUL");
     return f.isEmpty() ? juce::File() : f.getFirst();
 }
 juce::File findFactoryPatch()
 {
-    const auto d = srcDir().getChildFile ("presets/FACTORY");
+    const auto d = srcDir().getChildFile ("presets/AFACTORY");
     if (! d.exists()) return {};
     auto f = d.findChildFiles (juce::File::findFiles, true, "*.PRO");
     return f.isEmpty() ? juce::File() : f.getFirst();
@@ -108,7 +108,7 @@ const juce::Array<juce::File>& collectPresetFiles()
         juce::Array<juce::File> f;
         const juce::File root = srcDir().getChildFile ("presets");
         if (! root.exists()) return f;
-        for (const auto& bank : { "FACTORY/A", "FACTORY/B", "FACTORY/F", "FACTORY/S" })
+        for (const auto& bank : { "AFACTORY/A", "AFACTORY/B", "AFACTORY/F", "AFACTORY/S" })
         {
             const auto b = root.getChildFile (bank);
             if (! b.exists()) continue;
@@ -116,7 +116,7 @@ const juce::Array<juce::File>& collectPresetFiles()
             for (int i = 0; i < ps.size() && i < 8; ++i)   // cap per bank for speed
                 f.add (ps.getReference (i));
         }
-        f.addArray (root.getChildFile ("FACTORY_MULTI").findChildFiles (juce::File::findFiles, false, "*.MUL"));
+        f.addArray (root.getChildFile ("AFACTORY_MULTI").findChildFiles (juce::File::findFiles, false, "*.MUL"));
         f.addArray (root.getChildFile ("TEMPLATES").findChildFiles (juce::File::findFiles, false, "*.yml"));
         return f;
     }();

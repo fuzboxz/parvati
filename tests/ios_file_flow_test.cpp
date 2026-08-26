@@ -12,6 +12,9 @@
 //   [3] F-ios-perf-5   the installer's version-marker fast path: a completed
 //       pass writes the marker; a subsequent run still content-syncs the
 //       TEMPLATES (the fast path skips only the bank walk).
+//   [3b] AFACTORY rename: the installer removes the legacy roots
+//       (Factory/FactoryMulti, FACTORY/FACTORY_MULTI) once. A live root
+//       that bears a legacy name is never deleted.
 //   [4] F-ios-perf-4   PresetBrowser scan bounds: depth cap, per-directory
 //       entry cap and symlink refusal — a hostile USER tree cannot stall the
 //       message thread.
@@ -89,8 +92,8 @@ struct Workspace
         root.deleteRecursively();
         root.createDirectory();
         user         = root.getChildFile ("USER");
-        factory      = root.getChildFile ("FACTORY");
-        factoryMulti = root.getChildFile ("FACTORY_MULTI");
+        factory      = root.getChildFile ("AFACTORY");
+        factoryMulti = root.getChildFile ("AFACTORY_MULTI");
         templates    = root.getChildFile ("TEMPLATES");
         user.createDirectory();
         templates.createDirectory();
@@ -252,6 +255,63 @@ TEST(ios_file_flow_test)
             hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
             check (pros[0].existsAsFile(),
                    "[3] corrupt marker -> full pass re-extracts a deleted bank file");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    std::printf ("\n[3b] legacy factory-root cleanup (AFACTORY rename)\n");
+    {
+        Workspace ws ("legacy");
+
+        // Pre-rename layouts: Factory/FactoryMulti (flat era) and
+        // FACTORY/FACTORY_MULTI (2026-08-26 era). Seed a decoy file in each.
+        for (const char* const legacyName :
+             { "Factory", "FactoryMulti", "FACTORY", "FACTORY_MULTI" })
+        {
+            const juce::File legacy = ws.root.getChildFile (legacyName);
+            legacy.createDirectory();
+            (void) legacy.getChildFile ("decoy.txt").replaceWithText ("stale");
+        }
+
+        hellcat::resetInstallOnceForTest();
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+
+        for (const char* const legacyName :
+             { "Factory", "FactoryMulti", "FACTORY", "FACTORY_MULTI" })
+            check (! ws.root.getChildFile (legacyName).exists(),
+                   "[3b] a legacy root is removed after the pass");
+        {
+            juce::Array<juce::File> pros;
+            ws.factory.findChildFiles (pros, juce::File::findFiles, true, "*.PRO");
+            check (pros.size() > 0, "[3b] the banks install into AFACTORY");
+            juce::Array<juce::File> muls;
+            ws.factoryMulti.findChildFiles (muls, juce::File::findFiles, false, "*.MUL");
+            check (muls.size() > 0, "[3b] the multis install into AFACTORY_MULTI");
+        }
+
+        // The case-insensitive guard: a LIVE root that bears a legacy name
+        // must survive the cleanup. Here factoryDir IS "Factory"; on a
+        // case-insensitive FS "FACTORY" also resolves to it, and
+        // "FactoryMulti" resolves to the "FACTORY_MULTI" multi root.
+        {
+            const juce::File root2 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                         .getChildFile ("hellcat_iosfileflow_legacy_guard");
+            root2.deleteRecursively();
+            root2.createDirectory();
+            const juce::File factory2 = root2.getChildFile ("Factory");
+            const juce::File multi2   = root2.getChildFile ("FACTORY_MULTI");
+            hellcat::resetInstallOnceForTest();
+            hellcat::ensureFactoryPresetsInstalled (factory2, multi2,
+                                                    root2.getChildFile ("TEMPLATES"),
+                                                    root2.getChildFile ("USER"));
+            check (factory2.isDirectory(),
+                   "[3b] a live root named like a legacy root survives");
+            check (multi2.isDirectory(),
+                   "[3b] a live multi root named like a legacy root survives");
+            juce::Array<juce::File> pros2;
+            factory2.findChildFiles (pros2, juce::File::findFiles, true, "*.PRO");
+            check (pros2.size() > 0, "[3b] the guarded roots keep their banks");
+            root2.deleteRecursively();
         }
     }
 

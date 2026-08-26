@@ -64,7 +64,7 @@ bool overwriteIfChanged (const juce::File& target, const char* data, int size)
     return temp.overwriteTargetFileWithTemporary();
 }
 
-// The install-completion marker lives at the FACTORY root and reads
+// The install-completion marker lives at the AFACTORY root and reads
 // "installed=<kFactoryInstallVersion>". Present + version-matching => the
 // per-resource bank walk is skipped at startup (F-ios-perf-5); missing,
 // corrupt or version-mismatched => the full self-healing pass runs as before.
@@ -118,16 +118,17 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // change; the banks are write-if-missing otherwise).
         const bool markerFastPath = installMarkerMatches (factoryDir);
 
-        // Legacy cleanup (pre-release): the previous flat layout extracted to
-        // Hellcat/Factory and Hellcat/FactoryMulti. Those are superseded by
-        // FACTORY/<bank>/ and FACTORY_MULTI/, so remove the old flat dirs once.
-        // Only the two known legacy names are touched. On a CASE-INSENSITIVE FS
-        // (default macOS APFS) "Factory" and "FACTORY" are the same directory,
-        // so compare the paths case-insensitively and never delete a dir that is
-        // (case-insensitively) the live factory/multi dir. Skipped on the marker
-        // fast path: a tree with a matching marker was installed by a version
-        // that already ran this cleanup (the marker is written only at the END
-        // of a full pass, cleanup included).
+        // Legacy cleanup (pre-release): earlier layouts extracted to
+        // Hellcat/Factory + Hellcat/FactoryMulti (flat), then
+        // Hellcat/FACTORY + Hellcat/FACTORY_MULTI. Those are superseded by
+        // AFACTORY/<bank>/ and AFACTORY_MULTI/, so remove the old dirs once.
+        // Only the four known legacy names are touched. On a CASE-INSENSITIVE FS
+        // (default macOS APFS) some legacy names resolve to the same directory
+        // as another, so compare the paths case-insensitively and never delete
+        // a dir that is (case-insensitively) a live factory/multi dir. Skipped
+        // on the marker fast path: a tree with a matching marker was installed
+        // by a version that already ran this cleanup (the marker is written
+        // only at the END of a full pass, cleanup included).
         if (! markerFastPath)
         {
             const auto sameDirCI = [] (const juce::File& a, const juce::File& b)
@@ -135,12 +136,13 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                 return a.getFullPathName().toLowerCase() == b.getFullPathName().toLowerCase();
             };
             const juce::File base = factoryDir.getParentDirectory();
-            const juce::File legacyFactory = base.getChildFile ("Factory");
-            const juce::File legacyMulti   = base.getChildFile ("FactoryMulti");
-            if (! sameDirCI (legacyFactory, factoryDir))
-                legacyFactory.deleteRecursively (false);
-            if (! sameDirCI (legacyMulti, factoryMultiDir))
-                legacyMulti.deleteRecursively (false);
+            for (const char* const legacyName :
+                 { "Factory", "FactoryMulti", "FACTORY", "FACTORY_MULTI" })
+            {
+                const juce::File legacy = base.getChildFile (legacyName);
+                if (! sameDirCI (legacy, factoryDir) && ! sameDirCI (legacy, factoryMultiDir))
+                    legacy.deleteRecursively (false);
+            }
         }
 
         // Factory .PRO/.MUL banks are stable -> write-if-missing only. The stock

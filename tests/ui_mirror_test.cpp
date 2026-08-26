@@ -438,7 +438,7 @@ TEST(ui_mirror_test)
         const auto tplDir = juce::File::getCurrentWorkingDirectory()
                                 .getChildFile ("presets/TEMPLATES");
         const auto proDir = juce::File::getCurrentWorkingDirectory()
-                                .getChildFile ("presets/FACTORY/A");
+                                .getChildFile ("presets/AFACTORY/A");
 
         char m[220];
 

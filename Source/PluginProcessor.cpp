@@ -1229,10 +1229,12 @@ bool HellcatAudioProcessor::saveProgramFile (const juce::File& file)
 juce::File HellcatAudioProcessor::getFactoryPatchDir()
 {
     // Per-user app-data location (user-writable on macOS, unlike
-    // ~/Library/Audio/Presets which is often root-owned). The factory banks are
-    // extracted here as subfolders: <appdata>/Hellcat/FACTORY/{A,B,F,S}/.
+    // ~/Library/Audio/Presets which is often root-owned). The Ambika factory
+    // banks are extracted here as subfolders: <appdata>/Hellcat/AFACTORY/{A,B,F,S}/.
+    // The "A" prefix holds the stock Ambika banks; a later Hellcat bank set
+    // gets its own root (H*), separate from this one.
     return hellcat::getSharedContainerRoot()
-        .getChildFile ("Hellcat/FACTORY");
+        .getChildFile ("Hellcat/AFACTORY");
 }
 
 //==========================================================================
@@ -1355,7 +1357,7 @@ bool HellcatAudioProcessor::loadMultiFile (const juce::File& file)
 juce::File HellcatAudioProcessor::getFactoryMultiDir()
 {
     return hellcat::getSharedContainerRoot()
-        .getChildFile ("Hellcat/FACTORY_MULTI");
+        .getChildFile ("Hellcat/AFACTORY_MULTI");
 }
 
 juce::File HellcatAudioProcessor::getTemplatesDir()

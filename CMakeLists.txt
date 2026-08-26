@@ -574,25 +574,27 @@ endif()
 
 # ------------------------------------------------------------------------------
 # Factory presets (Ambika "goldencard" GPL-3.0 banks), organized under presets/
-# as FACTORY/<bank>/ (A/B/F/S) + FACTORY_MULTI/. EMBEDDED into the plugin binary
-# via juce_add_binary_data, then extracted to the user app-data dir on first run
-# (hellcat::ensureFactoryPresetsInstalled, see Source/ui/FactoryPresetInstaller.h)
-# so they show up in the Patch combo out of the box.
+# as AFACTORY/<bank>/ (A/B/F/S) + AFACTORY_MULTI/. The "A" roots hold the stock
+# Ambika banks; a future Hellcat bank set gets its own roots (H*). EMBEDDED into
+# the plugin binary via juce_add_binary_data, then extracted to the user
+# app-data dir on first run (hellcat::ensureFactoryPresetsInstalled, see
+# Source/ui/FactoryPresetInstaller.h) so they show up in the Patch combo out of
+# the box.
 #
 # The four program banks share filenames (each has 000.PRO, 001.PRO ...), so they
 # cannot be embedded by their raw names. Stage them into a build dir with
 # bank-unique names first: <BANK>__<file> (A__000.PRO) and MULTI__<file>. The
-# installer parses the "__" delimiter to reconstruct FACTORY/<bank>/<file>.
+# installer parses the "__" delimiter to reconstruct AFACTORY/<bank>/<file>.
 set(_parvati_preset_stage "${CMAKE_BINARY_DIR}/hellcat_preset_stage")
 file(REMOVE_RECURSE "${_parvati_preset_stage}")
 file(MAKE_DIRECTORY "${_parvati_preset_stage}")
 # Re-stage when the source presets change (CONFIGURE_DEPENDS -> reconfigure).
-file(GLOB _cfgdep_pro CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY/*/*.PRO")
-file(GLOB _cfgdep_mul CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY_MULTI/*.MUL")
+file(GLOB _cfgdep_pro CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY/*/*.PRO")
+file(GLOB _cfgdep_mul CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY_MULTI/*.MUL")
 file(GLOB _cfgdep_tpl CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/TEMPLATES/*.yml")
 set(_staged_sources "")
 foreach(_bank A B F S)
-    file(GLOB _files "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY/${_bank}/*.PRO")
+    file(GLOB _files "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY/${_bank}/*.PRO")
     foreach(_f ${_files})
         get_filename_component(_n "${_f}" NAME)
         set(_out "${_parvati_preset_stage}/${_bank}__${_n}")
@@ -600,7 +602,7 @@ foreach(_bank A B F S)
         list(APPEND _staged_sources "${_out}")
     endforeach()
 endforeach()
-file(GLOB _mulfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/FACTORY_MULTI/*.MUL")
+file(GLOB _mulfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY_MULTI/*.MUL")
 foreach(_f ${_mulfiles})
     get_filename_component(_n "${_f}" NAME)
     set(_out "${_parvati_preset_stage}/MULTI__${_n}")

@@ -295,8 +295,8 @@ public:
     // APVTS) as an Ambika .PRO — the exact inverse of loadProgramFile. A saved
     // file re-loads to the same engine state. Returns true on success.
     bool saveProgramFile (const juce::File& file);
-    // Where the factory Ambika patches are installed (FACTORY root; banks A/B/F/S
-    // are subfolders), where the factory multis live, and the user save area.
+    // Where the factory Ambika patches are installed (AFACTORY root; banks
+    // A/B/F/S are subfolders), where the factory multis live, and the user save area.
     static juce::File getFactoryPatchDir();
     static juce::File getUserPatchDir();
 

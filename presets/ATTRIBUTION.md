@@ -1,7 +1,7 @@
 # Factory Presets — Attribution
 
-The factory patches shipped with Hellcat (`presets/FACTORY/<BANK>/*.PRO` and
-`presets/FACTORY_MULTI/*.MUL`) are the **Ambika "goldencard" factory banks** by
+The factory patches shipped with Hellcat (`presets/AFACTORY/<BANK>/*.PRO` and
+`presets/AFACTORY_MULTI/*.MUL`) are the **Ambika "goldencard" factory banks** by
 **Emilie Gillet / Mutable Instruments**, taken from the Ambika firmware tree
 (`controller/data/goldencard/`).
 
