@@ -1,9 +1,9 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // WheelsComponent — Pitch + Mod wheels drawn to the LEFT of the virtual
 // keyboard. Two vertical sliders: the pitch wheel is bipolar and springs back
 // to centre on release (a real pitch-bend wheel), the mod wheel is unipolar and
-// stays where dropped. Themed via the inherited ParvatiLookAndFeel (read in
+// stays where dropped. Themed via the inherited HellcatLookAndFeel (read in
 // paint()). The editor wires onPitch / onMod to the engine as MIDI pitch-bend
 // / CC1 (mod wheel) on the current Part's channel.
 //
@@ -66,7 +66,7 @@ private:
     std::unique_ptr<juce::Component> modDrag_;
 
     // [<][>] octave switch under the pitch wheel (see onOctaveShift). Plain
-    // themed TextButtons — no custom painting (ParvatiLookAndFeel styles them
+    // themed TextButtons — no custom painting (HellcatLookAndFeel styles them
     // like every other button in the chrome) — sized to kOctBtnSize (44pt HIG).
     std::unique_ptr<juce::TextButton> octaveDown_;
     std::unique_ptr<juce::TextButton> octaveUp_;

@@ -13,13 +13,13 @@
 //
 //  [B] UNICODE / NAME SAFETY — part + program names with multi-byte UTF-8
 //      (accents, CJK, emoji), quotes, backslashes and newlines:
-//        * .parvati multi: exact round-trip of unicode + escaped quotes.
+//        * .yml multi: exact round-trip of unicode + escaped quotes.
 //        * host engine-state: exact round-trip.
 //        * .MUL/.PRO 16-byte name chunk: never splits a code point (the file
 //          stays valid UTF-8), control chars dropped, re-parse == truncated
 //          whole-char prefix.
 //        * the engine's setPartName strips control chars (a newline would
-//          corrupt the line-based .parvati document on save).
+//          corrupt the line-based .yml document on save).
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -36,7 +36,7 @@
 
 #include "MulExport.h"
 #include "PatchFile.h"
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 
@@ -45,7 +45,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -61,12 +61,12 @@ int popcount8 (uint8_t x) { int n = 0; for (; x; x >>= 1) n += x & 1; return n; 
 juce::File tempDir()
 {
     const auto d = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("parvati_mul_strategies_test");
+                       .getChildFile ("hellcat_mul_strategies_test");
     d.createDirectory();
     return d;
 }
 
-using namespace parvati::mul_export;
+using namespace hellcat::mul_export;
 
 struct Scenario
 {
@@ -120,7 +120,7 @@ bool commonInvariants (const Setup& s, const Solution& sol, int maxCards)
 // seeds slot counts (legacy load path); requested == 0 must NOT go through
 // setPartVoiceSlots — the public setter clamps 0 to 1 (cannot disable), so a
 // zero-request part keeps its zero-mask materialization (0 slots = disabled).
-void applyScenario (ParvatiAudioProcessor& proc, const Scenario& sc)
+void applyScenario (HellcatAudioProcessor& proc, const Scenario& sc)
 {
     proc.prepareToPlay (48000.0, 256);
     renderIdle (proc, 2);
@@ -293,12 +293,12 @@ TEST(mul_strategies_test)
         };
         for (const auto& c : cases)
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             applyScenario (proc, *c.sc);
             const auto f = tempDir().getChildFile ("play.MUL");
             check (proc.saveMultiFile (f, c.strat), "export saves");
 
-            ParvatiAudioProcessor hw;
+            HellcatAudioProcessor hw;
             hw.prepareToPlay (48000.0, 256);
             renderIdle (hw, 2);
             check (hw.loadMultiFile (f), "hardware reload");
@@ -339,7 +339,7 @@ TEST(mul_strategies_test)
 
         // Chain units reload standalone with their own masks.
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             applyScenario (proc, kScenarios[3]);   // 10/8/6
             const auto f = tempDir().getChildFile ("chainp.MUL");
             check (proc.saveMultiFile (f, 5), "chain export");
@@ -348,7 +348,7 @@ TEST(mul_strategies_test)
             for (size_t u = 1; u < units.size(); ++u)   // unit 0 == f (checked above pattern)
             {
                 const auto uf = f.getParentDirectory().getChildFile ("chainp-" + juce::String (u + 1) + ".MUL");
-                ParvatiAudioProcessor hw;
+                HellcatAudioProcessor hw;
                 hw.prepareToPlay (48000.0, 256);
                 renderIdle (hw, 2);
                 char msg[128];
@@ -371,9 +371,9 @@ TEST(mul_strategies_test)
     std::printf ("\n[C] unicode / name safety\n");
     // =====================================================================
     {
-        // ---- [C1] part names: .parvati exact round-trip (multi-byte UTF-8 + escapes) ----
-        std::printf ("\n[C1] .parvati part-name round-trip\n");
-        ParvatiAudioProcessor proc;
+        // ---- [C1] part names: .yml exact round-trip (multi-byte UTF-8 + escapes) ----
+        std::printf ("\n[C1] .yml part-name round-trip\n");
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& e = proc.getEngine();
@@ -383,7 +383,7 @@ TEST(mul_strategies_test)
         e.setPartName (3, juce::CharPointer_UTF8 ("\xf0\x9f\x8e\xb9 Pad"));    // 🎹
         e.setPartName (4, "He said \"hi\"");
         e.setPartName (5, "Back\\slash");
-        const juce::String yaml = parvati::preset::serializeParvatiMulti (proc);
+        const juce::String yaml = hellcat::preset::serializeHellcatMulti (proc);
         // The document must stay line-based (a newline in a name would corrupt it).
         const int partLines = [&]
         {
@@ -394,10 +394,10 @@ TEST(mul_strategies_test)
         } ();
         check (partLines == 6, "all 6 parts serialized on single lines");
 
-        ParvatiAudioProcessor other;
+        HellcatAudioProcessor other;
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
-        check (parvati::preset::applyParvatiMulti (other, yaml), "re-applies");
+        check (hellcat::preset::applyHellcatMulti (other, yaml), "re-applies");
         bool namesOk = true;
         namesOk = namesOk && other.getEngine().getPartName (0) == juce::CharPointer_UTF8 ("Kick \xc3\xa9");
         namesOk = namesOk && other.getEngine().getPartName (1) == juce::CharPointer_UTF8 ("\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e");
@@ -412,7 +412,7 @@ TEST(mul_strategies_test)
         {
             juce::MemoryBlock blob;
             e.captureState (blob);
-            ParvatiAudioProcessor h;
+            HellcatAudioProcessor h;
             h.prepareToPlay (48000.0, 256);
             renderIdle (h, 2);
             check (h.getEngine().restoreState (blob.getData(), blob.getSize()), "v6 blob restores");
@@ -426,23 +426,23 @@ TEST(mul_strategies_test)
         // ---- [C3] setPartName strips control characters ----
         std::printf ("\n[C3] name sanitization\n");
         {
-            ParvatiAudioProcessor p2;
+            HellcatAudioProcessor p2;
             p2.prepareToPlay (48000.0, 256);
             renderIdle (p2, 2);
             p2.getEngine().setPartName (0, "Bad\nName");
             check (p2.getEngine().getPartName (0) == "BadName", "newline stripped by setPartName");
             p2.getEngine().setPartName (1, "Tab\tName");
             check (p2.getEngine().getPartName (1) == "TabName", "tab stripped");
-            const juce::String y2 = parvati::preset::serializeParvatiMulti (p2);
+            const juce::String y2 = hellcat::preset::serializeHellcatMulti (p2);
             // The sanitized name stays a single YAML token on one line (the
             // value itself contains no newline): "name: \"BadName\"".
             check (y2.contains ("name: \"BadName\"") && y2.contains ("name: \"TabName\""),
                    "sanitized names serialize as single-line tokens");
             // ...and the document still round-trips.
-            ParvatiAudioProcessor p3;
+            HellcatAudioProcessor p3;
             p3.prepareToPlay (48000.0, 256);
             renderIdle (p3, 2);
-            check (parvati::preset::applyParvatiMulti (p3, y2) && p3.getEngine().getPartName (0) == "BadName",
+            check (hellcat::preset::applyHellcatMulti (p3, y2) && p3.getEngine().getPartName (0) == "BadName",
                    "document with previously-corrupting name still round-trips");
         }
 
@@ -514,7 +514,7 @@ TEST(mul_strategies_test)
         // ---- [C5] hardware ASCII references still byte-identical ----
         std::printf ("\n[C5] ASCII references unchanged\n");
         {
-            const juce::File ref = juce::File (PARVATI_SOURCE_DIR)
+            const juce::File ref = juce::File (HELLCAT_SOURCE_DIR)
                 .getChildFile ("ambika_reference/controller/data/goldencard/MULTI/BANK/A/000.MUL");
             AmbikaMulti m;
             check (parseAmbikaMultiFile (ref, m) && m.ok, "reference parses");

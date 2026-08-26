@@ -1,8 +1,8 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SharedContainer.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SharedContainer.h.
 
 #include "SharedContainer.h"
 
-namespace parvati
+namespace hellcat
 {
 juce::File getSharedContainerRoot()
 {
@@ -23,4 +23,4 @@ juce::File getSharedContainerRoot()
 #endif
 }
 
-} // namespace parvati
+} // namespace hellcat

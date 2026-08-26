@@ -1,7 +1,7 @@
 // Typography consistency + module-header contrast (UI feedback 2026-08-20).
 //
 // [1] MODULE/SECTION HEADERS on the textPrimary tier: every built-in theme's
-//     GroupComponent title colour (via the themed ParvatiLookAndFeel) resolves
+//     GroupComponent title colour (via the themed HellcatLookAndFeel) resolves
 //     to theme.textPrimary — NOT the dim textSecondary the titles used before
 //     the fix — with WCAG contrast >= 7:1 against BOTH the card fill
 //     (containerFill — what drawGroupComponentOutline actually paints under
@@ -14,7 +14,7 @@
 //     were 15/17pt — the user-visible "seq dropdown font too big").
 // [3] A live theme switch keeps the title tier (setTheme re-colours the L&F).
 //
-// Run: ./build_unified/parvati_unified_tests ui_typography_test
+// Run: ./build_unified/hellcat_unified_tests ui_typography_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -30,8 +30,8 @@
 
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
-#include "ui/ParvatiLookAndFeel.h"
-#include "ui/ParvatiTheme.h"
+#include "ui/HellcatLookAndFeel.h"
+#include "ui/HellcatTheme.h"
 #include "ui/SeqLengthStepper.h"
 
 namespace
@@ -87,10 +87,10 @@ TEST(ui_typography_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     const auto& desc = lengthDescriptor();
 
-    std::vector<std::pair<const char*, const ParvatiTheme&>> themes {
+    std::vector<std::pair<const char*, const HellcatTheme&>> themes {
         { "Carbon",      carbonTheme()      },
         { "Midnight",    midnightTheme()    },
         {"Immutable",   immutableTheme()      },
@@ -101,7 +101,7 @@ TEST(ui_typography_test)
     // ---- [1] Module-header tier + contrast (the reported dim headers) -------
     std::printf ("[1] Module headers: textPrimary tier + contrast >= 7:1\n");
     {
-        ParvatiLookAndFeel lnf;   // defaults to Carbon
+        HellcatLookAndFeel lnf;   // defaults to Carbon
         juce::GroupComponent group;
         group.setLookAndFeel (&lnf);
 
@@ -146,7 +146,7 @@ TEST(ui_typography_test)
     // ---- [2] 14pt app-control font unification (the reported big dropdown) --
     std::printf ("\n[2] Font heights unified at the 14pt app-control height\n");
     {
-        ParvatiLookAndFeel lnf;
+        HellcatLookAndFeel lnf;
         juce::ComboBox combo;
         juce::TextButton btn;
         combo.setLookAndFeel (&lnf);

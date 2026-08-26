@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxMatrixView.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxMatrixView.h.
 
 #include "FxMatrixView.h"
 #include "FxSlotLabels.h"          // activeParamCount / paramLabel (dynamic FX-dest labels)
 #include "ModDestMap.h"            // isFxDest / kFxModDstOffset (FX-dest domain)
 #include "ModMatrixHighlight.h"    // onAssignRequest bus (drag-and-drop -> fxmod slot)
 
-#include "PluginProcessor.h"       // ParvatiAudioProcessor (complete type)
+#include "PluginProcessor.h"       // HellcatAudioProcessor (complete type)
 #include "ThemeManager.h"
 
 #include "dsp/patch.h"             // ambika::dsp::MOD_SRC_* (addSlot default)
@@ -34,7 +34,7 @@ MatrixViewConfig makeFxConfig()
     cfg.destComboAttached   = false;   // dest combo is manually index-bound (dynamic labels)
     cfg.highlightSelfOnHover = true;   // a hovered row highlights itself besides the broadcast
     cfg.lampDiameter            = 18.0f;  // same lamp size as the synth matrix
-    cfg.destBusOffset    = parvati::ModDestMap::kFxModDstOffset;   // FX dests broadcast offset-encoded
+    cfg.destBusOffset    = hellcat::ModDestMap::kFxModDstOffset;   // FX dests broadcast offset-encoded
     cfg.rejectDestAtOrAbove = std::numeric_limits<int>::max();     // raw FX_DST_* indices only
     cfg.addDefaultSource = ambika::dsp::MOD_SRC_ENV_1;
     cfg.addDefaultDest   = 0;   // FX_DST_FX1_DRYWET (the first makeFxDests() entry)
@@ -98,7 +98,7 @@ void syncDestFromParam (FxMatrixView& view, juce::ComboBox& combo, int slot)
 }  // namespace
 
 //==============================================================================
-FxMatrixView::FxMatrixView (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
+FxMatrixView::FxMatrixView (HellcatAudioProcessor& processor, ThemeManager& themeManager)
     : MatrixViewBase (processor, themeManager, makeFxConfig())
 {
     refresh();
@@ -111,12 +111,12 @@ FxMatrixView::FxMatrixView (ParvatiAudioProcessor& processor, ThemeManager& them
     // those). The guard also keeps a hovered-synth-knob drop from grabbing an
     // FX slot. assignNextFreeSlot keeps its RAW FX_DST index contract (0..17).
     juce::Component::SafePointer<FxMatrixView> safe (this);
-    assignSub_ = parvati::ModMatrixHighlight::instance().onAssignRequest (
+    assignSub_ = hellcat::ModMatrixHighlight::instance().onAssignRequest (
         [safe] (int source, int dest) -> bool
         {
-            if (safe == nullptr || ! parvati::ModDestMap::isFxDest (dest))
+            if (safe == nullptr || ! hellcat::ModDestMap::isFxDest (dest))
                 return false;   // ignore synth-dest drops
-            const int raw = dest - parvati::ModDestMap::kFxModDstOffset;   // FX_DST_* index
+            const int raw = dest - hellcat::ModDestMap::kFxModDstOffset;   // FX_DST_* index
             if (raw >= FX_DST_LAST)
                 return false;   // defensive: out-of-range FX dest (unreachable via modDest_)
             return safe->assignNextFreeSlot (source, raw);

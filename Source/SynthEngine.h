@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // SynthEngine — a juce::Synthesiser that owns a fixed pool of AmbikaVoice
 // instances (kNumVoices = kNumParts * kMaxVoicesPerPart). The pool is divided
@@ -36,7 +36,7 @@
 // of SynthEngine.h.
 #include "SynthPart.h"
 
-// ===== Parvati-exclusive per-part FX (Ambika knows nothing about these) =====
+// ===== Hellcat-exclusive per-part FX (Ambika knows nothing about these) =====
 // FxType / FxTopology / FxModDestination / kNumFxSlots / kNumFxMatrixSlots /
 // kNumFxSlotParams / fxOrderPermutation. These live in a dependency-free
 // shard (dsp/fx/FxTypes.h). The FX DSP core can use them without pulling in
@@ -51,7 +51,7 @@
 // The engine is the seqlock WRITER (audio thread, renderPartFx); the editor's
 // LiveFeedbackHub is the bounded-retry reader (message thread).
 #include "ui/ModTelemetryTypes.h"
-static_assert (parvati::ModTelemetrySnapshot::kNumSources >= ambika::dsp::MOD_SRC_LAST,
+static_assert (hellcat::ModTelemetrySnapshot::kNumSources >= ambika::dsp::MOD_SRC_LAST,
                "the telemetry frame must hold every MOD_SRC_* source without "
                "misindexing sources[]/history[]");
 // NOTE (contract deviation, reported to the parent): the frozen shared header
@@ -160,7 +160,7 @@ public:
     // writer of those (it services configDirty_ in processTransport). The
     // staging removes the data race between a file load and the audio-thread
     // clock loop. It also keeps pendingConfig_ (the serialize source) in sync
-    // with the loaded values. Used by the .MUL and .parvati multi-load paths.
+    // with the loaded values. Used by the .MUL and .yml multi-load paths.
     void stageArpSeqFromPartBytes (int part);   // reads parts_[part].partBytes (atomic)
 
     // Hard-reset EVERY voice: stopNote(.,false) (Kill + clearCurrentNote) +
@@ -224,7 +224,7 @@ public:
     // contiguous proportional card share via mul_export::deriveMasks (same
     // shape as the .MUL Proportional strategy) and publishes it into
     // Part::voiceAllocation. setPartVoiceAllocation is kept as the LEGACY
-    // LOAD PATH: .MUL files, host-state v1..v5 and older .parvati files carry
+    // LOAD PATH: .MUL files, host-state v1..v5 and older .yml files carry
     // bitmasks. The setter materializes the equivalent slot count (slots =
     // popcount(mask), 0 -> disabled) and marks the allocation dirty.
     void setPartVoiceAllocation (int part, uint8_t bitmask);
@@ -240,10 +240,10 @@ public:
         std::array<int, kNumParts> want {};
         for (int q = 0; q < kNumParts; ++q)
             want[(size_t) q] = static_cast<int> (parts_[(size_t) q].voiceSlots.load (std::memory_order_relaxed));
-        return parvati::mul_export::deriveMasks (want)[(size_t) part];
+        return hellcat::mul_export::deriveMasks (want)[(size_t) part];
     }
 
-    // ---- Per-part voice slots (Parvati extension) ----
+    // ---- Per-part voice slots (Hellcat extension) ----
     // slots: 1..kMaxVoicesPerPart = the Part's voice count drawn from the
     // engine pool (the single source of truth; the card mask is derived from
     // it). The pool (kNumVoices = kNumParts * kMaxVoicesPerPart) always
@@ -272,9 +272,9 @@ public:
     void resolveTuningOffsets (int part, int16_t out[12]) const;
     bool isNoteAcceptedByPartTuning (int part, int rawNote) const;
 
-    // ---- Part names / aliases (Parvati extension; message-thread only) ----
-    // 16-char limit keeps the Multi page rows + .parvati lines tidy. Control
-    // characters (newlines) are stripped: the .parvati multi format is
+    // ---- Part names / aliases (Hellcat extension; message-thread only) ----
+    // 16-char limit keeps the Multi page rows + .yml lines tidy. Control
+    // characters (newlines) are stripped: the .yml multi format is
     // LINE-based. A newline inside a name would corrupt the document on save
     // (and the hardware name chunk only wants printable text anyway).
     static juce::String sanitizePartName (const juce::String& n)
@@ -338,7 +338,7 @@ public:
     // Test-only: the INSTALLED slot type on @p part's chain (the AT-owned
     // slotType_ cache — a staged swap is reflected only after the audio
     // thread's servicePendingTypeSwaps consumed it, i.e. after a
-    // processBlock). Proves a .parvati multi load staged its FX slot TYPES
+    // processBlock). Proves a .yml multi load staged its FX slot TYPES
     // into the DSP chains, not just the fxState atomics. (The atomic-only load
     // left the chains on their previous processors.)
     uint8_t fxChainSlotTypeForTest (int part, int slot) const
@@ -407,7 +407,7 @@ public:
     // arp/seq state is MT-readable via pendingConfig_
     // (readPendingConfig) instead.
 
-    // ---- Per-part FX (Parvati-exclusive; post-render, host-rate stereo) ----
+    // ---- Per-part FX (Hellcat-exclusive; post-render, host-rate stereo) ----
     // Render every Part's FX chain into its stereo FX-output buffer (called from
     // PluginProcessor::processBlock AFTER renderNextBlock, BEFORE the main-bus
     // sum). For each Part: (1) services fxDirty_ single-threaded (pushes the
@@ -468,7 +468,7 @@ public:
     // transport BPM. Safe on the audio thread (relaxed loads + one store).
     void recomputeTailCache() noexcept;
     // Loader-side per-part FX slot-TYPE writer: the same contract as
-    // setFxSlotType but for an EXPLICIT part (the .parvati multi loader
+    // setFxSlotType but for an EXPLICIT part (the .yml multi loader
     // restores all 6 parts' FX, not just the current one). Stores the fxState
     // atomic AND stages the replacement processor on the message thread
     // (audit F1: the audio thread installs it with pointer moves only) and
@@ -496,7 +496,7 @@ public:
     // (a resetUiTelemetry landed and the audio thread has not serviced the
     // clear yet — the UI must hide its live overlays for that window); or the
     // serviced part no longer matches the tracked part (a part switch).
-    bool readUiTelemetry (parvati::ModTelemetrySnapshot& out) const;
+    bool readUiTelemetry (hellcat::ModTelemetrySnapshot& out) const;
 
     // Reset the telemetry (message thread): invalidates the current frame via
     // an epoch bump (visible to the reader IMMEDIATELY, before the audio
@@ -646,7 +646,7 @@ private:
     std::atomic<double> tailBpmCache_ { 120.0 };
     // Mono scratch buffer for the per-part voicecard sum (sized in prepare; AT-only).
     juce::AudioBuffer<float> fxMonoScratch_;
-    parvati::TransportClock transport_;
+    hellcat::TransportClock transport_;
     // Typed view of the juce::Synthesiser voice pool. The ctor adds exactly
     // kNumVoices AmbikaVoice objects and nothing else, so voicePool_[i] aliases
     // voices[i] without a dynamic_cast. The base class keeps ownership.
@@ -677,7 +677,7 @@ private:
     // a torn-read window). readUiTelemetry linearizes it OLDEST-FIRST into
     // the caller's frame. Storage is fixed-size (no allocation anywhere on
     // the audio-thread path).
-    parvati::ModTelemetrySnapshot uiTel_ {};   // ring storage + observables (AT writes under the seqlock)
+    hellcat::ModTelemetrySnapshot uiTel_ {};   // ring storage + observables (AT writes under the seqlock)
     std::atomic<uint32_t> uiTelSeq_ { 0 };       // seqlock: even = stable, odd = writer mid-update
     std::atomic<uint32_t> uiTelemetryEpoch_ { 0 };   // MT-authoritative validity epoch (resetUiTelemetry bumps)
     std::atomic<int>  uiTelPart_ { -1 };         // MT -> AT: the tracked part (-1 = not tracking)
@@ -707,7 +707,7 @@ private:
     void uiTelServiceStage (int p);
     // Decimated history append of this internal block's effective sources
     // (also refreshes uiTel_.sources).
-    bool uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq,
+    bool uiTelAppendHistory (const uint8_t* effSrcs, const hellcat::Sequencer& noteSeq,
                              int noteSeqOverride = -1);
     // Once-per-block observables refresh: envelope stage/progress/level,
     // effective cutoff/resonance/mode, current sources, voiceActive. @p repVoice

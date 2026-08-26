@@ -1,6 +1,6 @@
-// Ambika .PRO patch-file support verification for Parvati.
+// Ambika .PRO patch-file support verification for Hellcat.
 // 1. Parses real factory .PRO files (RIFF "MBKS") -> name + Patch[112] + Part[84].
-// 2. Loads them into the full ParvatiAudioProcessor and confirms the APVTS
+// 2. Loads them into the full HellcatAudioProcessor and confirms the APVTS
 //    reflects the patch bytes (osc1_shape, filter1_cutoff, a mod amount).
 
 #include <cstdio>
@@ -17,8 +17,8 @@
 #include "PatchFile.h"
 #include "PluginProcessor.h"
 
-#ifndef PARVATI_SOURCE_DIR
-#define PARVATI_SOURCE_DIR "."
+#ifndef HELLCAT_SOURCE_DIR
+#define HELLCAT_SOURCE_DIR "."
 #endif
 
 namespace
@@ -28,7 +28,7 @@ void check (bool cond, const char* msg) { std::printf("  %s: %s\n", cond?"ok  ":
 
 juce::File proFile (const char* bank, const char* idx)
 {
-    return juce::File (PARVATI_SOURCE_DIR)
+    return juce::File (HELLCAT_SOURCE_DIR)
         .getChildFile ("ambika_reference/controller/data/goldencard/PROGRAM/BANK")
         .getChildFile (bank).getChildFile (idx + juce::String (".PRO"));
 }
@@ -61,9 +61,9 @@ TEST(patch_test)
     }
 
     // ---- [2] Load a .PRO into the processor; APVTS must reflect the bytes ----
-    std::printf ("\n[2] Load .PRO into ParvatiAudioProcessor\n");
+    std::printf ("\n[2] Load .PRO into HellcatAudioProcessor\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
 
         AmbikaProgram a;

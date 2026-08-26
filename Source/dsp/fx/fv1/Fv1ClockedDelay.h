@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1ClockedDelay — DAW-synced "Clocked Delay" from the FV-1 hardware-emulation
 // family. Mono-in, stereo-out (the chain duplicates the mono source to L==R and
@@ -16,8 +16,8 @@
 // depth grows with Tape Age), and saturating feedback. Output is the delayed,
 // grit+aged read duplicated to both channels.
 
-#ifndef PARVATI_DSP_FX_FV1_FV1CLOCKEDDELAY_H
-#define PARVATI_DSP_FX_FV1_FV1CLOCKEDDELAY_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1CLOCKEDDELAY_H
+#define HELLCAT_DSP_FX_FV1_FV1CLOCKEDDELAY_H
 
 #include <cstdint>
 
@@ -25,7 +25,7 @@
 #include "dsp/fx/fv1/Fv1Engine.h"
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1ClockedDelay : public Fv1FxProcessor
@@ -89,6 +89,6 @@ private:
     OnePoleLpFx tapeLp_;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1CLOCKEDDELAY_H
+#endif // HELLCAT_DSP_FX_FV1_FV1CLOCKEDDELAY_H

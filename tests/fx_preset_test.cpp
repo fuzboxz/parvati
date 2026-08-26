@@ -1,12 +1,12 @@
-// Per-part FX serialization regression test for Parvati.
+// Per-part FX serialization regression test for Hellcat.
 //
-// Proves the Parvati-only FX section (3 FX slots + 16-slot FX mod matrix,
+// Proves the Hellcat-only FX section (3 FX slots + 16-slot FX mod matrix,
 // topology + order) round-trips through EVERY format that should carry it
-// (.parvati multi + .parvati patch + host binary state), and is DROPPED by the
+// (.yml multi + .yml patch + host binary state), and is DROPPED by the
 // Ambika .PRO/.MUL byte formats (which know nothing about FX). Mirrors the
-// shape of parvati_preset_test.cpp.
+// shape of hellcat_preset_test.cpp.
 //
-// Run: ./build_unified/parvati_unified_tests fx_preset_test
+// Run: ./build_unified/hellcat_unified_tests fx_preset_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -16,7 +16,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 
@@ -31,7 +31,7 @@ void check (bool cond, const char* msg)
 }
 
 // Select part @p partIndex (0-based) by driving the part_select param (1-based).
-void selectPart (ParvatiAudioProcessor& proc, int partIndex)
+void selectPart (HellcatAudioProcessor& proc, int partIndex)
 {
     setParam (proc, "part_select", partIndex + 1);
 }
@@ -72,7 +72,7 @@ bool allFxAtDefaults (const PartFxState& fx)
 
 // Set a diverse spread of FX values on the CURRENT part (so it hits the current
 // Part's fxState via applyFxParameter). Keeps the spread within legal ranges.
-void paintDiverseFx (ParvatiAudioProcessor& proc)
+void paintDiverseFx (HellcatAudioProcessor& proc)
 {
     // FX1 = Reverb, enabled, dry/wet mid, params spread.
     setParam (proc, "fx1_type",    3);   // Reverb
@@ -116,12 +116,12 @@ TEST(fx_preset_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    using namespace parvati::preset;
+    using namespace hellcat::preset;
 
     // ---------------------------------------------------------------------
-    std::printf ("[1] .parvati MULTI round-trips FX on every Part\n");
+    std::printf ("[1] .yml MULTI round-trips FX on every Part\n");
     {
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
@@ -133,12 +133,12 @@ TEST(fx_preset_test)
         setParam (a, "fx_order", 5);          // {2,1,0}
         setParam (a, "fx2_drywet", 12);
 
-        const juce::String yaml = serializeParvatiMulti (a);
+        const juce::String yaml = serializeHellcatMulti (a);
         check (yaml.contains ("fx1_type"), "multi YAML carries fx1_type");
         check (yaml.contains ("fxmod1_amount"), "multi YAML carries fxmod1_amount");
         check (yaml.contains ("fx_topo"), "multi YAML carries fx_topo");
 
-        check (applyParvatiMulti (b, yaml), "applyParvatiMulti parses + applies");
+        check (applyHellcatMulti (b, yaml), "applyHellcatMulti parses + applies");
 
         // Every Part's fxState must match field-for-field. Parts we didn't paint
         // (1,2,4,5) stay at defaults on both sides (a was default before paint,
@@ -155,9 +155,9 @@ TEST(fx_preset_test)
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[2] .parvati PATCH (single, current part) round-trips FX\n");
+    std::printf ("\n[2] .yml PATCH (single, current part) round-trips FX\n");
     {
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
@@ -165,24 +165,24 @@ TEST(fx_preset_test)
         selectPart (a, 0);
         paintDiverseFx (a);
 
-        const juce::String yaml = serializeParvatiPatch (a);
+        const juce::String yaml = serializeHellcatPatch (a);
         check (yaml.contains ("fx1_type"), "patch YAML carries fx1_type");
         check (yaml.contains ("fxmod16_dest"), "patch YAML carries fxmod16_dest");
 
-        check (applyParvatiPatch (b, yaml), "applyParvatiPatch parses + applies");
+        check (applyHellcatPatch (b, yaml), "applyHellcatPatch parses + applies");
 
         // The patch writes through the APVTS -> applyFxParameter on b's current
         // Part (0). Part 0's fxState must match a's.
         const int mism = countFxMismatches (a.getEngine().getPart (0).fxState,
                                             b.getEngine().getPart (0).fxState);
         std::printf ("     Part 0 fxState mismatches = %d\n", mism);
-        check (mism == 0, "single-part .parvati round-trips Part 0 FX");
+        check (mism == 0, "single-part .yml round-trips Part 0 FX");
     }
 
     // ---------------------------------------------------------------------
     std::printf ("\n[3] .PRO (single-part) RESETS a pre-existing fxState to default\n");
     {
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
@@ -199,7 +199,7 @@ TEST(fx_preset_test)
                "target Part 0 has non-default FX before the .PRO load (sanity)");
 
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                             .getChildFile ("parvati_fx_preset.PRO");
+                             .getChildFile ("hellcat_fx_preset.PRO");
         check (a.saveProgramFile (tmp), ".PRO saved");
         check (b.loadProgramFile (tmp), ".PRO loaded");
 
@@ -211,7 +211,7 @@ TEST(fx_preset_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[4] .MUL (multi) RESETS every Part's pre-existing fxState to default\n");
     {
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
@@ -233,7 +233,7 @@ TEST(fx_preset_test)
         check (bHadFx, "target has non-default FX before the .MUL load (sanity)");
 
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                             .getChildFile ("parvati_fx_preset.MUL");
+                             .getChildFile ("hellcat_fx_preset.MUL");
         check (a.saveMultiFile (tmp), ".MUL saved");
         check (b.loadMultiFile (tmp), ".MUL loaded");
 
@@ -247,15 +247,15 @@ TEST(fx_preset_test)
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[5] Forward-compat: .parvati multi WITHOUT any fx params loads cleanly\n");
+    std::printf ("\n[5] Forward-compat: .yml multi WITHOUT any fx params loads cleanly\n");
     {
-        // Hand-craft a multi with NO fx params. Old .parvati files (pre-FX) must
+        // Hand-craft a multi with NO fx params. Old .yml files (pre-FX) must
         // still load and leave fxState at defaults.
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 512);
 
         juce::String yaml =
-            "format: parvati-multi\n"
+            "format: hellcat-multi\n"
             "version: 1\n"
             "name: \"Legacy\"\n"
             "parts:\n"
@@ -266,13 +266,13 @@ TEST(fx_preset_test)
             "    params:\n"
             "      osc1_shape: 2\n";
 
-        check (applyParvatiMulti (proc, yaml), "legacy multi (no fx params) loads");
+        check (applyHellcatMulti (proc, yaml), "legacy multi (no fx params) loads");
         check (allFxAtDefaults (proc.getEngine().getPart (0).fxState),
-               "Part 0 fxState stays at defaults for a pre-FX .parvati multi");
+               "Part 0 fxState stays at defaults for a pre-FX .yml multi");
     }
 
     // ---------------------------------------------------------------------
-    std::printf ("\n[1b] .parvati MULTI load STAGES slot types into the DSP chains\n");
+    std::printf ("\n[1b] .yml MULTI load STAGES slot types into the DSP chains\n");
     {
         // The fxState atomics round-tripping (section [1]) is not the whole
         // story: slot TYPES reach the DSP only via message-thread chain
@@ -281,7 +281,7 @@ TEST(fx_preset_test)
         // the atomics, so a loaded multi's FX were silently absent (fresh
         // engine: all-None chains) — assert against the INSTALLED chain type
         // after one block (the swap is consumed by servicePendingTypeSwaps).
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
@@ -290,9 +290,9 @@ TEST(fx_preset_test)
         setParam (a, "fx1_enabled", 1);
 
         juce::File f = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                           .getChildFile ("parvati_fx_stage_multi.parvati");
-        check (a.saveParvatiMultiFile (f), "multi with part-3 FX saved");
-        check (b.loadParvatiMultiFile (f), "multi loads into a fresh engine");
+                           .getChildFile ("hellcat_fx_stage_multi.yml");
+        check (a.saveHellcatMultiFile (f), "multi with part-3 FX saved");
+        check (b.loadHellcatMultiFile (f), "multi loads into a fresh engine");
         f.deleteFile();
 
         // One block: the audio thread consumes the staged swap (pointer moves)

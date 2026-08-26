@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ModDestMap — a pure-data bridge between the APVTS modulation-matrix
 // parameters and the synth's visible knobs. It maps a ModulationDestination
@@ -19,7 +19,7 @@
 
 #include "dsp/fx/FxTypes.h"   // FxModDestination (FX_DST_*), kNumFxMatrixSlots (FX domain)
 
-namespace parvati::ModDestMap
+namespace hellcat::ModDestMap
 {
 // A ModulationDestination enum value (ambika::dsp::MOD_DST_*), an FX-dest
 // offset (FX_DST_* + kFxModDstOffset), or -1 for "none".
@@ -62,4 +62,4 @@ int aggregateAmount (juce::AudioProcessorValueTreeState& apvts, ModDst dest, int
 // order. Returns an empty vector for an invalid destination.
 std::vector<int> slotsForDest (juce::AudioProcessorValueTreeState& apvts, ModDst dest);
 
-}  // namespace parvati::ModDestMap
+}  // namespace hellcat::ModDestMap

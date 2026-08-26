@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // SynthWorkspace — the content of the top-level SYNTH tab. A rigid, void-free
 // 3-row integrated panel that hosts the EXISTING, editor-owned ParamPages
@@ -26,7 +26,7 @@
 // active-editor host IS a vertical-scroll Viewport, but only as a T4 safety
 // net (see the base class).
 //
-// The pages stay owned by ParvatiEditor
+// The pages stay owned by HellcatEditor
 // (generatedPages_); the workspace owns only the bar + the active-editor host,
 // so reparenting never duplicates a ParamControl / APVTS attachment.
 
@@ -91,7 +91,7 @@ private:
     // gap applies from the flush joint every time — never re-reduced.
     juce::Rectangle<int> matrixFlushBounds_;
 
-    // SYNTH-ONLY bottom seam rule (parvati::ChromeRule): the 1px border at
+    // SYNTH-ONLY bottom seam rule (hellcat::ChromeRule): the 1px border at
     // the bottom row's top edge — between the cards panel and the mod-matrix
     // page. Held as unique_ptr<Component> (the ChromeRule.h include stays in
     // the .cpp), exactly like the base class's barRule_.

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // IconButton — a small square button that draws its glyph with juce::Path (no
 // font/unicode dependency), so Undo/Redo/Settings render correctly on every OS
 // (unicode arrows U+21B6/21B7 show as "…" on font stacks that lack them).
-// Colours come from the editor-wide ParvatiLookAndFeel (inherited). The gear
+// Colours come from the editor-wide HellcatLookAndFeel (inherited). The gear
 // honours the toggle state (Settings "on" = accent) like the old TextButton.
 
 #pragma once
@@ -12,8 +12,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ParvatiLookAndFeel.h"
-#include "ParvatiTheme.h"
+#include "HellcatLookAndFeel.h"
+#include "HellcatTheme.h"
 
 class IconButton : public juce::Button
 {
@@ -58,9 +58,9 @@ public:
 
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
-        const ParvatiTheme* t = parvati::themeFor (*this);
-        const juce::Colour text   = t ? t->textPrimary   : parvati::kFallbackTextPrimary;
-        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
+        const HellcatTheme* t = hellcat::themeFor (*this);
+        const juce::Colour text   = t ? t->textPrimary   : hellcat::kFallbackTextPrimary;
+        const juce::Colour accent = t ? t->accentPrimary : hellcat::hellcatFallbackAccent;
 
         juce::Colour c = text;
         if (! isEnabled())            c = text.withAlpha (0.30f);

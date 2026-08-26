@@ -12,7 +12,7 @@
 //
 // Each controller is routed to MOD_DST_FILTER_CUTOFF (amount 63) so a controller
 // move changes the cutoff -> a measurable RMS change on a sustaining note.
-// Run: ./build_unified/parvati_unified_tests controller_mod_test
+// Run: ./build_unified/hellcat_unified_tests controller_mod_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -53,7 +53,7 @@ double bufferRms (const juce::AudioBuffer<float>& b)
 
 // Set up one modulation routing (source -> Filter Cutoff, amount 63) on slot
 // `slot`, so the given source is audible.
-void routeToCutoff (ParvatiAudioProcessor& proc, int slot, int sourceEnum)
+void routeToCutoff (HellcatAudioProcessor& proc, int slot, int sourceEnum)
 {
     char id[32];
     std::snprintf (id, sizeof (id), "mod%d_source", slot);    setParam (proc, id, sourceEnum);
@@ -63,7 +63,7 @@ void routeToCutoff (ParvatiAudioProcessor& proc, int slot, int sourceEnum)
 
 // Render `blocks`, injecting @p inject (if any) in block 0; return RMS of the
 // last `meas` blocks (the steady-state response after the controller move).
-double measurePhase (ParvatiAudioProcessor& proc, const juce::MidiMessage* inject)
+double measurePhase (HellcatAudioProcessor& proc, const juce::MidiMessage* inject)
 {
     constexpr int kBlock = 512;
     constexpr int kBlocks = 50;
@@ -89,7 +89,7 @@ double measurePhase (ParvatiAudioProcessor& proc, const juce::MidiMessage* injec
 
 // Play a sustaining note (no release) + a short warm-up so the attack/decay
 // settles into the sustain segment before measurement.
-void playSustainingNote (ParvatiAudioProcessor& proc)
+void playSustainingNote (HellcatAudioProcessor& proc)
 {
     constexpr int kBlock = 512;
     {
@@ -116,8 +116,11 @@ bool controllerAudible (int slot, int sourceEnum,
                         const std::function<juce::MidiMessage (int val)>& makeMsg,
                         const char* label, double threshold)
 {
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 512);
+    // Pin the card: the loudness sweep of a cutoff move is card-dependent
+    // (this test targets the CONTROLLER wiring, not the filter).
+    setParam (proc, "filter_card", 3);   // Ladder
     routeToCutoff (proc, slot, sourceEnum);
     proc.syncAllParamsToEngine();
     playSustainingNote (proc);

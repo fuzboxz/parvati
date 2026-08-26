@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // LinearResamplerCore — the shared linear host<->internal resampler of the
 // two FX rate bridges. HostRateBridge (32 kHz, interleaved frames) and
@@ -22,10 +22,10 @@
 // two bridges unchanged. Any edit changes render bytes: fx_render_golden_test
 // pins them. A change to these loops needs an approved digest update.
 
-#ifndef PARVATI_DSP_FX_LINEAR_RESAMPLER_CORE_H
-#define PARVATI_DSP_FX_LINEAR_RESAMPLER_CORE_H
+#ifndef HELLCAT_DSP_FX_LINEAR_RESAMPLER_CORE_H
+#define HELLCAT_DSP_FX_LINEAR_RESAMPLER_CORE_H
 
-namespace parvati::dsp
+namespace hellcat::dsp
 {
 
 // CRTP base. The derived bridge supplies the internal-domain storage hooks:
@@ -168,6 +168,6 @@ protected:
     bool  hasTail_        = false;  // tail holds a valid sample
 };
 
-} // namespace parvati::dsp
+} // namespace hellcat::dsp
 
-#endif // PARVATI_DSP_FX_LINEAR_RESAMPLER_CORE_H
+#endif // HELLCAT_DSP_FX_LINEAR_RESAMPLER_CORE_H

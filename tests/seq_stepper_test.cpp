@@ -15,7 +15,7 @@
 //   [4] a live theme switch re-resolves the colour (the lookAndFeelChanged
 //       path — the "colour read before theme attach" trap).
 //
-// Run: ./build_unified/parvati_unified_tests seq_stepper_test
+// Run: ./build_unified/hellcat_unified_tests seq_stepper_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -31,8 +31,8 @@
 
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
-#include "ui/ParvatiLookAndFeel.h"
-#include "ui/ParvatiTheme.h"
+#include "ui/HellcatLookAndFeel.h"
+#include "ui/HellcatTheme.h"
 #include "ui/SeqLengthStepper.h"
 
 namespace
@@ -106,10 +106,10 @@ TEST(seq_stepper_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     const auto& desc = lengthDescriptor();
 
-    std::vector<std::pair<const char*, const ParvatiTheme&>> themes {
+    std::vector<std::pair<const char*, const HellcatTheme&>> themes {
         { "Carbon",      carbonTheme()      },
         { "Midnight",    midnightTheme()    },
         {"Immutable",   immutableTheme()      },
@@ -168,7 +168,7 @@ TEST(seq_stepper_test)
 
     std::printf ("\n[2] Per-theme colour tier + contrast + font\n");
     {
-        ParvatiLookAndFeel lnf;   // defaults to Carbon
+        HellcatLookAndFeel lnf;   // defaults to Carbon
         juce::Component host;
         auto stepper = std::make_unique<SeqLengthStepper> (proc, desc);
         auto* stepperPtr = stepper.get();
@@ -232,7 +232,7 @@ TEST(seq_stepper_test)
 
     std::printf ("\n[4] Live theme switch re-resolves the colour\n");
     {
-        ParvatiLookAndFeel lnf;   // Carbon
+        HellcatLookAndFeel lnf;   // Carbon
         juce::Component host;
         auto stepper = std::make_unique<SeqLengthStepper> (proc, desc);
         auto* stepperPtr = stepper.get();

@@ -9,7 +9,7 @@
 // voicecards are always fully and disjointly shared when any part is active) and
 // Custom detection for non-template states.
 //
-// Dependency-light: includes SynthEngine via the Parvati lib only (no GUI).
+// Dependency-light: includes SynthEngine via the Hellcat lib only (no GUI).
 
 #include <cstring>
 

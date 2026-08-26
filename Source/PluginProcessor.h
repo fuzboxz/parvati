@@ -1,6 +1,6 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
-// ParvatiAudioProcessor — the plugin's AudioProcessor. Owns the SynthEngine
+// HellcatAudioProcessor — the plugin's AudioProcessor. Owns the SynthEngine
 // (a kNumVoices = 96 AmbikaVoice pool — 6 parts x 16 max slots) and an
 // AudioProcessorValueTreeState (APVTS) that exposes every Ambika patch/part
 // parameter. Parameter changes are bridged to the integer engine by writing
@@ -25,12 +25,12 @@
 #include "SynthEngine.h"
 #include "MidiParameterMap.h"
 
-class ParvatiAudioProcessor : public juce::AudioProcessor,
+class HellcatAudioProcessor : public juce::AudioProcessor,
                               private juce::AudioProcessorValueTreeState::Listener
 {
 public:
-    ParvatiAudioProcessor();
-    ~ParvatiAudioProcessor() override;
+    HellcatAudioProcessor();
+    ~HellcatAudioProcessor() override;
 
     //==========================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -54,7 +54,7 @@ public:
     bool hasEditor() const override { return true; }
 
     //==========================================================================
-    const juce::String getName() const override { return "Parvati"; }
+    const juce::String getName() const override { return "Hellcat"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -191,7 +191,7 @@ public:
     int getThermalHint() const noexcept { return thermalHint_.load (std::memory_order_relaxed); }
 
     // NOTE: the UI font mode selector was removed — the whole UI now uses the
-    // system default sans-serif (see ParvatiLookAndFeel::appFont). The field
+    // system default sans-serif (see HellcatLookAndFeel::appFont). The field
     // below is kept ONLY so legacy saved states that carry a ui_font_mode
     // property still load (the value is read + re-saved but no longer applied).
 
@@ -300,24 +300,24 @@ public:
     static juce::File getFactoryPatchDir();
     static juce::File getUserPatchDir();
 
-    // ---- Parvati-native preset format (.parvati, human-editable YAML) ----
-    // A full-fidelity format that carries Parvati-only settings (vca_curve,
+    // ---- Hellcat-native preset format (.yml, human-editable YAML) ----
+    // A full-fidelity format that carries Hellcat-only settings (vca_curve,
     // filter_card) and arp/seq that the Ambika .PRO/.MUL byte format drops.
     // Coexists with .PRO/.MUL (kept for Ambika interop).
-    bool saveParvatiPatchFile (const juce::File& file);   // current part
-    bool loadParvatiPatchFile (const juce::File& file);
-    bool saveParvatiMultiFile (const juce::File& file);   // all 6 parts
-    bool loadParvatiMultiFile (const juce::File& file);
+    bool saveHellcatPatchFile (const juce::File& file);   // current part
+    bool loadHellcatPatchFile (const juce::File& file);
+    bool saveHellcatMultiFile (const juce::File& file);   // all 6 parts
+    bool loadHellcatMultiFile (const juce::File& file);
 
     // Multi-load hygiene: reset every Part's voice slots to the ENGINE INIT
     // allocation (Part 0 = 6 voices, the popcount of the constructor's 0x3f
     // init bitmask; Parts 1..5 disabled) BEFORE a multi file applies its own
     // per-part data. Thus a file that does not carry voice settings for a
     // Part never inherits the PREVIOUS multi's leftover counts (stale-voice
-    // bug: a short/legacy .parvati parts list, or any future MultiData-less
+    // bug: a short/legacy .yml parts list, or any future MultiData-less
     // .MUL acceptance). Public setters only: setPartVoiceSlots for the
     // enabled Part 0 and the legacy setPartVoiceAllocation(part, 0) disable
-    // path for the rest. Called by loadMultiFile + loadParvatiMultiFile.
+    // path for the rest. Called by loadMultiFile + loadHellcatMultiFile.
     void resetVoiceSlotsToInit();
 
     // ---- Ambika .MUL (multi) support ----
@@ -343,25 +343,25 @@ public:
     // optional polyphony-mode rewrite). ChainSplit writes more sibling
     // "-2.MUL"/"-3.MUL" unit files for physically chained Ambikas. The default
     // (0 = AsIs) is the legacy behaviour: bitmasks unchanged, slots ignored.
-    // @p strategyInt is a parvati::mul_export::Strategy value passed as int to
+    // @p strategyInt is a hellcat::mul_export::Strategy value passed as int to
     // keep this header light for the headless tests.
     bool saveMultiFile (const juce::File& file, int strategyInt = 0);
 
     // The current export Setup (requested voices / cards / poly modes), for
     // the editor's fallback dialog preview. Pure read of engine state.
-    parvati::mul_export::Setup getMulExportSetup() const;
+    hellcat::mul_export::Setup getMulExportSetup() const;
     static juce::File getFactoryMultiDir();
     // Stock init templates (Mono / Poly / Unison / Multitimbral) — full-fidelity
-    // .parvati multis. <appdata>/Parvati/TEMPLATES/.
+    // .yml multis. <appdata>/Hellcat/TEMPLATES/.
     static juce::File getTemplatesDir();
     // The name of the last loaded program (for the GUI title).
     juce::String getLoadedProgramName() const { return loadedProgramName_; }
     // Set the loaded-program name (used by the template generator so each stock
-    // template's .parvati `name:` field matches its label).
+    // template's .yml `name:` field matches its label).
     void setLoadedProgramName (const juce::String& n) { loadedProgramName_ = n; }
 
     // Re-read a Part's engine storage into the APVTS (engine→APVTS display
-    // refresh). Public so the .parvati/.MUL multi-load epilogue can refresh the
+    // refresh). Public so the .yml/.MUL multi-load epilogue can refresh the
     // editor after making engine storage authoritative.
     void loadPartIntoApvts (int part);
 
@@ -421,9 +421,9 @@ private:
     // synchronous), the same order as the frameDirty_ one-block staging.
     struct DeferredParamTimer : juce::Timer
     {
-        explicit DeferredParamTimer (ParvatiAudioProcessor& o) : owner (o) {}
+        explicit DeferredParamTimer (HellcatAudioProcessor& o) : owner (o) {}
         void timerCallback() override;
-        ParvatiAudioProcessor& owner;
+        HellcatAudioProcessor& owner;
         // F-ios-perf-2: tick counter so the thermal sampler runs every 60th
         // callback (~1 Hz at the timer's 60 Hz) instead of every tick.
         int tick = 0;
@@ -610,5 +610,5 @@ private:
     // parameterID -> index into getPatchParamDescriptors() for O(1) lookups.
     std::unordered_map<std::string, int> paramIndex_;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParvatiAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HellcatAudioProcessor)
 };

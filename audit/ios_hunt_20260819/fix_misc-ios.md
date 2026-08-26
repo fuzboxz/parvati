@@ -1,11 +1,11 @@
 # Fix report — key `misc-ios` (iOS hunt wave, 2026-08-19)
 
-Owns exactly: `tests/parvati_tests.cpp` (one guard), `audit/ios_device_checklist.md`
+Owns exactly: `tests/hellcat_tests.cpp` (one guard), `audit/ios_device_checklist.md`
 (new), `CHANGELOG.md` (one appended section). No other files touched.
 
 ## FIX 1 — F-ios-build-3: `std::system` blocks the iOS toolchain build of `parvati_tests`
 
-- **Change:** `tests/parvati_tests.cpp` `toolAvailable()` (was :55) now returns
+- **Change:** `tests/hellcat_tests.cpp` `toolAvailable()` (was :55) now returns
   `false` on iOS without invoking the shell, behind a new `PARVATI_TESTS_IOS` macro.
   The two call sites (:202-203) are unchanged — they only consume the bool.
 - **Why not `#if ! JUCE_IOS`:** this harness is deliberately JUCE-free (pure

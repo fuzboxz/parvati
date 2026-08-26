@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FactoryPresetInstaller.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FactoryPresetInstaller.h.
 
 #include "FactoryPresetInstaller.h"
 
@@ -10,7 +10,7 @@
 #include <mutex>
 #include <set>
 
-namespace parvati
+namespace hellcat
 {
 namespace
 {
@@ -119,7 +119,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         const bool markerFastPath = installMarkerMatches (factoryDir);
 
         // Legacy cleanup (pre-release): the previous flat layout extracted to
-        // Parvati/Factory and Parvati/FactoryMulti. Those are superseded by
+        // Hellcat/Factory and Hellcat/FactoryMulti. Those are superseded by
         // FACTORY/<bank>/ and FACTORY_MULTI/, so remove the old flat dirs once.
         // Only the two known legacy names are touched. On a CASE-INSENSITIVE FS
         // (default macOS APFS) "Factory" and "FACTORY" are the same directory,
@@ -148,9 +148,9 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // renames / content edits / removals (e.g. consolidating "Poly 6" +
         // "Poly 16" into "Poly") propagate to an already-installed user tree:
         // writeIfMissing alone would leave the old "Poly 6/16" on disk forever
-        // AND skip the new "Poly" entirely (the dir already has *.parvati).
+        // AND skip the new "Poly" entirely (the dir already has *.yml).
         // TEMPLATES/ is stock-only (user saves go to USER/), so removing a local
-        // .parvati that is no longer in the embedded set is safe.
+        // .yml that is no longer in the embedded set is safe.
         //
         // The banks run writeIfMissing UNCONDITIONALLY per resource (the old
         // one-shot dirHasPresets existence gate is gone): the .PRO side looked
@@ -177,7 +177,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
 
             const juce::String name (originalName);
             // The staged name encodes the bank: "A__000.PRO" (bank A),
-            // "MULTI__000.MUL" (a multi), "TEMPLATE__Poly.parvati" (a stock
+            // "MULTI__000.MUL" (a multi), "TEMPLATE__Poly.yml" (a stock
             // template). Split at the first "__": token before, filename after.
             const int sep = name.indexOf ("__");
             if (sep <= 0 || sep >= name.length() - 2)
@@ -220,7 +220,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         }
 
         // Remove stock templates no longer in the embedded set (e.g. the removed
-        // "Poly 6" / "Poly 16"). TEMPLATES/ is stock-only, so any local .parvati
+        // "Poly 6" / "Poly 16"). TEMPLATES/ is stock-only, so any local .yml
         // absent from the embedded set is a stale stock template.
         // F-ios-files-4 (iOS hunt 2026-08-19): SKIP files matching the JUCE
         // TemporaryFile shape ("<name>_temp<hex>", created IN the target
@@ -230,6 +230,10 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // fail for that run). Temps never match an embedded name, so skipping
         // them changes nothing for a settled tree.
         juce::Array<juce::File> localTemplates;
+        templatesDir.findChildFiles (localTemplates, juce::File::findFiles, false, "*.yml");
+        // v2 sweep: also purge every legacy "*.parvati" template (the
+        // 2026-08-26 extension rename). Installed trees otherwise keep the
+        // dead files forever and the browser would still list them.
         templatesDir.findChildFiles (localTemplates, juce::File::findFiles, false, "*.parvati");
         for (const auto& f : localTemplates)
         {
@@ -265,4 +269,4 @@ void resetInstallOnceForTest()
     g_installDone.store (false, std::memory_order_relaxed);
     g_installOnceFlag = std::make_unique<std::once_flag>();
 }
-}  // namespace parvati
+}  // namespace hellcat

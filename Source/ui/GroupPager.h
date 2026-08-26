@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // GroupPager — a reusable sub-tab strip that paginates ONE editor-owned
 // ParamPage by its named groups. Each sub-tab calls page->setVisibleGroups
@@ -10,9 +10,9 @@
 //   MODIFIERS    [1-2] [3-4]
 //   ENV/LFO/SEQ  one generator per sub-tab
 //
-// The page stays owned by ParvatiEditor (reparent, never regenerate); GroupPager
+// The page stays owned by HellcatEditor (reparent, never regenerate); GroupPager
 // holds only a raw ParamPage* and never destroys it. The bare juce::TabbedButtonBar
-// renders the segmented sub-tabs via the editor-wide ParvatiLookAndFeel.
+// renders the segmented sub-tabs via the editor-wide HellcatLookAndFeel.
 
 #pragma once
 
@@ -45,7 +45,7 @@ public:
     // @p page is the editor-owned ParamPage to paginate (NOT owned/deleted here).
     // @p categoryColour is the bar's FUNCTION-CATEGORY colour (resolved from the
     // parent tab's shortName + theme); all of this pager's sub-tabs are coloured
-    // with it (see drawTabButton + parvatiTabCategoryColourId).
+    // with it (see drawTabButton + hellcatTabCategoryColourId).
     // @p tabDragSource (optional) makes the sub-tab buttons themselves draggable
     // mod-source drag SOURCES (see TabSourceMap); pass {} for non-generator
     // pagers (MODIFIERS) whose sub-tabs must stay plain tab buttons.
@@ -76,7 +76,7 @@ private:
     void selectSubset (int index);
 
     // Push the stored category colour onto every sub-tab button (drawTabButton
-    // reads parvatiTabCategoryColourId per TabBarButton).
+    // reads hellcatTabCategoryColourId per TabBarButton).
     void applySubTabCategoryColours();
 
     ThemeManager& themeManager_;

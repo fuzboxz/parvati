@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1JunoChorus — the Dual-BBD Chorus. This effect ports the documented
 // Roland Juno-60/106 chorus configuration into the FV-1 family. See the
@@ -25,14 +25,14 @@
 //                  must live inside it too.
 //   * param[4] is unused.
 
-#ifndef PARVATI_DSP_FX_FV1_FV1JUNOCHORUS_H
-#define PARVATI_DSP_FX_FV1_FV1JUNOCHORUS_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1JUNOCHORUS_H
+#define HELLCAT_DSP_FX_FV1_FV1JUNOCHORUS_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // One-pole high-pass with a settable cutoff, fixed-point in/out. Fv1Engine's
@@ -81,6 +81,6 @@ private:
     BbdLeakHp hpL_ {}, hpR_ {};       // per-line clock-leak high-pass
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1JUNOCHORUS_H
+#endif // HELLCAT_DSP_FX_FV1_FV1JUNOCHORUS_H

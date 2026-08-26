@@ -28,7 +28,7 @@
 //   [2] The NoteStepControl lane (seqnote step slider) defers the same way.
 //   [3] The processor itself keeps functioning (render still finite).
 //
-// Run: ./build_unified/parvati_unified_tests param_thread_test
+// Run: ./build_unified/hellcat_unified_tests param_thread_test
 
 #include <atomic>
 #include "unified_test_runner.h"
@@ -69,7 +69,7 @@ void pumpMessages (int ms)
 
 // One write from the MESSAGE thread: the listener's synchronous path (the
 // immediate refresh branch) must still work after the off-thread storm.
-void messageThreadWrite (ParvatiAudioProcessor& p, const char* id, float v)
+void messageThreadWrite (HellcatAudioProcessor& p, const char* id, float v)
 {
     if (auto* param = p.getApvts().getParameter (id))
         param->setValueNotifyingHost (v);
@@ -80,7 +80,7 @@ TEST(param_thread_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
 
-    ParvatiAudioProcessor processor;
+    HellcatAudioProcessor processor;
     processor.prepareToPlay (48000.0, 256);
     processor.syncAllParamsToEngine();
 

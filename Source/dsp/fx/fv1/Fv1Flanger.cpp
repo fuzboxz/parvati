@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Flanger implementation — short modulated delay, 180-deg stereo phases,
 // damped feedback up to 0.92.
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // BASE-DELAY GLIDE (2026-08-21, the Fv1Echo/Fv1ClockedDelay idiom): the
@@ -78,7 +78,7 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
     // the loop signal LEGALLY exceeds the Q.23 rail on a unity input — the old
     // f24_addSat hard-clipped every recirculation, squaring the resonant
     // buildup: measured -58 dB inharmonic foldback splatter on a PURE SINE
-    // (tests/parvati_fx_foldback_probe). The float-domain soft knee below is
+    // (tests/hellcat_fx_foldback_probe). The float-domain soft knee below is
     // transparent up to +/-0.6 (C1 at the knee) and eases into the rail like
     // a regen analog stage — the jet character stays, the edges are removed.
     const int32_t fbTap = damp_.process (rL);
@@ -101,4 +101,4 @@ void Fv1Flanger::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = rR;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

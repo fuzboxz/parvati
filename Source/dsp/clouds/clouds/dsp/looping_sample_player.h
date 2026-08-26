@@ -52,7 +52,7 @@ class LoopingSamplePlayer {
   LoopingSamplePlayer() { }
   ~LoopingSamplePlayer() { }
   
-  // PARVATI PATCH: Q12.20 -> ReadHermite fractional: take only the low 16 bits.
+  // HELLCAT PATCH: Q12.20 -> ReadHermite fractional: take only the low 16 bits.
   // `x << 4` overflows int32 (UB) whenever the integral part is nonzero;
   // unsigned shift + truncate is bit-identical to the intended two's-complement result.
   static inline uint16_t frac16FromQ12 (int32_t x) { return static_cast<uint16_t> ((static_cast<uint32_t> (x) << 4) & 0xffffu); }

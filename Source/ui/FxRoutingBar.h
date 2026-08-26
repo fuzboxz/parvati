@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FxRoutingBar — the slim ROUTING column (column 0 of the FX page's 4-column
 // top row: [ ROUTING | FX1 | FX2 | FX3 ]). It holds the chain-level routing
@@ -27,9 +27,9 @@
 #include <memory>
 #include <array>
 
-#include "ThemeManager.h"     // also brings ParvatiTheme.h
+#include "ThemeManager.h"     // also brings HellcatTheme.h
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class FxFlowDiagram;
 
 //==============================================================================
@@ -45,7 +45,7 @@ public:
     static constexpr int kStepBtnH   = 44;   // ◀ ▶ topology stepper height
     static constexpr int kEqKnobSize = 44;   // EQ rotary dial (was 42; HIG minimum)
 
-    FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
+    FxRoutingBar (HellcatAudioProcessor& processor, ThemeManager& themeManager);
     ~FxRoutingBar() override;
 
     void paint (juce::Graphics&) override;
@@ -56,7 +56,7 @@ public:
     void applyThemeColors();
 
 private:
-    ParvatiAudioProcessor& processor_;
+    HellcatAudioProcessor& processor_;
     ThemeManager&          themeManager_;
 
     // ---- Routing: flow diagram + ◀ ▶ steppers + Dry/Wet knob ----

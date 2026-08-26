@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ModDestMap.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ModDestMap.h.
 
 #include "ui/ModDestMap.h"
 
@@ -6,7 +6,7 @@
 
 #include <juce_core/juce_core.h>  // juce::String
 
-namespace parvati::ModDestMap
+namespace hellcat::ModDestMap
 {
 namespace
 {
@@ -182,4 +182,4 @@ bool isFxDest (ModDst dest) noexcept
 {
     return dest >= kFxModDstOffset;
 }
-}  // namespace parvati::ModDestMap
+}  // namespace hellcat::ModDestMap

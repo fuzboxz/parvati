@@ -11,8 +11,8 @@
 // Field order of uint24c_t is deliberately {carry, integral, fractional}
 // to match base.h.
 
-#ifndef PARVATI_DSP_FIXED_TYPES_H
-#define PARVATI_DSP_FIXED_TYPES_H
+#ifndef HELLCAT_DSP_FIXED_TYPES_H
+#define HELLCAT_DSP_FIXED_TYPES_H
 
 #include <cstdint>
 
@@ -35,4 +35,4 @@ struct uint24c_t {
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_FIXED_TYPES_H
+#endif  // HELLCAT_DSP_FIXED_TYPES_H

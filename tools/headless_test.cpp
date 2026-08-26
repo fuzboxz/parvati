@@ -1,6 +1,6 @@
 // Headless Layer-3a verification: instantiate the plugin, prepare it, push a
 // NoteOn, and confirm it produces non-silent audio. Not shipped — build only
-// via the `parvati_headless_test` CMake target.
+// via the `hellcat_headless_test` CMake target.
 
 #include <cmath>
 #include <cstdio>
@@ -15,7 +15,7 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // AudioProcessor needs this once.
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 512);
 
     constexpr int kBlocks = 100;   // ~1.07 s at 48 kHz / 512
@@ -42,7 +42,7 @@ int main()
             }
     }
 
-    std::printf ("parvati_headless_test: %d blocks, peak=%.6f\n", kBlocks, peak);
+    std::printf ("hellcat_headless_test: %d blocks, peak=%.6f\n", kBlocks, peak);
 
     // Non-silent => success (exit 0).
     return peak > 1.0e-4 ? 0 : 2;

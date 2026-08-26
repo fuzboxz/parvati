@@ -13,7 +13,7 @@
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 #include "dsp/fx/fv1/Fv1JunoChorus.h"
 
-namespace fv1 = parvati::fv1;
+namespace fv1 = hellcat::fv1;
 
 namespace
 {
@@ -41,7 +41,7 @@ public:
 
 TEST(fv1_engine_test)
 {
-    using namespace parvati::fv1;
+    using namespace hellcat::fv1;
 
     // ---- Fixed-point round-trip ----
     {

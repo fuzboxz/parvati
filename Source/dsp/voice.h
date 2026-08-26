@@ -29,8 +29,8 @@
 //  * The `static uint8_t ops[9]` scratch in the firmware LoadSources is a
 //    local array here (per-voice; it must not be shared across voices).
 
-#ifndef PARVATI_DSP_VOICE_H_
-#define PARVATI_DSP_VOICE_H_
+#ifndef HELLCAT_DSP_VOICE_H_
+#define HELLCAT_DSP_VOICE_H_
 
 #include <array>
 #include <cstdint>
@@ -235,7 +235,7 @@ class Voice {
     // in RenderOscillators() (direct osc pitch, independent of the mod matrix).
     int16_t pitch_bend_offset_ {};
 
-    // Live part-parameter retune (Parvati extension; the firmware computes
+    // Live part-parameter retune (Hellcat extension; the firmware computes
     // the 14-bit pitch only at NoteOn). A tuning/spread edit on a SOUNDING
     // voice stages the pitch DELTA here; RenderOscillators() glides the
     // offset toward the target at block rate. Trigger() resets both to zero:
@@ -259,8 +259,8 @@ class Voice {
     // (voice.cc:441-442) and the ANALOG mixer stage smooths the DAC steps in
     // hardware. The digital port has no analog domain, so a mix_balance /
     // mix_parameter tick steps the osc crossfade gains by up to 16/255 of
-    // the waveform — the zipper measured at 0.0597 by parvati_synth_drag_
-    // probe (gate 0.05). Parvati glides each gain linearly across the block
+    // the waveform — the zipper measured at 0.0597 by hellcat_synth_drag_
+    // probe (gate 0.05). Hellcat glides each gain linearly across the block
     // (~0.9 ms slew), emulating the analog smoothing. Static CVs render
     // byte-identically to the firmware: the first block after Init() snaps
     // to the CV, and a steady CV has a zero glide diff (pinned by the parity
@@ -288,4 +288,4 @@ class Voice {
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_VOICE_H_
+#endif  // HELLCAT_DSP_VOICE_H_

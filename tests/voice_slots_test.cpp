@@ -1,4 +1,4 @@
-// Voice-slots (Parvati extension) test — verifies the SLOTS MODEL on top of
+// Voice-slots (Hellcat extension) test — verifies the SLOTS MODEL on top of
 // the faithful 6-voicecard engine:
 //
 //   * voiceSlots is the SINGLE SOURCE OF TRUTH: each Part has 1..16 voices
@@ -19,7 +19,7 @@
 //     capture/restore; a legacy v5-sized blob (no v6 tail) materializes its
 //     slot counts from the blob bitmasks (popcount).
 //
-// Harness mirrors polyphony_test: a ParvatiAudioProcessor, edits via the
+// Harness mirrors polyphony_test: a HellcatAudioProcessor, edits via the
 // engine API, notes on MIDI channel 1, active-voice inspection on the engine.
 
 #include <algorithm>
@@ -35,7 +35,7 @@
 #include <juce_events/juce_events.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 
@@ -44,7 +44,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -55,7 +55,7 @@ void renderIdle (ParvatiAudioProcessor& p, int blocks)
     }
 }
 
-void noteEvent (ParvatiAudioProcessor& p, const juce::MidiMessage& m)
+void noteEvent (HellcatAudioProcessor& p, const juce::MidiMessage& m)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -83,7 +83,7 @@ TEST(voice_slots_test)
     // ---- [a] Default = Part 0 with 6 materialized voices ----
     {
         std::printf ("\n[a] default: part 0 owns 6 voices (faithful hardware)\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -107,7 +107,7 @@ TEST(voice_slots_test)
     // ---- [b] Fixed slots: polyphony beyond the card count, from the pool ----
     {
         std::printf ("\n[b] fixed slots: part 0 (6 cards) at 16 slots sustains 10 notes\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -127,7 +127,7 @@ TEST(voice_slots_test)
     // ---- [c] Every Part maxed simultaneously (pool never steals) ----
     {
         std::printf ("\n[c] all 6 parts at 16 slots, one card each\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -152,7 +152,7 @@ TEST(voice_slots_test)
     // ---- [d] Slots alone enable a Part (the card gate is gone) ----
     {
         std::printf ("\n[d] slots activate a part with no legacy card assignment\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -174,7 +174,7 @@ TEST(voice_slots_test)
     // ---- [e] Aux routing: a Part's voices spread round-robin over ITS DERIVED cards ----
     {
         std::printf ("\n[e] derived card tagging (round-robin over the derived share)\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -204,7 +204,7 @@ TEST(voice_slots_test)
     // ---- [f] MONO unison size = the Part's voice count ----
     {
         std::printf ("\n[f] MONO fires every allocated voice\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -238,7 +238,7 @@ TEST(voice_slots_test)
     // ---- [g] Host engine-state v6 round-trip: slots + names ----
     {
         std::printf ("\n[g] engine-state capture/restore round-trips slots + names\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
@@ -249,7 +249,7 @@ TEST(voice_slots_test)
         juce::MemoryBlock blob;
         engine.captureState (blob);
 
-        ParvatiAudioProcessor other;
+        HellcatAudioProcessor other;
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
         check (other.getEngine().restoreState (blob.getData(), blob.getSize()), "v6 blob restores");
@@ -264,7 +264,7 @@ TEST(voice_slots_test)
     // ---- [h] Legacy v5 blob (no v6 tail) restores with AUTO + empty names ----
     {
         std::printf ("\n[h] legacy v5 blob -> AUTO slots, empty names\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         juce::MemoryBlock blob;
@@ -296,7 +296,7 @@ TEST(voice_slots_test)
             w += kPartCore;
         }
         dst[4] = 5;
-        ParvatiAudioProcessor other;
+        HellcatAudioProcessor other;
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
         check (other.getEngine().restoreState (v5.getData(), v5.getSize()), "legacy v5 blob restores");
@@ -304,23 +304,23 @@ TEST(voice_slots_test)
         check (other.getEngine().getPartName (0).isEmpty(), "legacy blob -> empty name");
     }
 
-    // ---- [i] .parvati multi round-trips slots + names ----
+    // ---- [i] .yml multi round-trips slots + names ----
     {
-        std::printf ("\n[i] .parvati multi round-trips slots + names\n");
-        ParvatiAudioProcessor proc;
+        std::printf ("\n[i] .yml multi round-trips slots + names\n");
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         SynthEngine& engine = proc.getEngine();
         engine.setPartVoiceSlots (0, 12);
         engine.setPartName (0, "Kick");
-        const juce::String yaml = parvati::preset::serializeParvatiMulti (proc);
+        const juce::String yaml = hellcat::preset::serializeHellcatMulti (proc);
         check (yaml.contains ("voice_slots: 12"), "serialized multi carries voice_slots");
         check (yaml.contains ("name: \"Kick\""), "serialized multi carries the part name");
 
-        ParvatiAudioProcessor other;
+        HellcatAudioProcessor other;
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
-        check (parvati::preset::applyParvatiMulti (other, yaml), "multi re-applies");
+        check (hellcat::preset::applyHellcatMulti (other, yaml), "multi re-applies");
         check (other.getEngine().getPartVoiceSlots (0) == 12, "voice_slots round-trips through the multi format");
         check (other.getEngine().getPartName (0) == "Kick", "part name round-trips through the multi format");
         renderIdle (other, 2);

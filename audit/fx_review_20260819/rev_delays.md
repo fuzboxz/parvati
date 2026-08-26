@@ -25,7 +25,7 @@ All evidence gathered and arithmetic verified. Compiling the final report.
 
 **Param edges (lens 2):** p1=0 → fb=0, single pass ✓; min time 10 ms (no empty-delay degeneracy; `readFrac` self-clamps d≥1) ✓; p0=1/p3=1 → spread silently degrades to 16383/15401 = 1.064× (documented ring guard) ✓. Lenses 3/6/7: no OS-requiring nonlinearity; `latency()==0` consistent with the time-aligned resampler; shared RateBridge covered in §2/§3 context.
 
-**Test suggestions:** (a) stepped-Time sweep continuity (impulse train, sweep p0, isolated-spike count vs static-param floor — the pop-test heuristic at tests/parvati_fx_bridge_pop_test.cpp:74); (b) DSP-vs-table tail parity at p1∈{0.5,0.9} × spread {0,1}.
+**Test suggestions:** (a) stepped-Time sweep continuity (impulse train, sweep p0, isolated-spike count vs static-param floor — the pop-test heuristic at tests/hellcat_fx_bridge_pop_test.cpp:74); (b) DSP-vs-table tail parity at p1∈{0.5,0.9} × spread {0,1}.
 
 ## 2. Fv1ClockedDelay (`Source/dsp/fx/fv1/Fv1ClockedDelay.{h,cpp}`) — verdict: FINDINGS (minor)
 
@@ -43,7 +43,7 @@ All evidence gathered and arithmetic verified. Compiling the final report.
 
 **[OK-PINNED] Drift-free m (lens 6).** Persistent carry (`hostWritePhase_ = phase − span`, :153) makes the long-run internal count exactly n·ratio; float-grid jitter is a bounded random walk (≪ 1 sample/hour at 44.1 k), no systematic pitch offset. `m ≤ ceil(n·ratio) ≤ maxM_−2` for n ≤ maxBlock (chain clamps) → scratch never overrun; `i1`/`j1` clamps keep all reads in-range.
 
-**[OK-PINNED] m==0 + sub-chunk seam.** The `m<=0` ZOH-hold of `prevTail_` (m==0 branch of `internalToHost`) avoids the 1-sample-block dropout — pinned by tests/parvati_fx_bridge_tinychunk.cpp; the head-overlap blend (`vj<0` blends `prevTail_`@vj=−1 with `scratch_[0]`, :191–205) makes sub-chunk resampling seamless — pinned by tests/parvati_fx_bridge_pop_test.cpp. `prevTail_` is exactly at vj=−1 by scratch continuity ✓. The `vj=(i−phaseStart_)·ratio_` mapping is grid-consistent with the downsample (internal sample m sits at host time `phaseStart+m·invRatio`) → zero net latency, consistent with `latency()==0` (lens 3).
+**[OK-PINNED] m==0 + sub-chunk seam.** The `m<=0` ZOH-hold of `prevTail_` (m==0 branch of `internalToHost`) avoids the 1-sample-block dropout — pinned by tests/hellcat_fx_bridge_tinychunk.cpp; the head-overlap blend (`vj<0` blends `prevTail_`@vj=−1 with `scratch_[0]`, :191–205) makes sub-chunk resampling seamless — pinned by tests/hellcat_fx_bridge_pop_test.cpp. `prevTail_` is exactly at vj=−1 by scratch continuity ✓. The `vj=(i−phaseStart_)·ratio_` mapping is grid-consistent with the downsample (internal sample m sits at host time `phaseStart+m·invRatio`) → zero net latency, consistent with `latency()==0` (lens 3).
 
 **[RISK] Host < 32 kHz: unfiltered internal→host decimation (lenses 3/6).** `aaActive_ = hostRate > kInternalRate` (:52) disables **all** filtering below 32 kHz, but the internal→host direction is then a *downsample*: internal Nyquist is 16 kHz, while e.g. a 22050 Hz host has Nyquist 11025 Hz — engine-generated/upsample-image content in 11025–16000 Hz folds into 6021–11025 Hz with no attenuation. The :49–51 comment ("At 32 k-or-lower host there is no aliasing") is wrong for that direction. Trigger: host device rate < 32 kHz (22050-class video hosts). Fix: run the recon cascade at `min(14 kHz, 0.45·hostRate)` on `internalToHost` whenever host < 32 kHz too.
 
@@ -57,4 +57,4 @@ All evidence gathered and arithmetic verified. Compiling the final report.
 
 ---
 
-*Commands a supervisor may run to re-verify:* the JUCE-free delay tests per their headers — `clang++ -std=c++17 -O2 -I Source tests/fv1_clocked_delay_test.cpp Source/dsp/fx/fv1/Fv1ClockedDelay.cpp` (run binary); `tests/fv1_newfamily_test.cpp`, `tests/parvati_fx_bridge_tinychunk.cpp`, `tests/parvati_fx_bridge_pop_test.cpp` via the CMake targets noted in those files. Not run here (review is read-only).
+*Commands a supervisor may run to re-verify:* the JUCE-free delay tests per their headers — `clang++ -std=c++17 -O2 -I Source tests/fv1_clocked_delay_test.cpp Source/dsp/fx/fv1/Fv1ClockedDelay.cpp` (run binary); `tests/fv1_newfamily_test.cpp`, `tests/hellcat_fx_bridge_tinychunk.cpp`, `tests/hellcat_fx_bridge_pop_test.cpp` via the CMake targets noted in those files. Not run here (review is read-only).

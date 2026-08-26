@@ -1,4 +1,4 @@
-// Multitimbral verification for Parvati.
+// Multitimbral verification for Hellcat.
 // Proves: (1) each of the 6 Parts holds its OWN patch (distinct bytes per part),
 // (2) MIDI channel routing sends ch1->Part0, ch2->Part1, (3) a channel-1 note
 // triggers a Part0 voice only (never steals a Part1 voice), and (4) both Parts
@@ -39,7 +39,7 @@ bool voiceInPart (int voice, int part)
     return false;
 }
 
-double renderBlocks (ParvatiAudioProcessor& proc, int blocks)
+double renderBlocks (HellcatAudioProcessor& proc, int blocks)
 {
     double peak = 0.0;
     for (int b = 0; b < blocks; ++b)
@@ -59,9 +59,9 @@ TEST(multitimbral_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
 
-    std::printf ("=== Parvati Multitimbral (6 Parts) ===\n");
+    std::printf ("=== Hellcat Multitimbral (6 Parts) ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     auto& eng = proc.getEngine();
@@ -172,7 +172,7 @@ TEST(multitimbral_test)
 
     std::printf ("\n[5] Derived voicecard masks (contiguous share of the slots)\n");
     {
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         p.prepareToPlay (48000.0, 256);
         SynthEngine& e = p.getEngine();
 

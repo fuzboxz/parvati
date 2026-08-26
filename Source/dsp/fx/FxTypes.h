@@ -1,6 +1,6 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
-// FxTypes — Parvati-exclusive per-part FX enums and constants. Included by
+// FxTypes — Hellcat-exclusive per-part FX enums and constants. Included by
 // SynthEngine.h (so engine/Preset/ParameterLayout code sees it) AND by the FX
 // DSP core (FxProcessor.h/FxChain.h), which lets the DSP layer reference these
 // types WITHOUT pulling in all of SynthEngine.h (avoiding a circular include:
@@ -107,7 +107,7 @@ inline std::array<int, 3> fxOrderPermutation (uint8_t idx)
 // (helps the user find which effect does what). The APVTS choice list (host surface)
 // stays FLAT and enum-ordered: the stored value is the enum/choice index, so
 // categories never touch serialization, host automation, or the < > step
-// buttons. Only Parvati's own FxTypeCombo popup presents the grouped order.
+// buttons. Only Hellcat's own FxTypeCombo popup presents the grouped order.
 enum class FxCategory : uint8_t {
     None = 0,        // the None slot — uncategorized, always listed first
     Delay,           // repeats/echoes of the past
@@ -186,7 +186,7 @@ inline FxCategory fxCategoryOf (FxType t) noexcept
 // a category. DISPLAY ONLY — the ComboBox's internal items stay in ENUM order
 // (ComboBoxAttachment syncs by item INDEX, so position == choice index there;
 // the popup's action lambda maps back through this table). Pinned by
-// parvati_clouds_fx_test (all types exactly once; category order ascending).
+// hellcat_clouds_fx_test (all types exactly once; category order ascending).
 inline std::array<FxType, static_cast<size_t> (FxType::Count)> fxTypeDisplayOrder() noexcept
 {
     return { {

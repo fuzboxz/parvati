@@ -232,7 +232,7 @@ class SampleRateConverter<SRC_DOWN, ratio, filter_size> {
     // so the first circular call after a fast call reads an FIR window that
     // mixes fresh, stale-mirror and stale-history samples: a large-amplitude
     // discontinuity. That is harmless upstream, where one caller feeds whole
-    // fixed-size buffers and never switches paths mid-stream, but Parvati
+    // fixed-size buffers and never switches paths mid-stream, but Hellcat
     // drives this from the FX chain with VARIABLE sub-chunk sizes that cross
     // the 8 * filter_size threshold inside a single host block (full sub-
     // chunks take the fast path, the trailing remainder drops back to the

@@ -14,7 +14,7 @@
 //       manual bpm; the setter clamps to 40..300 (restored state is never
 //       trusted raw).
 //
-// Run: ./build_unified/parvati_unified_tests undo_clock_test
+// Run: ./build_unified/hellcat_unified_tests undo_clock_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -41,7 +41,7 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-void renderBlock (ParvatiAudioProcessor& p)
+void renderBlock (HellcatAudioProcessor& p)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -72,7 +72,7 @@ static int testFixedUndoBound()
     std::printf ("[fixed-size undo history]\n");
     int fails = g_failures;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     auto& um = proc.getUndoManager();
 
     const auto& descs = getPatchParamDescriptors();
@@ -91,7 +91,7 @@ static int testFixedUndoBound()
         value.setValue (original + 1.0f + (float) (i & 1));
     }
     check (um.canUndo(), "history is functional after thousands of transactions");
-    check (um.getNumberOfUnitsTakenUpByStoredCommands() <= ParvatiAudioProcessor::kUndoMaxUnits,
+    check (um.getNumberOfUnitsTakenUpByStoredCommands() <= HellcatAudioProcessor::kUndoMaxUnits,
            "stored undo units never exceed the fixed cap");
 
     // The stack is BOUNDED: undoing exhausts after a small, fixed number of
@@ -119,7 +119,7 @@ static int testManualClock()
     std::printf ("[manual arp-clock fallback]\n");
     int fails = g_failures;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     check (proc.getManualTempoBpm() == 120, "manual bpm defaults to 120 (the old hard-coded value)");
@@ -176,7 +176,7 @@ static int testManualClock()
     juce::MemoryBlock state;
     proc.getStateInformation (state);
     {
-        ParvatiAudioProcessor fresh;
+        HellcatAudioProcessor fresh;
         fresh.setStateInformation (state.getData(), (int) state.getSize());
         check (fresh.getManualTempoBpm() == 143, "manual bpm persists through plugin state");
     }
@@ -191,7 +191,7 @@ static int testManualClock()
         check (xml != nullptr && xml->hasAttribute ("manual_bpm"), "saved state carries manual_bpm");
         if (xml != nullptr)
             xml->removeAttribute ("manual_bpm");
-        ParvatiAudioProcessor legacy;
+        HellcatAudioProcessor legacy;
         legacy.setManualTempoBpm (200);   // ensure the restore must OVERRIDE this
         juce::MemoryBlock stripped;
         proc.copyXmlToBinary (*xml, stripped);
@@ -221,7 +221,7 @@ static int testSettingsPanelDegradation()
     std::printf ("[settings panel R3 degradation (Arp Clock rows)]\n");
     int fails = g_failures;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     ThemeManager themes;
     SettingsPanel panel (proc, themes, {}, {}, {}, {}, {});
 

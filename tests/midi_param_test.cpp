@@ -55,19 +55,19 @@ void addCcAt (juce::MidiBuffer& buf, int controller, int value, int pos)
 }
 
 // Run the MIDI through the processor (handleBuffer runs first inside processBlock).
-void processMidi (ParvatiAudioProcessor& proc, const juce::MidiBuffer& midi)
+void processMidi (HellcatAudioProcessor& proc, const juce::MidiBuffer& midi)
 {
     juce::AudioBuffer<float> buf (2, 64);
     buf.clear();
     proc.processBlock (buf, const_cast<juce::MidiBuffer&> (midi));
 }
 
-float rawVal (ParvatiAudioProcessor& proc, const char* id)
+float rawVal (HellcatAudioProcessor& proc, const char* id)
 {
     return proc.getApvts().getRawParameterValue (id)->load();
 }
 
-uint8_t patchByte (ParvatiAudioProcessor& proc, int offset)
+uint8_t patchByte (HellcatAudioProcessor& proc, int offset)
 {
     return proc.getEngine().getPart (0).patchBytes[(size_t) offset];
 }
@@ -76,9 +76,9 @@ uint8_t patchByte (ParvatiAudioProcessor& proc, int offset)
 TEST(midi_param_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
-    std::printf ("=== Parvati MIDI CC/NRPN parameter mapping (spec F.4) ===\n");
+    std::printf ("=== Hellcat MIDI CC/NRPN parameter mapping (spec F.4) ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 64);
 
     // ---- NRPN: address == byte; value is the DIRECT param value (clamped) ----
@@ -188,7 +188,7 @@ TEST(midi_param_test)
     {
         const int before = static_cast<int> (rawVal (proc, "filter1_cutoff"));
         juce::MidiBuffer m;
-        addNrpn (m, 127, 9);   // addr 127 = polyphony_mode; no Parvati descriptor
+        addNrpn (m, 127, 9);   // addr 127 = polyphony_mode; no Hellcat descriptor
         processMidi (proc, m);
         const int after = static_cast<int> (rawVal (proc, "filter1_cutoff"));
         std::printf ("     filter1_cutoff before = %d, after NRPN(127) = %d (expect unchanged)\n", before, after);

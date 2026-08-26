@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 // Ambika analog-filter emulation. Original Ambika firmware (C) Emilie Gillet, GPL3.
 //
 // There is NO filter code in the Ambika firmware: the filter is ANALOG hardware
@@ -10,7 +10,8 @@
 //   * 4-pole Ladder                 -> juce::dsp::LadderFilter, LPF24 (internal tanh saturation;
 //                                   controllable Drive scales the saturator -> bass-drop at high Q).
 //   * 4-pole SSM2164 ("4P")       -> TWO juce::dsp::StateVariableTPTFilter (lowpass) IN SERIES,
-//                                   cutoff+resonance linked — a linear 24 dB/oct baseline.
+//                                   per-stage Q = 0.5*(1-res)^(-0.616): the exact 24 dB/oct cascade
+//                                   baseline at knob 0; the peak tracks the family cluster.
 //   * 2-pole SVF (SSM2164)        -> juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high)
 //   * 4-pole OTA ("SMR4")          -> custom OTA-cascade model (this repo), NOT juce::dsp. Four
 //                                   LM13700-style stages; each integrates gm*tanh(error/2Vt).
@@ -45,10 +46,36 @@
 namespace ambika::dsp {
 
 // Selectable voicecard filter topology.
+//
+// LOUDNESS PARITY (2026-08-25 calibration): the six cards play together, so
+// their output levels must match roughly at equal settings. Four measures:
+//   1. Resonance maps share ONE law per pole count (see below). The knob is
+//      never a raw Q: the 2-pole cards use Q = 1/(2*(1-res)) (the Polivoks
+//      law; Q 0.5 at knob 0, onset at 1.0), the 4-pole cascade uses
+//      q = 0.5*(1-res)^(-0.616) per stage (EXACT 4-pole baseline at knob 0;
+//      the peak lands on the 2-pole family value, +20 dB at knob 0.95).
+//      The Ladder knob passes ladderResonanceKnob(). JUCE maps knob r to
+//      feedback k = 0.4 + 3.6*r. The remap inverts that offset. So the
+//      feedback becomes k = 4*knob above knob 0.1. The pre-parity raw-Q
+//      mapping left the SVF and 4P cards droopy and silent (up to 38 dB
+//      under the siblings).
+//   2. A static per-card output trim (the k*CardGain constants) levels the
+//      passband against the Ladder (the calibration reference card).
+//   3. The feedback cards (SMR4, IR3109) add a partial resonance
+//      compensation (1+kfb)^exp: high resonance thins their bass by
+//      1/(1+kfb), and their saturating stages sag further. The compensation
+//      keeps them near the Q-based cards (which keep DC gain 1).
+//   4. The OTA core runs on a 2 V signal scale (kOtaCoreScale) and its
+//      output passes a 10 Hz DC blocker: the pre-parity calibration fed the
+//      cores ~20x past the 2Vt knee (a rectified DC point down to -0.33 and
+//      a low-cutoff AC collapse up to 10 dB under the family).
+// Remaining spread at the extremes (self-oscillation at res 1.0, sub-300 Hz
+// cutoffs on the saturating cards, Filter Drive 12) is card character,
+// pinned by the filter_loudness_test bounds.
 enum class FilterTopology {
     FOUR_POLE_LADDER,   // 4-pole Ladder.  juce::dsp::LadderFilter LPF24 (tanh saturation; Drive control). Self-oscillating.
-    FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, cutoff+resonance linked. Linear baseline. Always LP.
-    TWO_POLE_SVF,       // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high).
+    FOUR_POLE_SSM2164,  // 4-pole ("4P").  TWO juce::dsp::StateVariableTPTFilter (lowpass) in series, per-stage Q = 0.5*(1-res)^(-0.616): the exact 24 dB/oct cascade baseline at knob 0, peak lands on the family cluster (+20 dB at knob 0.95). Always LP.
+    TWO_POLE_SVF,       // 2-pole state-variable (SSM2164).  juce::dsp::StateVariableTPTFilter (LP/BP/HP, NOTCH = low+high). Q = 1/(2*(1-res)), the same law as the Polivoks card.
     FOUR_POLE_OTA,      // 4-pole SMR4 OTA cascade (custom model). Four tanh OTA stages, 2Vt knee, normalised resonance VCA. Always LP. Self-oscillates at resonance 1.0.
     TWO_POLE_POLIVOKS,  // 2-pole Polivoks SVF (custom model). Op-amp character layer: asymmetric hard-shoulder rails, diode-style resonance limiting, Q-dependent damping sag, input offset, rate-limited outputs. LP + BP. HP/Notch clamp to LP. Self-oscillates at resonance 1.0.
     FOUR_POLE_IR3109    // 4-pole IR3109 (Juno-60/106-class) OTA cascade. Same structure as the SMR4, calibrated sibling: higher knee (0.10), milder resonance clip, kfb capped at 3.4 below the 4.0 onset. Never self-oscillates. Always LP.
@@ -89,6 +116,14 @@ public:
     static constexpr float kMaxHz = 16000.0f;
     // Resonance ceiling kept below the juce::dsp self-oscillation point (~1.0).
     static constexpr float kMaxResonance = 0.95f;
+    // 4P cascade peak-law exponent (2026-08-26 harmonization). Per-stage
+    // Q = 0.5*(1-res)^(-kSsm4PeakExp). Any power law keeps q(0) = 0.5, the
+    // EXACT cascade baseline (-12.04 dB at the cutoff). This exponent solves
+    // q(0.95)^2 = 10.0 (+20 dB): the 2-pole family peak at knob 0.95. The
+    // earlier sqrt law (exponent 0.5) gave q^2 = 0.25/(1-res) = 5 (+14 dB),
+    // 6..8 dB under the family cluster. Derivation: 0.05^(-E) = 2*sqrt(10)
+    // gives E = ln(2*sqrt(10))/ln(20) = 0.6158 ~= 0.616.
+    static constexpr double kSsm4PeakExp = 0.616;
 
     AnalogFilter() = default;
     ~AnalogFilter() = default;
@@ -120,9 +155,10 @@ public:
 
     // Saturation drive. Scales the tanh saturator of the Ladder card (1.2 ==
     // the juce::dsp::LadderFilter default), the OTA knee of the SMR4 card
-    // (knee = 2Vt / drive), and the clip and rate limits of the Polivoks
-    // card (more drive clips lower and slews slower). Cached; applied on the
-    // next commit().
+    // (knee = (2Vt/1.2) * cbrt(1.2/drive): anchored at drive 1.2. A linear
+    // law dropped the saturated output ~16 dB at drive 12, far below every
+    // other card), and the clip and rate limits of the Polivoks card.
+    // Cached; applied on the next commit().
     void setDrive (float newDrive) { drive_ = newDrive; dirty_ = true; }
 
     // TEST-ONLY: bypass the Polivoks character layer. The filter then runs
@@ -145,11 +181,22 @@ public:
     float          getCutoffHz() const noexcept  { return cutoffHz_; }
     float          getResonance() const noexcept { return resonance_; }
     bool           isPrepared()  const noexcept  { return prepared_; }
+    // Output loudness trim the filter currently applies (static card trim x
+    // resonance compensation). Read by the loudness parity test.
+    float          getLoudnessGain() const noexcept { return loudnessGain_; }
 
     // Map the firmware 8-bit cutoff (0..255) to Hz, exponential across ~20..16k.
     // Provided as a convenience; the primary path is setCutoffHz() driven by the
     // Voice (which already folds in keytracking + env + lfo before scaling).
     static float cutoffByteToHz (uint8_t cutoffByte);
+
+    // Remaps the resonance knob for the JUCE ladder. JUCE maps knob r to
+    // feedback k = 0.4 + 3.6*r internally; the ideal 4-pole law is k = 4*r.
+    // Returns the JUCE knob whose feedback equals the ideal law:
+    // (4*r - 0.4)/3.6, clamped to [0, 1]. Above knob 0.1 the ladder tracks
+    // k = 4*knob. Below 0.1 JUCE cannot go under k = 0.4: a dead zone holds
+    // that floor (peak -11.1 dB at the cutoff instead of the ideal -12.04 dB).
+    static float ladderResonanceKnob (float knob);
 
 private:
     // Pushes the cached cutoff/resonance + mode into the active filter(s).
@@ -165,7 +212,7 @@ private:
     float             resonance_ = 0.0f;
     // Ladder saturation drive. Default 1.2 == the juce::dsp::LadderFilter ctor
     // default, so the pre-control sound is preserved when Drive is untouched.
-    // The OTA card maps drive to the inverse knee (2Vt / drive).
+    // The OTA cards map drive to the softened knee law (see applyParams).
     float             drive_     = 1.2f;
 
     // Param / topology dirtiness tracking for the control-rate commit() contract.
@@ -201,7 +248,8 @@ private:
     juce::dsp::StateVariableTPTFilter<float> svfNotch_; // fixed highpass, used only for notch
 
     // ---- 4-pole OTA cascade family (SMR4 / IR3109) ----------------------------
-    // One sample of the OTA model. x = input. Returns the 4th stage output.
+    // One sample of the OTA model. x = input. Returns the 4th stage output
+    // (before the DC blocker and the loudness trim, both in processSample).
     // The two cards share this code; only the coefficients differ.
     float processOTASample (float x) noexcept;
     // Stage states = capacitor voltages (one per OTA pole).
@@ -215,8 +263,10 @@ private:
     //   G_     gLin/(1+gLin): linearised one-pole gain used by the feedback solve.
     //   G2..4  powers of G for the sigma sum.
     //   gk_    gLin*knee: the coefficient that multiplies the tanh.
-    //   knee_  the card knee base divided by drive. SMR4: 2Vt (0.052).
-    //          IR3109: 0.10 (higher headroom). invKnee_ is its reciprocal.
+    //   knee_  the card knee base scaled by the drive law (1.2/drive)^(1/3),
+    //          anchored at drive 1.2 (a linear law collapsed the loudness at
+    //          high drive; see setDrive). SMR4 base: 2Vt (0.052). IR3109
+    //          base: 0.10. invKnee_ is its reciprocal.
     //   kfb_   resonance feedback gain: kfb = res * kfbMax. For the SMR4 the
     //          factor 4 is the
     //          EXACT self-oscillation onset of four identical bilinear
@@ -229,15 +279,64 @@ private:
     float gLin_ = 0.0f, G_ = 0.0f, G2_ = 0.0f, G3_ = 0.0f, G4_ = 0.0f;
     float gk_ = 0.0f, knee_ = 1.0f, invKnee_ = 1.0f, kfb_ = 0.0f, invOnePlusR_ = 1.0f;
     // Resonance-VCA soft clip: unit-slope form kfb*vcaKnee*tanh(y4/vcaKnee).
-    // vcaKnee_ = 2Vt on the SMR4; kIr3109VcaKnee*2Vt on the IR3109 (milder).
+    // vcaKnee_ = 2Vt*kOtaCoreScale on the SMR4; kIr3109VcaKnee*2Vt*
+    // kOtaCoreScale on the IR3109 (milder). The core scale rides both knees.
     float kfbVca_ = 0.0f, vcaKnee_ = 1.0f, invVcaKnee_ = 1.0f;
+    // Output loudness trim: static card calibration times the resonance
+    // compensation (1+kfb)^exp. Computed in applyParams(), applied on every
+    // processSample() return. The ladder keeps 1.0 (its JUCE path is pinned
+    // bit-identical by hellcat_analog_filter_batch_test, and JUCE already
+    // half-compensates its resonance bass drop via comp = 0.5).
+    float loudnessGain_ = 1.0f;
+    // DC blocker for the OTA family (SMR4 / IR3109): a one-pole highpass at
+    // ~10 Hz. The saturating cascade RECTIFIES an asymmetric waveform (a saw
+    // within its period): measured DC operating points reach -0.26..-0.33 at
+    // hot levels, which steals headroom and sums across the 6 voices. A real
+    // card's output stage is AC-referenced; this models that coupling. The
+    // state and coefficient live here; the pole tracks the sample rate.
+    float otaDcState_  = 0.0f;
+    float otaDcCoeff_  = 0.001f;   // 1 - exp(-2*pi*10Hz/fs), set in applyParams
     // 2Vt of the LM13700 in normalized units (52 mV at 1.0 == 1 V full scale).
     // The Polivoks reuses the same normalized knee scale: its op-amp
     // saturation uses the same behavioural constant, scaled by Filter Drive.
     static constexpr float kTwoVt = 0.052f;
-    static constexpr float kInvTwoVt = 1.0f / 0.052f;
+    // OTA CORE SIGNAL SCALE (2026-08-25 loudness calibration). The physical
+    // stage knee stays the LM13700 2Vt (0.052); this factor sets the signal
+    // scale AT THE CORE. The card's input network attenuates the DAC signal
+    // before the summing node. So 1.0 full-scale at the core equals
+    // kOtaCoreScale volts, not 1 V. The pre-2026-08-25 calibration (1.0)
+    // drove every stage ~20x past its knee at hot levels. The rectified DC
+    // operating point reached -0.33. The low-cutoff AC output collapsed up
+    // to 10 dB under the sibling cards. Value 2.0 keeps the saturation
+    // audible: a hot saw still clips the first stages. The card still tracks
+    // the family loudness. The scale applies to the stage knee AND the
+    // resonance VCA knee. So every ratio-based character pin stays unchanged
+    // (knee ratios, harmonic deltas, self-oscillation semantics).
+    static constexpr double kOtaCoreScale = 2.0;
     // Hard cap on kfb_ (numeric guard only; kOnset <= ~4 keeps kfb small).
     static constexpr double kKfbHardMax = 1.0e12;
+
+    // ---- Loudness parity calibration (see the topology comment above) ------
+    // Static per-card output trims plus the feedback-card resonance
+    // compensation exponent, measured on the reference program (band-limited
+    // saw 110 Hz at amp 0.9, 24 partials, drive 1.2, 48 kHz, AC RMS) against
+    // the Ladder card (the calibration reference) across cutoff 500 Hz..6 kHz x resonance
+    // 0..0.95. Measured result: spread <= 4.5 dB over that band (2.0 dB at
+    // the neutral setting), <= 5.9 dB at resonance 0.95, <= 4.8 dB at Filter
+    // Drive 12. Pin: filter_loudness_test.
+    static constexpr float kLadderCardGain   = 1.00f;   // reference (JUCE path pinned bit-identical)
+    static constexpr float kSsm2164CardGain  = 0.78f;   // -2.2 dB
+    static constexpr float kSvfCardGain      = 0.78f;   // -2.2 dB
+    static constexpr float kSmr4CardGain     = 0.93f;   // -0.6 dB (x resonance compensation)
+    static constexpr float kPolivoksCardGain = 0.74f;   // -2.6 dB
+    static constexpr float kIr3109CardGain   = 1.00f;   // unity (x resonance compensation)
+    // Resonance compensation exponent for the feedback cards: output scales
+    // by (1+kfb)^exp. The IR3109 takes the stronger exponent: its factory
+    // kfb cap suppresses the ring, so without the extra lift its program
+    // loudness sags at high resonance (the never-screams character stays:
+    // the cap is in kfb, not in this gain).
+    static constexpr double kSmr4ResCompExp   = 0.50;
+    static constexpr double kIr3109ResCompExp = 0.65;
     // IR3109 (Juno-60/106-class) calibration. The card shares the OTA-cascade
     // structure with the SMR4; these constants make the character:
     //   kIr3109TwoVt   0.10: a higher stage knee than the SMR4's 0.052. The

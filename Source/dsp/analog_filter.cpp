@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 // Ambika analog-filter emulation (juce::dsp). See analog_filter.h for details.
 
 #include "dsp/analog_filter.h"
@@ -26,6 +26,12 @@ void AnalogFilter::prepare (double sampleRate, int blockSize)
     blockSize_  = juce::jmax (1, blockSize);
 
     const auto spec = makeSpec (sampleRate_, blockSize_);
+
+    // DC blocker pole: one-pole highpass at ~10 Hz (see the header). Depends
+    // only on the sample rate, so it is computed HERE, not in applyParams()
+    // (the parameter-smoothing path calls commit() once per sample).
+    otaDcCoeff_ = static_cast<float> (1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 10.0 / sampleRate_));
+    otaDcState_ = 0.0f;
 
     // Both 4-pole topologies are lowpass-only in the hardware -> LPF24.
     ladder_.prepare (spec);
@@ -129,6 +135,7 @@ void AnalogFilter::commit()
             case FilterTopology::FOUR_POLE_OTA:
             case FilterTopology::FOUR_POLE_IR3109:
                 otaState_[0] = otaState_[1] = otaState_[2] = otaState_[3] = 0.0f;
+                otaDcState_ = 0.0f;
                 break;
             case FilterTopology::TWO_POLE_POLIVOKS:
                 pvS1_ = 0.0f;
@@ -157,18 +164,36 @@ void AnalogFilter::applyParams()
     if (topology_ == FilterTopology::FOUR_POLE_LADDER)
     {
         ladder_.setCutoffFrequencyHz (cutoffHz_);
-        ladder_.setResonance (safeRes);
+        // Resonance remap: JUCE maps knob r to feedback k = 0.4 + 3.6*r
+        // internally. ladderResonanceKnob() inverts that offset, so the
+        // ladder tracks the ideal law k = 4*knob above knob 0.1. Below 0.1
+        // JUCE cannot go under k = 0.4: a dead zone holds that floor.
+        ladder_.setResonance (ladderResonanceKnob (safeRes));
         ladder_.setDrive (drive_);   // tanh saturation drive (default 1.2 == JUCE default)
+        // No trim, no resonance compensation: the JUCE path is pinned
+        // bit-identical (hellcat_analog_filter_batch_test) and its comp = 0.5
+        // term already halves the resonance bass drop.
+        loudnessGain_ = 1.0f;
     }
     else if (topology_ == FilterTopology::FOUR_POLE_SSM2164)
     {
-        // "4P": two series lowpass TPT SVFs, cutoff + resonance LINKED.
-        const float svfRes = juce::jlimit (0.05f, kMaxResonance, res);
+        // "4P": two series lowpass TPT SVFs. Per-stage Q = 0.5*(1-res)^(-kSsm4PeakExp):
+        //   * res 0 -> q = 0.5 per stage: (s^2 + 2ws + w^2)^2 == (s + w)^4,
+        //     the EXACT classic 4-pole cascade (24 dB/oct, -12.04 dB at fc).
+        //     Every power law keeps this anchor, because (1-0)^(-E) = 1.
+        //     The old raw-Q mapping (Q = knob = 0.05) was a droopy overdamped
+        //     shelf: up to 38 dB quieter than the sibling cards at low cutoff.
+        //   * kSsm4PeakExp = 0.616 -> q(0.95)^2 = 10.0 (+20 dB): the 2-pole
+        //     family peak. The earlier sqrt law gave q^2 = 0.25/(1-res) = 5
+        //     (+14 dB), 6..8 dB under the family cluster at high knob.
+        const double resEff = juce::jlimit (0.0, 1.0, double (safeRes));
+        const double q      = 0.5 * std::pow (juce::jmax (1.0e-6, 1.0 - resEff), -kSsm4PeakExp);
         for (int i = 0; i < 2; ++i)
         {
             svf4p_[i].setCutoffFrequency (cutoffHz_);
-            svf4p_[i].setResonance (svfRes);
+            svf4p_[i].setResonance (static_cast<float> (q));
         }
+        loudnessGain_ = kSsm2164CardGain;
     }
     else if (topology_ == FilterTopology::FOUR_POLE_OTA || topology_ == FilterTopology::FOUR_POLE_IR3109)
     {
@@ -185,12 +210,16 @@ void AnalogFilter::applyParams()
         const double pi      = juce::MathConstants<double>::pi;
         const double gLin    = std::tan (pi * fc / sampleRate_);   // exact TPT pole conductance
         const double G       = gLin / (1.0 + gLin);
-        // Stage knee = the card knee base / drive: higher drive lowers the
-        // knee, so the OTA saturates earlier. The SMR4 uses the LM13700 2Vt
-        // (0.052); the IR3109 runs 0.10 (the cleaner Juno headroom). Drive
-        // reuses the Filter Drive setting.
-        const double kneeBase = ir3109 ? kIr3109TwoVt : double (kTwoVt);
-        const double knee     = kneeBase / juce::jmax (0.05, double (drive_));
+        // Stage knee = card knee base x the SOFT drive law (1.2/drive)^(1/3),
+        // anchored at drive 1.2: knee(1.2) == kneeBase/1.2 exactly (the
+        // documented default-drive calibration is unchanged). The old linear
+        // law (base/drive) collapsed the saturated output proportional to
+        // 1/drive. At Filter Drive 12 the card sat ~16 dB below every other
+        // card. The cube root softens that collapse. The saturation threshold
+        // still tracks the knob. The SMR4 uses the LM13700 2Vt (0.052); the
+        // IR3109 runs 0.10 (the cleaner Juno headroom).
+        const double kneeBase = (ir3109 ? kIr3109TwoVt : double (kTwoVt)) * kOtaCoreScale;
+        const double knee     = (kneeBase / 1.2) * std::cbrt (1.2 / juce::jmax (0.1, double (drive_)));
         // Loop-gain normalisation. The self-oscillation onset of four
         // identical bilinear one-pole stages with gain feedback is EXACTLY
         // kfb = 4.0, at every cutoff:
@@ -229,13 +258,22 @@ void AnalogFilter::applyParams()
         // VCA clips at its own 2Vt. IR3109: kIr3109VcaKnee*2Vt, a milder
         // feedback path (the thinner Juno high-Q character). The unit-slope
         // form keeps the small-signal loop gain exactly kfb on both cards.
-        const double vcaKnee = ir3109 ? (kIr3109VcaKnee * double (kTwoVt)) : double (kTwoVt);
+        const double vcaKnee = ((ir3109 ? kIr3109VcaKnee : 1.0) * double (kTwoVt)) * kOtaCoreScale;
         kfbVca_      = static_cast<float> (kfb * vcaKnee);
         vcaKnee_     = static_cast<float> (vcaKnee);
-        // SMR4 keeps the exact constexpr reciprocal (kInvTwoVt) so its audio
-        // path stays bit-identical to the pre-IR3109 build.
-        invVcaKnee_  = ir3109 ? static_cast<float> (1.0 / vcaKnee) : kInvTwoVt;
+        invVcaKnee_  = static_cast<float> (1.0 / vcaKnee);
         invOnePlusR_ = static_cast<float> (1.0 / (1.0 + r));
+        // Loudness trim: static card calibration times a partial resonance
+        // compensation. The feedback loop thins the bass by 1/(1+kfb) (DC
+        // gain) and the stage saturation deepens with the loop signal, so a
+        // hot program sags badly at high resonance. (1+kfb)^exp restores part
+        // of that sag: the card tracks the Q-based cards (which keep DC gain
+        // 1) within the parity bounds without boosting the resonant peak to
+        // the full (1+kfb) gain. The IR3109 takes the stronger exponent: its
+        // factory kfb cap leaves its ring suppressed, so it sags more.
+        loudnessGain_ = static_cast<float> ((ir3109 ? kIr3109CardGain : kSmr4CardGain)
+                                            * std::pow (1.0 + kfb,
+                                                        ir3109 ? kIr3109ResCompExp : kSmr4ResCompExp));
     }
     else if (topology_ == FilterTopology::TWO_POLE_POLIVOKS)
     {
@@ -306,17 +344,24 @@ void AnalogFilter::applyParams()
         // clamp to LP (documented in the header). The voice passes the patch
         // mode through; the model picks its tap here.
         pvBandpass_ = (mode_ == AnalogFilterMode::Bandpass);
+        loudnessGain_ = kPolivoksCardGain;
     }
     else // TWO_POLE_SVF
     {
-        // JUCE's TPT SVF computes R2 = 1/resonance internally; resonance==0
-        // => division by zero => NaN. Floor it so the minimum-resonance case
-        // (maximum damping / no resonance peak) stays finite and stable.
-        const float svfRes = juce::jlimit (0.05f, kMaxResonance, res);
+        // Q = 1/(2*(1-res)): the SAME law as the Polivoks card (the other
+        // 2-pole). Q 0.5 at knob 0 (the classic minimum, -6 dB at fc),
+        // onset exactly at 1.0, capped at kMaxResonance (Q 10, no
+        // self-oscillation). The old raw-Q mapping (Q = knob) ran Q 0.05 at
+        // knob 0: a droopy shelf far below every sibling card, and it never
+        // resonated (Q < 1 at the maximum). JUCE computes R2 = 1/Q internally,
+        // so Q >= 0.5 keeps R2 finite and the filter stable.
+        const double resEff = juce::jlimit (0.0, 1.0, double (safeRes));
+        const float svfQ    = static_cast<float> (0.5 / juce::jmax (1.0e-6, 1.0 - resEff));
         svf_.setCutoffFrequency (cutoffHz_);
-        svf_.setResonance (svfRes);
+        svf_.setResonance (svfQ);
         svfNotch_.setCutoffFrequency (cutoffHz_);
-        svfNotch_.setResonance (svfRes);
+        svfNotch_.setResonance (svfQ);
+        loudnessGain_ = kSvfCardGain;
 
         // svfNotch_ stays highpass; pick svf_'s tap by mode.
         switch (mode_)
@@ -348,14 +393,23 @@ float AnalogFilter::processSample (float inputValue)
     {
         // Cascade: stage 0 then stage 1 (both lowpass). 24 dB/oct, linear.
         const float a = svf4p_[0].processSample (0, inputValue);
-        return svf4p_[1].processSample (0, a);
+        return loudnessGain_ * svf4p_[1].processSample (0, a);
     }
 
     if (topology_ == FilterTopology::FOUR_POLE_OTA || topology_ == FilterTopology::FOUR_POLE_IR3109)
-        return processOTASample (inputValue);
+    {
+        // OTA family: model output -> loudness trim -> DC blocker. The blocker
+        // is the standard one-pole form H(z) = (1 - z^-1)/(1 - (1-k) z^-1):
+        // the state accumulates the BLOCKED OUTPUT (accummulating the input
+        // instead would put a marginal pole at z = 1 and oscillate).
+        const float y = loudnessGain_ * processOTASample (inputValue);
+        const float out = y - otaDcState_;
+        otaDcState_ += otaDcCoeff_ * out;
+        return out;
+    }
 
     if (topology_ == FilterTopology::TWO_POLE_POLIVOKS)
-        return processPolivoksSample (inputValue);
+        return loudnessGain_ * processPolivoksSample (inputValue);
 
     if (topology_ == FilterTopology::TWO_POLE_SVF)
     {
@@ -364,17 +418,18 @@ float AnalogFilter::processSample (float inputValue)
         // filter is constructed in the matching mode); Notch sums the svf_
         // lowpass with the svfNotch_ highpass.
         if (mode_ == AnalogFilterMode::Notch)
-            return svf_.processSample (0, inputValue)
-                 + svfNotch_.processSample (0, inputValue);
-        return svf_.processSample (0, inputValue);
+            return loudnessGain_ * (svf_.processSample (0, inputValue)
+                                  + svfNotch_.processSample (0, inputValue));
+        return loudnessGain_ * svf_.processSample (0, inputValue);
     }
 
     // 4-pole. Direct per-sample call through the LadderTap: JUCE's public
     // process() runs `updateSmoothers(); processSample (v, ch);` per sample,
     // so this reproduces the exact per-sample sequence of the legacy 1-sample
     // AudioBlock + ProcessContextReplacing routing (bit-identical output —
-    // pinned by parvati_analog_filter_batch_test) without the per-sample
-    // block/context construction.
+    // pinned by hellcat_analog_filter_batch_test) without the per-sample
+    // block/context construction. loudnessGain_ stays 1.0 on this path (x * 1
+    // is bit-identical to x), so the pin holds.
     ladder_.updateSmoothers();
     return ladder_.processSample (inputValue, 0);
 }
@@ -630,6 +685,16 @@ float AnalogFilter::cutoffByteToHz (uint8_t cutoffByte)
     const float t = static_cast<float> (cutoffByte) / 255.0f;
     const float hz = kMinHz * std::pow (kMaxHz / kMinHz, t);
     return juce::jlimit (kMinHz, kMaxHz, hz);
+}
+
+float AnalogFilter::ladderResonanceKnob (float knob)
+{
+    // Inverse of JUCE's internal map (feedback k = 0.4 + 3.6*r): return the
+    // knob value whose feedback equals the ideal law 4*knob. Clamp to
+    // [0, 1]: below knob 0.1 the value goes negative, and JUCE floors the
+    // feedback at k = 0.4 there (the documented dead zone).
+    const float remapped = (4.0f * knob - 0.4f) / 3.6f;
+    return juce::jlimit (0.0f, 1.0f, remapped);
 }
 
 } // namespace ambika::dsp

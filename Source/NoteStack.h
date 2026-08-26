@@ -7,13 +7,13 @@
 // the firmware (1-based pool indices, sorted-by-pitch side array). Only the
 // C++ scaffolding (namespacing, constexpr, delete-copy) differs.
 
-#ifndef PARVATI_NOTE_STACK_H_
-#define PARVATI_NOTE_STACK_H_
+#ifndef HELLCAT_NOTE_STACK_H_
+#define HELLCAT_NOTE_STACK_H_
 
 #include <cstdint>
 #include <cstring>
 
-namespace parvati {
+namespace hellcat {
 
 static constexpr uint8_t kFreeSlot = 0xff;
 
@@ -181,6 +181,6 @@ private:
     NoteStack& operator= (const NoteStack&) = delete;
 };
 
-}  // namespace parvati
+}  // namespace hellcat
 
-#endif  // PARVATI_NOTE_STACK_H_
+#endif  // HELLCAT_NOTE_STACK_H_

@@ -1,8 +1,8 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // MulExport — the .MUL hardware-export fallback solver (pure, dependency-free).
 //
-// A Parvati multi can give a Part MORE voices than the voicecards it owns
+// A Hellcat multi can give a Part MORE voices than the voicecards it owns
 // (the per-part `voice_slots` pool extension), but the Ambika hardware has
 // exactly 6 voicecards: a .MUL can only express "this Part owns these cards"
 // (a 6-bit bitmask) and its polyphony MODE. When a setup requests more voices
@@ -17,15 +17,15 @@
 // Patch page use — except AsIs, which writes the engine's stored bitmasks
 // unchanged (the pre-extension behaviour).
 
-#ifndef PARVATI_MUL_EXPORT_H_
-#define PARVATI_MUL_EXPORT_H_
+#ifndef HELLCAT_MUL_EXPORT_H_
+#define HELLCAT_MUL_EXPORT_H_
 
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace parvati::mul_export
+namespace hellcat::mul_export
 {
 inline constexpr int kParts = 6;   // firmware Parts / voicecards
 
@@ -105,6 +105,6 @@ std::vector<std::string> previewLines (const Setup& s, const Solution& sol,
 // "Needs 3 chained Ambikas. All 24 voices kept."
 std::string summarize (const Setup& s, Strategy strategy);
 
-}  // namespace parvati::mul_export
+}  // namespace hellcat::mul_export
 
-#endif  // PARVATI_MUL_EXPORT_H_
+#endif  // HELLCAT_MUL_EXPORT_H_

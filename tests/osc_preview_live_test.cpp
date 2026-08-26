@@ -224,7 +224,7 @@ TEST(osc_preview_live_test)
             bool  moving = false;
             float frozen = 0.8f;
             int   call   = 0;
-            parvati::LiveOscValues operator()()
+            hellcat::LiveOscValues operator()()
             {
                 if (! moving)
                     return { active, frozen, };
@@ -270,7 +270,7 @@ TEST(osc_preview_live_test)
         lv.moving = true;
         CHECK(pumpUntil ([&disp] { return disp.liveOverlayActiveForTest(); }, 1500),
               "[c] overlay armed again before the unset check");
-        disp.setLiveValuesProvider (std::function<parvati::LiveOscValues()> {});
+        disp.setLiveValuesProvider (std::function<hellcat::LiveOscValues()> {});
         CHECK(! disp.liveOverlayActiveForTest(),
               "[c] unset provider hides the overlay immediately");
     }
@@ -278,7 +278,7 @@ TEST(osc_preview_live_test)
     // =========================================================================
     std::printf ("[d] Engine end-to-end: effOscParam follows the knob at rest, departs under ENV_1->P1\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         // Belt-and-braces: zero every plugin matrix row that targets the osc
@@ -307,7 +307,7 @@ TEST(osc_preview_live_test)
         renderBlocks (proc, 3, &on, kBlock);
         renderBlocks (proc, blocksForMs (1000.0), nullptr, kBlock);      // envelopes settled
 
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
         CHECK(proc.getEngine().readUiTelemetry (snap), "[d] frame valid while held");
         CHECK(snap.voiceActive, "[d] voiceActive while held");
         CHECK(snap.effOscParam[0] == 100, "[d] effOscParam[0] == knob byte (100) with no modulation");
@@ -317,7 +317,7 @@ TEST(osc_preview_live_test)
         for (int i = 0; i < 20; ++i)
         {
             renderBlocks (proc, 2, nullptr, kBlock);
-            parvati::ModTelemetrySnapshot s2;
+            hellcat::ModTelemetrySnapshot s2;
             if (! proc.getEngine().readUiTelemetry (s2) || s2.effOscParam[0] != 100)
                 constant = false;
         }
@@ -329,7 +329,7 @@ TEST(osc_preview_live_test)
         // ENV_1 is DC-coupled, so with amount 63 and env1 sustained near its
         // ceiling the 14-bit accumulator (param*128 + 63*env1value) drives the
         // effective byte far above the knob byte while held.
-        ParvatiAudioProcessor proc2;
+        HellcatAudioProcessor proc2;
         proc2.prepareToPlay (kRate, kBlock);
         auto& eng2 = proc2.getEngine();
         // Zero the OTHER osc-param rows (LFO_2->P1/P2, ENV_1->P2 — all default
@@ -349,7 +349,7 @@ TEST(osc_preview_live_test)
         renderBlocks (proc2, 3, &on, kBlock);
         renderBlocks (proc2, blocksForMs (1000.0), nullptr, kBlock);      // env 1 rests at sustain
 
-        parvati::ModTelemetrySnapshot snap2;
+        hellcat::ModTelemetrySnapshot snap2;
         CHECK(eng2.readUiTelemetry (snap2), "[d] frame valid (modulated) while held");
         {
             char m[128];

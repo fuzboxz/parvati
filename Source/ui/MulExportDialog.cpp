@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // MulExportDialog implementation — see MulExportDialog.h.
 //
@@ -19,11 +19,11 @@
 
 #include "MulExportDialog.h"
 
-#include "ParvatiLookAndFeel.h"
+#include "HellcatLookAndFeel.h"
 
 namespace
 {
-using parvati::mul_export::Strategy;
+using hellcat::mul_export::Strategy;
 
 // ComboBox ids = index + 1 (0 reserved). Order = menu order; the first item
 // is the recommended default.
@@ -51,18 +51,18 @@ const StrategyItem kItems[] = {
 juce::String toJuceString (const std::string& s) { return juce::String (s); }
 }  // namespace
 
-MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
+MulExportDialog::MulExportDialog (const hellcat::mul_export::Setup& setup,
                                   const std::vector<juce::String>& partNames,
                                   DoneCallback onDone)
     : setup_ (setup), onDone_ (std::move (onDone))
 {
     // Preview context: part display names (or the empty fallback -> "Part N").
-    for (int p = 0; p < parvati::mul_export::kParts; ++p)
+    for (int p = 0; p < hellcat::mul_export::kParts; ++p)
         ctx_.names.push_back ((size_t) p < partNames.size()
                                   ? partNames[(size_t) p].toStdString()
                                   : std::string());
 
-    heading_.setFont (parvati::headerFontExactFor (*this, 15.0f));
+    heading_.setFont (hellcat::headerFontExactFor (*this, 15.0f));
     heading_.setJustificationType (juce::Justification::centredLeft);
     // Two single-line TRANS fragments (not one \n literal): the tables are
     // LocalisedStrings line-parsed, so a raw newline inside a key can never
@@ -74,7 +74,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     addAndMakeVisible (heading_);
 
     strategyCaption_.setText (TRANS ("How to fit it"), juce::dontSendNotification);
-    strategyCaption_.setFont (parvati::labelFontExactFor (*this, 11.0f));
+    strategyCaption_.setFont (hellcat::labelFontExactFor (*this, 11.0f));
     strategyCaption_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (strategyCaption_);
 
@@ -83,7 +83,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     for (size_t i = 0; i < sizeof (kItems) / sizeof (kItems[0]); ++i)
         strategyCombo_.addItem (TRANS (kItems[i].label), static_cast<int> (i) + 1);
     strategyCombo_.setSelectedId (1, juce::dontSendNotification);   // recommended default
-    // Popup rows: 44pt via the inherited ParvatiLookAndFeel's
+    // Popup rows: 44pt via the inherited HellcatLookAndFeel's
     // getIdealPopupMenuItemSize override (menus without an explicit
     // standardItemHeight are raised to the HIG floor) — see launch().
     strategyCombo_.onChange = [this] { refreshPreview(); };
@@ -92,7 +92,7 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
 
     // Always-visible plain-language description of the selected strategy
     // (under the combo — a tooltip would be invisible on touch).
-    descriptionLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
+    descriptionLabel_.setFont (hellcat::labelFontExactFor (*this, 12.0f));
     descriptionLabel_.setJustificationType (juce::Justification::topLeft);
     descriptionLabel_.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (descriptionLabel_);
@@ -100,12 +100,12 @@ MulExportDialog::MulExportDialog (const parvati::mul_export::Setup& setup,
     // The outcome in one line (e.g. "Fits on one Ambika. Only 6 of your 24
     // voices will play at once on the hardware.") — the honest cost up front,
     // above the per-part detail.
-    summaryLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
+    summaryLabel_.setFont (hellcat::dataFontExactFor (*this, 13.0f, juce::Font::bold));
     summaryLabel_.setJustificationType (juce::Justification::topLeft);
     summaryLabel_.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (summaryLabel_);
 
-    previewLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f));
+    previewLabel_.setFont (hellcat::dataFontExactFor (*this, 12.0f));
     previewLabel_.setJustificationType (juce::Justification::topLeft);
     previewLabel_.setMinimumHorizontalScale (1.0f);
     // The preview scrolls inside a Viewport (a 4-unit chain summary far
@@ -178,7 +178,7 @@ void MulExportDialog::resized()
 
 void MulExportDialog::refreshPreview()
 {
-    using namespace parvati::mul_export;
+    using namespace hellcat::mul_export;
     const int idx = strategyCombo_.getSelectedId() - 1;
     if (idx < 0) return;
     const auto& item = kItems[(size_t) idx];
@@ -220,13 +220,13 @@ void MulExportDialog::refreshPreview()
 }
 
 void MulExportDialog::launch (juce::Component* parent,
-                              const parvati::mul_export::Setup& setup,
+                              const hellcat::mul_export::Setup& setup,
                               const std::vector<juce::String>& partNames,
                               DoneCallback onDone)
 {
     auto* content = new MulExportDialog (setup, partNames, std::move (onDone));
 
-    // Theme: the dialog OWNS a ParvatiLookAndFeel copied from the launching
+    // Theme: the dialog OWNS a HellcatLookAndFeel copied from the launching
     // editor's active theme (F-ui-2, bug hunt 2026-08-18). The DialogWindow is
     // its own desktop window and CAN OUTLIVE the editor (host closes the
     // plugin window mid-dialog) — borrowing &parent->getLookAndFeel() painted
@@ -235,9 +235,9 @@ void MulExportDialog::launch (juce::Component* parent,
     // immortal function-local statics). Null parent
     // (tests) keeps the default look.
     if (parent != nullptr)
-        if (auto* plnf = dynamic_cast<ParvatiLookAndFeel*> (&parent->getLookAndFeel()))
+        if (auto* plnf = dynamic_cast<HellcatLookAndFeel*> (&parent->getLookAndFeel()))
         {
-            content->ownedLnf_ = std::make_unique<ParvatiLookAndFeel>();
+            content->ownedLnf_ = std::make_unique<HellcatLookAndFeel>();
             content->ownedLnf_->setTheme (*plnf->getTheme());
             content->setLookAndFeel (content->ownedLnf_.get());
         }

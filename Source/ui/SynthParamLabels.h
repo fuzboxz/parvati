@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // SynthParamLabels — meaningful-unit value readout for the SYNTH-section knob
 // params (OSC/MIX/FILTER/ENV/LFO/MOD/SEQ/ARP/GLOBAL). The FX section has its
 // own formatter (ui/FxSlotLabels.cpp::paramValueText); this is the synth mirror.
 //
 // DISPLAY-ONLY: the returned string is just the knob's centre readout (drawn by
-// ParvatiLookAndFeel::drawRotarySlider via slider.getTextFromValue). The stored
+// HellcatLookAndFeel::drawRotarySlider via slider.getTextFromValue). The stored
 // APVTS value, the slider value, serialization, and the painter are all
 // untouched — wiring installs it through ParamControl::setDisplayValueText.
 

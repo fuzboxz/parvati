@@ -4,7 +4,7 @@
 // format pair, "save A -> load into a fresh B -> save B" must reproduce
 // byte-identical files, and the loaded program TITLE must equal the
 // format-documented normalized form of the saved name. Historical instance of
-// the class: the .parvati top-level name was emitted UN-escaped (a `"` or a
+// the class: the .yml top-level name was emitted UN-escaped (a `"` or a
 // newline in a patch name corrupted the document so the file could not be
 // reloaded at all — silent data loss on save).
 //
@@ -20,7 +20,7 @@
 //     expected title = control-strip + code-point-safe 16-byte truncation +
 //     trailing-space trim (writeName16 / trimName, independently re-derived
 //     below so WRITER DRIFT turns this red).
-//   .parvati (patch + multi): the loader re-titles from the FILENAME
+//   .yml (patch + multi): the loader re-titles from the FILENAME
 //     (documented), so the fixed point is asserted with title == file
 //     basename (both saves use the basename "rt"); the adversarial corpus
 //     then asserts (a) every name produces a file that LOADS through the
@@ -30,7 +30,7 @@
 // Canary self-check (required): the byte comparator reports a 1-flipped-byte
 // file with its exact offset; the title comparator flags a wrong expectation.
 //
-// Unified runner. Run with: ./build_unified/parvati_unified_tests roundtrip_golden_test
+// Unified runner. Run with: ./build_unified/hellcat_unified_tests roundtrip_golden_test
 
 #include <cstdint>
 #include "unified_test_runner.h"
@@ -45,7 +45,7 @@
 #include <juce_events/juce_events.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 #include "dsp/fx/FxTypes.h"
@@ -106,7 +106,7 @@ FileCmp compareFiles (const juce::File& a, const juce::File& b)
 juce::File tempCaseDir (int idx, const juce::String& sub = {})
 {
     auto d = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                 .getChildFile ("parvati_rt_golden")
+                 .getChildFile ("hellcat_rt_golden")
                  .getChildFile ("case" + juce::String (idx));
     if (sub.isNotEmpty())
         d = d.getChildFile (sub);
@@ -123,7 +123,7 @@ juce::File tempCaseDir (int idx, const juce::String& sub = {})
 //   .PRO/.MUL name chunk: control chars (< 0x20) dropped; truncated to 16
 //     bytes on a UTF-8 code-point boundary; space-padded; the parser trims
 //     TRAILING spaces/NULs.
-//   .parvati top-level name: control chars dropped, quote/backslash escaped
+//   .yml top-level name: control chars dropped, quote/backslash escaped
 //     in the raw text; the loader's parser unescapes, so the parsed value ==
 //     input minus control chars (no length limit).
 juce::String stripControl (const juce::String& s)
@@ -167,9 +167,9 @@ juce::String proTitle16 (const juce::String& s)
 }
 
 //==============================================================================
-// Rich seed state (idiom shared with parvati_shadow_state_test so every
+// Rich seed state (idiom shared with hellcat_shadow_state_test so every
 // mirrored surface carries non-default bytes a round trip must preserve).
-void seedRichState (ParvatiAudioProcessor& proc)
+void seedRichState (HellcatAudioProcessor& proc)
 {
     SynthEngine& e = proc.getEngine();
     const int nParts = SynthEngine::getNumParts();
@@ -187,7 +187,7 @@ void seedRichState (ParvatiAudioProcessor& proc)
     e.setPartKeyZone (1, 20, 40);
 
     // Part-0 params through the real APVTS bridge (part_select FIRST so the
-    // writes land on part 0) + one global option (serialized by .parvati).
+    // writes land on part 0) + one global option (serialized by .yml).
     auto setP = [&] (const char* id, float v) {
         proc.getApvts().getParameterAsValue (id) = v;
     };
@@ -236,7 +236,7 @@ void roundtripAmbika (const char* fmt, int idx, const juce::String& title,
 {
     const auto dir = tempCaseDir (idx);
 
-    ParvatiAudioProcessor a;
+    HellcatAudioProcessor a;
     a.prepareToPlay (48000.0, 256);
     seedRichState (a);
     a.setLoadedProgramName (title);
@@ -248,7 +248,7 @@ void roundtripAmbika (const char* fmt, int idx, const juce::String& title,
         return;
     }
 
-    ParvatiAudioProcessor b;
+    HellcatAudioProcessor b;
     b.prepareToPlay (48000.0, 256);
     if (! load (b, fa))
     {
@@ -286,28 +286,28 @@ void roundtripAmbika (const char* fmt, int idx, const juce::String& title,
     }
 }
 
-// .parvati: fixed point with title == file basename (the documented
+// .yml: fixed point with title == file basename (the documented
 // filename-retitling behavior means the doc name line only round-trips when
 // the two agree — both saves use the basename "rt").
 template <typename SaveFn, typename LoadFn>
-void roundtripParvatiFixedPoint (const char* fmt, int idx, SaveFn save, LoadFn load)
+void roundtripHellcatFixedPoint (const char* fmt, int idx, SaveFn save, LoadFn load)
 {
     const auto dirA = tempCaseDir (idx, "a");
     const auto dirB = tempCaseDir (idx, "b");
 
-    ParvatiAudioProcessor a;
+    HellcatAudioProcessor a;
     a.prepareToPlay (48000.0, 256);
     seedRichState (a);
     a.setLoadedProgramName ("rt");   // == the basename of both save targets
 
-    const juce::File fa = dirA.getChildFile ("rt.parvati");
+    const juce::File fa = dirA.getChildFile ("rt.yml");
     if (! save (a, fa))
     {
         check (false, "save A");
         return;
     }
 
-    ParvatiAudioProcessor b;
+    HellcatAudioProcessor b;
     b.prepareToPlay (48000.0, 256);
     if (! load (b, fa))
     {
@@ -316,7 +316,7 @@ void roundtripParvatiFixedPoint (const char* fmt, int idx, SaveFn save, LoadFn l
     }
     renderBlocks (b, 2);
 
-    const juce::File fb = dirB.getChildFile ("rt.parvati");
+    const juce::File fb = dirB.getChildFile ("rt.yml");
     if (! save (b, fb))
     {
         check (false, "save B");
@@ -334,20 +334,20 @@ void roundtripParvatiFixedPoint (const char* fmt, int idx, SaveFn save, LoadFn l
     check (cmp.equal, msg);
 }
 
-// .parvati: adversarial-name corpus — the file must LOAD (the un-escaped-name
+// .yml: adversarial-name corpus — the file must LOAD (the un-escaped-name
 // class corrupted the document before the escaping fix) and the parsed
 // top-level name must equal the control-stripped input.
 template <typename SaveFn, typename LoadFn>
-void parvatiNameEscaping (const char* fmt, int idx, const NameCase& nc,
+void hellcatNameEscaping (const char* fmt, int idx, const NameCase& nc,
                           SaveFn save, LoadFn load)
 {
     const auto dir = tempCaseDir (idx);
-    ParvatiAudioProcessor a;
+    HellcatAudioProcessor a;
     a.prepareToPlay (48000.0, 256);
     seedRichState (a);
     a.setLoadedProgramName (nc.name);
 
-    const juce::File f = dir.getChildFile ("c.parvati");
+    const juce::File f = dir.getChildFile ("c.yml");
     if (! save (a, f))
     {
         check (false, "save A");
@@ -355,7 +355,7 @@ void parvatiNameEscaping (const char* fmt, int idx, const NameCase& nc,
     }
 
     {
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         char msg[160];
         std::snprintf (msg, sizeof (msg), "%s [%s]: adversarial-name file LOADS", fmt, nc.label);
@@ -366,7 +366,7 @@ void parvatiNameEscaping (const char* fmt, int idx, const NameCase& nc,
         juce::String text;
         if (juce::FileInputStream in (f); in.openedOk())
             text = in.readEntireStreamAsString();
-        const juce::var tree = parvati::preset::parseParvatiYaml (text);
+        const juce::var tree = hellcat::preset::parseHellcatYaml (text);
         const juce::String parsed = tree.isObject() ? tree["name"].toString() : juce::String();
         char msg[192];
         std::snprintf (msg, sizeof (msg), "%s [%s]: parsed doc name == control-stripped input [%s]",
@@ -383,25 +383,25 @@ TEST(roundtrip_golden_test)
 
     std::printf ("=== TOOL 8: golden round-trip bytes ===\n");
 
-    auto savePRO  = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.saveProgramFile (f); };
-    auto loadPRO  = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.loadProgramFile (f); };
-    auto saveMUL  = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.saveMultiFile (f); };
-    auto loadMUL  = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.loadMultiFile (f); };
-    auto savePPat = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.saveParvatiPatchFile (f); };
-    auto loadPPat = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.loadParvatiPatchFile (f); };
-    auto savePMul = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.saveParvatiMultiFile (f); };
-    auto loadPMul = [] (ParvatiAudioProcessor& p, const juce::File& f) { return p.loadParvatiMultiFile (f); };
+    auto savePRO  = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.saveProgramFile (f); };
+    auto loadPRO  = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.loadProgramFile (f); };
+    auto saveMUL  = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.saveMultiFile (f); };
+    auto loadMUL  = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.loadMultiFile (f); };
+    auto savePPat = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.saveHellcatPatchFile (f); };
+    auto loadPPat = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.loadHellcatPatchFile (f); };
+    auto savePMul = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.saveHellcatMultiFile (f); };
+    auto loadPMul = [] (HellcatAudioProcessor& p, const juce::File& f) { return p.loadHellcatMultiFile (f); };
 
     // ---- canary 1: the byte comparator reports a 1-flipped-byte file ----
     std::printf ("\n[canary] byte comparator detects a 1-byte flip\n");
     {
         const auto dir = tempCaseDir (9001);
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         seedRichState (a);
         a.setLoadedProgramName ("canary");
-        const juce::File good = dir.getChildFile ("good.parvati");
-        const juce::File bad  = dir.getChildFile ("bad.parvati");
+        const juce::File good = dir.getChildFile ("good.yml");
+        const juce::File bad  = dir.getChildFile ("bad.yml");
         check (savePMul (a, good), "canary: save the reference file");
 
         std::vector<uint8_t> bytes;
@@ -426,7 +426,7 @@ TEST(roundtrip_golden_test)
         check (loaded != wrong, "canary: title comparator flags a mismatched expectation");
     }
 
-    // ---- the corpus over the two Ambika pairs + the two .parvati names ----
+    // ---- the corpus over the two Ambika pairs + the two .yml names ----
     int idx = 0;
     for (const auto& nc : corpus())
     {
@@ -435,15 +435,15 @@ TEST(roundtrip_golden_test)
                          .substring (0, 32).toRawUTF8());
         roundtripAmbika (".PRO", idx, nc.name, savePRO, loadPRO);
         roundtripAmbika (".MUL", idx, nc.name, saveMUL, loadMUL);
-        parvatiNameEscaping (".parvati-patch", idx + 1000, nc, savePPat, loadPPat);
-        parvatiNameEscaping (".parvati-multi", idx + 2000, nc, savePMul, loadPMul);
+        hellcatNameEscaping (".hellcat-patch", idx + 1000, nc, savePPat, loadPPat);
+        hellcatNameEscaping (".hellcat-multi", idx + 2000, nc, savePMul, loadPMul);
         ++idx;
     }
 
-    // ---- .parvati fixed points (title == basename) ----
-    std::printf ("\n[fixed point] .parvati pairs with title == basename\n");
-    roundtripParvatiFixedPoint (".parvati-patch", 3001, savePPat, loadPPat);
-    roundtripParvatiFixedPoint (".parvati-multi", 3002, savePMul, loadPMul);
+    // ---- .yml fixed points (title == basename) ----
+    std::printf ("\n[fixed point] .yml pairs with title == basename\n");
+    roundtripHellcatFixedPoint (".hellcat-patch", 3001, savePPat, loadPPat);
+    roundtripHellcatFixedPoint (".hellcat-multi", 3002, savePMul, loadPMul);
 
     // ---- summary ----
     std::printf ("\n=== GOLDEN ROUND-TRIP: %s (%d failures) ===\n",

@@ -1,4 +1,4 @@
-// Filter-card topology verification for Parvati.
+// Filter-card topology verification for Hellcat.
 // Renders a sustained saw through the full processor for each of the 3
 // selectable filter cards (4-pole Ladder / 4-pole "4P" = two series
 // StateVariableTPTFilter lowpass / 2-pole SVF) and asserts all three are
@@ -222,7 +222,7 @@ double hfRms (const std::vector<float>& v, double cutoffHz, double fs)
 
 // Render `card` (0=Ladder,1=SSM2164,2=SVF): saw osc, low cutoff, no resonance,
 // sustained note, capture the stereo channel-0 output and return its RMS.
-double renderCard (ParvatiAudioProcessor& proc, int card, std::vector<float>& capture)
+double renderCard (HellcatAudioProcessor& proc, int card, std::vector<float>& capture)
 {
     auto& apvts = proc.getApvts();
     apvts.getParameterAsValue ("osc1_shape")      = 1.0f;     // SAW
@@ -262,7 +262,7 @@ double renderCard (ParvatiAudioProcessor& proc, int card, std::vector<float>& ca
 // Render the LADDER card at a given Filter Drive choice index (0="1.0"..7="12.0")
 // with HIGH resonance (to exercise the tanh saturator) and return the RMS of the
 // sustained output. Used to prove Filter Drive is actually wired.
-double renderLadderDrive (ParvatiAudioProcessor& proc, int driveIndex, std::vector<float>& capture)
+double renderLadderDrive (HellcatAudioProcessor& proc, int driveIndex, std::vector<float>& capture)
 {
     auto& apvts = proc.getApvts();
     apvts.getParameterAsValue ("osc1_shape")      = 1.0f;     // SAW
@@ -305,20 +305,38 @@ TEST(filter_topology_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
-    std::printf ("[1] The 3 filter cards render distinct output levels\n");
+    std::printf ("[1] The 3 filter cards render at matched loudness (parity contract)\n");
     std::vector<float> ladder, ssm, svf;
-    const double rLadder = renderCard (proc, 0, ladder);
+    const double rLadder = renderCard (proc, 3, ladder);
     const double rSSM    = renderCard (proc, 1, ssm);
     const double rSVF    = renderCard (proc, 2, svf);
     std::printf ("     RMS  Ladder=%.5f  SSM2164=%.5f  SVF=%.5f\n", rLadder, rSSM, rSVF);
     {
-        const bool distinctLevels = std::fabs (rLadder - rSSM) > 1e-3
-                                 && std::fabs (rLadder - rSVF) > 1e-3
-                                 && std::fabs (rSSM    - rSVF) > 1e-3;
-        check (distinctLevels, "3 distinct output levels (Ladder / SSM2164 / SVF)");
+        // Loudness parity (2026-08-25 calibration, see analog_filter.h): at
+        // matched settings the cards must sit within a few dB of each other.
+        // The OLD pin demanded pairwise-DISTINCT levels: it froze the
+        // pre-parity state in which the raw-Q mappings left the SVF/4P cards
+        // up to 38 dB off. Distinctness of the FILTERS themselves stays
+        // pinned by [2] (sample-diff RMS), which is level-independent.
+        auto db = [] (double v) { return 20.0 * std::log10 (juce::jmax (1e-12, v)); };
+        const double dLS = std::fabs (db (rLadder) - db (rSSM));
+        const double dLV = std::fabs (db (rLadder) - db (rSVF));
+        const double dSV = std::fabs (db (rSSM)    - db (rSVF));
+        std::printf ("     dB spread  Ladder-SSM2164=%.2f  Ladder-SVF=%.2f  SSM2164-SVF=%.2f\n", dLS, dLV, dSV);
+        char msg[160];
+        std::snprintf (msg, sizeof (msg), "Ladder/SSM2164 within 4 dB (got %.2f)", dLS);
+        check (dLS < 4.0, msg);
+        std::snprintf (msg, sizeof (msg), "Ladder/SVF within 4 dB (got %.2f)", dLV);
+        check (dLV < 4.0, msg);
+        std::snprintf (msg, sizeof (msg), "SSM2164/SVF within 4 dB (got %.2f)", dSV);
+        check (dSV < 4.0, msg);
+        // The levels must not COLLAPSE onto one value either: three distinct
+        // filter implementations still differ by a measurable amount.
+        const bool notIdentical = dLS > 1e-4 || dLV > 1e-4 || dSV > 1e-4;
+        check (notIdentical, "the 3 cards keep measurable level differences (distinct implementations)");
     }
 
     std::printf ("\n[2] The 3 cards are distinct FILTERS (pairwise sample-diff RMS)\n");
@@ -478,10 +496,10 @@ TEST(filter_topology_test)
         check (m3_99 < 0.05 * m1_99 && m1_99 > 1e-9, "OTA ring decays at resonance 0.99");
     }
 
-    std::printf ("\n[8] OTA card (filter_card=3) through the processor: a 4th distinct filter\n");
+    std::printf ("\n[8] OTA card (filter_card=0, stock SMR4) through the processor: a 4th distinct filter\n");
     {
         std::vector<float> ota;
-        const double rOTA = renderCard (proc, 3, ota);
+        const double rOTA = renderCard (proc, 0, ota);
         std::printf ("     RMS  OTA(SMR4)=%.5f\n", rOTA);
         const double d0 = diffRms (ladder, ota);
         const double d1 = diffRms (ssm, ota);
@@ -641,7 +659,7 @@ TEST(filter_topology_test)
         const double d1 = diffRms (ssm, pv);
         const double d2 = diffRms (svf, pv);
         std::vector<float> ota;
-        renderCard (proc, 3, ota);
+        renderCard (proc, 0, ota);
         const double d3 = diffRms (ota, pv);
         std::printf ("     diff RMS  PV-Ladder=%.5f  PV-4P=%.5f  PV-SVF=%.5f  PV-OTA=%.5f\n", d0, d1, d2, d3);
         check (d0 > 1e-3 && d1 > 1e-3 && d2 > 1e-3 && d3 > 1e-3, "Polivoks card differs from all 4 existing cards");
@@ -1049,7 +1067,7 @@ TEST(filter_topology_test)
         const double d1 = diffRms (ssm, ir);
         const double d2 = diffRms (svf, ir);
         std::vector<float> ota, pv;
-        renderCard (proc, 3, ota);
+        renderCard (proc, 0, ota);
         renderCard (proc, 4, pv);
         const double d3 = diffRms (ota, ir);
         const double d4 = diffRms (pv, ir);

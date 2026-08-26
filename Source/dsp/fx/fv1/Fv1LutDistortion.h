@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1LutDistortion — the "super digital" wavetable distortion: Drive into ONE
 // OF SIXTEEN 1024-entry weird-distortion wavetables (the FV-1 external-EEPROM
@@ -28,8 +28,8 @@
 // internal samples); only the memoryless table evaluation runs at 6x, in the
 // same Q.23 saturating fixed-point path.
 
-#ifndef PARVATI_DSP_FX_FV1_FV1LUTDISTORTION_H
-#define PARVATI_DSP_FX_FV1_FV1LUTDISTORTION_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1LUTDISTORTION_H
+#define HELLCAT_DSP_FX_FV1_FV1LUTDISTORTION_H
 
 #include <cstdint>
 #include <vector>
@@ -37,7 +37,7 @@
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 #include "warps/dsp/sample_rate_converter.h"   // 6x polyphase FIR (shaper OS)
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1LutDistortion : public Fv1FxProcessor
@@ -45,7 +45,7 @@ class Fv1LutDistortion : public Fv1FxProcessor
 public:
     Fv1LutDistortion();
 
-    // TEST HOOKS (parvati_fx_invariants_test): the curve audits need read
+    // TEST HOOKS (hellcat_fx_invariants_test): the curve audits need read
     // access to the built tables + the periodicity policy. No audio-path use.
     const int16_t* debugTable (int s) const { return tables_[s]; }
     static bool debugShapeIsPeriodic (int s) { return kShapeIsPeriodic[s]; }
@@ -140,6 +140,6 @@ private:
     bool shapeSet_ = false;                          // first setParams: no fade
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1LUTDISTORTION_H
+#endif // HELLCAT_DSP_FX_FV1_FV1LUTDISTORTION_H

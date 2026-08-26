@@ -6,22 +6,22 @@
 //
 // Invariants (each prints ok/FAIL lines; any FAIL fails the test):
 //   [1] NO PER-TEST TARGETS: no add_executable() other than
-//       parvati_unified_tests may reference tests/*.cpp sources
+//       hellcat_unified_tests may reference tests/*.cpp sources
 //       (tools/*.cpp EXCLUDE_FROM_ALL utility targets are allowed).
 //   [2] ORPHAN-FREE: every tests/*.cpp on disk (minus the two-file harness
 //       whitelist, mirroring the configure guard) is listed in the
-//       parvati_unified_tests source list.
+//       hellcat_unified_tests source list.
 //   [3] SINGLE MAIN: unified_test_runner_main.cpp is the ONLY tests/*.cpp
 //       defining a top-level int main().
 //   [4] COUNT SANITY: the runner's registered test count equals the number of
 //       TEST( registrations on disk (harness whitelist excluded; the 8 gated
-//       example demos compile out under the default PARVATI_TEST_EXAMPLES=OFF)
+//       example demos compile out under the default HELLCAT_TEST_EXAMPLES=OFF)
 //       and is at least 100.
 //   [5] SCAFFOLDER: tools/new_test.sh exists, is executable, and its text
 //       never contains the token "add_executable" — it must not be able to
 //       create per-test targets.
 //
-// Pure file I/O (<2s). Run: ./build_unified/parvati_unified_tests build_policy_test
+// Pure file I/O (<2s). Run: ./build_unified/hellcat_unified_tests build_policy_test
 
 #include <cstdio>
 #include <fstream>
@@ -38,8 +38,8 @@
 
 #include "unified_test_runner.h"
 
-#ifndef PARVATI_SOURCE_DIR
-#define PARVATI_SOURCE_DIR "."
+#ifndef HELLCAT_SOURCE_DIR
+#define HELLCAT_SOURCE_DIR "."
 #endif
 
 namespace {
@@ -88,7 +88,7 @@ bool isTestCppToken (const std::string& tok)
 }
 
 // Same two files the configure-time guard whitelists: the runner's own main
-// and the gated demo file (compiled out unless PARVATI_TEST_EXAMPLES=ON).
+// and the gated demo file (compiled out unless HELLCAT_TEST_EXAMPLES=ON).
 bool isHarnessWhitelisted (const std::string& fname)
 {
     return fname == "unified_test_runner_main.cpp" || fname == "unified_test_examples.cpp";
@@ -114,13 +114,13 @@ std::vector<std::string> splitTokens (const std::string& s)
 
 TEST(build_policy_test)
 {
-    const std::filesystem::path srcDir (PARVATI_SOURCE_DIR);
+    const std::filesystem::path srcDir (HELLCAT_SOURCE_DIR);
     const std::filesystem::path testsDir = srcDir / "tests";
     const std::filesystem::path cmakePath = srcDir / "CMakeLists.txt";
 
     // ---- shared inputs ----------------------------------------------------
     const std::string cmakeText = readTextFile (cmakePath);
-    check (! cmakeText.empty(), "CMakeLists.txt is readable via PARVATI_SOURCE_DIR");
+    check (! cmakeText.empty(), "CMakeLists.txt is readable via HELLCAT_SOURCE_DIR");
 
     std::vector<std::string> testFiles;  // bare file names, sorted
     for (const auto& entry : std::filesystem::directory_iterator (testsDir))
@@ -131,7 +131,7 @@ TEST(build_policy_test)
 
     // ======================================================================
     // [1] NO PER-TEST TARGETS: scan add_executable( occurrences; any argument
-    // referencing tests/*.cpp must belong to parvati_unified_tests.
+    // referencing tests/*.cpp must belong to hellcat_unified_tests.
     // Handles multi-line spans; comment lines are skipped inside a span.
     // ======================================================================
     std::printf ("\n[1] no per-test add_executable targets\n");
@@ -182,7 +182,7 @@ TEST(build_policy_test)
                 if (close != std::string::npos)
                 {
                     const auto toks = splitTokens (rest.substr (0, close));
-                    if (! toks.empty() && toks[0] != "parvati_unified_tests")
+                    if (! toks.empty() && toks[0] != "hellcat_unified_tests")
                         for (size_t i = 1; i < toks.size(); ++i)
                             if (isTestCppToken (toks[i]))
                             {
@@ -195,7 +195,7 @@ TEST(build_policy_test)
                     // Span continues on following lines.
                     const auto toks = splitTokens (rest);
                     captureName = toks.empty() ? std::string() : toks[0];
-                    captureIsUnified = captureName == "parvati_unified_tests";
+                    captureIsUnified = captureName == "hellcat_unified_tests";
                     captureArgs.assign (toks.begin() + (toks.empty() ? 0 : 1), toks.end());
                     capturing = true;
                     break;
@@ -206,7 +206,7 @@ TEST(build_policy_test)
 
         check (violations.empty(),
                violations.empty()
-                   ? "no add_executable outside parvati_unified_tests references tests/*.cpp"
+                   ? "no add_executable outside hellcat_unified_tests references tests/*.cpp"
                    : "per-test target(s) found: " + [&] {
                          std::string joined;
                          for (size_t i = 0; i < violations.size() && i < 10; ++i)
@@ -217,7 +217,7 @@ TEST(build_policy_test)
 
     // ======================================================================
     // [2] ORPHAN-FREE MIRROR: every tests/*.cpp (minus harness whitelist)
-    // appears in the parvati_unified_tests source list.
+    // appears in the hellcat_unified_tests source list.
     // ======================================================================
     std::printf ("\n[2] orphan-free mirror of the configure guard\n");
     {
@@ -231,7 +231,7 @@ TEST(build_policy_test)
             const std::string t = trim (line);
             if (! inBlock)
             {
-                if (startsWith (t, "add_executable(parvati_unified_tests"))
+                if (startsWith (t, "add_executable(hellcat_unified_tests"))
                     inBlock = true;
                 continue;
             }
@@ -246,7 +246,7 @@ TEST(build_policy_test)
                 if (isTestCppToken (tok))
                     listed.push_back (tok);
         }
-        check (closed, "parvati_unified_tests source list block found ("
+        check (closed, "hellcat_unified_tests source list block found ("
                            + std::to_string (listed.size()) + " tests/*.cpp entries)");
 
         std::vector<std::string> orphans;
@@ -342,7 +342,7 @@ TEST(build_policy_test)
 
         std::string extra;
         if (runnerCount == diskCount + 8)
-            extra = " (delta is exactly 8 — PARVATI_TEST_EXAMPLES appears ON; "
+            extra = " (delta is exactly 8 — HELLCAT_TEST_EXAMPLES appears ON; "
                     "this test pins the default OFF configuration)";
         check (diskCount >= 100, "at least 100 TEST( registrations on disk (got "
                                      + std::to_string (diskCount) + ")");

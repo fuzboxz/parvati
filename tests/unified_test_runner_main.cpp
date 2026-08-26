@@ -1,10 +1,10 @@
 /*
  * Main entry point for the unified test runner
  *
- *   ./parvati_unified_tests              # Run all tests (fork-isolated)
- *   ./parvati_unified_tests list         # List available tests
- *   ./parvati_unified_tests <test-name>  # Run specific test (fork-isolated)
- *   ./parvati_unified_tests a b c        # Run several tests by name
+ *   ./hellcat_unified_tests              # Run all tests (fork-isolated)
+ *   ./hellcat_unified_tests list         # List available tests
+ *   ./hellcat_unified_tests <test-name>  # Run specific test (fork-isolated)
+ *   ./hellcat_unified_tests a b c        # Run several tests by name
  *
  * FORK-PER-TEST ISOLATION: the suite packs 100+ GUI/DSP harnesses into one
  * binary. Each test constructs processors/editors/threads that outlive the
@@ -18,7 +18,7 @@
  * OOM in one test cannot take down the rest of the suite, and the parent only
  * ever holds the (tiny) test registry. _exit() deliberately skips static
  * destructors, so per-child JUCE leak reports do not fire by default; set
- * PARVATI_UNIFIED_INPROCESS=1 to run without forking (single test under a
+ * HELLCAT_UNIFIED_INPROCESS=1 to run without forking (single test under a
  * debugger, or to see the exit-time leak report).
  */
 
@@ -39,7 +39,7 @@ namespace {
 #if ! defined (_WIN32)
 bool inProcessRequested()
 {
-    const char* e = std::getenv ("PARVATI_UNIFIED_INPROCESS");
+    const char* e = std::getenv ("HELLCAT_UNIFIED_INPROCESS");
     return e != nullptr && e[0] == '1';
 }
 #endif
@@ -50,7 +50,7 @@ int runTestIsolated (const std::string& name)
 #if defined (_WIN32)
     // Windows has no fork()/waitpid(), so the fork-per-test reaper cannot
     // run. Fall back to the in-process path (the same code the
-    // PARVATI_UNIFIED_INPROCESS=1 opt-out uses). A CreateProcess-based
+    // HELLCAT_UNIFIED_INPROCESS=1 opt-out uses). A CreateProcess-based
     // runner would restore per-test isolation; that work stays open.
     return unified_test_runner::g_runner.runTest (name) ? 0 : 1;
 #else

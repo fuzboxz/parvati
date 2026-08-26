@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FxMatrixView — the per-part FX modulation-matrix panel. The FX twin of
 // ModMatrixView: the shared list/row machinery lives in MatrixViewBase; this
@@ -34,14 +34,14 @@
 
 #include <array>
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class ThemeManager;
 
 //==============================================================================
 class FxMatrixView : public MatrixViewBase
 {
 public:
-    FxMatrixView (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
+    FxMatrixView (HellcatAudioProcessor& processor, ThemeManager& themeManager);
 
     // Base refresh plus the FX-dest combo reconcile: when a slot's FX type
     // changes (a type edit or a part switch) every row's dest combo is

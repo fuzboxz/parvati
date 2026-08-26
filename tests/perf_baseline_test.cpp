@@ -30,12 +30,12 @@
 //     mismatch (Debug baseline on a Release binary, or the reverse)
 //     prints a warning and skips the compare, because Debug and Release
 //     codegen do not share score magnitudes.
-//   * Harvest (PARVATI_PERF_HARVEST=1): the full method runs, the test
+//   * Harvest (HELLCAT_PERF_HARVEST=1): the full method runs, the test
 //     prints a paste-ready JSON block and writes the baseline file.
 //
 // The baseline file is gitignored on purpose. It holds numbers for one
 // machine and one build config. Harvest a fresh file per host:
-//   PARVATI_PERF_HARVEST=1 ./build_unified/parvati_unified_tests perf_baseline_test
+//   HELLCAT_PERF_HARVEST=1 ./build_unified/hellcat_unified_tests perf_baseline_test
 //
 // Telemetry note: the engine writes the UI telemetry frame on every
 // renderPartFx call. No runtime switch exists for it. The scenarios
@@ -43,7 +43,7 @@
 // needs a source change, so it stays out of this harness.
 //
 // Unified runner. Run with:
-//   ./build_unified/parvati_unified_tests perf_baseline_test
+//   ./build_unified/hellcat_unified_tests perf_baseline_test
 
 #include <algorithm>
 #include <chrono>
@@ -115,7 +115,7 @@ struct RenderOutcome
 
 RenderOutcome renderOnce (const PerfScenario& sc)
 {
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (sc.sampleRate, kBlock);
 
     if (sc.allParts16)
@@ -226,7 +226,7 @@ double madOf (std::vector<double> v, double med)
 // Baseline file: tests/perf_baseline.local.json (gitignored).
 juce::File baselineFile()
 {
-    return juce::File (PARVATI_SOURCE_DIR "/tests/perf_baseline.local.json");
+    return juce::File (HELLCAT_SOURCE_DIR "/tests/perf_baseline.local.json");
 }
 
 juce::String configName()
@@ -246,7 +246,7 @@ TEST(perf_baseline_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    const char* const harvestEnv = std::getenv ("PARVATI_PERF_HARVEST");
+    const char* const harvestEnv = std::getenv ("HELLCAT_PERF_HARVEST");
     const bool harvest = harvestEnv != nullptr && *harvestEnv != '\0';
     const juce::File baseline = baselineFile();
     const bool haveBaseline = ! harvest && baseline.existsAsFile();
@@ -403,7 +403,7 @@ TEST(perf_baseline_test)
     else
     {
         std::printf ("\nno baseline file: smoke pass only (timing does not gate). "
-                     "Harvest one with PARVATI_PERF_HARVEST=1.\n");
+                     "Harvest one with HELLCAT_PERF_HARVEST=1.\n");
     }
 
     return true;

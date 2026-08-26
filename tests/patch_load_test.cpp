@@ -24,7 +24,7 @@ int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
 // Render @p blocks of empty MIDI; returns the last block's mono samples (L).
-std::vector<float> renderIdle (ParvatiAudioProcessor& proc, int blocks)
+std::vector<float> renderIdle (HellcatAudioProcessor& proc, int blocks)
 {
     std::vector<float> last;
     for (int b = 0; b < blocks; ++b)
@@ -37,7 +37,7 @@ std::vector<float> renderIdle (ParvatiAudioProcessor& proc, int blocks)
     return last;
 }
 
-void noteOn (ParvatiAudioProcessor& proc, int ch, int note, int vel)
+void noteOn (HellcatAudioProcessor& proc, int ch, int note, int vel)
 {
     juce::AudioBuffer<float> buf (2, 256); buf.clear();
     juce::MidiBuffer m;
@@ -45,7 +45,7 @@ void noteOn (ParvatiAudioProcessor& proc, int ch, int note, int vel)
     proc.processBlock (buf, m);
 }
 
-int countActiveVoices (ParvatiAudioProcessor& proc)
+int countActiveVoices (HellcatAudioProcessor& proc)
 {
     auto& e = proc.getEngine();
     int c = 0;
@@ -55,7 +55,7 @@ int countActiveVoices (ParvatiAudioProcessor& proc)
     return c;
 }
 
-int countActiveInPart (ParvatiAudioProcessor& proc, int part)
+int countActiveInPart (HellcatAudioProcessor& proc, int part)
 {
     auto& e = proc.getEngine();
     int c = 0;
@@ -76,9 +76,9 @@ double peak (const std::vector<float>& s)
 TEST(patch_load_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
-    std::printf ("=== Parvati Patch-Load + DSP Regression ===\n");
+    std::printf ("=== Hellcat Patch-Load + DSP Regression ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     auto& eng = proc.getEngine();
     auto setP = [&] (const char* id, float v) { proc.getApvts().getParameterAsValue (id) = v; };
@@ -98,9 +98,9 @@ TEST(patch_load_test)
         check (countActiveVoices (proc) > 0, "a held note triggers a voice");
 
         // Load a different template while the note is still held.
-        const auto tdir = ParvatiAudioProcessor::getTemplatesDir();
-        const juce::File poly6 = tdir.getChildFile ("Poly.parvati");
-        bool loaded = poly6.existsAsFile() && proc.loadParvatiMultiFile (poly6);
+        const auto tdir = HellcatAudioProcessor::getTemplatesDir();
+        const juce::File poly6 = tdir.getChildFile ("Poly.yml");
+        bool loaded = poly6.existsAsFile() && proc.loadHellcatMultiFile (poly6);
         check (loaded, "Poly template loaded mid-note");
         renderIdle (proc, 6);   // let the reset + release settle
 
@@ -116,7 +116,7 @@ TEST(patch_load_test)
         // Two engines, same note, only Mix Crush differs. They start phase-aligned
         // (same note + init), so any divergence is the crush (pre-filter sample-
         // and-hold). A no-op crush would leave the two waveforms ~identical.
-        auto setup = [] (ParvatiAudioProcessor& p, int crush) {
+        auto setup = [] (HellcatAudioProcessor& p, int crush) {
             p.prepareToPlay (48000.0, 256);
             p.getApvts().getParameterAsValue ("part_select")   = 1.0f;
             p.getApvts().getParameterAsValue ("part_polyphony") = 1.0f;   // POLY
@@ -126,7 +126,7 @@ TEST(patch_load_test)
             noteOn (p, 1, 60, 110);
             renderIdle (p, 8);
         };
-        ParvatiAudioProcessor clean, crushed;
+        HellcatAudioProcessor clean, crushed;
         setup (clean, 0);
         setup (crushed, 28);   // crush() = 29 -> hold 29 samples
         const auto a = renderIdle (clean, 1);
@@ -146,10 +146,10 @@ TEST(patch_load_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[B8] Multitimbral MIDI input (loaded Multitimbral template)\n");
     {
-        ParvatiAudioProcessor mp;
+        HellcatAudioProcessor mp;
         mp.prepareToPlay (48000.0, 256);
-        const juce::File mt = ParvatiAudioProcessor::getTemplatesDir().getChildFile ("Multitimbral.parvati");
-        bool loaded = mt.existsAsFile() && mp.loadParvatiMultiFile (mt);
+        const juce::File mt = HellcatAudioProcessor::getTemplatesDir().getChildFile ("Multitimbral.yml");
+        bool loaded = mt.existsAsFile() && mp.loadHellcatMultiFile (mt);
         check (loaded, "Multitimbral template loaded");
         renderIdle (mp, 2);   // flush the deferred rebuild so routing/allocation settle
 
@@ -183,14 +183,14 @@ TEST(patch_load_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[B9] Multi-load does not clobber Part 0 (engine authoritative)\n");
     {
-        ParvatiAudioProcessor mp;
+        HellcatAudioProcessor mp;
         mp.prepareToPlay (48000.0, 256);
         // Pre-load: init patch has osc1_shape = 0 (NONE). The Mono template
         // carries osc1_shape = 1 (Saw). A clobber (syncAllParamsToEngine pushing
         // stale APVTS back into engine) would leave engine patchBytes[0] at 0.
-        const auto tdir = ParvatiAudioProcessor::getTemplatesDir();
-        const juce::File mono = tdir.getChildFile ("Mono.parvati");
-        check (mono.existsAsFile() && mp.loadParvatiMultiFile (mono), "Mono template loaded");
+        const auto tdir = HellcatAudioProcessor::getTemplatesDir();
+        const juce::File mono = tdir.getChildFile ("Mono.yml");
+        check (mono.existsAsFile() && mp.loadHellcatMultiFile (mono), "Mono template loaded");
         renderIdle (mp, 2);
 
         const uint8_t engineByte = mp.getEngine().getPart (0).patchBytes[0];

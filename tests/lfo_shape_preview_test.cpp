@@ -37,11 +37,11 @@ TEST(lfo_shape_preview_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     proc.syncAllParamsToEngine();
 
-    // The REAL wiring from ParvatiEditor's page builder (LFO preview mode,
+    // The REAL wiring from HellcatEditor's page builder (LFO preview mode,
     // shape getter over the APVTS choice parameter).
     auto* shapeParam = proc.getApvts().getParameter ("env1_lfo_shape");
     CHECK(shapeParam != nullptr, "env1_lfo_shape parameter exists");

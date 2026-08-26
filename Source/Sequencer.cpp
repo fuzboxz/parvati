@@ -1,8 +1,8 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See Sequencer.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See Sequencer.h.
 
 #include "Sequencer.h"
 
-namespace parvati
+namespace hellcat
 {
 
 void Sequencer::clockTick (uint8_t heldNote, bool keyHeld)
@@ -73,4 +73,4 @@ void Sequencer::clockTick (uint8_t heldNote, bool keyHeld)
     }
 }
 
-}  // namespace parvati
+}  // namespace hellcat

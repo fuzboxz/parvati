@@ -15,7 +15,7 @@
 # trailing spaces are significant for the suffix-key fragment convention).
 #
 # Audit note (TOOL 10, 2026-08-18): the tuning preset names are NOT TRANS'd
-# (added via parvati::tuningPresetName without TRANS), so they cannot appear
+# (added via hellcat::tuningPresetName without TRANS), so they cannot appear
 # here; parameter NAMES are hardware terms and stay raw by design (see the
 # table header comments in Source/ui/Translations.cpp).
 

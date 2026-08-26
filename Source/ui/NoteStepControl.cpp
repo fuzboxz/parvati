@@ -1,10 +1,10 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See NoteStepControl.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See NoteStepControl.h.
 
 #include "ui/NoteStepControl.h"
 
 #include "ui/NoteName.h"   // midiNoteName
 
-NoteStepControl::NoteStepControl (ParvatiAudioProcessor& processor,
+NoteStepControl::NoteStepControl (HellcatAudioProcessor& processor,
                                   const PatchParamDescriptor& descriptor)
     : ParamControl (processor, descriptor)
 {

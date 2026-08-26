@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxWorkspace.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxWorkspace.h.
 
 #include "FxWorkspace.h"
 

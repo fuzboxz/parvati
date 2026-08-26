@@ -1,4 +1,4 @@
-// Concurrency / multithreaded fuzz test for Parvati.
+// Concurrency / multithreaded fuzz test for Hellcat.
 //
 // Models the REAL plugin threading via tests/mt_harness.h: a background AUDIO
 // thread loops processBlock with the transport playing and a HELD NOTE each
@@ -15,7 +15,7 @@
 //   * engine modes: polyphony (Mono..Chain on every Part), filter oversampling
 //     (1/2/4), parameter smoothing, VCA curve.
 //   * multitimbrality: per-Part MIDI channel, key zone, voice-card allocation.
-//   * patch / multi / template loads (.PRO / .MUL / .parvati).
+//   * patch / multi / template loads (.PRO / .MUL / .yml).
 //   * host-state get/set cycling (DAW autosave + scene restore).
 //   * optional concurrent MIDI injection (the thread-safe UI click-play path).
 //
@@ -69,8 +69,8 @@ double peakAbs (const juce::AudioBuffer<float>& buf)
 }
 
 // Resolve preset files that exist in this checkout (tests degrade gracefully if a
-// bank is absent). PARVATI_SOURCE_DIR is defined for this target in CMake.
-const juce::File srcDir()        { return juce::File (PARVATI_SOURCE_DIR); }
+// bank is absent). HELLCAT_SOURCE_DIR is defined for this target in CMake.
+const juce::File srcDir()        { return juce::File (HELLCAT_SOURCE_DIR); }
 // NOTE: findChildFiles returns Array<File> by value; .getFirst() on the
 // temporary would dangle. Capture the array, return a copy.
 juce::File findFactoryMulti()
@@ -87,19 +87,19 @@ juce::File findFactoryPatch()
     auto f = d.findChildFiles (juce::File::findFiles, true, "*.PRO");
     return f.isEmpty() ? juce::File() : f.getFirst();
 }
-juce::File findParvatiTemplate()
+juce::File findHellcatTemplate()
 {
-    const auto d = ParvatiAudioProcessor::getTemplatesDir();
+    const auto d = HellcatAudioProcessor::getTemplatesDir();
     if (! d.exists()) return {};
-    auto f = d.findChildFiles (juce::File::findFiles, false, "*.parvati");
+    auto f = d.findChildFiles (juce::File::findFiles, false, "*.yml");
     return f.isEmpty() ? juce::File() : f.getFirst();
 }
 
 // A pool of preset files from the source tree: factory .PRO patches (a handful
-// per bank A/B/F/S for speed), the factory .MUL multis, and the .parvati multi
+// per bank A/B/F/S for speed), the factory .MUL multis, and the .yml multi
 // templates. Cached after the first scan. Drives rapid preset switching under
 // the audio thread -- the "clicking through the browser" load that exercises
-// every load path (.PRO / .MUL / .parvati-multi) and the deferred voice reset /
+// every load path (.PRO / .MUL / .yml-multi) and the deferred voice reset /
 // part re-seed / allocation rebuild each one triggers.
 const juce::Array<juce::File>& collectPresetFiles()
 {
@@ -117,7 +117,7 @@ const juce::Array<juce::File>& collectPresetFiles()
                 f.add (ps.getReference (i));
         }
         f.addArray (root.getChildFile ("FACTORY_MULTI").findChildFiles (juce::File::findFiles, false, "*.MUL"));
-        f.addArray (root.getChildFile ("TEMPLATES").findChildFiles (juce::File::findFiles, false, "*.parvati"));
+        f.addArray (root.getChildFile ("TEMPLATES").findChildFiles (juce::File::findFiles, false, "*.yml"));
         return f;
     }();
     return files;
@@ -128,20 +128,20 @@ const juce::Array<juce::File>& collectPresetFiles()
 // entire surface (osc/mix/filter/3x env+lfo/voice lfo/14 mods/4 modifiers/part/
 // seq/arp/options) is exercised against the audio thread. Routed through the
 // APVTS listener so each param hits its faithful engine method.
-void fullParameterSweep (ParvatiAudioProcessor& proc, juce::Random& rng)
+void fullParameterSweep (HellcatAudioProcessor& proc, juce::Random& rng)
 {
     const auto& descs = getPatchParamDescriptors();
     for (int part = 1; part <= SynthEngine::getNumParts(); ++part)
     {
-        parvati_test::setParamRaw (proc, "part_select", static_cast<float> (part));
+        hellcat_test::setParamRaw (proc, "part_select", static_cast<float> (part));
         std::this_thread::sleep_for (std::chrono::microseconds (40));
         for (const auto& d : descs)
         {
             if (d.paramID == "part_select")
                 continue;
-            parvati_test::setParamRaw (proc, d.paramID.c_str(), static_cast<float> (d.minValue));
-            parvati_test::setParamRaw (proc, d.paramID.c_str(), static_cast<float> (d.maxValue));
-            parvati_test::setParamRaw (proc, d.paramID.c_str(), parvati_test::randomRawValue (d, rng));
+            hellcat_test::setParamRaw (proc, d.paramID.c_str(), static_cast<float> (d.minValue));
+            hellcat_test::setParamRaw (proc, d.paramID.c_str(), static_cast<float> (d.maxValue));
+            hellcat_test::setParamRaw (proc, d.paramID.c_str(), hellcat_test::randomRawValue (d, rng));
         }
     }
 }
@@ -151,7 +151,7 @@ void fullParameterSweep (ParvatiAudioProcessor& proc, juce::Random& rng)
 // index exceeding the resource table) surfaces RELIABLY rather than by timing
 // luck. Runs single-threaded: the bug is in the render path itself, independent
 // of threading. `outFinite` reports whether any shape produced NaN/Inf.
-void dspExtremeShapeRender (ParvatiAudioProcessor& proc, bool& outFinite)
+void dspExtremeShapeRender (HellcatAudioProcessor& proc, bool& outFinite)
 {
     juce::AudioBuffer<float> buf (2, 256);
     juce::MidiBuffer noteOn;
@@ -159,12 +159,12 @@ void dspExtremeShapeRender (ParvatiAudioProcessor& proc, bool& outFinite)
     outFinite = true;
     for (int shape = 0; shape < 38; ++shape)   // WAVEFORM_LAST == 38
     {
-        parvati_test::setParamRaw (proc, "osc1_shape", (float) shape);
-        parvati_test::setParamRaw (proc, "osc1_param",  127.0f);
-        parvati_test::setParamRaw (proc, "osc1_range",   24.0f);
-        parvati_test::setParamRaw (proc, "osc1_detune",  64.0f);
-        parvati_test::setParamRaw (proc, "osc2_shape", (float) shape);
-        parvati_test::setParamRaw (proc, "osc2_param",  127.0f);
+        hellcat_test::setParamRaw (proc, "osc1_shape", (float) shape);
+        hellcat_test::setParamRaw (proc, "osc1_param",  127.0f);
+        hellcat_test::setParamRaw (proc, "osc1_range",   24.0f);
+        hellcat_test::setParamRaw (proc, "osc1_detune",  64.0f);
+        hellcat_test::setParamRaw (proc, "osc2_shape", (float) shape);
+        hellcat_test::setParamRaw (proc, "osc2_param",  127.0f);
         buf.clear();
         proc.processBlock (buf, noteOn);   // executes this shape's Render() path
         for (int ch = 0; ch < buf.getNumChannels() && outFinite; ++ch)
@@ -174,22 +174,22 @@ void dspExtremeShapeRender (ParvatiAudioProcessor& proc, bool& outFinite)
 }
 
 // Rapidly switch presets on the MESSAGE thread while the audio thread renders.
-// Cycles through every load path (.PRO / .MUL / .parvati-multi) and interleaves a
-// .parvati single-patch save->load round-trip (the 4th path) plus part-select
+// Cycles through every load path (.PRO / .MUL / .yml-multi) and interleaves a
+// .yml single-patch save->load round-trip (the 4th path) plus part-select
 // switches. Each load defers a voice reset / part re-seed / allocation rebuild
 // to the audio thread -- the race-prone path this is designed to hammer.
-void presetSwitchStress (ParvatiAudioProcessor& proc, const juce::Array<juce::File>& files,
+void presetSwitchStress (HellcatAudioProcessor& proc, const juce::Array<juce::File>& files,
                          juce::Random& rng, int switches)
 {
     const juce::File roundTrip = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                     .getChildFile ("parvati_mt_roundtrip.parvati");
+                                     .getChildFile ("hellcat_mt_roundtrip.yml");
     for (int i = 0; i < switches; ++i)
     {
         if (files.isEmpty() || rng.nextInt (5) == 0)
         {
-            // .parvati single-patch save -> load round-trip (loadParvatiPatchFile path).
-            (void) proc.saveParvatiPatchFile (roundTrip);
-            (void) proc.loadParvatiPatchFile (roundTrip);
+            // .yml single-patch save -> load round-trip (loadHellcatPatchFile path).
+            (void) proc.saveHellcatPatchFile (roundTrip);
+            (void) proc.loadHellcatPatchFile (roundTrip);
         }
         else
         {
@@ -197,10 +197,10 @@ void presetSwitchStress (ParvatiAudioProcessor& proc, const juce::Array<juce::Fi
             const auto ext = f.getFileExtension().toLowerCase();
             if (ext == ".pro")            (void) proc.loadProgramFile (f);
             else if (ext == ".mul")       (void) proc.loadMultiFile (f);
-            else if (ext == ".parvati")   (void) proc.loadParvatiMultiFile (f);
+            else if (ext == ".yml")   (void) proc.loadHellcatMultiFile (f);
         }
         if (rng.nextInt (4) == 0)   // editor flips which Part it shows mid-switch
-            parvati_test::setParamRaw (proc, "part_select",
+            hellcat_test::setParamRaw (proc, "part_select",
                 (float) (1 + rng.nextInt (SynthEngine::getNumParts())));
         std::this_thread::sleep_for (std::chrono::microseconds (50 + rng.nextInt (250)));
     }
@@ -212,14 +212,14 @@ void presetSwitchStress (ParvatiAudioProcessor& proc, const juce::Array<juce::Fi
 // `modeMask` selects which op classes run (bit0..bit9) so a corruptor can be
 // isolated (pass hex on argv[1]). The random parameter edit (bit0) draws from the
 // FULL descriptor table, not a fixed subset.
-void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
+void chaosSurface (HellcatAudioProcessor& proc, juce::Random& rng, int iters,
                    const juce::MemoryBlock* savedState, unsigned modeMask = 0xFFFFu)
 {
     const auto& descs = getPatchParamDescriptors();
     const int nDescs = static_cast<int> (descs.size());
     const juce::File multi = findFactoryMulti();
     const juce::File patch = findFactoryPatch();
-    const juce::File tpl   = findParvatiTemplate();
+    const juce::File tpl   = findHellcatTemplate();
     auto& engine = proc.getEngine();
 
     for (int i = 0; i < iters; ++i)
@@ -229,19 +229,19 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
         switch (op)
         {
             case 0: { const auto& d = descs[(size_t) rng.nextInt (nDescs)];           // random param (full table)
-                      parvati_test::setParamRaw (proc, d.paramID.c_str(), parvati_test::randomRawValue (d, rng)); } break;
-            case 1: parvati_test::setParamRaw (proc, "arp_mode",       (float) rng.nextInt (3));      // Off/Arp/Seq
-                    parvati_test::setParamRaw (proc, "arp_direction",  (float) rng.nextInt (6));
-                    parvati_test::setParamRaw (proc, "arp_octave",     (float) (1 + rng.nextInt (4)));
-                    parvati_test::setParamRaw (proc, "arp_resolution", (float) rng.nextInt (15));
-                    parvati_test::setParamRaw (proc, "seq_length_1",   (float) (1 + rng.nextInt (32)));
-                    parvati_test::setParamRaw (proc, "seqnote_step0",  (float) rng.nextInt (256)); break;
-            case 2: parvati_test::setParamRaw (proc, "part_polyphony", (float) rng.nextInt (5)); break; // Mono..Chain
-            case 3: parvati_test::setParamRaw (proc, "vca_curve",    (float) rng.nextInt (2));        // global options
-                    parvati_test::setParamRaw (proc, "filter_card",  (float) rng.nextInt (3));
-                    parvati_test::setParamRaw (proc, "filter_drive", (float) rng.nextInt (8)); break;
+                      hellcat_test::setParamRaw (proc, d.paramID.c_str(), hellcat_test::randomRawValue (d, rng)); } break;
+            case 1: hellcat_test::setParamRaw (proc, "arp_mode",       (float) rng.nextInt (3));      // Off/Arp/Seq
+                    hellcat_test::setParamRaw (proc, "arp_direction",  (float) rng.nextInt (6));
+                    hellcat_test::setParamRaw (proc, "arp_octave",     (float) (1 + rng.nextInt (4)));
+                    hellcat_test::setParamRaw (proc, "arp_resolution", (float) rng.nextInt (15));
+                    hellcat_test::setParamRaw (proc, "seq_length_1",   (float) (1 + rng.nextInt (32)));
+                    hellcat_test::setParamRaw (proc, "seqnote_step0",  (float) rng.nextInt (256)); break;
+            case 2: hellcat_test::setParamRaw (proc, "part_polyphony", (float) rng.nextInt (5)); break; // Mono..Chain
+            case 3: hellcat_test::setParamRaw (proc, "vca_curve",    (float) rng.nextInt (2));        // global options
+                    hellcat_test::setParamRaw (proc, "filter_card",  (float) rng.nextInt (3));
+                    hellcat_test::setParamRaw (proc, "filter_drive", (float) rng.nextInt (8)); break;
             case 4: { const int sel = 1 + rng.nextInt (SynthEngine::getNumParts());
-                      parvati_test::setParamRaw (proc, "part_select", (float) sel); } break;
+                      hellcat_test::setParamRaw (proc, "part_select", (float) sel); } break;
             case 5: { juce::MemoryBlock b; proc.getStateInformation (b); } break;                    // host autosave
             case 6: if (savedState != nullptr) proc.setStateInformation (savedState->getData(), (int) savedState->getSize()); break;  // host restore
             case 7: switch (rng.nextInt (2)) {                                                        // engine modes
@@ -256,26 +256,26 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
             case 9: switch (rng.nextInt (3)) {                                                        // file loads
                         case 0: if (multi.existsAsFile()) (void) proc.loadMultiFile (multi); break;
                         case 1: if (patch.existsAsFile()) (void) proc.loadProgramFile (patch); break;
-                        case 2: if (tpl.existsAsFile())   (void) proc.loadParvatiMultiFile (tpl); break;
+                        case 2: if (tpl.existsAsFile())   (void) proc.loadHellcatMultiFile (tpl); break;
                     } break;
-            case 10: { // FX section (Parvati-exclusive): ENABLE a slot so the real renderPartFx
+            case 10: { // FX section (Hellcat-exclusive): ENABLE a slot so the real renderPartFx
                        // chain runs on the audio thread (not the dry-copy bypass) while we mutate
                        // its params + the FX mod matrix + topology/order concurrently. This is the
                        // MT-write / AT-read race the fxDirty_ flag must guard (run under TSAN).
                       const int slot = 1 + rng.nextInt (kNumFxSlots);               // fx1..3
                       const juce::String pfx = "fx" + juce::String (slot);
-                      parvati_test::setParamRaw (proc, (pfx + "_type").toRawUTF8(),    (float) rng.nextInt ((int) FxType::Count));
-                      parvati_test::setParamRaw (proc, (pfx + "_enabled").toRawUTF8(), rng.nextBool() ? 1.0f : 0.0f);
-                      parvati_test::setParamRaw (proc, (pfx + "_drywet").toRawUTF8(),  (float) rng.nextInt (128));
-                      parvati_test::setParamRaw (proc, (pfx + "_param1").toRawUTF8(),  (float) rng.nextInt (128));
-                      parvati_test::setParamRaw (proc, (pfx + "_param2").toRawUTF8(),  (float) rng.nextInt (128));
-                      parvati_test::setParamRaw (proc, "fx_topo",                       (float) rng.nextInt (3));      // Series / Parallel 1+2->3 / Parallel 1->2+3
-                      parvati_test::setParamRaw (proc, "fx_order",                      (float) rng.nextInt (6));      // 6 permutations
+                      hellcat_test::setParamRaw (proc, (pfx + "_type").toRawUTF8(),    (float) rng.nextInt ((int) FxType::Count));
+                      hellcat_test::setParamRaw (proc, (pfx + "_enabled").toRawUTF8(), rng.nextBool() ? 1.0f : 0.0f);
+                      hellcat_test::setParamRaw (proc, (pfx + "_drywet").toRawUTF8(),  (float) rng.nextInt (128));
+                      hellcat_test::setParamRaw (proc, (pfx + "_param1").toRawUTF8(),  (float) rng.nextInt (128));
+                      hellcat_test::setParamRaw (proc, (pfx + "_param2").toRawUTF8(),  (float) rng.nextInt (128));
+                      hellcat_test::setParamRaw (proc, "fx_topo",                       (float) rng.nextInt (3));      // Series / Parallel 1+2->3 / Parallel 1->2+3
+                      hellcat_test::setParamRaw (proc, "fx_order",                      (float) rng.nextInt (6));      // 6 permutations
                       // an FX-mod routing (16-slot matrix) onto this slot's drywet + a source.
                       const int m = 1 + rng.nextInt (kNumFxMatrixSlots);
-                      parvati_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_source").toRawUTF8(), (float) rng.nextInt (31));
-                      parvati_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_dest").toRawUTF8(),   (float) ((slot - 1) * 5));
-                      parvati_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_amount").toRawUTF8(), (float) (rng.nextInt (127) - 63));
+                      hellcat_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_source").toRawUTF8(), (float) rng.nextInt (31));
+                      hellcat_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_dest").toRawUTF8(),   (float) ((slot - 1) * 5));
+                      hellcat_test::setParamRaw (proc, ("fxmod" + juce::String (m) + "_amount").toRawUTF8(), (float) (rng.nextInt (127) - 63));
                     } break;
         }
         std::this_thread::sleep_for (std::chrono::microseconds (20 + rng.nextInt (80)));
@@ -286,14 +286,14 @@ void chaosSurface (ParvatiAudioProcessor& proc, juce::Random& rng, int iters,
 TEST(concurrency_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
-    // Optional bisect (was argv[1] in the standalone binary): PARVATI_MT_MASK
+    // Optional bisect (was argv[1] in the standalone binary): HELLCAT_MT_MASK
     // (hex, env var) selects which chaos op classes run concurrently with the
     // audio thread, so the corruptor can be isolated. Default = all ops.
     const unsigned mask = [] {
-        const char* e = std::getenv ("PARVATI_MT_MASK");
+        const char* e = std::getenv ("HELLCAT_MT_MASK");
         return e ? (unsigned) std::strtoul (e, nullptr, 0) : 0xFFFFu;
     }();
-    std::printf ("=== Parvati Concurrency / Multithreaded Fuzz (mask=0x%x) ===\n", mask);
+    std::printf ("=== Hellcat Concurrency / Multithreaded Fuzz (mask=0x%x) ===\n", mask);
 
     // -------------------------------------------------------------------------
     // [1] FULL deterministic parameter sweep vs the audio thread: every Part,
@@ -303,12 +303,12 @@ TEST(concurrency_test)
     // -------------------------------------------------------------------------
     std::printf ("\n[1] full parameter sweep (all parts, all params) vs audio\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.getApvts().getParameterAsValue ("part_select") = 1.0f;
         proc.syncAllParamsToEngine();
         juce::Random rng { 0xC0FFEE };
-        const auto out = parvati_test::runConcurrent (proc,
+        const auto out = hellcat_test::runConcurrent (proc,
             [&] { fullParameterSweep (proc, rng); },
             1 << 30, /*heldNote*/ 60);
         char m[160];
@@ -325,7 +325,7 @@ TEST(concurrency_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[1b] DSP extreme-shape render (every osc shape, maxed params)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
         bool finite = true;
@@ -341,13 +341,13 @@ TEST(concurrency_test)
     // -------------------------------------------------------------------------
     std::printf ("\n[2] chaos: full surface + engine modes + MIDI injection\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
         juce::MemoryBlock saved;
         proc.getStateInformation (saved);
         juce::Random rng { 0xBA5EBA11 };
-        const auto out = parvati_test::runConcurrent (proc,
+        const auto out = hellcat_test::runConcurrent (proc,
             [&] { chaosSurface (proc, rng, 2000, &saved, mask); },
             1 << 30, /*heldNote*/ 60, 256, /*fireMidi*/ true);
         check (! out.audioThrew, "chaos: audio thread did not throw");
@@ -363,19 +363,19 @@ TEST(concurrency_test)
     // -------------------------------------------------------------------------
     std::printf ("\n[3] polyphony stress vs audio\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
         juce::Random rng { 0xFEEDFACE };
-        const auto out = parvati_test::runConcurrent (proc,
+        const auto out = hellcat_test::runConcurrent (proc,
             [&]()
             {
                 for (int round = 0; round < 12; ++round)
                 {
                     for (int p = 0; p < SynthEngine::getNumParts(); ++p)
                     {
-                        parvati_test::setParamRaw (proc, "part_select", (float) (p + 1));
-                        parvati_test::setParamRaw (proc, "part_polyphony", (float) rng.nextInt (5));
+                        hellcat_test::setParamRaw (proc, "part_select", (float) (p + 1));
+                        hellcat_test::setParamRaw (proc, "part_polyphony", (float) rng.nextInt (5));
                         std::this_thread::sleep_for (std::chrono::microseconds (80));
                     }
                 }
@@ -392,14 +392,14 @@ TEST(concurrency_test)
     // -------------------------------------------------------------------------
     std::printf ("\n[4] TekDrums multi: note-sequencer vs host state + loads\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         const juce::File tekDrums = findFactoryMulti();
         check (tekDrums.existsAsFile() ? proc.loadMultiFile (tekDrums) : true, "loaded a factory multi");
         juce::MemoryBlock saved;
         proc.getStateInformation (saved);
         juce::Random rng { 0xDECAFBAD };
-        const auto out = parvati_test::runConcurrent (proc,
+        const auto out = hellcat_test::runConcurrent (proc,
             [&] { chaosSurface (proc, rng, 1500, &saved, 0xFFFFu); },
             1 << 30, /*heldNote*/ 36);
         check (! out.audioThrew, "TekDrums: audio thread did not throw");
@@ -409,20 +409,20 @@ TEST(concurrency_test)
 
     // ---------------------------------------------------------------------
     // [6] Preset switching under load: rapidly cycle through the factory preset
-    //     pool (.PRO / .MUL / .parvati-multi) plus a .parvati single-patch
+    //     pool (.PRO / .MUL / .yml-multi) plus a .yml single-patch
     //     save->load round-trip, while a note renders. Hammers every load path's
     //     deferred voice reset / part re-seed / allocation rebuild under audio
     //     contention (the classic preset-click race surface).
     // ---------------------------------------------------------------------
     std::printf ("\n[6] preset switching vs audio (all load paths)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
         const auto& pool = collectPresetFiles();
         std::printf ("     preset pool: %d files\n", pool.size());
         juce::Random rng { 0xFEEDC0DE };
-        const auto out = parvati_test::runConcurrent (proc,
+        const auto out = hellcat_test::runConcurrent (proc,
             [&] { presetSwitchStress (proc, pool, rng, 600); },
             1 << 30, /*heldNote*/ 60);
         check (! out.audioThrew, "preset switch: audio thread did not throw");
@@ -435,7 +435,7 @@ TEST(concurrency_test)
     // -------------------------------------------------------------------------
     std::printf ("\n[5] engine still responds after the concurrent run\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
         juce::AudioBuffer<float> buf (2, 256);
@@ -466,7 +466,7 @@ TEST(concurrency_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[7] deferred arp/seq/part_select: audio-thread writes drain to the MT\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
 
@@ -514,7 +514,7 @@ TEST(concurrency_test)
         // dispatch loop so the 60 Hz DeferredParamTimer drains the ring.
         for (int i = 0; i < 300; ++i)
         {
-            parvati_test::setParamRaw (proc, "arp_resolution", (float) (i % 15));
+            hellcat_test::setParamRaw (proc, "arp_resolution", (float) (i % 15));
             pumpDeferredTimerMs (2);
         }
         running.store (false, std::memory_order_relaxed);
@@ -565,7 +565,7 @@ TEST(concurrency_test)
                 "part_select parameter reflects the deferred selection");
             // A byte edit after the deferred switch must land on Part 2 (the
             // onPartSelect-driven currentPart_, not just the parameter value).
-            parvati_test::setParamRaw (proc, "part_octave", 2.0f);
+            hellcat_test::setParamRaw (proc, "part_octave", 2.0f);
             check (proc.getEngine().getPart (2).partBytes[1] == 2,
                 "post-switch byte edit routes to the deferred-selected Part 2");
         }
@@ -594,7 +594,7 @@ TEST(concurrency_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[7] UI-pref state save/restore vs message-thread setters (F-ios-lc-1)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
 
@@ -643,7 +643,7 @@ TEST(concurrency_test)
         // Full host-state round-trip preserves the UI preferences.
         juce::MemoryBlock blob;
         proc.getStateInformation (blob);
-        ParvatiAudioProcessor restored;
+        HellcatAudioProcessor restored;
         restored.prepareToPlay (48000.0, 256);
         restored.setStateInformation (blob.getData(), (int) blob.getSize());
         check (restored.getUiTheme() == "Slate", "state round-trip preserves theme");

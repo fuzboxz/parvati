@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1VinylCompressor implementation. See the header for the signal path and
 // parameter mapping. The entire audio-path multiply/add is 24-bit fixed-point
@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // Total delay memory: one DelayLine<2048> (no extra buffer). Well within the
@@ -166,4 +166,4 @@ void Fv1VinylCompressor::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = out;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

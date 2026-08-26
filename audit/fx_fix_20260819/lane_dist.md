@@ -24,8 +24,8 @@
 
 ## Doc edits for the GATE (not mine)
 - `docs/FX_FV1_DESIGN.md`: Overdrive/LUT sections — effective drive ranges (now truly 1..16x/1..8x), Bias ±0.3 real, Level 0..2 real, latency reported, curve-shape truth; Echo glide; mod-delay clamp corners.
-- `tests/parvati_fx_onset_regression.cpp`: **LUT Dist (fx 17) bound 0.10 → 0.16** — measured 0.129/0.134/0.143/0.129 vs the default 0.10 after the calibration fix (legitimate driven-edge slope, the same designed-transient class as Overdrive's documented 0.16; the defect class this test pins is 0.6+). **Currently FAILING — needs the gate's one-line bound update.**
-- `tests/parvati_fv1_alias_probe.cpp` historical changelog numbers were measured at the old 8x-hot calibration.
+- `tests/hellcat_fx_onset_regression.cpp`: **LUT Dist (fx 17) bound 0.10 → 0.16** — measured 0.129/0.134/0.143/0.129 vs the default 0.10 after the calibration fix (legitimate driven-edge slope, the same designed-transient class as Overdrive's documented 0.16; the defect class this test pins is 0.6+). **Currently FAILING — needs the gate's one-line bound update.**
+- `tests/hellcat_fv1_alias_probe.cpp` historical changelog numbers were measured at the old 8x-hot calibration.
 
 ## Residual risks
 - Echo glide attenuation of circulating tails during long retargets (documented, tape-authentic).

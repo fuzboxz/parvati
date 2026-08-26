@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // GeneratorHostWorkspace — the shared skeleton of the SYNTH and FX tabs.
 // Both workspaces mirror each other line for line:
@@ -123,7 +123,7 @@ protected:
 
     // MIDDLE seam: the full-width Central Modulation Bar (workspace-owned).
     std::unique_ptr<CentralModBar> modBar_;
-    // The middle seam's top separator (parvati::ChromeRule; ui/ChromeRule.h).
+    // The middle seam's top separator (hellcat::ChromeRule; ui/ChromeRule.h).
     // Held as unique_ptr<Component> to avoid pulling the header into every
     // consumer — GeneratorHost.cpp owns the type via its include.
     std::unique_ptr<juce::Component> barRule_;

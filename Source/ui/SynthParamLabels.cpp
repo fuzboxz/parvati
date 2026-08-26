@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SynthParamLabels.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SynthParamLabels.h.
 //
 // Meaningful-unit value readout for the SYNTH-section knob params. Mirrors the
 // FX formatter (ui/FxSlotLabels.cpp::paramValueText) for the synth side. The
@@ -229,8 +229,8 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
             // reason as the seqnote branches below: a unit-checkable decode of
             // the raga byte (index 0 -> 12-EDO, 1..32 -> preset name).
             return iv == 0 ? juce::String ("12-EDO")
-                           : juce::String (parvati::tuningPresetName (
-                                 juce::jlimit (1, parvati::kNumTuningPresets, iv)));
+                           : juce::String (hellcat::tuningPresetName (
+                                 juce::jlimit (1, hellcat::kNumTuningPresets, iv)));
         }
         return juce::String (iv);
     }

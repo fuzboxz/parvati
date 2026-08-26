@@ -25,13 +25,13 @@
 //       impulse with IDENTICAL timing and <=1e-6 deviation vs a control chain
 //       whose gate is pinned OFF — the arm/wake cycle preserves N1/N2 latency
 //       exactly (rings zeroed at arm; all-zero rings are phase-invariant).
-//   [5] engine end-to-end: through ParvatiAudioProcessor + processBlock with
+//   [5] engine end-to-end: through HellcatAudioProcessor + processBlock with
 //       FX enabled, pure idle arms part 0's chain; a note-on wakes it and
 //       produces finite audible output; an fx1_param1 write on the armed idle
 //       chain disarms it within a block or two (the smoothedBase_ sub-chunk
 //       path delivers a REAL setSlotParam value change).
 //
-// Built by default. Run: ./build_unified/parvati_unified_tests fx_silence_gate_test
+// Built by default. Run: ./build_unified/hellcat_unified_tests fx_silence_gate_test
 
 #include <cmath>
 #include <cstdio>
@@ -291,7 +291,7 @@ TEST(fx_silence_gate_test)
     // =========================================================================
     std::printf ("[5] engine end-to-end: idle arms part 0, a note wakes it, a param edit disarms\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, kBlock);
         auto& eng = proc.getEngine();
 

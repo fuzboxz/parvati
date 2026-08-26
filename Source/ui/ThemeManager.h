@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ThemeManager — owns the built-in (and future user) themes plus the
 // selected one, and broadcasts a change notification whenever the selection
@@ -13,7 +13,7 @@
 
 #include <vector>
 
-#include "ParvatiTheme.h"
+#include "HellcatTheme.h"
 
 //==============================================================================
 class ThemeManager : public juce::ChangeBroadcaster
@@ -26,10 +26,10 @@ public:
     const std::vector<juce::String> getThemeNames() const;
 
     /** The currently selected theme. Never null (Carbon is always index 0). */
-    const ParvatiTheme& getCurrentTheme() const;
+    const HellcatTheme& getCurrentTheme() const;
 
     /** Theme at @p index, clamped to the valid range. */
-    const ParvatiTheme& getTheme (int index) const;
+    const HellcatTheme& getTheme (int index) const;
 
     //==========================================================================
     // Selection. By name is preferred (robust to reordering).
@@ -37,6 +37,6 @@ public:
     bool selectByName (const juce::String& name);
 
 private:
-    std::vector<ParvatiTheme> themes_;
+    std::vector<HellcatTheme> themes_;
     int currentIndex_ = 0;
 };

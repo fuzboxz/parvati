@@ -16,7 +16,7 @@ Repo: /Users/fuzboxz/parvati (read-only audit; no files changed). Sources under 
 - Cases: parse both tables via `juce::LocalisedStrings(text,true)` and assert identical key sets; `installLanguage("fr")` → `TRANS("Settings")=="Réglages"`, `TRANS("not a key")=="not a key"`; `installLanguage("zz")` → mappings null; `getAvailableLanguages()` order `{auto,en,fr,de}`. Effort: **S**. Suggested: `tests/translations_test.cpp`.
 
 ### 3. paramValueTextSynth — untested families (`Source/ui/SynthParamLabels.cpp`)
-`tests/parvati_synth_paramtext_test.cpp` (137 lines) covers osc/mix_balance/filter1_cutoff/env1_attack/synced rate idx 10/mod/seqnote_step/arp/part_tuning/part_raga. UNTESTED branches:
+`tests/hellcat_synth_paramtext_test.cpp` (137 lines) covers osc/mix_balance/filter1_cutoff/env1_attack/synced rate idx 10/mod/seqnote_step/arp/part_tuning/part_raga. UNTESTED branches:
 - `seqnote_vel*` (lines 158–163): `T("seqnote_vel3", 0x80|100)=="79%L"`, `T("seqnote_vel3",100)=="79%"` — the legato-bit decode has zero assertions.
 - `filter_env`/`filter_lfo` (fall-through pct/63): `T("filter_env",63)=="100%"`.
 - `part_spread`(÷40)/`part_portamento`(÷63)/`part_volume`(÷127): `T("part_spread",40)=="100%"`.

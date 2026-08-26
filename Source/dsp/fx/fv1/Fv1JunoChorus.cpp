@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1JunoChorus implementation — the Dual-BBD Chorus. This file holds the
 // documented source configuration table and the FV-1 realization of it.
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 static_assert (2 * DelayLine<2048>::capacity <= kMaxMemorySamples,
@@ -139,4 +139,4 @@ void Fv1JunoChorus::processSampleFx (int32_t lin, int32_t /*rin*/,
     phase_ -= std::floor (phase_);
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

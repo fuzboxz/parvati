@@ -1,4 +1,4 @@
-// Standalone verification of parvati::fv1::Fv1PlateReverb. JUCE-FREE: compiles
+// Standalone verification of hellcat::fv1::Fv1PlateReverb. JUCE-FREE: compiles
 // in seconds with
 //   clang++ -std=c++17 -O2 -Wall -Wextra -fsanitize=address,undefined \
 //     -I Source tests/fv1_plate_reverb_test.cpp \
@@ -17,7 +17,7 @@
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 #include "dsp/fx/fv1/Fv1PlateReverb.h"
 
-namespace fv1 = parvati::fv1;
+namespace fv1 = hellcat::fv1;
 
 namespace
 {
@@ -73,7 +73,7 @@ void processChunked (fv1::Fv1PlateReverb& fx, float* L, float* R, int n, int chu
 
 TEST(fv1_plate_reverb_test)
 {
-    using namespace parvati::fv1;
+    using namespace hellcat::fv1;
 
     std::printf ("FV1 PLATE REVERB TEST\n");
 

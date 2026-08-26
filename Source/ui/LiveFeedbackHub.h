@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef OttICSAK / Parvati.
+// Copyright (c) 2026 Jozsef OttICSAK / Hellcat.
 //
 // LiveFeedbackHub — the editor-owned pump of the LIVE modulation feedback
 // system (docs/LIVE_MOD_FEEDBACK_DESIGN.md). One juce::Timer (message thread)
@@ -25,7 +25,7 @@
 
 #include "ModTelemetryTypes.h"
 
-namespace parvati
+namespace hellcat
 {
 
 class LiveFeedbackHub : private juce::Timer
@@ -89,4 +89,4 @@ private:
     int  rateHz_ = 30;
 };
 
-}  // namespace parvati
+}  // namespace hellcat

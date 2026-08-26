@@ -28,7 +28,7 @@
 #include "dsp/fx/fv1/Fv1Room.h"
 #include "dsp/fx/fv1/Fv1Spring.h"
 
-namespace fv1 = parvati::fv1;
+namespace fv1 = hellcat::fv1;
 
 namespace
 {

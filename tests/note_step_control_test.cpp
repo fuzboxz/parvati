@@ -9,7 +9,7 @@
 // plus the on-screen readout through a REAL constructed control, and the
 // midiNoteName edges it renders with.
 //
-// Run: ./build_unified/parvati_unified_tests note_step_control_test
+// Run: ./build_unified/hellcat_unified_tests note_step_control_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -97,7 +97,7 @@ TEST(note_step_control_test)
 
     std::printf ("\n[5] Constructed control readout (real slider textFromValue)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         const PatchParamDescriptor* stepDesc = nullptr;
         for (const auto& d : getPatchParamDescriptors())
             if (d.paramID == "seqnote_step0") { stepDesc = &d; break; }

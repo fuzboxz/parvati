@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // AmbikaVoice — bridges ONE Ambika integer voice (ambika::dsp::Voice) into a
 // juce::SynthesiserVoice, running the digital engine at the fixed internal
@@ -73,7 +73,7 @@ public:
     // increments default to 0 and are (re)seeded by Voice::Init() and by
     // Envelope::Update() each ProcessBlock for ACTIVE voices. But an IDLE voice
     // is gated out of renderNextBlock, so after a bulk patch-byte push (a
-    // voice-mode / allocation rebuild, or a .MUL/.parvati load) its increments
+    // voice-mode / allocation rebuild, or a .MUL/.yml load) its increments
     // are stale. The next Trigger(ATTACK) then reads a 0 attack increment =>
     // the voice renders SILENT (VCA never opens). This was the standalone
     // "goes dead after a voice-mode / template switch" glitch. Call right
@@ -93,7 +93,7 @@ public:
         voice_.set_part_data (static_cast<uint8_t> (offset), value);
         // PartData bytes 1/2 are controller-side octave/tuning (the voicecard
         // dsp::Part struct has no such fields). The firmware applies both at
-        // NoteOn (Part::TuneNote). Parvati extension: a TUNING edit also
+        // NoteOn (Part::TuneNote). Hellcat extension: a TUNING edit also
         // retunes SOUNDING voices live — the delta glides at block rate in
         // dsp::Voice (stage_live_tune_delta). An OCTAVE edit stays at the
         // next trigger BY DESIGN: a 12-semitone jump on held notes is a setup
@@ -109,7 +109,7 @@ public:
         }
         else if (offset == 3)
         {
-            // Live spread re-drift (Parvati extension): re-derive this voice's
+            // Live spread re-drift (Hellcat extension): re-derive this voice's
             // drift from ITS multiplier and the new spread (uint8 wrap, the
             // same arithmetic the trigger path uses), then glide the delta.
             // A voice that never triggered holds multiplier 0 => delta 0.
@@ -120,7 +120,7 @@ public:
         }
     }
 
-    // Per-part tuning table (firmware raga preset or Parvati custom table):
+    // Per-part tuning table (firmware raga preset or Hellcat custom table):
     // 12 offsets in 1/128-semitone units, indexed by the RAW incoming note's
     // class at trigger (startNote). Staged by the engine's audio-thread tuning
     // service (pushTuningToVoices) — never written from the message thread
@@ -507,10 +507,11 @@ private:
 
     // Filter-card topology staging (message-thread -> audio-thread). The active
     // topology is applied in fillInternalBlock() so the filter is never
-    // re-prepared under a concurrent processSample. Defaults to the topology
-    // prepare() initialises (four-pole ladder).
-    std::atomic<ambika::dsp::FilterTopology> pendingTopology_ { ambika::dsp::FilterTopology::FOUR_POLE_LADDER };
+    // re-prepared under a concurrent processSample. prepare() stages the
+    // stock default (SMR4, filter_card default 0) through this same path;
+    // a later stage call simply overwrites the pending value.
     std::atomic<bool> topologyDirty_ { false };
+    std::atomic<ambika::dsp::FilterTopology> pendingTopology_ { ambika::dsp::FilterTopology::FOUR_POLE_OTA };
     std::unique_ptr<juce::dsp::Oversampling<float>> filterOS_;
 
     juce::LagrangeInterpolator interp_;

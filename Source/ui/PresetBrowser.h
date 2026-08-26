@@ -1,9 +1,9 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // PresetBrowser — a button showing the current patch name that opens a
 // HIERARCHICAL juce::PopupMenu, replacing the flat patch ComboBox. Categories:
-//   Templates ▸ (.parvati templates)
-//   User ▸ (recursively scanned nested folders; .PRO/.MUL/.parvati)
+//   Templates ▸ (.yml templates)
+//   User ▸ (recursively scanned nested folders; .PRO/.MUL/.yml)
 //   Factory ▸ A / B / F / S ▸ (.PRO patches per bank)
 //   Multi ▸ (factory .MUL multis)
 // The menu tree is rebuilt from a disk CACHE (W10, lane-A finding 5): the
@@ -114,7 +114,7 @@ public:
     static juce::File importIntoUserTree (const juce::File& file, const juce::File& userDir);
 
     /** F-ios-lc-4 (bug hunt 2026-08-19): one-way ADDITIVE mirror of a source
-        tree into @p destDir — the containing app's Documents/Parvati/USER in
+        tree into @p destDir — the containing app's Documents/Hellcat/USER in
         production use. Presets saved from inside an AUv3 host (AUM/GB) land
         in the shared App-Group USER tree, but the per-save Documents mirror
         writes into the EXTENSION's private container (invisible to Files);

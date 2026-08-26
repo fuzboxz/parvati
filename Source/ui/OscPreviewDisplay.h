@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // OscPreviewDisplay — a compact LIVE vector preview of the selected oscillator
 // shape, intended to sit INLINE beside the Shape dropdown in each OSC panel so
@@ -9,7 +9,7 @@
 // parameter (PWM/CZ-resonance/wavetable-position/...). Self-contained: owns a
 // 30 Hz refresh timer with an eps-diff gate, so it only re-renders + repaints
 // when the shape or (quantized) parameter actually changes. Read-only on the
-// APVTS. Colours are read from the active ParvatiTheme via the component's
+// APVTS. Colours are read from the active HellcatTheme via the component's
 // LookAndFeel every repaint, so theme switches are picked up automatically; the
 // trace adopts a category hue (catAudio) via setCategoryColour().
 //
@@ -68,7 +68,7 @@
 #include <functional>
 #include <vector>
 
-#include "ModTelemetryTypes.h"   // parvati::LiveOscValues (live modulated overlay)
+#include "ModTelemetryTypes.h"   // hellcat::LiveOscValues (live modulated overlay)
 
 //==============================================================================
 class OscPreviewDisplay : public juce::Component,
@@ -120,7 +120,7 @@ public:
         preview eases back to the knob value. An empty or inactive provider
         hides the overlay at zero overhead beyond one std::function call per
         poll tick. */
-    void setLiveValuesProvider (std::function<parvati::LiveOscValues()> p);
+    void setLiveValuesProvider (std::function<hellcat::LiveOscValues()> p);
 
     // TEST-ONLY: is the live modulated overlay now ARMED (the temporal
     // activity state after the change gate — lets a headless test observe the
@@ -222,7 +222,7 @@ private:
     // previous tick (re)arms a ~270 ms hold, a settled or absent voice hides
     // the overlay at once. dispLiveParamByte_ is the quantized live byte
     // (-1 => never seen an active provider frame).
-    std::function<parvati::LiveOscValues()> liveValuesProvider_;
+    std::function<hellcat::LiveOscValues()> liveValuesProvider_;
     bool dispLiveActive_     = false;
     int  dispLiveParamByte_  = -1;
     int  liveHoldTicks_      = 0;     // temporal-gate hold budget (ticks)

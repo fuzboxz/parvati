@@ -78,7 +78,7 @@ class WSOLASamplePlayer {
     env_phase_ = 0.0f;
     env_phase_increment_ = 0.5f;
     elapsed_ = 0;
-    // PARVATI PATCH: the very first window must not be placed from the
+    // HELLCAT PATCH: the very first window must not be placed from the
     // correlator. Before any search has run, Correlator::best_match() reports
     // its Init() zero, so the first window was scheduled at buffer position
     // -window_size_/2: its 0->1 gain ramp played over the NEVER-WRITTEN (zeroed)
@@ -237,7 +237,7 @@ class WSOLASamplePlayer {
       Window* window) {
     int32_t next_window_position = correlator_->best_match();
     if (first_window_) {
-      // PARVATI PATCH (see Init): place the startup window at the head so its
+      // HELLCAT PATCH (see Init): place the startup window at the head so its
       // gain ramp fades IN the recorded audio instead of stepping onto it
       // after ramping over silence. Start(0) == best-match window_size_/2.
       next_window_position = window_size_ >> 1;
@@ -306,7 +306,7 @@ class WSOLASamplePlayer {
   float env_phase_;
   float env_phase_increment_;
   int32_t elapsed_;
-  bool first_window_;   // PARVATI PATCH: startup window placement (see Init)
+  bool first_window_;   // HELLCAT PATCH: startup window placement (see Init)
   
   DISALLOW_COPY_AND_ASSIGN(WSOLASamplePlayer);
 };

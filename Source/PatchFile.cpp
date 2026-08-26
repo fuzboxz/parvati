@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PatchFile.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See PatchFile.h.
 
 #include "PatchFile.h"
 

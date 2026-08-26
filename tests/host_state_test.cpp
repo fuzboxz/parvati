@@ -1,4 +1,4 @@
-// Host plugin-state persistence regression test for Parvati.
+// Host plugin-state persistence regression test for Hellcat.
 //
 // Verifies getStateInformation / setStateInformation round-trip preserves the
 // FULL 6-Part multitimbral state (patch bytes, arp/seq config, MIDI routing,
@@ -6,7 +6,7 @@
 // the host state carried only the current Part's APVTS values, so Parts 1..5
 // (patch / arp / seq / routing) reverted to init on every DAW project reload.
 //
-// Run: ./build_unified/parvati_unified_tests host_state_test
+// Run: ./build_unified/hellcat_unified_tests host_state_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -35,7 +35,7 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-void renderOnce (ParvatiAudioProcessor& p)
+void renderOnce (HellcatAudioProcessor& p)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear ();
@@ -71,14 +71,14 @@ size_t capturePartStride (const juce::MemoryBlock& engineBlob) noexcept
 }
 
 // Select part @p partIndex (0-based) via the 1-based part_select param.
-void selectPart (ParvatiAudioProcessor& proc, int partIndex)
+void selectPart (HellcatAudioProcessor& proc, int partIndex)
 {
     setParam (proc, "part_select", partIndex + 1);
 }
 
 // Paint a distinctive FX state onto the CURRENT part (routes through
 // applyFxParameter into the current Part's fxState).
-void paintFx (ParvatiAudioProcessor& proc)
+void paintFx (HellcatAudioProcessor& proc)
 {
     setParam (proc, "fx1_type",    3);   // Reverb
     setParam (proc, "fx1_enabled", 1);
@@ -136,7 +136,7 @@ TEST(host_state_test)
     // ---------------------------------------------------------------------
     std::printf ("[1] Full 6-Part state survives a host-state round-trip\n");
     {
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
 
         // Customize Parts 1 and 2 distinctly (directly on the engine -- they are
@@ -166,7 +166,7 @@ TEST(host_state_test)
         check (blob.getSize() > 0, "getStateInformation produced a non-empty block");
 
         // Restore into a fresh processor + service the deferred rebuild.
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         b.setStateInformation (blob.getData(), (int) blob.getSize());
         renderOnce (b);
@@ -198,7 +198,7 @@ TEST(host_state_test)
     {
         // Save a real state from Part 3 with painted params, then strip the
         // engine_state attribute to mimic a pre-persistence saved project.
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         selectPart (a, 3);
         // Paint a spread of parameter classes on the (current) Part 3: part
@@ -225,7 +225,7 @@ TEST(host_state_test)
         juce::MemoryBlock legacy;
         juce::AudioProcessor::copyXmlToBinary (*xml, legacy);
 
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         bool threw = false;
         try { b.setStateInformation (legacy.getData(), (int) legacy.getSize()); }
@@ -279,7 +279,7 @@ TEST(host_state_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[3] Per-part FX survives a host-state round-trip (binary v3)\n");
     {
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
 
         selectPart (a, 1);  paintFx (a);
@@ -295,7 +295,7 @@ TEST(host_state_test)
         a.getStateInformation (blob);
         check (blob.getSize() > 0, "getStateInformation produced a non-empty block");
 
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         b.setStateInformation (blob.getData(), (int) blob.getSize());
         renderOnce (b);
@@ -326,7 +326,7 @@ TEST(host_state_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[4] v1 engine-state blob loads with FX at defaults\n");
     {
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
 
         // Distinct CORE on Part 1 + non-default FX on Part 1, so we can prove the
@@ -377,7 +377,7 @@ TEST(host_state_test)
 
         // Restore the v1 blob directly into a fresh engine. A v1 blob has NO FX
         // block, so fxState must stay at defaults while the core round-trips.
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         c.prepareToPlay (48000.0, 256);
         check (c.getEngine().restoreState (v1Engine.getData(), v1Engine.getSize()),
                "restoreState accepts the hand-crafted v1 blob");
@@ -401,7 +401,7 @@ TEST(host_state_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[5] v2 engine-state blob loads with master section at defaults\n");
     {
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         selectPart (a, 1);
         paintFx (a);                       // Part 1 non-default v2-era FX
@@ -465,7 +465,7 @@ TEST(host_state_test)
             }
         }
 
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         c.prepareToPlay (48000.0, 256);
         check (c.getEngine().restoreState (v2Engine.getData(), v2Engine.getSize()),
                "restoreState accepts the hand-crafted v2 blob");
@@ -498,7 +498,7 @@ TEST(host_state_test)
     std::printf ("\n[6] Filter oversampling pref: default 2x, 8x max, clamping\n");
     {
         // Fresh instance: the default is 2x (raised from 1x in 2026-08).
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         check (a.getUiOversampling() == 2, "fresh processor defaults to 2x oversampling");
 
@@ -517,19 +517,19 @@ TEST(host_state_test)
         a.setOversamplingFactor (8);
         juce::MemoryBlock blob;
         a.getStateInformation (blob);
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         b.setStateInformation (blob.getData(), (int) blob.getSize());
         check (b.getUiOversampling() == 8, "8x survives a host-state round-trip");
 
         // A state PERSISTED at 1x restores 1x: the default change applies only
         // to NEW states (the stored property wins over the fallback default).
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         c.prepareToPlay (48000.0, 256);
         c.setOversamplingFactor (1);
         juce::MemoryBlock oneX;
         c.getStateInformation (oneX);
-        ParvatiAudioProcessor d;
+        HellcatAudioProcessor d;
         d.prepareToPlay (48000.0, 256);
         d.setStateInformation (oneX.getData(), (int) oneX.getSize());
         check (d.getUiOversampling() == 1, "a persisted 1x state restores 1x (not the new 2x default)");
@@ -544,12 +544,12 @@ TEST(host_state_test)
         // ENGINE on its defaults while the UI combos showed the saved values
         // (typical hosts prepareToPlay BEFORE setStateInformation, so the
         // ctor/prepare sync never re-applies them afterwards).
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         if (auto* p = a.getApvts().getParameter ("vca_curve"))
             p->setValueNotifyingHost (p->convertTo0to1 (1.0f));   // Exponential
         if (auto* p = a.getApvts().getParameter ("filter_card"))
-            p->setValueNotifyingHost (p->convertTo0to1 (1.0f));   // SSM2164 Cascade
+            p->setValueNotifyingHost (p->convertTo0to1 (1.0f));   // 4P (SSM2164)
         if (auto* p = a.getApvts().getParameter ("filter_drive"))
             p->setValueNotifyingHost (p->convertTo0to1 (5.0f));   // "5.0" (kDriveValues[5])
         renderOnce (a);
@@ -560,7 +560,7 @@ TEST(host_state_test)
         a.getStateInformation (blob);
 
         // Host ordering: prepare FIRST, then restore (no re-prepare afterwards).
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         b.setStateInformation (blob.getData(), (int) blob.getSize());
         renderOnce (b);
@@ -589,7 +589,7 @@ TEST(host_state_test)
     {
         // Source A: a state with DISTINCT per-part values (patch byte, channel,
         // zone, slots, name) so any leaked partial apply is detectable.
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         for (int p = 0; p < SynthEngine::getNumParts(); ++p)
         {
@@ -618,7 +618,7 @@ TEST(host_state_test)
 
         // Target B: a DIFFERENT state (so a probe mismatch cannot be a
         // coincidence of equal values).
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         for (int p = 0; p < SynthEngine::getNumParts(); ++p)
         {
@@ -674,7 +674,7 @@ TEST(host_state_test)
         // explicit re-echo the combo could disagree with the engine — e.g. a
         // host-modified state or a save racing a deferred part_select drain).
         {
-            ParvatiAudioProcessor b2;
+            HellcatAudioProcessor b2;
             b2.prepareToPlay (48000.0, 256);
             // Park b2 on a DIFFERENT part first so the re-echo is observable.
             selectPart (b2, 4);

@@ -50,7 +50,7 @@ namespace ambika::dsp {
 
 // Mirrors the firmware voicecard build flag. Defined → wavetable-LFO branch is
 // omitted (matches voicecard/makefile EXTRA_DEFINES).
-#define PARVATI_DISABLE_WAVETABLE_LFOS
+#define HELLCAT_DISABLE_WAVETABLE_LFOS
 
 class Lfo {
  public:
@@ -86,7 +86,7 @@ class Lfo {
                 value = (phase_ & 0x8000u) ? 255 : 0;
                 break;
 
-#ifndef PARVATI_DISABLE_WAVETABLE_LFOS
+#ifndef HELLCAT_DISABLE_WAVETABLE_LFOS
             default: {
                 uint8_t shape_offset = shape - LFO_WAVEFORM_WAVE_1;
                 uint16_t offset = static_cast<uint16_t>(shape_offset) << 8;
@@ -94,7 +94,7 @@ class Lfo {
                 value = InterpolateSample(wav_res_lfo_waveforms + offset, phase_);
                 break;
             }
-#endif  // PARVATI_DISABLE_WAVETABLE_LFOS
+#endif  // HELLCAT_DISABLE_WAVETABLE_LFOS
 
             default:
                 // Unreachable on the voicecard (shape clamped to 0..3); keep

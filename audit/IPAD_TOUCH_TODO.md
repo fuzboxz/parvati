@@ -138,7 +138,7 @@ Check items off (`[x]`) as they are implemented and verified.
   iOS zoom default (`#if JUCE_IOS`, same gate); destructor re-enables it next
   to the zoom reset. Desktop compiled out.
 
-- [x] **T15. Knob readout shrink floor 9pt** (`ParvatiLookAndFeel.cpp`
+- [x] **T15. Knob readout shrink floor 9pt** (`HellcatLookAndFeel.cpp`
   `drawRotarySlider` `juce::jmax (9.0f, …)`) — raise floor to 11pt; flow-diagram
   8-10pt fonts → 10/12pt.
 

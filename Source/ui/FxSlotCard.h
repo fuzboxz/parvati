@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FxSlotCard — one Serum/Pigments-style modular FX-slot card for the FX page's
 // upper region (FX1 / FX2 / FX3). It is a SELF-CONTAINED juce::Component that
@@ -46,7 +46,7 @@
 // APVTS (a Value for the 0..1 Int enable param, a ComboBoxAttachment for the
 // type choice).
 //
-// Colours are read from the active ParvatiTheme via the component's LookAndFeel
+// Colours are read from the active HellcatTheme via the component's LookAndFeel
 // every repaint; applyThemeColors() just repaints. The owned ParamControl knobs
 // are re-themed by the editor's global ParamControl::reapplyCategoryColours()
 // pass on a theme switch. (The per-slot FxSlotVisualizer band was REMOVED
@@ -57,11 +57,11 @@
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachment
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ParvatiLookAndFeel.h"   // ParvatiModuleLamp (the shared disable widget)
+#include "HellcatLookAndFeel.h"   // HellcatModuleLamp (the shared disable widget)
 
 #include <memory>
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class ParamControl;
 struct PatchParamDescriptor;
 
@@ -86,7 +86,7 @@ public:
                owns the ParamControls; they are full modulation-destination knobs).
         @param drywetDesc  descriptor for fx{N}_drywet (the fixed "Dry/Wet" knob,
                anchored bottom-right; hidden when the slot type is None). */
-    FxSlotCard (ParvatiAudioProcessor& processor, int slot,
+    FxSlotCard (HellcatAudioProcessor& processor, int slot,
                 const PatchParamDescriptor* p1Desc, const PatchParamDescriptor* p2Desc,
                 const PatchParamDescriptor* p3Desc, const PatchParamDescriptor* p4Desc,
                 const PatchParamDescriptor* p5Desc,
@@ -125,17 +125,17 @@ public:
     void simulateUserTypePickForTest (int typeIndex);
 
     /** Test-only (header parity, 2026-08-20): the colour the painted "FX N"
-        title resolves to RIGHT NOW (through the inherited ParvatiLookAndFeel's
+        title resolves to RIGHT NOW (through the inherited HellcatLookAndFeel's
         active theme, with paint()'s no-L&F fallback). The parity test asserts
         this equals the synth side's GroupComponent::textColourId (both are
         theme.textPrimary) for every shipped theme. */
     juce::Colour headerTitleColourForTest() const;
 
     /** Test-only (disable-widget parity): the card's power toggle as the
-        shared ParvatiModuleLamp base, so tests can resolve its ON colour and
+        shared HellcatModuleLamp base, so tests can resolve its ON colour and
         dot diameter against the synth mod-matrix lamps (identical by
         construction — same widget class). Nullptr before construction. */
-    ParvatiModuleLamp* powerLampForTest() const;
+    HellcatModuleLamp* powerLampForTest() const;
 
 private:
     // APVTS::Listener — fires on ANY fx{N}_type / fx{N}_enabled change (combo
@@ -168,7 +168,7 @@ private:
     // Inactive params are hidden. The knob block centres vertically in @p gridArea.
     void layoutParamGrid (const juce::Rectangle<int>& gridArea);
 
-    ParvatiAudioProcessor& processor_;
+    HellcatAudioProcessor& processor_;
     int slot_;
     const juce::String prefix_;   // "fx{N}_"
 

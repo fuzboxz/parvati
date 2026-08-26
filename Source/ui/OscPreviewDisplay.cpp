@@ -1,10 +1,10 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See OscPreviewDisplay.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See OscPreviewDisplay.h.
 
 #include "OscPreviewDisplay.h"
 
 #include <cmath>
 
-#include "ParvatiLookAndFeel.h"
+#include "HellcatLookAndFeel.h"
 #include "VectorTrace.h"
 
 // Real oscillator (DSP-sample path for the non-basic, deterministic shapes).
@@ -156,7 +156,7 @@ void OscPreviewDisplay::timerCallback()
     int  liveParam  = dispLiveParamByte_;
     if (liveValuesProvider_)
     {
-        const parvati::LiveOscValues lv = liveValuesProvider_();
+        const hellcat::LiveOscValues lv = liveValuesProvider_();
         if (lv.active)
         {
             liveParam = juce::roundToInt (juce::jlimit (0.0f, 1.0f, lv.param01) * 127.0f);
@@ -281,7 +281,7 @@ void OscPreviewDisplay::timerCallback()
         repaint();
 }
 
-void OscPreviewDisplay::setLiveValuesProvider (std::function<parvati::LiveOscValues()> p)
+void OscPreviewDisplay::setLiveValuesProvider (std::function<hellcat::LiveOscValues()> p)
 {
     liveValuesProvider_ = std::move (p);
     // An un-set provider must immediately hide any armed overlay (the state is
@@ -419,11 +419,11 @@ void OscPreviewDisplay::rebuildCycle (int shapeIdx, uint8_t paramByte)
 //==============================================================================
 void OscPreviewDisplay::paint (juce::Graphics& g)
 {
-    const ParvatiTheme* t = parvati::themeFor (*this);
+    const HellcatTheme* t = hellcat::themeFor (*this);
 
-    const auto panelBg = t ? t->backgroundPanel : parvati::kFallbackPanel;
-    const auto outline = t ? t->outline         : parvati::kFallbackOutline;
-    const auto accent  = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
+    const auto panelBg = t ? t->backgroundPanel : hellcat::kFallbackPanel;
+    const auto outline = t ? t->outline         : hellcat::kFallbackOutline;
+    const auto accent  = t ? t->accentPrimary          : hellcat::hellcatFallbackAccent;
     const auto trace   = hasCategoryColour_ ? categoryColour_ : accent;
     const auto gridCol = t ? t->divider.withAlpha (0.10f) : accent.withAlpha (0.06f);
 
@@ -432,7 +432,7 @@ void OscPreviewDisplay::paint (juce::Graphics& g)
     g.fillRect (bounds);
 
     // Faint clean grid backdrop (thin 1px lines).
-    parvati::vectorTrace::drawGrid (g, bounds.reduced (0.5f), gridCol, 18.0f);
+    hellcat::vectorTrace::drawGrid (g, bounds.reduced (0.5f), gridCol, 18.0f);
 
     g.setColour (outline);
     g.drawRect (bounds.reduced (0.5f), 1.0f);
@@ -468,8 +468,8 @@ void OscPreviewDisplay::paint (juce::Graphics& g)
     // midline). Square/PWM stays smooth; only an S&H shape (none here) would use
     // the staircase variant.
     const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
-    parvati::vectorTrace::render (g, plot, sampleCount, sampleCycle,
-                                  trace, parvati::vectorTrace::Mode::bipolar,
+    hellcat::vectorTrace::render (g, plot, sampleCount, sampleCycle,
+                                  trace, hellcat::vectorTrace::Mode::bipolar,
                                   false, 1.5f, 0.12f);
 
     // Midline reference (1px) so the bipolar centre reads on every shape.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# tools/run_sanitizers.sh — Parvati dynamic memory-safety + concurrency checker.
+# tools/run_sanitizers.sh — Hellcat dynamic memory-safety + concurrency checker.
 # ---------------------------------------------------------------------------
-# Builds the unified test binary (parvati_unified_tests; one binary, every test
+# Builds the unified test binary (hellcat_unified_tests; one binary, every test
 # fork-isolated — see tests/unified_test_runner.h) under AddressSanitizer+UBSan
 # and ThreadSanitizer and runs the requested tests (default: all), surfacing:
 #   * ASan  — heap/stack/global buffer overflows, use-after-free, double-free.
@@ -35,7 +35,7 @@
 #   SKIP_TSAN=1 tools/run_sanitizers.sh            # ASan+UBSan only
 #
 # History note: before the 2026-08-22 test unification this script globbed the
-# per-test parvati_*_test binaries; those targets no longer exist, which had
+# per-test hellcat_*_test binaries; those targets no longer exist, which had
 # silently turned the sweep into a 0/0-runs "pass" (or stale-binary runs).
 #
 # Exits non-zero if any sanitizer reports a finding or any test fails.
@@ -51,7 +51,7 @@ JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
 # overwrite each other's /tmp logs.
 LOGDIR="${TMPDIR:-/tmp}"
 LOGTAG="$$"
-UNIFIED=parvati_unified_tests
+UNIFIED=hellcat_unified_tests
 fail=0
 
 if [ ! -f "$JUCE/CMakeLists.txt" ]; then
@@ -91,11 +91,11 @@ build_config () {
         $os_arch_flag \
         -DPARVATI_FORMATS= -DPARVATI_BUILD_CLAP=OFF \
         "$@" \
-        > "$LOGDIR/parvati_cmake_$(basename "$dir").$LOGTAG.log" 2>&1 \
-        || { tail -20 "$LOGDIR/parvati_cmake_$(basename "$dir").$LOGTAG.log"; exit 2; }
+        > "$LOGDIR/hellcat_cmake_$(basename "$dir").$LOGTAG.log" 2>&1 \
+        || { tail -20 "$LOGDIR/hellcat_cmake_$(basename "$dir").$LOGTAG.log"; exit 2; }
     cmake --build "$dir" --target "$UNIFIED" -j "$JOBS" \
-        > "$LOGDIR/parvati_build_$(basename "$dir").$LOGTAG.log" 2>&1 \
-        || { tail -30 "$LOGDIR/parvati_build_$(basename "$dir").$LOGTAG.log"; exit 2; }
+        > "$LOGDIR/hellcat_build_$(basename "$dir").$LOGTAG.log" 2>&1 \
+        || { tail -30 "$LOGDIR/hellcat_build_$(basename "$dir").$LOGTAG.log"; exit 2; }
 }
 
 # Run the unified binary in $1=build dir under $2=label. Any remaining args are
@@ -103,7 +103,7 @@ build_config () {
 # caller so both configs share this path.
 run_suite () {
     local dir="$1" label="$2"; shift 2
-    local log="$LOGDIR/parvati_san_${label}.$LOGTAG.log"
+    local log="$LOGDIR/hellcat_san_${label}.$LOGTAG.log"
     local what="all tests"
     if [ $# -gt 0 ]; then what="test(s): $*"; fi
     echo "  running $what under $label..."
@@ -118,7 +118,7 @@ run_suite () {
     fi
 }
 
-echo "=== Parvati sanitizer sweep (concurrency_test x${REPEAT} under TSan) ==="
+echo "=== Hellcat sanitizer sweep (concurrency_test x${REPEAT} under TSan) ==="
 echo "  JUCE=$JUCE  jobs=$JOBS  tests=${*:-all}"
 
 # --- ASan + UBSan ----------------------------------------------------------
@@ -143,12 +143,12 @@ if [ "${SKIP_TSAN:-0}" != "1" ]; then
         for ((i = 1; i <= REPEAT; ++i)); do
             if TSAN_OPTIONS="halt_on_error=1" \
                 "$SRC/build_san_tsan/$UNIFIED" concurrency_test \
-                > "$LOGDIR/parvati_san_conc_${i}.$LOGTAG.log" 2>&1; then
+                > "$LOGDIR/hellcat_san_conc_${i}.$LOGTAG.log" 2>&1; then
                 echo "    concurrency_test TSan run $i/$REPEAT: PASS"
             else
                 echo "    concurrency_test TSan run $i/$REPEAT: FAIL"
                 grep -m3 -iE "WARNING: ThreadSanitizer|SUMMARY:" \
-                    "$LOGDIR/parvati_san_conc_${i}.$LOGTAG.log" | sed 's/^/        /'
+                    "$LOGDIR/hellcat_san_conc_${i}.$LOGTAG.log" | sed 's/^/        /'
                 fail=1
             fi
         done
@@ -159,6 +159,6 @@ echo ""
 if [ "$fail" -eq 0 ]; then
     echo "=== SANITIZER SWEEP: ALL CLEAN ==="
 else
-    echo "=== SANITIZER SWEEP: FAILURES (see $LOGDIR/parvati_san_*.$LOGTAG.log) ==="
+    echo "=== SANITIZER SWEEP: FAILURES (see $LOGDIR/hellcat_san_*.$LOGTAG.log) ==="
 fi
 exit "$fail"

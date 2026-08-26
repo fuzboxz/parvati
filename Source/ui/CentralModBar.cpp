@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See CentralModBar.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See CentralModBar.h.
 //
 // Layout geometry (px):
 //   kBarHeight = 78, pill height 56 -> top/bottom inset (single UI, all platforms).
@@ -17,9 +17,9 @@
 #include <cmath>
 
 #include "ModSourceCatalog.h"
-#include "ModTelemetryTypes.h"   // parvati::isBipolarModSource (strip polarity)
-#include "ParvatiLookAndFeel.h"   // appFont() when the bar is reparented
-#include "ParvatiTheme.h"
+#include "ModTelemetryTypes.h"   // hellcat::isBipolarModSource (strip polarity)
+#include "HellcatLookAndFeel.h"   // appFont() when the bar is reparented
+#include "HellcatTheme.h"
 
 namespace
 {
@@ -82,17 +82,17 @@ namespace
                                        // Bézier smoothing below rounds the rest)
 
     // Short cluster label drawn at the left of each segment.
-    juce::String clusterShortLabel (parvati::Cluster c)
+    juce::String clusterShortLabel (hellcat::Cluster c)
     {
         switch (c)
         {
-            case parvati::Cluster::Env:    return "ENVELOPE";
-            case parvati::Cluster::Lfo:    return "LFO";
-            case parvati::Cluster::SeqArp: return "SEQUENCER";
-            case parvati::Cluster::Mod:    return "MOD";
-            case parvati::Cluster::Perf:   return "PERF";
-            case parvati::Cluster::Util:   return "UTIL";
-            case parvati::Cluster::Const:  return "CONST";
+            case hellcat::Cluster::Env:    return "ENVELOPE";
+            case hellcat::Cluster::Lfo:    return "LFO";
+            case hellcat::Cluster::SeqArp: return "SEQUENCER";
+            case hellcat::Cluster::Mod:    return "MOD";
+            case hellcat::Cluster::Perf:   return "PERF";
+            case hellcat::Cluster::Util:   return "UTIL";
+            case hellcat::Cluster::Const:  return "CONST";
         }
         return {};
     }
@@ -104,7 +104,7 @@ namespace
     // (textSecondary) at rest, lifts to textPrimary on hover and the theme
     // accent on press; the well brightens on hover and darkens on press.
     // Disabled dims to 40%. (Was a bare text glyph, invisible at rest.)
-    class NavButtonLnf : public ParvatiLookAndFeel
+    class NavButtonLnf : public HellcatLookAndFeel
     {
     public:
         juce::Font getTextButtonFont (juce::TextButton&, int) override
@@ -116,7 +116,7 @@ namespace
                                    const juce::Colour& /*backgroundColour*/,
                                    bool isMouseOverButton, bool isButtonDown) override
         {
-            const ParvatiTheme* t = getTheme();
+            const HellcatTheme* t = getTheme();
             if (t == nullptr)
                 return;
 
@@ -143,7 +143,7 @@ namespace
         void drawButtonText (juce::Graphics& g, juce::TextButton& b,
                              bool isMouseOverButton, bool isButtonDown) override
         {
-            const ParvatiTheme* t = getTheme();
+            const HellcatTheme* t = getTheme();
             if (t == nullptr)
                 return;
             const float alpha = b.isEnabled() ? 1.0f : 0.40f;
@@ -230,14 +230,14 @@ namespace
 struct CentralModBar::ModPill : public juce::Component,
                                 public juce::SettableTooltipClient
 {
-    ModPill (CentralModBar& owner, const parvati::SourceEntry& e)
+    ModPill (CentralModBar& owner, const hellcat::SourceEntry& e)
         : owner_ (owner),
           enumValue_ (e.enumValue),
           shortLabel_ (e.shortLabel),
           fullName_ (e.fullName),
           cluster_ (e.cluster),
           isGenerator_ (e.isGenerator),
-          stripBipolar_ (parvati::isBipolarModSource (e.enumValue))   // display polarity (mirrors the voice mod-matrix AC coupling)
+          stripBipolar_ (hellcat::isBipolarModSource (e.enumValue))   // display polarity (mirrors the voice mod-matrix AC coupling)
     {
         setTooltip (fullName_);
         // Accessibility-only: name the pill after its full source name (the
@@ -481,7 +481,7 @@ struct CentralModBar::ModPill : public juce::Component,
         identical frame returns false and costs nothing. */
     bool updateStripFromHistory (const uint8_t* samples, int count, uint8_t currentVal)
     {
-        constexpr int kWindow = parvati::ModTelemetrySnapshot::kHistoryLen;
+        constexpr int kWindow = hellcat::ModTelemetrySnapshot::kHistoryLen;
         constexpr float kEps = 1.0f / 255.0f;   // one value quantum
         constexpr int m = kStripMaxPts;         // the window is ALWAYS full-width
 
@@ -642,7 +642,7 @@ struct CentralModBar::ModPill : public juce::Component,
         // telemetry slot — including the bar-only Note Sequencer sentinel
         // (enumValue_ < 0), whose melody trace rides the spare kNoteSeqSlot
         // (see the bar's telemetry tick).
-        if (cluster_ == parvati::Cluster::Const)
+        if (cluster_ == hellcat::Cluster::Const)
             return;   // Const pills carry no history
         if (stripCount_ <= 0)
             return;   // no history yet (e.g. after a reset): the band stays empty
@@ -665,7 +665,7 @@ struct CentralModBar::ModPill : public juce::Component,
         // lurching once per tick. The newest bin extends flat to the right
         // edge (its data is the freshest we have; the <= 1-fetch lag is
         // invisible), and everything clips to the strip rect.
-        constexpr int kWindowAppends = parvati::ModTelemetrySnapshot::kHistoryLen;
+        constexpr int kWindowAppends = hellcat::ModTelemetrySnapshot::kHistoryLen;
         const float pxPerAppend = (x1 - x0) / (float) kWindowAppends;
         const float shiftPx = static_cast<float> (owner_.telemetryAppendsSinceFetch()) * pxPerAppend;
         // Point caches for the MIN-MAX band (see updateStripFromHistory):
@@ -841,7 +841,7 @@ struct CentralModBar::ModPill : public juce::Component,
     int               enumValue_;
     juce::String      shortLabel_;
     juce::String      fullName_;
-    parvati::Cluster  cluster_;
+    hellcat::Cluster  cluster_;
     bool              isGenerator_;
     bool              dragStarted_ = false;
     bool              active_      = false;
@@ -944,7 +944,7 @@ CentralModBar::CentralModBar (ThemeManager& themeManager)
     : themeManager_ (themeManager)
 {
     // One pill per catalogue entry, in cluster display order.
-    for (const auto& e : parvati::kAllSources)
+    for (const auto& e : hellcat::kAllSources)
         pills_.push_back (std::make_unique<ModPill> (*this, e));
     // Wrap the pill row in a horizontal-scroll Viewport (pills become children
     // of the scrolled content) so 25+ pills never widen the editor.
@@ -1055,7 +1055,7 @@ void CentralModBar::applyThemeColors()
     // generator pill stays highlighted via its solid fill + bright text (see
     // ModPill::paint); the family colour only tints the underline.
     for (auto& p : pills_)
-        p->accent_ = parvati::clusterAccent (p->cluster_, t);
+        p->accent_ = hellcat::clusterAccent (p->cluster_, t);
     // (The iOS Viewport has no background-colour API; the scrolled content fills
     // its own background in paintSegments, so the bar reads as one colour.)
     // Theme the `<` / `>` nav glyphs from the active theme (the scrollbar is
@@ -1094,7 +1094,7 @@ void CentralModBar::invokeClicked (int modSrcEnum)
         onPillClicked_ (modSrcEnum);
 }
 
-const ParvatiTheme& CentralModBar::theme() const
+const HellcatTheme& CentralModBar::theme() const
 {
     return themeManager_.getCurrentTheme();
 }
@@ -1104,10 +1104,10 @@ juce::Font CentralModBar::pillFont() const
     const float size = 14.0f;   // proportional with the ~1.5x bigger pills
     // Y2K: the pill label is a CAPTION (PT Sans). Every other theme keeps
     // the legacy appFont resolution (byte-identical rendering).
-    if (auto* lnf = dynamic_cast<const ParvatiLookAndFeel*> (&getLookAndFeel()))
-        if (parvati::isY2kTheme (lnf->getTheme()))
+    if (auto* lnf = dynamic_cast<const HellcatLookAndFeel*> (&getLookAndFeel()))
+        if (hellcat::isY2kTheme (lnf->getTheme()))
             return lnf->labelFont (size, juce::Font::plain);
-    return parvati::appFontFor (*this, size);
+    return hellcat::appFontFor (*this, size);
 }
 
 // ---- TEST-ONLY paint-split accessors (see the header) ----
@@ -1158,7 +1158,7 @@ void CentralModBar::paint (juce::Graphics& g)
     // card body tone, no rounded corner and no chrome bevel. The pills stay
     // dark data cells on top of it; their light text and the LCD-green
     // indicators read on the pill fills, not on the bar.
-    if (parvati::isY2kTheme (&theme()))
+    if (hellcat::isY2kTheme (&theme()))
         g.fillAll (theme().containerFill);
     else
         g.fillAll (theme().backgroundBase);
@@ -1202,7 +1202,7 @@ int CentralModBar::computeLayout (bool positionChildren) const
     const juce::Font f = pillFont();
     const int        pillY = kSegVPad + kLabelTabH + kLabelTabGap;   // pills sit BELOW the coloured tab
 
-    const auto& clusters = parvati::clustersInOrder();
+    const auto& clusters = hellcat::clustersInOrder();
 
     int x = kEdgePad;
     size_t idx = 0;   // walks kAllSources, which is already in cluster order
@@ -1217,15 +1217,15 @@ int CentralModBar::computeLayout (bool positionChildren) const
 
     for (size_t ci = 0; ci < clusters.size(); ++ci)
     {
-        const parvati::Cluster c = clusters[ci];
+        const hellcat::Cluster c = clusters[ci];
 
         // Separator BEFORE this cluster (skipped before the very first): the
         // normal inter-cluster gap, EXCEPT at the generators->drag-only split,
         // where a larger kSideGap clearly separates the two halves of the bar.
         if (ci > 0)
         {
-            const bool prevGen = parvati::isGeneratorCluster (clusters[ci - 1]);
-            const bool thisGen = parvati::isGeneratorCluster (c);
+            const bool prevGen = hellcat::isGeneratorCluster (clusters[ci - 1]);
+            const bool thisGen = hellcat::isGeneratorCluster (c);
             x += (prevGen && ! thisGen) ? kSideGap : kClusterGap;
         }
 
@@ -1233,7 +1233,7 @@ int CentralModBar::computeLayout (bool positionChildren) const
 
         // Pills belonging to this cluster (kAllSources is ordered to match).
         bool first = true;
-        for (; idx < parvati::kAllSources.size() && parvati::kAllSources[idx].cluster == c; ++idx)
+        for (; idx < hellcat::kAllSources.size() && hellcat::kAllSources[idx].cluster == c; ++idx)
         {
             if (! first) x += kPillGap;
             first = false;
@@ -1282,7 +1282,7 @@ void CentralModBar::updateNavEnabled()
 //==============================================================================
 // ---- Live telemetry (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
 
-void CentralModBar::setTelemetryProvider (std::function<bool (parvati::ModTelemetrySnapshot&)> fetch)
+void CentralModBar::setTelemetryProvider (std::function<bool (hellcat::ModTelemetrySnapshot&)> fetch)
 {
     telemetryFetch_ = std::move (fetch);
     // A provider arriving (or being cleared) re-evaluates the poll: with none
@@ -1365,7 +1365,7 @@ void CentralModBar::telemetryTick()
     if (! isVisible() || telemetryFetch_ == nullptr)
         return;
 
-    parvati::ModTelemetrySnapshot snap;
+    hellcat::ModTelemetrySnapshot snap;
     if (! telemetryFetch_ (snap))
     {
         // Torn seqlock read OR a stale epoch (patch load / part switch reset):
@@ -1383,9 +1383,9 @@ void CentralModBar::telemetryTick()
         const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
         if (telHaveHead_)
         {
-            int delta = (snap.historyHead - telPrevHead_) % parvati::ModTelemetrySnapshot::kHistoryLen;
+            int delta = (snap.historyHead - telPrevHead_) % hellcat::ModTelemetrySnapshot::kHistoryLen;
             if (delta < 0)
-                delta += parvati::ModTelemetrySnapshot::kHistoryLen;
+                delta += hellcat::ModTelemetrySnapshot::kHistoryLen;
             if (delta > 0 && delta < 32)   // sane single-interval advance
             {
                 telUnwrappedAppends_ += delta;
@@ -1397,7 +1397,7 @@ void CentralModBar::telemetryTick()
         telLastFetchMono_ = now;
     }
 
-    const int n = juce::jlimit (0, parvati::ModTelemetrySnapshot::kHistoryLen, snap.historyCount);
+    const int n = juce::jlimit (0, hellcat::ModTelemetrySnapshot::kHistoryLen, snap.historyCount);
     bool anyRepainted = false;
     for (auto& p : pills_)
     {
@@ -1405,13 +1405,13 @@ void CentralModBar::telemetryTick()
         // frame by their MOD_SRC_* enum; the bar-only Note Sequencer sentinel
         // (enumValue_ < 0) reads the spare kNoteSeqSlot — the tracked part's
         // sounding sequencer note, a melody trace with rests as gaps.
-        if (p->cluster_ == parvati::Cluster::Const)
+        if (p->cluster_ == hellcat::Cluster::Const)
             continue;
         const int slot = (p->enumValue_ >= 0)
             ? p->enumValue_
-            : parvati::ModTelemetrySnapshot::kNoteSeqSlot;
+            : hellcat::ModTelemetrySnapshot::kNoteSeqSlot;
         const uint8_t* hist = snap.history
-            + (size_t) slot * (size_t) parvati::ModTelemetrySnapshot::kHistoryLen;
+            + (size_t) slot * (size_t) hellcat::ModTelemetrySnapshot::kHistoryLen;
         if (p->updateStripFromHistory (hist, n, snap.sources[(size_t) slot]))
         {
             p->stripLastChangeMono_ = juce::Time::getMillisecondCounterHiRes() * 0.001;
@@ -1460,7 +1460,7 @@ double CentralModBar::telemetryAppendsSinceFetch() const
     if (now - telLastMotionMono_ > 0.25 || telLastFetchMono_ <= 0.0)
         return 0.0;
     const double since = juce::jlimit (0.0, 0.25, now - telLastFetchMono_);
-    return since * parvati::ModTelemetrySnapshot::kAppendHz;
+    return since * hellcat::ModTelemetrySnapshot::kAppendHz;
 }
 
 void CentralModBar::visibilityChanged()
@@ -1563,15 +1563,15 @@ void CentralModBar::paintSegments (juce::Graphics& g) const
     // Fill the scrolled content with the bar background so the gaps between /
     // around the cluster tabs read as one continuous bar. Y2K: the card BODY
     // tone (flat mid steel) matching the chrome bar above.
-    g.fillAll (parvati::isY2kTheme (&t) ? t.containerFill : t.backgroundBase);
+    g.fillAll (hellcat::isY2kTheme (&t) ? t.containerFill : t.backgroundBase);
 
     // One small COLOURED LABEL TAB header per cluster (its family colour + short
     // label), sitting above the pills — replaces the former full-height 'cube'.
-    const juce::Font tabFont = parvati::labelFontFor (*this, 9.0f, juce::Font::bold);
+    const juce::Font tabFont = hellcat::labelFontFor (*this, 9.0f, juce::Font::bold);
     for (int i = 0; i < segmentRects_.size(); ++i)
     {
         const auto& seg = segmentRects_.getReference (i);   // the tab rect (top of the cluster column)
-        g.setColour (parvati::clusterAccent (segmentClusters_.getReference (i), t));
+        g.setColour (hellcat::clusterAccent (segmentClusters_.getReference (i), t));
         g.fillRoundedRectangle (seg.toFloat().reduced (0.5f), 4.0f);
 
         g.setColour (t.backgroundBase);   // dark text reads on every saturated family colour

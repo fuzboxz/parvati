@@ -1,9 +1,9 @@
 // ModDestMap unit test — verifies the paramID <-> MOD_DST mapping table and the
 // per-slot modulation-amount aggregation helpers (aggregateAmount /
 // slotsForDest) used by the modulation-ring, hover-highlight, and drag-and-drop
-// features. Drives a real ParvatiAudioProcessor APVTS so the raw-value paths
+// features. Drives a real HellcatAudioProcessor APVTS so the raw-value paths
 // are exercised exactly as the UI will call them.
-// Run: ./build_unified/parvati_unified_tests mod_dest_map_test
+// Run: ./build_unified/hellcat_unified_tests mod_dest_map_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -31,7 +31,7 @@ void check (bool cond, const char* msg)
 }
 
 // Route slot (0-based) -> dest with amount.
-void setMod (ParvatiAudioProcessor& proc, int slot, int dest, int amount)
+void setMod (HellcatAudioProcessor& proc, int slot, int dest, int amount)
 {
     char id[32];
     std::snprintf (id, sizeof (id), "mod%d_dest", slot + 1);   setParam (proc, id, dest);
@@ -39,7 +39,7 @@ void setMod (ParvatiAudioProcessor& proc, int slot, int dest, int amount)
 }
 
 // Route an FX-mod slot (0-based) -> raw FX_DST index with amount.
-void setFxMod (ParvatiAudioProcessor& proc, int slot, int fxDest, int amount)
+void setFxMod (HellcatAudioProcessor& proc, int slot, int fxDest, int amount)
 {
     char id[32];
     std::snprintf (id, sizeof (id), "fxmod%d_dest", slot + 1);   setParam (proc, id, fxDest);
@@ -49,7 +49,7 @@ void setFxMod (ParvatiAudioProcessor& proc, int slot, int fxDest, int amount)
 
 TEST(mod_dest_map_test)
 {
-    using namespace parvati::ModDestMap;
+    using namespace hellcat::ModDestMap;
 
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -97,7 +97,7 @@ TEST(mod_dest_map_test)
     check (paramIDForDest (999).isEmpty(), "out-of-range dest -> empty paramID");
 
     std::printf ("\n[3] aggregateAmount + slotsForDest (APVTS-driven)\n");
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 512);
 
     // Neutralise all 14 slots first for deterministic aggregation.

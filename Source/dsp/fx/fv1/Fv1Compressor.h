@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Compressor — the standard clean feed-forward peak compressor
 // (the non-vinyl sibling of the Vinyl Compressor: no wow, no noise, no
@@ -11,14 +11,14 @@
 //   * Release (p2): 20..500 ms (log).
 //   * Level   (p3): 0..2 output trim (1.0 at center).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1COMPRESSOR_H
-#define PARVATI_DSP_FX_FV1_FV1COMPRESSOR_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1COMPRESSOR_H
+#define HELLCAT_DSP_FX_FV1_FV1COMPRESSOR_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Compressor : public Fv1FxProcessor
@@ -47,6 +47,6 @@ private:
                               // effect)
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1COMPRESSOR_H
+#endif // HELLCAT_DSP_FX_FV1_FV1COMPRESSOR_H

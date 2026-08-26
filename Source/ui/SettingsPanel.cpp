@@ -1,15 +1,15 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SettingsPanel.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SettingsPanel.h.
 
 #include "SettingsPanel.h"
 
-#include "ParvatiLookAndFeel.h"   // parvati::labelFontExactFor / dataFontExactFor (role fonts)
-#include "ParvatiTheme.h"
+#include "HellcatLookAndFeel.h"   // hellcat::labelFontExactFor / dataFontExactFor (role fonts)
+#include "HellcatTheme.h"
 #include "PluginProcessor.h"
 #include "ThemeManager.h"
 #include "Translations.h"
 
 //==============================================================================
-SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
+SettingsPanel::SettingsPanel (HellcatAudioProcessor& proc,
                               ThemeManager& themeManager,
                               std::function<void (double)> onZoomChanged,
                               std::function<void (bool)> onTooltipsChanged,
@@ -30,7 +30,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
 {
     // ---- Theme ----
     themeLabel_.setText (TRANS ("Theme"), juce::dontSendNotification);
-    themeLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    themeLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     themeLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (themeLabel_);
 
@@ -50,7 +50,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // clamp the editor's applyZoom uses; the value persists through
     // proc_.setUiZoom exactly like the old slider did. ----
     zoomLabel_.setText (TRANS ("Zoom"), juce::dontSendNotification);
-    zoomLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    zoomLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     zoomLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (zoomLabel_);
 
@@ -77,7 +77,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     addAndMakeVisible (zoomInBt_);
     addAndMakeVisible (zoomResetBt_);
 
-    zoomValueLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    zoomValueLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     zoomValueLabel_.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (zoomValueLabel_);
     refreshZoomReadout();
@@ -127,7 +127,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // (1/2/4/8). Default "High" (2x); "Standard" (1x) keeps the audio path
     // bit-identical.
     osLabel_.setText (TRANS ("Filter Quality"), juce::dontSendNotification);
-    osLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    osLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     osLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (osLabel_);
 
@@ -148,7 +148,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // the stored code ("auto"/"en"/"fr") is round-tripped, not the label, so a
     // localized label never leaks into persistence.
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
-    langLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    langLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     langLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (langLabel_);
 
@@ -180,11 +180,11 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // state). The status line shows which source is driving the clock right
     // now (2 Hz refresh — the source can only change when audio runs).
     clockLabel_.setText (TRANS ("Arp Clock"), juce::dontSendNotification);
-    clockLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    clockLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     clockLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (clockLabel_);
 
-    clockStatusLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
+    clockStatusLabel_.setFont (hellcat::labelFontExactFor (*this, 12.0f));
     clockStatusLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (clockStatusLabel_);
 
@@ -212,7 +212,7 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
     // the nearest step while the processor keeps its exact value until the
     // user actually changes the combo.
     refreshLabel_.setText (TRANS ("Visual Refresh"), juce::dontSendNotification);
-    refreshLabel_.setFont (parvati::labelFontExactFor (*this, 14.0f));
+    refreshLabel_.setFont (hellcat::labelFontExactFor (*this, 14.0f));
     refreshLabel_.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (refreshLabel_);
 
@@ -230,6 +230,22 @@ SettingsPanel::SettingsPanel (ParvatiAudioProcessor& proc,
 
     refreshClockStatus();
     startTimerHz (2);   // clock-status line only (gated by isShowing())
+
+    // Accessibility (2026-08-26 pass): the member widgets carry no component
+    // names, so their built-in JUCE handlers announce nothing. Titles mirror
+    // the visible row captions; descriptions mirror the tooltips.
+    juce::Component::setTitle (TRANS ("Settings"));
+    setDescription (TRANS ("Editor settings"));
+    themeCombo_.setTitle (TRANS ("Theme"));
+    osCombo_.setTitle (TRANS ("Filter Quality"));
+    langCombo_.setTitle (TRANS ("Language"));
+    refreshCombo_.setTitle (TRANS ("Visual Refresh"));
+    refreshCombo_.setDescription (TRANS ("Animation rate of the live modulation indicators"));
+    bpmSlider_.setTitle (TRANS ("Manual tempo"));
+    bpmSlider_.setDescription (TRANS ("Arp clock tempo in BPM"));
+    zoomOutBt_.setDescription (TRANS ("Zoom out"));
+    zoomInBt_.setDescription (TRANS ("Zoom in"));
+    zoomResetBt_.setDescription (TRANS ("Reset zoom"));
 }
 
 void SettingsPanel::setZoomValue (double)
@@ -349,6 +365,12 @@ void SettingsPanel::refreshLanguage()
     langLabel_.setText (TRANS ("Language"), juce::dontSendNotification);
     clockLabel_.setText (TRANS ("Arp Clock"), juce::dontSendNotification);
     refreshLabel_.setText (TRANS ("Visual Refresh"), juce::dontSendNotification);
+    // Accessibility titles follow the same re-translation (see the ctor).
+    themeCombo_.setTitle (TRANS ("Theme"));
+    osCombo_.setTitle (TRANS ("Filter Quality"));
+    langCombo_.setTitle (TRANS ("Language"));
+    refreshCombo_.setTitle (TRANS ("Visual Refresh"));
+    bpmSlider_.setTitle (TRANS ("Manual tempo"));
     // (The BPM text lambdas evaluate TRANS() at invocation time, so a live
     // language switch re-resolves them with no re-assignment needed.)
     refreshClockStatus();
@@ -373,14 +395,14 @@ void SettingsPanel::applyRoleFonts()
     // shared default data face via dataFontExactFor (the former Y2K VT323
     // console face is retired) so the captions and value readouts match the
     // active theme. All other themes keep their legacy caption face.
-    themeLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    zoomLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    zoomValueLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    osLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    langLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    clockLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
-    clockStatusLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f));
-    refreshLabel_.setFont (parvati::dataFontExactFor (*this, 14.0f));
+    themeLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
+    zoomLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
+    zoomValueLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
+    osLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
+    langLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
+    clockLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
+    clockStatusLabel_.setFont (hellcat::dataFontExactFor (*this, 12.0f));
+    refreshLabel_.setFont (hellcat::dataFontExactFor (*this, 14.0f));
 }
 
 void SettingsPanel::lookAndFeelChanged()
@@ -392,7 +414,7 @@ void SettingsPanel::paint (juce::Graphics& g)
 {
     // Fill with the active theme's window background for a seamless look with
     // the rest of the editor. Controls inherit their colours from the
-    // editor-wide ParvatiLookAndFeel (no manual setColour calls).
+    // editor-wide HellcatLookAndFeel (no manual setColour calls).
     g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 

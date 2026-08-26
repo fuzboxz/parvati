@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Arpeggiator — a faithful port of Ambika's controller-side arpeggiator
 // (controller/part.cc ClockArpeggiator / StepArpeggio / StartArpeggio).
@@ -9,8 +9,8 @@
 // selects a note according to direction/pattern/octave, emitting note-on/off
 // events via callbacks to the SynthEngine.
 
-#ifndef PARVATI_ARPEGGIATOR_H_
-#define PARVATI_ARPEGGIATOR_H_
+#ifndef HELLCAT_ARPEGGIATOR_H_
+#define HELLCAT_ARPEGGIATOR_H_
 
 #include <cstdint>
 #include <functional>
@@ -19,7 +19,7 @@
 #include "dsp/constants.h"   // midi_clock_tick_per_step (single-source tick table)
 #include "dsp/random.h"
 
-namespace parvati
+namespace hellcat
 {
 
 // Direction values (match ambika ArpeggiatorDirection enum).
@@ -215,6 +215,6 @@ private:
     }
 };
 
-}  // namespace parvati
+}  // namespace hellcat
 
-#endif  // PARVATI_ARPEGGIATOR_H_
+#endif  // HELLCAT_ARPEGGIATOR_H_

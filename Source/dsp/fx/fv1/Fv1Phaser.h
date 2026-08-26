@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Phaser — 6-stage digital phaser (FV-1 hardware-emulation family).
 //
@@ -17,15 +17,15 @@
 //
 // JUCE-FREE: only the FV-1/framework headers + standard <...> headers.
 
-#ifndef PARVATI_DSP_FX_FV1_FV1PHASER_H
-#define PARVATI_DSP_FX_FV1_FV1PHASER_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1PHASER_H
+#define HELLCAT_DSP_FX_FV1_FV1PHASER_H
 
 #include <array>
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Phaser : public Fv1FxProcessor
@@ -77,6 +77,6 @@ private:
     int16_t fb14_   = 0;     // q14(fb_) — 14-bit feedback coefficient
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1PHASER_H
+#endif // HELLCAT_DSP_FX_FV1_FV1PHASER_H

@@ -2,7 +2,7 @@
 
 **Status:** Spec for implementation subagents (Phases 2–4).
 **Reference source (read-only):** `ambika_reference/` (the original Ambika firmware; not tracked — see `.gitignore`)
-**Target project:** the Parvati project root (JUCE project "Parvati", Jozsef Ottucsak), JUCE at `~/JUCE`.
+**Target project:** the Hellcat project root (JUCE project "Hellcat", Jozsef Ottucsak), JUCE at `~/JUCE`.
 
 All `file:line` citations are relative to `ambika_reference/`.
 
@@ -301,12 +301,22 @@ inline uint8_t InterpolateSample(const uint8_t* table, uint16_t phase){
 
 ## E. ANALOG FILTER EMULATION DESIGN (`dsp/analog_filter.h/.cpp`)
 
-There is **no firmware filter**. The voice computes `cutoff` (8-bit, 0..127 via `U14ShiftRight6`, voice.cc:274) and `resonance` (8-bit, voice.cc:276-278) once per block, plus `mode` (`patch.filter[0].mode`, written to hardware in voicecard.cc:143). Parvati emulates 6 selectable topologies:
+There is **no firmware filter**. The voice computes `cutoff` (8-bit, 0..127 via `U14ShiftRight6`, voice.cc:274) and `resonance` (8-bit, voice.cc:276-278) once per block, plus `mode` (`patch.filter[0].mode`, written to hardware in voicecard.cc:143). Hellcat emulates 6 selectable topologies:
 
 ### E.1 Topology → JUCE class
+
+Card naming (harmonized 2026-08-26): the six cards use the historical Ambika
+voicecard board names with a uniform `Board (N-pole)` label scheme —
+`SMR4 (4-pole)`, `4P (4-pole)`, `SVF (2-pole)`, `Ladder (4-pole)`,
+`Polivoks (2-pole)`, `IR3109 (4-pole)`. The stock Ambika boards come first
+(SMR4 — every unit shipped with it — then the 4P and SVF options); the
+character cards follow. The `filter_card` parameter defaults
+to **SMR4** at index 0. The choice order (0..5) is frozen from this change
+forward: stored APVTS state carries the index.
+
 | Voicecard | Topology | JUCE class | Modes |
 |---|---|---|---|
-| SMR4 (LM13700) / 4-pole SSM2164 | 4-pole cascaded LP | `juce::dsp::LadderFilter` (mode = LP12/LP24) | LP (24dB/oct). NOTCH/BP/HP from `mode` apply only conceptually; real 4-pole card is LP. **Use LP24 for both 4-pole types.** (The UI card is named Ladder: the JUCE ladder stands in for the OTA cascade.) |
+| Ladder | 4-pole transistor-ladder stand-in | `juce::dsp::LadderFilter` (mode = LP12/LP24) | LP (24dB/oct). NOTCH/BP/HP from `mode` apply only conceptually; real 4-pole card is LP. **Use LP24 for both 4-pole types.** (The UI card is named Ladder: the JUCE ladder stands in for the OTA cascade.) |
 | SMR4 OTA (card index 3) | 4-pole OTA cascade | custom OTA-cascade model (this repo) | LP only. Per-stage `gm*tanh(error/2Vt)`, 52 mV knee, loop-gain-normalised resonance with VCA soft clip. Self-oscillates at resonance 1.0. | 
 | SVF (SSM2164) | 2-pole state variable | `juce::dsp::StateVariableTPTFilter` | LP/BP/HP (mode 0/2/3). NOTCH (mode 3→ use HP or a notch via `band - low` — approximate). |
 | Polivoks SVF (card index 4) | 2-pole saturated SVF | custom ZDF model (this repo, not juce::dsp) | LP + BP (mode 0/1). HP/Notch clamp to LP. Op-amp character layer: asymmetric hard-shoulder rails (negative side 22 percent lower: even harmonics), a harder diode-style resonance-return shaper, Q-dependent damping sag, input-offset drift, asymmetric rate-limited outputs, supply clamp on the states. Filter Drive scales every clip point and rate limit. Self-oscillates at resonance 1.0. Documented-behavior-derived calibration: no reference schematic exists in ambika_reference (the Polivoks is a Formanta-derived community card, not an Ambika voicecard). |
@@ -324,8 +334,8 @@ with `minHz≈20`, `maxHz≈16000` (tune in Phase 3 against the frequency respon
 - **`juce::dsp::StateVariableTPTFilter`**: `setCutoffFrequencyHz(freqHz)`.
 
 ### E.3 Resonance mapping (0..127 → 0..1)
-- `LadderFilter.setResonance(resonance/127.0f * 0.95f)` (avoid self-osc instability; the JUCE ladder self-oscillates near 1.0).
-- `StateVariableTPTFilter` has no Q param directly — use the TPT `setResonance` if available, else emulate resonance by blending or by using `juce::dsp::StateVariableFilter` (deprecated but has resonance) OR implement a small SVF. **Flag:** verify the exact JUCE 8 API for SVF resonance (the TPT filter exposes `setResonance(0..1)` in recent JUCE). If unavailable, fall back to a hand-written TPT SVF (4 lines) — acceptable, because it is filter emulation and not voice DSP.
+- `LadderFilter.setResonance(AnalogFilter::ladderResonanceKnob(resonance/127.0f))`. JUCE maps knob r internally to feedback k = 0.4 + 3.6*r. The remap inverts that offset (`(4*r - 0.4)/3.6`, clamped to [0, 1]): the ladder tracks the ideal law `k = 4*knob` above knob 0.1. Below 0.1 JUCE cannot go under k = 0.4; a small dead zone holds that floor. The ceiling 0.95 avoids the JUCE self-oscillation point.
+- `StateVariableTPTFilter.setResonance` takes the **Q** directly (it computes `R2 = 1/Q` internally). The knob is NEVER fed raw: the 2-pole cards map `Q = 1/(2*(1-res))` (onset at 1.0) and the 4P cascade maps `q = 0.5*(1-res)^(-0.616)` per stage (the peak lands on the 2-pole family value, +20 dB at knob 0.95). See E.6 for the derivations and the parity pin. (The pre-2026-08-25 code fed the raw 0..0.95 knob as Q: knob 0 meant Q 0.05, a droopy shelf.)
 
 ### E.4 Mode → output selection
 - SVF: `mode==0`→Low, `2`→High, `3`→Band (and Notch≈Band−Low). Per voice.cc/voicecard.cc the 2-bit mode is `filter_mode_bytes[]={0,1,2,3}` but only LP/BP/HP/NOTCH enum exists. Map FILTER_MODE_LP→low, _HP→high, _BP→band, _NOTCH→notch.
@@ -334,7 +344,59 @@ with `minHz≈20`, `maxHz≈16000` (tune in Phase 3 against the frequency respon
 ### E.5 Update cadence
 The analog filter cutoff/res/mode update **once per 40-sample block** (control rate) in hardware. Faithfully: update the JUCE filter params once per block in `Voice::ProcessBlock` after `UpdateDestinations()`, then `process()` each of the 40 samples. (JUCE dsp filters accept per-sample `process`.) This matches the hardware CV-update cadence.
 
-### E.6 VCA
+### E.6 Loudness parity across the six cards (2026-08-25 calibration)
+The six cards play inside one instrument, so a patch must keep roughly its
+level when the user switches cards. Four measures, all in
+`dsp/analog_filter.h/.cpp` and pinned by `tests/filter_loudness_test.cpp`:
+
+1. **Resonance maps.** The knob is never a raw Q. The 2-pole cards (SVF,
+   Polivoks) use `Q = 1/(2*(1-res))`: Q 0.5 at knob 0, self-oscillation
+   onset exactly at 1.0. The 4P cascade uses `q = 0.5*(1-res)^(-0.616)` per
+   stage: `(s^2 + 2ws + w^2)^2 == (s + w)^4` at knob 0 (the exact 24 dB/oct
+   cascade; any power law keeps `q(0) = 0.5`), and `q(0.95)^2 = 10` (+20 dB),
+   the 2-pole family peak. The exponent solves
+   `0.05^(-E) = 2*sqrt(10)`, so `E = ln(2*sqrt(10))/ln(20) = 0.6158`.
+   The earlier sqrt law gave `q^2 = 0.25/(1-res)` = +14 dB at knob 0.95,
+   6..8 dB under the family cluster. The Ladder passes the knob through
+   `ladderResonanceKnob()`: JUCE maps knob r to feedback `k = 0.4 + 3.6*r`
+   internally; the remap inverts that offset, so `k = 4*knob` above knob
+   0.1 (dead zone floor k = 0.4 below; JUCE cannot go lower). The pre-parity
+   raw-Q mapping fed the knob straight into JUCE `setResonance` (which IS
+   the Q): knob 0 meant Q 0.05, a droopy overdamped shelf up to 38 dB under
+   the siblings, and the maximum (Q 0.95) barely resonated.
+2. **OTA core scale and DC blocker.** The SMR4/IR3109 cores run on a 2 V
+   signal scale (`kOtaCoreScale`): the physical stage knee stays the LM13700
+   2Vt. The old 1 V scale drove every stage ~20x past its knee at hot
+   levels; the saturating stages rectified the waveform into a DC operating
+   point down to -0.33 (measured), stealing headroom and summing across the
+   six voices. A one-pole 10 Hz DC blocker on the card output models the
+   AC-referenced output stage.
+3. **Drive law.** The OTA stage knee follows `(kneeBase/1.2) * cbrt(1.2/drive)`:
+   anchored at the documented default (drive 1.2 keeps the old knee exactly)
+   and softened from the old linear law, which collapsed the saturated
+   output proportional to 1/drive (the SMR4 sat ~16 dB under the Ladder at
+   Filter Drive 12; the spread is now under 5 dB).
+4. **Trims and resonance compensation.** Static per-card output trims level
+   the passband against the Ladder (the calibration reference card, whose JUCE path stays
+   bit-identical). The feedback cards add `(1+kfb)^exp` (exp 0.5 SMR4, 0.65
+   IR3109): their loop thins the bass by `1/(1+kfb)` and their saturating
+   stages sag with the loop signal, so a partial compensation keeps them
+   near the Q-based cards (which keep DC gain 1).
+
+Measured result after the 2026-08-26 law harmonization (hot saw 110 Hz, amp
+0.9, drive 1.2, 48 kHz, AC RMS): six-card spread <= 4.4 dB across cutoff
+500 Hz..6 kHz x resonance 0..0.85, 2.0 dB at the neutral setting
+(2.5 kHz, res 0), <= 6.4 dB at resonance 0.95, <= 4.8 dB at Filter Drive
+12. Resonance peaks at knob 0.95 (trim-normalized, measured): Ladder
++21.5 dB, 4P +20.0, SVF +20.0, Polivoks +21.0 — a 1.5 dB cluster (the OTA
+cards sit near 0 dB: their ring suppression is pinned character). Remaining
+spread at the extremes (self-oscillation at res 1.0, sub-300 Hz cutoffs on
+the saturating cards) is card character. The Ladder path multiplies by a
+loudness gain of exactly 1.0, and the batch test's reference applies the
+same knob remap, so `hellcat_analog_filter_batch_test`'s bit-identity pin
+holds.
+
+### E.7 VCA
 `vca()` (0..255, multiplicative mod) gates amplitude. Apply as a per-sample gain `vca()/255.0f` AFTER the filter (the analog VCA is post-filter). Also note `lut_res_vca_linearization` (256) gives the VCA log curve — apply it for authenticity: `gain = lut_res_vca_linearization[vca()]/32768.0f` (verify scaling). This is the one controller-side table that IS relevant to voice output.
 
 ---
@@ -381,9 +443,9 @@ Per instance i (0..2): attack(0..127), decay(0..127), sustain(0..127), release(0
 
 ### F.2 Part parameters (in scope: volume, legato, portamento)
 - part_volume (0..127), part_legato (0/1), part_portamento (0..63). (Octave/tuning/spread/raga are part-level extras — include octave (-2..2) and tuning for usability; defer raga/scale quantization.)
-- **Live application (Parvati extension, 2026-08-24).** The firmware computes
+- **Live application (Hellcat extension, 2026-08-24).** The firmware computes
   a voice's 14-bit pitch only at NoteOn (part.cc TuneNote) and reads legato /
-  portamento at Trigger. Parvati additionally applies Patch-page part edits to
+  portamento at Trigger. Hellcat additionally applies Patch-page part edits to
   SOUNDING notes of the current part:
   * part_tuning: each sounding voice retunes by the edit DELTA, gliding at
     block rate in dsp::Voice (`stage_live_tune_delta`; full range ~33 ms).

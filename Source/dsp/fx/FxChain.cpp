@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxChain.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxChain.h.
 
 #include "dsp/fx/FxChain.h"
 
@@ -441,7 +441,7 @@ void FxChain::EqBiquad::process (float* io, int numSamples) noexcept
     // here: the master EQ sits in the wet path after the mix blend and the
     // chain silence gate zeroes the frame before it reaches silence.
     for (int i = 0; i < numSamples; ++i)
-        io[i] = parvati::dsp::df2tProcessSample (io[i], b0, b1, b2, a1, a2, z1, z2);
+        io[i] = hellcat::dsp::df2tProcessSample (io[i], b0, b1, b2, a1, a2, z1, z2);
 }
 
 void FxChain::blendSlotWetFade (float* outL, float* outR, int numSamples, int s) noexcept
@@ -575,7 +575,7 @@ void FxChain::updateEqCoeffs() noexcept
     // Nyquist with margin), mirroring the FV-1 RateBridge BW clamp
     // (Fv1Engine.h: min(15k, 0.49*hostRate)). No-op at any sane rate.
     const double r = rate_ > 0.0 ? rate_ : 44100.0;
-    constexpr double kTwoPi = parvati::dsp::kRbjTwoPi;
+    constexpr double kTwoPi = hellcat::dsp::kRbjTwoPi;
     const double maxEqFreq = 0.45 * r;
 
     auto assign = [] (EqBiquad& b, double b0, double b1, double b2,

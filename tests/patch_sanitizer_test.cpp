@@ -155,7 +155,7 @@ TEST(patch_sanitizer_test)
 
     // ------------------------------------------------------------------
     // [2a] WIRING (.MUL): hostile bytes in a real written file land in the
-    //      engine SANITIZED via ParvatiAudioProcessor::loadMultiFile.
+    //      engine SANITIZED via HellcatAudioProcessor::loadMultiFile.
     // ------------------------------------------------------------------
     printf("[2a] .MUL ingestion wiring (loadMultiFile sanitizes)\n");
     {
@@ -172,10 +172,10 @@ TEST(patch_sanitizer_test)
         multi.multiData.fill (0);
 
         juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                             .getChildFile ("parvati_sanitizer_hostile.mul");
+                             .getChildFile ("hellcat_sanitizer_hostile.mul");
         CHECK (writeAmbikaMultiFile (tmp, multi), "hostile .MUL written by the real writer");
 
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         CHECK (proc.loadMultiFile (tmp), "loadMultiFile accepts the well-formed hostile .MUL");
 
@@ -203,7 +203,7 @@ TEST(patch_sanitizer_test)
     // ------------------------------------------------------------------
     printf("[2b] host-state ingestion wiring (restoreState sanitizes)\n");
     {
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
 
         // Inject hostile bytes directly into the engine's storage (the same MT
@@ -216,7 +216,7 @@ TEST(patch_sanitizer_test)
         juce::MemoryBlock blob;
         a.getEngine().captureState (blob);
 
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         CHECK (b.getEngine().restoreState (blob.getData(), blob.getSize()),
                "restoreState accepts the captured blob");

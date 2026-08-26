@@ -85,13 +85,13 @@ FX DSP. The hold introduces at most a 1-sample zero-order-hold error on the rare
 
 ## Regression tests (two layers)
 
-1. **`tests/parvati_fx_bridge_tinychunk.cpp`** (`parvati_fx_bridge_tinychunk_test`,
+1. **`tests/hellcat_fx_bridge_tinychunk.cpp`** (`parvati_fx_bridge_tinychunk_test`,
    built by default) — drives the bridge directly with 1-sample blocks and a
    drift-like `{49,49,49,1}` pattern; asserts no zeroed outputs and a bounded Δ.
    Passes with the fix (Δ 0.014), fails without it (Δ 0.300, 104 zeros). Guards
    the bridge's `m==0` branch specifically.
 
-2. **`tests/parvati_fx_engine_continuity.cpp`** (`parvati_fx_engine_continuity_test`,
+2. **`tests/hellcat_fx_engine_continuity.cpp`** (`parvati_fx_engine_continuity_test`,
    built by default) — the layer that actually *found* the bug. Renders a
    sustained note through the real `ParvatiAudioProcessor::processBlock` (the
    only path that generates renderPartFx's drift-induced 1-sample sub-chunks)

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Phaser — 6-stage digital phaser implementation.
 // See Fv1Phaser.h for the parameter mapping + algorithm description.
@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // No DelayLine instances in this effect; the summed delay memory is 0 samples.
@@ -121,4 +121,4 @@ Fv1Phaser::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lout, int32_t
     rout = out;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

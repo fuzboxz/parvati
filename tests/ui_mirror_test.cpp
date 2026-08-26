@@ -6,7 +6,7 @@
 //     (S1) the REVEAL refresh (setCurrentTopPage(2) -> showTopPage ->
 //          patchPage_->refresh(), the fixed "single-patch load / host state
 //          restore left the page stale" class), and
-//     (S2) the VISIBLE-page poll mirror (ParvatiEditor::pollPatchPageMirror,
+//     (S2) the VISIBLE-page poll mirror (HellcatEditor::pollPatchPageMirror,
 //          driven by the 30 Hz timer via SynthEngine::getDisplayVersion — the
 //          fixed "host automation / NRPN / undo while the page is on screen"
 //          class). pollPatchPageMirror is public for exactly this test.
@@ -18,7 +18,7 @@
 //   [2] engine-direct writes: setPartVoiceSlots / setPartVoiceAllocation(0)
 //       (disable) / setPartChannel / setPartKeyZone / setPartName.
 //   [3] processor-level file loads: two presets/TEMPLATES multis
-//       (Poly.parvati, Drum Kit (GM).parvati) + one factory .PRO — these do
+//       (Poly.yml, Drum Kit (GM).yml) + one factory .PRO — these do
 //       NOT go through the editor's applyPatchFile, so only S1/S2 can bring
 //       the page back in sync (the original bug: only multi loads refreshed).
 //   [4] setStateInformation recall with a LIVE editor (blob path), on both
@@ -45,7 +45,7 @@
 // explicit poll call replaces the 30 Hz tick; file loads use the checked-in
 // preset corpus). Runs in seconds.
 //
-// Run: ./build_unified/parvati_unified_tests ui_mirror_test
+// Run: ./build_unified/hellcat_unified_tests ui_mirror_test
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -58,7 +58,7 @@
 #include <juce_events/juce_events.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "PluginEditor.h"          // ParvatiEditor (setCurrentTopPage / pollPatchPageMirror)
+#include "PluginEditor.h"          // HellcatEditor (setCurrentTopPage / pollPatchPageMirror)
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 #include "ui/PatchArrangement.h"   // Arrangement, inferArrangement
@@ -122,7 +122,7 @@ struct MirrorReport
     juce::String fail;
 };
 
-MirrorReport mirrorMatches (ParvatiAudioProcessor& proc, PatchPage* page)
+MirrorReport mirrorMatches (HellcatAudioProcessor& proc, PatchPage* page)
 {
     MirrorReport r;
     const auto fail = [&] (const juce::String& m)
@@ -248,13 +248,13 @@ TEST(ui_mirror_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    std::printf ("=== Parvati UI Mirror Consistency (T4) ===\n");
+    std::printf ("=== Hellcat UI Mirror Consistency (T4) ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
-    auto* editor = dynamic_cast<ParvatiEditor*> (proc.createEditor());
-    check (editor != nullptr, "editor constructs (ParvatiEditor)");
+    auto* editor = dynamic_cast<HellcatEditor*> (proc.createEditor());
+    check (editor != nullptr, "editor constructs (HellcatEditor)");
     if (editor == nullptr)
     {
         std::printf ("\nUI MIRROR TEST: FAILURES (%d failures)\n", g_failures);
@@ -443,21 +443,21 @@ TEST(ui_mirror_test)
         char m[220];
 
         // [3a] Poly template — poll seam while visible.
-        if (proc.loadParvatiMultiFile (tplDir.getChildFile ("Poly.parvati")))
+        if (proc.loadHellcatMultiFile (tplDir.getChildFile ("Poly.yml")))
         {
             editor->pollPatchPageMirror();
             const auto r = mirrorMatches (proc, page);
-            std::snprintf (m, sizeof (m), "Poly.parvati load mirrors (poll seam) [%s]",
+            std::snprintf (m, sizeof (m), "Poly.yml load mirrors (poll seam) [%s]",
                            r.ok ? "clean" : r.fail.toRawUTF8());
             check (r.ok, m);
             check (page->getDisplayedArrangement() == Arrangement::Poly,
-                   "Poly.parvati re-infers the Poly arrangement");
+                   "Poly.yml re-infers the Poly arrangement");
         }
         else
-            check (false, "Poly.parvati loads (run from the repo root)");
+            check (false, "Poly.yml loads (run from the repo root)");
 
         // [3b] Drum Kit (GM) — reveal seam (page hidden during the load).
-        if (proc.loadParvatiMultiFile (tplDir.getChildFile ("Drum Kit (GM).parvati")))
+        if (proc.loadHellcatMultiFile (tplDir.getChildFile ("Drum Kit (GM).yml")))
         {
             editor->setCurrentTopPage (0);
             editor->setCurrentTopPage (2);
@@ -467,7 +467,7 @@ TEST(ui_mirror_test)
             check (r.ok, m);
         }
         else
-            check (false, "Drum Kit (GM).parvati loads (run from the repo root)");
+            check (false, "Drum Kit (GM).yml loads (run from the repo root)");
 
         // [3c] A factory .PRO — single-program load into the current part
         // (the class that originally NEVER refreshed the page at all).

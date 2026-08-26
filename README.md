@@ -1,6 +1,6 @@
-# Parvati
+# Hellcat
 
-**Parvati** is a software synthesizer. It is a plugin port of the
+**Hellcat** is a software synthesizer. It is a plugin port of the
 [Mutable Instruments **Ambika**](https://github.com/pichenettes/ambika)
 hybrid polysynth. It is available as a modern VST3 / AU / CLAP / Standalone
 plugin.
@@ -68,23 +68,23 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-The build writes the artifacts to `build/Parvati_artefacts/Release/`:
-`Parvati.vst3`, `Parvati.component`, `Parvati.clap`, and `Parvati.app`.
+The build writes the artifacts to `build/Hellcat_artefacts/Release/`:
+`Hellcat.vst3`, `Hellcat.component`, `Hellcat.clap`, and `Hellcat.app`.
 
 ### Install into your DAW
 
 ```bash
 # VST3
-cp -R build/Parvati_artefacts/Release/VST3/Parvati.vst3 ~/Library/Audio/Plug-Ins/VST3/
+cp -R build/Hellcat_artefacts/Release/VST3/Hellcat.vst3 ~/Library/Audio/Plug-Ins/VST3/
 
 # AU (Audio Unit)
-cp -R build/Parvati_artefacts/Release/AU/Parvati.component ~/Library/Audio/Plug-Ins/Components/
+cp -R build/Hellcat_artefacts/Release/AU/Hellcat.component ~/Library/Audio/Plug-Ins/Components/
 
 # CLAP
-cp -R build/Parvati_artefacts/Release/CLAP/Parvati.clap ~/Library/Audio/Plug-Ins/CLAP/
+cp -R build/Hellcat_artefacts/Release/CLAP/Hellcat.clap ~/Library/Audio/Plug-Ins/CLAP/
 
 # Standalone app (optional)
-cp -R build/Parvati_artefacts/Release/Standalone/Parvati.app /Applications/
+cp -R build/Hellcat_artefacts/Release/Standalone/Hellcat.app /Applications/
 ```
 
 (On macOS, the one-command `cmake --build build_release --target deploy`
@@ -98,7 +98,7 @@ can quarantine files that you download or copy. In that case, clear the
 attribute once:
 
 ```bash
-xattr -cr ~/Library/Audio/Plug-Ins/Components/Parvati.component
+xattr -cr ~/Library/Audio/Plug-Ins/Components/Hellcat.component
 ```
 
 For distribution, use [`tools/release/sign_and_notarize.sh`](tools/release/)
@@ -115,12 +115,12 @@ sudo apt install libasound2-dev libx11-dev libxcomposite-dev libxcursor-dev \
   libxext-dev libxi-dev libxinerama-dev libxrandr-dev libxrender-dev \
   libfreetype6-dev libfontconfig1-dev libglu1-mesa-dev libjack-jackd2-dev
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target Parvati_VST3 Parvati_CLAP Parvati_Standalone -j
+cmake --build build --target Hellcat_VST3 Hellcat_CLAP Hellcat_Standalone -j
 ```
 
 Linux builds VST3, CLAP, and Standalone (the classic AU is macOS-only).
 User-level install targets are `~/.vst3` and `~/.clap`. The standalone
-binary is written to `build/Parvati_artefacts/Release/Standalone/Parvati`.
+binary is written to `build/Hellcat_artefacts/Release/Standalone/Hellcat`.
 
 ## Microtonal tuning
 
@@ -143,6 +143,6 @@ Every part has its own tuning (the **Tune** column on the Patch page):
 
 ---
 
-Parvati is licensed under the **AGPL-3.0** (own code). It is a derivative
+Hellcat is licensed under the **AGPL-3.0** (own code). It is a derivative
 work of the GPL-3.0 Ambika firmware (the DSP under `Source/dsp/` keeps
 GPL-3.0). See [`LICENSE`](LICENSE) and [`NOTICES.md`](NOTICES.md).

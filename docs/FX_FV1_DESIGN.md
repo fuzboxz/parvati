@@ -1,4 +1,4 @@
-# Parvati FX — FV-1 Hardware-Emulation Family (Design Spec)
+# Hellcat FX — FV-1 Hardware-Emulation Family (Design Spec)
 
 A family of five per-part FX effects emulates the **Spin FV-1** DSP and the
 early-2010s lo-fi hybrid synths. This family is **separate** from the existing
@@ -39,7 +39,7 @@ strict hardware constraint set.
   note-onset crackle burst). No input/output LP can undo a fold. Linear
   stages (Tone LP, Level, clock jitter) and internal-sample-defined timings
   (the shape-crossfade clock) stay at the 1x rate. Post-fix worst folded
-  spur: -45 dB at 3 kHz (`parvati_fv1_alias_probe`).
+  spur: -45 dB at 3 kHz (`hellcat_fv1_alias_probe`).
 * **Memory limit:** **≤ 32,768 samples** of total delay memory per effect
   (1.0 s at 32.768 kHz). Each effect `static_assert`s its total.
 * **Arithmetic:** audio path in **24-bit fixed-point (Q.23 signed)** with
@@ -54,7 +54,7 @@ strict hardware constraint set.
 `Source/dsp/fx/fv1/Fv1Engine.h` (header-only, **JUCE-free**, so effects +
 their unit tests compile standalone in seconds without the JUCE build):
 
-* `namespace parvati::fv1`
+* `namespace hellcat::fv1`
 * Fixed-point: `f24_fromFloat / f24_toFloat / f24_sat / f24_addSat / f24_mul /
   f24_mulk` (Q.23 data, 14-bit coeff multiply), `q14(c)` 14-bit coefficient
   quantizer, `quantBits(x,bits)` bit-truncation (grit). Constants `kOneQ23`,
@@ -329,7 +329,7 @@ median mid-note):
    rail. Fix: the ladder is unsaturated (|v| <= 8·rail = 2^26, int32-safe);
    out-of-domain peaks reach the wrap/clamp policy intact.
 
-Pinned by tests/parvati_fx_lut_dropout_test.cpp (red on the pre-fix tree:
+Pinned by tests/hellcat_fx_lut_dropout_test.cpp (red on the pre-fix tree:
 rmsMin 0.002–0.014; green post-fix: 0.28–0.77, margins > 2x).
 
 ### FX knob-drag dezipper (2026-08-21 — "whichever knob I drag crackles")
@@ -362,7 +362,7 @@ folded/driven content):
   RATE-INDEPENDENT (0.0992 slow vs 0.0975 fast) and output-continuous. It
   is the slide of the fold curve's C0 knees, inherent to modulation of a
   folding curve. No dezipper applies. Pinned at a 0.12 bound with a
-  fast==slow equality check in tests/parvati_fx_drag_test.cpp.
+  fast==slow equality check in tests/hellcat_fx_drag_test.cpp.
 
 ### Subagent audit wave (2026-08-21): the phaser class, family-wide
 
@@ -395,7 +395,7 @@ over the FV-1 tree. REAL findings, all fixed + pinned:
   reference point — exact, stateless (no transient: keeps the RAW-param
   contract that HARDEN-2b pins).
 
-New invariant layers in tests/parvati_fx_invariants_test.cpp: [I2] extended
+New invariant layers in tests/hellcat_fx_invariants_test.cpp: [I2] extended
 to Chorus/Ensemble; **[I2b]** near-Nyquist loop gain (a quiet 15.9 kHz probe
 straight into processSampleFx — bypassing the bridge's 15 kHz output LP —
 must stay <= 3x); **[I4]** Drive-knob resolution (distinct drive settings
@@ -420,12 +420,12 @@ the regen return (measured ladder: 1 pole 0.063, 2 poles 0.034-0.046 — the
 artifacts are broadband; 4 poles = -24 dB/oct pin every above-damp resonance
 at net-negative gain). The musical notch band (<= 3.5 kHz at max
 Center+Depth) is untouched — analog regen stages are band-limited too.
-Pinned by parvati_phaser_crackle_test (red 0.096 pre-damp; passes at the
+Pinned by hellcat_phaser_crackle_test (red 0.096 pre-damp; passes at the
 0.025 baseline floor = parity with the engine's own lo-fi character).
 
 ### Math-invariant tests (2026-08-21): catching the memory-safety-blind class
 
-`tests/parvati_fx_invariants_test.cpp` encodes the LAWS that each effect
+`tests/hellcat_fx_invariants_test.cpp` encodes the LAWS that each effect
 class must obey, at parameter EXTREMES (every bug below lived there — the
 existing suites probe typical settings). It caught two real bugs on its
 first run:
@@ -446,7 +446,7 @@ first run:
   non-degenerate output (the attack silence of delays/reverbs is exempt;
   the analysis uses the final 30%).
 
-Red-validated: the USER REPRO rows in parvati_fx_lut_dropout_test fail
+Red-validated: the USER REPRO rows in hellcat_fx_lut_dropout_test fail
 0.002-0.03 on the pre-killer tree; I2 phaser fails 0.136 pre-fb-killer.
 
 ### Native-shape quality pass (2026-08-21, second wave)
@@ -456,7 +456,7 @@ Red-validated: the USER REPRO rows in parvati_fx_lut_dropout_test fail
   doublings pinned the table index at the rail for Drive >= ~8x. They
   squared the signal instead of folding it through the tube curve's droop
   tail. Max-drive now reads the real curve; pinned by the Overdrive row in
-  parvati_fx_lut_dropout_test.
+  hellcat_fx_lut_dropout_test.
 * **LUT shapes**: Fuzz (#5) and Sparse (#15) had hard C0 discontinuities in
   their transfer curves (a knee step at x=0.12; a zero-crossing flip with a
   ~400x slope) — step artifacts that no oversampling can repair. Fuzz now
@@ -466,7 +466,7 @@ Red-validated: the USER REPRO rows in parvati_fx_lut_dropout_test fail
   transparent to +/-0.6, tanh to the rail). At fb 0.92 the loop resonates
   ~12.5x, and the old f24_addSat hard-clipped every recirculation —
   measured -58 dB inharmonic foldback on a pure sine
-  (tests/parvati_fx_foldback_probe); -64 dB with the knee. The jet
+  (tests/hellcat_fx_foldback_probe); -64 dB with the knee. The jet
   self-oscillation character is preserved.
 * **Harness note**: test binaries that construct juce objects without
   ScopedJuceInitialiser_GUI bind the MessageManager to a background thread.

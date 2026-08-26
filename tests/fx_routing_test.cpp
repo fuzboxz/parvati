@@ -1,4 +1,4 @@
-// Per-part FX routing verification for Parvati.
+// Per-part FX routing verification for Hellcat.
 //
 // Proves FxChain::process() produces FINITE output for every topology
 // (Series / Parallel12to3 / Parallel1to23) x every order permutation (0..5),
@@ -13,7 +13,7 @@
 // used for the state/fade checks because it responds to both DC and impulse
 // input (Diffuser passes DC unchanged) and has a long tail.
 //
-// Run: ./build_unified/parvati_unified_tests fx_routing_test
+// Run: ./build_unified/hellcat_unified_tests fx_routing_test
 
 #include <cmath>
 #include "unified_test_runner.h"

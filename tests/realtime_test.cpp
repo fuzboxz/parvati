@@ -1,4 +1,4 @@
-// Real-time / buffer-robustness smoke test for the Parvati engine.
+// Real-time / buffer-robustness smoke test for the Hellcat engine.
 //
 // Renders a DENSE sustained chord for ~0.5 s at several host buffer sizes
 // (32 .. 1024) with the full 6-voice polyphony, and asserts the audio thread:
@@ -12,7 +12,7 @@
 // (NaN/Inf from a bad ramp / divider / filter state). The render-time vs
 // audio-time ratio is PRINTED as a CPU indicator but NOT asserted (it is
 // machine/CI-dependent and would be flaky; a Debug build is expected to exceed
-// realtime). Run: ./build_unified/parvati_unified_tests realtime_test
+// realtime). Run: ./build_unified/hellcat_unified_tests realtime_test
 
 #include <chrono>
 #include "unified_test_runner.h"
@@ -52,7 +52,7 @@ struct RenderOutcome { double peak = 0.0; bool completed = false; };
 RenderOutcome renderDenseChord (int bufferSize, int numNotes, double sampleRate = 48000.0)
 {
     RenderOutcome out;
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (sampleRate, bufferSize);
 
     // The APVTS default osc1_shape is NONE (silent); give Part 0 an audible
@@ -113,7 +113,7 @@ TEST(realtime_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    std::printf ("=== Parvati real-time / buffer-robustness smoke test ===\n");
+    std::printf ("=== Hellcat real-time / buffer-robustness smoke test ===\n");
 
     static const int kBuffers[] = { 32, 64, 128, 256, 512, 1024 };
 

@@ -22,8 +22,8 @@
 // the global Random. This matches the firmware, which never calls Random::*
 // from the transient generator.
 
-#ifndef PARVATI_DSP_TRANSIENT_GENERATOR_H
-#define PARVATI_DSP_TRANSIENT_GENERATOR_H
+#ifndef HELLCAT_DSP_TRANSIENT_GENERATOR_H
+#define HELLCAT_DSP_TRANSIENT_GENERATOR_H
 
 #include <cstdint>
 
@@ -125,4 +125,4 @@ class TransientGenerator {
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_TRANSIENT_GENERATOR_H
+#endif  // HELLCAT_DSP_TRANSIENT_GENERATOR_H

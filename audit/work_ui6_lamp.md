@@ -1,8 +1,8 @@
 # work_ui6_lamp — indicator-lamp border "a tiny bit" thicker
 
 ## Change
-- `ParvatiLookAndFeel.h`: new `public: static constexpr float kLampBorderWidth = 2.5f;` on `ParvatiModuleLamp` — ONE value shared by paint + both tests.
-- `ParvatiLookAndFeel.cpp` (`paintButton` only):
+- `HellcatLookAndFeel.h`: new `public: static constexpr float kLampBorderWidth = 2.5f;` on `ParvatiModuleLamp` — ONE value shared by paint + both tests.
+- `HellcatLookAndFeel.cpp` (`paintButton` only):
   - Stroke **1.5f → 2.5f** (`g.drawEllipse (r, kLampBorderWidth)`).
   - Resting ring colour **outline → outline.brighter(0.25f)** for contour legibility; hover-brighten (0.8/0.20) and disabled-alpha paths unchanged.
   - Dot geometry/diameter logic untouched.

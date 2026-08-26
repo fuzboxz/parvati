@@ -6,8 +6,8 @@
 // SystemSettings static data (reception fully enabled = factory default).
 //
 // This TU deliberately includes ONLY shim + firmware headers — never any
-// Parvati header — so the firmware namespace (ambika:: / avrlib::) and
-// Parvati's (ambika::dsp::) never meet in one translation unit.
+// Hellcat header — so the firmware namespace (ambika:: / avrlib::) and
+// Hellcat's (ambika::dsp::) never meet in one translation unit.
 
 #include "controller/midi_dispatcher.h"
 #include "controller/parameter.h"

@@ -25,7 +25,7 @@ Group titles ("FX", "Sequencer", "Osc 1", …) were painted with
 `GroupComponent::textColourId == textSecondary` (the dim caption tier) over the
 `containerFill` card. One-line L&F change (`setColour(... t.textPrimary)` in
 `ParvatiLookAndFeel`'s colour map + comment/doc updates in
-`drawGroupComponentOutline` and `ParvatiTheme.h`); titles stay 14pt bold — the
+`drawGroupComponentOutline` and `HellcatTheme.h`); titles stay 14pt bold — the
 complaint was contrast, not size, and the bold weight already carries the
 hierarchy.
 
@@ -69,7 +69,7 @@ else shifts tier.
 | parvati_ui_mirror_test | ALL CHECKS PASSED (0 failures) |
 
 ## Files (this lane only)
-`Source/ui/ParvatiLookAndFeel.cpp`, `Source/ui/ParvatiTheme.h`,
+`Source/ui/HellcatLookAndFeel.cpp`, `Source/ui/HellcatTheme.h`,
 `Source/ui/SeqLengthStepper.cpp`, `tests/seq_stepper_test.cpp`,
 `tests/ui_typography_test.cpp` (new), `CMakeLists.txt` (one appended block).
 Untouched as contracted: PluginEditor.*, NoteStepControl (no font there to

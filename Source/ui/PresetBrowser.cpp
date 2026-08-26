@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // PresetBrowser implementation. See PresetBrowser.h for the class contract
 // and the design comments (the bodies moved here unchanged from the header).
@@ -44,7 +44,7 @@ juce::File PresetBrowser::importIntoUserTree (const juce::File& file, const juce
     if (userDir.getFullPathName().isEmpty() || file.isAChildOf (userDir))
         return {};
     if (! (file.hasFileExtension (".pro") || file.hasFileExtension (".mul")
-           || file.hasFileExtension (".parvati")))
+           || file.hasFileExtension (".yml")))
         return {};
     if (! file.existsAsFile())
         return {};
@@ -143,7 +143,7 @@ void PresetBrowser::scanInto (MenuNode& root)
         scanFlatInto (root.subs.emplace_back(), factoryDir_.getChildFile (bank), "*.PRO", true).title = bank;
     scanFlatInto (root.subs.emplace_back(), factoryMultiDir_, "*.MUL", false);
     scanRecursiveInto (root.subs.emplace_back(), userDir_);
-    scanFlatInto (root.subs.emplace_back(), templatesDir_, "*.parvati", false);
+    scanFlatInto (root.subs.emplace_back(), templatesDir_, "*.yml", false);
     cacheValid_ = true;
     ++scanCount_;
 }
@@ -216,7 +216,7 @@ void PresetBrowser::scanRecursiveInto (MenuNode& node, const juce::File& dir, in
             sub.title = e.getFileName();
             scanRecursiveInto (sub, e, depth + 1);
         }
-        else if (e.hasFileExtension (".pro") || e.hasFileExtension (".mul") || e.hasFileExtension (".parvati"))
+        else if (e.hasFileExtension (".pro") || e.hasFileExtension (".mul") || e.hasFileExtension (".yml"))
         {
             node.leaves.push_back ({ e, patchLabel (e, e.hasFileExtension (".pro")) });
         }

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Engine — the shared Spin FV-1 hardware-emulation framework for the
 // Clocked Delay / Ensemble / Plate Reverb / Vinyl Compressor / Phaser FX family.
@@ -17,10 +17,10 @@
 // This is NOT a port of the FV-1 instruction set; it is a faithful-enough
 // emulation of the chip's *signal characteristics* (fixed-point saturation,
 // coefficient quantization, band-limited I/O, the ~1 s RAM budget) sized to the
-// Parvati per-part FX slot contract (one FxProcessor per slot).
+// Hellcat per-part FX slot contract (one FxProcessor per slot).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1ENGINE_H
-#define PARVATI_DSP_FX_FV1_FV1ENGINE_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1ENGINE_H
+#define HELLCAT_DSP_FX_FV1_FV1ENGINE_H
 
 #include <algorithm>
 #include <array>
@@ -32,7 +32,7 @@
 #include "dsp/fx/LinearResamplerCore.h"   // shared resampler transport (CRTP base, include-free)
 #include "dsp/fx/RbjBiquad.h"           // shared DF2T biquad kernel (kRbjTwoPi, df2tProcessSample)
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // ---------------------------------------------------------------------------
@@ -390,7 +390,7 @@ public:
     // Design a Butterworth (Q=0.7071) low-pass at fc Hz for sample rate fs.
     void design (double fc, double fs) noexcept
     {
-        const double w0 = parvati::dsp::kRbjTwoPi * fc / fs;
+        const double w0 = hellcat::dsp::kRbjTwoPi * fc / fs;
         const double cw = std::cos (w0), sw = std::sin (w0);
         const double alpha = sw / (2.0 * 0.7071067811865476);
         const double a0 = 1.0 + alpha;
@@ -402,7 +402,7 @@ public:
     }
     float process (float x) noexcept
     {
-        const float y = parvati::dsp::df2tProcessSample (x, b0, b1, b2, a1, a2, z1, z2);
+        const float y = hellcat::dsp::df2tProcessSample (x, b0, b1, b2, a1, a2, z1, z2);
         // Denormal flush: a stable IIR fed silence (a reverb/delay tail, a
         // paused track, or the gap between notes) decays its z-state toward 0
         // but never reaches it in finite steps, passing through the subnormal
@@ -417,7 +417,7 @@ public:
     }
 };
 
-class RateBridge : public parvati::dsp::LinearResamplerCore<RateBridge>
+class RateBridge : public hellcat::dsp::LinearResamplerCore<RateBridge>
 {
 public:
     static constexpr double kRate = kInternalRate;
@@ -455,7 +455,7 @@ public:
     {
         std::fill (iL_.begin(), iL_.end(), 0.0f);
         std::fill (iR_.begin(), iR_.end(), 0.0f);
-        parvati::dsp::LinearResamplerCore<RateBridge>::reset();
+        hellcat::dsp::LinearResamplerCore<RateBridge>::reset();
         for (int i = 0; i < 2; ++i)
         {
             inLpL_[i].clear();  inLpR_[i].clear();
@@ -500,7 +500,7 @@ public:
     }
 
 private:
-    friend parvati::dsp::LinearResamplerCore<RateBridge>;
+    friend hellcat::dsp::LinearResamplerCore<RateBridge>;
 
     // ---- Internal-domain storage hooks of the shared resampler core ----
     void storeSample (int m, float l, float r) noexcept
@@ -518,6 +518,6 @@ private:
     BiquadLP inLpL_[2], inLpR_[2], outLpL_[2], outLpR_[2];
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1ENGINE_H
+#endif // HELLCAT_DSP_FX_FV1_FV1ENGINE_H

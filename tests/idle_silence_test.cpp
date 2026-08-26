@@ -10,7 +10,7 @@
 // and asserts the main bus stays in the noise floor. Before the fix this
 // rumbled; with the idle-voice gate (and the master DC blocker) it is silent.
 //
-// Run: ./build_unified/parvati_unified_tests idle_silence_test
+// Run: ./build_unified/hellcat_unified_tests idle_silence_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -31,7 +31,7 @@ TEST(idle_silence_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // AudioProcessor needs this once.
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 512);
 
     // Construct the rumble condition: ENV3 -> VCA with a mid amount (< 63), so a
@@ -63,7 +63,7 @@ TEST(idle_silence_test)
             }
     }
 
-    std::printf ("parvati_idle_silence_test: %d idle blocks, peak=%.6f\n", kBlocks, peak);
+    std::printf ("hellcat_idle_silence_test: %d idle blocks, peak=%.6f\n", kBlocks, peak);
 
 
     // Idle output must stay in the noise floor => success (exit 0).

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PluginProcessor.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See PluginProcessor.h.
 
 #include <algorithm>
 #include <array>
@@ -18,7 +18,7 @@
 
 #include "PluginEditor.h"
 #include "MulExport.h"
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PatchFile.h"
 #include "ui/FactoryPresetInstaller.h"
 #include "ui/IosOpenIn.h"        // open-in routing (desktop: inline no-op)
@@ -40,7 +40,7 @@ constexpr float kMainMixHeadroomGain = 0.5f;   // -6 dB
 }  // namespace
 
 //==============================================================================
-void ParvatiAudioProcessor::DeferredParamRing::push (int index, float value) noexcept
+void HellcatAudioProcessor::DeferredParamRing::push (int index, float value) noexcept
 {
     // Spin until the drain (message thread) releases the lock. The critical
     // section is a bounded scan + store (no allocation, no system call), so the
@@ -66,7 +66,7 @@ void ParvatiAudioProcessor::DeferredParamRing::push (int index, float value) noe
     lock.clear (std::memory_order_release);
 }
 
-juce::Array<ParvatiAudioProcessor::DeferredParamRing::Entry> ParvatiAudioProcessor::DeferredParamRing::drain() noexcept
+juce::Array<HellcatAudioProcessor::DeferredParamRing::Entry> HellcatAudioProcessor::DeferredParamRing::drain() noexcept
 {
     // FX audit finding 4: the previous drain built the juce::Array WHILE
     // HOLDING the spinlock -- juce::Array::add can MALLOC, and the audio
@@ -108,7 +108,7 @@ juce::Array<ParvatiAudioProcessor::DeferredParamRing::Entry> ParvatiAudioProcess
 // call — safe inside the 60 Hz timer callback (sampled ~1 Hz anyway).
 // NSProcessInfoThermalState: 0=Nominal 1=Fair 2=Serious 3=Critical, exactly
 // ThermalLevel's raw values.
-static ParvatiAudioProcessor::ThermalLevel currentThermalLevel() noexcept
+static HellcatAudioProcessor::ThermalLevel currentThermalLevel() noexcept
 {
     using SendFn = long (*) (void*, void*);   // NSInteger (id, SEL)
     static void* const processInfoClass = (void*) objc_getClass ("NSProcessInfo");
@@ -116,17 +116,17 @@ static ParvatiAudioProcessor::ThermalLevel currentThermalLevel() noexcept
     static void* const thermalStateSel  = (void*) sel_registerName ("thermalState");
     static SendFn const  send           = (SendFn) objc_msgSend;
     if (processInfoClass == nullptr)
-        return ParvatiAudioProcessor::ThermalLevel::Nominal;
+        return HellcatAudioProcessor::ThermalLevel::Nominal;
     void* const info = reinterpret_cast<void*> (send (processInfoClass, processInfoSel));   // +processInfo (long -> void*: same width on arm64)
     const long state = info != nullptr ? send (info, thermalStateSel) : 0;
-    return state >= 3 ? ParvatiAudioProcessor::ThermalLevel::Critical
-         : state == 2 ? ParvatiAudioProcessor::ThermalLevel::Serious
-         : state == 1 ? ParvatiAudioProcessor::ThermalLevel::Fair
-                      : ParvatiAudioProcessor::ThermalLevel::Nominal;
+    return state >= 3 ? HellcatAudioProcessor::ThermalLevel::Critical
+         : state == 2 ? HellcatAudioProcessor::ThermalLevel::Serious
+         : state == 1 ? HellcatAudioProcessor::ThermalLevel::Fair
+                      : HellcatAudioProcessor::ThermalLevel::Nominal;
 }
 #endif
 
-void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
+void HellcatAudioProcessor::DeferredParamTimer::timerCallback()
 {
     // Message thread. Drain the deferred ring and dispatch each entry through
     // the exact GUI-path apply function for its class. These are idempotent
@@ -176,7 +176,7 @@ void ParvatiAudioProcessor::DeferredParamTimer::timerCallback()
     }
 }
 
-ParvatiAudioProcessor::ParvatiAudioProcessor()
+HellcatAudioProcessor::HellcatAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
         .withOutput ("Main", juce::AudioChannelSet::stereo(), true)
         .withOutput ("VC1", juce::AudioChannelSet::mono(), false)
@@ -185,7 +185,7 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
         .withOutput ("VC4", juce::AudioChannelSet::mono(), false)
         .withOutput ("VC5", juce::AudioChannelSet::mono(), false)
         .withOutput ("VC6", juce::AudioChannelSet::mono(), false)),
-      apvts (*this, &undoManager_, "PARAMS", createParvatiParameterLayout())
+      apvts (*this, &undoManager_, "PARAMS", createHellcatParameterLayout())
 {
     // Build the paramID -> descriptor-index lookup and register a listener for
     // every parameter so host / GUI / automation edits reach the engine.
@@ -213,7 +213,7 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // on first run (process-once) so the Patch combo is populated without
     // user setup. This also makes sure the USER save area exists. Non-fatal:
     // a failure just leaves the combo empty.
-    parvati::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getTemplatesDir(), getUserPatchDir());
+    hellcat::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getTemplatesDir(), getUserPatchDir());
 
     // Start the deferred-parameter drain (60 Hz, message thread). Processor
     // construction happens on the message thread in every host (and in the
@@ -231,8 +231,8 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     setOversamplingFactor (getUiOversampling());
 
 #if JUCE_IOS
-    // Open-in loop (see ui/IosOpenIn.h): iOS offers "Open in Parvati" for
-    // .parvati/.PRO/.MUL (document types grafted 2026-08-19), but
+    // Open-in loop (see ui/IosOpenIn.h): iOS offers "Open in Hellcat" for
+    // .yml/.PRO/.MUL (document types grafted 2026-08-19), but
     // JUCE 9 drops application:openURL:options:. Install our handler and
     // route: presets import into the shared USER tree then LOAD through the
     // same main-thread paths the editor's FileChooser completions use (the
@@ -241,9 +241,9 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     // Standalone processor is owned by StandalonePluginHolder for the app's
     // whole lifetime (the `this` capture below is safe by construction).
     if (wrapperType == wrapperType_Standalone)
-        parvati::installOpenInHandler (getUserPatchDir(), [this] (const juce::File& routed)
+        hellcat::installOpenInHandler (getUserPatchDir(), [this] (const juce::File& routed)
         {
-            if (routed.hasFileExtension (".parvati")) loadParvatiMultiFile (routed);
+            if (routed.hasFileExtension (".yml")) loadHellcatMultiFile (routed);
             else if (routed.hasFileExtension (".pro")) loadProgramFile (routed);
             else if (routed.hasFileExtension (".mul")) loadMultiFile (routed);
         });
@@ -261,14 +261,14 @@ ParvatiAudioProcessor::ParvatiAudioProcessor()
     if (wrapperType == wrapperType_Standalone)
     {
         const auto docsUser = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                                  .getChildFile ("Parvati")
+                                  .getChildFile ("Hellcat")
                                   .getChildFile ("USER");
         (void) PresetBrowser::syncTreeNewestWins (getUserPatchDir(), docsUser);
     }
 #endif
 }
 
-ParvatiAudioProcessor::~ParvatiAudioProcessor()
+HellcatAudioProcessor::~HellcatAudioProcessor()
 {
     // Stop the deferred drain FIRST: the timer holds a back-reference to this
     // processor, and a callback firing mid-destruction would apply parameters
@@ -280,7 +280,7 @@ ParvatiAudioProcessor::~ParvatiAudioProcessor()
 }
 
 //==============================================================================
-void ParvatiAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void HellcatAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     hostSampleRate_ = sampleRate;   // cache for the audio-thread latency re-report
 #if ! JUCE_IOS
@@ -347,7 +347,7 @@ void ParvatiAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     syncAllParamsToEngine();
 }
 
-void ParvatiAudioProcessor::releaseResources()
+void HellcatAudioProcessor::releaseResources()
 {
     // F-ios-lc-2 (bug hunt 2026-08-19, iOS hunt lane "lifecycle"): hosts tear
     // down render resources on an audio-session interruption (phone call /
@@ -374,7 +374,7 @@ void ParvatiAudioProcessor::releaseResources()
     midiCollector_.reset (hostSampleRate_ > 0.0 ? hostSampleRate_ : 44100.0);
 }
 
-bool ParvatiAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool HellcatAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     // Main bus: stereo or mono only.
     const auto& mainOut = layouts.getMainOutputChannelSet();
@@ -397,7 +397,7 @@ bool ParvatiAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) 
     return auxEnabled <= SynthEngine::getNumParts();
 }
 
-void ParvatiAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
+void HellcatAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
 {
 
     // Cache the host's offline-render state. The host wrapper calls this on the
@@ -440,7 +440,7 @@ void ParvatiAudioProcessor::setNonRealtime (bool isNonRealtime) noexcept
 }
 
 //==========================================================================
-void ParvatiAudioProcessor::setManualTempoBpm (int bpm)
+void HellcatAudioProcessor::setManualTempoBpm (int bpm)
 {
     // Clamp to the Settings slider's range (40..300): the value also arrives
     // from restored host state, which must never be trusted raw (the same
@@ -452,7 +452,7 @@ void ParvatiAudioProcessor::setManualTempoBpm (int bpm)
     manualTempoBpm_.store (clamped, std::memory_order_relaxed);
 }
 
-void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void HellcatAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     // ---- Realtime overrun probe: capture the wall-clock cost of this block so
     // it can be compared to its real-time budget (numSamples/sampleRate). RT-
@@ -718,7 +718,7 @@ void ParvatiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 }
 
 //==============================================================================
-void ParvatiAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer,
+void HellcatAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer,
                                                    juce::MidiBuffer&)
 {
     // A bypassed SYNTH outputs silence. Overridden because the inherited
@@ -734,7 +734,7 @@ void ParvatiAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>& buff
 }
 
 //==============================================================================
-void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, float newValue)
+void HellcatAudioProcessor::parameterChanged (const juce::String& parameterID, float newValue)
 {
     // Suppress the engine re-apply while loadPartIntoApvts pushes engine->APVTS
     // (the feedback is redundant for byte/arp/seq params and corrupts the FX mod
@@ -789,7 +789,7 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
         return;
     }
 
-    const uint8_t byte = parvatiValueToPatchByte (d, newValue);
+    const uint8_t byte = hellcatValueToPatchByte (d, newValue);
     if (d.isPart)
         engine_.applyPartByte (d.byteOffset, byte);
     else
@@ -801,7 +801,7 @@ void ParvatiAudioProcessor::parameterChanged (const juce::String& parameterID, f
     // byte is the whole tuning state now, so nothing to clear.
 }
 
-void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& d)
+void HellcatAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& d)
 {
     if (d.isArp || d.isSequencer)
     {
@@ -827,14 +827,14 @@ void ParvatiAudioProcessor::applyParameterToEngine (const PatchParamDescriptor& 
     }
 
     const float raw = apvts.getRawParameterValue (d.paramID)->load();
-    const uint8_t byte = parvatiValueToPatchByte (d, raw);
+    const uint8_t byte = hellcatValueToPatchByte (d, raw);
     if (d.isPart)
         engine_.applyPartByte (d.byteOffset, byte);
     else
         engine_.applyPatchByte (d.byteOffset, byte);
 }
 
-void ParvatiAudioProcessor::applyArpSeqParameter (const PatchParamDescriptor& d, float rawValue)
+void HellcatAudioProcessor::applyArpSeqParameter (const PatchParamDescriptor& d, float rawValue)
 {
     // Message-thread only: this writes the engine's pendingConfig_ seqlock
     // (single-writer). Audio-thread-origin arp/seq edits arrive via the deferred
@@ -863,7 +863,7 @@ void ParvatiAudioProcessor::applyArpSeqParameter (const PatchParamDescriptor& d,
     engine_.setSequenceDataByte (d.byteOffset - 16, static_cast<uint8_t> (v));
 }
 
-void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d, float rawValue)
+void HellcatAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d, float rawValue)
 {
     if (d.paramID == "vca_curve")
         engine_.setVcaExponential (static_cast<int> (rawValue) != 0);  // 0=Linearized, 1=Exponential
@@ -873,12 +873,14 @@ void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d,
     {
         using FT = ambika::dsp::FilterTopology;
         const int v = static_cast<int> (rawValue);
+        // Stock Ambika boards first (SMR4 / 4P / SVF), then the character
+        // cards (Ladder / Polivoks / IR3109). The choice order is frozen.
         const FT t = (v == 5) ? FT::FOUR_POLE_IR3109
                     : (v == 4) ? FT::TWO_POLE_POLIVOKS
-                    : (v == 3) ? FT::FOUR_POLE_OTA
+                    : (v == 3) ? FT::FOUR_POLE_LADDER
                     : (v == 2) ? FT::TWO_POLE_SVF
                     : (v == 1) ? FT::FOUR_POLE_SSM2164
-                               : FT::FOUR_POLE_LADDER;
+                               : FT::FOUR_POLE_OTA;
         engine_.setFilterTopology (t);   // global: every voice, every part
     }
     else if (d.paramID == "filter_drive")
@@ -892,7 +894,7 @@ void ParvatiAudioProcessor::applyOptionParameter (const PatchParamDescriptor& d,
     }
 }
 
-void ParvatiAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, float rawValue)
+void HellcatAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, float rawValue)
 {
     // Decode the FX paramID with the ONE shared grammar decoder
     // (parseFxParamId) -> call the matching engine setter on the CURRENT part
@@ -944,7 +946,7 @@ void ParvatiAudioProcessor::applyFxParameter (const PatchParamDescriptor& d, flo
     }
 }
 
-void ParvatiAudioProcessor::syncAllParamsToEngine()
+void HellcatAudioProcessor::syncAllParamsToEngine()
 {
     for (const auto& d : getPatchParamDescriptors())
         applyParameterToEngine (d);
@@ -955,7 +957,7 @@ void ParvatiAudioProcessor::syncAllParamsToEngine()
 // objects/voices (see SynthEngine::applyPatchByte), so each Part's storage is
 // always up to date — switching Parts only needs to LOAD the new Part's stored
 // values back into the APVTS (so the editor reflects it).
-void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
+void HellcatAudioProcessor::onPartSelect (int newPart1Based)
 {
     // Message-thread only: this runs loadPartIntoApvts (~250 ValueTree+
     // UndoManager writes). Audio-thread-origin part_select edits arrive via the
@@ -1010,7 +1012,7 @@ void ParvatiAudioProcessor::onPartSelect (int newPart1Based)
 // late entries after onPartSelect's synchronous clear — sweep once more, then
 // replay. Host automation never drives this UndoManager (it is a plugin-side
 // UI concept), so these two entry points cover every real replay.
-void ParvatiAudioProcessor::undoSafe()
+void HellcatAudioProcessor::undoSafe()
 {
     if (undoInvalidatedByPartSwitch_)
     {
@@ -1021,7 +1023,7 @@ void ParvatiAudioProcessor::undoSafe()
     undoManager_.undo();
 }
 
-void ParvatiAudioProcessor::redoSafe()
+void HellcatAudioProcessor::redoSafe()
 {
     if (undoInvalidatedByPartSwitch_)
     {
@@ -1032,7 +1034,7 @@ void ParvatiAudioProcessor::redoSafe()
     undoManager_.redo();
 }
 
-void ParvatiAudioProcessor::loadPartIntoApvts (int part)
+void HellcatAudioProcessor::loadPartIntoApvts (int part)
 {
     // Suppress the parameterChanged feedback loop while we push engine->APVTS
     // (see loadingPartIntoApvts_). RAII: restored even if an early return is
@@ -1094,7 +1096,7 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
         {
             const uint8_t byte = d.isPart ? p.partBytes[(size_t) d.byteOffset]
                                            : p.patchBytes[(size_t) d.byteOffset];
-            value = parvatiPatchByteToValue (d, byte);
+            value = hellcatPatchByteToValue (d, byte);
         }
 
         // NON-UNDOABLE display write: this is an engine->APVTS reflection
@@ -1115,7 +1117,7 @@ void ParvatiAudioProcessor::loadPartIntoApvts (int part)
 
 //==========================================================================
 // Ambika .PRO patch loading.
-bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const uint8_t* part84)
+bool HellcatAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const uint8_t* part84)
 {
     if (patch112 == nullptr || part84 == nullptr)
         return false;
@@ -1132,7 +1134,7 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
             continue;  // not stored in the patch/part structs
 
         const uint8_t byte = (d.isPart || d.isSequencer ? part84 : patch112)[d.byteOffset];
-        apvts.getParameterAsValue (d.paramID) = parvatiPatchByteToValue (d, byte);
+        apvts.getParameterAsValue (d.paramID) = hellcatPatchByteToValue (d, byte);
     }
 
     // Apply the full patch atomically (the per-param listener writes may be
@@ -1160,7 +1162,7 @@ bool ParvatiAudioProcessor::loadProgramFromBytes (const uint8_t* patch112, const
     return true;
 }
 
-bool ParvatiAudioProcessor::loadProgramFile (const juce::File& file)
+bool HellcatAudioProcessor::loadProgramFile (const juce::File& file)
 {
     AmbikaProgram prog;
     if (! parseAmbikaProgramFile (file, prog) || ! prog.hasPatch)
@@ -1176,7 +1178,7 @@ bool ParvatiAudioProcessor::loadProgramFile (const juce::File& file)
     return true;
 }
 
-void ParvatiAudioProcessor::gatherCurrentPartBytes (std::array<uint8_t, 112>& patch,
+void HellcatAudioProcessor::gatherCurrentPartBytes (std::array<uint8_t, 112>& patch,
                                                     std::array<uint8_t, 84>&  part) const
 {
     for (const auto& d : getPatchParamDescriptors())
@@ -1186,13 +1188,13 @@ void ParvatiAudioProcessor::gatherCurrentPartBytes (std::array<uint8_t, 112>& pa
 
         const float raw = apvts.getRawParameterValue (d.paramID)->load();
 
-        // parvatiValueToPatchByte does not cover sequencer params (they live in
+        // hellcatValueToPatchByte does not cover sequencer params (they live in
         // the controller PartData, not the Patch struct, and the shared helper
         // early-returns 0 for them), so convert their AudioParameterInt value to
         // the byte directly — otherwise the sequence would not round-trip.
         const uint8_t byte = d.isSequencer
             ? static_cast<uint8_t> (juce::jlimit (d.minValue, d.maxValue, static_cast<int> (raw)))
-            : parvatiValueToPatchByte (d, raw);
+            : hellcatValueToPatchByte (d, raw);
 
         const int off = d.byteOffset;
         if (d.isPart || d.isSequencer)
@@ -1206,14 +1208,14 @@ void ParvatiAudioProcessor::gatherCurrentPartBytes (std::array<uint8_t, 112>& pa
     }
 }
 
-bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
+bool HellcatAudioProcessor::saveProgramFile (const juce::File& file)
 {
     // The byte-exact inverse of loadProgramFromBytes: gatherCurrentPartBytes
     // iterates the same set of descriptors with the same skip rule (isArp /
     // isOption carry no patch or part byte) and the same patch/part routing,
     // and stores each one's current APVTS value as its faithful byte.
     AmbikaProgram prog;
-    prog.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Parvati";
+    prog.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Hellcat";
     // prog.patch / prog.part are zero-initialised (the bytes no parameter maps
     // to — e.g. PartData's MIDI channel / key zone / voice allocation, which live
     // in the .MUL MultiData, not the .PRO — stay 0, exactly as on load).
@@ -1224,18 +1226,18 @@ bool ParvatiAudioProcessor::saveProgramFile (const juce::File& file)
     return writeAmbikaProgramFile (file, prog);
 }
 
-juce::File ParvatiAudioProcessor::getFactoryPatchDir()
+juce::File HellcatAudioProcessor::getFactoryPatchDir()
 {
     // Per-user app-data location (user-writable on macOS, unlike
     // ~/Library/Audio/Presets which is often root-owned). The factory banks are
-    // extracted here as subfolders: <appdata>/Parvati/FACTORY/{A,B,F,S}/.
-    return parvati::getSharedContainerRoot()
-        .getChildFile ("Parvati/FACTORY");
+    // extracted here as subfolders: <appdata>/Hellcat/FACTORY/{A,B,F,S}/.
+    return hellcat::getSharedContainerRoot()
+        .getChildFile ("Hellcat/FACTORY");
 }
 
 //==========================================================================
 // Ambika .MUL (multi) loading — configures all 6 Parts at once.
-bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
+bool HellcatAudioProcessor::loadMultiFile (const juce::File& file)
 {
     AmbikaMulti multi;
     if (! parseAmbikaMultiFile (file, multi) || ! multi.ok)
@@ -1325,7 +1327,7 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     // Show Part 0 in the editor and re-apply its parameters.
     engine_.setCurrentPart (0);
     // Sync the part_select parameter to the engine's part-0 state (mirrors the
-    // .parvati multi path, ParvatiPreset.cpp:794-795). Without this the
+    // .yml multi path, HellcatPreset.cpp:794-795). Without this the
     // editor's part combo kept showing the PREVIOUSLY selected part while the
     // engine/edits had already moved to Part 0 -- the combo desynced from
     // engine state until the user re-picked a part. onPartSelect early-returns
@@ -1350,30 +1352,30 @@ bool ParvatiAudioProcessor::loadMultiFile (const juce::File& file)
     return true;
 }
 
-juce::File ParvatiAudioProcessor::getFactoryMultiDir()
+juce::File HellcatAudioProcessor::getFactoryMultiDir()
 {
-    return parvati::getSharedContainerRoot()
-        .getChildFile ("Parvati/FACTORY_MULTI");
+    return hellcat::getSharedContainerRoot()
+        .getChildFile ("Hellcat/FACTORY_MULTI");
 }
 
-juce::File ParvatiAudioProcessor::getTemplatesDir()
+juce::File HellcatAudioProcessor::getTemplatesDir()
 {
-    // Stock init templates (full-fidelity .parvati multis): Mono / Poly /
+    // Stock init templates (full-fidelity .yml multis): Mono / Poly /
     // Unison / Multitimbral. Created on first run by the factory installer.
-    // <appdata>/Parvati/TEMPLATES/.
-    return parvati::getSharedContainerRoot()
-        .getChildFile ("Parvati/TEMPLATES");
+    // <appdata>/Hellcat/TEMPLATES/.
+    return hellcat::getSharedContainerRoot()
+        .getChildFile ("Hellcat/TEMPLATES");
 }
 
-juce::File ParvatiAudioProcessor::getUserPatchDir()
+juce::File HellcatAudioProcessor::getUserPatchDir()
 {
     // User-writable area for the user's own saved patches/multis. Created on
-    // first run by the factory installer. <appdata>/Parvati/USER/.
-    return parvati::getSharedContainerRoot()
-        .getChildFile ("Parvati/USER");
+    // first run by the factory installer. <appdata>/Hellcat/USER/.
+    return hellcat::getSharedContainerRoot()
+        .getChildFile ("Hellcat/USER");
 }
 
-bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyInt)
+bool HellcatAudioProcessor::saveMultiFile (const juce::File& file, int strategyInt)
 {
     // The byte-exact inverse of loadMultiFile. Builds an AmbikaMulti from the
     // live engine + APVTS state: the CURRENT part's Patch/PartData bytes come
@@ -1381,7 +1383,7 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     // engine storage, and MultiData.part_mapping_ is rebuilt from the engine's
     // per-part channel / keyrange / voice-allocation.
     AmbikaMulti multi;
-    multi.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Parvati";
+    multi.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Hellcat";
 
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
@@ -1442,7 +1444,7 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     // a mid-set failure can roll the whole generation back (see below).
     std::vector<AmbikaMulti> unitMultis;   // ChainSplit units 1..N (unit 0 rides the primary)
     {
-        using namespace parvati::mul_export;
+        using namespace hellcat::mul_export;
         const Setup setup = getMulExportSetup();
         const auto strat = static_cast<Strategy> (juce::jlimit (0, 5, strategyInt));
 
@@ -1511,14 +1513,14 @@ bool ParvatiAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     return true;
 }
 
-parvati::mul_export::Setup ParvatiAudioProcessor::getMulExportSetup() const
+hellcat::mul_export::Setup HellcatAudioProcessor::getMulExportSetup() const
 {
     // Voice-first model: the per-part slot count IS the requested voice count
     // (0 = a disabled part), and the card counts come from the DERIVED
     // voicecard masks (contiguous proportional share of the 6 cards — the
     // same rule the engine's rebuild tags voices with, so needsFallback
     // compares against what a .MUL can actually carry).
-    parvati::mul_export::Setup setup;
+    hellcat::mul_export::Setup setup;
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
         const int slots = engine_.getPartVoiceSlots (i);
@@ -1535,10 +1537,10 @@ parvati::mul_export::Setup ParvatiAudioProcessor::getMulExportSetup() const
 }
 
 //==========================================================================
-// Parvati-native preset format (.parvati) — full-fidelity YAML.
-bool ParvatiAudioProcessor::saveParvatiPatchFile (const juce::File& file)
+// Hellcat-native preset format (.yml) — full-fidelity YAML.
+bool HellcatAudioProcessor::saveHellcatPatchFile (const juce::File& file)
 {
-    const juce::String text = parvati::preset::serializeParvatiPatch (*this);
+    const juce::String text = hellcat::preset::serializeHellcatPatch (*this);
     juce::TemporaryFile temp (file);
     {
         juce::FileOutputStream out (temp.getFile());
@@ -1549,7 +1551,7 @@ bool ParvatiAudioProcessor::saveParvatiPatchFile (const juce::File& file)
     return temp.overwriteTargetFileWithTemporary();
 }
 
-bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
+bool HellcatAudioProcessor::loadHellcatPatchFile (const juce::File& file)
 {
     juce::String text;
     {
@@ -1557,19 +1559,19 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
         if (! in.openedOk()) return false;
         text = in.readEntireStreamAsString();
     }
-    // VALIDATE FIRST, MUTATE LATER (the .MUL / .parvati-multi doctrine): a
+    // VALIDATE FIRST, MUTATE LATER (the .MUL / .hellcat-multi doctrine): a
     // corrupt document must not reach resetAllVoices below — a failed load
     // previously cut every sounding voice and THEN failed, leaving silence
-    // under a stale UI. applyParvatiMulti re-parses internally; this hoisted
+    // under a stale UI. applyHellcatMulti re-parses internally; this hoisted
     // check is the same cheap guard (an object with a `params:` object).
     {
-        const juce::var tree = parvati::preset::parseParvatiYaml (text);
+        const juce::var tree = hellcat::preset::parseHellcatYaml (text);
         if (! tree.isObject() || ! tree["params"].isObject())
             return false;
     }
-    // Clean slate before applying the new Parvati-native patch.
+    // Clean slate before applying the new Hellcat-native patch.
     engine_.resetAllVoices();
-    if (! parvati::preset::applyParvatiPatch (*this, text))
+    if (! hellcat::preset::applyHellcatPatch (*this, text))
         return false;
     // Derive a display name from the file (the in-document name is applied via
     // the loaded-program title separately by the editor).
@@ -1583,9 +1585,9 @@ bool ParvatiAudioProcessor::loadParvatiPatchFile (const juce::File& file)
     return true;
 }
 
-bool ParvatiAudioProcessor::saveParvatiMultiFile (const juce::File& file)
+bool HellcatAudioProcessor::saveHellcatMultiFile (const juce::File& file)
 {
-    const juce::String text = parvati::preset::serializeParvatiMulti (*this);
+    const juce::String text = hellcat::preset::serializeHellcatMulti (*this);
     juce::TemporaryFile temp (file);
     {
         juce::FileOutputStream out (temp.getFile());
@@ -1596,7 +1598,7 @@ bool ParvatiAudioProcessor::saveParvatiMultiFile (const juce::File& file)
     return temp.overwriteTargetFileWithTemporary();
 }
 
-bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
+bool HellcatAudioProcessor::loadHellcatMultiFile (const juce::File& file)
 {
     juce::String text;
     {
@@ -1608,21 +1610,21 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
     // real multi BEFORE any engine mutation runs. A malformed file (or a
     // non-multi document) previously left the engine already reset to the
     // init allocation — a failed load mutated the synth under a stale UI
-    // (resetAllVoices + resetVoiceSlotsToInit had run, then applyParvatiMulti
-    // returned false after them). applyParvatiMulti re-parses internally; this
+    // (resetAllVoices + resetVoiceSlotsToInit had run, then applyHellcatMulti
+    // returned false after them). applyHellcatMulti re-parses internally; this
     // pre-parse is the same cheap check hoisted ahead of the resets so a
     // failed load leaves the engine + UI exactly as they were. The parts
     // array must be NON-EMPTY and every entry an object: a degenerate
     // `parts: []` (or a list of scalars) would otherwise "load successfully"
     // over the PREVIOUS multi's leftover state (the reset only touches
-    // slots/names, and applyParvatiMulti skips non-object entries entirely).
-        // (b) A corrupt .parvati multi (the multi path got validate-first; the
+    // slots/names, and applyHellcatMulti skips non-object entries entirely).
+        // (b) A corrupt .yml multi (the multi path got validate-first; the
         // patch path used to resetAllVoices first and only then fail).
         // A parts entry must carry at least one RECOGNIZED part key — the
         // line-based parser wraps a BARE list item (`- 7`) as an object with
         // the key "0", so a plain isObject() check would pass garbage through.
         {
-            const juce::var tree = parvati::preset::parseParvatiYaml (text);
+            const juce::var tree = hellcat::preset::parseHellcatYaml (text);
             if (! tree.isObject())
                 return false;
             auto* partsArr = tree["parts"].getArray();
@@ -1633,9 +1635,9 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
                                               "params", "tuning_mode", "tuning_offsets" };
             // NOTE: tuning_mode/tuning_offsets are LEGACY keys (the custom-
             // tuning subsystem was removed 2026-08-19). They stay in the
-            // recognition list so old .parvati files that carry them still
+            // recognition list so old .yml files that carry them still
             // parse as valid parts (their values are ignored on apply — see
-            // ParvatiPreset.cpp); a bare/scalar parts entry must still fail.
+            // HellcatPreset.cpp); a bare/scalar parts entry must still fail.
             for (const auto& entry : *partsArr)
             {
                 auto* entryObj = entry.getDynamicObject();
@@ -1648,22 +1650,22 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
                     return false;   // bare/scalar item or an all-unknown-keys entry
             }
         }
-    // Clean slate before applying the new Parvati-native multi: kill sounding
+    // Clean slate before applying the new Hellcat-native multi: kill sounding
     // voices AND reset the per-part voice slots to the engine init allocation
     // (Part 0 = 6 voices, Parts 1..5 disabled) — the format is human-editable,
     // so a parts list shorter than 6 (or a part node without voice_slots /
     // voice_allocation keys) would otherwise inherit the PREVIOUS multi's
-    // leftover counts. applyParvatiMulti then restores the file's explicit
+    // leftover counts. applyHellcatMulti then restores the file's explicit
     // slots over the init state (a saved file always carries all 6).
     engine_.resetAllVoices();
     resetVoiceSlotsToInit();
-    if (! parvati::preset::applyParvatiMulti (*this, text))
+    if (! hellcat::preset::applyHellcatMulti (*this, text))
         return false;
     loadedProgramName_ = file.getFileNameWithoutExtension();
 
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): whole-multi load —
     // wipe the telemetry history + re-point at the restored current part
-    // (applyParvatiMulti routes its own part-0 select through the part_select
+    // (applyHellcatMulti routes its own part-0 select through the part_select
     // boundary, but this explicit reset also covers a same-part restore).
     engine_.resetUiTelemetry();
     engine_.setUiTelemetryPart (engine_.getCurrentPart());
@@ -1671,7 +1673,7 @@ bool ParvatiAudioProcessor::loadParvatiMultiFile (const juce::File& file)
 }
 
 //==========================================================================
-void ParvatiAudioProcessor::resetVoiceSlotsToInit()
+void HellcatAudioProcessor::resetVoiceSlotsToInit()
 {
     // Mirror of the SynthEngine constructor's kInitVoiceAllocation
     // { 0x3f, 0, 0, 0, 0, 0 } (SynthEngine.cpp): Part 0 materializes 6 slots
@@ -1687,13 +1689,13 @@ void ParvatiAudioProcessor::resetVoiceSlotsToInit()
     // Whole-setup loads also reset the user part ALIASES ("Kick", "Lead",
     // ...): a stale name is a stale UI label for content the loaded file just
     // replaced, so resetVoiceSlotsToInit (the clean-slate both multi loaders
-    // run before applying file data) clears them too. The .parvati multi path
+    // run before applying file data) clears them too. The .yml multi path
     // is safe against this reset by construction: its serializer ALWAYS emits
-    // the per-part `name:` key (even empty), so applyParvatiMulti re-applies
+    // the per-part `name:` key (even empty), so applyHellcatMulti re-applies
     // the file's names right after. The .MUL format carries NO part names
-    // (Ambika MultiData has no such field — names are a Parvati extension),
+    // (Ambika MultiData has no such field — names are a Hellcat extension),
     // so aliases correctly vanish on a .MUL load. Single-patch loads
-    // (.PRO / .parvati patch) deliberately do NOT pass through here: a part
+    // (.PRO / .yml patch) deliberately do NOT pass through here: a part
     // alias is user metadata about the TRACK, not the patch — swapping the
     // sound keeps the label (same doctrine as a DAW track name surviving a
     // clip swap).
@@ -1702,13 +1704,13 @@ void ParvatiAudioProcessor::resetVoiceSlotsToInit()
 }
 
 //==============================================================================
-juce::AudioProcessorEditor* ParvatiAudioProcessor::createEditor()
+juce::AudioProcessorEditor* HellcatAudioProcessor::createEditor()
 {
-    return new ParvatiEditor (*this);
+    return new HellcatEditor (*this);
 }
 
 //==========================================================================
-void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+void HellcatAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     // Serialize the full APVTS state plus the persisted UI preferences
     // (theme/zoom/tooltips) as root-level properties on the state tree. This is
@@ -1754,7 +1756,7 @@ void ParvatiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         copyXmlToBinary (*xml, destData);
 }
 
-void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+void HellcatAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     // Restore the APVTS, then push every parameter into the engine. If the
     // voices are not yet initialized the byte writes are stored harmlessly and
@@ -1916,14 +1918,14 @@ void ParvatiAudioProcessor::setStateInformation (const void* data, int sizeInByt
 }
 
 //==========================================================================
-void ParvatiAudioProcessor::setParameterSmoothing (bool smoothing)
+void HellcatAudioProcessor::setParameterSmoothing (bool smoothing)
 {
     setUiSmoothing (smoothing);         // persist (locked accessor — F-ios-lc-1)
     engine_.setParameterSmoothing (smoothing);
 }
 
 //==========================================================================
-void ParvatiAudioProcessor::rebuildOsLatencyProbe (int osFactor)
+void HellcatAudioProcessor::rebuildOsLatencyProbe (int osFactor)
 {
     // The probe IS the per-voice Oversampling config (AmbikaVoice::
     // buildOversamplingFor builds both paths) so its getLatencyInSamples()
@@ -1942,7 +1944,7 @@ void ParvatiAudioProcessor::rebuildOsLatencyProbe (int osFactor)
         std::memory_order_release);
 }
 
-int ParvatiAudioProcessor::computePluginLatency (double hostSampleRate) const
+int HellcatAudioProcessor::computePluginLatency (double hostSampleRate) const
 {
     // Lagrange resampler: 2 INPUT (internal) samples of latency
     // (LagrangeTraits::algorithmicLatency == 2.0). latency_host = 2 * hostRate/internalRate.
@@ -1960,7 +1962,7 @@ int ParvatiAudioProcessor::computePluginLatency (double hostSampleRate) const
     return juce::jlimit (0, 4096, latencySamples);
 }
 
-void ParvatiAudioProcessor::applyOversamplingFactor (int factor)
+void HellcatAudioProcessor::applyOversamplingFactor (int factor)
 {
     // Supported factors: 1 / 2 / 4 / 8 (powers of two up to the 8x UI maximum).
     // Anything else snaps to the nearest supported factor.
@@ -1974,7 +1976,7 @@ void ParvatiAudioProcessor::applyOversamplingFactor (int factor)
     latencyDirty_.store (true, std::memory_order_release);   // report next block
 }
 
-void ParvatiAudioProcessor::setOversamplingFactor (int factor)
+void HellcatAudioProcessor::setOversamplingFactor (int factor)
 {
     // The PUBLIC setter: persist the user's choice, then apply it. A factor
     // change made DURING an offline auto-max boost (editor open over a bounce)
@@ -1992,5 +1994,5 @@ void ParvatiAudioProcessor::setOversamplingFactor (int factor)
 // This creates new instances of the plugin.
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new ParvatiAudioProcessor();
+    return new HellcatAudioProcessor();
 }

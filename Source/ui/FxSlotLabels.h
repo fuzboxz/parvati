@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FxSlotLabels — declarations for the per-FX-type active-parameter count and
 // semantic short parameter labels. The definitions live in FxSlotLabels.cpp

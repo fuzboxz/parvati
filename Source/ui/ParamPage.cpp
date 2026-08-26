@@ -1,12 +1,12 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ui/ParamPage.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ui/ParamPage.h.
 
 #include "ParamPage.h"
 
 #include "NoteStepControl.h"     // sequencer step cells (buildGroups)
 #include "SeqLengthStepper.h"    // sequencer length cells (buildGroups)
-#include "ParvatiTheme.h"   // ParvatiTheme (getCurrentTheme return type)
-#include "SynthParamLabels.h"    // parvati::paramValueTextSynth (step readouts)
-#include "ParvatiLookAndFeel.h"   // parvati::isY2kTheme (Y2K window-chrome transparency)
+#include "HellcatTheme.h"   // HellcatTheme (getCurrentTheme return type)
+#include "SynthParamLabels.h"    // hellcat::paramValueTextSynth (step readouts)
+#include "HellcatLookAndFeel.h"   // hellcat::isY2kTheme (Y2K window-chrome transparency)
 #include "ThemeManager.h"   // themeManager_.getCurrentTheme()
 
 
@@ -777,7 +777,7 @@ void ParamPage::setVisibleGroups (const juce::StringArray& groupNames)
     setSize (getWidth(), contentHeight_);
 }
 
-ParamPage::ParamPage (ParvatiAudioProcessor& processor,
+ParamPage::ParamPage (HellcatAudioProcessor& processor,
                       ThemeManager& themeManager,
                       const std::vector<const PatchParamDescriptor*>& descriptors,
                       int columns, int cellWidth, int cellHeight)
@@ -866,7 +866,7 @@ void ParamPage::paint (juce::Graphics& g)
     const auto& theme = themeManager_.getCurrentTheme();
     // Y2K: NO fill — the liquid-chrome WINDOW sweep shows through; the
     // module cards (dark-steel chrome) pop off it.
-    if (! parvati::isY2kTheme (&theme))
+    if (! hellcat::isY2kTheme (&theme))
         g.fillAll (theme.backgroundBase);
 
     // Sub-section dividers inside a sectioned panel (merged Mixer):

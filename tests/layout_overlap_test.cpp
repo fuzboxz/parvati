@@ -23,7 +23,7 @@
 // accepts out-of-bounds children of a Viewport on axes where the viewport has
 // non-zero maximum scroll. Everything else must stay inside.
 //
-// Run: ./build_unified/parvati_unified_tests layout_overlap_test
+// Run: ./build_unified/hellcat_unified_tests layout_overlap_test
 
 #if defined (__GNUC__) || defined (__clang__)
     #include <cxxabi.h>   // abi::__cxa_demangle (GCC/Clang ABI)
@@ -172,11 +172,11 @@ void audit (juce::Component* root, std::vector<Violation>& out)
 
 const char* pageName (int idx) { return idx == 0 ? "SYNTH" : idx == 1 ? "FX" : "Patch"; }
 
-void sweepSize (ParvatiEditor& editor, int w, int h)
+void sweepSize (HellcatEditor& editor, int w, int h)
 {
     std::printf ("\n=== %dx%d ===\n", w, h);
     // setSize below the resize-limit minimum deliberately bypasses the limits
-    // (documented in ParvatiEditor::resized comments for headless tests).
+    // (documented in HellcatEditor::resized comments for headless tests).
     editor.setSize (w, h);
     for (int page = 0; page < 3; ++page)
     {
@@ -195,15 +195,15 @@ TEST(layout_overlap_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     auto* editorRaw = proc.createEditor();
     check (editorRaw != nullptr, "editor constructs");
     if (editorRaw == nullptr)
         return false;
-    auto* editor = dynamic_cast<ParvatiEditor*> (editorRaw);
-    check (editor != nullptr, "editor is a ParvatiEditor");
+    auto* editor = dynamic_cast<HellcatEditor*> (editorRaw);
+    check (editor != nullptr, "editor is a HellcatEditor");
     if (editor == nullptr)
     {
         delete editorRaw;

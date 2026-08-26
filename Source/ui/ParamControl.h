@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ParamControl — one descriptor-driven control cell (a rotary Slider or a
 // ComboBox plus a label) bound to one APVTS parameter. Extracted unchanged
@@ -15,10 +15,10 @@
 #include <memory>
 
 #include "ParameterLayout.h"   // PatchParamDescriptor
-#include "PluginProcessor.h"   // ParvatiAudioProcessor (complete type: subclass headers rely on it)
-#include "ModDestMap.h"        // parvati::ModDestMap::ModDst (modDest_ member)
+#include "PluginProcessor.h"   // HellcatAudioProcessor (complete type: subclass headers rely on it)
+#include "ModDestMap.h"        // hellcat::ModDestMap::ModDst (modDest_ member)
 
-struct ParvatiTheme;
+struct HellcatTheme;
 
 // ---- Map a parameter ID to one of the GUI sections --------------------------
 // (Derived from the well-defined paramID prefixes in ParameterLayout.cpp, so the
@@ -32,13 +32,13 @@ Section sectionForId (const juce::String& id);
 // "audio" brand accent; Envelopes/LFOs/Sequencer/Arp get their own hue. This is the
 // ONLY place a Section resolves to a category token, so every arc / graph / tint
 // shares one consistent mapping and a theme switch re-resolves automatically.
-juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s);
+juce::Colour categoryColourForSection (const HellcatTheme& theme, Section s);
 
 // Popup host protocol: the ancestor that owns the editor-wide TooltipWindow
 // and the host-context plumbing. ParamControl::showContextMenu uses both when
 // it opens a context menu: it hides the tooltip window for the first popup
 // frame and merges the host's parameter menu below Reset/Randomize.
-// ParvatiEditor implements this, so the control never depends on the editor
+// HellcatEditor implements this, so the control never depends on the editor
 // type itself.
 class ParamControlPopupHost
 {
@@ -51,7 +51,7 @@ public:
 //==============================================================================
 // One control cell: a rotary Slider (numeric params) or a ComboBox (choice
 // params), plus a label, all bound to one APVTS parameter. Colours are taken
-// from the editor-wide ParvatiLookAndFeel (inherited via the component tree),
+// from the editor-wide HellcatLookAndFeel (inherited via the component tree),
 // and the cell exposes its parameter's help text as a tooltip.
 class ParamControl : public juce::Component,
                      public juce::TooltipClient,
@@ -61,20 +61,26 @@ class ParamControl : public juce::Component,
                    , private juce::Timer   // long-press -> context menu (armed on touch only)
 {
 public:
-    ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
+    ParamControl (HellcatAudioProcessor& processor, const PatchParamDescriptor& descriptor);
 
     void resized() override;
 
     ~ParamControl() override;
 
+    // Accessibility: the cell exposes itself as a TITLED GROUP (the ctor sets
+    // the title from the descriptor label and the description from the
+    // ParamHelp text). The interactive children carry the real slider/combo
+    // handlers. Constructed on demand by the accessibility focus walk.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+
     // Fires when the component inherits/changes its LookAndFeel (initial
     // reparent into the editor tree, and on a theme switch via
-    // sendLookAndFeelChange). At construction the ParvatiLookAndFeel is not yet
+    // sendLookAndFeelChange). At construction the HellcatLookAndFeel is not yet
     // attached, so the category arc / mod tint are applied here once the theme
     // is reachable. Idempotent.
     void lookAndFeelChanged() override;
     // Reparenting into the editor tree: getLookAndFeel() then walks up to the
-    // editor's ParvatiLookAndFeel, so this is where the initial category arc /
+    // editor's HellcatLookAndFeel, so this is where the initial category arc /
     // mod tint are first applied (lookAndFeelChanged only fires on an explicit
     // setLookAndFeel, not on inheritance via reparent).
     void parentHierarchyChanged() override;
@@ -102,7 +108,7 @@ public:
     // While a modulation source is being dragged onto a destination knob, dim
     // every control that is NOT a valid drop target (alpha 0.3) and light up
     // every valid target with a drop-zone ring (parvatiModDrag). Toggled from
-    // ParvatiEditor's dragOperationStarted/Ended; iterates the live registry
+    // HellcatEditor's dragOperationStarted/Ended; iterates the live registry
     // (mirrors setTooltipsEnabled / reapplyCategoryColours). Restored (full
     // alpha, ring cleared) the instant the drag ends.
     static void   setModDragActive (bool active);
@@ -228,7 +234,7 @@ private:
     // Shared by the mod-source combo tint AND the per-source modulation ring so
     // both use one consistent name->colour mapping. Pure / null-safe.
     static juce::Colour categoryColourForSourceName (const juce::String& name,
-                                                     const ParvatiTheme& theme);
+                                                     const HellcatTheme& theme);
     // Tint a mod-source combo's background (modN_source / modifN_in1|in2) to 15%
     // alpha of the SELECTED source's category colour (Env=cyan, LFO=magenta,
     // Seq=green, Arp=purple; Op/Const/Velocity/etc => neutral / no tint).
@@ -239,7 +245,7 @@ private:
 
     // ---- Modulation ring (per-source concentric arcs) ----
     // Recompute the ACTIVE mod slots routed to this knob's ModulationDestination
-    // (parvati::ModDestMap::slotsForDest) and push ONE concentric arc PER active
+    // (hellcat::ModDestMap::slotsForDest) and push ONE concentric arc PER active
     // source onto the slider's getProperties(): "parvatiModN" = count, and for
     // each i: "parvatiModCol"+i = the source's CATEGORY colour (via
     // categoryColourForSourceName), "parvatiModAmt"+i = the signed amount
@@ -286,7 +292,7 @@ protected:
     static int parseStepIndex (const juce::String& id);
 
     const PatchParamDescriptor& desc_;
-    ParvatiAudioProcessor& processor_;   // APVTS access for reset/randomize
+    HellcatAudioProcessor& processor_;   // APVTS access for reset/randomize
     // NoteStepControl re-ranges slider_ after tearing down the byte-range
     // sliderAttachment_; SeqLengthStepper hides slider_ and overlays -/number/+.
     std::unique_ptr<juce::Slider>    slider_;
@@ -336,7 +342,7 @@ private:
     // change adds/removes an arc, an amount change resizes one). modDest_ is -1
     // for non-destination controls. refreshingModRing_ guards against re-entrant
     // repaints (mirrors the refreshingModTint_ pattern).
-    parvati::ModDestMap::ModDst modDest_ = -1;
+    hellcat::ModDestMap::ModDst modDest_ = -1;
     bool isModDestKnob_ = false;
     bool refreshingModRing_ = false;
     // ModMatrixHighlight bus subscription id for the dest-highlight observer

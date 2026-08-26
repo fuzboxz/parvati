@@ -12,7 +12,7 @@ Naming/build pattern to follow: `tests/<name>_test.cpp` → `add_executable(parv
 2. **TransientGenerator** — Effort **M** — zero coverage (grep "TransientGenerator" in tests/: no hits; lifecycle "transient" is UI lifetime).
    - Pin: `Trigger()` arms counter_=255 so Render mixes exactly 255 samples then stops (transient_generator.h:38,41-55); `shape < WAVEFORM_SUB_OSC_CLICK` is a no-op; `shape > POP` clamps to POP; CLICK: output 255 only while counter_<32 (last 31 samples), amplitude envelope = `U8U8MulShift8(counter_, amount)`; GLITCH first sample = 0*73+254 = 254 (deterministic LCG, rng_state_=0); POP returns value 0 with gain 255→0.
    - Suggested: `tests/transient_generator_test.cpp` → `parvati_transient_generator_test`.
-3. **Envelope unit semantics** — Effort **S** (only env2 amplitude via Voice in parvati_tests.cpp:293-312).
+3. **Envelope unit semantics** — Effort **S** (only env2 amplitude via Voice in hellcat_tests.cpp:293-312).
    - Pin: `Update(0,...)` gives lut[0]=65535 → first `Render()` completes ATTACK, peaks at **254 not 255** (÷256, envelope.h:101-118); sustain target = `sustain<<1` (127→254, :92-94); `Trigger(DEAD)` forces value_=0 → Render()==0 (:73-84); stage chain ATTACK→DECAY→SUSTAIN(holds, increment 0)→RELEASE→DEAD; Init() renders 0 and is trigger-ready.
    - Suggested: `tests/envelope_test.cpp` → `parvati_envelope_test`.
 4. **SubOscillator** — Effort **M** — no direct tests (only engine sub-level 0 vs 63 in synth_param_coverage_test.cpp:450).
@@ -21,7 +21,7 @@ Naming/build pattern to follow: `tests/<name>_test.cpp` → `add_executable(parv
 5. **Oscillator hard-sync path (OP_SYNC + sync arrays)** — Effort **M** — zero coverage: no test mentions `OP_SYNC`, `sync_input`, or `sync_output` (only SUM vs RING_MOD, synth_param_coverage_test.cpp:434-448).
    - Pin: `UPDATE_PHASE` resets phase to 0 when sync_input byte non-zero and records carry on wrap (oscillator.cpp:44-56); at Voice level `mix_op==OP_SYNC` routes osc_1's `sync_state_` into osc_2 (voice.cpp:496) → osc_2 pitch locks to osc_1's period; square `parameter_==0` dispatches RenderSimpleWavetable not PWM (oscillator.h:63-70).
    - Suggested: `tests/osc_sync_test.cpp` → `parvati_osc_sync_test`.
-6. **Voice pitch-path extremes** — Effort **M** — pitch tested only at notes 57/69/81 (parvati_tests.cpp:242).
+6. **Voice pitch-path extremes** — Effort **M** — pitch tested only at notes 57/69/81 (hellcat_tests.cpp:242).
    - Pin: `pitch >= kHighestNote` clamp (voice.cpp:459-461) — notes 120*128 and 127*128 produce identical increments; `ref_pitch < 0` octave-shift loop for low notes+negative range (:463-476); `midi_note < 0` clamp to 0 (:478-482); `set_pitch_bend_offset(+128)` shifts detected pitch exactly +1 semitone (bypasses mod matrix, :444).
    - Suggested: `tests/voice_pitch_test.cpp` → `parvati_voice_pitch_test`.
 

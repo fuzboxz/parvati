@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Echo — stereo ping-pong digital echo: input -> L delay -> R delay ->
 // cross-feedback, tone-damped. The two 16384-sample rings consume the FV-1's
@@ -24,14 +24,14 @@
 // glide (one-pole k = 1/256, capped at ~0.25 sample/internal-sample so the
 // pitch bend stays tape-like; sub-1/16-sample tails snap; never stalls).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1ECHO_H
-#define PARVATI_DSP_FX_FV1_FV1ECHO_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1ECHO_H
+#define HELLCAT_DSP_FX_FV1_FV1ECHO_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Echo : public Fv1FxProcessor
@@ -77,6 +77,6 @@ private:
     LoopDcKiller dcKiller_;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1ECHO_H
+#endif // HELLCAT_DSP_FX_FV1_FV1ECHO_H

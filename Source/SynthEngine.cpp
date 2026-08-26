@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SynthEngine.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SynthEngine.h.
 
 #include <array>
 #include <cstring>   // memcpy (blob -> Patch view for sanitization)
@@ -8,7 +8,7 @@
 
 #include "stmlib/dsp/dsp.h"    // stmlib::SoftLimit (FX chain-input safety knee)
 #include "MulExport.h"        // mul_export::deriveMasks (derived voicecard masks)
-#include "VoiceMasks.h"       // parvati::popcount8 (bitmask slot counting)
+#include "VoiceMasks.h"       // hellcat::popcount8 (bitmask slot counting)
 #include "ParameterLayout.h"   // getControllerInitPatchBytes (audible init patch)
 #include "TuningTables.h"     // raga preset tables (resolvedTuningOffsets)
 
@@ -61,7 +61,7 @@ SynthEngine::SynthEngine()
         // the bitmask itself is only the seed, rebuildVoiceAllocation derives
         // the live masks from the slots.
         part.voiceSlots.store (
-            static_cast<uint8_t> (parvati::popcount8 (kInitVoiceAllocation[p])),
+            static_cast<uint8_t> (hellcat::popcount8 (kInitVoiceAllocation[p])),
             std::memory_order_relaxed);
         part.voiceAllocation.store (kInitVoiceAllocation[p]);
         // Default: part i -> MIDI channel i+1 (so channel 1 -> Part 0).
@@ -306,7 +306,7 @@ void SynthEngine::setArpMode (uint8_t mode)
 
 void SynthEngine::stageArpSeqFromPartBytes (int part)
 {
-    // Message-thread entry point for FILE LOADS (.MUL / .parvati multi): stage
+    // Message-thread entry point for FILE LOADS (.MUL / .yml multi): stage
     // the full arp/seq config from a Part's PartData into pendingConfig_ + flag
     // configDirty_, exactly like the live setters do. The audio thread is the
     // sole writer of the live Arpeggiator/Sequencer objects (it services
@@ -357,61 +357,61 @@ void SynthEngine::stageArpSeqFromPartBytes (int part)
 // into fxChains_[p] single-threaded. EXACTLY the frameDirty_ / optionsDirty_
 // staging pattern. slot/idx are range-clamped; values stored verbatim (the AT
 // normalizes 0..127 / -63..63 to 0..1 floats when servicing the chain).
-#define PARVATI_FX_CURRENT_PART() parts_[(size_t) currentPart_]
+#define HELLCAT_FX_CURRENT_PART() parts_[(size_t) currentPart_]
 void SynthEngine::setFxSlotType    (int slot, uint8_t v)
 {
     if (slot >= 0 && slot < kNumFxSlots)
     {
-        PARVATI_FX_CURRENT_PART().fxState.slotType[(size_t) slot].store (v, std::memory_order_relaxed);
+        HELLCAT_FX_CURRENT_PART().fxState.slotType[(size_t) slot].store (v, std::memory_order_relaxed);
         // Audit F1: pre-build + stage the replacement processor HERE (message
         // thread) so the audio thread installs it with pointer moves only
         // (FxChain::servicePendingTypeSwaps in renderPartFx). The factory /
         // prepare allocations used to run inside processBlock.
         fxChains_[(size_t) currentPart_].setSlotType (slot, static_cast<FxType> (v));
-        PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
+        HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
     }
 }
 void SynthEngine::setFxSlotEnabled (int slot, uint8_t v)
 {
-    if (slot >= 0 && slot < kNumFxSlots) { PARVATI_FX_CURRENT_PART().fxState.slotEnabled[(size_t) slot].store (v != 0 ? 1 : 0, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+    if (slot >= 0 && slot < kNumFxSlots) { HELLCAT_FX_CURRENT_PART().fxState.slotEnabled[(size_t) slot].store (v != 0 ? 1 : 0, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 }
 void SynthEngine::setFxSlotDryWet  (int slot, uint8_t v)
 {
-    if (slot >= 0 && slot < kNumFxSlots) { PARVATI_FX_CURRENT_PART().fxState.slotDryWet[(size_t) slot].store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+    if (slot >= 0 && slot < kNumFxSlots) { HELLCAT_FX_CURRENT_PART().fxState.slotDryWet[(size_t) slot].store (v, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 }
 void SynthEngine::setFxSlotParam   (int slot, int idx, uint8_t v)
 {
     if (slot >= 0 && slot < kNumFxSlots && idx >= 0 && idx < kNumFxSlotParams)
-    { PARVATI_FX_CURRENT_PART().fxState.slotParam[(size_t) slot][(size_t) idx].store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+    { HELLCAT_FX_CURRENT_PART().fxState.slotParam[(size_t) slot][(size_t) idx].store (v, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 }
 void SynthEngine::setFxTopology    (uint8_t v)
 {
-    PARVATI_FX_CURRENT_PART().fxState.topology.store (v, std::memory_order_relaxed);
-    PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
+    HELLCAT_FX_CURRENT_PART().fxState.topology.store (v, std::memory_order_relaxed);
+    HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
 }
 void SynthEngine::setFxOrder       (uint8_t v)
 {
-    PARVATI_FX_CURRENT_PART().fxState.orderIdx.store (v, std::memory_order_relaxed);
-    PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
+    HELLCAT_FX_CURRENT_PART().fxState.orderIdx.store (v, std::memory_order_relaxed);
+    HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release);
 }
 // Master-section setters (engine-state v3). Mirror the topology/order pattern:
 // relaxed store into the CURRENT Part's fxState + a release-store on fxDirty_ to
 // publish the frame to the audio thread. Consumed in renderPartFx's fxDirty_
 // service (chain.setMasterMix / setMasterEqLow / Mid / High).
-void SynthEngine::setFxMix       (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.mix.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
-void SynthEngine::setFxEqLow     (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqLow.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
-void SynthEngine::setFxEqMid     (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqMid.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
-void SynthEngine::setFxEqHigh    (uint8_t v) { PARVATI_FX_CURRENT_PART().fxState.eqHigh.store (v, std::memory_order_relaxed); PARVATI_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxMix       (uint8_t v) { HELLCAT_FX_CURRENT_PART().fxState.mix.store (v, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxEqLow     (uint8_t v) { HELLCAT_FX_CURRENT_PART().fxState.eqLow.store (v, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxEqMid     (uint8_t v) { HELLCAT_FX_CURRENT_PART().fxState.eqMid.store (v, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
+void SynthEngine::setFxEqHigh    (uint8_t v) { HELLCAT_FX_CURRENT_PART().fxState.eqHigh.store (v, std::memory_order_relaxed); HELLCAT_FX_CURRENT_PART().fxState.fxDirty_.store (true, std::memory_order_release); }
 void SynthEngine::setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount)
 {
     if (slot < 0 || slot >= kNumFxMatrixSlots) return;
-    auto& st = PARVATI_FX_CURRENT_PART().fxState;
+    auto& st = HELLCAT_FX_CURRENT_PART().fxState;
     st.modSource[(size_t) slot].store (src,    std::memory_order_relaxed);
     st.modDest  [(size_t) slot].store (dest,   std::memory_order_relaxed);
     st.modAmount[(size_t) slot].store (amount, std::memory_order_relaxed);
     st.fxDirty_.store (true, std::memory_order_release);
 }
-#undef PARVATI_FX_CURRENT_PART
+#undef HELLCAT_FX_CURRENT_PART
 
 void SynthEngine::resetPartFx (int part)
 {
@@ -468,7 +468,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     // Byte-oriented payload (endian-independent): magic + version + current
     // part, then per Part: patch[112], part[84] (with the arp/seq region overlaid
     // from the authoritative pendingConfig_), midi channel / keyzone / voice
-    // allocation, then a length-prefixed FX block (Parvati-exclusive; version 2),
+    // allocation, then a length-prefixed FX block (Hellcat-exclusive; version 2),
     // voice slots + name (version 6). polyphony rides in
     // partBytes[15]. arp/seq lives in pendingConfig_ (overlaid here) and is
     // re-staged on restore. The length prefixes are for forward-safety (a
@@ -481,7 +481,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
     // restoreState still ACCEPTS v7 blobs (parses + ignores the tuning block —
     // a v7 custom mode 33 loads as 12-EDO, its raga byte was kept 0 by the
     // custom-active invariant). The version bump means legacy (pre-2026-08-19)
-    // Parvati builds reject the v8 blob and fall back to legacy APVTS restore
+    // Hellcat builds reject the v8 blob and fall back to legacy APVTS restore
     // — the same accepted tradeoff as v5->v6 (documented in CHANGELOG).
     //
     // FX block layout (fixed, 78 bytes): slotType[3], slotEnabled[3],
@@ -514,7 +514,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         out.writeByte ((char) part.keyrangeHigh.load (std::memory_order_relaxed));
         out.writeByte ((char) part.voiceAllocation.load (std::memory_order_relaxed));
 
-        // Parvati-exclusive per-part FX state (version 2). Length prefix first
+        // Hellcat-exclusive per-part FX state (version 2). Length prefix first
         // (4 bytes, little-endian), then the fixed-layout FX bytes above.
         const auto& fx = part.fxState;
         out.writeByte ((char) (kFxBlobLen        & 0xFF));
@@ -538,7 +538,7 @@ void SynthEngine::captureState (juce::MemoryBlock& dest) const
         out.writeByte ((char) fx.eqMid.load (std::memory_order_relaxed));
         out.writeByte ((char) fx.eqHigh.load (std::memory_order_relaxed));
 
-        // Per-part voice slots + name (version 6, Parvati extension).
+        // Per-part voice slots + name (version 6, Hellcat extension).
         // slots: the Part's voice count, 1..kMaxVoicesPerPart (0 = disabled
         // Part; on restore a 0 falls back to the bitmask popcount so
         // pre-conversion AUTO sessions restore their faithful card counts).
@@ -603,7 +603,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
 
         if (version >= 2)
         {
-            // Parvati-exclusive per-part FX state: length-prefixed (4 bytes LE)
+            // Hellcat-exclusive per-part FX state: length-prefixed (4 bytes LE)
             // then the fixed-layout FX bytes. A larger length is forward-compat
             // (trailing bytes skipped); a short/truncated read is rejected like
             // the core payload above. Absent in v1 -> hasFx stays false.
@@ -629,7 +629,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
                 if (in.read (nb, nameLen) != nameLen) return false;
                 // Same sanitize as setPartName (16-char cap + control-char
                 // strip): a corrupt or hand-edited state blob could otherwise
-                // carry a newline into a name that a later .parvati save would
+                // carry a newline into a name that a later .yml save would
                 // corrupt. Done here (phase 1) so the commit stays a pure copy.
                 s.name = sanitizePartName (juce::String::fromUTF8 (nb, nameLen));
             }
@@ -749,7 +749,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         // their faithful card counts. Absent in v1..v5 -> empty name ("Part N").
         if (s.hasSlotsName)
         {
-            const int restoredSlots = parvati::popcount8 (s.mask);
+            const int restoredSlots = hellcat::popcount8 (s.mask);
             // Clamp like the public setPartVoiceSlots (bug hunt 2026-08-18,
             // F-state-5): s.slots is a raw blob byte (no upstream validation;
             // restoredSlots' popcount is inherently <= 8 but the explicit
@@ -768,7 +768,7 @@ bool SynthEngine::restoreState (const void* data, size_t size)
         else
         {
             part.voiceSlots.store (
-                static_cast<uint8_t> (parvati::popcount8 (s.mask)),
+                static_cast<uint8_t> (hellcat::popcount8 (s.mask)),
                 std::memory_order_relaxed);
             part.name = juce::String();
         }
@@ -792,7 +792,7 @@ void SynthEngine::setCurrentPart (int part)
 
 //==========================================================================
 //==========================================================================
-// Voice allocation: the firmware 6-voicecard bitmask + the Parvati voice-slot
+// Voice allocation: the firmware 6-voicecard bitmask + the Hellcat voice-slot
 // extension.
 namespace
 {
@@ -833,7 +833,7 @@ void SynthEngine::rebuildVoiceAllocation()
     std::array<int, kNumParts> want {};
     for (int p = 0; p < kNumParts; ++p)
         want[(size_t) p] = static_cast<int> (parts_[(size_t) p].voiceSlots.load (std::memory_order_relaxed));
-    const std::array<uint8_t, kNumParts> partCards = parvati::mul_export::deriveMasks (want);
+    const std::array<uint8_t, kNumParts> partCards = hellcat::mul_export::deriveMasks (want);
 
     int nextVoice = 0;                    // next free pool index
 
@@ -857,7 +857,7 @@ void SynthEngine::rebuildVoiceAllocation()
         if (want[(size_t) p] <= 0 || partCards[(size_t) p] == 0)
             continue;   // disabled Part (0 slots): no voices
 
-        const int cards = parvati::popcount8 (partCards[(size_t) p]);
+        const int cards = hellcat::popcount8 (partCards[(size_t) p]);
         const int n = juce::jmin (want[(size_t) p], kNumVoices - nextVoice);
         for (int k = 0; k < n; ++k)
         {
@@ -878,7 +878,7 @@ void SynthEngine::rebuildVoiceAllocation()
         if (parts_[(size_t) p].polyphonyMode != 4 /*CHAIN*/) continue;
         const int baseN = static_cast<int> (parts_[(size_t) p].voiceIndices.size());
         if (baseN == 0 || partCards[(size_t) p] == 0) continue;
-        const int cards = parvati::popcount8 (partCards[(size_t) p]);
+        const int cards = hellcat::popcount8 (partCards[(size_t) p]);
         const int n = juce::jmin (baseN, kNumVoices - nextVoice);
         for (int k = 0; k < n; ++k)
         {
@@ -934,14 +934,14 @@ void SynthEngine::setPartVoiceAllocation (int part, uint8_t bitmask)
     // LEGACY LOAD PATH (bitmask era). The mask is no longer user state —
     // voiceSlots owns polyphony and the mask is DERIVED from it by
     // rebuildVoiceAllocation. Loaders that still carry bitmasks (.MUL files,
-    // host-state v1..v5, PatchArrangement presets, older .parvati files)
+    // host-state v1..v5, PatchArrangement presets, older .yml files)
     // materialize the equivalent slot count here: slots = popcount(mask)
     // (0 -> disabled). Exclusivity is inherent — derived masks are contiguous
     // and disjoint by construction — so the old card-stealing logic is gone.
     if (! ok (part))
         return;
 
-    int slots = parvati::popcount8 (bitmask);
+    int slots = hellcat::popcount8 (bitmask);
     const uint8_t v = static_cast<uint8_t> (slots);
 
     if (parts_[(size_t) part].voiceSlots.load (std::memory_order_relaxed) == v)
@@ -990,9 +990,9 @@ void SynthEngine::resolveTuningOffsets (int part, int16_t out[12]) const
         return;
     }
     const int mode = resolvedTuningMode (part);
-    if (mode >= 1 && mode <= parvati::kNumTuningPresets)
+    if (mode >= 1 && mode <= hellcat::kNumTuningPresets)
     {
-        const int16_t* t = parvati::tuningPresetTable (mode);
+        const int16_t* t = hellcat::tuningPresetTable (mode);
         for (int c = 0; c < 12; ++c)
             out[c] = t != nullptr ? t[c] : 0;
         return;
@@ -1009,7 +1009,7 @@ bool SynthEngine::isNoteAcceptedByPartTuning (int part, int rawNote) const
     // Firmware Part::AcceptNote (part.cc:649-660): a muted note CLASS is
     // refused outright. Voiced as a refusal (not as firmware TuneNote's
     // 32767-clamped garbage pitch) — deliberate, documented deviation.
-    return t[rawNote % 12] != parvati::kTuningSilence;
+    return t[rawNote % 12] != hellcat::kTuningSilence;
 }
 
 void SynthEngine::pushTuningToVoices (int part)
@@ -1203,7 +1203,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
         const bool legato = p.monoStack.size() > 1;
         // MONO fires EVERY allocated VOICE (slots model: 1 voice = digital
         // voice + voicecard — the firmware triggers every allocated voicecard;
-        // Parvati's unison size is the Part's voice count). MONO + 1 voice is
+        // Hellcat's unison size is the Part's voice count). MONO + 1 voice is
         // true single-voice mono, MONO + 16 is a 16-voice unison.
         uint8_t drift = 0;   // 14-bit units (1/128 semitone); uint8 wrap is faithful
         int ordinal = 0;      // this voice's spread multiplier (running drift => ordinal)
@@ -1255,7 +1255,7 @@ void SynthEngine::triggerNoteInPart (int part, int note, float velocity, int inc
     else if (p.polyphonyMode == 4 /*CHAIN*/)  // internal 2x doubling (Option A)
     {
         // The firmware forwards idx>=n to a 2nd unit over MIDI (ForwardNote,
-        // midi_dispatcher.h:228). Parvati instead gives the Part 2x its voices
+        // midi_dispatcher.h:228). Hellcat instead gives the Part 2x its voices
         // internally (rebuildVoiceAllocation partner claim), so every allocator
         // index maps to a real same-patch voice. Drift = idx*spread (part.cc:711).
         if (auto* av = getAmbikaVoice (p.voiceIndices[(size_t) idx]))
@@ -1575,7 +1575,7 @@ void SynthEngine::handleAftertouch (int midiChannel, int midiNoteNumber, int aft
 
 // GLOBAL mod-matrix write for the continuous controllers (mod wheel / breath /
 // foot pedal). Faithful to firmware Part::WriteToAllVoices (part.cc:998):
-// iterate every allocated voicecard and set the mod source. Parvati gives each
+// iterate every allocated voicecard and set the mod source. Hellcat gives each
 // Voice its own modulation_sources_[] (firmware's is a single shared static
 // array), so a write to EVERY voice reproduces that shared-global semantics —
 // a CC move is immediately visible to all sounding notes AND persists in idle
@@ -2463,7 +2463,7 @@ while (written < numSamples)
             {
                 constexpr uint8_t kFall = 1;   // 255->0 in ~256 appends = one window
                 for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
-                    if (! parvati::telemetrySourcePersistsWhenIdle (src))
+                    if (! hellcat::telemetrySourcePersistsWhenIdle (src))
                         uiTelIdlePrev_[(size_t) src] = (uiTelIdlePrev_[(size_t) src] > kFall)
                             ? static_cast<uint8_t> (uiTelIdlePrev_[(size_t) src] - kFall)
                             : uint8_t { 0 };
@@ -2575,8 +2575,8 @@ void SynthEngine::buildIdleTelemetryRow (int p, uint8_t* idleRow)
     for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
     {
         if (src >= 24)   // CONSTANT_*: a constant's state IS its value
-            idleRow[(size_t) src] = parvati::telemetryConstantByte (src);
-        else if (parvati::telemetrySourcePersistsWhenIdle (src))
+            idleRow[(size_t) src] = hellcat::telemetryConstantByte (src);
+        else if (hellcat::telemetrySourcePersistsWhenIdle (src))
             idleRow[(size_t) src] = lastModSources_[(size_t) p][(size_t) src];
         else
             idleRow[(size_t) src] = uiTelIdlePrev_[(size_t) src];
@@ -2634,10 +2634,10 @@ void SynthEngine::uiTelServiceStage (int p)
     if (uiTelWrittenPart_ == p && ! resetReq)
         return;   // already servicing this part and no wipe pending
 
-    parvati::seqlockBegin (uiTelSeq_);
+    hellcat::seqlockBegin (uiTelSeq_);
     // Fixed-size wipe (the ~4 KB frame is zeroed with stores only; this fires
     // once per reset / part switch, never per block).
-    uiTel_ = parvati::ModTelemetrySnapshot {};
+    uiTel_ = hellcat::ModTelemetrySnapshot {};
     uiTel_.epoch = uiTelemetryEpoch_.load (std::memory_order_relaxed);
     uiTel_.part  = p;
     // historyHead / historyCount are already zeroed by the wipe above.
@@ -2649,11 +2649,11 @@ void SynthEngine::uiTelServiceStage (int p)
     uiTelIdleSeeded_ = false;
     uiTelLiveSeen_   = false;  // no live append since the wipe: the next idle must NOT seed
     uiTelNoteSeqLast_ = 0;
-    parvati::seqlockEnd (uiTelSeq_);
+    hellcat::seqlockEnd (uiTelSeq_);
     uiTelWrittenPart_ = p;
 }
 
-bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Sequencer& noteSeq,
+bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const hellcat::Sequencer& noteSeq,
                                      int noteSeqOverride)
 {
     // Decimate: one append per kUiTelDecimBlocks internal ticks (~81.7 Hz at
@@ -2664,10 +2664,10 @@ bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
         return false;
     uiTelDecim_ = 0;
 
-    constexpr int kLen = parvati::ModTelemetrySnapshot::kHistoryLen;
+    constexpr int kLen = hellcat::ModTelemetrySnapshot::kHistoryLen;
     const int idx = uiTel_.historyHead;   // guarded ring metadata (read pre-lock, re-stamped inside)
 
-    parvati::seqlockBegin (uiTelSeq_);
+    hellcat::seqlockBegin (uiTelSeq_);
     // effSrcs holds MOD_SRC_LAST(31) bytes; the frame's spare slot carries
     // the NOTE-SEQ preview (kNoteSeqSlot): the tracked part's now-sounding
     // sounding sequencer note (0..127 -> 0..254, 0 = rest/gap) — a melody
@@ -2682,9 +2682,9 @@ bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
             : ((noteSeq.liveNote() <= 127)
                    ? static_cast<uint8_t> (noteSeq.liveNote() * 2) : uint8_t { 0 });
         uiTelNoteSeqLast_ = v;
-        uiTel_.history[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot * (size_t) kLen
+        uiTel_.history[(size_t) hellcat::ModTelemetrySnapshot::kNoteSeqSlot * (size_t) kLen
                        + (size_t) idx] = v;
-        uiTel_.sources[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot] = v;
+        uiTel_.sources[(size_t) hellcat::ModTelemetrySnapshot::kNoteSeqSlot] = v;
     }
     for (int src = 0; src < ambika::dsp::MOD_SRC_LAST; ++src)
     {
@@ -2694,7 +2694,7 @@ bool SynthEngine::uiTelAppendHistory (const uint8_t* effSrcs, const parvati::Seq
     uiTel_.historyHead = (idx + 1 >= kLen) ? 0 : idx + 1;
     if (uiTel_.historyCount < kLen)
         ++uiTel_.historyCount;
-    parvati::seqlockEnd (uiTelSeq_);
+    hellcat::seqlockEnd (uiTelSeq_);
     return true;
 }
 
@@ -2707,7 +2707,7 @@ void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* 
     if (! active && ! uiTelWasActive_)
         return;
 
-    parvati::seqlockBegin (uiTelSeq_);
+    hellcat::seqlockBegin (uiTelSeq_);
     if (active)
     {
         for (int e = 0; e < 3; ++e)
@@ -2739,7 +2739,7 @@ void SynthEngine::uiTelUpdateObservables (AmbikaVoice* repVoice, const uint8_t* 
             uiTel_.sources[(size_t) src] = currentSources[(size_t) src];
     }
     uiTel_.voiceActive = active;
-    parvati::seqlockEnd (uiTelSeq_);
+    hellcat::seqlockEnd (uiTelSeq_);
     uiTelWasActive_ = active;
 }
 
@@ -2761,7 +2761,7 @@ void SynthEngine::setUiTelemetryPart (int part)
     uiTelPart_.store (juce::jlimit (0, kNumParts - 1, part), std::memory_order_relaxed);
 }
 
-bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
+bool SynthEngine::readUiTelemetry (hellcat::ModTelemetrySnapshot& out) const
 {
     // Message thread (the editor's LiveFeedbackHub poll). Bounded-retry
     // seqlock read — the Part::readPendingConfig discipline: copy the plain
@@ -2772,11 +2772,11 @@ bool SynthEngine::readUiTelemetry (parvati::ModTelemetrySnapshot& out) const
     if (tracked < 0)
         return false;   // no part tracked yet (the editor has not wired the hub)
 
-    constexpr int kLen  = parvati::ModTelemetrySnapshot::kHistoryLen;
-    constexpr int kSrcs = parvati::ModTelemetrySnapshot::kNumSources;
+    constexpr int kLen  = hellcat::ModTelemetrySnapshot::kHistoryLen;
+    constexpr int kSrcs = hellcat::ModTelemetrySnapshot::kNumSources;
 
-    parvati::ModTelemetrySnapshot copy;
-    if (! parvati::seqlockTryRead (uiTelSeq_, uiTel_, copy))
+    hellcat::ModTelemetrySnapshot copy;
+    if (! hellcat::seqlockTryRead (uiTelSeq_, uiTel_, copy))
         return false;   // retries exhausted (sustained writer churn — poll again)
     {
         // Validity (see the public contract in the header): a stale epoch = a

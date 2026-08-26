@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // workspace_padding_test — pins batch-3 part C (2026-08-20):
 //   [1] SynthWorkspace's top-row padding == FxWorkspace's (FX-page parity for
@@ -10,7 +10,7 @@
 //       "Clear"/"M" labels remains anywhere in a row; and the ACTIONS still
 //       fire through the same view seams (X clears the slot, lamp toggles
 //       the session mute).
-// Run: ./build_unified/parvati_unified_tests workspace_padding_test
+// Run: ./build_unified/hellcat_unified_tests workspace_padding_test
 
 #include <array>
 #include <cstdio>
@@ -137,7 +137,7 @@ TEST(workspace_padding_test)
         // the modules stay top-pinned at kRowGap (the old code stretched them
         // to viewH - 2*kGap; the interim fix centred the band — both
         // rejected), and (c) the modules stay inside the workspace.
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         ThemeManager themeManager;
 
@@ -294,7 +294,7 @@ TEST(workspace_padding_test)
 
     std::printf ("\n[2] FX-matrix rows use the icon idiom (lamp + X, no text buttons)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         ThemeManager themeManager;
 
@@ -368,8 +368,8 @@ TEST(workspace_padding_test)
             // Border-ring stroke pin (2026-08-20 "a tiny bit thicker"): the
             // lamp draws the shared constant (asserted in mod_matrix_ui_test
             // too — one value, two pins).
-            check (ParvatiModuleLamp::kLampBorderWidth >= 2.0f
-                       && ParvatiModuleLamp::kLampBorderWidth <= 3.0f,
+            check (HellcatModuleLamp::kLampBorderWidth >= 2.0f
+                       && HellcatModuleLamp::kLampBorderWidth <= 3.0f,
                    "lamp border ring stroke is the slightly-thicker value (2-3pt)");
             const bool before = view.isSlotMuted (0);
             click (lamp);

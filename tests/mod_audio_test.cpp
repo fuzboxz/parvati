@@ -2,7 +2,7 @@
 // (ModMatrixView + ring listeners + drag affordance) alters the amp-envelope
 // modulation (mod11_amount = ENV3->VCA) or renders the engine silent on a
 // FRESH processor. Runs in the unified suite:
-//   ./build_unified/parvati_unified_tests mod_audio_test
+//   ./build_unified/hellcat_unified_tests mod_audio_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -14,7 +14,7 @@
 #include "PluginProcessor.h"
 #include "test_utils.h"              // shared setInt (host-path helper)
 
-static float amountOf (ParvatiAudioProcessor& proc, const char* id)
+static float amountOf (HellcatAudioProcessor& proc, const char* id)
 {
     if (auto* r = proc.getApvts().getRawParameterValue (id))
         return r->load();
@@ -22,7 +22,7 @@ static float amountOf (ParvatiAudioProcessor& proc, const char* id)
 }
 
 // Render ~0.3 s of a sustained note; return the output peak.
-static double renderNote (ParvatiAudioProcessor& proc, int bufferSize = 256)
+static double renderNote (HellcatAudioProcessor& proc, int bufferSize = 256)
 {
     {   // flush one block first
         juce::AudioBuffer<float> f (2, bufferSize); f.clear();
@@ -52,7 +52,7 @@ TEST(mod_audio_test)
     juce::ScopedJuceInitialiser_GUI juceInit;
     juce::MessageManager::getInstance();   // main thread == message thread
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     proc.getApvts().getParameterAsValue ("part_select") = 1.0f;   // Part 1
     setInt (proc, "osc1_shape", 1);   // WAVEFORM_SAW (audible source)

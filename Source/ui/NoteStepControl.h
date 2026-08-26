@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // NoteStepControl — a ParamControl subclass for the note-sequencer step byte
 // (seqnote_step{0..15}). The underlying APVTS param is a single 0..255 byte
@@ -24,7 +24,7 @@
 
 #pragma once
 
-#include "ParamControl.h"   // ParamControl, ParvatiAudioProcessor
+#include "ParamControl.h"   // ParamControl, HellcatAudioProcessor
 
 // A single note-sequencer step cell: one remapped rotary (Rest-at-min + full
 // note range). Lives in a ParamPage's controls_ vector (polymorphic ParamControl)
@@ -33,7 +33,7 @@
 class NoteStepControl : public ParamControl
 {
 public:
-    NoteStepControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
+    NoteStepControl (HellcatAudioProcessor& processor, const PatchParamDescriptor& descriptor);
     ~NoteStepControl() override;
 
     // Slider value (0..128: 0=Rest, 1..128=note 0..127) -> seqnote_step byte.

@@ -32,7 +32,7 @@
 
 #include "stmlib/stmlib.h"
 #include "stmlib/dsp/dsp.h"
-// PARVATI PATCH: the upstream #include "stmlib/dsp/filter.h" is unused here
+// HELLCAT PATCH: the upstream #include "stmlib/dsp/filter.h" is unused here
 // (AllPassFilter below is self-contained) and filter.h is not vendored.
 
 namespace warps {

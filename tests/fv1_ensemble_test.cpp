@@ -11,7 +11,7 @@
 
 #include "dsp/fx/fv1/Fv1Ensemble.h"
 
-namespace fv1 = parvati::fv1;
+namespace fv1 = hellcat::fv1;
 
 namespace
 {

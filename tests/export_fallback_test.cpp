@@ -6,7 +6,7 @@
 //   * End-to-end: a slot-extended multi saves as .MUL under each strategy and
 //     re-loads (loadMultiFile) with the solved bitmasks + folded modes.
 //   * Chain split writes the sibling unit files, each reloading standalone.
-//   * .parvati (the Parvati-native format) round-trips the slots UNCHANGED —
+//   * .yml (the Hellcat-native format) round-trips the slots UNCHANGED —
 //     the native format never goes through the fallback.
 //   * Default (AsIs) keeps the legacy behaviour: bitmasks unchanged.
 
@@ -26,7 +26,7 @@
 
 #include "MulExport.h"
 #include "PatchFile.h"
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "ui/MulExportDialog.h"
 #include "SynthEngine.h"
@@ -36,7 +36,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -49,7 +49,7 @@ void renderIdle (ParvatiAudioProcessor& p, int blocks)
 
 int popcount8 (uint8_t x) { int n = 0; for (; x; x >>= 1) n += x & 1; return n; }
 
-using namespace parvati::mul_export;
+using namespace hellcat::mul_export;
 
 // The standard over-capacity scenario used by the end-to-end sections:
 // part 0 requests 10 (2 cards), part 1 requests 8 (2 cards), part 2 requests
@@ -68,7 +68,7 @@ Setup makeOverSetup()
 }
 
 // Configure a live processor into the same over-capacity state.
-void setupProcessor (ParvatiAudioProcessor& proc)
+void setupProcessor (HellcatAudioProcessor& proc)
 {
     proc.prepareToPlay (48000.0, 256);
     renderIdle (proc, 2);
@@ -85,7 +85,7 @@ void setupProcessor (ParvatiAudioProcessor& proc)
 juce::File tempDir()
 {
     const auto d = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("parvati_export_fallback_test");
+                       .getChildFile ("hellcat_export_fallback_test");
     d.createDirectory();
     return d;
 }
@@ -236,7 +236,7 @@ TEST(export_fallback_test)
         };
         for (const auto& c : cases)
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             setupProcessor (proc);
             const auto f = tempDir().getChildFile (juce::String (c.name) + ".MUL");
             check (proc.saveMultiFile (f, c.strat), "saveMultiFile with strategy");
@@ -244,7 +244,7 @@ TEST(export_fallback_test)
             check (parseAmbikaMultiFile (f, m) && m.ok, ".MUL re-parses");
 
             // Reload through the real path and inspect the engine bitmasks.
-            ParvatiAudioProcessor other;
+            HellcatAudioProcessor other;
             other.prepareToPlay (48000.0, 256);
             renderIdle (other, 2);
             check (other.loadMultiFile (f), ".MUL reloads via loadMultiFile");
@@ -271,7 +271,7 @@ TEST(export_fallback_test)
     // ---- [i] ChainSplit end-to-end: sibling unit files ----
     {
         std::printf ("\n[i] ChainSplit end-to-end\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         setupProcessor (proc);
         const auto f = tempDir().getChildFile ("chain.MUL");
         check (proc.saveMultiFile (f, 5), "chain save succeeds");
@@ -295,18 +295,18 @@ TEST(export_fallback_test)
         }
     }
 
-    // ---- [j] .parvati round-trips slots unchanged (no fallback) ----
+    // ---- [j] .yml round-trips slots unchanged (no fallback) ----
     {
-        std::printf ("\n[j] .parvati fidelity\n");
-        ParvatiAudioProcessor proc;
+        std::printf ("\n[j] .yml fidelity\n");
+        HellcatAudioProcessor proc;
         setupProcessor (proc);
-        const auto yaml = parvati::preset::serializeParvatiMulti (proc);
+        const auto yaml = hellcat::preset::serializeHellcatMulti (proc);
         check (yaml.contains ("voice_slots: 10") && yaml.contains ("voice_slots: 8") && yaml.contains ("voice_slots: 6"),
                "native multi carries the exact slot counts");
-        ParvatiAudioProcessor other;
+        HellcatAudioProcessor other;
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
-        check (parvati::preset::applyParvatiMulti (other, yaml), "native multi re-applies");
+        check (hellcat::preset::applyHellcatMulti (other, yaml), "native multi re-applies");
         check (other.getEngine().getPartVoiceSlots (0) == 10
                && other.getEngine().getPartVoiceSlots (1) == 8
                && other.getEngine().getPartVoiceSlots (2) == 6,
@@ -316,11 +316,11 @@ TEST(export_fallback_test)
     // ---- [k] default save (no strategy arg) = legacy AsIs ----
     {
         std::printf ("\n[k] default legacy behaviour\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         setupProcessor (proc);
         const auto f = tempDir().getChildFile ("legacy.MUL");
         check (proc.saveMultiFile (f), "saveMultiFile(file) compiles + saves");
-        ParvatiAudioProcessor other;
+        HellcatAudioProcessor other;
         other.prepareToPlay (48000.0, 256);
         renderIdle (other, 2);
         other.loadMultiFile (f);

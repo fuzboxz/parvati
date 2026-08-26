@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Echo implementation — ping-pong stereo echo at the exact 32K RAM budget.
 
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 static_assert (2 * DelayLine<16384>::capacity == kMaxMemorySamples,
@@ -82,4 +82,4 @@ void Fv1Echo::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = tapR;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

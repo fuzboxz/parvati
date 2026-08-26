@@ -1,4 +1,4 @@
-// Step-sequencer verification for Parvati (Ambika port).
+// Step-sequencer verification for Hellcat (Ambika port).
 //  (1) NOTE sequence mode: arp_mode=Sequencer + a note sequence -> the engine
 //      emits sequenced notes (>= 2 distinct pitches over time, transposed by
 //      the held key).
@@ -6,7 +6,7 @@
 //      sequence value into every voice's modulation_sources_[MOD_SRC_SEQ_1]
 //      each block; value varies as steps advance).
 //
-// Run: ./build_unified/parvati_unified_tests sequencer_test
+// Run: ./build_unified/hellcat_unified_tests sequencer_test
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -43,7 +43,7 @@ TEST(sequencer_test)
     // ---------- (1) NOTE sequence: distinct pitches ----------
     std::printf ("[1] Note sequence emits distinct pitches\n");
     {
-        ParvatiAudioProcessor processor;
+        HellcatAudioProcessor processor;
         FakePlayHead playHead;
         processor.setPlayHead (&playHead);
         processor.prepareToPlay (48000.0, 256);
@@ -91,7 +91,7 @@ TEST(sequencer_test)
     // ---------- (2) SEQ_1 modulation reaches a voice ----------
     std::printf ("\n[2] SEQ_1 modulation reaches the voices\n");
     {
-        ParvatiAudioProcessor processor;
+        HellcatAudioProcessor processor;
         FakePlayHead playHead;
         processor.setPlayHead (&playHead);
         processor.prepareToPlay (48000.0, 256);

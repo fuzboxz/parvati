@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // MatrixViewBase — the shared implementation of the two modulation-matrix
 // panels (ModMatrixView and FxMatrixView). One view serves the synth matrix
@@ -33,32 +33,32 @@
 #include <array>
 #include <memory>
 
-#include "ParvatiLookAndFeel.h"   // parvati::appFontFor / themeFor (component resolution)
-#include "ParvatiTheme.h"         // ParvatiTheme (category colour tokens)
+#include "HellcatLookAndFeel.h"   // hellcat::appFontFor / themeFor (component resolution)
+#include "HellcatTheme.h"         // HellcatTheme (category colour tokens)
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class ThemeManager;
 
 //==============================================================================
-namespace parvati::matrixview
+namespace hellcat::matrixview
 {
 // Category colour for a mod-source display name. The mapping mirrors the
 // STRICT family palette and ModSourceCatalog::clusterAccent: Env=teal,
 // LFO=magenta, Seq/Arp=mint, Op=purple, Const=indigo, Perf=amber,
 // Gate/Noise/Random=orange. An unknown name returns a transparent colour.
-juce::Colour sourceCategoryColour (const ParvatiTheme& t, const juce::String& sourceName);
+juce::Colour sourceCategoryColour (const HellcatTheme& t, const juce::String& sourceName);
 
 // Row category colour: every source resolves to its family cat* token. An
 // unknown name falls back to the neutral accent. The result is never
 // transparent. The row tint, the slider fill and the combo tag use it.
-juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourceName);
+juce::Colour rowCategoryColour (const HellcatTheme& t, const juce::String& sourceName);
 
 // Row-index label width. JUCE Label draws a default 5px border per side, so
 // an 18pt label leaves an 8px text box. The two-digit '16' needs 13px at the
 // 12pt app font. The constant covers the text plus 6px slack, floored at 18.
 // A constant width keeps every row identical. The UI test pins the fit.
 constexpr int kMatrixIndexLabelW = 20;
-}  // namespace parvati::matrixview
+}  // namespace hellcat::matrixview
 
 //==============================================================================
 // Every structural difference between the two matrix views. The base reads
@@ -112,7 +112,7 @@ class MatrixViewBase : public juce::Component,
                        private juce::Timer
 {
 public:
-    MatrixViewBase (ParvatiAudioProcessor& processor, ThemeManager& themeManager,
+    MatrixViewBase (HellcatAudioProcessor& processor, ThemeManager& themeManager,
                     MatrixViewConfig config);
     ~MatrixViewBase() override;
 
@@ -130,7 +130,7 @@ public:
     virtual void refresh();
 
     // ---- Accessors used by the rows and the wiring step ----
-    ParvatiAudioProcessor& processor() const noexcept { return processor_; }
+    HellcatAudioProcessor& processor() const noexcept { return processor_; }
     ThemeManager&          themeManager() const noexcept { return themeManager_; }
 
     // ---- mute-lamp colour policy (global setting, both matrices) ----
@@ -227,7 +227,7 @@ private:
     void rebuildLayout();
     juce::String buildSignature() const;             // compact "active set" fingerprint
 
-    ParvatiAudioProcessor& processor_;
+    HellcatAudioProcessor& processor_;
     ThemeManager&          themeManager_;
     const MatrixViewConfig config_;   // by value: views build theirs in a local factory
     bool lampCategoryColour_ { true };   // global setting; seeded by the editor

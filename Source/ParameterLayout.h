@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ParameterLayout — the full Ambika patch parameter surface exposed through a
 // JUCE AudioProcessorValueTreeState (APVTS), plus the faithful mapping from
@@ -33,7 +33,7 @@ struct PatchParamDescriptor
     bool isArp = false;           // true => controller-side arpeggiator param (no patch byte)
     bool isOption = false;        // true => synth option (no patch byte), routed specially (e.g. VCA curve)
     bool isSequencer = false;     // true => step-sequencer param (controller PartData; routed to the engine Sequencer)
-    bool isFx = false;            // true => Parvati per-part FX param (no patch byte; routed via applyFxParameter)
+    bool isFx = false;            // true => Hellcat per-part FX param (no patch byte; routed via applyFxParameter)
     const juce::StringArray* choices = nullptr;  // non-null => AudioParameterChoice (value = index)
     int minValue = 0;             // APVTS Int range (ignored for Choice)
     int maxValue = 0;
@@ -47,7 +47,7 @@ struct PatchParamDescriptor
 const std::vector<PatchParamDescriptor>& getPatchParamDescriptors();
 
 // Build the APVTS ParameterLayout from the descriptor table.
-juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout();
+juce::AudioProcessorValueTreeState::ParameterLayout createHellcatParameterLayout();
 
 // FxType choice-list DISPLAY labels ("None", "Diffuser", ..., "Digital Echo",
 // "Room", "Spring"), one per FxType enum value in order. The stored parameter
@@ -64,12 +64,12 @@ const uint8_t* getControllerInitPatchBytes();
 
 // Convert an APVTS raw (float) value to the faithful Patch/Part byte for a
 // given descriptor (clamped to range; signed values cast to int8).
-uint8_t parvatiValueToPatchByte (const PatchParamDescriptor& descriptor, float rawValue);
+uint8_t hellcatValueToPatchByte (const PatchParamDescriptor& descriptor, float rawValue);
 
-// Inverse of parvatiValueToPatchByte: the faithful Patch/Part byte back to the
+// Inverse of hellcatValueToPatchByte: the faithful Patch/Part byte back to the
 // APVTS raw (denormalized) value for a descriptor. Used when loading Ambika
 // .PRO patch files (which store the raw struct bytes).
-float parvatiPatchByteToValue (const PatchParamDescriptor& descriptor, uint8_t byte);
+float hellcatPatchByteToValue (const PatchParamDescriptor& descriptor, uint8_t byte);
 
 // (The arp choice lists are built inline from makeArp*() in the descriptor
 // table below; no public accessors are needed.)

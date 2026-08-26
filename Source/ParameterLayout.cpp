@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ParameterLayout.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ParameterLayout.h.
 
 #include "ParameterLayout.h"
 
@@ -67,7 +67,7 @@ juce::StringArray makeFilterModes()
 
 // Voice LFO shapes: limited to 0..LFO_WAVEFORM_RAMP (4) per parameter.cc.
 // NOTE: the in-engine LFO 1/2/3 cannot render wavetable shapes 4..19
-// (PARVATI_DISABLE_WAVETABLE_LFOS), so both the voice LFO and the 3 env-lfo
+// (HELLCAT_DISABLE_WAVETABLE_LFOS), so both the voice LFO and the 3 env-lfo
 // units expose only these 4 shapes (Triangle/Square/S&H/Ramp).
 juce::StringArray makeVoiceLfoShapes()
 {
@@ -87,9 +87,9 @@ juce::StringArray makeTuningPresetNames()
 {
     juce::StringArray a;
     a.add ("Off");
-    for (int id = 1; id <= parvati::kNumTuningPresets; ++id)
-        a.add (juce::String (parvati::tuningPresetName (id)));
-    jassert (a.size() == parvati::kNumTuningPresets + 1);
+    for (int id = 1; id <= hellcat::kNumTuningPresets; ++id)
+        a.add (juce::String (hellcat::tuningPresetName (id)));
+    jassert (a.size() == hellcat::kNumTuningPresets + 1);
     return a;
 }
 
@@ -415,7 +415,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             p.defaultValue = defVal;
             d.push_back (std::move (p));
         };
-        addSeq ("seq_length_1", "Seq 1 Length", 12, 1, 16, 16);   // Parvati has 16 step cells/seq (firmware byte allows 1..32)
+        addSeq ("seq_length_1", "Seq 1 Length", 12, 1, 16, 16);   // Hellcat has 16 step cells/seq (firmware byte allows 1..32)
         addSeq ("seq_length_2", "Seq 2 Length", 13, 1, 16, 16);
         addSeq ("seq_length_3", "Seq 3 Length", 14, 1, 16, 16);
         for (int s = 0; s < 16; ++s)
@@ -500,12 +500,12 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
         // ---- GLOBAL filter-card topology (one Ambika unit = one filter card) ----
         {
             static const auto kFilterCards = juce::StringArray {
-                "Ladder (24 dB/oct)",
-                "4-pole SSM2164 (Cascade)",
-                "2-pole SVF",
-                "SMR4 (OTA Cascade)",
-                "Polivoks (SVF)",
-                "IR3109 (Cascade)"
+                "SMR4 (4-pole)",
+                "4P (4-pole)",
+                "SVF (2-pole)",
+                "Ladder (4-pole)",
+                "Polivoks (2-pole)",
+                "IR3109 (4-pole)"
             };
             PatchParamDescriptor f;
             f.paramID = "filter_card";
@@ -513,15 +513,18 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             f.byteOffset = -1;
             f.isOption = true;
             f.choices = &kFilterCards;
-            f.defaultValue = 0;   // Ladder (the saturation-rich 4-pole card)
+            // The stock Ambika boards come first: SMR4 (every unit shipped
+            // with it), then the 4P and SVF options. The character cards
+            // follow: Ladder, Polivoks, IR3109. SMR4 is the default card.
+            f.defaultValue = 0;
             d.push_back (std::move (f));
         }
 
-        // ---- Ladder saturation drive (Parvati-only; no Ambika patch byte) ----
+        // ---- Ladder saturation drive (Hellcat-only; no Ambika patch byte) ----
         // Scales the juce::dsp::LadderFilter tanh saturator. The default entry
         // "1.2" is the JUCE LadderFilter ctor default, so an untouched control
         // reproduces the pre-control sound exactly. Only affects the Ladder
-        // card; carried by .parvati (isOption), dropped by .PRO/.MUL (correct:
+        // card; carried by .yml (isOption), dropped by .PRO/.MUL (correct:
         // there is no Ambika byte for it).
         {
             static const auto kFilterDrives = juce::StringArray {
@@ -537,7 +540,7 @@ const std::vector<PatchParamDescriptor>& getPatchParamDescriptors()
             d.push_back (std::move (fd));
         }
 
-        // ---- Per-part FX (Parvati-exclusive; no Ambika patch byte; per-part) ----
+        // ---- Per-part FX (Hellcat-exclusive; no Ambika patch byte; per-part) ----
         // 78 params: 3 slots x (type/enabled/drywet/param1..5) = 24, + fx_topo +
         // fx_order = 2, + 16 x (fxmod source/dest/amount) = 48, + 4 master section
         // (fx_mix/fx_eq_low/mid/high, engine-state v3). All isFx=true,
@@ -613,7 +616,7 @@ namespace
 // to the descriptor table's emission order. Groups are created lazily in
 // FIRST-APPEARANCE order, so the flattened host parameter list stays as close
 // to the historical descriptor order as the grouping permits (see the note in
-// createParvatiParameterLayout for the exact deltas).
+// createHellcatParameterLayout for the exact deltas).
 enum class HostGroup { Osc, Mix, Filter, Env, Lfo, Mod, Modif, Part, Seq, Arp, Global, Fx, FxMod };
 
 const char* hostGroupId (HostGroup g)
@@ -758,12 +761,12 @@ FxParamId parseFxParamId (const juce::String& id)
     return r;
 }
 
-juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout createHellcatParameterLayout()
 {
     // ---- Host-facing text + grouping ------------------------------------------
     // (1) Every AudioParameterInt carries a value->text formatter so host
     //     automation lanes / generic editors show the same meaningful-unit
-    //     readout as the Parvati UI (Hz / ms / semitones / cents / % / note
+    //     readout as the Hellcat UI (Hz / ms / semitones / cents / % / note
     //     names) instead of a raw 0..127 integer, plus a text->value parser so
     //     hosts with typed parameter entry (Cubase / Bitwig) map typed values
     //     through the DISPLAYED unit (typing "100" into Dry/Wet = 100% = 127).
@@ -940,7 +943,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParvatiParameterLayout
     return layout;
 }
 
-uint8_t parvatiValueToPatchByte (const PatchParamDescriptor& d, float rawValue)
+uint8_t hellcatValueToPatchByte (const PatchParamDescriptor& d, float rawValue)
 {
     if (d.isArp || d.isOption || d.isSequencer || d.isFx)
         return 0;  // arp / option / sequencer / FX params have no patch byte
@@ -960,9 +963,9 @@ uint8_t parvatiValueToPatchByte (const PatchParamDescriptor& d, float rawValue)
                       : static_cast<uint8_t> (v);
 }
 
-float parvatiPatchByteToValue (const PatchParamDescriptor& d, uint8_t byte)
+float hellcatPatchByteToValue (const PatchParamDescriptor& d, uint8_t byte)
 {
-    // Reverse of parvatiValueToPatchByte: the raw byte back to the APVTS
+    // Reverse of hellcatValueToPatchByte: the raw byte back to the APVTS
     // (denormalized) value. Choice params store the enum index; Int params the
     // signed/unsigned value.
     if (d.choices != nullptr)

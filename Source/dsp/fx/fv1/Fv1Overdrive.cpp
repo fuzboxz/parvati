@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Overdrive implementation — Drive/Bias into an asymmetric soft-clip
 // wavetable, Tone LP, Level trim. Pure 24-bit fixed-point audio path; only the
@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // No delay lines: the only state is the LUT + one-pole LP. RAM budget 0.
@@ -192,4 +192,4 @@ void Fv1Overdrive::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = y;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

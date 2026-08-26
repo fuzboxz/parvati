@@ -23,7 +23,7 @@ Scope: `Source/SynthEngine.{h,cpp}`, `AmbikaVoice.{h,cpp}`, `PluginProcessor.{h,
 - Oversized-block chunked render tail (slice-0 MIDI only): `render_quality_test.cpp` [2].
 - OS pref clamping/round-trips: `host_state_test.cpp` [6]; OS flips under TSAN: `concurrency_test.cpp:247`.
 - Display-version mirror healing + restoreState bump: `ui_mirror_test.cpp` (canaries A/B, line 525).
-- Arp prescaler gating, seq lifecycle/self-clean, engine no-stuck-note, chord release, clamped raw bytes: `arp_test.cpp`, `parvati_arp_seq_timing_test.cpp`.
+- Arp prescaler gating, seq lifecycle/self-clean, engine no-stuck-note, chord release, clamped raw bytes: `arp_test.cpp`, `hellcat_arp_seq_timing_test.cpp`.
 - NRPN direct/stride/signed/unmapped + CC map end-to-end: `midi_param_test.cpp`; sustain/CC123/CC routing: `cc_routing_test.cpp`.
 - Sequencer note seq + mod seqs: `sequencer_test.cpp`; voice slots/allocation: `voice_slots_test.cpp` et al.
 

@@ -3,10 +3,10 @@
 // Property under test (the "validate-before-mutate" class this exists to pin):
 //   (P1) ANY load call that returns FALSE must leave the processor state
 //        BIT-IDENTICAL (getStateInformation snapshot compared byte-for-byte).
-//        Historical instances of the class: loadParvatiMultiFile ran
+//        Historical instances of the class: loadHellcatMultiFile ran
 //        resetAllVoices + resetVoiceSlotsToInit before its pre-parse guard
 //        existed; restoreState applied a truncated blob part-way; failed
-//        .parvati patch loads killed sounding voices.
+//        .yml patch loads killed sounding voices.
 //   (P2) ANY load call that returns TRUE must render 32 processBlocks inside a
 //        10 s watchdog with FINITE output. Historical instance: a .MUL with
 //        arpOctave byte 0 hung the audio thread in Arpeggiator::stepArpeggio's
@@ -19,8 +19,8 @@
 //        clean apply or untouched — never a corrupt hybrid).
 //
 // Corpus: five files built through the REAL save paths (saveProgramFile .PRO,
-// saveMultiFile .MUL x2, saveParvatiMultiFile .parvati-multi with custom
-// tunings + part names + FX slot types, saveParvatiPatchFile .parvati-patch),
+// saveMultiFile .MUL x2, saveHellcatMultiFile .hellcat-multi with custom
+// tunings + part names + FX slot types, saveHellcatPatchFile .hellcat-patch),
 // so every mutational case exercises the exact bytes a user's disk file has.
 //
 // Mutations (~300 cases, all deterministic — fixed seeds, no wall clock):
@@ -36,7 +36,7 @@
 // Rollback exemptions on false==identical: NONE. A violating input is a REAL
 // bug — do not weaken the assertion; report the case label + first-diff offset.
 //
-// Run: ./build_unified/parvati_unified_tests loader_fuzz_test
+// Run: ./build_unified/hellcat_unified_tests loader_fuzz_test
 
 #include <atomic>
 #include "unified_test_runner.h"
@@ -89,7 +89,7 @@ struct XorShift32
 // 6-part engine blob). Deterministic for identical state — proven by the
 // canary below before any mutation runs (if two snapshots of the same state
 // ever differ, the harness itself would be invalid and must abort).
-std::vector<uint8_t> snapshot (ParvatiAudioProcessor& proc)
+std::vector<uint8_t> snapshot (HellcatAudioProcessor& proc)
 {
     juce::MemoryBlock mb;
     proc.getStateInformation (mb);
@@ -125,7 +125,7 @@ bool bytesIdentical (const std::vector<uint8_t>& a, const std::vector<uint8_t>& 
 // otherwise block process exit and hide the failure in CI).
 struct WatchResult { bool completed; bool finite; };
 
-WatchResult watchdog (ParvatiAudioProcessor& proc, int blocks = 32)
+WatchResult watchdog (HellcatAudioProcessor& proc, int blocks = 32)
 {
     std::atomic<bool> finite { true };
     auto fut = std::async (std::launch::async, [&proc, blocks, &finite]() {
@@ -182,27 +182,27 @@ juce::String readFileText (const juce::File& f)
 
 //==============================================================================
 // Loader dispatch: which real load entry point a corpus uses.
-// 0 = loadProgramFile, 1 = loadMultiFile, 2 = loadParvatiMultiFile,
-// 3 = loadParvatiPatchFile.
+// 0 = loadProgramFile, 1 = loadMultiFile, 2 = loadHellcatMultiFile,
+// 3 = loadHellcatPatchFile.
 const char* loaderName (int l)
 {
     switch (l)
     {
         case 0: return "loadProgramFile";
         case 1: return "loadMultiFile";
-        case 2: return "loadParvatiMultiFile";
-        default: return "loadParvatiPatchFile";
+        case 2: return "loadHellcatMultiFile";
+        default: return "loadHellcatPatchFile";
     }
 }
 
-bool dispatchLoad (ParvatiAudioProcessor& proc, int loader, const juce::File& f)
+bool dispatchLoad (HellcatAudioProcessor& proc, int loader, const juce::File& f)
 {
     switch (loader)
     {
         case 0:  return proc.loadProgramFile (f);
         case 1:  return proc.loadMultiFile (f);
-        case 2:  return proc.loadParvatiMultiFile (f);
-        default: return proc.loadParvatiPatchFile (f);
+        case 2:  return proc.loadHellcatMultiFile (f);
+        default: return proc.loadHellcatPatchFile (f);
     }
 }
 
@@ -212,7 +212,7 @@ bool dispatchLoad (ParvatiAudioProcessor& proc, int loader, const juce::File& f)
 // failed load that resets slots to init / clears a custom table / drops a part
 // name would otherwise produce a byte-identical false pass). Different from
 // every corpus state so successful loads also move the state.
-void reseed (ParvatiAudioProcessor& proc)
+void reseed (HellcatAudioProcessor& proc)
 {
     auto& e = proc.getEngine();
     e.setCurrentPart (3);
@@ -229,7 +229,7 @@ void reseed (ParvatiAudioProcessor& proc)
 
 //==============================================================================
 // One mutated-file case: P1 (rollback) or P2 (watchdog), never both.
-void runCase (ParvatiAudioProcessor& proc, int loader, const char* label,
+void runCase (HellcatAudioProcessor& proc, int loader, const char* label,
               const juce::File& f)
 {
     reseed (proc);
@@ -261,7 +261,7 @@ void runCase (ParvatiAudioProcessor& proc, int loader, const char* label,
 
 // Convenience for binary mutations: apply, run, restore the original bytes so
 // the corpus file stays pristine for the next case.
-void runBinaryMutation (ParvatiAudioProcessor& proc, int loader, const char* label,
+void runBinaryMutation (HellcatAudioProcessor& proc, int loader, const char* label,
                         const juce::File& f, const std::vector<uint8_t>& original,
                         size_t offset, int bit)
 {
@@ -283,7 +283,7 @@ struct Corpus
 // (a) .PRO — single program, distinctive patch/part bytes via the APVTS bridge.
 Corpus buildPro()
 {
-    ParvatiAudioProcessor p;
+    HellcatAudioProcessor p;
     p.prepareToPlay (48000.0, 256);
     auto& apvts = p.getApvts();
     apvts.getParameterAsValue ("part_select")    = 1.0f;   // part 0
@@ -293,10 +293,10 @@ Corpus buildPro()
     apvts.getParameterAsValue ("arp_octave")     = 3.0f;
     apvts.getParameterAsValue ("seq_length_1")   = 9.0f;
     p.setLoadedProgramName ("FuzzPro");
-    const juce::File f = tempFile ("parvati_fuzz_c1.pro");
+    const juce::File f = tempFile ("hellcat_fuzz_c1.pro");
     if (! p.saveProgramFile (f))
         { std::printf ("FATAL: corpus .PRO save failed\n"); std::_Exit (90); }
-    return { "parvati_fuzz_c1.pro", 0 };
+    return { "hellcat_fuzz_c1.pro", 0 };
 }
 
 // (b) .MUL — 3+3 voicecard split with routing + part names (the classic
@@ -304,7 +304,7 @@ Corpus buildPro()
 Corpus buildMul (const char* fileName, uint8_t alloc0, uint8_t alloc1,
                  uint8_t alloc2, int ch1)
 {
-    ParvatiAudioProcessor p;
+    HellcatAudioProcessor p;
     p.prepareToPlay (48000.0, 256);
     auto& e = p.getEngine();
     e.setPartVoiceAllocation (0, alloc0);
@@ -324,12 +324,12 @@ Corpus buildMul (const char* fileName, uint8_t alloc0, uint8_t alloc1,
     return { fileName, 1 };
 }
 
-// (c) .parvati MULTI — the RICH corpus: custom tunings, part names, FX slot
+// (c) .yml MULTI — the RICH corpus: custom tunings, part names, FX slot
 // TYPES + params, per-part poly/spread/arp bytes, mixed slot counts (incl. a
 // disabled part). Exercises every extended field the serializer emits.
-Corpus buildParvatiMulti()
+Corpus buildHellcatMulti()
 {
-    ParvatiAudioProcessor p;
+    HellcatAudioProcessor p;
     p.prepareToPlay (48000.0, 256);
     auto& e = p.getEngine();
     const int slots[6] = { 16, 8, 4, 2, 1, 0 };
@@ -366,32 +366,32 @@ Corpus buildParvatiMulti()
     }
     e.setCurrentPart (saved);
     p.setLoadedProgramName ("FuzzRich");
-    const juce::File f = tempFile ("parvati_fuzz_c3.parvati");
-    if (! p.saveParvatiMultiFile (f))
-        { std::printf ("FATAL: corpus .parvati multi save failed\n"); std::_Exit (90); }
-    return { "parvati_fuzz_c3.parvati", 2 };
+    const juce::File f = tempFile ("hellcat_fuzz_c3.yml");
+    if (! p.saveHellcatMultiFile (f))
+        { std::printf ("FATAL: corpus .yml multi save failed\n"); std::_Exit (90); }
+    return { "hellcat_fuzz_c3.yml", 2 };
 }
 
-// (d) .parvati PATCH — current-part-only program.
-Corpus buildParvatiPatch()
+// (d) .yml PATCH — current-part-only program.
+Corpus buildHellcatPatch()
 {
-    ParvatiAudioProcessor p;
+    HellcatAudioProcessor p;
     p.prepareToPlay (48000.0, 256);
     p.getApvts().getParameterAsValue ("part_select") = 1.0f;
     p.getApvts().getParameterAsValue ("osc1_shape")  = 1.0f;
     p.getApvts().getParameterAsValue ("part_raga")   = 2.0f;
     p.setLoadedProgramName ("FuzzPatch");
-    const juce::File f = tempFile ("parvati_fuzz_c4.parvati");
-    if (! p.saveParvatiPatchFile (f))
-        { std::printf ("FATAL: corpus .parvati patch save failed\n"); std::_Exit (90); }
-    return { "parvati_fuzz_c4.parvati", 3 };
+    const juce::File f = tempFile ("hellcat_fuzz_c4.yml");
+    if (! p.saveHellcatPatchFile (f))
+        { std::printf ("FATAL: corpus .yml patch save failed\n"); std::_Exit (90); }
+    return { "hellcat_fuzz_c4.yml", 3 };
 }
 
 //==============================================================================
 // Truncation sweep at evenly-spaced cut points + the 1-byte / size-1 / full
 // edges (the full-length pass is the unmutated baseline: must load true and
 // pass the watchdog).
-void runTruncations (ParvatiAudioProcessor& proc, const Corpus& c)
+void runTruncations (HellcatAudioProcessor& proc, const Corpus& c)
 {
     const juce::File f = tempFile (c.file);
     const auto original = readFileBytes (f);
@@ -422,7 +422,7 @@ void runTruncations (ParvatiAudioProcessor& proc, const Corpus& c)
 //   .PRO (256 B): patch[112] @ 48, PartData[84] @ 172.
 //   .MUL (1424 B): MultiData[56] (routing: 6x{ch,lo,hi,alloc}) @ 48;
 //     part i patch @ 104 + i*220 + 12; part i PartData @ 104 + i*220 + 124.
-void runProBitFlips (ParvatiAudioProcessor& proc, const Corpus& c)
+void runProBitFlips (HellcatAudioProcessor& proc, const Corpus& c)
 {
     const juce::File f = tempFile (c.file);
     const auto original = readFileBytes (f);
@@ -448,7 +448,7 @@ void runProBitFlips (ParvatiAudioProcessor& proc, const Corpus& c)
     }
 }
 
-void runMulBitFlips (ParvatiAudioProcessor& proc, const Corpus& c)
+void runMulBitFlips (HellcatAudioProcessor& proc, const Corpus& c)
 {
     const juce::File f = tempFile (c.file);
     const auto original = readFileBytes (f);
@@ -521,7 +521,7 @@ std::vector<TextEdit> multiEdits()
         { "emptyPartsArray",   [] (const juce::String& t)
                                { return replaceFirst (t, "parts:", "parts: []"); } },
         { "scalarParts",       [] (const juce::String&)
-                               { return juce::String ("format: parvati-multi\nversion: 1\nname: \"S\"\nparts:\n  - 7\n  - 9\n"); } },
+                               { return juce::String ("format: hellcat-multi\nversion: 1\nname: \"S\"\nparts:\n  - 7\n  - 9\n"); } },
         { "dropChannelKeys",   [] (const juce::String& t) { return removeLinesContaining (t, "channel:"); } },
         { "dropKeyzoneLow",    [] (const juce::String& t) { return removeLinesContaining (t, "keyzone_low:"); } },
         { "dropKeyzoneHigh",   [] (const juce::String& t) { return removeLinesContaining (t, "keyzone_high:"); } },
@@ -548,12 +548,12 @@ std::vector<TextEdit> multiEdits()
         { "deepNest",           [] (const juce::String&)
                                {   // Hostile deep nesting (bug hunt 2026-08-18,
                                    // F-state-1): thousands of increasing-indent
-                                   // lines made parseParvatiYaml recurse once
+                                   // lines made parseHellcatYaml recurse once
                                    // per level (stack exhaustion -> host crash).
                                    // With the depth cap the parse refuses; the
                                    // load must FAIL CLEANLY and leave the state
                                    // untouched (the runCase contract).
-                                   juce::String t = "format: parvati-multi\nversion: 1\nname: \"D\"\nparts:\n";
+                                   juce::String t = "format: hellcat-multi\nversion: 1\nname: \"D\"\nparts:\n";
                                    for (int k = 0; k < 5000; ++k)
                                        t += juce::String::repeatedString (" ", 1 + k) + "a:\n";
                                    return t; } },
@@ -574,7 +574,7 @@ std::vector<TextEdit> patchEdits()
     };
 }
 
-void runTextEdits (ParvatiAudioProcessor& proc, const Corpus& c,
+void runTextEdits (HellcatAudioProcessor& proc, const Corpus& c,
                    const std::vector<TextEdit>& edits)
 {
     const juce::File f = tempFile (c.file);
@@ -595,7 +595,7 @@ void runTextEdits (ParvatiAudioProcessor& proc, const Corpus& c,
 TEST(loader_fuzz_test)
 {
     juce::ScopedJuceInitialiser_GUI guiInit;
-    std::printf ("=== Parvati Loader Fuzzer + Rollback Checker (T1) ===\n");
+    std::printf ("=== Hellcat Loader Fuzzer + Rollback Checker (T1) ===\n");
 
     // ------------------------------------------------------------------
     // [C] Canary self-checks — the harness must PROVE it detects the
@@ -606,7 +606,7 @@ TEST(loader_fuzz_test)
     {
         // (c1) snapshot determinism: two snapshots of the same state must be
         // byte-identical, or every later comparison would be meaningless.
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         p.prepareToPlay (48000.0, 256);
         reseed (p);
         const auto s1 = snapshot (p);
@@ -636,18 +636,18 @@ TEST(loader_fuzz_test)
     // ------------------------------------------------------------------
     std::printf ("\n[F] corpus via real save paths\n");
     const Corpus pro   = buildPro();
-    const Corpus mul1  = buildMul ("parvati_fuzz_c2.mul", 0x07, 0x38, 0x00, 2);
-    const Corpus mul2  = buildMul ("parvati_fuzz_c5.mul", 0x03, 0x0c, 0x30, 3);
-    const Corpus pmul  = buildParvatiMulti();
-    const Corpus ppat  = buildParvatiPatch();
+    const Corpus mul1  = buildMul ("hellcat_fuzz_c2.mul", 0x07, 0x38, 0x00, 2);
+    const Corpus mul2  = buildMul ("hellcat_fuzz_c5.mul", 0x03, 0x0c, 0x30, 3);
+    const Corpus pmul  = buildHellcatMulti();
+    const Corpus ppat  = buildHellcatPatch();
     {
-        ParvatiAudioProcessor v;
+        HellcatAudioProcessor v;
         v.prepareToPlay (48000.0, 256);
         check (v.loadProgramFile (tempFile (pro.file)),  "corpus: .PRO loads");
         check (v.loadMultiFile (tempFile (mul1.file)),   "corpus: .MUL(3+3) loads");
         check (v.loadMultiFile (tempFile (mul2.file)),   "corpus: .MUL(2+2+2) loads");
-        check (v.loadParvatiMultiFile (tempFile (pmul.file)), "corpus: rich .parvati multi loads");
-        check (v.loadParvatiPatchFile (tempFile (ppat.file)), "corpus: .parvati patch loads");
+        check (v.loadHellcatMultiFile (tempFile (pmul.file)), "corpus: rich .yml multi loads");
+        check (v.loadHellcatPatchFile (tempFile (ppat.file)), "corpus: .yml patch loads");
     }
 
     // ------------------------------------------------------------------
@@ -655,7 +655,7 @@ TEST(loader_fuzz_test)
     // ------------------------------------------------------------------
     std::printf ("\n[1] truncation sweep\n");
     {
-        ParvatiAudioProcessor t;
+        HellcatAudioProcessor t;
         t.prepareToPlay (48000.0, 256);
         runTruncations (t, pro);
         runTruncations (t, mul1);
@@ -669,7 +669,7 @@ TEST(loader_fuzz_test)
     // ------------------------------------------------------------------
     std::printf ("\n[2] bit-flip sweep (routing / arp / part-param bytes)\n");
     {
-        ParvatiAudioProcessor t;
+        HellcatAudioProcessor t;
         t.prepareToPlay (48000.0, 256);
         runProBitFlips (t, pro);
         runMulBitFlips (t, mul1);
@@ -679,9 +679,9 @@ TEST(loader_fuzz_test)
     // ------------------------------------------------------------------
     // [3] Structural YAML edits on the text formats.
     // ------------------------------------------------------------------
-    std::printf ("\n[3] structural .parvati edits\n");
+    std::printf ("\n[3] structural .yml edits\n");
     {
-        ParvatiAudioProcessor t;
+        HellcatAudioProcessor t;
         t.prepareToPlay (48000.0, 256);
         runTextEdits (t, pmul, multiEdits());
         runTextEdits (t, ppat, patchEdits());
@@ -707,7 +707,7 @@ TEST(loader_fuzz_test)
         // requiring the result to be STABLE (idempotent restore — a second
         // restore changes nothing) fixes the reference AND pins that extra
         // invariant.
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (48000.0, 256);
         reseed (a);   // distinctive state (same seed as the mutation harness)
         auto raw0 = snapshot (a);
@@ -717,7 +717,7 @@ TEST(loader_fuzz_test)
         check (bytesIdentical (snapshot (a), full),
                "state restore is idempotent (2nd restore == 1st, canonical)");
 
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (48000.0, 256);
         reseed (b);
         const double fracs[] = { 0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.92 };

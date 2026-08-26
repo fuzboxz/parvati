@@ -5,6 +5,56 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 ## [Unreleased]
 
 ### Changed
++- **Harmonized filter-card names; SMR4 is card 0 and the default
+  (2026-08-26).** The cards use the historical Ambika voicecard names with
+  one label scheme: SMR4 (4-pole), 4P (4-pole), SVF (2-pole), Ladder
+  (4-pole), Polivoks (2-pole), IR3109 (4-pole). The old labels mixed three
+  different meanings of "Cascade". The stock Ambika boards now come first:
+  SMR4 (every unit shipped with it) at index 0 and as the default, then the
+  4P and SVF options, then the character cards. The order is frozen from
+  this change forward; pre-release states that stored index 0 or 3 swap
+  their meaning (Ladder and SMR4 exchanged indices). The SMR4 voice renders
+  about 10 to 20 percent slower than the Ladder; re-harvest the local perf
+  baseline (PARVATI_PERF_HARVEST=1 perf_baseline_test).
+- **Card-aware filter response preview (2026-08-26).** The Filter page curve
+  now follows the selected card. Each card draws its own family: 2-pole
+  (SVF, Polivoks skeleton) versus 4-pole (Ladder, 4P cascade, SMR4, IR3109).
+  Each card also draws its own resonance law, mirroring the runtime DSP maps.
+  The IR3109 preview shows its capped peak (the factory resonance limit).
+  The 4-pole cards draw lowpass only, as the hardware. The Polivoks card
+  draws LP and BP only, as the hardware.
+- **Filter resonance law harmonization (2026-08-26).** The Ladder knob now
+  tracks the ideal law k = 4*knob: JUCE's internal offset (k = 0.4 + 3.6*r)
+  is inverted above knob 0.1 (below it, JUCE floors at k = 0.4; a small dead
+  zone keeps that floor). The 4P cascade peak lifts onto the family cluster:
+  per-stage Q = 0.5*(1-res)^(-0.616) gives +20 dB at knob 0.95 (was +14).
+  Knob-zero baselines stay unchanged (the exact cascade q(0) = 0.5 holds for
+  any power law; the Ladder floor is unchanged). The four Q-law cards now
+  cluster within 1.5 dB at knob 0.95 (was 8 dB). analog_filter_batch_test's
+  ladder reference applies the same remap, so its bit-identity pin keeps
+  comparing the new law.
+- **Filter-card loudness parity (2026-08-26).** The six filter cards now
+  play at matched levels: a hot program keeps the six-card RMS spread under
+  4.5 dB across cutoff 500 Hz..6 kHz and resonance 0..0.85 (was up to
+  38 dB). Four fixes: (1) the SVF and 4P cards use proper resonance laws
+  (Q = 1/(2*(1-res)) and per-stage Q = 0.5/sqrt(1-res); the old raw-Q map
+  made both cards droopy and near-silent at low resonance); (2) the OTA
+  cards run on a 2 V core scale with a 10 Hz DC blocker on the output (the
+  old calibration rectified up to -0.33 DC and collapsed the low-cutoff
+  level); (3) the OTA drive law is anchored and softened (Filter Drive 12
+  no longer sinks the SMR4 ~15 dB below the Ladder); (4) static trims plus
+  a partial resonance compensation level every card against the Ladder.
+  Card character is unchanged where it is pinned: slopes, saturation,
+  harmonic profiles, self-oscillation semantics, and the IR3109 cap. New
+  regression test: filter_loudness_test.
+- **Standalone musical typing without the on-screen keyboard
+  (2026-08-26).** In the standalone app, plain QWERTY keys (A W S D F G H
+  J K L ; plus W E T Y U O P, Z/X octave, C/V velocity) now play notes while
+  the [KBD] strip is HIDDEN and while no control holds the keyboard focus.
+  The editor registers a key listener on the window, so every focus state
+  works. A window that loses key focus releases held typing notes (no stuck
+  notes). Plugin builds keep the old behaviour: the host owns the computer
+  keyboard, so no key is claimed there.
 - **HELLCAT wordmark in Michroma on every theme (2026-08-26).** The header
   brand text reads HELLCAT, 22pt Michroma (the Y2K header face) with tight
   tracking on EVERY theme, not only Y2K. A new wordmarkFont() resolves the
@@ -55,6 +105,33 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   unchanged.
 
 ### Added
+- **Accessibility and contrast pass (2026-08-26).** Every parameter cell
+  announces to assistive tech: the cell is a titled group and its knob or
+  combo carries a title, a description and a value interface with a valid
+  range. Names derive from the label tables; descriptions are the ParamHelp
+  tooltips. The Settings panel combos and tempo slider carry titles in every
+  language. New tool `tools/check_contrast.py` gates WCAG 2.1 contrast for
+  all five themes; four failing pairs were fixed (Immutable page, Swedish
+  Red labels and accent, Y2K labels and button text) and every enforced pair
+  now meets 4.5:1. New test: a11y_smoke_test.
+- **Generatable PDF user manual (2026-08-26, updated same day with
+  screenshots and a themed layout).** A user manual documents every feature:
+  install, quick start, interface tour, synthesis, modulation, effects,
+  presets, MIDI and troubleshooting. Eleven sections carry screenshots of the
+  live interface, rendered headlessly in the default Carbon theme by the
+  existing screen-capture tool (hellcat_screen_shots). The screenshots are
+  gitignored artifacts; the manual target re-renders them before every
+  build. The document itself now follows a Carbon dark theme that mirrors
+  the plugin palette: dark pages, cyan chapter rules, dark table plates and
+  framed screenshots. The "Parameter Reference" appendix lists all 260
+  parameters with ranges, choices and tooltips. It parses ParameterLayout.cpp
+  and ParamHelp.cpp at run time, so it cannot drift from the code. The PDF
+  is accessible: every screenshot carries an alt description in the tagged
+  structure tree, the document declares its language and title, and a full
+  bookmark outline navigates every chapter (needs fpdf2 2.7 or newer).
+  Screenshots render at 80 percent page width and center on the page. Build
+  with `cmake --build build_unified --target hellcat_gen_manual`. Output:
+  docs/manual/Hellcat-Manual.pdf, 33 pages, clickable table of contents.
 - **Y2K closed-dropdown readout font (2026-08-25).** The closed combo text
   now reliably renders in the VT323 console face on Y2K. ComboBox only
   re-resolves its inline text inside resized(), which bails while a combo
@@ -121,6 +198,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   the unit. Existing types are untouched; the new type appends to the list.
 
 ### Fixed
+- **Stock templates no longer override the filter card (2026-08-26).** The
+  five presets/TEMPLATES files carried the global options block. The multi
+  loader applies that block, so every stock template reset the SMR4 stock
+  card to Ladder on load. The generator strips the block now and self-checks
+  the files. Each template diff is four deleted lines.
+- **Static analysis gates on a baseline (2026-08-26).** The script fails on
+  NEW cppcheck findings only. The allowlist holds 30 signatures covering the
+  53 historical findings (oscillator.cpp phase.carry debt, vendored trees,
+  test style). Signatures carry no line numbers, so edits keep the baseline
+  valid. Regenerate with PARVATI_STATIC_ALLOWLIST_REGEN=1.
+- **Filter test pins and doc alignment (2026-08-26).** filter_loudness_test
+  pins the Ladder resonance remap against a raw-knob reference (gap 1.32 dB
+  at knob 0.5; a lost remap fails two checks). AmbikaVoice::prepare stages
+  the stock card through the topology path; the FX goldens stay at the
+  2026-08-23 harvest. Drive-law and vcaKnee comments match the code again.
+  MIGRATION_STATUS counts refreshed (128 registered, 127/127 roster).
 - **Stale previous-theme background after a theme switch (2026-08-26).**
   Two independent causes, both fixed. (1) The TabbedComponent's per-tab
   content backgrounds are component-level colours pinned at construction
@@ -741,7 +834,7 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   JUCE Label's default 5px-per-side border left the 18pt-wide index label an
   8px text box for the 13px text. Both matrices zero the border and allocate
   a measured 20pt. (2) ONE shared disable widget — `ParvatiModuleLamp`
-  (ParvatiLookAndFeel.h) — now renders the synth mod-matrix bypass lamp, the
+  (HellcatLookAndFeel.h) — now renders the synth mod-matrix bypass lamp, the
   FX mod-matrix lamp AND the FX slot power toggle: the FX toggle previously
   filled with accentSecondary (the style mismatch); all three now use
   accentPrimary on / textDisabled off, with the dot scaled by the band

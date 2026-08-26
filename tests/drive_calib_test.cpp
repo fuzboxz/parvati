@@ -2,7 +2,7 @@
 // clamp verification for the FV-1 distortion + dynamics + modulated-delay
 // families (2026-08-19 fix wave, audit/fx_review_20260819/rev_dyn.md +
 // rev_moddelays.md + rev_delays.md). JUCE-FREE: compiles the effect .cpps
-// directly (no Parvati/JUCE link), same pattern as fv1_newfamily_test.
+// directly (no Hellcat/JUCE link), same pattern as fv1_newfamily_test.
 //
 // Pins, with the pre-fix numbers from the audit in parentheses:
 //  1. Overdrive  Drive=1 small-signal gain ~ 0.72*1.35 = 0.97 (+-20%)
@@ -24,7 +24,7 @@
 //     the 1-sample read floor (near-copy fraction small) and the Flanger's
 //     max reachable delay collapses to the clamped range (was ~152 samples).
 //
-// Run: ./build_unified/parvati_unified_tests drive_calib_test
+// Run: ./build_unified/hellcat_unified_tests drive_calib_test
 
 #include <array>
 #include <algorithm>
@@ -140,7 +140,7 @@ static void testDriveCalibration()
 {
     std::printf ("[1] Overdrive table calibration (v>>16: xT = D*x)\n");
     {
-        parvati::fv1::Fv1Overdrive fx;
+        hellcat::fv1::Fv1Overdrive fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         // Drive=1 (p0=0), Bias center, Tone max (LP ~15 kHz, no droop at
@@ -168,7 +168,7 @@ static void testDriveCalibration()
 
     std::printf ("[2] LUT Distortion table calibration + mono ceiling\n");
     {
-        parvati::fv1::Fv1LutDistortion fx;
+        hellcat::fv1::Fv1LutDistortion fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         // Shape 1 (Soft: x/(1+|x|) * 1.5): slope 0.75*1.5 = 1.125 at 0.
@@ -205,7 +205,7 @@ static void testLevelMonotonic()
 {
     std::printf ("[3] Level 0..2 monotonic (ki/kf split)\n");
     {
-        parvati::fv1::Fv1Overdrive fx;
+        hellcat::fv1::Fv1Overdrive fx;
         fx.prepare (kRate, kBlock);
         const int n = 16384;
         std::vector<float> in (static_cast<size_t> (n)), out (static_cast<size_t> (n));
@@ -229,7 +229,7 @@ static void testLevelMonotonic()
         check (mono, "Overdrive: Level monotonic through the FULL 0..2 range (upper half was dead)");
     }
     {
-        parvati::fv1::Fv1Compressor fx;
+        hellcat::fv1::Fv1Compressor fx;
         fx.prepare (kRate, kBlock);
         const int n = 16384;
         std::vector<float> in (static_cast<size_t> (n)), out (static_cast<size_t> (n));
@@ -264,7 +264,7 @@ static void testDcBlockers()
     std::vector<float> sil (static_cast<size_t> (n), 0.0f),
                        out (static_cast<size_t> (n));
     {
-        parvati::fv1::Fv1LutDistortion fx;
+        hellcat::fv1::Fv1LutDistortion fx;
         fx.prepare (kRate, kBlock);
         for (int shape : { 9, 4, 11 })   // Cheby2 / OctUp / Asym
         {
@@ -280,7 +280,7 @@ static void testDcBlockers()
         }
     }
     {
-        parvati::fv1::Fv1Overdrive fx;
+        hellcat::fv1::Fv1Overdrive fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         const std::array<float, kNumFxSlotParams> prm = { 0.0f, 1.0f, 0.5f, 0.5f, 0.0f };   // full Bias
@@ -298,7 +298,7 @@ static void testLatency()
 {
     std::printf ("[5] 6x-OS latency() in host samples\n");
     {
-        parvati::fv1::Fv1Overdrive fx;
+        hellcat::fv1::Fv1Overdrive fx;
         check (fx.latency() == 0, "Overdrive: latency()==0 before prepare (stage-snapshot compat)");
         fx.prepare (kRate, kBlock);
         fx.reset();
@@ -306,7 +306,7 @@ static void testLatency()
         check (fx.latency() == 12, "Overdrive: latency()==12 @48k (was 0: comb at dry/wet)");
     }
     {
-        parvati::fv1::Fv1LutDistortion fx;
+        hellcat::fv1::Fv1LutDistortion fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         std::printf ("  LutDist latency() @48k = %d\n", fx.latency());
@@ -323,7 +323,7 @@ static void testLatency()
 static void testEchoGlide()
 {
     std::printf ("[6] Fv1Echo Time glide (Q.16 tap slew)\n");
-    parvati::fv1::Fv1Echo fx;
+    hellcat::fv1::Fv1Echo fx;
     fx.prepare (kRate, kBlock);
     fx.reset();
 
@@ -406,7 +406,7 @@ static void testEchoGlide()
 // Fraction of samples where |out[i] - in[i]| < eps (a near-zero-delay copy —
 // what a sweep pinned at the read floor produces). Probe 35 Hz so a moving
 // tap of even ~2 samples is already distinguishable from a copy.
-static float nearCopyFraction (parvati::fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> prm,
+static float nearCopyFraction (hellcat::fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> prm,
                                float amp, float eps)
 {
     const int n = 65536;   // 2+ LFO cycles at 8 Hz
@@ -426,7 +426,7 @@ static float nearCopyFraction (parvati::fv1::Fv1FxProcessor& fx, const std::arra
 
 // Max best-correlation lag of out vs in (host samples): the largest delay the
 // sweep actually reaches. Window 4096 Hann, step 512, lags 0..300.
-static float maxReachableLag (parvati::fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> prm, float amp)
+static float maxReachableLag (hellcat::fv1::Fv1FxProcessor& fx, const std::array<float, kNumFxSlotParams> prm, float amp)
 {
     const int n = 65536;
     std::vector<float> in (static_cast<size_t> (n)), out (static_cast<size_t> (n));
@@ -461,7 +461,7 @@ static void testModDelayClamps()
 {
     std::printf ("[7] Mod-delay depth clamps (sweep never pins at the read floor)\n");
     {
-        parvati::fv1::Fv1Flanger fx;
+        hellcat::fv1::Fv1Flanger fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         // Corner: Manual=0 (base 0.15 ms = 4.9), Depth=1 (4.5 ms = 147.5).
@@ -481,7 +481,7 @@ static void testModDelayClamps()
         check (lagMid > 200.0f && lagMid < 340.0f, "Flanger: mid-setting sweep unaffected by the clamp");
     }
     {
-        parvati::fv1::Fv1Chorus fx;
+        hellcat::fv1::Fv1Chorus fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         const std::array<float, kNumFxSlotParams> prm = { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f };   // 8 Hz, corner
@@ -490,7 +490,7 @@ static void testModDelayClamps()
         check (f < 0.10f, "Chorus: corner sweep no longer dwells at the floor (was 18.9%)");
     }
     {
-        parvati::fv1::Fv1Ensemble fx;
+        hellcat::fv1::Fv1Ensemble fx;
         fx.prepare (kRate, kBlock);
         fx.reset();
         const std::array<float, kNumFxSlotParams> prm = { 1.0f, 1.0f, 0.0f, 0.5f, 0.0f };   // 8 Hz, corner

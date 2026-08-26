@@ -1,15 +1,15 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // MulExport implementation — see MulExport.h for the design notes.
 
 #include "MulExport.h"
 
-#include "VoiceMasks.h"    // parvati::popcount8 (bitmask slot counting)
+#include "VoiceMasks.h"    // hellcat::popcount8 (bitmask slot counting)
 
 #include <algorithm>
 #include <string>
 
-namespace parvati::mul_export
+namespace hellcat::mul_export
 {
 namespace
 {
@@ -308,4 +308,4 @@ std::string summarize (const Setup& s, Strategy strategy)
     return out;
 }
 
-}  // namespace parvati::mul_export
+}  // namespace hellcat::mul_export

@@ -123,7 +123,7 @@ void FrameTransformation::SetPhases(
   uint32_t* synthesis_phase = (uint32_t*) &destination[fft_size_ >> 1];
   for (int32_t i = 0; i < size_; ++i) {
     synthesis_phase[i] = phases_[i];
-    // Parvati memory-safety fix: the scaled delta can leave the uint16 range
+    // Hellcat memory-safety fix: the scaled delta can leave the uint16 range
     // (a direct float->uint16_t conversion of e.g. 99081.2 is UB). Route
     // through int32_t (defined for every finite value in range) then wrap on
     // the uint16_t accumulation — the mod-2^16 phase arithmetic upstream

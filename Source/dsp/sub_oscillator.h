@@ -13,8 +13,8 @@
 // members. The synthesis algorithm is otherwise byte-for-byte identical
 // (integer 8-bit, centred at 128).
 
-#ifndef PARVATI_DSP_SUB_OSCILLATOR_H
-#define PARVATI_DSP_SUB_OSCILLATOR_H
+#ifndef HELLCAT_DSP_SUB_OSCILLATOR_H
+#define HELLCAT_DSP_SUB_OSCILLATOR_H
 
 #include <cstdint>
 
@@ -79,4 +79,4 @@ class SubOscillator {
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_SUB_OSCILLATOR_H
+#endif  // HELLCAT_DSP_SUB_OSCILLATOR_H

@@ -2,7 +2,7 @@
 // theme switch (the reported bug: "after changing the theme the preview no
 // longer updates for waveform preview").
 //
-// Drives the REAL theme path (ParvatiEditor::selectThemeForTest ->
+// Drives the REAL theme path (HellcatEditor::selectThemeForTest ->
 // ThemeManager::selectByName -> change broadcast -> applyAllColoursFromTheme)
 // and pins, for the osc waveform preview AND the LFO waveform preview:
 //   * the 30 Hz poll timer is still running after the switch,
@@ -44,10 +44,10 @@ TEST(theme_switch_preview_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     proc.syncAllParamsToEngine();
-    auto* ed = dynamic_cast<ParvatiEditor*> (proc.createEditor());
+    auto* ed = dynamic_cast<HellcatEditor*> (proc.createEditor());
     CHECK(ed != nullptr, "editor created");
     if (ed == nullptr)
         return false;

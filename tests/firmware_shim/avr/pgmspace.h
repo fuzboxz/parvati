@@ -1,5 +1,5 @@
 // Desktop shim: AVR pgmspace compatibility for the vendored Ambika firmware
-// (ambika_reference/) when compiled into the parvati_firmware_parity_test
+// (ambika_reference/) when compiled into the hellcat_firmware_parity_test
 // oracle. On AVR these macros/devices place data in flash and read it with
 // special instructions; on the desktop build everything is plain memory.
 // This header SHADOWS the real <avr/pgmspace.h> via the shim include path

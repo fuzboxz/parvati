@@ -31,7 +31,7 @@
 //       constant with no modulation; departs from the baseline under a strong
 //       env-2 -> cutoff (filter_env) modulation
 //
-// Run: ./build_unified/parvati_unified_tests ui_telemetry_test
+// Run: ./build_unified/hellcat_unified_tests ui_telemetry_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -48,7 +48,7 @@
 #include "test_utils.h"              // shared setParam (host-path helper)
 
 #include "dsp/fixed_math.h"          // U14ShiftRight6 / S16ClipU14 (base mapping)
-#include "ui/ModTelemetryTypes.h"    // parvati::ModTelemetrySnapshot
+#include "ui/ModTelemetryTypes.h"    // hellcat::ModTelemetrySnapshot
 
 using ambika::dsp::S16ClipU14;        // the LoadSources base-mapping helpers
 using ambika::dsp::U14ShiftRight6;
@@ -75,7 +75,7 @@ juce::MidiMessage noteOnMsg()  { return juce::MidiMessage::noteOn  (1, 60, 0.9f)
 juce::MidiMessage noteOffMsg() { return juce::MidiMessage::noteOff (1, 60, 0.0f); }
 
 // One valid read (fails the check on an unexpected invalid frame).
-bool readSnap (ParvatiAudioProcessor& proc, parvati::ModTelemetrySnapshot& snap, const char* msg)
+bool readSnap (HellcatAudioProcessor& proc, hellcat::ModTelemetrySnapshot& snap, const char* msg)
 {
     const bool ok = proc.getEngine().readUiTelemetry (snap);
     check (ok, msg);
@@ -88,13 +88,13 @@ TEST(ui_telemetry_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    constexpr int kLen  = parvati::ModTelemetrySnapshot::kHistoryLen;
+    constexpr int kLen  = hellcat::ModTelemetrySnapshot::kHistoryLen;
     constexpr int kLfo1 = 3;   // MOD_SRC_LFO_1 (enum order in dsp/patch.h)
 
     // =========================================================================
     std::printf ("[1] History always scrolls: zero buffer at start, live while held\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         // Free-running LFO 1, rate byte 60 ~= 1.17 s triangle (lut index 45 ->
@@ -104,7 +104,7 @@ TEST(ui_telemetry_test)
         proc.syncAllParamsToEngine();
         eng.setUiTelemetryPart (0);
         {
-            parvati::ModTelemetrySnapshot s2;
+            hellcat::ModTelemetrySnapshot s2;
             check (! eng.readUiTelemetry (s2),
                    "[1] invalid until the first render services the tracked part");
         }
@@ -115,7 +115,7 @@ TEST(ui_telemetry_test)
         // scroll; a per-voice modulator that is not running = zero). The
         // constants keep their literal values (a constant's state is its
         // value) — the frame is not misindexed.
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
         renderBlocks (proc, blocksForMs (300.0), nullptr, kBlock);        // idle: zero rows append
         readSnap (proc, snap, "[1] frame valid while idle (pre-note)");
         check (snap.historyCount > 0, "[1] history populates BEFORE any note (zero buffer start)");
@@ -146,7 +146,7 @@ TEST(ui_telemetry_test)
         check (snap.historyCount == kLen, "[1] history saturates at kHistoryLen");
 
         // The NEWEST tail must move between reads ~0.21 s apart (the LFO swept).
-        parvati::ModTelemetrySnapshot a, b;
+        hellcat::ModTelemetrySnapshot a, b;
         eng.readUiTelemetry (a);
         renderBlocks (proc, 20, nullptr, kBlock);
         eng.readUiTelemetry (b);
@@ -204,7 +204,7 @@ TEST(ui_telemetry_test)
         eng.resetUiTelemetry();
         check (eng.uiTelemetryEpoch() == e0 + 1, "[3] epoch bumps on reset");
         {
-            parvati::ModTelemetrySnapshot s2;
+            hellcat::ModTelemetrySnapshot s2;
             check (! eng.readUiTelemetry (s2),
                    "[3] read invalid immediately after reset (stale epoch, pre-service)");
         }
@@ -233,7 +233,7 @@ TEST(ui_telemetry_test)
         std::printf ("[4] Part tracking\n");
         eng.setUiTelemetryPart (1);                      // Part 1: no voices (default single-part)
         {
-            parvati::ModTelemetrySnapshot s2;
+            hellcat::ModTelemetrySnapshot s2;
             check (! eng.readUiTelemetry (s2), "[4] invalid until serviced after a part switch");
         }
         renderBlocks (proc, 2, nullptr, kBlock);
@@ -252,7 +252,7 @@ TEST(ui_telemetry_test)
     // =========================================================================
     std::printf ("[5] Envelope stage walk (Env 3, long attack)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         // attack 80 ~= 1.81 s, decay 50 ~= 0.41 s, sustain 100 (target 200),
@@ -265,7 +265,7 @@ TEST(ui_telemetry_test)
         eng.setUiTelemetryPart (0);
         renderBlocks (proc, 2, nullptr, kBlock);                          // part service
 
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
         const auto on = noteOnMsg();
         const auto off = noteOffMsg();
 
@@ -313,7 +313,7 @@ TEST(ui_telemetry_test)
     // =========================================================================
     std::printf ("[6] Effective filter values\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         // Kill the init patch's HARDCODED env-2 -> cutoff amount (filter_env
@@ -338,7 +338,7 @@ TEST(ui_telemetry_test)
         renderBlocks (proc, 3, &on, kBlock);
         renderBlocks (proc, blocksForMs (1000.0), nullptr, kBlock);       // env 2 settled at sustain (amount 0)
 
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
         readSnap (proc, snap, "[6] valid while held");
         check (snap.voiceActive, "[6] voiceActive while held");
         {
@@ -353,7 +353,7 @@ TEST(ui_telemetry_test)
         for (int i = 0; i < 20; ++i)
         {
             renderBlocks (proc, 2, nullptr, kBlock);
-            parvati::ModTelemetrySnapshot s2;
+            hellcat::ModTelemetrySnapshot s2;
             if (! eng.readUiTelemetry (s2) || s2.effCutoff != expected)
                 constant = false;
         }
@@ -362,7 +362,7 @@ TEST(ui_telemetry_test)
         // Strong env-2 -> cutoff (the firmware "filter envelope" path): with
         // filter_env 63 and env2 sustain 100 the 14-bit sum clips, so the live
         // byte departs from the baseline by a wide margin while held.
-        ParvatiAudioProcessor proc2;
+        HellcatAudioProcessor proc2;
         proc2.prepareToPlay (kRate, kBlock);
         auto& eng2 = proc2.getEngine();
         setParam (proc2, "filter_env", 63);
@@ -374,7 +374,7 @@ TEST(ui_telemetry_test)
         renderBlocks (proc2, 3, &on, kBlock);
         renderBlocks (proc2, blocksForMs (1000.0), nullptr, kBlock);      // env 2 rests at its sustain
 
-        parvati::ModTelemetrySnapshot snap2;
+        hellcat::ModTelemetrySnapshot snap2;
         readSnap (proc2, snap2, "[6] valid (modulated patch) while held");
         check (snap2.effCutoff > expected + 40,
                "[6] effCutoff departs from the baseline under env-2 -> cutoff");
@@ -390,7 +390,7 @@ TEST(ui_telemetry_test)
         // mid-hold (or any indexing bug interleaves ring entries), the ENV row
         // jumps around and the pill strip reads as noise ("way too jumpy to be
         // true with slow envelopes" — 2026-08-21).
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         setParam (proc, "env1_attack", 127);   // byte 127 ~= slowest attack
         proc.syncAllParamsToEngine();
@@ -398,7 +398,7 @@ TEST(ui_telemetry_test)
         const auto on = noteOnMsg();
         renderBlocks (proc, blocksForMs (2500.0), &on, kBlock);   // ~2.5 s INTO the attack
 
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
         if (readSnap (proc, snap, "[7] valid while the slow attack runs"))
         {
             const uint8_t* env = snap.history + (size_t) 0 * kLen;   // MOD_SRC_ENV_1 == 0
@@ -447,7 +447,7 @@ TEST(ui_telemetry_test)
             const auto on2 = juce::MidiMessage::noteOn (1, 62, 0.9f);
             renderBlocks (proc, blocksForMs (1500.0), &on2, kBlock);
             {
-                parvati::ModTelemetrySnapshot s3;
+                hellcat::ModTelemetrySnapshot s3;
                 if (readSnap (proc, s3, "[7] valid after the re-strike"))
                 {
                     const uint8_t* e2 = s3.history + 0 * kLen;
@@ -476,7 +476,7 @@ TEST(ui_telemetry_test)
         // (b) LFO animates while held, (c) LFO falls to zero after release and
         // STAYS zero while idle, (d) a controller (mod wheel, CC1) moved while
         // IDLE shows on the WHEEL strip while the LFO strip is zero.
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         setParam (proc, "env1_lfo_rate", 60);          // free-running LFO 1
@@ -484,7 +484,7 @@ TEST(ui_telemetry_test)
         eng.setUiTelemetryPart (0);
         renderBlocks (proc, 2, nullptr, kBlock);                          // service the tracked part
 
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
         constexpr int kWheel = 17;                       // MOD_SRC_WHEEL
 
         // (a) zero buffer at start: history grows while idle, all values 0.
@@ -559,14 +559,14 @@ TEST(ui_telemetry_test)
         // part's voice table. Pins: rest == 128 with NO note ever played, a
         // wheel move while IDLE tracks immediately (both directions), and a
         // telemetry wipe (the patch-load seam) does NOT resurrect the zero.
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& eng = proc.getEngine();
         eng.setUiTelemetryPart (0);
         renderBlocks (proc, 2, nullptr, kBlock);                          // service the tracked part
 
         constexpr int kPitchBend = 16;                   // MOD_SRC_PITCH_BEND
-        parvati::ModTelemetrySnapshot snap;
+        hellcat::ModTelemetrySnapshot snap;
 
         // (a) rest, no note ever: the strip AND the current source read MID.
         renderBlocks (proc, blocksForMs (250.0), nullptr, kBlock);

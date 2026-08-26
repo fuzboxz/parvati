@@ -1,10 +1,10 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Ambika .PRO patch-file support. Ambika stores programs as RIFF "MBKS"
 // containers (see ambika_reference/controller/storage.cc): a `name` chunk +
 // `obj` chunks, each carrying a 4-byte type prefix followed by a raw struct
 // (Patch = 112 bytes, PartData = 84 bytes). This parses them into plain byte
-// arrays that the ParvatiAudioProcessor can load straight into the APVTS bridge.
+// arrays that the HellcatAudioProcessor can load straight into the APVTS bridge.
 
 #pragma once
 

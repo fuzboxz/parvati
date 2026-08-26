@@ -1,6 +1,6 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
-// Chrome (UI chrome) translations for the Parvati editor. Only the editor
+// Chrome (UI chrome) translations for the Hellcat editor. Only the editor
 // chrome — top-bar buttons, settings labels, tab names, page headings — is
 // localised. Parameter NAMES are Ambika hardware terms and are intentionally
 // NOT translated (they stay raw in every language). English is the identity

@@ -1,10 +1,10 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ChromeRule — the 1px full-width separator rules delimiting the chrome bands
 // (below the header / above the status strip / above the on-screen keyboard /
-// above the central mod-pill bar). Shared by ParvatiEditor and the
+// above the central mod-pill bar). Shared by HellcatEditor and the
 // Synth/FxWorkspace middle seams so every rule in the UI is ONE family: same
-// colour resolution (the active ParvatiTheme's textSecondary via the inherited
+// colour resolution (the active HellcatTheme's textSecondary via the inherited
 // L&F), same 1px rule + ~5px soft depth falloff.
 //
 // A dedicated NON-INTERACTIVE child, not a stroke in a paint(): children
@@ -24,9 +24,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ParvatiLookAndFeel.h"
+#include "HellcatLookAndFeel.h"
 
-namespace parvati
+namespace hellcat
 {
 // The depth-falloff height beside every rule (bounds reserve 1 + this).
 constexpr int kRuleShadowH = 5;
@@ -53,7 +53,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const ParvatiTheme* t = parvati::themeFor (*this);
+        const HellcatTheme* t = hellcat::themeFor (*this);
         const juce::Colour rule (t != nullptr ? t->textSecondary
                                               : juce::Colours::darkgrey);
         constexpr int kShadowH = kRuleShadowH;
@@ -98,4 +98,4 @@ private:
     bool dark_;
     bool strongestAtLine_;
 };
-}  // namespace parvati
+}  // namespace hellcat

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1PlateReverb — FV-1 hardware-emulation "Sparse Digital Plate Reverb"
 // (Schroeder/Moorer topology): predelay -> four parallel lowpass-comb filters ->
@@ -17,15 +17,15 @@
 //     0..15 samples (the short AP1 line clamps its swing to 14 — capacity
 //     guard; read pointers sweep fractionally via readFrac).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1PLATEREVERB_H
-#define PARVATI_DSP_FX_FV1_FV1PLATEREVERB_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1PLATEREVERB_H
+#define HELLCAT_DSP_FX_FV1_FV1PLATEREVERB_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1Engine.h"
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1PlateReverb : public Fv1FxProcessor
@@ -89,6 +89,6 @@ public:
                                         + kCombCap3 + kApCap0 + kApCap1;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1PLATEREVERB_H
+#endif // HELLCAT_DSP_FX_FV1_FV1PLATEREVERB_H

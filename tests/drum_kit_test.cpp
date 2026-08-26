@@ -1,5 +1,5 @@
 // Drum Kit (GM) template test — verifies the shipped multi preset:
-//   * loads via the real .parvati load path and re-infers as the built-in
+//   * loads via the real .yml load path and re-infers as the built-in
 //     Drum Kit ARRANGEMENT (the Patch page shows "Drum Kit", not "Custom"),
 //   * each GM note routes to its own Part (single-note keyzones, Omni channel),
 //   * every part carries its name + exactly 1 MONO voice slot (the built-in
@@ -35,7 +35,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -46,7 +46,7 @@ void renderIdle (ParvatiAudioProcessor& p, int blocks)
     }
 }
 
-float blockPeak (ParvatiAudioProcessor& p, juce::MidiBuffer& midi)
+float blockPeak (HellcatAudioProcessor& p, juce::MidiBuffer& midi)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -80,18 +80,18 @@ TEST(drum_kit_test)
     std::printf ("DRUM KIT TEST\n");
 
     const juce::File tmpl = juce::File::getCurrentWorkingDirectory()
-                                .getChildFile ("presets/TEMPLATES/Drum Kit (GM).parvati");
+                                .getChildFile ("presets/TEMPLATES/Drum Kit (GM).yml");
     if (! tmpl.existsAsFile())
     {
-        std::printf ("  FAIL: template not found (run parvati_gen_templates first): %s\n",
+        std::printf ("  FAIL: template not found (run hellcat_gen_templates first): %s\n",
                      tmpl.getFullPathName().toRawUTF8());
         return false;
     }
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     renderIdle (proc, 2);
-    check (proc.loadParvatiMultiFile (tmpl), "Drum Kit (GM).parvati loads");
+    check (proc.loadHellcatMultiFile (tmpl), "Drum Kit (GM).yml loads");
     SynthEngine& engine = proc.getEngine();
     renderIdle (proc, 2);
 

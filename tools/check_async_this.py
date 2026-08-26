@@ -294,21 +294,21 @@ def load_allowlist() -> set:
 
 def self_test() -> bool:
     bad = (
-        "void f (ParvatiEditor& ed) {\n"
+        "void f (HellcatEditor& ed) {\n"
         "    juce::PopupMenu m;\n"
         "    m.showMenuAsync (juce::PopupMenu::Options(), [this] (int r) { onMenuDone (r); });\n"
         "}\n"
     )
     good_capture = (
-        "void f (ParvatiEditor& ed) {\n"
-        "    juce::Component::SafePointer<ParvatiEditor> safe (this);\n"
+        "void f (HellcatEditor& ed) {\n"
+        "    juce::Component::SafePointer<HellcatEditor> safe (this);\n"
         "    juce::PopupMenu m;\n"
         "    m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int) { if (safe != nullptr) safe->done(); });\n"
         "}\n"
     )
     good_window = (
-        "void f (ParvatiEditor& ed) {\n"
-        "    juce::Component::SafePointer<ParvatiEditor> safe (this);\n"
+        "void f (HellcatEditor& ed) {\n"
+        "    juce::Component::SafePointer<HellcatEditor> safe (this);\n"
         "    juce::PopupMenu m;\n"
         "    m.addItem (TRANS (\"x\"), [this] { doThing (); });\n"
         "}\n"

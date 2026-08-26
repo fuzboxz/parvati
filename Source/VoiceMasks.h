@@ -1,16 +1,16 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // VoiceMasks — shared helpers over the 8-bit voicecard bitmasks (pure,
 // dependency-free). The slots model derives a Part's voice count as
 // popcount(mask), and the .MUL export solver counts solved cards the same
 // way. One helper here keeps the engine and the solver from drifting.
 
-#ifndef PARVATI_VOICE_MASKS_H_
-#define PARVATI_VOICE_MASKS_H_
+#ifndef HELLCAT_VOICE_MASKS_H_
+#define HELLCAT_VOICE_MASKS_H_
 
 #include <cstdint>
 
-namespace parvati
+namespace hellcat
 {
 
 // Count the set bits of an 8-bit voicecard bitmask.
@@ -21,6 +21,6 @@ inline int popcount8 (uint8_t x) noexcept
     return n;
 }
 
-}  // namespace parvati
+}  // namespace hellcat
 
-#endif  // PARVATI_VOICE_MASKS_H_
+#endif  // HELLCAT_VOICE_MASKS_H_

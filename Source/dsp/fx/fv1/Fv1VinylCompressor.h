@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1VinylCompressor — Lo-Fi Vinyl Compressor, part of the FV-1 hardware-
 // emulation FX family. Tuned after the Roland SP-303/SP-404 "Vinyl Sim" COMP
@@ -17,14 +17,14 @@
 // JUCE-FREE: only the FV-1/framework headers + <cstdint>, so it compiles
 // standalone in seconds for its unit test, exactly like the rest of the family.
 
-#ifndef PARVATI_DSP_FX_FV1_FV1VINYLCOMPRESSOR_H
-#define PARVATI_DSP_FX_FV1_FV1VINYLCOMPRESSOR_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1VINYLCOMPRESSOR_H
+#define HELLCAT_DSP_FX_FV1_FV1VINYLCOMPRESSOR_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // Params (generic 0..1 slot params; param[4] is the chain dry/wet, never read):
@@ -93,6 +93,6 @@ private:
     float tickEnv_     = 0.0f;   // current tick amplitude (decays 0.55/sample)
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1VINYLCOMPRESSOR_H
+#endif // HELLCAT_DSP_FX_FV1_FV1VINYLCOMPRESSOR_H

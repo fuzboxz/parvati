@@ -1,20 +1,20 @@
 // Deterministic tooling T2 — SHADOW-STATE DEFAULTS PROPERTY.
 //
 // Property under test (the "stale shadow state survives a load" class this
-// exists to pin): loading a DEFAULTS-ONLY .parvati multi must reset EVERY
+// exists to pin): loading a DEFAULTS-ONLY .yml multi must reset EVERY
 // piece of per-part shadow state — the previous session's raga presets,
 // part names/aliases, staged FX slot types, voice slots, routing and
 // the mirrored PartData bytes must all return to the fresh-engine values.
 // The file is the whole truth; nothing the user did before the load may leak
 // through. Historical instances of the class:
 //   - part names ("Kick") survived .MUL/.PRO loads that replaced the content;
-//   - .parvati multi loads wrote FX slot TYPES into fxState but never staged
+//   - .yml multi loads wrote FX slot TYPES into fxState but never staged
 //     them into the DSP chains (loaded FX silently absent / previous effect);
 //   - a defaults file must also restore voice slots, channel, key zone and
 //     PartData bytes 3 (spread) / 4 (raga) / 15 (polyphony) per part.
 //
 // Harness: proc A (fresh, prepareToPlay) saves a defaults multi through the
-// REAL path (saveParvatiMultiFile). Proc D is POLLUTED on every mirrored
+// REAL path (saveHellcatMultiFile). Proc D is POLLUTED on every mirrored
 // surface (raga presets on parts 0+3, names on all parts, a staged
 // non-None FX type on part 2 slot 0, arp config, slots/channel/zone on part
 // 1, bytes 3/4/15 on parts 1+4). CANARY: the diff collector must REPORT the
@@ -29,7 +29,7 @@
 //
 // Deterministic: fixed pollution values (chosen against the fresh-engine
 // values read at runtime, never wall-clock/random), a handful of blocks.
-// Run: ./build_unified/parvati_unified_tests shadow_state_test
+// Run: ./build_unified/hellcat_unified_tests shadow_state_test
 
 #include <cstdint>
 #include "unified_test_runner.h"
@@ -73,8 +73,8 @@ juce::String J (int v) { return juce::String (v); }
 // by category ("name", "tune", "fx", "slots", "ch", "zone", "spread", "raga",
 // "poly") so the canary can prove EACH category is observable. Compares two
 // processors' ENGINES only (the file-load contract ends at engine storage).
-std::vector<juce::String> collectDiffs (ParvatiAudioProcessor& a,
-                                        ParvatiAudioProcessor& b)
+std::vector<juce::String> collectDiffs (HellcatAudioProcessor& a,
+                                        HellcatAudioProcessor& b)
 {
     SynthEngine& ea = a.getEngine();
     SynthEngine& eb = b.getEngine();
@@ -137,7 +137,7 @@ int countCategory (const std::vector<juce::String>& diffs, const char* cat)
 // guaranteed different from the fresh-engine state (byte values are chosen
 // against the reference's current value, so no default can collide). Uses
 // only public message-thread setters — the exact paths a user session drives.
-void pollute (ParvatiAudioProcessor& proc)
+void pollute (HellcatAudioProcessor& proc)
 {
     SynthEngine& e = proc.getEngine();
     const int nParts = SynthEngine::getNumParts();
@@ -188,25 +188,25 @@ TEST(shadow_state_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    std::printf ("=== Parvati shadow-state defaults property ===\n");
+    std::printf ("=== Hellcat shadow-state defaults property ===\n");
 
     // ------------------------------------------------------------------
     // [0] Build the defaults file through the REAL save path (proc A fresh).
     // ------------------------------------------------------------------
-    std::printf ("[0] save a defaults-only .parvati multi from a fresh proc\n");
+    std::printf ("[0] save a defaults-only .yml multi from a fresh proc\n");
     juce::File defaultsFile;
     {
-        ParvatiAudioProcessor a;
+        HellcatAudioProcessor a;
         a.prepareToPlay (kRate, kBlock);
         defaultsFile = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                           .getChildFile ("parvati_shadow_defaults.parvati");
+                           .getChildFile ("hellcat_shadow_defaults.yml");
         (void) defaultsFile.deleteFile();
-        const bool saved = a.saveParvatiMultiFile (defaultsFile);
+        const bool saved = a.saveHellcatMultiFile (defaultsFile);
         check (saved && defaultsFile.existsAsFile(), "defaults multi saved via the real path");
     }
 
     // Reference: a fresh processor (what the polluted proc must become).
-    ParvatiAudioProcessor c;
+    HellcatAudioProcessor c;
     c.prepareToPlay (kRate, kBlock);
     renderBlocks (c, 1);
 
@@ -217,7 +217,7 @@ TEST(shadow_state_test)
     // ------------------------------------------------------------------
     std::printf ("\n[1] canary: polluted engine (no load) diffs a fresh one\n");
     {
-        ParvatiAudioProcessor d;
+        HellcatAudioProcessor d;
         d.prepareToPlay (kRate, kBlock);
         renderBlocks (d, 1);
         pollute (d);
@@ -253,12 +253,12 @@ TEST(shadow_state_test)
     // ------------------------------------------------------------------
     std::printf ("\n[2] defaults load resets every polluted surface\n");
     {
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         b.prepareToPlay (kRate, kBlock);
         renderBlocks (b, 1);
         pollute (b);
 
-        const bool loaded = b.loadParvatiMultiFile (defaultsFile);
+        const bool loaded = b.loadHellcatMultiFile (defaultsFile);
         check (loaded, "defaults multi loads into the polluted proc");
         renderBlocks (b, 4);   // flush: consume staged FX swaps + dirty flags
 

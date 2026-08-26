@@ -1,12 +1,12 @@
 // tools/menu_shots.cpp
 //
-// Renders Parvati's right-click / popup menus to PNGs — exactly as they appear
+// Renders Hellcat's right-click / popup menus to PNGs — exactly as they appear
 // (themed colours + active font) — so they can be fed to an LLM for review.
 //
 // Why a dedicated tool: juce::PopupMenu shows itself as a live OS window, and
 // its item list is private API, so it cannot be captured offscreen directly.
 // Instead we reconstruct each menu's items and paint them through the SAME
-// ParvatiLookAndFeel the live menu uses (the editor's), calling the public L&F
+// HellcatLookAndFeel the live menu uses (the editor's), calling the public L&F
 // hooks the live PopupMenu calls: drawPopupMenuBackground + drawPopupMenuItem +
 // getIdealPopupMenuItemSize + getPopupMenuFont. The result is byte-faithful to
 // the shipped appearance (Carbon theme, system sans-serif), at 2x for crispness.
@@ -14,8 +14,8 @@
 // Each menu is rendered in two states: resting (no highlight) and with the first
 // item highlighted, so both the text colour and the accent highlight are visible.
 //
-// Build: cmake --build build_release --target parvati_menu_shots
-// Run:   ./build_release/parvati_menu_shots [outputDir] [scale]   (defaults: ./screens/menus, 2)
+// Build: cmake --build build_release --target hellcat_menu_shots
+// Run:   ./build_release/hellcat_menu_shots [outputDir] [scale]   (defaults: ./screens/menus, 2)
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -23,7 +23,7 @@
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
-#include "ui/ParvatiLookAndFeel.h"
+#include "ui/HellcatLookAndFeel.h"
 
 #include <cstdio>
 #include <string>
@@ -40,7 +40,7 @@ struct MenuSpec
 
 // Paint a single themed menu into an Image at @p scale and write it to @p file.
 // @p highlightIdx is the 0-based item to show highlighted, or -1 for none.
-void renderMenu (ParvatiLookAndFeel& lnf,
+void renderMenu (HellcatLookAndFeel& lnf,
                  const juce::String& fileStem,
                  const std::vector<juce::String>& items,
                  int highlightIdx,
@@ -122,7 +122,7 @@ int main (int argc, char** argv)
     const File outDir { String { outDirArg } };
     outDir.createDirectory();
 
-    ParvatiAudioProcessor processor;
+    HellcatAudioProcessor processor;
     processor.prepareToPlay (48000.0, 256);
 
     AudioProcessorEditor* ed = processor.createEditor();
@@ -132,10 +132,10 @@ int main (int argc, char** argv)
         return 1;
     }
 
-    auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&ed->getLookAndFeel());
+    auto* lnf = dynamic_cast<HellcatLookAndFeel*> (&ed->getLookAndFeel());
     if (lnf == nullptr)
     {
-        std::printf ("FAIL: editor LookAndFeel is not a ParvatiLookAndFeel\n");
+        std::printf ("FAIL: editor LookAndFeel is not a HellcatLookAndFeel\n");
         delete ed;
         return 1;
     }
@@ -146,7 +146,7 @@ int main (int argc, char** argv)
     // ParamControl::showContextMenu + the Save format menu in PluginEditor).
     const std::vector<MenuSpec> menus {
         { "01_context_menu",            { TRANS ("Reset to default"), TRANS ("Randomize") } },
-        { "03_save_format",             { TRANS ("Ambika Patch (.PRO)"), TRANS ("Parvati Patch (.parvati)") } },
+        { "03_save_format",             { TRANS ("Ambika Patch (.PRO)"), TRANS ("Hellcat Patch (.yml)") } },
     };
 
     for (const auto& m : menus)

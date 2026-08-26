@@ -9,7 +9,7 @@
 // namespace to talk to it.
 //
 // Like shims.cc, this TU deliberately includes ONLY shim + firmware headers
-// — never any Parvati headers — so the oracle stays an independent
+// — never any Hellcat headers — so the oracle stays an independent
 // implementation (no shared code with the port under test).
 #include "firmware_shim/voicecard_oracle.h"
 

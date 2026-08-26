@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SynthWorkspace.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SynthWorkspace.h.
 
 #include "SynthWorkspace.h"
 
-#include "ChromeRule.h"         // parvati::ChromeRule (the bottom-row seam rule)
+#include "ChromeRule.h"         // hellcat::ChromeRule (the bottom-row seam rule)
 #include "ModMatrixView.h"
 #include "ParamPage.h"        // ParamPage complete type
-#include "ParvatiLookAndFeel.h"   // parvati::isY2kTheme / themeFor (the Y2K matrix gap)
+#include "HellcatLookAndFeel.h"   // hellcat::isY2kTheme / themeFor (the Y2K matrix gap)
 
 //==============================================================================
 SynthWorkspace::SynthWorkspace (ThemeManager& themeManager)
@@ -17,7 +17,7 @@ SynthWorkspace::SynthWorkspace (ThemeManager& themeManager)
     // panel), so the bottom row reads raised. SYNTH ONLY (the FX workspace
     // keeps no seam) and on EVERY theme; same ChromeRule family as the
     // editor chrome rules.
-    bottomRule_ = std::make_unique<parvati::ChromeRule> (false, true, true);
+    bottomRule_ = std::make_unique<hellcat::ChromeRule> (false, true, true);
     addAndMakeVisible (*bottomRule_);
 }
 
@@ -157,8 +157,8 @@ void SynthWorkspace::resized()
     // children (the editor host + the matrix view are added later).
     if (bottomRule_ != nullptr)
     {
-        bottomRule_->setBounds (bottomRow.getX(), bottomRow.getY() - parvati::kRuleShadowH,
-                                bottomRow.getWidth(), 1 + parvati::kRuleShadowH);
+        bottomRule_->setBounds (bottomRow.getX(), bottomRow.getY() - hellcat::kRuleShadowH,
+                                bottomRow.getWidth(), 1 + hellcat::kRuleShadowH);
         bottomRule_->toFront (false);
     }
 
@@ -174,7 +174,7 @@ void SynthWorkspace::applyY2kMatrixGap()
 {
     if (modMatrixView_ == nullptr || matrixFlushBounds_.isEmpty())
         return;
-    if (parvati::isY2kTheme (parvati::themeFor (*this)))
+    if (hellcat::isY2kTheme (hellcat::themeFor (*this)))
         modMatrixView_->setBounds (matrixFlushBounds_.reduced (6));
     else
         modMatrixView_->setBounds (matrixFlushBounds_);

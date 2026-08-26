@@ -124,7 +124,7 @@ audio thread                       message thread
 --------------                     ------------------------------------------
 renderPartFx (per part,            LiveFeedbackHub (editor-owned juce::Timer
   per internal block)                 at ui_refresh_hz) -> engine.readUiTelemetry()
-    |                                   | cached parvati::ModTelemetrySnapshot
+    |                                   | cached hellcat::ModTelemetrySnapshot
     +-- decimated history append        +-- CentralModBar::timerCallback (bar rate)
     +-- per-block snapshot write        |     per-pill diff gate -> strip repaint(rect)
         (seqlock, ~4 KB)                +-- EnvelopeDisplay::timerCallback (30 Hz)
@@ -143,7 +143,7 @@ renderPartFx (per part,            LiveFeedbackHub (editor-owned juce::Timer
 
 ## Shared types — `Source/ui/ModTelemetryTypes.h` (WRITTEN, do not modify)
 
-`parvati::ModTelemetrySnapshot` (trivially copyable, dependency-light):
+`hellcat::ModTelemetrySnapshot` (trivially copyable, dependency-light):
 
 - `kNumSources = 32`, `kHistoryLen = 256` (doubled from 128 on 2026-08-22
   user feedback — strips scrolled visibly faster than the previews; the
@@ -161,7 +161,7 @@ renderPartFx (per part,            LiveFeedbackHub (editor-owned juce::Timer
 - `effCutoff`, `effResonance` (uint16 0..255 — effective,
   modulation-applied), `filterMode` (0..3), `voiceActive`.
 
-`parvati::LiveEnvStage` and `parvati::LiveFilterValues` — the small structs
+`hellcat::LiveEnvStage` and `hellcat::LiveFilterValues` — the small structs
 that the display components take (this avoids cross-includes between hub and
 components).
 
@@ -170,7 +170,7 @@ components).
 Public API (implemented in SynthEngine.h/.cpp):
 
 ```cpp
-bool     readUiTelemetry (parvati::ModTelemetrySnapshot& out) const; // false = torn/stale
+bool     readUiTelemetry (hellcat::ModTelemetrySnapshot& out) const; // false = torn/stale
 void     resetUiTelemetry();          // message thread: bump epoch + request clear
 uint32_t uiTelemetryEpoch() const noexcept;
 void     setUiTelemetryPart (int part); // message thread: track this part (clears on change)
@@ -208,14 +208,14 @@ Write path (audio thread, inside `renderPartFx`):
   bipolar sources = `MOD_SRC_LFO_1..4`, `MOD_SRC_PITCH_BEND`,
   `MOD_SRC_NOTE`; every other source is unipolar (0 = floor). UI draws
   bipolar around a midline. (The informational constant lives in
-  ModTelemetryTypes.h: `parvati::isBipolarModSource(int)`.)
+  ModTelemetryTypes.h: `hellcat::isBipolarModSource(int)`.)
 
 ## CentralModBar contract (modbar task)
 
 - `CentralModBar` privately inherits `juce::Timer`.
 - New API:
   ```cpp
-  void setTelemetryProvider (std::function<bool(parvati::ModTelemetrySnapshot&)> fetch);
+  void setTelemetryProvider (std::function<bool(hellcat::ModTelemetrySnapshot&)> fetch);
   void setTelemetryRateHz (int hz);       // clamps 5..60; 0 disables; restarts timer
   int  telemetryRateHz() const noexcept;
   void clearTelemetry();                  // hide all strips (invalid snapshot)
@@ -243,7 +243,7 @@ Write path (audio thread, inside `renderPartFx`):
 
 - New API:
   ```cpp
-  void setLiveStageProvider (std::function<parvati::LiveEnvStage()> p);
+  void setLiveStageProvider (std::function<hellcat::LiveEnvStage()> p);
   // TEST-ONLY:
   bool  liveMarkerVisibleForTest() const noexcept;
   float liveMarkerXForTest() const noexcept;   // normalized 0..1
@@ -265,7 +265,7 @@ Write path (audio thread, inside `renderPartFx`):
 
 - New API:
   ```cpp
-  void setLiveValuesProvider (std::function<parvati::LiveFilterValues()> p);
+  void setLiveValuesProvider (std::function<hellcat::LiveFilterValues()> p);
   // TEST-ONLY:
   bool  liveCurveVisibleForTest() const noexcept;
   float liveCutoffXForTest() const noexcept;   // normalized 0..1
@@ -287,7 +287,7 @@ Write path (audio thread, inside `renderPartFx`):
 
 - New API:
   ```cpp
-  void setLiveValuesProvider (std::function<parvati::LiveOscValues()> p);
+  void setLiveValuesProvider (std::function<hellcat::LiveOscValues()> p);
   // TEST-ONLY:
   bool liveOverlayActiveForTest() const noexcept;
   ```
@@ -306,7 +306,7 @@ Write path (audio thread, inside `renderPartFx`):
 
 ## Settings + persistence (settings task)
 
-- `ParvatiAudioProcessor`: `int getUiRefreshHz() const` /
+- `HellcatAudioProcessor`: `int getUiRefreshHz() const` /
   `void setUiRefreshHz(int)` (clamp 5..60, default 30), guarded by
   `uiPrefsLock_`, persisted as `"ui_refresh_hz"` in getStateInformation /
   setStateInformation next to the other ui_* props (legacy states default
@@ -318,7 +318,7 @@ Write path (audio thread, inside `renderPartFx`):
 
 ## Editor wiring (wiring task — AFTER the above)
 
-- Editor owns `std::unique_ptr<parvati::LiveFeedbackHub> liveHub_`
+- Editor owns `std::unique_ptr<hellcat::LiveFeedbackHub> liveHub_`
   (Source/ui/LiveFeedbackHub.{h,cpp} — WRITTEN, do not modify) constructed
   with a fetcher bound to `engine.readUiTelemetry`.
 - Wire `setTelemetryProvider` on BOTH workspace bars (SynthWorkspace::modBar_
@@ -327,7 +327,7 @@ Write path (audio thread, inside `renderPartFx`):
 - Wire `setLiveStageProvider` on the three ADSR EnvelopeDisplays (Env 1/2/3)
   and `setLiveValuesProvider` on the FilterResponseDisplay, via the hub
   cache.
-- Apply the refresh rate: in `ParvatiEditor::timerCallback`, when
+- Apply the refresh rate: in `HellcatEditor::timerCallback`, when
   `processor.getUiRefreshHz()` differs from `lastAppliedRefreshHz_` →
   `liveHub_->setRateHz(hz)` + `modBar->setTelemetryRateHz(hz)` (both bars).
   Also apply once at editor construction. (This also covers the
@@ -343,7 +343,7 @@ Write path (audio thread, inside `renderPartFx`):
 ## Tests
 
 - `tests/ui_telemetry_test.cpp` (engine task; target
-  `parvati_ui_telemetry_test` registered in CMakeLists): drives the engine
+  `hellcat_ui_telemetry_test` registered in CMakeLists): drives the engine
   headless (copy the controller_mod_test harness idioms) and asserts —
   ALWAYS-ON contract (2026-08-21, replacing the old "populates only while a
   note sounds / frozen after release" semantics): history populates from a

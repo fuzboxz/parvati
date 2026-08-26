@@ -82,7 +82,7 @@ RT-safe and assume any thread. Most branches are (they stage atomics). Two are n
 - Reachable writers today:
   * MT: GUI arp/seq edits (setArpMode… setSequenceDataByte, SynthEngine.cpp:243–246;
     SynthEngine.h:363–369), file loads (stageArpSeqFromPartBytes, SynthEngine.cpp:248–265),
-    applyParvatiMulti (ParvatiPreset.cpp:558–585).
+    applyParvatiMulti (HellcatPreset.cpp:558–585).
   * AT: MIDI NRPN. `MidiParameterMap::initialise` explicitly maps arp_mode…arp_resolution to
     NRPN addresses 119–123 and seq data to 112+byteOffset (MidiParameterMap.cpp:227–244);
     `handleBuffer` runs in processBlock (PluginProcessor.cpp:187); `midi_nrpn_map[119..123]` is
@@ -147,13 +147,13 @@ RT-safe and assume any thread. Most branches are (they stage atomics). Two are n
   field debugging.
 
 ### 4.2 .parvati YAML format — good forward-compat mechanics, unguarded version
-- Unknown keys ignored (applyParvatiPatch/Multi skip unmapped IDs — ParvatiPreset.cpp:466–475,
-  530–533; tested parvati_preset_test.cpp:160–172). Escape/quoting round-trips (CHANGELOG:80–83;
-  unescapeQuoted ParvatiPreset.cpp:107–124). Legacy `voice_mode` option parsed-and-ignored
-  (ParvatiPreset.cpp:645–653) — correct pattern.
-- IMPROVEMENT-2: `version:` is emitted (kFormatVersion=1, ParvatiPreset.h:21–27) but NEVER read:
+- Unknown keys ignored (applyParvatiPatch/Multi skip unmapped IDs — HellcatPreset.cpp:466–475,
+  530–533; tested hellcat_preset_test.cpp:160–172). Escape/quoting round-trips (CHANGELOG:80–83;
+  unescapeQuoted HellcatPreset.cpp:107–124). Legacy `voice_mode` option parsed-and-ignored
+  (HellcatPreset.cpp:645–653) — correct pattern.
+- IMPROVEMENT-2: `version:` is emitted (kFormatVersion=1, HellcatPreset.h:21–27) but NEVER read:
   applyParvatiPatch/applyParvatiMulti/detectParvatiFormat ignore it entirely
-  (ParvatiPreset.cpp:455–517, 522–690, 696–711). Additive evolution is safe, but any future
+  (HellcatPreset.cpp:455–517, 522–690, 696–711). Additive evolution is safe, but any future
   semantic change would silently misload old builds / new files. Recommendation: reject or warn
   when `version > kFormatVersion`.
 
@@ -175,7 +175,7 @@ RT-safe and assume any thread. Most branches are (they stage atomics). Two are n
   so the parameter — and the top-bar combo bound via ComboBoxAttachment
   (PluginEditor.cpp:2312–2313) — still shows the previously selected part.
 - Contrast: `applyParvatiMulti` explicitly writes part_select before refreshing
-  (ParvatiPreset.cpp:680–684). The .MUL path forgot the equivalent.
+  (HellcatPreset.cpp:680–684). The .MUL path forgot the equivalent.
 - Effect (verified by code path): load a .MUL while on Part 3 → combo reads "Part 3", APVTS values
   show Part 0, and every knob edit routes to Part 0 (engine setters use the ENGINE's currentPart_).
   Clicking "Part 1" then hits the early-return `if (newPart == currentPart_) return;`
@@ -222,7 +222,7 @@ RT-safe and assume any thread. Most branches are (they stage atomics). Two are n
 
 ### 5.4 NOTE — capture paths can snapshot a torn frame
 - captureState (SynthEngine.cpp:370–446), partRaw in serializeParvatiMulti
-  (ParvatiPreset.cpp:300–368), and saveMultiFile (PluginProcessor.cpp:831–880) copy
+  (HellcatPreset.cpp:300–368), and saveMultiFile (PluginProcessor.cpp:831–880) copy
   patchBytes/partBytes/fxState with relaxed atomics and no acquire pairing against the
   frameDirty_/fxDirty_ release-stores. A save taken mid-knob-drag can serialize a mixed old/new
   frame (invisible on x86; observable on ARM/iOS weak ordering). Rare and self-healing on the next
@@ -275,7 +275,7 @@ Covered well:
   optional MIDI injection (concurrency_test.cpp [1]–[6]); TSAN/ASAN wiring documented
   (mt_harness.h:12–17).
 - Formats: .PRO/.MUL byte-exact round-trips vs vendored reference (roundtrip_test.cpp);
-  .parvati patch/multi round-trips + unknown-key tolerance (parvati_preset_test.cpp);
+  .parvati patch/multi round-trips + unknown-key tolerance (hellcat_preset_test.cpp);
   part-state across saves (partstate_test.cpp); MulExport strategy invariants
   (mul_strategies_test, export_fallback_test).
 NOT covered (each maps to a finding above):
@@ -301,11 +301,11 @@ Recommended supervisor commands (not run by this audit):
 |----|----------|----------|---------|
 | CRITICAL-1 | critical | PluginProcessor.cpp:319–353, 423–428, 532–624; ParameterLayout.cpp:536–553 | part_select automation runs onPartSelect on the render thread → ~250 ValueTree+UndoManager writes on RT + data race with the 50 Hz APVTS flush timer (AUv3/VST3 wrappers verified). |
 | IMPORTANT-1 | important | SynthEngine.h:269–311; MidiParameterMap.cpp:227–248, 305–343; PluginProcessor.cpp:187,54–58 | pendingConfig_ seqlock has reachable dual writers (MT GUI edit vs. AT NRPN/automation) → torn snapshot = the historical SIGBUS class. |
-| IMPORTANT-2 | important | PluginProcessor.cpp:793–795, 535–536, 552–554 | loadMultiFile leaves part_select param stale → UI shows old part, edits go to Part 0; .parvati path does it right (ParvatiPreset.cpp:680–684). |
+| IMPORTANT-2 | important | PluginProcessor.cpp:793–795, 535–536, 552–554 | loadMultiFile leaves part_select param stale → UI shows old part, edits go to Part 0; .parvati path does it right (HellcatPreset.cpp:680–684). |
 | IMPORTANT-3 | important | PluginProcessor.cpp:1070–1104 | "replaceState fires no parameterChanged" is false (verified vs JUCE 9) → re-entrant onPartSelect mid-redirect can clobber legacy restores; currentPart_ tracking depends on the accident. |
 | IMPORTANT-4 | important | SynthEngine.h:292–306 | readPendingConfig spins unbounded on the AT (comment claims bounded) → priority-inversion xrun window. |
-| IMPROVEMENT-1 | improvement | SynthEngine.cpp:370–446; ParvatiPreset.cpp:300–368; PluginProcessor.cpp:831–880 | Relaxed-atomic snapshot copies can tear mid-edit on ARM. |
-| IMPROVEMENT-2 | improvement | ParvatiPreset.cpp:455–517, 522–690, 696–711 | .parvati `version:` never checked on load. |
+| IMPROVEMENT-1 | improvement | SynthEngine.cpp:370–446; HellcatPreset.cpp:300–368; PluginProcessor.cpp:831–880 | Relaxed-atomic snapshot copies can tear mid-edit on ARM. |
+| IMPROVEMENT-2 | improvement | HellcatPreset.cpp:455–517, 522–690, 696–711 | .parvati `version:` never checked on load. |
 | IMPROVEMENT-3 | improvement | PluginProcessor.cpp:544–624; PluginProcessor.h:100–110 | Part switches flood the UndoManager (~250 undoable writes each). |
 | IMPROVEMENT-5 | improvement | PluginEditor.cpp:2985–2995, 3021 | Unconditional partCombo_.repaint() every timer tick. |
 | IMPROVEMENT-6 | improvement | SharedContainer.cpp/.mm; FactoryPresetInstaller.cpp:82–88 | Silent app-group fallback root-switch; per-process-only first-run lock (TEMPLATES sync transient gap). |

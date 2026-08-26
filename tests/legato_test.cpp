@@ -36,7 +36,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -48,7 +48,7 @@ void renderIdle (ParvatiAudioProcessor& p, int blocks)
 }
 
 // Render `blocks` of audio (no MIDI) and return the mono-sum peak amplitude.
-float renderMonoPeak (ParvatiAudioProcessor& p, int blocks)
+float renderMonoPeak (HellcatAudioProcessor& p, int blocks)
 {
     float peak = 0.0f;
     for (int i = 0; i < blocks; ++i)
@@ -68,7 +68,7 @@ float renderMonoPeak (ParvatiAudioProcessor& p, int blocks)
 // settled note is tiny (a ~260 Hz saw at ~0.3 amp slews ~0.01/sample), while
 // a resampler-FIFO discard restarts the interpolator cold — a time-skip
 // discontinuity on the order of the signal level itself.
-float renderMonoMaxSlew (ParvatiAudioProcessor& p, int blocks)
+float renderMonoMaxSlew (HellcatAudioProcessor& p, int blocks)
 {
     float maxDelta = 0.0f;
     float prev = 0.0f;
@@ -88,7 +88,7 @@ float renderMonoMaxSlew (ParvatiAudioProcessor& p, int blocks)
     return maxDelta;
 }
 
-void noteEvent (ParvatiAudioProcessor& p, const juce::MidiMessage& m)
+void noteEvent (HellcatAudioProcessor& p, const juce::MidiMessage& m)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -113,7 +113,7 @@ TEST(legato_test)
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
 
-    ParvatiAudioProcessor processor;
+    HellcatAudioProcessor processor;
     processor.prepareToPlay (48000.0, 256);
     processor.syncAllParamsToEngine();
 
@@ -175,7 +175,7 @@ TEST(legato_test)
     // keeps sounding through the transition.
     std::printf ("\n[2b] legato retrigger continuity (signal survives, bounded step)\n");
     {
-        ParvatiAudioProcessor p2;
+        HellcatAudioProcessor p2;
         p2.prepareToPlay (48000.0, 256);
         p2.syncAllParamsToEngine();
         p2.getApvts().getParameterAsValue ("part_polyphony") = 0.0f;   // MONO

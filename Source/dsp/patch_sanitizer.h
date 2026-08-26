@@ -3,7 +3,7 @@
 //
 // WHY: two load paths push file/host bytes straight into the engine's
 // patchBytes[112] / partBytes[84] with NO validation (the APVTS round-trip
-// paths — .PRO via loadProgramFromBytes, .parvati via descriptor decode —
+// paths — .PRO via loadProgramFromBytes, .yml via descriptor decode —
 // clamp by construction; these two do not):
 //   * .MUL multi loads      (PluginProcessor::loadMultiFile)
 //   * host-state blob resto (SynthEngine::restoreState — setStateInformation)
@@ -24,8 +24,8 @@
 // All bounds derive from the patch.h enums/constants, so they cannot drift
 // from the DSP definitions.
 
-#ifndef PARVATI_DSP_PATCH_SANITIZER_H_
-#define PARVATI_DSP_PATCH_SANITIZER_H_
+#ifndef HELLCAT_DSP_PATCH_SANITIZER_H_
+#define HELLCAT_DSP_PATCH_SANITIZER_H_
 
 #include <array>
 #include <cstddef>
@@ -208,10 +208,10 @@ constexpr const ArpSeqDomain& arpSeqDomain (ArpSeqField f)
 // The pattern and resolution rows index real DSP tables: pin their bounds
 // against the table sizes so a table edit fails at compile time.
 static_assert (arpSeqDomain (ArpSeqField::ArpPattern).hi + 1
-                   == sizeof (::parvati::kArpPatterns) / sizeof (::parvati::kArpPatterns[0]),
+                   == sizeof (::hellcat::kArpPatterns) / sizeof (::hellcat::kArpPatterns[0]),
                "arp pattern domain drifted from kArpPatterns (22 entries)");
 static_assert (arpSeqDomain (ArpSeqField::ArpResolution).hi + 1
-                   == sizeof (::parvati::kMidiClockTickPerStep) / sizeof (::parvati::kMidiClockTickPerStep[0]),
+                   == sizeof (::hellcat::kMidiClockTickPerStep) / sizeof (::hellcat::kMidiClockTickPerStep[0]),
                "arp resolution domain drifted from kMidiClockTickPerStep (15 entries)");
 
 // Sized so the array type itself enforces the PartData length at compile time.
@@ -223,12 +223,12 @@ inline size_t sanitizePartData(std::array<uint8_t, 84>& part) {
     };
 
     // Tuning preset byte ([4]): 0 = 12-EDO, 1..kNumTuningPresets = raga ids
-    // (ParvatiPreset's legacy tuning_mode mapping writes exactly this domain).
+    // (HellcatPreset's legacy tuning_mode mapping writes exactly this domain).
     // Bound derived from the real constant so the two cannot drift; the
     // TuningTables id guard remains the sink-side check either way.
-    static_assert(parvati::kNumTuningPresets == 32,
+    static_assert(hellcat::kNumTuningPresets == 32,
                   "PartData[4] tuning domain drifted — update sanitizePartData");
-    clampByte(part[4], 0, static_cast<uint8_t> (parvati::kNumTuningPresets));
+    clampByte(part[4], 0, static_cast<uint8_t> (hellcat::kNumTuningPresets));
 
     // Portamento ([6]): the voicecard's lut_res_env_portamento_increments
     // domain (F-static-2; voice.cpp also clamps at the sink).
@@ -249,4 +249,4 @@ inline size_t sanitizePartData(std::array<uint8_t, 84>& part) {
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_PATCH_SANITIZER_H_
+#endif  // HELLCAT_DSP_PATCH_SANITIZER_H_

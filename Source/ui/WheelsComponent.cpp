@@ -1,9 +1,9 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See WheelsComponent.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See WheelsComponent.h.
 
 #include "WheelsComponent.h"
 
-#include "ParvatiLookAndFeel.h"
-#include "ParvatiTheme.h"
+#include "HellcatLookAndFeel.h"
+#include "HellcatTheme.h"
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_PITCH_BEND / MOD_SRC_WHEEL
 #include "ParamControl.h"    // ParamControl (tap-to-assign state)
 
@@ -49,18 +49,18 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
 
     void paint (juce::Graphics& g) override
     {
-        const ParvatiTheme* t = parvati::themeFor (*this);
+        const HellcatTheme* t = hellcat::themeFor (*this);
         // Match the surrounding label text (e.g. the keyboard's key labels use
         // the bright `text` token) rather than the dim caption token.
-        g.setColour (t != nullptr ? t->textPrimary : parvati::kFallbackTextSoft);
+        g.setColour (t != nullptr ? t->textPrimary : hellcat::kFallbackTextSoft);
         // Same app typeface as all other UI text (appFont uses the system
         // default sans-serif). The shared resolver's default-font fallback
         // keeps the FACE even if this child's LookAndFeel is not yet resolved,
         // so the caption never silently renders in a different font than the
         // surrounding labels.
-        g.setFont (parvati::isY2kTheme (t)
-                       ? parvati::labelFontFor (*this, 9.0f)
-                       : parvati::appFontFor (*this, 9.0f));
+        g.setFont (hellcat::isY2kTheme (t)
+                       ? hellcat::labelFontFor (*this, 9.0f)
+                       : hellcat::appFontFor (*this, 9.0f));
         g.drawText (label_, getLocalBounds(), juce::Justification::centredTop);
     }
 
@@ -89,13 +89,13 @@ struct WheelDragLabel : public juce::Component, public juce::SettableTooltipClie
     // A small themed chip (mirrors the CentralModBar mod-pill drag image).
     juce::Image buildDragImage() const
     {
-        const ParvatiTheme* t = parvati::themeFor (*this);
-        const juce::Colour fill = (t != nullptr) ? t->containerFill : parvati::kFallbackContainerFill;
-        const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : parvati::kFallbackTextSoft;
-        const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : parvati::parvatiFallbackAccent;
-        const juce::Font f = parvati::isY2kTheme (t)
-                                 ? parvati::labelFontFor (*this, 13.0f)
-                                 : parvati::appFontFor (*this, 13.0f);
+        const HellcatTheme* t = hellcat::themeFor (*this);
+        const juce::Colour fill = (t != nullptr) ? t->containerFill : hellcat::kFallbackContainerFill;
+        const juce::Colour txt  = (t != nullptr) ? t->textPrimary          : hellcat::kFallbackTextSoft;
+        const juce::Colour acc  = (t != nullptr) ? t->accentPrimary        : hellcat::hellcatFallbackAccent;
+        const juce::Font f = hellcat::isY2kTheme (t)
+                                 ? hellcat::labelFontFor (*this, 13.0f)
+                                 : hellcat::appFontFor (*this, 13.0f);
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, label_);
         const int w = juce::jmax (48, 12 + 8 + textW + 10);
         const int h = 22;
@@ -158,7 +158,7 @@ WheelsComponent::WheelsComponent()
     // [<][>] octave switch under the pitch wheel: mirrors the Z/X
     // musical-typing keys. Emits onOctaveShift(+/-1) (unit octave steps); the
     // editor multiplies by 12 and routes into KeyboardView::shiftOctave.
-    // Plain themed TextButtons (ParvatiLookAndFeel styles them like the
+    // Plain themed TextButtons (HellcatLookAndFeel styles them like the
     // header icon buttons — no custom painting) at the kOctBtnSize 44pt HIG
     // touch target.
     octaveDown_ = std::make_unique<juce::TextButton> ("<");
@@ -175,14 +175,14 @@ WheelsComponent::~WheelsComponent() = default;
 
 void WheelsComponent::paint (juce::Graphics& g)
 {
-    // Read the active theme through the inherited ParvatiLookAndFeel (same
+    // Read the active theme through the inherited HellcatLookAndFeel (same
     // pattern as KeyboardView). Re-applied each paint so a live theme switch
     // recolours the wheels, and the label font follows the font mode.
-    const ParvatiTheme* t = parvati::themeFor (*this);
+    const HellcatTheme* t = hellcat::themeFor (*this);
 
-    const juce::Colour bg    = (t != nullptr) ? t->backgroundBase : parvati::kFallbackBase;
-    const juce::Colour track = (t != nullptr) ? t->outline          : parvati::kFallbackOutlineSoft;
-    const juce::Colour thumb = (t != nullptr) ? t->accentPrimary           : parvati::parvatiFallbackAccent;
+    const juce::Colour bg    = (t != nullptr) ? t->backgroundBase : hellcat::kFallbackBase;
+    const juce::Colour track = (t != nullptr) ? t->outline          : hellcat::kFallbackOutlineSoft;
+    const juce::Colour thumb = (t != nullptr) ? t->accentPrimary           : hellcat::hellcatFallbackAccent;
 
     g.fillAll (bg);
 

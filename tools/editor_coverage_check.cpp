@@ -1,5 +1,5 @@
 // tools/editor_coverage_check.cpp
-// Headless GUI coverage check for the Parvati editor (integrated, Serum-style
+// Headless GUI coverage check for the Hellcat editor (integrated, Serum-style
 // layout).
 //
 // The editor is a two-tab [SYNTH][FX] page selector (the tab bar itself is
@@ -15,10 +15,10 @@
 //   - BOTTOM row: the active-editor host (shows ONE generator ParamPage at a
 //     time, chosen by the bar) on the left, and the editor-owned ModMatrixView
 //     (a DIRECT child of the workspace, no longer tab content) on the right.
-// Generator pages are EDITOR-OWNED (ParvatiEditor::generatedPages_); only ENV 1
+// Generator pages are EDITOR-OWNED (HellcatEditor::generatedPages_); only ENV 1
 // is reparented at startup, the rest stay unparented until their pill is clicked.
 // A ParamPage OWNS its ParamControls whether parented or not, so this test
-// enumerates every page via ParvatiEditor::allGeneratedPages() and counts the
+// enumerates every page via HellcatEditor::allGeneratedPages() and counts the
 // controls directly (parented or not). The Global ParamPage is hosted INSIDE
 // the Patch page (hostParamPage) and shown by its header "Patch" button.
 // This test verifies:
@@ -44,9 +44,9 @@
 //     marked Length controls + correct step dimming
 //   - the voice-activity CELLS meter is GONE; the global voice-POOL view
 //     (labels + active/allocated counts) lives on the Patch page
-//   - the editor is deleted cleanly (JUCE leak detector validates Parvati classes)
+//   - the editor is deleted cleanly (JUCE leak detector validates Hellcat classes)
 //
-// Build: cmake --build build --target parvati_editor_coverage_check && ./build/parvati_editor_coverage_check
+// Build: cmake --build build --target hellcat_editor_coverage_check && ./build/hellcat_editor_coverage_check
 
 #include <algorithm>
 #include <cctype>
@@ -70,7 +70,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "dsp/fx/FxTypes.h"     // FxType::Count (FX type combo assertion)
-#include "ui/ModSourceCatalog.h"   // parvati::kNoteSeqSentinel + ambika::dsp::MOD_SRC_*
+#include "ui/ModSourceCatalog.h"   // hellcat::kNoteSeqSentinel + ambika::dsp::MOD_SRC_*
 #include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
 #include "ui/FxWorkspace.h"        // complete type for findFirst<FxWorkspace>
 #include "ui/FxMatrixView.h"       // complete type for findFirst<FxMatrixView>
@@ -192,7 +192,7 @@ int main()
     }
 
     {
-        ParvatiAudioProcessor processor;
+        HellcatAudioProcessor processor;
         processor.prepareToPlay (48000.0, 256);
 
         juce::AudioProcessorEditor* ed = processor.createEditor();
@@ -208,7 +208,7 @@ int main()
         // at startup), and the Global page. A ParamPage owns its ParamControls
         // whether parented or not, so unparented generator pages are counted
         // here too.
-        auto* editor = dynamic_cast<ParvatiEditor*> (ed);
+        auto* editor = dynamic_cast<HellcatEditor*> (ed);
         std::vector<ParamPage*> pages = (editor != nullptr)
             ? editor->allGeneratedPages() : std::vector<ParamPage*>{};
         std::sort (pages.begin(), pages.end());
@@ -380,7 +380,7 @@ int main()
                 check (seqNotePage != nullptr, "Sequencer generator page found");
                 if (seqNotePage != nullptr)
                 {
-                    workspace->setActiveGenerator (parvati::kNoteSeqSentinel);
+                    workspace->setActiveGenerator (hellcat::kNoteSeqSentinel);
                     std::snprintf (msg, sizeof (msg),
                                    "NOTE pill reparents the Sequencer page into the active-editor host [parent=%s]",
                                    seqNotePage->getParentComponent() != nullptr ? "set" : "null");
@@ -570,7 +570,7 @@ int main()
 
         // ------------------------------------------------------------------
         // [11] REMOVED: the nested ENV/LFO/ARP/SEQ card tab bar (and its
-        // per-tab parvatiTabCategoryColourId colouring) was deleted by design
+        // per-tab hellcatTabCategoryColourId colouring) was deleted by design
         // — generator selection is now driven by the CentralModBar pills
         // (covered by [3d]). Nothing to assert here.
         // ------------------------------------------------------------------

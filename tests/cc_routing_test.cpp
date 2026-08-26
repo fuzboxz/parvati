@@ -13,7 +13,7 @@
 //   [4] CC1 (mod wheel) writes only the parts whose channel matches: a
 //       two-part split (ch1 / ch2) sees the CC land on part B's voices only.
 //
-// Run: ./build_unified/parvati_unified_tests cc_routing_test
+// Run: ./build_unified/hellcat_unified_tests cc_routing_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -37,7 +37,7 @@ void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok 
 constexpr int kRate = 48000;
 constexpr int kBlock = 256;
 
-void render (ParvatiAudioProcessor& p, const juce::MidiBuffer& midi, int blocks)
+void render (HellcatAudioProcessor& p, const juce::MidiBuffer& midi, int blocks)
 {
     juce::MidiBuffer none;
     for (int i = 0; i < blocks; ++i)
@@ -56,7 +56,7 @@ juce::MidiBuffer one (const juce::MidiMessage& m)
 }
 
 // Sounding (envelope not finished) voices of @p part.
-int activeVoices (ParvatiAudioProcessor& p, int part)
+int activeVoices (HellcatAudioProcessor& p, int part)
 {
     auto& e = p.getEngine();
     int n = 0;
@@ -68,7 +68,7 @@ int activeVoices (ParvatiAudioProcessor& p, int part)
 }
 
 // The MOD_SRC_WHEEL value on part @p 's first voice (0 when it has none).
-int wheelValue (ParvatiAudioProcessor& p, int part)
+int wheelValue (HellcatAudioProcessor& p, int part)
 {
     auto& e = p.getEngine();
     for (int vi : e.getPart (part).voiceIndices)
@@ -85,7 +85,7 @@ TEST(cc_routing_test)
     // ------------------------------------------------------------------
     std::printf ("[1] sustain pedal: CC64 holds a released note, pedal-up releases\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
 
         render (proc, one (juce::MidiMessage::controllerEvent (1, 64, 127)), 1);   // pedal down
@@ -110,7 +110,7 @@ TEST(cc_routing_test)
     // ------------------------------------------------------------------
     std::printf ("\n[2] sustain + arp: held-key stack survives the key release, drains on pedal-up\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& e = proc.getEngine();
 
@@ -134,7 +134,7 @@ TEST(cc_routing_test)
     // ------------------------------------------------------------------
     std::printf ("\n[3] CC123 all-notes-off clears arp stacks and stops voices\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& e = proc.getEngine();
 
@@ -165,7 +165,7 @@ TEST(cc_routing_test)
     // ------------------------------------------------------------------
     std::printf ("\n[4] CC1 mod wheel reaches only the channel-matching part's voices\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
         auto& e = proc.getEngine();
 

@@ -9,8 +9,8 @@ All findings verified against source; severity per taxonomy
 (high = crash/corruption/data loss, medium = wrong load/save behavior, low = latent).
 
 ## F-state-1: parseParvatiYaml recursion is depth-unbounded — stack-exhaustion crash on a crafted .parvati
-- file:line — Source/ParvatiPreset.cpp:136 (`ParseResult parseBlock (...)`, no depth limit),
-  reached via Source/ParvatiPreset.cpp:264 (`parseParvatiYaml`), called from
+- file:line — Source/HellcatPreset.cpp:136 (`ParseResult parseBlock (...)`, no depth limit),
+  reached via Source/HellcatPreset.cpp:264 (`parseParvatiYaml`), called from
   Source/PluginProcessor.cpp:1405-1411 (loadParvatiMultiFile pre-parse) and
   Source/PluginProcessor.cpp:1341-1348 (loadParvatiPatchFile pre-parse).
 - severity: high (crash)
@@ -74,8 +74,8 @@ All findings verified against source; severity per taxonomy
   (offsets 4..7, 16..23, 36..47 and each obj's 8-byte header).
 
 ## F-state-4: .parvati multi serializer reads seqData without the bound guard the loader has
-- file:line — Source/ParvatiPreset.cpp:429 (`return static_cast<float> (pc.seqData[(size_t)
-  (d.byteOffset - 16)]);`) vs the guarded write path Source/ParvatiPreset.cpp:814
+- file:line — Source/HellcatPreset.cpp:429 (`return static_cast<float> (pc.seqData[(size_t)
+  (d.byteOffset - 16)]);`) vs the guarded write path Source/HellcatPreset.cpp:814
   (`else if (d->byteOffset >= 16 && d->byteOffset < 80)`).
 - severity: low (latent — descriptor-table drift)
 - evidence: `partRaw`'s sequencer branch indexes `seqData[byteOffset - 16]` for any isSequencer
@@ -85,20 +85,20 @@ All findings verified against source; severity per taxonomy
   uint8_t[64], SynthEngine.h). Today the descriptor table only uses 12..14 (by-ID) and 16..63
   (steps, ParameterLayout.cpp:393-398+), so the paths are safe; the asymmetry with the guarded
   apply side is the fragility.
-- deterministic_check: add a static/unit assertion in parvati_preset_test.cpp: for every
+- deterministic_check: add a static/unit assertion in hellcat_preset_test.cpp: for every
   descriptor d with `d.isSequencer`, assert `(d.byteOffset >= 16 && d.byteOffset < 80) ||
   paramID ∈ {seq_length_1,2,3}`; or add the same `if (d.byteOffset >= 16 && d.byteOffset < 80)`
   guard to partRaw and assert a descriptor with byteOffset 15 serializes as 0 instead of OOB
   (verified today only by absence of such a descriptor).
 
 ## F-state-5: applyParvatiMulti applies ANY APVTS paramID found under `options:` before part_select is reset
-- file:line — Source/ParvatiPreset.cpp:964-967 (`for (const auto& p : oobj->getProperties())
+- file:line — Source/HellcatPreset.cpp:964-967 (`for (const auto& p : oobj->getProperties())
   ... if (auto* param = proc.getApvts().getParameter (p.name.toString()))
   param->setValueNotifyingHost (param->convertTo0to1 ((float) p.value));`), executed before the
-  part_select reset at Source/ParvatiPreset.cpp:970-973.
+  part_select reset at Source/HellcatPreset.cpp:970-973.
 - severity: low (latent — hand-edited files only; violates the "file is the whole truth" contract)
 - evidence: the serializer emits ONLY isOption params under `options:`
-  (Source/ParvatiPreset.cpp:665-680), but the loader accepts a superset: any key matching an
+  (Source/HellcatPreset.cpp:665-680), but the loader accepts a superset: any key matching an
   APVTS parameter ID is applied. Per-part params (e.g. `osc1_shape`) applied here route through
   parameterChanged → currentPart_, which is still the PRE-LOAD part (part_select is reset to
   Part 0 only afterwards at :970-977), so the value overwrites that part's just-loaded file
@@ -129,7 +129,7 @@ All findings verified against source; severity per taxonomy
   131). Also add engine_state-payload bit-flips as a new fuzz corpus section.
 
 ## F-state-7: .parvati header fields are write-only; `version:` is never validated on load
-- file:line — written at Source/ParvatiPreset.cpp:548-552 (patch) and :598-603 (multi)
+- file:line — written at Source/HellcatPreset.cpp:548-552 (patch) and :598-603 (multi)
   (`version`, `parvati_version`, `author`, top-level `name`); no read of `version`/
   `parvati_version`/`author` exists in applyParvatiPatch (:558-589) or applyParvatiMulti
   (:590-978); the in-document `name:` is also never applied — loadedProgramName_ is set from
@@ -142,7 +142,7 @@ All findings verified against source; severity per taxonomy
   The top-level `name:`/`author:` asymmetry is benign metadata (the filename is deliberately
   authoritative per the loadParvatiPatchFile comment), but the version asymmetry is a real
   policy gap.
-- deterministic_check: in parvati_preset_test.cpp, load a doc with `version: 99` plus a
+- deterministic_check: in hellcat_preset_test.cpp, load a doc with `version: 99` plus a
   deliberately-semantics-changing key and pin the intended policy (reject with error, or
   documented accept-and-ignore) — today the test would pass only because nothing checks
   version; assert `applyParvatiMulti` on `version: 99` either returns false or is explicitly
@@ -177,7 +177,7 @@ All findings verified against source; severity per taxonomy
 - TuningTables: no input path — static tables, id bounds-checked at dispatch
   (TuningTables.cpp:83-95); kTuningSilence (32767) round-trips verbatim through
   setPartTuningCustom (SynthEngine.cpp:1033-1035), engine blob, and .parvati
-  (ParvatiPreset.cpp:876-884) — pinned by tuning_test + scala tests.
+  (HellcatPreset.cpp:876-884) — pinned by tuning_test + scala tests.
 - Shadow-state contract (tests/shadow_state_test.cpp): defaults-multi load must zero-diff all
   9 polluted surfaces against a fresh engine — suite passes (log:
   last_run_parvati_shadow_state_test.log), and the comparator has per-category canaries.

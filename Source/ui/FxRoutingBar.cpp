@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxRoutingBar.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxRoutingBar.h.
 
 #include "FxRoutingBar.h"
 
-#include "PluginProcessor.h"   // ParvatiAudioProcessor complete type (getApvts)
+#include "PluginProcessor.h"   // HellcatAudioProcessor complete type (getApvts)
 #include "ThemeManager.h"
-#include "ParvatiTheme.h"
-#include "ParvatiLookAndFeel.h"   // dynamic_cast + appFont() in FxFlowDiagram
+#include "HellcatTheme.h"
+#include "HellcatLookAndFeel.h"   // dynamic_cast + appFont() in FxFlowDiagram
 #include "FxSlotLabels.h"     // fxEqLowToString / fxEqDbToString (hoisted EQ readouts)
 
 //==============================================================================
@@ -53,7 +53,7 @@ class FxFlowDiagram : public juce::Component,
                       private juce::AsyncUpdater
 {
 public:
-    FxFlowDiagram (ParvatiAudioProcessor& proc, ThemeManager& tm)
+    FxFlowDiagram (HellcatAudioProcessor& proc, ThemeManager& tm)
         : processor_ (proc), themeManager_ (tm)
     {
         setTitle ("FX signal flow");
@@ -92,8 +92,8 @@ public:
         // below touch readability. The FX-slot labels already degrade to a
         // bare digit when the block is too narrow, and IN/OUT are sized to
         // their glyphs at these sizes, so nothing overflows its block.
-        const juce::Font blockFont (parvati::labelFontExactFor (*this, 12.0f, juce::Font::bold));
-        const juce::Font endFont   (parvati::labelFontExactFor (*this, 10.0f, juce::Font::bold));   // IN/OUT (smaller utility label)
+        const juce::Font blockFont (hellcat::labelFontExactFor (*this, 12.0f, juce::Font::bold));
+        const juce::Font endFont   (hellcat::labelFontExactFor (*this, 10.0f, juce::Font::bold));   // IN/OUT (smaller utility label)
 
         auto nodeRect = [&] (float cx, float bcY, float w) -> juce::Rectangle<float>
         {
@@ -244,13 +244,13 @@ private:
         return juce::jlimit (0, 2, juce::roundToInt (v * 2.0f));
     }
 
-    ParvatiAudioProcessor& processor_;
+    HellcatAudioProcessor& processor_;
     ThemeManager&          themeManager_;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxFlowDiagram)
 };
 
 //==============================================================================
-FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
+FxRoutingBar::FxRoutingBar (HellcatAudioProcessor& processor, ThemeManager& themeManager)
     : processor_ (processor), themeManager_ (themeManager)
 {
     // ---- in->out signal-flow block chart (tracks fx_topo live) + ◀ ▶ steppers ----
@@ -271,8 +271,8 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     //      identical to the Mixer / Oscillator knobs). ----
     mixLabel_.setText (TRANS ("Dry/Wet"), juce::dontSendNotification);
     mixLabel_.setJustificationType (juce::Justification::centred);
-    mixLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
-    mixLabel_.setColour (juce::Label::textColourId, parvati::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
+    mixLabel_.setFont (hellcat::labelFontExactFor (*this, 12.0f));
+    mixLabel_.setColour (juce::Label::textColourId, hellcat::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
     addAndMakeVisible (mixLabel_);
 
     mixKnob_.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
@@ -300,8 +300,8 @@ FxRoutingBar::FxRoutingBar (ParvatiAudioProcessor& processor, ThemeManager& them
     {
         eqLabels_[i].setText (TRANS (eqNames[i]), juce::dontSendNotification);
         eqLabels_[i].setJustificationType (juce::Justification::centred);
-        eqLabels_[i].setFont (parvati::labelFontExactFor (*this, 12.0f));
-        eqLabels_[i].setColour (juce::Label::textColourId, parvati::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
+        eqLabels_[i].setFont (hellcat::labelFontExactFor (*this, 12.0f));
+        eqLabels_[i].setColour (juce::Label::textColourId, hellcat::onCardText (&themeManager_.getCurrentTheme(), themeManager_.getCurrentTheme().textSecondary));
         addAndMakeVisible (eqLabels_[i]);
 
         eqKnobs_[i].setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
@@ -344,14 +344,14 @@ void FxRoutingBar::paint (juce::Graphics& g)
     // Sibling-card panel: the shared module-card painter — flat tonal lift on
     // every theme, liquid chrome on Y2K (matches the synth cards and the
     // FX-slot cards).
-    parvati::paintChromeCard (g, getLocalBounds().toFloat(), kCorner, &t);
+    hellcat::paintChromeCard (g, getLocalBounds().toFloat(), kCorner, &t);
 
     // Section header "FX ROUTING" — the SAME typography as the OSC 1 / MIXER
     // GroupComponent headers (bold 14px, UPPERCASE, textSecondary), drawn here
     // rather than via a Label so it is byte-identical to the synth card titles.
     // Y2K: the header role font (Michroma) on the on-chrome label colour.
-    const juce::Font headerFont = parvati::headerFontFor (*this, 14.0f);
-    g.setColour (parvati::onCardText (&t, t.textSecondary));
+    const juce::Font headerFont = hellcat::headerFontFor (*this, 14.0f);
+    g.setColour (hellcat::onCardText (&t, t.textSecondary));
     g.setFont (headerFont);
     g.drawText (TRANS ("FX ROUTING").toUpperCase(),
                 juce::Rectangle<int> (kPad + 2, kPad, getWidth() - 2 * kPad, kHeaderH),
@@ -437,9 +437,9 @@ void FxRoutingBar::resized()
 void FxRoutingBar::applyThemeColors()
 {
     const auto& t = themeManager_.getCurrentTheme();
-    mixLabel_.setColour (juce::Label::textColourId, parvati::onCardText (&t, t.textSecondary));
+    mixLabel_.setColour (juce::Label::textColourId, hellcat::onCardText (&t, t.textSecondary));
     for (auto& l : eqLabels_)
-        l.setColour (juce::Label::textColourId, parvati::onCardText (&t, t.textSecondary));
+        l.setColour (juce::Label::textColourId, hellcat::onCardText (&t, t.textSecondary));
 
     if (flowDiagram_ != nullptr)
         flowDiagram_->repaint();   // re-resolve trace/block colours from the new theme

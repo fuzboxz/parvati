@@ -11,7 +11,7 @@
 //   * Echo: a discrete repeat appears ~Time later.
 //   * Room/Spring: impulse produces a decaying tail (energy over time).
 //
-// Build: linked as parvati_fv1_newfamily_test (built by default).
+// Build: linked as hellcat_fv1_newfamily_test (built by default).
 
 #include <array>
 #include <algorithm>
@@ -44,7 +44,7 @@ void check (bool ok, const char* m)
 }
 
 constexpr int kBlock = 256;
-void runFx (parvati::fv1::Fv1FxProcessor& fx, const float p0, const float p1,
+void runFx (hellcat::fv1::Fv1FxProcessor& fx, const float p0, const float p1,
             const float p2, const float p3, const float* inL, const float* inR,
             int n, float* outL, float* outR)
 {
@@ -83,7 +83,7 @@ TEST(fv1_newfamily_test)
 
     // ---- Overdrive ----
     {
-        parvati::fv1::Fv1Overdrive fx;
+        hellcat::fv1::Fv1Overdrive fx;
         fx.prepare (48000.0, kBlock);
         fx.reset();
         check (fx.type() == FxType::Overdrive, "Overdrive: type()");
@@ -109,7 +109,7 @@ TEST(fv1_newfamily_test)
 
     // ---- LUT Distortion ----
     {
-        parvati::fv1::Fv1LutDistortion fx;
+        hellcat::fv1::Fv1LutDistortion fx;
         fx.prepare (48000.0, kBlock);
         fx.reset();
         check (fx.type() == FxType::LutDistortion, "LUT Distortion: type()");
@@ -234,7 +234,7 @@ TEST(fv1_newfamily_test)
 
     // ---- Compressor ----
     {
-        parvati::fv1::Fv1Compressor fx;
+        hellcat::fv1::Fv1Compressor fx;
         fx.prepare (48000.0, kBlock);
         fx.reset();
         check (fx.type() == FxType::Compressor, "Compressor: type()");
@@ -258,7 +258,7 @@ TEST(fv1_newfamily_test)
 
     // ---- Gate ----
     {
-        parvati::fv1::Fv1Gate fx;
+        hellcat::fv1::Fv1Gate fx;
         fx.prepare (48000.0, kBlock);
         fx.reset();
         check (fx.type() == FxType::Gate, "Gate: type()");
@@ -276,11 +276,11 @@ TEST(fv1_newfamily_test)
     }
 
     // ---- Chorus / Flanger ----
-    for (auto [kind, mk] : std::initializer_list<std::pair<const char*, std::function<parvati::fv1::Fv1FxProcessor* ()>>> {
-              { "Chorus", [] { return new parvati::fv1::Fv1Chorus(); } },
-              { "Flanger", [] { return new parvati::fv1::Fv1Flanger(); } } })
+    for (auto [kind, mk] : std::initializer_list<std::pair<const char*, std::function<hellcat::fv1::Fv1FxProcessor* ()>>> {
+              { "Chorus", [] { return new hellcat::fv1::Fv1Chorus(); } },
+              { "Flanger", [] { return new hellcat::fv1::Fv1Flanger(); } } })
     {
-        std::unique_ptr<parvati::fv1::Fv1FxProcessor> fx { mk() };
+        std::unique_ptr<hellcat::fv1::Fv1FxProcessor> fx { mk() };
         fx->prepare (48000.0, kBlock);
         fx->reset();
         runFx (*fx, 0.4f, 0.5f, 0.5f, 0.4f, inL.data(), inR.data(), kN, oL.data(), oR.data());
@@ -301,7 +301,7 @@ TEST(fv1_newfamily_test)
 
     // ---- Echo ----
     {
-        parvati::fv1::Fv1Echo fx;
+        hellcat::fv1::Fv1Echo fx;
         fx.prepare (48000.0, kBlock);
         fx.reset();
         check (fx.type() == FxType::Echo, "Echo: type()");
@@ -354,11 +354,11 @@ TEST(fv1_newfamily_test)
     }
 
     // ---- Room / Spring ----
-    for (auto [kind, mk] : std::initializer_list<std::pair<const char*, std::function<parvati::fv1::Fv1FxProcessor* ()>>> {
-              { "Room", [] { return new parvati::fv1::Fv1Room(); } },
-              { "Spring", [] { return new parvati::fv1::Fv1Spring(); } } })
+    for (auto [kind, mk] : std::initializer_list<std::pair<const char*, std::function<hellcat::fv1::Fv1FxProcessor* ()>>> {
+              { "Room", [] { return new hellcat::fv1::Fv1Room(); } },
+              { "Spring", [] { return new hellcat::fv1::Fv1Spring(); } } })
     {
-        std::unique_ptr<parvati::fv1::Fv1FxProcessor> fx { mk() };
+        std::unique_ptr<hellcat::fv1::Fv1FxProcessor> fx { mk() };
         fx->prepare (48000.0, kBlock);
         fx->reset();
         std::printf ("-- %s --\n", kind);

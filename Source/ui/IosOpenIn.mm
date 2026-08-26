@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // IosOpenIn.mm — the iOS half of the open-in loop (see IosOpenIn.h). iOS only;
 // added to the build via an explicit target_sources line (mirroring
@@ -32,20 +32,20 @@ juce::File gOpenInUserDir;
 // UIApplication*, NSURL*, NSDictionary*) — the UIApplicationDelegate
 // application:openURL:options: signature. Runs ON THE MAIN THREAD (UIKit
 // delegate delivery), which is exactly what the routed-file callback assumes.
-void parvatiApplicationOpenURL (id, SEL, UIApplication*, NSURL* url, NSDictionary*)
+void hellcatApplicationOpenURL (id, SEL, UIApplication*, NSURL* url, NSDictionary*)
 {
     if (url == nullptr)
         return;
 
     // Open-in-place hands us a SECURITY-SCOPED URL: reads are only permitted
-    // between start/stop. "Copy to Parvati" Inbox copies are plain sandbox
+    // between start/stop. "Copy to Hellcat" Inbox copies are plain sandbox
     // files; start... returns NO there and the bracket is a harmless no-op.
     const bool scoped = [url startAccessingSecurityScopedResource];
     juce::File routed;
     {
         std::lock_guard<std::mutex> lock (gOpenInMutex);
         const juce::File source { juce::String (url.path.UTF8String) };
-        routed = parvati::routeOpenedFile (source, gOpenInUserDir);
+        routed = hellcat::routeOpenedFile (source, gOpenInUserDir);
     }
     if (scoped)
         [url stopAccessingSecurityScopedResource];
@@ -61,7 +61,7 @@ void parvatiApplicationOpenURL (id, SEL, UIApplication*, NSURL* url, NSDictionar
 }
 }  // namespace
 
-namespace parvati
+namespace hellcat
 {
 void installOpenInHandler (const juce::File& userPatchDir,
                            std::function<void (juce::File)> onRouted)
@@ -89,7 +89,7 @@ void installOpenInHandler (const juce::File& userPatchDir,
         // (category-style, no swizzle). "v@:@@@": void return, self, _cmd,
         // UIApplication*, NSURL*, NSDictionary*.
         class_addMethod (delegateClass, openSel,
-                         (IMP) parvatiApplicationOpenURL, "v@:@@@");
+                         (IMP) hellcatApplicationOpenURL, "v@:@@@");
     }
     else
     {
@@ -97,13 +97,13 @@ void installOpenInHandler (const juce::File& userPatchDir,
         // under a PRIVATE selector and exchange implementations — calls to
         // the public selector run ours; the private one keeps the original
         // IMP available for a call-through if that is ever wanted.
-        const SEL privateSel = sel_registerName ("parvati_application:openURL:options:");
+        const SEL privateSel = sel_registerName ("hellcat_application:openURL:options:");
         class_addMethod (delegateClass, privateSel,
-                         (IMP) parvatiApplicationOpenURL, "v@:@@@");
+                         (IMP) hellcatApplicationOpenURL, "v@:@@@");
         Method ours = class_getInstanceMethod (delegateClass, privateSel);
         if (ours != nullptr)
             method_exchangeImplementations (existing, ours);
     }
     installed = true;
 }
-}  // namespace parvati
+}  // namespace hellcat

@@ -1,4 +1,4 @@
-// Per-part FX input-routing regression test for Parvati.
+// Per-part FX input-routing regression test for Hellcat.
 //
 // renderPartFx builds each Part's FX-chain input by summing that Part's
 // voicecard buffers. The buggy implementation indexed voiceCardBuffers_ by the
@@ -28,7 +28,7 @@
 //       level-dependent, so the correct contract is knee(sum), pinned here
 //       (the same honest-calibration approach as the mix_fuzz ZCR check).
 //
-// Run: ./build_unified/parvati_unified_tests part_fx_routing_test
+// Run: ./build_unified/hellcat_unified_tests part_fx_routing_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -60,7 +60,7 @@ constexpr int kBlock = 512;
 // Enable an audible FX slot on the CURRENT part (engine setters route to
 // currentPart_, so switch first). Resonator with a mid dry/wet is clearly
 // audible wet output while remaining short-tailed for fast settling.
-void enableAudibleFx (ParvatiAudioProcessor& proc, int part)
+void enableAudibleFx (HellcatAudioProcessor& proc, int part)
 {
     auto& eng = proc.getEngine();
     eng.setCurrentPart (part);
@@ -74,7 +74,7 @@ void enableAudibleFx (ParvatiAudioProcessor& proc, int part)
 // Render `blocks` blocks with a note-on (channel/note) on block 0, then return
 // the peak |sample| of a Part's stereo FX-output buffer over the LAST 4 blocks
 // (the head is skipped so the dry/wet + fade-in smoothing has settled).
-double renderFxPeak (ParvatiAudioProcessor& proc, int channel, int note, int blocks, int part)
+double renderFxPeak (HellcatAudioProcessor& proc, int channel, int note, int blocks, int part)
 {
     juce::AudioBuffer<float> buf (2, kBlock);
     juce::MidiBuffer midi;
@@ -103,7 +103,7 @@ double renderFxPeak (ParvatiAudioProcessor& proc, int channel, int note, int blo
 template <typename Setup>
 void checkDirection (const char* label, int channel, int playedPart, int otherPart, Setup setup)
 {
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (kRate, kBlock);
     setup (proc);
 
@@ -131,7 +131,7 @@ TEST(part_fx_routing_test)
         // P0's pool slice is [0..15] and P1's is [16..31]. The old code summed
         // buffers [0..5] for P0 (every part's audio) and NOTHING for P1 (all
         // its pool indices are >= kNumParts).
-        const auto setup = [] (ParvatiAudioProcessor& proc)
+        const auto setup = [] (HellcatAudioProcessor& proc)
         {
             auto& eng = proc.getEngine();
             eng.setPartVoiceAllocation (0, 0x01);
@@ -153,7 +153,7 @@ TEST(part_fx_routing_test)
         // P0 = cards {0,2,4} (channel 1), P1 = cards {1,3,5} (channel 2). The
         // old code summed buffers 0,1,2 for P0 (card 1 is Part 1's!) and 3,4,5
         // for P1 (card 4 is Part 0's) -- both directions cross-bled.
-        const auto setup = [] (ParvatiAudioProcessor& proc)
+        const auto setup = [] (HellcatAudioProcessor& proc)
         {
             auto& eng = proc.getEngine();
             eng.setPartVoiceAllocation (0, 0x15);
@@ -170,7 +170,7 @@ TEST(part_fx_routing_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[3] default layout: dry FX output == sum of all 6 card buffers\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, kBlock);
 
         // All FX disabled => the chain is a dry copy, so Part 0's FX-output

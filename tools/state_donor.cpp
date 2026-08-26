@@ -1,7 +1,7 @@
-// State donor: builds a Parvati processor state with FX1 = <type> enabled at
+// State donor: builds a Hellcat processor state with FX1 = <type> enabled at
 // full wet and writes the getStateInformation blob to a file (for feeding the
-// real Standalone's Parvati.settings filterState).
-// Build: parvati_state_donor (EXCLUDE_FROM_ALL). Run: ./parvati_state_donor <fxType> <outFile>
+// real Standalone's Hellcat.settings filterState).
+// Build: hellcat_state_donor (EXCLUDE_FROM_ALL). Run: ./hellcat_state_donor <fxType> <outFile>
 
 #include <cstdio>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -12,13 +12,13 @@
 
 namespace
 {
-void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
+void setInt (HellcatAudioProcessor& proc, const char* id, int value)
 {
     if (auto* param = proc.getApvts().getParameter (id))
         if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
             ip->setValueNotifyingHost (ip->convertTo0to1 (static_cast<float> (value)));
 }
-void setChoice (ParvatiAudioProcessor& proc, const char* id, int index)
+void setChoice (HellcatAudioProcessor& proc, const char* id, int index)
 {
     if (auto* param = proc.getApvts().getParameter (id))
         param->setValueNotifyingHost (param->convertTo0to1 (static_cast<float> (index)));
@@ -31,11 +31,11 @@ int main (int argc, char** argv)
     const int fx = std::atoi (argv[1]);
 
     juce::ScopedJuceInitialiser_GUI juceInit;
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     proc.getApvts().getParameterAsValue ("part_select") = 1.0f;
     setInt (proc, "osc1_shape", 1);   // SAW
-    if (const char* oct = std::getenv ("PARVATI_DONOR_OCTAVE"))
+    if (const char* oct = std::getenv ("HELLCAT_DONOR_OCTAVE"))
         setInt (proc, "part_octave", std::atoi (oct));
     if (fx != 0)
     {
@@ -53,7 +53,7 @@ int main (int argc, char** argv)
     juce::MemoryBlock blob;
     proc.getStateInformation (blob);
     juce::File (argv[2]).replaceWithData (blob.getData(), blob.getSize());
-    // JUCE-flavour base64 ("<len>.<6-bit-packed>") for Parvati.settings
+    // JUCE-flavour base64 ("<len>.<6-bit-packed>") for Hellcat.settings
     juce::File (juce::String (argv[2]) + ".jb64").replaceWithText (blob.toBase64Encoding ());
     std::printf ("wrote %d bytes for fx=%d -> %s (+ .jb64)\n", (int) blob.getSize(), fx, argv[2]);
     return 0;

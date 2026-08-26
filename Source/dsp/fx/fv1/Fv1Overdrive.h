@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Overdrive — FV-1-style classic tube overdrive: Drive pre-gain into a
 // 1024-entry asymmetric 12AX7-ish soft-clip wavetable (the FV-1 "external
@@ -26,8 +26,8 @@
 //   * Tone   (p2): 700..15000 Hz post-LP.
 //   * Level  (p3): 0..2 output trim (0.5 at center).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1OVERDRIVE_H
-#define PARVATI_DSP_FX_FV1_FV1OVERDRIVE_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1OVERDRIVE_H
+#define HELLCAT_DSP_FX_FV1_FV1OVERDRIVE_H
 
 #include <cstdint>
 #include <vector>
@@ -35,7 +35,7 @@
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 #include "warps/dsp/sample_rate_converter.h"   // 6x polyphase FIR (shaper OS)
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Overdrive : public Fv1FxProcessor
@@ -94,6 +94,6 @@ private:
     int latencyHost_ = 0;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1OVERDRIVE_H
+#endif // HELLCAT_DSP_FX_FV1_FV1OVERDRIVE_H

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Chorus implementation — two detuned SIN-LFO delay voices, panned L/R.
 
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 static_assert (2 * DelayLine<2048>::capacity <= kMaxMemorySamples,
@@ -60,4 +60,4 @@ void Fv1Chorus::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = rR;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

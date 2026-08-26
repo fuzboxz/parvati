@@ -1,9 +1,33 @@
 # Static Analysis & Audit
 
-Parvati is checked with three complementary tools. **No real defects were
+Hellcat is checked with three complementary tools. **No real defects were
 found**. The only findings are style issues in the faithful
 firmware/controller ports (exempt by policy) and a small set of documented
 clang-tidy false positives (NOLINT'd in source with a reason).
+
+## Baseline gate (2026-08-26)
+
+`tools/run_static_analysis.sh` FAILS on any cppcheck finding whose signature
+is absent from `tools/static_analysis_allowlist.txt`. The baseline holds the
+historical debt: 30 signatures that cover 53 raw findings (repeated lines of
+the same defect collapse into one line). Owners:
+
+* `Source/dsp/oscillator.cpp` — 15 error-severity `uninitStructMember`
+  (`phase.carry`). The firmware-faithful 24-bit phase struct leaves the carry
+  uninitialised on purpose. Fix is separate work; do not touch it casually.
+* Vendored trees — `Source/dsp/clouds/*`, `ambika_reference/*`, the clap
+  helpers under `_deps`.
+* `Source/dsp/fixed_math.h` — `shiftNegativeLHS` x2: int8 left-shift that
+  matches the firmware arithmetic. Runtime-clean under ASan/UBSan sweeps.
+* The rest — style/perf findings in `tests/*` and two Source style notes.
+
+Rules:
+* A NEW finding fails the gate. Fix the code, or extend the baseline
+  consciously (review first).
+* Line numbers are NOT part of a signature. Edits that shift lines keep the
+  baseline valid.
+* Regenerate signatures after an intentional re-baseline:
+  `HELLCAT_STATIC_ALLOWLIST_REGEN=1 tools/run_static_analysis.sh`.
 
 ## How to reproduce
 
@@ -14,7 +38,7 @@ automatically):
 # 1. Sanitizers (whole build, incl. JUCE) — run the test suite under ASan+UBSan.
 cmake -S . -B build_asan -DPARVATI_ENABLE_ASAN=ON -DPARVATI_ENABLE_UBSAN=ON
 cmake --build build_asan -j 8
-(cd build_asan && for t in parvati_*_test; do ASAN_OPTIONS=detect_leaks=0 ./$t; done)
+(cd build_asan && for t in hellcat_*_test; do ASAN_OPTIONS=detect_leaks=0 ./$t; done)
 
 # 2. clang-tidy (bug-focused; see .clang-tidy for the curated check set).
 /opt/homebrew/opt/llvm/bin/clang-tidy -p build <file>
@@ -29,7 +53,7 @@ cppcheck --enable=warning,style,unusedFunction -DDEBUG -D_DEBUG \
 ### Sanitizers (ASan + UBSan)
 All headless tests run **clean** — no heap/stack buffer overflows, no
 use-after-free, no undefined behaviour. (LeakSanitizer has no support on
-Apple Silicon; Parvati relies on JUCE's `JUCE_LEAK_DETECTOR` for leak checks
+Apple Silicon; Hellcat relies on JUCE's `JUCE_LEAK_DETECTOR` for leak checks
 instead.)
 
 ### clang-tidy
@@ -100,5 +124,5 @@ callers across `Source/`, `tests/`, `tools/`):
 
 Every public engine/processor method, every APVTS parameter, and every GUI
 control is now reachable (the latter two are enforced structurally — the GUI
-is generated from the descriptor table, and `parvati_editor_coverage_check`
+is generated from the descriptor table, and `hellcat_editor_coverage_check`
 asserts that every descriptor has a control + attachment).

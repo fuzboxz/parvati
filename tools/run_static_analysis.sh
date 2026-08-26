@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# tools/run_static_analysis.sh — Parvati static "linter" for memory safety.
+# tools/run_static_analysis.sh — Hellcat static "linter" for memory safety.
 # ---------------------------------------------------------------------------
 # Runs two complementary static analyzers over Source/:
 #   * clang-tidy — bugprone-* / cert-* / performance-* checks (.clang-tidy),
@@ -17,9 +17,10 @@
 #   BUILD=build_release tools/run_static_analysis.sh
 #   SKIP_CPPCHECK=1 tools/run_static_analysis.sh
 #
-# Exits non-zero if cppcheck finds a real (non-suppressed) issue. clang-tidy is
-# advisory (its findings are printed; it does not fail the run unless you pass
-# them via .clang-tidy WarningsAsErrors).
+# cppcheck gate + allowlist: the gate FAILS on any finding whose signature
+# (path | id | message) is absent from tools/static_analysis_allowlist.txt.
+# Baseline findings pass. Set HELLCAT_STATIC_ALLOWLIST_REGEN=1 to print
+# paste-ready signatures instead of gating (maintain the file consciously).
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -42,7 +43,7 @@ CLANG_TIDY="${CLANG_TIDY:-$(command -v clang-tidy || echo /opt/homebrew/opt/llvm
 RUN_CLANG_TIDY="${RUN_CLANG_TIDY:-$(command -v run-clang-tidy || echo /opt/homebrew/opt/llvm/bin/run-clang-tidy)}"
 CPPCHECK="${CPPCHECK:-cppcheck}"
 
-echo "=== Parvati static analysis ==="
+echo "=== Hellcat static analysis ==="
 echo "  build (compile_commands.json): $BUILD"
 echo ""
 
@@ -65,12 +66,14 @@ else
 fi
 echo ""
 
-# --- cppcheck (fail-on real issues) ----------------------------------------
+# --- cppcheck (gated against the allowlist) -------------------------------
 if [ "${SKIP_CPPCHECK:-0}" != "1" ] && command -v "$CPPCHECK" > /dev/null 2>&1; then
     echo "--- cppcheck (Source/) ---"
     # --inline-suppr honours // cppcheck-suppress; --library=gnu gives std types;
     # -DPARVATI_UNIT_TEST off keeps it on the plugin path. force + check-level
     # exhaustive trade speed for deeper interprocedural analysis.
+    TMP_FINDINGS="$(mktemp "${TMPDIR:-/tmp}/hellcat_cppcheck.XXXXXX")"
+    trap 'rm -f "$TMP_FINDINGS"' RETURN
     ( cd "$SRC" && "$CPPCHECK" \
         --project="$BUILD/compile_commands.json" \
         --enable=warning,style,performance,portability \
@@ -79,19 +82,49 @@ if [ "${SKIP_CPPCHECK:-0}" != "1" ] && command -v "$CPPCHECK" > /dev/null 2>&1; 
         --check-level=exhaustive \
         --suppress=useStlAlgorithm \
         --quiet \
-        -I Source ) 2>&1 | sed 's/^/  /'
-    # cppcheck exits non-zero only with --error-exitcode; re-scan its output.
-    # Rerun with the exit code so CI can gate on it:
-    if ( cd "$SRC" && "$CPPCHECK" \
-        --project="$BUILD/compile_commands.json" \
-        --enable=warning,style,performance,portability \
-        --inline-suppr --library=gnu --check-level=exhaustive \
-        --suppress=useStlAlgorithm --quiet --error-exitcode=1 -I Source ) > /dev/null 2>&1; then
-        echo "  cppcheck: no issues found"
-    else
-        echo "  cppcheck: ISSUES FOUND (see above)"
-        exit 1
-    fi
+        -I Source ) 2>&1 | tee "$TMP_FINDINGS" | sed 's/^/  /'
+
+    # Signature = repo-relative path | cppcheck id | message (no line/column:
+    # they drift with edits). Files outside the repo sign by basename only.
+    ALLOW="$SRC/tools/static_analysis_allowlist.txt"
+    python3 - "$TMP_FINDINGS" "$ALLOW" "${HELLCAT_STATIC_ALLOWLIST_REGEN:-0}" "$SRC" <<'PYEOF' || exit 1
+import re, sys, os
+findings_path, allow_path, regen, src = sys.argv[1:5]
+sig = []
+seen = set()
+for line in open(findings_path, errors="replace"):
+    m = re.match(r"^(.+?):(\d+):(\d+): \w+: (.*) \[([^]]+)\]$", line.rstrip())
+    if not m:
+        continue
+    path, _ln, _col, msg, cid = m.groups()
+    ap = os.path.abspath(os.path.join(src, path))
+    if ap.startswith(src + os.sep):
+        path = ap[len(src) + 1:]
+    if os.sep in path and not path.startswith(("Source/", "tests/", "ambika_reference/")):
+        path = os.path.basename(path)   # build/_deps or vendored tree: basename
+    s = f"{path}|{cid}|{msg}"
+    if s not in seen:
+        seen.add(s)
+        sig.append(s)
+if regen == "1":
+    print("  REGEN: paste-ready signatures (review, then replace the non-header lines of the allowlist):")
+    for s in sorted(seen):
+        print(s)
+    sys.exit(0)
+allowed = set()
+for line in open(allow_path, errors="replace") if os.path.exists(allow_path) else []:
+    line = line.rstrip("\n")
+    if line and not line.startswith("#"):
+        allowed.add(line)
+new = [s for s in sig if s not in allowed]
+print(f"  cppcheck: {len(sig)} finding signature(s); {len(sig) - len(new)} allowlisted, {len(new)} NEW")
+if new:
+    print("  NEW findings (fix, or extend the baseline consciously):")
+    for s in new:
+        print(f"    {s}")
+    sys.exit(1)
+print("  cppcheck: gate PASSED (no new findings)")
+PYEOF
 else
     echo "  (cppcheck not found; install with: brew install cppcheck)"
 fi

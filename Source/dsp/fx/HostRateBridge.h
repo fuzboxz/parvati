@@ -1,6 +1,6 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
-// HostRateBridge — bridges Parvati's host-rate de-interleaved (L[], R[]) audio
+// HostRateBridge — bridges Hellcat's host-rate de-interleaved (L[], R[]) audio
 // to/from the vendored Clouds engines' FIXED 32 kHz interleaved (FloatFrame[])
 // domain. Running the engines at a fixed 32 kHz leaves every Clouds/stmlib
 // numeric constant (delay lengths, LFO rates, decay tuning) untouched, so the
@@ -26,7 +26,7 @@
 #include <cmath>
 #include <vector>
 
-class HostRateBridge : public parvati::dsp::LinearResamplerCore<HostRateBridge>
+class HostRateBridge : public hellcat::dsp::LinearResamplerCore<HostRateBridge>
 {
 public:
     static constexpr double kInternalRate = 32000.0;
@@ -145,7 +145,7 @@ public:
     }
 
 private:
-    friend parvati::dsp::LinearResamplerCore<HostRateBridge>;
+    friend hellcat::dsp::LinearResamplerCore<HostRateBridge>;
 
     // ---- Internal-domain storage hooks of the shared resampler core ----
     void storeSample (int m, float l, float r) noexcept

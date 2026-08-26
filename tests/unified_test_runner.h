@@ -14,8 +14,8 @@
  *   }
  */
 
-#ifndef PARVATI_UNIFIED_TEST_RUNNER_H
-#define PARVATI_UNIFIED_TEST_RUNNER_H
+#ifndef HELLCAT_UNIFIED_TEST_RUNNER_H
+#define HELLCAT_UNIFIED_TEST_RUNNER_H
 
 #include <string>
 #include <map>
@@ -120,4 +120,4 @@ inline TestRunner& g_runner = TestRunner::instance();
 
 } // namespace unified_test_runner
 
-#endif // PARVATI_UNIFIED_TEST_RUNNER_H
+#endif // HELLCAT_UNIFIED_TEST_RUNNER_H

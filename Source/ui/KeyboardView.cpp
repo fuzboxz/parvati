@@ -1,9 +1,9 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See KeyboardView.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See KeyboardView.h.
 
 #include "KeyboardView.h"
 
-#include "ParvatiLookAndFeel.h"   // themeFor (component/L&F resolution)
-#include "ParvatiTheme.h"
+#include "HellcatLookAndFeel.h"   // themeFor (component/L&F resolution)
+#include "HellcatTheme.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,7 +21,7 @@
 // roundedInt) so there are no fractional edges / cut-off pixels even on scaled
 // (HiDPI / zoomed) surfaces.
 // THEME-SAFE by contract: NO colour literals live here. Every colour comes
-// from ParvatiTheme tokens via KeyboardView::resolveColours (keyWhite /
+// from HellcatTheme tokens via KeyboardView::resolveColours (keyWhite /
 // keyBlack / accents / outline / containerFill), so the whole keyboard
 // re-tints on a theme switch with no extra wiring.
 namespace
@@ -49,7 +49,7 @@ namespace
 //==============================================================================
 KeyboardView::KeyboardColours KeyboardView::resolveColours (const juce::LookAndFeel& lnf)
 {
-    const ParvatiTheme* t = parvati::themeFor (lnf);
+    const HellcatTheme* t = hellcat::themeFor (lnf);
     if (t == nullptr)
         t = &carbonTheme();   // pre-L&F fallback: Carbon's own tokens (never literals)
 
@@ -241,16 +241,16 @@ struct KeyboardView::KeyComp : public juce::MidiKeyboardComponent
         const auto text = getWhiteNoteText (midiNoteNumber);
         if (text.isNotEmpty() && area.getHeight() > 16.0f)
         {
-            auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
+            auto* lnf = dynamic_cast<HellcatLookAndFeel*> (&getLookAndFeel());
             g.setColour (fill.contrasting ());
             // Y2K: the caption role face (PT Sans). Other themes keep the
             // app font through the same L&F call as before.
-            g.setFont (lnf != nullptr && parvati::isY2kTheme (lnf->getTheme())
+            g.setFont (lnf != nullptr && hellcat::isY2kTheme (lnf->getTheme())
                            ? lnf->labelFont (juce::jmin (11.0f, area.getWidth() * 0.6f),
                                              juce::Font::plain)
                            : (lnf != nullptr
                                   ? lnf->appFont (juce::jmin (11.0f, area.getWidth() * 0.6f), juce::Font::plain)
-                                  : parvati::labelFontFor (*this, 11.0f)));
+                                  : hellcat::labelFontFor (*this, 11.0f)));
             g.drawText (text, area.withTrimmedLeft (1.0f).withTrimmedBottom (2.0f),
                         juce::Justification::centredBottom, false);
         }
@@ -388,7 +388,7 @@ void KeyboardView::refresh()
 
 void KeyboardView::lookAndFeelChanged()
 {
-    // The keyboard reads its colours from the inherited ParvatiLookAndFeel; re-
+    // The keyboard reads its colours from the inherited HellcatLookAndFeel; re-
     // apply them the instant a new L&F is set on this component (e.g. when it is
     // added to the editor tree) so the keys are shown themed right away, with no
     // reliance on an external refresh() call.
@@ -465,7 +465,7 @@ void KeyboardView::applyThemeColours()
     if (keyboard_ == nullptr)
         return;
 
-    // The complete themed palette (ParvatiTheme when the editor's L&F is
+    // The complete themed palette (HellcatTheme when the editor's L&F is
     // inherited; Carbon's tokens otherwise -- never literals).
     const auto pal = resolveColours (getLookAndFeel());
 
@@ -574,6 +574,13 @@ void KeyboardView::releaseAllNotes()
         latchNoteOff (kv.second);
     }
     mouseDownNotesBySource_.clear();
+    releaseHeldComputerNotes();
+}
+
+void KeyboardView::releaseComputerNotes()
+{
+    // Public wrapper: the editor timer calls this when the window loses key
+    // focus (no key-up arrives then, so the release walk cannot run).
     releaseHeldComputerNotes();
 }
 

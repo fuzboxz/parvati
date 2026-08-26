@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Spring — a dispersive-network spring reverb: each spring is a feedback
 // loop of [long delay -> cascade of SIX short allpasses -> damping LP], with a
@@ -17,14 +17,14 @@
 //   * Width (p3): 0 = one spring (TRUE mono: L and R are bit-identical),
 //     1 = both springs (decorrelated stereo).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1SPRING_H
-#define PARVATI_DSP_FX_FV1_FV1SPRING_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1SPRING_H
+#define HELLCAT_DSP_FX_FV1_FV1SPRING_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Spring : public Fv1FxProcessor
@@ -58,6 +58,6 @@ private:
     int16_t invWidth14_ = 8191; // q14(1-Width)  (precomputed — no per-sample q14)
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1SPRING_H
+#endif // HELLCAT_DSP_FX_FV1_FV1SPRING_H

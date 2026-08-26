@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------- #
-# Parvati — .gitignore
+# Hellcat — .gitignore
 # --------------------------------------------------------------------------- #
 
 # --- macOS ---
@@ -77,3 +77,11 @@ __pycache__/
 !/CONTRIBUTING.md
 !/NOTICES.md
 !/CLAUDE.md
+
+# --- Generated user manual PDF (the .md source and tools/gen_manual.py are tracked) ---
+docs/manual/*.pdf
+
+# --- Manual screenshots (tools/screen_shots.cpp renders them on demand;
+# regenerate with: cmake --build build_unified --target hellcat_screen_shots &&
+# ./build_unified/hellcat_screen_shots docs/manual/screens 2) ---
+docs/manual/screens/

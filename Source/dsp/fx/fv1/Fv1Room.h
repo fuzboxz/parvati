@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Room — the canonical Schroeder room: four parallel lowpass-damped combs
 // -> sum -> TWO series-allpass chains with slightly different lengths per
@@ -14,14 +14,14 @@
 //   * Width (p2): 0 = mono (both outs = the L chain), 1 = full stereo.
 //   * Tone  (p3): 700..15000 Hz output LP.
 
-#ifndef PARVATI_DSP_FX_FV1_FV1ROOM_H
-#define PARVATI_DSP_FX_FV1_FV1ROOM_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1ROOM_H
+#define HELLCAT_DSP_FX_FV1_FV1ROOM_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Room : public Fv1FxProcessor
@@ -56,6 +56,6 @@ private:
     int16_t invWidth14_ = 0;   // q14(1-Width)  (precomputed — no per-sample q14)
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1ROOM_H
+#endif // HELLCAT_DSP_FX_FV1_FV1ROOM_H

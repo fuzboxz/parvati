@@ -1,0 +1,58 @@
+# tools/static_analysis_allowlist.txt — cppcheck baseline (the audit debt).
+#
+# Baseline: 2026-08-26, build_unified Debug compile_commands.json, 53 raw
+# findings deduped to 30 signatures (repeated lines of the same defect in one
+# file collapse: 13x oscillator.cpp uninitStructMember = 1 line here).
+#
+# Signature format: <path>|<cppcheck id>|<message>
+#   * Repo files: repo-relative path. No line/column (they drift with edits).
+#   * Files outside the repo (JUCE, toolchain): basename only.
+# A finding matches a line when path, id, and message text all match.
+#
+# THE GATE: tools/run_static_analysis.sh fails on any finding NOT in this
+# file. Fixing a baseline item and leaving its line here is safe: a stale
+# line simply never matches (prune them when you fix the debt).
+#
+# Regenerate after an INTENTIONAL new baseline:
+#   HELLCAT_STATIC_ALLOWLIST_REGEN=1 tools/run_static_analysis.sh
+#   (prints paste-ready signatures; review before pasting).
+#
+# Debt owners (do not fix inside this task):
+#   * oscillator.cpp uninitStructMember: firmware-faithful 24-bit phase
+#     struct; the firmware leaves carry uninitialised on purpose (documented
+#     port divergence candidate — separate work).
+#   * clouds/* + ambika_reference/*: vendored third-party trees.
+#   * clap-helpers: vendored library from clap-juce-extensions.
+#   * fixed_math.h shiftNegativeLHS: int8 left-shift matches the firmware
+#     arithmetic (runtime-verified clean under ASan/UBSan sweeps).
+#   * tests/*: harness-local style findings.
+Source/Arpeggiator.h|functionStatic|The member function 'hellcat::Arpeggiator::randomByte' can be static.
+Source/dsp/clouds/clouds/dsp/correlator.cc|constVariablePointer|Variable 'destination' can be declared as pointer to const
+Source/dsp/clouds/clouds/dsp/correlator.cc|constVariablePointer|Variable 'source' can be declared as pointer to const
+Source/dsp/clouds/clouds/dsp/pvoc/frame_transformation.cc|cstyleCast|C-style pointer casting
+Source/dsp/envelope.h|shadowFunction|Argument 'stage' shadows outer function
+Source/dsp/fixed_math.h|shiftNegativeLHS|Shifting a negative value is technically undefined behaviour
+Source/dsp/fx/fv1/Fv1Engine.h|duplInheritedMember|The class 'RateBridge' defines member function with name 'reset' also defined in its parent class 'LinearResamplerCore < RateBridge >'.
+Source/dsp/fx/fv1/Fv1FxProcessor.h|uselessOverride|The function 'latency' overrides a function in a base class but is identical to the overridden function
+Source/dsp/oscillator.cpp|uninitStructMember|Uninitialized struct member: phase.carry
+Source/dsp/voice.cpp|shadowFunction|Local variable 'cutoff' shadows outer function
+ambika_reference/controller/multi.cc|knownConditionTrueFalse|Condition '!Storage::LoadMultiFromEeprom()' is always true
+ambika_reference/controller/part.cc|cstyleCast|C-style pointer casting
+ambika_reference/controller/part.cc|knownConditionTrueFalse|Condition 'parameter_id!=0xff' is always false
+ambika_reference/controller/part.cc|knownConditionTrueFalse|Condition 'parameter_id==0xff' is always true
+ambika_reference/controller/part.cc|variableScope|The scope of the variable 'new_value' can be reduced.
+ambika_reference/controller/resources.cc|unknownMacro|There is an unknown macro here somewhere. Configuration is required. If PROGMEM is a macro then please configure it.
+host-proxy.hh|noExplicitConstructor|Class 'HostProxy' has a constructor with 1 argument that is not explicit.
+juce_TargetPlatform.h|preprocessorErrorDirective|#error "Unknown platform!"
+tests/build_policy_test.cpp|constVariableReference|Variable 'tok' can be declared as reference to const
+tests/build_policy_test.cpp|containerOutOfBounds|Either the condition 'toks.empty()' is redundant or expression 'toks.begin()+(toks.empty()?0:1)' causes access out of bounds.
+tests/drive_calib_test.cpp|passedByValue|Function parameter 'prm' should be passed by const reference.
+tests/firmware_shim/controller/midi_dispatcher.h|constParameterPointer|Parameter 'part' can be declared as pointer to const
+tests/firmware_shim/controller/parameter.h|functionStatic|The member function 'ambika::Parameter::Scale' can be static.
+tests/fv1_clocked_delay_test.cpp|unusedStructMember|struct member 'Setting::name' is never used.
+tests/fv1_engine_test.cpp|knownConditionTrueFalse|Condition 'f24_sat(kMaxQ23+100)==kMaxQ23' is always true
+tests/fv1_engine_test.cpp|knownConditionTrueFalse|Condition 'f24_sat(kMinQ23-100)==kMinQ23' is always true
+tests/osc_sync_test.cpp|compareValueOutOfTypeRangeError|Comparing expression of type 'unsigned char' against value 255. Condition is always true.
+tests/hellcat_fx_invariants_test.cpp|passedByValue|Function parameter 'params' should be passed by const reference.
+tests/hellcat_tests.cpp|knownConditionTrueFalse|Condition 'e<0' is always false
+tests/reverb_decay_test.cpp|passedByValue|Function parameter 'p' should be passed by const reference.

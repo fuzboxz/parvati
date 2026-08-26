@@ -114,7 +114,7 @@ design; flagging only so nobody mistakes them for drift.
   such patches render an ~constant LFO. Severity: note — recommend remapping shapes>3 to
   triangle on load, or surfacing a warning.
 - Bit-exactness is not regression-tested: the simavr/avr-gcc gold-standard harness skips
-  when tools are absent (tests/parvati_tests.cpp:5-10). All §1 conclusions above are
+  when tools are absent (tests/hellcat_tests.cpp:5-10). All §1 conclusions above are
   code-reading only. Severity: important (residual risk) — recommend a CI job (or a
   one-time committed golden-fixture set: N patches × M blocks of 8-bit output captured
   from the AVR build) diffed against ambika::dsp::Voice.
@@ -179,7 +179,7 @@ design; flagging only so nobody mistakes them for drift.
   (HostRateBridge.h:178-190). The drift-free fractional phase (hostWritePhase_ carry,
   HostRateBridge.h:153) and the phaseStart_ head-overlap (HostRateBridge.h:161-176,
   194-205) are as documented. Regression tests exist
-  (tests/parvati_fx_bridge_tinychunk.cpp, tests/parvati_fx_engine_continuity.cpp).
+  (tests/hellcat_fx_bridge_tinychunk.cpp, tests/hellcat_fx_engine_continuity.cpp).
 - FX_AUDIO_REVIEW.md findings vs current code:
   - B1/B3 fixed: wetFade_ is a per-sample one-pole both directions, always on
     (FxChain.h:169-186; blendSlotWetFade FxChain.cpp:171-224; renderParallel persists
@@ -305,7 +305,7 @@ design; flagging only so nobody mistakes them for drift.
 | F1 | important | SynthEngine renderPartFx | FX input sums voice-pool indices as card indices; wrong part mixes for non-default allocations | SynthEngine.cpp:1534-1536 vs :1457-1458, SynthEngine.h:271,588 |
 | F2 | important | perf / filter | 1-sample LadderFilter::process() wrapper per sample per voice | analog_filter.cpp:215-222 |
 | F3 | important | AT discipline | heap alloc/free on audio thread for OS-factor/topology/FX-type changes (make_unique ~512KB classes) | AmbikaVoice.cpp:249-268; FxChain.cpp:97-100; FxProcessors.h:158-160 |
-| F-bitexact | important (residual risk) | testing | no automated bit-exact regression vs firmware DSP (simavr harness skips without avr-gcc) | tests/parvati_tests.cpp:5-10 |
+| F-bitexact | important (residual risk) | testing | no automated bit-exact regression vs firmware DSP (simavr harness skips without avr-gcc) | tests/hellcat_tests.cpp:5-10 |
 | F4 | note | clouds fx | Reverb lp_decay_1_/2_ uninitialized (indeterminate read) | clouds/dsp/fx/reverb.h:44-69 vs :93-94 |
 | F5 | note | fidelity | LFO wavetable shapes 4..19 + tempo-sync stubs reachable via NRPN/.MUL | voice.cpp:6-29; lfo.h:99-104; MidiParameterMap.cpp:160 |
 | F6 | note | robustness | no processBlock-size guard vs prepared scratch | PluginProcessor.cpp:69-72; FxChain.cpp:20-56 |

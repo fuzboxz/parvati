@@ -52,10 +52,10 @@ build_release/build_san_*/build_ios* was touched). No Source/ or tests/ edits.
 - deterministic_check: run the bad form, then `cmake --build ... --config Release ... -sdk iphonesimulator`; expect rc != 0 with 'unable to create directory'. Remediation: document `--config Release` before the `--` separator in the CMakeLists.txt iOS block comment (or CONTRIBUTING), and/or add a pre-build artefacts-config mismatch guard.
 
 ## F-ios-build-3: parvati_tests is not compilable under the iOS toolchain
-- tests/parvati_tests.cpp:58 (`std::system` inside toolAvailable)
+- tests/hellcat_tests.cpp:58 (`std::system` inside toolAvailable)
 - severity: low (blocks simulator CI of the deterministic suite; the plugin lib itself is iOS-clean — everything else compiled)
 - class: build | tests
-- evidence: `cmake --build build_ios_bh_build --config Release --target parvati_tests -- -sdk iphonesimulator` => rc=65, `tests/parvati_tests.cpp:58:17: error: 'system' is unavailable: not available on iOS`. Contrast: `parvati_multi_load_test` builds CLEAN for iOS sim (rc=0) — so the suite is one unportable call away from being largely iOS-buildable.
+- evidence: `cmake --build build_ios_bh_build --config Release --target parvati_tests -- -sdk iphonesimulator` => rc=65, `tests/hellcat_tests.cpp:58:17: error: 'system' is unavailable: not available on iOS`. Contrast: `parvati_multi_load_test` builds CLEAN for iOS sim (rc=0) — so the suite is one unportable call away from being largely iOS-buildable.
 - deterministic_check: the command above (fails today). Remediation: guard toolAvailable()/its callers with `#if ! JUCE_IOS` (the function only probes for optional external analyzers — desktop diagnostics).
 
 ## F-ios-build-4: No app icon declared or shipped

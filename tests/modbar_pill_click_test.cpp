@@ -28,7 +28,7 @@
 // nothing even to a plain juce::TextButton in a temporary desktop window).
 // Hit-testing, the other half of real event delivery, is covered by [1].
 //
-// Run: ./build_unified/parvati_unified_tests modbar_pill_click_test
+// Run: ./build_unified/hellcat_unified_tests modbar_pill_click_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -142,7 +142,7 @@ TEST(modbar_pill_click_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     juce::AudioProcessorEditor* editor = proc.createEditor();

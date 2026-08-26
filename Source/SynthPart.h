@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // SynthPart — the per-part data model of SynthEngine, in a dependency-light
 // shard: PolyAllocator, AtomicByteArray, PartFxState and Part, plus the
@@ -27,7 +27,7 @@
 // the pendingConfig_ members below. Dependency-light: no JUCE module enters.
 #include "dsp/patch_sanitizer.h"
 
-namespace parvati
+namespace hellcat
 {
 // ---- seqlock primitives (SPSC: one writer thread, one reader thread) ----
 // The protocol behind every guarded frame in this header and the engine
@@ -72,11 +72,11 @@ bool seqlockTryRead (const std::atomic<uint32_t>& seq, const T& src, T& out)
     }
     return false;
 }
-} // namespace parvati
+} // namespace hellcat
 
 // Authentic hardware = 6 voicecards => 6 Parts.
 static constexpr int kNumParts  = 6;
-// Per-part voice-slot ceiling (Parvati extension). The engine owns a fixed
+// Per-part voice-slot ceiling (Hellcat extension). The engine owns a fixed
 // pool of kNumParts * kMaxVoicesPerPart voices. Thus EVERY Part can be maxed
 // out SIMULTANEOUSLY. The pool always satisfies the sum of all Parts' slot
 // settings, so allocation never steals between Parts. voiceSlots is the
@@ -263,13 +263,13 @@ struct Part
     AtomicByteArray<84>  partBytes  {};   // sizeof(PartData) — MT writes, AT reads
     // Per-part microtonal tuning: the firmware raga preset (PartData.raga,
     // byte 4). 0 = 12-EDO; 1..32 = firmware raga preset == partBytes[4]. The
-    // Parvati custom-table extension (Scala import / TuningEditor) was REMOVED
+    // Hellcat custom-table extension (Scala import / TuningEditor) was REMOVED
     // 2026-08-19 — factory raga presets only. Raga byte edits ride the
     // frameDirty_ publish (the patchBytes pattern); the AT services it in
     // processTransport and pushes the resolved table to the Part's voices
     // (pushTuningToVoices).
-    parvati::Arpeggiator arp;
-    parvati::Sequencer   seq;
+    hellcat::Arpeggiator arp;
+    hellcat::Sequencer   seq;
     // These three are written on the message thread (Multi page / .MUL load) and
     // read on the audio thread (findPartForNote, every note) and (like the
     // routing fields) voiceAllocation is written on the message thread and read
@@ -315,15 +315,15 @@ struct Part
     // Message-thread writer: wrap a field mutation so the audio-thread reader
     // never sees a torn pendingConfig_. The message thread is the SOLE writer
     // (audio-thread-origin arp/seq/part_select edits are funneled back to the
-    // message thread by ParvatiAudioProcessor's deferred-parameter drain before
+    // message thread by HellcatAudioProcessor's deferred-parameter drain before
     // they can reach these setters — see PluginProcessor.h / DeferredParamRing;
     // without that deferral this seqlock would have two writers and tear).
     template <typename Fn>
     void writePendingConfig (Fn&& fn)
     {
-        parvati::seqlockBegin (pendingSeq_);
+        hellcat::seqlockBegin (pendingSeq_);
         fn (pendingConfig_);
-        parvati::seqlockEnd (pendingSeq_);
+        hellcat::seqlockEnd (pendingSeq_);
     }
     // Audio-thread reader: copy out a consistent snapshot (retry on a concurrent
     // write). Bounded retries (64): an unbounded spin on the audio thread could
@@ -340,7 +340,7 @@ struct Part
     PendingConfig readPendingConfig (bool* exhausted = nullptr) const
     {
         PendingConfig copy;
-        const bool ok = parvati::seqlockTryRead (pendingSeq_, pendingConfig_, copy);
+        const bool ok = hellcat::seqlockTryRead (pendingSeq_, pendingConfig_, copy);
         if (exhausted != nullptr)
             *exhausted = ! ok;
         return ok ? copy : (hasLastGoodConfig_ ? lastGoodConfig_ : PendingConfig{});
@@ -402,7 +402,7 @@ struct Part
     // the slot counts) and read on the message thread (.MUL export + UI).
     // NOT user state — see voiceSlots.
     std::atomic<uint8_t> voiceAllocation { 0 };
-    // Parvati extension: the Part's VOICE COUNT from the engine pool — the
+    // Hellcat extension: the Part's VOICE COUNT from the engine pool — the
     // single source of truth for polyphony. 1..kMaxVoicesPerPart = voices;
     // 0 = disabled (only the ctor default / legacy loaders store 0 —
     // setPartVoiceSlots clamps 0 to 1). Written on the message thread
@@ -410,15 +410,15 @@ struct Part
     // rebuildVoiceAllocation — atomic like voiceAllocation, published through
     // the allocationDirty_ release/acquire.
     std::atomic<uint8_t> voiceSlots { 0 };
-    // Parvati extension: user-facing part name/alias ("Kick", "Snare", "Lead").
+    // Hellcat extension: user-facing part name/alias ("Kick", "Snare", "Lead").
     // Message-thread-only (MIDI routing and the audio thread never read it),
-    // so a plain String is safe. Carried by the .parvati multi format and the
+    // so a plain String is safe. Carried by the .yml multi format and the
     // host engine-state blob (v2); the Ambika .MUL/.PRO formats have no name
     // bytes, so hardware export falls back to "Part N".
     juce::String name;
     uint8_t polyphonyMode = 1;     // POLY (firmware default); PartData byte 15
     PolyAllocator          polyAlloc;   // POLY/CYCLIC/UNISON_2X/CHAIN allocator
-    parvati::NoteStack<12> monoStack;   // MONO note-priority stack
+    hellcat::NoteStack<12> monoStack;   // MONO note-priority stack
     std::vector<int> voiceIndices;   // indices into the Synthesiser's voice list
 
     // ---- Sustain pedal (CC64): firmware part.cc:335-390 semantics (W7) ----

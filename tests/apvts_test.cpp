@@ -1,6 +1,6 @@
 // Layer-3b verification: the APVTS parameter bridge actually drives the engine.
 //
-// Instantiates the full ParvatiAudioProcessor, then proves that changing an
+// Instantiates the full HellcatAudioProcessor, then proves that changing an
 // APVTS patch parameter (osc1_shape) reaches every voice's Patch byte and
 // changes the rendered audio (SAW = audible, NONE = near-silent). Also reports
 // the full parameter descriptor count and a per-group breakdown.
@@ -35,7 +35,7 @@ void check (bool cond, const char* msg)
 // Render `blocks` blocks (noteOn on block 0, held), returning the peak |sample|.
 // Any voices still sounding from a previous phase are killed first so the
 // measurement reflects ONLY this note with the current patch.
-double renderPeak (ParvatiAudioProcessor& proc, int midi, int blocks)
+double renderPeak (HellcatAudioProcessor& proc, int midi, int blocks)
 {
     constexpr int kBlock = 512;
     juce::AudioBuffer<float> buf (2, kBlock);
@@ -68,7 +68,7 @@ double renderPeak (ParvatiAudioProcessor& proc, int midi, int blocks)
 }
 
 // Render `blocks` blocks (noteOn on block 0, held) and return the mono mix.
-std::vector<float> renderAudio (ParvatiAudioProcessor& proc, int midi, int blocks)
+std::vector<float> renderAudio (HellcatAudioProcessor& proc, int midi, int blocks)
 {
     constexpr int kBlock = 512;
     juce::AudioBuffer<float> buf (2, kBlock);
@@ -142,7 +142,7 @@ TEST(apvts_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    std::printf ("=== Parvati Layer-3b (APVTS parameter bridge) ===\n");
+    std::printf ("=== Hellcat Layer-3b (APVTS parameter bridge) ===\n");
 
     // (1) Descriptor table + per-group breakdown.
     const auto& descs = getPatchParamDescriptors();
@@ -180,7 +180,7 @@ TEST(apvts_test)
     check (groups["part"] == 8, "8 part params (volume/octave/tuning/spread/raga/legato/portamento/polyphony)");
 
     // (2) Processor constructs; APVTS holds every descriptor paramID.
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 512);
 
     std::printf ("\n[2] APVTS contains every descriptor parameter ID\n");

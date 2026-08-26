@@ -1,4 +1,4 @@
-// Standalone verification of parvati::fv1::Fv1ClockedDelay (the FV-1 DAW-synced
+// Standalone verification of hellcat::fv1::Fv1ClockedDelay (the FV-1 DAW-synced
 // clocked delay). JUCE-FREE: compiles in seconds with
 //   clang++ -std=c++17 -O2 -Wall -Wextra -fsanitize=address,undefined \
 //     -I Source tests/fv1_clocked_delay_test.cpp \
@@ -13,7 +13,7 @@
 
 #include "dsp/fx/fv1/Fv1ClockedDelay.h"
 
-namespace fv1 = parvati::fv1;
+namespace fv1 = hellcat::fv1;
 
 namespace
 {
@@ -199,7 +199,7 @@ TEST(fv1_clocked_delay_test)
     // NOTE: the CHAIN-level seam (FxChain::setTempo -> slot override, and its
     // bit-identical no-op on non-ClockedDelay slots) is covered by the chain
     // sections T1/T2 of tests/fx_routing_test.cpp — FxChain needs the full
-    // Parvati/JUCE link, which this deliberately JUCE-free target omits.
+    // Hellcat/JUCE link, which this deliberately JUCE-free target omits.
     {
         constexpr int n = 16384;
         const float sync18 = 6.0f / 7.0f;   // 1/12 division

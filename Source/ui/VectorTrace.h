@@ -1,15 +1,15 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // VectorTrace — the single modern vector recipe shared by the three
 // data-visualization canvases (EnvelopeDisplay, OscPreviewDisplay,
 // FilterResponseDisplay). It replaces the former chunky dot-matrix / 3px-LCD-cell
 // rasterization with smooth, anti-aliased stroked `juce::Path`s plus a
 // translucent vertical gradient area fill, matching the smooth rotary-arc style
-// in `ParvatiLookAndFeel::drawRotarySlider` (Path + PathStrokeType(curved,
+// in `HellcatLookAndFeel::drawRotarySlider` (Path + PathStrokeType(curved,
 // rounded)).
 //
 // THEME-SAFE by contract: NO colour literals live here. Every colour is supplied
-// by the caller from `ParvatiTheme` tokens. The gradient endpoints derive from
+// by the caller from `HellcatTheme` tokens. The gradient endpoints derive from
 // the single `trace` colour via `.withAlpha()` only (peak end brightened, the
 // baseline end fully transparent), so the whole graph re-tints on a category /
 // theme change with no extra wiring.
@@ -23,7 +23,7 @@
 
 #include <functional>
 
-namespace parvati::vectorTrace
+namespace hellcat::vectorTrace
 {
 //==============================================================================
 // How `levelAt(xf)` is interpreted.
@@ -203,4 +203,4 @@ inline void render (juce::Graphics& g, juce::Rectangle<float> area, int count,
     }
 }
 
-}  // namespace parvati::vectorTrace
+}  // namespace hellcat::vectorTrace

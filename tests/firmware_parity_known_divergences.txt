@@ -15,7 +15,7 @@
 
 # The firmware's note-sequence decode returns the programmed velocity
 # verbatim (a gated step with velocity byte 0 plays at velocity 0 = silent);
-# Parvati's Sequencer::noteStep substitutes 100 for a 0 velocity so an
+# Hellcat's Sequencer::noteStep substitutes 100 for a 0 velocity so an
 # untouched default step is audible. Deliberate UX deviation.
 velocity-zero-substitution
 
@@ -24,8 +24,8 @@ velocity-zero-substitution
 # and relies on the analog mixer stage to smooth the DAC steps in hardware.
 # The digital port has no analog domain, so a mix_balance / mix_parameter
 # tick steps the gains by up to 16/255 of the instantaneous waveform — the
-# audible zipper parvati_synth_drag_probe measured at 0.0597 vs its 0.05
-# gate. Parvati glides the gains linearly across each block (~0.9 ms slew,
+# audible zipper hellcat_synth_drag_probe measured at 0.0597 vs its 0.05
+# gate. Hellcat glides the gains linearly across each block (~0.9 ms slew,
 # 8.8 fixed-point accumulators in dsp::Voice), emulating the analog
 # smoothing. STATIC CVs render byte-identically to the firmware (first
 # block snaps; a steady CV has a zero increment; the glide converges to the

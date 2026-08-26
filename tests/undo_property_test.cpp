@@ -47,7 +47,7 @@
 //   — seeded float artifacts vs loadPartIntoApvts's canonical values —
 //   cannot occur within one instance).
 //
-// Run: ./build_unified/parvati_unified_tests undo_property_test
+// Run: ./build_unified/hellcat_unified_tests undo_property_test
 
 #include <cstdint>
 #include "unified_test_runner.h"
@@ -81,7 +81,7 @@ void check (bool cond, const char* msg)
 // Full host-visible state snapshot (APVTS tree + the 6-part engine blob + ui
 // prefs), exactly what a host saves. Deterministic within one instance for
 // identical state — proven by the canary before any property runs.
-std::vector<uint8_t> snapshot (ParvatiAudioProcessor& proc)
+std::vector<uint8_t> snapshot (HellcatAudioProcessor& proc)
 {
     juce::MemoryBlock mb;
     proc.getStateInformation (mb);
@@ -109,12 +109,12 @@ bool bytesIdentical (const std::vector<uint8_t>& a, const std::vector<uint8_t>& 
 
 // Raw APVTS value. Every id used here is a choice/int parameter whose stored
 // value is an exact integer-in-float, so callers compare with juce::approximatelyEqual.
-float rawValue (ParvatiAudioProcessor& proc, const char* id)
+float rawValue (HellcatAudioProcessor& proc, const char* id)
 {
     return proc.getApvts().getRawParameterValue (id)->load();
 }
 
-bool rawIs (ParvatiAudioProcessor& proc, const char* id, float exactIntValue)
+bool rawIs (HellcatAudioProcessor& proc, const char* id, float exactIntValue)
 {
     return juce::approximatelyEqual (rawValue (proc, id), exactIntValue);
 }
@@ -122,14 +122,14 @@ bool rawIs (ParvatiAudioProcessor& proc, const char* id, float exactIntValue)
 // A USER edit: the APVTS-bound editor widgets write through getParameterAsValue
 // (tree property write recorded by the UndoManager -> synchronous
 // parameterChanged -> engine staging). This is the real UI write path.
-void writeParam (ParvatiAudioProcessor& proc, const char* id, float v)
+void writeParam (HellcatAudioProcessor& proc, const char* id, float v)
 {
     proc.getApvts().getParameterAsValue (id) = v;
 }
 
 // Editor doctrine: each discrete edit site opens a fresh transaction, so one
 // undo = one logical edit (PluginEditor.cpp idiom).
-void newTransaction (ParvatiAudioProcessor& proc)
+void newTransaction (HellcatAudioProcessor& proc)
 {
     proc.getUndoManager().beginNewTransaction();
 }
@@ -142,7 +142,7 @@ struct PartBytes
     std::array<uint8_t, 84>  part {};
 };
 
-PartBytes readPartBytes (ParvatiAudioProcessor& proc, int i)
+PartBytes readPartBytes (HellcatAudioProcessor& proc, int i)
 {
     PartBytes out;
     out.patch = {};
@@ -162,9 +162,9 @@ TEST(undo_property_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    std::printf ("=== Parvati undo round-trip property (T7) ===\n");
+    std::printf ("=== Hellcat undo round-trip property (T7) ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     // The fx-type ENGAGEMENT SEEDING lives in FxSlotCard's APVTS listener (a
@@ -184,7 +184,7 @@ TEST(undo_property_test)
     // hunt runs on the FX page (then restores SYNTH).
     FxSlotCard* fx1 = nullptr;
     {
-        auto* parEd = dynamic_cast<ParvatiEditor*> (editor.get());
+        auto* parEd = dynamic_cast<HellcatEditor*> (editor.get());
         if (parEd != nullptr) parEd->setCurrentTopPage (1);
         std::function<void (juce::Component*)> hunt = [&] (juce::Component* c)
         {

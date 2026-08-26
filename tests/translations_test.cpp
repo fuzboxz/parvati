@@ -15,7 +15,7 @@
 // Key sets are read from LocalisedStrings::getCurrentMappings() AFTER
 // installLanguage() — the exact table the editor ships, not a copy.
 //
-// Run: ./build_unified/parvati_unified_tests translations_test
+// Run: ./build_unified/hellcat_unified_tests translations_test
 
 #include <cstdio>
 #include "unified_test_runner.h"

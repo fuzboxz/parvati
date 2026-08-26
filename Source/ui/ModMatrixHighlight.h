@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ModMatrixHighlight — a tiny editor-scoped highlight BUS that links the Mod
 // Matrix rows (ModMatrixView) and the destination knobs (ParamControl), which
@@ -34,7 +34,7 @@
 #include <utility>
 #include <vector>
 
-namespace parvati
+namespace hellcat
 {
 
 class ModMatrixHighlight
@@ -190,4 +190,4 @@ private:
     std::vector<AssignSub> assignSubs_;
 };
 
-}  // namespace parvati
+}  // namespace hellcat

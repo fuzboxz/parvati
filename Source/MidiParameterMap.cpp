@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See MidiParameterMap.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See MidiParameterMap.h.
 
 #include "MidiParameterMap.h"
 
@@ -115,7 +115,7 @@ constexpr uint8_t midi_nrpn_map[256] = {
 // `offset` is the byte address in the combined [Patch][PartData] space
 // (== the PRM_* enum value; e.g. PRM_PART_VOLUME == 112). Name resource ids
 // are dropped. unit is display-only and unused in the decode. min/max are
-// ported for parity (scaling uses the Parvati descriptor range instead).
+// ported for parity (scaling uses the Hellcat descriptor range instead).
 //
 // kNumParameters == 73 (parameter.h:120); only indices 0..57 are patch/part
 // level — the CC map never references >= 58, so those are not ported.
@@ -191,7 +191,7 @@ constexpr FirmwareParameter firmware_parameters[58] = {
     { LEVEL_PART, 124, 0,   1,  32, 1, 0, 0xff, 0xff },// 54 seq_length_1
     { LEVEL_PART, 125, 0,   1,  32, 1, 0, 0xff, 0xff },// 55 seq_length_2
     { LEVEL_PART, 126, 0,   1,  32, 1, 0, 0xff, 0xff },// 56 seq_length_3
-    // ---- polyphony (PartData 15 = address 127; not exposed in Parvati) ----
+    // ---- polyphony (PartData 15 = address 127; not exposed in Hellcat) ----
     { LEVEL_PART, 127, 0,   0,   4, 1, 0, 0xff, 107 }  // 57 polyphony_mode [not exposed]
 };
 static_assert (sizeof (firmware_parameters) / sizeof (firmware_parameters[0]) == 58,
@@ -259,7 +259,7 @@ void MidiParameterMap::applyValue (int address, int midiValue, bool scaled)
 {
     const PatchParamDescriptor* d = descriptorForAddress (address);
     if (d == nullptr || ! setter_)
-        return;  // address not exposed in Parvati (e.g. octave/tuning/polyphony)
+        return;  // address not exposed in Hellcat (e.g. octave/tuning/polyphony)
 
     const int lo = descriptorMin (*d);
     const int hi = descriptorMax (*d);

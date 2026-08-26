@@ -134,7 +134,7 @@ static inline uint16_t U8MixU16 (uint8_t a, uint8_t b, uint8_t balance)
 {
     // The real header has only the AVR-asm form; per its multiply comments the
     // value is the FULL 16-bit sum a*(255-balance) + b*balance (no >>8) —
-    // identical to Parvati's fixed_math.h U8MixU16 (used by voicecard/
+    // identical to Hellcat's fixed_math.h U8MixU16 (used by voicecard/
     // envelope.h in the audio oracle).
     return static_cast<uint16_t> (a) * static_cast<uint8_t> (255 - balance)
            + static_cast<uint16_t> (b) * balance;
@@ -144,7 +144,7 @@ static inline uint16_t U8MixU16 (uint8_t a, uint8_t b, uint8_t balance)
 // uint24_t / uint24c_t (integral:16 + fractional:8 [+ carry]) come from the
 // REAL avrlib/base.h included above. The real op.h has AVR-asm-only forms;
 // these portable equivalents use a 32-bit intermediate — semantics identical
-// to the asm (documented shifts/adds), and matching how Parvati's port
+// to the asm (documented shifts/adds), and matching how Hellcat's port
 // translated the same asm (Source/dsp/fixed_math.h — independently written,
 // cross-validating the translation).
 static inline uint32_t U24To32 (uint24_t a)
@@ -195,7 +195,7 @@ static inline uint24_t U24ShiftLeft (uint24_t a)
 
 // 4-bit-balance blends (waveform mip level crossfades in oscillator.cc).
 // Decoded from the real header's asm comments/final masks (and matching
-// Parvati's independent translation in Source/dsp/fixed_math.h).
+// Hellcat's independent translation in Source/dsp/fixed_math.h).
 static inline uint8_t U8U4MixU8 (uint8_t a, uint8_t b, uint8_t balance)
 {
     return static_cast<uint8_t> (

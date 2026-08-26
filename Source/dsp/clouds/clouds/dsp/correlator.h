@@ -68,7 +68,7 @@ class Correlator {
   uint32_t* source_;
   uint32_t* destination_;
   
-  // PARVATI PATCH: default member initializers. The class keeps an empty
+  // HELLCAT PATCH: default member initializers. The class keeps an empty
   // constructor and Init() (correlator.cc) sets only offset_/best_match_/
   // done_, leaving increment_/size_/candidate_/best_score_ indeterminate at
   // construction. best_match() reads increment_ (multiplied by best_match_,

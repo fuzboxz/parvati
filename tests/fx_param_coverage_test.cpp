@@ -28,7 +28,7 @@
 //                             "Wavemangler") with the choice INDEX order unchanged
 //                             (presets store the index, so renames are safe).
 //
-// Run: ./build_unified/parvati_unified_tests fx_param_coverage_test
+// Run: ./build_unified/hellcat_unified_tests fx_param_coverage_test
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -857,7 +857,7 @@ static void testFxModMatrix()
         const int slot  = dest / 6;          // field stride = dryWet + 5 params
         const int field = dest % 6;          // 0 = dryWet, 1..5 = param 0..4
 
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (kRate, block);
 
         auto& eng = proc.getEngine();
@@ -917,7 +917,7 @@ static void testFxModMatrix()
         const uint8_t kConst4   = 30;
         auto measure = [&] (uint8_t src) -> float
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             proc.prepareToPlay (kRate, block);
             auto& eng = proc.getEngine();
             eng.setFxSlotType (0, (uint8_t) FxType::Resonator);
@@ -1236,7 +1236,7 @@ static void testFxTypeChoiceLabels()
 
 TEST(fx_param_coverage_test)
 {
-    std::printf ("=== Parvati FX parameter + module coverage ===\n\n");
+    std::printf ("=== Hellcat FX parameter + module coverage ===\n\n");
     testFxTable();
     testPerEffectFinite();
     testPerEffectWetDiffers();

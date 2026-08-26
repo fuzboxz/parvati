@@ -6,7 +6,7 @@
 #include "unified_test_runner.h"
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>   // std::getenv (PARVATI_HEADLESS reads below)
+#include <cstdlib>   // std::getenv (HELLCAT_HEADLESS reads below)
 #include <cstring>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -33,7 +33,7 @@
  #include <CoreFoundation/CoreFoundation.h>
 #endif
 #include "TuningTables.h"              // tuningPresetTable (Tune combo assertions)
-#include "ui/ParvatiTheme.h"
+#include "ui/HellcatTheme.h"
 #include "ui/SynthWorkspace.h"          // [25] getSynthWorkspaceForTest()->modBar()
 #include "ui/ModTelemetryTypes.h"       // [25] ModTelemetrySnapshot / LiveEnvStage / LiveFilterValues
 #include "dsp/patch.h"                  // [25] MOD_SRC_* (synthetic telemetry history)
@@ -89,11 +89,11 @@ TEST(editor_test)
     // variable to suppress pickers in ANY manual binary run.
     // (setEnvVar from test_utils.h wraps ::setenv on POSIX and _putenv_s on
     // Windows, so every platform that builds the suite gets the override.)
-    setEnvVar ("PARVATI_HEADLESS", "1");
+    setEnvVar ("HELLCAT_HEADLESS", "1");
 
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     // ---- [1] Editor builds + is an AudioProcessorEditor ----
@@ -155,7 +155,7 @@ TEST(editor_test)
         struct ThemeCheck
         {
             const char* name;
-            const ParvatiTheme& t;
+            const HellcatTheme& t;
             bool expectDark;
             juce::Colour expAudio, expEnv, expLfo, expSeq;
         };
@@ -418,21 +418,21 @@ TEST(editor_test)
                "UI voices: re-picking 4 re-enables the part");
 
         // ---- [7c] Stock template FILES through the REAL load path ----
-        // Mirrors ParvatiEditor::applyPatchFile exactly (loadParvatiMultiFile
-        // + patchPage->refresh()): loads the shipped presets/TEMPLATES/*.parvati
+        // Mirrors HellcatEditor::applyPatchFile exactly (loadHellcatMultiFile
+        // + patchPage->refresh()): loads the shipped presets/TEMPLATES/*.yml
         // and asserts the Patch page's rows/arrangement reflect the loaded
         // multi — the end-to-end engine->GUI reflection after a file load.
         std::printf ("\n[7c] stock templates via the real load path\n");
         const juce::File tplDir = juce::File::getCurrentWorkingDirectory()
                                       .getChildFile ("presets/TEMPLATES");
-        const juce::File polyFile  = tplDir.getChildFile ("Poly.parvati");
-        const juce::File multiFile = tplDir.getChildFile ("Multitimbral.parvati");
-        const juce::File drumFile  = tplDir.getChildFile ("Drum Kit (GM).parvati");
+        const juce::File polyFile  = tplDir.getChildFile ("Poly.yml");
+        const juce::File multiFile = tplDir.getChildFile ("Multitimbral.yml");
+        const juce::File drumFile  = tplDir.getChildFile ("Drum Kit (GM).yml");
         check (polyFile.existsAsFile() && multiFile.existsAsFile() && drumFile.existsAsFile(),
-               "stock templates present (run parvati_gen_templates first)");
+               "stock templates present (run hellcat_gen_templates first)");
         if (polyFile.existsAsFile())
         {
-            check (proc.loadParvatiMultiFile (polyFile), "load path: Poly.parvati loads");
+            check (proc.loadHellcatMultiFile (polyFile), "load path: Poly.yml loads");
             patchPage->refresh();
             const int polyRows[6] = { 16, 0, 0, 0, 0, 0 };
             bool polyMirrored = true;
@@ -441,18 +441,18 @@ TEST(editor_test)
             check (polyMirrored,
                    "load path: Poly rows mirror 16/0/0/0/0/0 (Custom-style load no longer mis-styled)");
             check (patchPage->getDisplayedArrangement() == Arrangement::Poly,
-                   "load path: Poly.parvati re-infers as Poly");
+                   "load path: Poly.yml re-infers as Poly");
         }
         if (multiFile.existsAsFile())
         {
-            check (proc.loadParvatiMultiFile (multiFile), "load path: Multitimbral.parvati loads");
+            check (proc.loadHellcatMultiFile (multiFile), "load path: Multitimbral.yml loads");
             patchPage->refresh();
             bool sixMaxed = true;
             for (int p = 0; p < 6; ++p)
                 if (patchPage->getDisplayedVoiceSlots (p) != 16) sixMaxed = false;
             check (sixMaxed, "load path: Multitimbral rows mirror 6 x 16");
             check (patchPage->getDisplayedArrangement() == Arrangement::Multitimbral,
-                   "load path: Multitimbral.parvati re-infers as Multitimbral");
+                   "load path: Multitimbral.yml re-infers as Multitimbral");
         }
         if (drumFile.existsAsFile())
         {
@@ -460,14 +460,14 @@ TEST(editor_test)
             // preset exactly (6 x 1 mono voice, GM single-note zones) plus its
             // bespoke drum content (names + tuned patches, which inferArrangement
             // ignores) — so the page must show "Drum Kit", not Custom.
-            check (proc.loadParvatiMultiFile (drumFile), "load path: Drum Kit (GM).parvati loads");
+            check (proc.loadHellcatMultiFile (drumFile), "load path: Drum Kit (GM).yml loads");
             patchPage->refresh();
             bool allOne = true;
             for (int p = 0; p < 6; ++p)
                 if (patchPage->getDisplayedVoiceSlots (p) != 1) allOne = false;
             check (allOne, "load path: Drum Kit rows mirror 1 voice/part");
             check (patchPage->getDisplayedArrangement() == Arrangement::DrumKit,
-                   "load path: Drum Kit (GM).parvati re-infers as Drum Kit");
+                   "load path: Drum Kit (GM).yml re-infers as Drum Kit");
         }
 
         // ---- [7d] EDITOR-LEVEL load wiring: the REAL user entry points ----
@@ -476,11 +476,11 @@ TEST(editor_test)
         // patchPage->refresh(). Every check here asserts the page reflects the
         // load WITHOUT any manual refresh call from the test.
         std::printf ("\n[7d] editor-level load wiring (filesDropped / page reveal)\n");
-        auto* parEd = dynamic_cast<ParvatiEditor*> (editor);
-        check (parEd != nullptr, "editor casts to ParvatiEditor (drop-target seam)");
+        auto* parEd = dynamic_cast<HellcatEditor*> (editor);
+        check (parEd != nullptr, "editor casts to HellcatEditor (drop-target seam)");
         if (parEd != nullptr)
         {
-            // (a) Multi drop: Poly.parvati through filesDropped alone.
+            // (a) Multi drop: Poly.yml through filesDropped alone.
             if (polyFile.existsAsFile())
             {
                 parEd->filesDropped (juce::StringArray (polyFile.getFullPathName()), 0, 0);
@@ -530,17 +530,17 @@ TEST(editor_test)
                 }
             }
 
-            // (c) CORRUPT .parvati multi drop: validation must fail BEFORE any
+            // (c) CORRUPT .yml multi drop: validation must fail BEFORE any
             // engine mutation (the old path ran resetAllVoices + slot resets
             // first, so a failed load silently re-partitioned the pool).
             {
                 engine.setPartVoiceSlots (0, 11);   // distinctive state to detect mutation
                 patchPage->refresh();
                 juce::File corrupt = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                         .getChildFile ("parvati_corrupt_test.parvati");
+                                         .getChildFile ("hellcat_corrupt_test.yml");
                 check (corrupt.replaceWithText (
-                           "format: parvati-multi\nparts: [\n"),
-                       "corrupt .parvati test file written");
+                           "format: hellcat-multi\nparts: [\n"),
+                       "corrupt .yml test file written");
                 const int slotsBefore[6] = { engine.getPartVoiceSlots (0),
                                              engine.getPartVoiceSlots (1),
                                              engine.getPartVoiceSlots (2),
@@ -738,7 +738,7 @@ TEST(editor_test)
 #if defined (__APPLE__)
     std::printf ("\n[MOD] mod-pill bar toggle\n");
     {
-        auto* ed = dynamic_cast<ParvatiEditor*> (editor);
+        auto* ed = dynamic_cast<HellcatEditor*> (editor);
         std::function<juce::TextButton* (juce::Component*)> findBtn = [&] (juce::Component* c) -> juce::TextButton*
         {
             // Two header buttons are labelled "MOD" after the 2026-08 rename
@@ -802,7 +802,7 @@ TEST(editor_test)
     std::printf ("\n[16] SettingsPanel: language switch fires no uncommanded writes\n");
     {
         ThemeManager themeMgr;
-        ParvatiAudioProcessor settingsProc;
+        HellcatAudioProcessor settingsProc;
         settingsProc.prepareToPlay (48000.0, 256);
         settingsProc.setOversamplingFactor (4);   // NON-default selection
         int osWrites = 0, langWrites = 0;
@@ -851,7 +851,7 @@ TEST(editor_test)
         // is the current one — switch there for the hunt, restore SYNTH after.
         FxSlotCard* fxCard1 = nullptr;
         {
-            auto* parEd = dynamic_cast<ParvatiEditor*> (editor);
+            auto* parEd = dynamic_cast<HellcatEditor*> (editor);
             if (parEd != nullptr) parEd->setCurrentTopPage (1);
             std::function<void (juce::Component*)> hunt = [&] (juce::Component* c)
             {
@@ -973,7 +973,7 @@ TEST(editor_test)
     std::printf ("\n[17] PresetBrowser caches the scan + .PRO name parse\n");
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                             .getChildFile ("parvati_presetbrowser_cache_test");
+                             .getChildFile ("hellcat_presetbrowser_cache_test");
         tmp.deleteRecursively();
         auto mkDir = [] (const juce::File& d) { d.createDirectory(); return d; };
         const auto templatesDir = mkDir (tmp.getChildFile ("TEMPLATES"));
@@ -981,7 +981,7 @@ TEST(editor_test)
         const auto factoryDir   = mkDir (tmp.getChildFile ("FACTORY"));
         const auto factoryA     = mkDir (factoryDir.getChildFile ("A"));
         const auto multiDir     = mkDir (tmp.getChildFile ("FACTORY_MULTI"));
-        check (userDir.getChildFile ("zeta.parvati").replaceWithText ("format: parvati-multi\nparts: []\n"),
+        check (userDir.getChildFile ("zeta.yml").replaceWithText ("format: hellcat-multi\nparts: []\n"),
                "test setup: user preset file written");
         check (factoryA.getChildFile ("000.PRO").replaceWithText ("not-a-pro", false),
                "test setup: factory .PRO written (parse fails -> filename label)");
@@ -1014,7 +1014,7 @@ TEST(editor_test)
         // granularity filesystems like HFS+/FAT) — bump the directory mtime
         // EXPLICITLY so the pickup is deterministic everywhere (W11).
         juce::Thread::sleep (25);
-        check (userDir.getChildFile ("newleaf.parvati").replaceWithText ("x"),
+        check (userDir.getChildFile ("newleaf.yml").replaceWithText ("x"),
                "test setup: external file added to USER");
         userDir.setLastModificationTime (juce::Time::getCurrentTime()
                                              + juce::RelativeTime::seconds (2));
@@ -1030,7 +1030,7 @@ TEST(editor_test)
         // after a save covers the in-app writer.)
         {
             const juce::Time frozen = userDir.getLastModificationTime();
-            check (userDir.getChildFile ("ghost.parvati").replaceWithText ("x"),
+            check (userDir.getChildFile ("ghost.yml").replaceWithText ("x"),
                    "test setup: mtime-preserving external file added");
             userDir.setLastModificationTime (frozen);
             juce::PopupMenu m5;
@@ -1054,7 +1054,7 @@ TEST(editor_test)
             check (lateBrowser.debugScanCount() == 1, "late-root: first open scans once");
 
             lateUser.createDirectory();
-            lateUser.getChildFile ("appeared.parvati").replaceWithText ("x");
+            lateUser.getChildFile ("appeared.yml").replaceWithText ("x");
             lateUser.setLastModificationTime (juce::Time::getCurrentTime()
                                                  + juce::RelativeTime::seconds (2));
             juce::PopupMenu l2;
@@ -1081,7 +1081,7 @@ TEST(editor_test)
         // User, Templates; wrap at the ends; setCurrentFile anchors an
         // out-of-menu load.
         const auto tmp18 = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                               .getChildFile ("parvati_preset_step_test");
+                               .getChildFile ("hellcat_preset_step_test");
         tmp18.deleteRecursively();
         auto mkDir18 = [] (const juce::File& d) { d.createDirectory(); return d; };
         const auto factoryA18  = mkDir18 (tmp18.getChildFile ("FACTORY/A"));
@@ -1091,8 +1091,8 @@ TEST(editor_test)
         check (factoryA18.getChildFile ("a1.PRO").replaceWithText ("x", false), "setup: A/a1");
         check (factoryA18.getChildFile ("a2.PRO").replaceWithText ("x", false), "setup: A/a2");
         check (multiDir18.getChildFile ("m1.MUL").replaceWithText ("x"), "setup: multi");
-        check (userDir18.getChildFile ("u1.parvati").replaceWithText ("x"), "setup: user");
-        check (tplDir18.getChildFile ("t1.parvati").replaceWithText ("x"), "setup: template");
+        check (userDir18.getChildFile ("u1.yml").replaceWithText ("x"), "setup: user");
+        check (tplDir18.getChildFile ("t1.yml").replaceWithText ("x"), "setup: template");
 
         juce::Array<juce::File> steppedFiles;   // every file onSelect delivers
         PresetBrowser stepper (tplDir18, userDir18, tmp18.getChildFile ("FACTORY"),
@@ -1104,19 +1104,19 @@ TEST(editor_test)
         const juce::File third = stepper.selectNext();
         check (third.getFileName() == "m1.MUL", "step order: Multi follows the factory banks");
         const juce::File fourth = stepper.selectNext();
-        check (fourth.getFileName() == "u1.parvati", "step order: User follows Multi");
+        check (fourth.getFileName() == "u1.yml", "step order: User follows Multi");
         const juce::File fifth = stepper.selectNext();
-        check (fifth.getFileName() == "t1.parvati", "step order: Templates last");
+        check (fifth.getFileName() == "t1.yml", "step order: Templates last");
         const juce::File wrapped = stepper.selectNext();
         check (wrapped == first, "step(next) WRAPS back to the first leaf");
         const juce::File prev = stepper.selectPrev();
         check (prev == fifth, "step(prev) returns to the last leaf");
         const juce::File prevUser = stepper.selectPrev();
-        check (prevUser.getFileName() == "u1.parvati", "step(prev) walks backwards (User)");
+        check (prevUser.getFileName() == "u1.yml", "step(prev) walks backwards (User)");
         check (steppedFiles.size() == 8, "every step fires the onSelect (load) seam");
         // Anchor an out-of-menu load (drag-drop / Load... path): stepping
         // continues from THAT file, not from wherever stepping left off.
-        stepper.setCurrentFile (userDir18.getChildFile ("u1.parvati"));
+        stepper.setCurrentFile (userDir18.getChildFile ("u1.yml"));
         const juce::File fromAnchor = stepper.selectPrev();
         check (fromAnchor.getFileName() == "m1.MUL", "setCurrentFile anchors stepping");
         // An empty tree degrades to an invalid File (the editor then passes
@@ -1134,7 +1134,7 @@ TEST(editor_test)
         // the USER tree a SUBDIRECTORY's leaves come before the parent's own
         // leaves (the menu's subs-then-leaves traversal).
         const auto tmp18b = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                .getChildFile ("parvati_preset_step_multibank");
+                                .getChildFile ("hellcat_preset_step_multibank");
         tmp18b.deleteRecursively();
         const auto fact18b = mkDir18 (tmp18b.getChildFile ("FACTORY"));
         const char* const kBankNames18b[] = { "A", "B", "F", "S" };
@@ -1154,17 +1154,17 @@ TEST(editor_test)
         // Nested user tree: Sub/ holds u0, the user root holds z — "Sub"
         // must be visited BEFORE the root's own leaf z.
         const auto userSub18b = mkDir18 (user18b.getChildFile ("Sub"));
-        check (userSub18b.getChildFile ("u0.parvati").replaceWithText ("x"), "setup: user/Sub/u0");
-        check (user18b.getChildFile ("z.parvati").replaceWithText ("x"), "setup: user/z");
-        check (tpl18b.getChildFile ("t1.parvati").replaceWithText ("x"), "setup: template");
+        check (userSub18b.getChildFile ("u0.yml").replaceWithText ("x"), "setup: user/Sub/u0");
+        check (user18b.getChildFile ("z.yml").replaceWithText ("x"), "setup: user/z");
+        check (tpl18b.getChildFile ("t1.yml").replaceWithText ("x"), "setup: template");
         {
             PresetBrowser multi (tpl18b, user18b, fact18b, multi18b,
                                  [] (const juce::File&) {});
             const char* const expectedOrder[] = {
                 "a.PRO", "b.PRO", "f.PRO", "s.PRO",   // factory banks A B F S
                 "m1.MUL",                                  // multi bank
-                "u0.parvati", "z.parvati",               // user: Sub before root leaves
-                "t1.parvati" };                           // templates last
+                "u0.yml", "z.yml",               // user: Sub before root leaves
+                "t1.yml" };                           // templates last
             bool orderOk = true;
             for (int i = 0; i < 8; ++i)
             {
@@ -1184,7 +1184,7 @@ TEST(editor_test)
         tmp18b.deleteRecursively();
 
         // ---- (b) Editor-level shortcuts through the REAL keyPressed path.
-        auto* parEd18 = dynamic_cast<ParvatiEditor*> (editor);
+        auto* parEd18 = dynamic_cast<HellcatEditor*> (editor);
         if (parEd18 != nullptr)
         {
             // Host-context degradation: headless/standalone has NO host
@@ -1251,7 +1251,7 @@ TEST(editor_test)
         }
         else
         {
-            check (false, "editor casts to ParvatiEditor (shortcut assertions)");
+            check (false, "editor casts to HellcatEditor (shortcut assertions)");
         }
     }
 
@@ -1270,8 +1270,8 @@ TEST(editor_test)
     // ------------------------------------------------------------------
     std::printf ("\n[20] top-bar chrome polish\n");
     {
-        auto* parEd = dynamic_cast<ParvatiEditor*> (editor);
-        check (parEd != nullptr, "[20] editor casts to ParvatiEditor");
+        auto* parEd = dynamic_cast<HellcatEditor*> (editor);
+        check (parEd != nullptr, "[20] editor casts to HellcatEditor");
         if (parEd != nullptr)
         {
             editor->setSize (1280, 634);
@@ -1279,10 +1279,10 @@ TEST(editor_test)
             // ---- (a) version/patch separation ----
             const auto logo = parEd->getLogoAreaForTest();
             // Measure the subtitle with the SAME font paint()/resized() use.
-            const ParvatiLookAndFeel measureLnf;
+            const HellcatLookAndFeel measureLnf;
             juce::GlyphArrangement ga;
             ga.addLineOfText (measureLnf.appFont (10.0f, juce::Font::plain),
-                              juce::String (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION)),
+                              juce::String (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" HELLCAT_VERSION)),
                               0.0f, 0.0f);
             const int subW = juce::roundToInt (
                 ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth());
@@ -1314,7 +1314,7 @@ TEST(editor_test)
                     if (! b->isShowing() && b->getWidth() == 0) continue;
                     check (b->getHeight() >= 30 && b->getHeight() <= 38,
                            "[20] header TextButton visual height in [30,38] (slim, desktop)");
-                    check (b->getHeight() < ParvatiEditor::kBarHeight,
+                    check (b->getHeight() < HellcatEditor::kBarHeight,
                            "[20] header TextButton shorter than the 44pt strip");
                     ++checkedH;
                 }
@@ -1381,10 +1381,10 @@ TEST(editor_test)
     {
         struct PageScan { juce::StringArray groups; juce::StringArray paramIds; };
         juce::Array<PageScan> scans;
-        auto* parvatiEd = dynamic_cast<ParvatiEditor*> (editor);
-        check (parvatiEd != nullptr, "[21] ParvatiEditor cast for allGeneratedPages");
-        if (parvatiEd != nullptr)
-        for (auto* page : parvatiEd->allGeneratedPages())
+        auto* hellcatEd = dynamic_cast<HellcatEditor*> (editor);
+        check (hellcatEd != nullptr, "[21] HellcatEditor cast for allGeneratedPages");
+        if (hellcatEd != nullptr)
+        for (auto* page : hellcatEd->allGeneratedPages())
         {
             PageScan ps;
             for (auto* child : page->getChildren())
@@ -1500,8 +1500,8 @@ TEST(editor_test)
 
         // The Patch-hosted Global page stays well-formed with the Global
         // panel + the merged table (all part knobs are table columns now).
-        if (parvatiEd != nullptr)
-        for (auto* page : parvatiEd->allGeneratedPages())
+        if (hellcatEd != nullptr)
+        for (auto* page : hellcatEd->allGeneratedPages())
         {
             bool isGlobal = false;
             for (auto* child : page->getChildren())
@@ -1707,14 +1707,14 @@ TEST(editor_test)
     else
         check (false, "[23] PatchPage reachable for tab checks");
 
-    // ---- [24] Load/Save default to .parvati; Patch-page Ambika export ----
-    // (a) the top-bar Load/Save buttons exist with the direct .parvati
+    // ---- [24] Load/Save default to .yml; Patch-page Ambika export ----
+    // (a) the top-bar Load/Save buttons exist with the direct .yml
     //     semantics — clicking headless completes synchronously (the desktop
     //     gate means no picker/menu launches; an un-gated menu/picker would
     //     either hang the pump or create desktop chrome);
     // (b) the Patch page carries the two export buttons (findable, enabled,
     //     tooltiped) and the click seams fire the editor's wiring.
-    std::printf ("\n[24] parvati-first Load/Save + Ambika export buttons\n");
+    std::printf ("\n[24] hellcat-first Load/Save + Ambika export buttons\n");
     {
         juce::TextButton* loadBtn = nullptr;
         juce::TextButton* saveBtn = nullptr;
@@ -1741,8 +1741,8 @@ TEST(editor_test)
         else check (false, "[24] Load button has an onClick");
         if (saveBtn != nullptr && saveBtn->onClick != nullptr)
         {
-            saveBtn->onClick();   // direct .parvati save, desktop-gated
-            check (true, "[24] Save click completes headless (direct .parvati, no menu)");
+            saveBtn->onClick();   // direct .yml save, desktop-gated
+            check (true, "[24] Save click completes headless (direct .yml, no menu)");
         }
         else check (false, "[24] Save button has an onClick");
 
@@ -1831,7 +1831,7 @@ TEST(editor_test)
     // ==================================================================
     std::printf ("\n[25] live mod-feedback UI (strips / markers / live curve / refresh pref)\n");
     {
-        auto* ed25 = dynamic_cast<ParvatiEditor*> (editor);
+        auto* ed25 = dynamic_cast<HellcatEditor*> (editor);
         CentralModBar* editorBar = (ed25 != nullptr && ed25->getSynthWorkspaceForTest() != nullptr)
             ? ed25->getSynthWorkspaceForTest()->modBar() : nullptr;
         check (editorBar != nullptr, "[25] editor mod bar reachable via the synth workspace");
@@ -1872,7 +1872,7 @@ TEST(editor_test)
             bool moving = true;
             bool valid  = true;
             bool noteMoving = false;   // the NOTE-sentinel melody (slot 31) scrolls
-            parvati::ModTelemetrySnapshot snap {};
+            hellcat::ModTelemetrySnapshot snap {};
 
             SyntheticTelemetry()
             {
@@ -1881,28 +1881,28 @@ TEST(editor_test)
                 snap.historyCount = 64;
                 // VELOCITY: a constant pattern — it must NEVER trip the gate.
                 uint8_t* vel = snap.history
-                    + (size_t) ambika::dsp::MOD_SRC_VELOCITY * parvati::ModTelemetrySnapshot::kHistoryLen;
+                    + (size_t) ambika::dsp::MOD_SRC_VELOCITY * hellcat::ModTelemetrySnapshot::kHistoryLen;
                 for (int i = 0; i < 64; ++i) vel[(size_t) i] = 200;
             }
 
-            bool operator() (parvati::ModTelemetrySnapshot& out)
+            bool operator() (hellcat::ModTelemetrySnapshot& out)
             {
                 if (! valid)
                     return false;   // a torn read / stale reset epoch
                 // LFO 1: a scrolling ramp — the downsampled first/last/min/max
                 // signature moves on every call while `moving`.
                 uint8_t* lfo = snap.history
-                    + (size_t) ambika::dsp::MOD_SRC_LFO_1 * parvati::ModTelemetrySnapshot::kHistoryLen;
+                    + (size_t) ambika::dsp::MOD_SRC_LFO_1 * hellcat::ModTelemetrySnapshot::kHistoryLen;
                 for (int i = 0; i < 64; ++i)
                     lfo[(size_t) i] = static_cast<uint8_t> ((i * 4 + (moving ? call * 8 : 0)) & 0xff);
                 snap.sources[ambika::dsp::MOD_SRC_LFO_1] = lfo[63];
                 // NOTE-SEQ (spare slot): a scrolling melody while noteMoving —
                 // proves the bar-only sentinel pill consumes kNoteSeqSlot.
                 uint8_t* nseq = snap.history
-                    + (size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot * parvati::ModTelemetrySnapshot::kHistoryLen;
+                    + (size_t) hellcat::ModTelemetrySnapshot::kNoteSeqSlot * hellcat::ModTelemetrySnapshot::kHistoryLen;
                 for (int i = 0; i < 64; ++i)
                     nseq[(size_t) i] = static_cast<uint8_t> ((i * 4 + (noteMoving ? call * 8 : 0)) & 0xff);
-                snap.sources[(size_t) parvati::ModTelemetrySnapshot::kNoteSeqSlot] = nseq[63];
+                snap.sources[(size_t) hellcat::ModTelemetrySnapshot::kNoteSeqSlot] = nseq[63];
                 ++call;
                 out = snap;
                 return true;
@@ -1914,7 +1914,7 @@ TEST(editor_test)
             bar.setBounds (-1400, -1400, 900, CentralModBar::kBarHeight);   // off-screen probe peer
             bar.setVisible (true);   // a fresh JUCE Component is born HIDDEN — isShowing() needs this
             SyntheticTelemetry synth;
-            bar.setTelemetryProvider ([&synth] (parvati::ModTelemetrySnapshot& s) { return synth (s); });
+            bar.setTelemetryProvider ([&synth] (hellcat::ModTelemetrySnapshot& s) { return synth (s); });
             bar.setTelemetryRateHz (60);
             // A headless host cannot create the off-screen probe peer; the
             // isShowing() gate below then skips the checks. macOS always
@@ -1987,11 +1987,11 @@ TEST(editor_test)
         //    gated on the editor's visibilityChanged alone, which never fires
         //    again once the window gains its peer). --
         {
-            ParvatiAudioProcessor e2eProc;
+            HellcatAudioProcessor e2eProc;
             e2eProc.prepareToPlay (48000.0, 256);
             setInt (e2eProc, "env1_lfo_rate", 60);      // free-running LFO 1: the strip data moves
             e2eProc.syncAllParamsToEngine();
-            auto* e2eEd = dynamic_cast<ParvatiEditor*> (e2eProc.createEditor());
+            auto* e2eEd = dynamic_cast<HellcatEditor*> (e2eProc.createEditor());
             check (e2eEd != nullptr, "[25] e2e: editor created");
             CentralModBar* e2eBar = nullptr;
             // The e2e animation check needs the real peer (the hub pump
@@ -2078,7 +2078,7 @@ TEST(editor_test)
             const float kAttackEnd = kPad25 + (wA25 / kTotal25) * kSpan25;
             const float kPlateau25 = kPad25 + ((wA25 + wD25) / kTotal25) * kSpan25;
 
-            parvati::LiveEnvStage stage;   // provider-owned state, mutated between phases
+            hellcat::LiveEnvStage stage;   // provider-owned state, mutated between phases
             EnvelopeDisplay disp ("Env 25",
                 [] { return 0.5f; }, [] { return 0.3f; }, [] { return 0.7f; }, [] { return 0.4f; });
             disp.setBounds (0, 0, 200, 80);
@@ -2148,7 +2148,7 @@ TEST(editor_test)
                 bool  moving = false;
                 float frozen = 0.8f;      // the settled value while !moving
                 int   call   = 0;
-                parvati::LiveFilterValues operator()()
+                hellcat::LiveFilterValues operator()()
                 {
                     if (! moving) return { active, frozen, 0.2f };
                     // A slow cutoff sweep around 0.7: bytes move EVERY tick.
@@ -2223,7 +2223,7 @@ TEST(editor_test)
             proc.setUiRefreshHz (30);   // restore the default for everything after
 
             ThemeManager themeMgr25;
-            ParvatiAudioProcessor settingsProc25;
+            HellcatAudioProcessor settingsProc25;
             settingsProc25.prepareToPlay (48000.0, 256);
             int refreshCbSum = 0;
             SettingsPanel panel25 (settingsProc25, themeMgr25,
@@ -2289,12 +2289,12 @@ TEST(editor_test)
 static int runPreviewRegression (bool windowed)
 {
     juce::ScopedJuceInitialiser_GUI gui;
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
-    auto* ed = dynamic_cast<ParvatiEditor*> (proc.createEditor());
+    auto* ed = dynamic_cast<HellcatEditor*> (proc.createEditor());
     if (ed == nullptr)
     {
-        std::printf ("  FAIL: createEditor() -> ParvatiEditor\n");
+        std::printf ("  FAIL: createEditor() -> HellcatEditor\n");
         return 1;
     }
     ed->setSize (1280, 634);

@@ -4,7 +4,7 @@
 <dict>
     <!--
       Hardened-runtime entitlements for the RELEASE (Developer ID) signing of
-      the Parvati plugin bundles + Standalone app (tools/release/sign_and_notarize.sh).
+      the Hellcat plugin bundles + Standalone app (tools/release/sign_and_notarize.sh).
 
       disable-library-validation: REQUIRED for audio plugins under the hardened
       runtime — hosts (DAWs) load plugin binaries into their own process, and

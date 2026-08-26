@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // TuningTables — the controller-firmware scale ("raga") presets.
 //
@@ -19,20 +19,20 @@
 //     part.cc:634-647: raga shifts are applied to the tuned note).
 //   - 32767 is the firmware "silence this note class" sentinel: firmware
 //     Part::AcceptNote (part.cc:649-660) REFUSES notes of a muted class; it
-//     is never voiced as a pitch (a deliberate Parvati deviation from the
+//     is never voiced as a pitch (a deliberate Hellcat deviation from the
 //     firmware's TuneNote arithmetic, which would add 32767 and clamp to
 //     garbage — see SynthEngine::isNoteAcceptedByPartTuning).
 //   - Preset ids 1..32 are the firmware lookup_table_table indices; id 16
 //     (bageshree) aliases the kafi array and id 32 (rasia) aliases the yaman
 //     array, exactly like the firmware dispatch. The hardware UI offers
-//     0..31 (parameter.cc:680-689) but files can carry raga=32; Parvati keeps
+//     0..31 (parameter.cc:680-689) but files can carry raga=32; Hellcat keeps
 //     the file-faithful superset (harmless: the alias resolves).
 
 #pragma once
 
 #include <cstdint>
 
-namespace parvati
+namespace hellcat
 {
 // Preset ids run 1..kNumTuningPresets; 0 means "off" (12-EDO).
 inline constexpr int kNumTuningPresets = 32;
@@ -53,4 +53,4 @@ const char* tuningPresetName (int id);
 
 // The neutral 12-EDO table (twelve zeros).
 const int16_t* tuningEdoTable();
-}  // namespace parvati
+}  // namespace hellcat

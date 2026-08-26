@@ -10,7 +10,7 @@
 # after that component dies. Verified 2026-08-18 against ~/JUCE 9.0.1.
 # TODO(track): if the choosers ever move off member ownership (e.g. shared
 # static instances), these entries become REAL bugs — re-review then.
-Source/PluginEditor.cpp:4218: openLoadDialog FileChooser completion; `fileChooser_` is a ParvatiEditor member unique_ptr, destroyed in ~ParvatiEditor (JUCE cancels pending async ops). TODO: switch to SafePointer only if ownership changes.
+Source/PluginEditor.cpp:4218: openLoadDialog FileChooser completion; `fileChooser_` is a HellcatEditor member unique_ptr, destroyed in ~HellcatEditor (JUCE cancels pending async ops). TODO: switch to SafePointer only if ownership changes.
 Source/PluginEditor.cpp:4263: openSaveDialog FileChooser completion; same member-ownership contract as :4218. TODO: as above.
 Source/PluginEditor.cpp:4303: openSaveParvatiDialog FileChooser completion; same member-ownership contract as :4218. TODO: as above.
 Source/PluginEditor.cpp:4345: openSaveMultiDialog FileChooser completion; same member-ownership contract as :4218 (the inner MulExportDialog strategy callback IS SafePointer-guarded separately). TODO: as above.

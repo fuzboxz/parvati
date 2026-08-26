@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Parvati — Developer-ID signing + notarization + stapling for macOS releases.
+# Hellcat — Developer-ID signing + notarization + stapling for macOS releases.
 #
 # Signs every plugin artefact in an artefacts dir (VST3 / AU / CLAP /
 # Standalone) with a "Developer ID Application" certificate and the hardened
@@ -13,7 +13,7 @@
 #
 # Usage:
 #   tools/release/sign_and_notarize.sh [ARTEFACTS_DIR] [OUT_DIR]
-#     ARTEFACTS_DIR  default: build/Parvati_artefacts/Release
+#     ARTEFACTS_DIR  default: build/Hellcat_artefacts/Release
 #     OUT_DIR        default: dist/  (created)
 #
 # Required environment:
@@ -21,7 +21,7 @@
 #                               "Developer ID Application: ACME Inc (ABCD123456)"
 #                               (see `security find-identity -v -p codesigning`)
 #   and ONE of the notarytool credential sets:
-#     PARVATI_NOTARY_PROFILE    name of a stored profile
+#     HELLCAT_NOTARY_PROFILE    name of a stored profile
 #                               (`xcrun notarytool store-credentials PROFILE
 #                               --apple-id ... --team-id ... --password ...`)
 #     or APPLE_ID + APPLE_ID_PASSWORD (app-specific password) + TEAM_ID
@@ -37,7 +37,7 @@ set -euo pipefail
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 log() { printf '\n==> %s\n' "$*"; }
 
-ARTEFACTS_DIR="${1:-build/Parvati_artefacts/Release}"
+ARTEFACTS_DIR="${1:-build/Hellcat_artefacts/Release}"
 OUT_DIR="${2:-dist}"
 ENTITLEMENTS="$(cd "$(dirname "$0")" && pwd)/macos_release.entitlements"
 
@@ -53,28 +53,28 @@ security find-identity -v -p codesigning | grep -F "$DEV_ID" >/dev/null \
 
 NOTARY_ARGS=()
 if [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
-    if [ -n "${PARVATI_NOTARY_PROFILE:-}" ]; then
-        NOTARY_ARGS=(--keychain-profile "$PARVATI_NOTARY_PROFILE")
+    if [ -n "${HELLCAT_NOTARY_PROFILE:-}" ]; then
+        NOTARY_ARGS=(--keychain-profile "$HELLCAT_NOTARY_PROFILE")
     elif [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_AUTH_KEY_PATH:-}" ]; then
         [ -f "$ASC_AUTH_KEY_PATH" ] || die "ASC_AUTH_KEY_PATH does not exist: $ASC_AUTH_KEY_PATH"
         NOTARY_ARGS=(--key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --key "$ASC_AUTH_KEY_PATH")
     elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_ID_PASSWORD:-}" ] && [ -n "${TEAM_ID:-}" ]; then
         NOTARY_ARGS=(--apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$TEAM_ID")
     else
-        die "no notarytool credentials: set PARVATI_NOTARY_PROFILE, or ASC_KEY_ID+ASC_ISSUER_ID+ASC_AUTH_KEY_PATH, or APPLE_ID+APPLE_ID_PASSWORD+TEAM_ID (or SKIP_NOTARIZE=1)"
+        die "no notarytool credentials: set HELLCAT_NOTARY_PROFILE, or ASC_KEY_ID+ASC_ISSUER_ID+ASC_AUTH_KEY_PATH, or APPLE_ID+APPLE_ID_PASSWORD+TEAM_ID (or SKIP_NOTARIZE=1)"
     fi
 fi
 
 # --- collect bundles ---------------------------------------------------------
 BUNDLES=()
-for rel in "VST3/Parvati.vst3" "AU/Parvati.component" "CLAP/Parvati.clap" "Standalone/Parvati.app"; do
+for rel in "VST3/Hellcat.vst3" "AU/Hellcat.component" "CLAP/Hellcat.clap" "Standalone/Hellcat.app"; do
     if [ -d "$ARTEFACTS_DIR/$rel" ]; then
         BUNDLES+=("$ARTEFACTS_DIR/$rel")
     else
         printf 'note: %s not present, skipping\n' "$rel"
     fi
 done
-[ "${#BUNDLES[@]}" -ge 1 ] || die "no Parvati bundles found under $ARTEFACTS_DIR"
+[ "${#BUNDLES[@]}" -ge 1 ] || die "no Hellcat bundles found under $ARTEFACTS_DIR"
 
 mkdir -p "$OUT_DIR"
 
@@ -121,7 +121,7 @@ done
 
 # --- distribution zip ---------------------------------------------------------
 log "building distribution archive"
-STAGE="$OUT_DIR/Parvati-macOS"
+STAGE="$OUT_DIR/Hellcat-macOS"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 for b in "${BUNDLES[@]}"; do
@@ -130,7 +130,7 @@ done
 if [ "${STAPLE_README_NOTICES:-1}" = "1" ]; then
     cp README.md NOTICES.md "$STAGE/"
 fi
-DIST_ZIP="$OUT_DIR/Parvati-macOS.zip"
+DIST_ZIP="$OUT_DIR/Hellcat-macOS.zip"
 rm -f "$DIST_ZIP"
 ditto -c -k --keepParent --sequesterRsrc "$STAGE" "$DIST_ZIP"
 rm -rf "$STAGE"

@@ -4,10 +4,10 @@ Scope reviewed: Source/SynthEngine.{h,cpp}, Source/AmbikaVoice.{h,cpp}, Source/A
 Source/Sequencer.{h,cpp}, Source/NoteStack.h, Source/TransportClock.h, Source/dsp/{voice,analog_filter,
 oscillator,envelope,lfo,fixed_math,patch,constants}.{h,cpp}, Source/dsp/fx/** (FxChain, FxProcessors,
 HostRateBridge, Fv1Engine, fv1 family), plus load-path files (PluginProcessor.cpp, PatchFile.cpp,
-ParvatiPreset.cpp) where the engine's inputs are validated (or not).
+HellcatPreset.cpp) where the engine's inputs are validated (or not).
 
 Tests cross-checked before reporting (so pinned behavior is not re-reported):
-tests/arp_test.cpp, tests/arp_seq_timing (parvati_arp_seq_timing_test.cpp), tests/sequencer_test.cpp,
+tests/arp_test.cpp, tests/arp_seq_timing (hellcat_arp_seq_timing_test.cpp), tests/sequencer_test.cpp,
 tests/polyphony_test.cpp, tests/multitimbral_test.cpp, tests/host_state_test.cpp, tests/load_invariants_test.cpp,
 tests/loader_fuzz_test.cpp, tests/concurrency_test.cpp, tests/realtime_test.cpp, tests/part_fx_routing_test.cpp,
 tests/fx_param_coverage_test.cpp, tests/synth_param_coverage_test.cpp, tests/voice_slots_test.cpp,
@@ -47,7 +47,7 @@ it cannot catch the OOB write in F-eng-1; no test exercises arp_direction=Chord 
 - evidence: Every other input path clamps before these bytes reach the Voice, which shows the invariant
   the mod matrix relies on: .PRO loads go through the APVTS (PluginProcessor.cpp:911
   `parvatiPatchByteToValue` → parameter range clamp; ParameterLayout.cpp:622-633); .parvati loads clamp
-  (ParvatiPreset.cpp:882 via `parvatiValueToPatchByte`, ParameterLayout.cpp:602-619 jlimit to descriptor
+  (HellcatPreset.cpp:882 via `parvatiValueToPatchByte`, ParameterLayout.cpp:602-619 jlimit to descriptor
   range); APVTS ranges bound env rates to 0..142 (ParameterLayout.cpp:332) and portamento to 0..63
   (ParameterLayout.cpp:374); and the ARP/SEQ PartData bytes are explicitly clamped at the staging site
   "because raw-file loaders must do the same" (SynthEngine.cpp:302-321). The Patch struct has NO

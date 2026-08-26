@@ -42,7 +42,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -55,13 +55,13 @@ void renderIdle (ParvatiAudioProcessor& p, int blocks)
 
 juce::File goldencard (const juce::String& rel)
 {
-    return juce::File (PARVATI_SOURCE_DIR).getChildFile ("ambika_reference/controller/data/goldencard").getChildFile (rel);
+    return juce::File (HELLCAT_SOURCE_DIR).getChildFile ("ambika_reference/controller/data/goldencard").getChildFile (rel);
 }
 
 juce::File tempDir()
 {
     const auto d = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("parvati_export_bytes_test");
+                       .getChildFile ("hellcat_export_bytes_test");
     d.createDirectory();
     return d;
 }
@@ -139,7 +139,7 @@ struct RiffFile
 
 // Configure a processor into the over-capacity state (parts 0-2: 2 cards each,
 // slots 10/8/6; POLY) used by the strategy byte checks.
-void setupProcessor (ParvatiAudioProcessor& proc)
+void setupProcessor (HellcatAudioProcessor& proc)
 {
     proc.prepareToPlay (48000.0, 256);
     renderIdle (proc, 2);
@@ -205,7 +205,7 @@ TEST(export_bytes_test)
     // ---- [2] Chunk-level layout of a fresh export (RIFF walker) ----
     {
         std::printf ("\n[2] chunk layout of a fresh .MUL export\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         proc.setLoadedProgramName ("ByteLvl");
@@ -259,10 +259,10 @@ TEST(export_bytes_test)
     // ---- [3] Strategy rewrites at the byte level ----
     {
         std::printf ("\n[3] strategy byte-level rewrites\n");
-        using namespace parvati::mul_export;
+        using namespace hellcat::mul_export;
 
         // Baseline: a no-fallback export (AUTO slots) for the untouched-bytes ref.
-        ParvatiAudioProcessor plain;
+        HellcatAudioProcessor plain;
         plain.prepareToPlay (48000.0, 256);
         renderIdle (plain, 2);
         plain.getEngine().setPartVoiceAllocation (0, 0b000011);
@@ -280,7 +280,7 @@ TEST(export_bytes_test)
         };
         for (const auto& c : cases)
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             setupProcessor (proc);
             const juce::File f = tempDir().getChildFile (juce::String (c.name) + ".MUL");
             check (proc.saveMultiFile (f, c.strat), "strategy export saves");
@@ -347,7 +347,7 @@ TEST(export_bytes_test)
 
         // (d) ChainSplit sibling units carry CONTINUATION masks at the byte level.
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             setupProcessor (proc);
             const juce::File f = tempDir().getChildFile ("chainb.MUL");
             check (proc.saveMultiFile (f, 5), "chain export saves");
@@ -374,7 +374,7 @@ TEST(export_bytes_test)
     // ---- [4] .PRO parameter bytes at exact raw offsets ----
     {
         std::printf ("\n[4] .PRO parameter bytes at raw offsets\n");
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         renderIdle (proc, 2);
         // Distinct known values through the REAL APVTS bridge.
@@ -399,7 +399,7 @@ TEST(export_bytes_test)
             const float raw = proc.getApvts().getRawParameterValue (d.paramID)->load();
             const uint8_t byte = d.isSequencer
                 ? static_cast<uint8_t> (juce::jlimit (d.minValue, d.maxValue, (int) raw))
-                : parvatiValueToPatchByte (d, raw);
+                : hellcatValueToPatchByte (d, raw);
             const uint8_t inFile = (d.isPart || d.isSequencer)
                 ? part->payload[(size_t) d.byteOffset]
                 : patch->payload[(size_t) d.byteOffset];

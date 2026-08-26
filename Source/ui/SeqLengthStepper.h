@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // SeqLengthStepper — a ParamControl subclass for the sequencer LENGTH params
 // (seq_length_{1,2,3}, a normal 1..16 Int). A 1..16 knob is an awkward control
@@ -19,7 +19,7 @@
 // DROPDOWN AFFORDANCE (2026-08-23 user feedback: "the dropdown isn't styled
 // as a proper dropdown — not clear it can be changed"): the cell band now
 // paints the app's COMBO chrome (the same dark rounded field + right ▼
-// chevron ParvatiLookAndFeel::drawComboBox draws) behind the number, so the
+// chevron HellcatLookAndFeel::drawComboBox draws) behind the number, so the
 // control reads as a dropdown that opens the 1..16 picker. The tappable band
 // and the visual field are the SAME rect; the number keeps the bright value
 // tier; the fully-transparent tap button and always-on-top label (the 3
@@ -27,13 +27,13 @@
 
 #pragma once
 
-#include "ParamControl.h"   // ParamControl, ParvatiAudioProcessor
+#include "ParamControl.h"   // ParamControl, HellcatAudioProcessor
 
 class SeqLengthStepper : public ParamControl,
                          private juce::Button::Listener
 {
 public:
-    SeqLengthStepper (ParvatiAudioProcessor& processor, const PatchParamDescriptor& descriptor);
+    SeqLengthStepper (HellcatAudioProcessor& processor, const PatchParamDescriptor& descriptor);
     ~SeqLengthStepper() override = default;
 
     void resized() override;
@@ -95,7 +95,7 @@ private:
 
     // Push the ACTIVE theme's textPrimary (the value-readout colour tier, the
     // same token the knob centre readout uses via Slider::textBoxTextColourId)
-    // onto the number label. No-op when no themed ParvatiLookAndFeel is
+    // onto the number label. No-op when no themed HellcatLookAndFeel is
     // reachable (the label then keeps the inherited L&F default).
     void applyNumberLabelStyle();
 

@@ -14,7 +14,7 @@ Pinned by mod_matrix_ui_test **[7]**: `width >= textWidth + 2`, border 0.
 The three prior implementations differed: `MuteLamp`/`FxMuteLamp` filled with
 `accentPrimary` (~12pt dot) while the FX card's `PowerToggle` filled with
 **`accentSecondary`** — the style mismatch the user reported.
-**Fix:** one shared `ParvatiModuleLamp` (declared in ParvatiLookAndFeel.h,
+**Fix:** one shared `ParvatiModuleLamp` (declared in HellcatLookAndFeel.h,
 painted in the .cpp). All three call sites are now thin `final` subclasses.
 - Colour: `accentPrimary` on / `textDisabled` off / `outline` ring
   brightening on hover — identical resolution everywhere.

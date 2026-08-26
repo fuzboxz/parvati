@@ -45,8 +45,8 @@
 
 #include "ui/KeyboardView.h"
 #include "ui/WheelsComponent.h"
-#include "ui/ParvatiLookAndFeel.h"
-#include "ui/ParvatiTheme.h"
+#include "ui/HellcatLookAndFeel.h"
+#include "ui/HellcatTheme.h"
 
 // Exact float comparison is deliberate: these asserts pin values,
 // not ranges.
@@ -322,7 +322,7 @@ TEST(keyboard_view_test)
             return false;
         };
 
-        ParvatiLookAndFeel lnf;   // defaults to Carbon
+        HellcatLookAndFeel lnf;   // defaults to Carbon
         juce::Array<juce::uint32> naturalsSeen;
         for (const auto& theme : getBuiltinThemes())
         {

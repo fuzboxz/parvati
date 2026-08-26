@@ -1,13 +1,13 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // TransportClock — converts the host transport tempo (BPM from
 // juce::AudioPlayHead) into a stream of 24-PPQN clock ticks, sample-accurate.
 // The ticks drive the Arpeggiator (and, in a later task, tempo-synced LFOs).
 
-#ifndef PARVATI_TRANSPORT_CLOCK_H_
-#define PARVATI_TRANSPORT_CLOCK_H_
+#ifndef HELLCAT_TRANSPORT_CLOCK_H_
+#define HELLCAT_TRANSPORT_CLOCK_H_
 
-namespace parvati
+namespace hellcat
 {
 
 class TransportClock
@@ -65,6 +65,6 @@ private:
     double fractionalTick_ = 0.0;
 };
 
-}  // namespace parvati
+}  // namespace hellcat
 
-#endif  // PARVATI_TRANSPORT_CLOCK_H_
+#endif  // HELLCAT_TRANSPORT_CLOCK_H_

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // KeyboardView — a virtual keyboard that (a) reflects notes now sounding
 // in the engine (driven by the editor's timer via latchNoteOn/Off) and (b) lets
@@ -17,11 +17,11 @@
 // (see latchNoteOn); the QWERTY musical-typing row is clamped inside the
 // window (see keyPressed).
 //
-// Colours are read from the editor-wide ParvatiLookAndFeel (inherited through
+// Colours are read from the editor-wide HellcatLookAndFeel (inherited through
 // the component tree) in applyThemeColours(); call refresh() after adding the
 // component and whenever the theme changes. Phase 3 of docs/UI_MODERNIZATION_PLAN.md.
 //
-// THEMED-KEY WAVE: every key colour is a ParvatiTheme token (keyWhite/keyBlack
+// THEMED-KEY WAVE: every key colour is a HellcatTheme token (keyWhite/keyBlack
 // + the accents/outline) resolved through the public KeyboardColours resolver
 // below — the naturals are a theme-matched ELEVATED surface (slate on dark
 // themes, neutral near-white on light themes — deliberately NOT piano ivory),
@@ -38,7 +38,7 @@
 #include <map>
 #include <memory>
 
-#include "ParvatiLookAndFeel.h"   // theme accessor via getLookAndFeel()
+#include "HellcatLookAndFeel.h"   // theme accessor via getLookAndFeel()
 
 //==============================================================================
 class KeyboardView : public juce::Component
@@ -80,6 +80,15 @@ public:
         sustains forever in the host (W7, lane-B finding 6). Safe when idle
         (a no-op on empty tracking maps). */
     void releaseAllNotes();
+
+    /** True when musical typing holds at least one note. The editor timer
+        polls this for the busy-rate decision and the focus guard below. */
+    bool holdingComputerNotes() const noexcept { return ! heldNotes_.empty(); }
+
+    /** Release every note that musical typing holds, and nothing else.
+        Call when the window loses key focus: no key-up event follows then.
+        A no-op when no computer key holds a note. */
+    void releaseComputerNotes();
 
     /** Fired whenever the Ableton-style computer-keyboard settings change
         (Z/X octave, C/V velocity). Carries the new values so the editor can
@@ -126,8 +135,8 @@ public:
         juce::Colour panel;       // the rounded strip panel behind the keys (containerFill)
     };
 
-    /** Resolve the key palette from @p lnf: the ParvatiLookAndFeel's active
-        ParvatiTheme when the cast succeeds, else Carbon (the same values the
+    /** Resolve the key palette from @p lnf: the HellcatLookAndFeel's active
+        HellcatTheme when the cast succeeds, else Carbon (the same values the
         editor shows before any L&F is inherited — no literals). */
     static KeyboardColours resolveColours (const juce::LookAndFeel& lnf);
 

@@ -1,10 +1,10 @@
-# Parvati UI Modernization Plan
+# Hellcat UI Modernization Plan
 
 > **STATUS: COMPLETE (all phases 1–4c delivered).** Debug + release builds are
 > clean; all 14 test targets pass; the standalone launches. See the
 > "Completion Log" at the bottom of this file.
 
-**Goal:** transform Parvati's UI from a functional but primitive generated
+**Goal:** transform Hellcat's UI from a functional but primitive generated
 grid into a **modern, scalable, themeable, accessible** plugin GUI. Keep it a
 faithful, descriptor-driven view of the engine. The UI does not emulate the
 Ambika hardware UI (a 2×16 char LCD). It delivers a contemporary
@@ -16,7 +16,7 @@ software-synth experience.
 
 | Area | Status |
 |------|--------|
-| **Architecture** | `ParvatiAudioProcessor` owns `SynthEngine` (96-voice pool: 6 multitimbral Parts x 16 slots each) + APVTS exposing ~104 params via a `PatchParamDescriptor` table. |
+| **Architecture** | `HellcatAudioProcessor` owns `SynthEngine` (96-voice pool: 6 multitimbral Parts x 16 slots each) + APVTS exposing ~104 params via a `PatchParamDescriptor` table. |
 | **GUI generation** | `PluginEditor.cpp` auto-generates `ParamControl` cells (rotary `Slider`/`ComboBox`) into 9 `ParamPage`s + 1 custom `PatchPage`, wrapped in `Viewport`s in a `TabbedComponent`. It cannot drift from the engine (good — keep this). |
 | **Colour** | One hard-coded `col::` palette (dark bg + gold accent). Every control gets ~8 manual `setColour()` calls. No theme system, no `LookAndFeel`. |
 | **Layout** | Fixed-pixel grid (e.g. 214×106 cells). Resizable window, but the grid does **not** reflow/scale — controls get clipped or padded. |
@@ -26,16 +26,16 @@ software-synth experience.
 | **Visualization** | None (no keyboard, no scope, no envelope display, no meter). |
 | **UX/Accessibility** | No keyboard focus management, no `AccessibilityHandler` attention, no context menus. |
 | **Persistence** | Patch/multi load + state save/load. No UI prefs (theme/zoom) persisted. |
-| **Tests** | 18 test exes incl. `parvati_multigui_test` (editor builds + Part selector). Must stay passing. |
+| **Tests** | 18 test exes incl. `hellcat_multigui_test` (editor builds + Part selector). Must stay passing. |
 
 ---
 
 ## 2. Gap Analysis (what a modern GUI needs)
 
 ### A. Foundation / infrastructure
-1. **LookAndFeel layer** — one `ParvatiLookAndFeel` that centralizes all
+1. **LookAndFeel layer** — one `HellcatLookAndFeel` that centralizes all
    widget drawing.
-2. **Theme system** — `ParvatiTheme` palette struct + `ThemeManager` (multiple
+2. **Theme system** — `HellcatTheme` palette struct + `ThemeManager` (multiple
    named themes, runtime switch, persisted).
 3. **UI scaling** — user zoom (75–200%) + correct HiDPI, applied uniformly.
 4. **Tooltip / help system** — per-param help text + `TooltipClient` +
@@ -85,10 +85,10 @@ software-synth experience.
 ## 3. Target Architecture
 
 ### New files (under `Source/ui/`)
-- `ParvatiTheme.h/.cpp` — palette struct + built-in themes.
+- `HellcatTheme.h/.cpp` — palette struct + built-in themes.
 - `ThemeManager.h/.cpp` — owns themes, current index; `ChangeBroadcaster`;
   persistence helpers.
-- `ParvatiLookAndFeel.h/.cpp` — `LookAndFeel_V4` subclass that draws
+- `HellcatLookAndFeel.h/.cpp` — `LookAndFeel_V4` subclass that draws
   everything from the active theme.
 - `ParamHelp.h` — `paramID → description` map (tooltips). Keeps the
   byte-bridge `PatchParamDescriptor` pure.
@@ -102,7 +102,7 @@ software-synth experience.
 
 ### Theme system
 ```cpp
-struct ParvatiTheme {
+struct HellcatTheme {
     juce::String name;
     juce::Colour windowBackground, panelBackground, panelBackground2, panelHeader;
     juce::Colour outline, divider;
@@ -134,9 +134,9 @@ lays cells with `FlexBox` (row wrap), so the page reflows inside its
 
 | Phase | Worker | Files owned (may create/edit) | Depends on |
 |-------|--------|-------------------------------|------------|
-| **1a** | W-theme | `Source/ui/ParvatiTheme.*`, `Source/ui/ThemeManager.*` (new only) | — |
+| **1a** | W-theme | `Source/ui/HellcatTheme.*`, `Source/ui/ThemeManager.*` (new only) | — |
 | **1b** | W-help | `Source/ui/ParamHelp.h` (new only) | — |
-| **2** | W-core | `Source/ui/ParvatiLookAndFeel.*` (new) + rewrite `Source/PluginEditor.*` to use theme + L&F + global scale + `TooltipWindow` + responsive FlexBox layout + grouped panels | 1a, 1b |
+| **2** | W-core | `Source/ui/HellcatLookAndFeel.*` (new) + rewrite `Source/PluginEditor.*` to use theme + L&F + global scale + `TooltipWindow` + responsive FlexBox layout + grouped panels | 1a, 1b |
 | **3a** | W-env | `Source/ui/EnvelopeDisplay.*` (new) | 2 |
 | **3b** | W-kbd | `Source/ui/KeyboardView.*` (new) | 2 |
 | **3c** | W-meter | `Source/ui/VoiceMeter.*` (new) | 2 |
@@ -145,7 +145,7 @@ lays cells with `FlexBox` (row wrap), so the page reflows inside its
 | **review** | reviewer | read-only reviews between phases | each phase |
 
 **Safety rule:** phases 1a/1b are parallel (disjoint new files). Phase 2 is a
-single writer (it owns `PluginEditor.*` + `ParvatiLookAndFeel.*`). Phase 3
+single writer (it owns `PluginEditor.*` + `HellcatLookAndFeel.*`). Phase 3
 workers own only their new files (no `PluginEditor` edits), so they can run
 in parallel. The parent (orchestrator) integrates them, or phase-4 W-polish
 integrates. This keeps one writer per shared file at all times.
@@ -158,7 +158,7 @@ integrates. This keeps one writer per shared file at all times.
 2. **Phase 1** (parallel): theme system + help metadata (isolated new files).
 3. **Phase 2** (single writer): core rewrite — L&F, theme wiring, scale,
    tooltips, responsive grouped layout. Reviewer. Build +
-   `parvati_multigui_test`.
+   `hellcat_multigui_test`.
 4. **Phase 3** (parallel, new files): env display, keyboard, voice meter,
    settings/persistence. Parent integrates.
 5. **Phase 4** (single writer): polish — context menus, accessibility, full
@@ -188,7 +188,7 @@ integrates. This keeps one writer per shared file at all times.
 - Never break the `PatchParamDescriptor` ↔ APVTS ↔ engine byte-bridge (the
   GUI stays generated).
 - Never edit `ambika_reference/` (read-only).
-- Keep all 18 test executables passing; `parvati_multigui_test` must pass
+- Keep all 18 test executables passing; `hellcat_multigui_test` must pass
   after every phase.
 - One writer per shared file per phase.
 - C++17, JUCE 9.0.0, CMake glob picks up new `Source/ui/*` files
@@ -203,9 +203,9 @@ the standalone launches).
 
 | Phase | Delivered | New/edited files |
 |-------|-----------|------------------|
-| **1a** Theme system | `ParvatiTheme` (5 themes: Carbon/Midnight/Immutable/Swedish Red/Y2K), `ThemeManager` (ChangeBroadcaster, name/index select, ValueTree persistence) | `Source/ui/ParvatiTheme.{h,cpp}`, `Source/ui/ThemeManager.{h,cpp}` |
+| **1a** Theme system | `HellcatTheme` (5 themes: Carbon/Midnight/Immutable/Swedish Red/Y2K), `ThemeManager` (ChangeBroadcaster, name/index select, ValueTree persistence) | `Source/ui/HellcatTheme.{h,cpp}`, `Source/ui/ThemeManager.{h,cpp}` |
 | **1b** Tooltips | `ParamHelp` map — **183/183 params covered** (119 curated + 64 generated seq steps, runtime-verified) | `Source/ui/ParamHelp.{h,cpp}` |
-| **2a** LookAndFeel + wiring | `ParvatiLookAndFeel` (centralized, drives all stock widget colours from theme); removed legacy `col::`; `TooltipWindow`; `setZoom`; `ChangeListener` theme refresh | `Source/ui/ParvatiLookAndFeel.{h,cpp}`, `Source/PluginEditor.{h,cpp}` |
+| **2a** LookAndFeel + wiring | `HellcatLookAndFeel` (centralized, drives all stock widget colours from theme); removed legacy `col::`; `TooltipWindow`; `setZoom`; `ChangeListener` theme refresh | `Source/ui/HellcatLookAndFeel.{h,cpp}`, `Source/PluginEditor.{h,cpp}` |
 | **2b** Responsive layout | Grouped panels (`groupForId` → bordered `GroupComponent`s); FlexBox-style reflow to window width; dense Mod-Matrix/Sequencer handling; viewport reflow contract | `Source/PluginEditor.{h,cpp}` |
 | **3** Visualization components | `EnvelopeDisplay` (ADSR preview), `KeyboardView` (engine-mirrored + click-play), `VoiceMeter` (part-relative activity, up to 16 cells) | `Source/ui/{EnvelopeDisplay,KeyboardView,VoiceMeter}.{h,cpp}` |
 | **4a** Integration + settings + persistence | Keyboard + meter wired in; `SettingsPanel` (theme/zoom/tooltips) in a `SidePanel`; thread-safe `MidiMessageCollector` click-play; backward-compatible UI-pref persistence in processor state | `Source/PluginProcessor.{h,cpp}`, `Source/PluginEditor.{h,cpp}`, `Source/ui/SettingsPanel.{h,cpp}` |
@@ -228,7 +228,7 @@ the standalone launches).
 
 ### Known limitations / future enhancements (documented, not blocking)
 - **Zoom is process-global** (JUCE `Desktop::setGlobalScaleFactor`): multiple
-  Parvati instances in one host share one zoom. The zoom resets to 1.0 on
+  Hellcat instances in one host share one zoom. The zoom resets to 1.0 on
   editor teardown (no leak). Per-editor transform-based zoom is the
   documented future enhancement (it would need changes to the reflow
   layout that keys off `getWidth()`).
@@ -241,7 +241,7 @@ the standalone launches).
 ## QoL Audit & DSP-Settings Pass (post-modernization)
 
 This pass came from an audit of the JUCE professional checklist, filtered for
-Parvati's faithful-port architecture.
+Hellcat's faithful-port architecture.
 
 ### Implemented
 - **Preset Save** — `.PRO` export (byte-exact inverse of parser, round-trip
@@ -254,7 +254,7 @@ Parvati's faithful-port architecture.
   displays (the 182 generated controls already had JUCE defaults).
 - **Computer-keyboard play** — standalone-ONLY (in a DAW the host owns
   musical typing); modifier keys passthrough for zoom.
-- **🐛 Byte-bridge truncation fix** — `parvatiValueToPatchByte` now
+- **🐛 Byte-bridge truncation fix** — `hellcatValueToPatchByte` now
   `juce::roundToInt` (was truncating 62.9999→62). Init-neutral; it fixes
   load/live/save of float-roundtripped values.
 - **HW-accelerated rendering** — already ON by default in JUCE 9 (Direct2D

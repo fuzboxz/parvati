@@ -1,7 +1,7 @@
 // Editor/processor lifecycle regression tests (bug hunt 2026-08-19, iOS hunt).
 //
 //   [1] F-ios-lc-3 — process-global editor teardown side-effects are
-//       reference-counted. An AUv3 extension process hosts MULTIPLE Parvati
+//       reference-counted. An AUv3 extension process hosts MULTIPLE Hellcat
 //       instances (AUM: several editors in one process; JUCE's AUv3 wrapper
 //       creates/destroys one editor per instance). Pre-fix, destroying editor
 //       A re-enabled the screensaver (T14's protection voided) and cleared the
@@ -24,7 +24,7 @@
 //       dropped, patch state survives, and a NEW note still sounds after the
 //       release/prepare cycle.
 //
-// Run: ./build_unified/parvati_unified_tests lifecycle_test
+// Run: ./build_unified/hellcat_unified_tests lifecycle_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -48,7 +48,7 @@
 #include <juce_events/juce_events.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "PluginEditor.h"   // ParvatiEditor + ParamControl (tap-assign statics)
+#include "PluginEditor.h"   // HellcatEditor + ParamControl (tap-assign statics)
 #include "PluginProcessor.h"
 #include "test_utils.h"              // displayAvailable (headless-host skip)
 #include "ui/SeqLengthStepper.h"   // [4] the seq-length picker seam
@@ -80,7 +80,7 @@ void pumpRunLoop (int ms)
 }
 
 // Active (sounding) voices of Part 0 — the arp_test accounting.
-int activePart0 (ParvatiAudioProcessor& p)
+int activePart0 (HellcatAudioProcessor& p)
 {
     int n = 0;
     for (int vi : p.getEngine().getPart (0).voiceIndices)
@@ -90,7 +90,7 @@ int activePart0 (ParvatiAudioProcessor& p)
     return n;
 }
 
-void renderEmpty (ParvatiAudioProcessor& p, int blocks = 1)
+void renderEmpty (HellcatAudioProcessor& p, int blocks = 1)
 {
     for (int b = 0; b < blocks; ++b)
     {
@@ -124,14 +124,14 @@ TEST(lifecycle_test)
     // ==================================================================
     std::printf ("[1] editor teardown side-effects are reference-counted\n");
     {
-        ParvatiAudioProcessor procA, procB;
+        HellcatAudioProcessor procA, procB;
         procA.prepareToPlay (48000.0, 256);
         procB.prepareToPlay (48000.0, 256);
 
         std::unique_ptr<juce::AudioProcessorEditor> edA (procA.createEditor());
         std::unique_ptr<juce::AudioProcessorEditor> edB (procB.createEditor());
         check (edA != nullptr && edB != nullptr, "two editors created");
-        check (ParvatiEditor::liveEditorCountForTest() == 2,
+        check (HellcatEditor::liveEditorCountForTest() == 2,
                "live-editor count == 2 while both are open");
 
         const bool screensaverBefore = juce::Desktop::getInstance().isScreenSaverEnabled();
@@ -142,7 +142,7 @@ TEST(lifecycle_test)
         check (ParamControl::tapAssignActive(), "tap-assign armed");
 
         edA.reset();   // destroy ONLY editor A (editor B still live)
-        check (ParvatiEditor::liveEditorCountForTest() == 1,
+        check (HellcatEditor::liveEditorCountForTest() == 1,
                "count drops to 1 after destroying one editor");
         check (ParamControl::tapAssignActive(),
                "tap-assign still ACTIVE after a sibling editor closes (pre-fix: cleared)");
@@ -152,7 +152,7 @@ TEST(lifecycle_test)
         // The LAST editor's teardown DOES clear the global (the W-era
         // contract: [MAP] left ON at close must not leak to a reopen).
         edB.reset();
-        check (ParvatiEditor::liveEditorCountForTest() == 0, "count drops to 0 after the last editor");
+        check (HellcatEditor::liveEditorCountForTest() == 0, "count drops to 0 after the last editor");
         check (! ParamControl::tapAssignActive(),
                "tap-assign cleared when the LAST editor closes (leak guard intact)");
         check (juce::Desktop::getInstance().isScreenSaverEnabled() == screensaverBefore,
@@ -164,7 +164,7 @@ TEST(lifecycle_test)
     // ==================================================================
     std::printf ("[2] focus traversal excludes invisible zero-extent controls\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
         check (ed != nullptr, "editor created");
@@ -192,12 +192,14 @@ TEST(lifecycle_test)
 
     // ==================================================================
     // [2b] Musical typing survives a focused control (2026-08-21 user
-    //      report): unhandled plain keys bubble to ParvatiEditor::keyPressed,
-    //      which forwards them to the visible KeyboardView — no tree-wide
-    //      wantsKeyboardFocus mutation (that approach emptied the traversal
-    //      guarded by [2]).
+    //      report) and works with the strip hidden / nothing focused
+    //      (2026-08-26 user request): unhandled plain keys bubble to
+    //      HellcatEditor::keyPressed, which forwards them to the KeyboardView,
+    //      and the editor's top-level KeyListener covers the no-focus walk —
+    //      no tree-wide wantsKeyboardFocus mutation (that approach emptied the
+    //      traversal guarded by [2]).
     // ==================================================================
-    std::printf ("[2b] musical typing survives a focused control\n");
+    std::printf ("[2b] musical typing survives a focused control (and the hidden strip)\n");
     // The section needs a real desktop peer (isShowing() + timer delivery);
     // a headless host cannot create one. macOS always reports a display.
     if (! displayAvailable())
@@ -206,7 +208,7 @@ TEST(lifecycle_test)
     }
     else
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
         check (ed != nullptr, "editor created");
@@ -221,10 +223,49 @@ TEST(lifecycle_test)
 
         const juce::KeyPress noteA ('a', juce::ModifierKeys::noModifiers, 'a');
 
-        // Strip hidden at birth: a plain musical key is unclaimed at the
-        // editor level (the forward only runs while the strip is on screen).
+        auto* parEd = dynamic_cast<HellcatEditor*> (ed.get());
+        check (parEd != nullptr, "editor is a HellcatEditor (top-level seam)");
+
+        // HOST contract first: this harness builds a bare processor
+        // (wrapperType != Standalone), so the editor wires musical typing
+        // OFF (a host owns the computer keyboard). A plain musical key stays
+        // unclaimed at every dispatch level while typing is off.
         check (! ed->keyPressed (noteA),
-               "plain musical key unclaimed while the strip is hidden");
+               "host build: musical key unclaimed (typing off)");
+        if (parEd != nullptr)
+            check (! parEd->forwardTopLevelKeyForTest (noteA),
+                   "host build: top-level path unclaimed (typing off)");
+
+        // The strip via a RAW tree walk (the focus traversal lists only
+        // ON-SCREEN focusables, and the strip is still hidden here). Arm the
+        // PUBLIC seam to simulate the standalone gate.
+        KeyboardView* strip = nullptr;
+        std::function<void (juce::Component*)> findStrip =
+            [&] (juce::Component* c)
+            {
+                if (strip == nullptr)
+                    if (auto* kv = dynamic_cast<KeyboardView*> (c))
+                        strip = kv;
+                for (int i = 0; i < c->getNumChildComponents(); ++i)
+                    findStrip (c->getChildComponent (i));
+            };
+        findStrip (ed.get());
+        check (strip != nullptr, "keyboard strip found (still hidden)");
+        if (strip != nullptr)
+            strip->setComputerKeyboardEnabled (true);
+
+        // 2026-08-26 contract: with typing armed, a plain musical key is
+        // claimed WHILE THE STRIP IS HIDDEN. The editor forward covers a
+        // focused control; the top-level seam covers the no-focus walk.
+        check (ed->keyPressed (noteA),
+               "typing armed: musical key claimed while the strip is hidden");
+        if (parEd != nullptr)
+            check (parEd->forwardTopLevelKeyForTest (noteA),
+                   "typing armed: top-level (no-focus) path claims the key");
+        // Release path (no stuck note): the key is not physically down in
+        // this harness, so the state-change walk must drop the held note.
+        check (ed->keyStateChanged (false),
+               "keyStateChanged releases the held hidden-strip note");
 
         // Show the strip the way the user does: the header [KBD] toggle.
         juce::TextButton* kbdToggle = nullptr;
@@ -244,24 +285,15 @@ TEST(lifecycle_test)
                       kbdToggle != nullptr ? (int) kbdToggle->getToggleState() : -1);
         check (kbdToggle != nullptr && kbdToggle->getToggleState(), tmsg);
 
-        // Musical typing is a STANDALONE-only affordance (the editor gates it:
-        // a host owns the computer keyboard). This harness builds a bare
-        // processor (wrapperType != Standalone), so re-arm the strip via its
-        // PUBLIC seam to exercise the forward path under test.
-        auto focusables = juce::KeyboardFocusTraverser().getAllComponents (ed.get());
-        KeyboardView* strip = nullptr;
-        for (auto* c : focusables)
-            if (auto* kv = dynamic_cast<KeyboardView*> (c))
-                strip = kv;
+        // (The strip was found + armed above, before the toggle.)
         check (strip != nullptr && strip->isShowing(),
                "keyboard strip is on screen after the [KBD] click");
-        if (strip != nullptr)
-            strip->setComputerKeyboardEnabled (true);
 
         // A workspace control (NOT the strip) holds the focus — the
-        // clicked-knob mid-performance case the forward must cover. The
-        // traversal lists hidden focusables too; pick one with a real
-        // on-screen extent so the focus move actually takes.
+        // clicked-knob mid-performance case the forward must cover. Pick a
+        // real ON-SCREEN focusable from the traversal (it is focusable +
+        // visible now) so the focus move actually takes.
+        const auto focusables = juce::KeyboardFocusTraverser().getAllComponents (ed.get());
         juce::Component* held = nullptr;
         for (auto* c : focusables)
             if (dynamic_cast<KeyboardView*> (c) == nullptr && c->isShowing()
@@ -294,7 +326,7 @@ TEST(lifecycle_test)
     // ==================================================================
     std::printf ("[3] releaseResources interruption semantics\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
 
@@ -359,7 +391,7 @@ TEST(lifecycle_test)
     // ------------------------------------------------------------------
     std::printf ("[4] SeqLengthStepper: full-cell picker replaces the sub-44 +/- pair\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
         check (ed != nullptr, "[4] editor created");
@@ -371,7 +403,7 @@ TEST(lifecycle_test)
         // page is NOT in the visible tree until its generator is selected).
         // Make Sequencer 1 the active generator first — the same seam a pill
         // click drives (modbar_pill_click_test's verified chain).
-        if (auto* parEd = dynamic_cast<ParvatiEditor*> (ed.get()))
+        if (auto* parEd = dynamic_cast<HellcatEditor*> (ed.get()))
             parEd->getSynthWorkspaceForTest()->setActiveGenerator (ambika::dsp::MOD_SRC_SEQ_1);
         SeqLengthStepper* stepper = nullptr;
         std::function<void (juce::Component*)> hunt = [&] (juce::Component* c)
@@ -410,7 +442,7 @@ TEST(lifecycle_test)
     // [5] Thermal-hint transition matrix (F-ios-perf-2, 2026-08-19 follow-up).
     //     The 30 Hz timer surfaces the processor's atomic thermal hint ONLY
     //     on a level TRANSITION — the policy is the PURE static
-    //     ParvatiEditor::thermalStatusForTransition. This pins the full 3x3
+    //     HellcatEditor::thermalStatusForTransition. This pins the full 3x3
     //     matrix (hints are ThermalAction ints: 0=None, 1=Hint,
     //     2=StrongHint) plus the defensive clamp: escalations arm the
     //     transient status exactly once (Hint vs StrongHint distinguished),
@@ -424,7 +456,7 @@ TEST(lifecycle_test)
     // ------------------------------------------------------------------
     std::printf ("[5] Thermal transition matrix (F-ios-perf-2 label surfacing)\n");
     {
-        using Action = ParvatiEditor::ThermalStatusAction;
+        using Action = HellcatEditor::ThermalStatusAction;
 
         struct Cell { int from, to; Action want; const char* label; };
         const Cell cells[] = {
@@ -443,17 +475,17 @@ TEST(lifecycle_test)
         };
         for (const auto& c : cells)
         {
-            const Action got = ParvatiEditor::thermalStatusForTransition (c.from, c.to);
+            const Action got = HellcatEditor::thermalStatusForTransition (c.from, c.to);
             check (got == c.want, c.label);
         }
         // Defensive clamp: a corrupt/out-of-range atomic (the raw int from
         // thermalHint_) must never invent an action stronger than the
         // sampler's domain — negatives and >2 clamp BEFORE the comparison.
-        check (ParvatiEditor::thermalStatusForTransition (-5, 2)
+        check (HellcatEditor::thermalStatusForTransition (-5, 2)
                    == Action::ShowStrong, "out-of-range old clamps to None (escalation still detected)");
-        check (ParvatiEditor::thermalStatusForTransition (1, 99)
+        check (HellcatEditor::thermalStatusForTransition (1, 99)
                    == Action::ShowStrong, "out-of-range new clamps to StrongHint (no invented action)");
-        check (ParvatiEditor::thermalStatusForTransition (99, 99)
+        check (HellcatEditor::thermalStatusForTransition (99, 99)
                    == Action::NoOp,       "out-of-range same->same clamps to NoOp");
     }
 

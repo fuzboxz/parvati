@@ -1,5 +1,5 @@
 // Virtual MIDI source probe for the real Standalone app: creates a CoreMIDI
-// virtual source named "ParvatiProbe", waits for the app to boot, then sends a
+// virtual source named "HellcatProbe", waits for the app to boot, then sends a
 // single note (on ch1) after a delay, holds it, releases it.
 // Build: clang++ -std=c++17 -framework CoreMIDI -framework CoreFoundation vmidi_probe.cpp -o vmidi_probe
 // Run: ./vmidi_probe <noteDelaySec> <holdSec> [note] [vel]
@@ -21,12 +21,12 @@ int main (int argc, char** argv)
     const int vel         = (argc > 4) ? std::atoi (argv[4]) : 100;
 
     MIDIClientRef client = 0;
-    if (MIDIClientCreate (CFSTR ("ParvatiProbeClient"), nullptr, nullptr, &client) != noErr)
+    if (MIDIClientCreate (CFSTR ("HellcatProbeClient"), nullptr, nullptr, &client) != noErr)
     { std::printf ("MIDIClientCreate failed\n"); return 1; }
     MIDIEndpointRef src = 0;
-    if (MIDISourceCreate (client, CFSTR ("ParvatiProbe"), &src) != noErr)
+    if (MIDISourceCreate (client, CFSTR ("HellcatProbe"), &src) != noErr)
     { std::printf ("MIDISourceCreate failed\n"); return 1; }
-    std::printf ("virtual source 'ParvatiProbe' up; sleeping %.1f s...\n", delaySec);
+    std::printf ("virtual source 'HellcatProbe' up; sleeping %.1f s...\n", delaySec);
     std::fflush (stdout);
 
     std::this_thread::sleep_for (std::chrono::duration<double> (delaySec));

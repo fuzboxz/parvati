@@ -1,4 +1,4 @@
-// LFO retrigger-on-note verification for Parvati (Ambika port).
+// LFO retrigger-on-note verification for Hellcat (Ambika port).
 // Mirrors firmware Part::RetriggerLfos: an LFO whose retrigger_mode is
 // LFO_SYNC_MODE_SLAVE resets its phase to 0 on a fresh note-on. Drives an
 // ambika::dsp::Voice directly and reads MOD_SRC_LFO_1 each block.

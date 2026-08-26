@@ -1,10 +1,10 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ModSourceCatalog.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ModSourceCatalog.h.
 
 #include "ModSourceCatalog.h"
 
 #include <cassert>
 
-namespace parvati
+namespace hellcat
 {
 
 const SourceEntry& entryFor (int modSrcEnum)
@@ -40,7 +40,7 @@ std::optional<Cluster> clusterForSourceName (const juce::String& name)
     return std::nullopt;
 }
 
-juce::Colour clusterAccent (Cluster c, const ParvatiTheme& theme)
+juce::Colour clusterAccent (Cluster c, const HellcatTheme& theme)
 {
     // Y2K: every indicator and mod pill carries ONE accent — the LCD green
     // (theme.accentPrimary, the calm #3FBF3F). The category rainbow stays
@@ -72,4 +72,4 @@ const std::array<Cluster, 7>& clustersInOrder()
     return kClustersInOrder;
 }
 
-}  // namespace parvati
+}  // namespace hellcat

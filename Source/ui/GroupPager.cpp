@@ -1,9 +1,9 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See GroupPager.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See GroupPager.h.
 
 #include "GroupPager.h"
 
 #include "ParamPage.h"        // ParamPage complete type (ParamControl statics via it)
-#include "ParvatiLookAndFeel.h"   // appFont()/getTheme() + parvatiTabCategoryColourId
+#include "HellcatLookAndFeel.h"   // appFont()/getTheme() + hellcatTabCategoryColourId
 #include "ThemeManager.h"
 
 namespace
@@ -98,8 +98,8 @@ private:
     // container-fill rounded tile (mirrors ModSourceDragGrip::buildDragImage).
     juce::Image buildDragImage() const
     {
-        const ParvatiTheme* t = parvati::themeFor (*this);
-        const juce::Font f = parvati::labelFontFor (*this, 13.0f, juce::Font::plain);
+        const HellcatTheme* t = hellcat::themeFor (*this);
+        const juce::Font f = hellcat::labelFontFor (*this, 13.0f, juce::Font::plain);
 
         const juce::String name = getButtonText();
         const int textW = juce::GlyphArrangement::getStringWidthInt (f, name);
@@ -115,9 +115,9 @@ private:
         g.setColour (containerFill);
         g.fillRoundedRectangle (img.getBounds().toFloat(), 5.0f);
 
-        // Category colour chip (this tab's parvatiTabCategoryColourId; falls
+        // Category colour chip (this tab's hellcatTabCategoryColourId; falls
         // back to accent for a tab without a category assigned).
-        const juce::Colour cat = findColour (parvatiTabCategoryColourId, false);
+        const juce::Colour cat = findColour (hellcatTabCategoryColourId, false);
         g.setColour (cat.isTransparent() ? accent : cat);
         g.fillRoundedRectangle (juce::Rectangle<float> (5.0f, 5.0f, 7.0f, static_cast<float> (h) - 10.0f), 2.0f);
 
@@ -192,7 +192,7 @@ void GroupPager::paint (juce::Graphics& g)
     // Void-free fill behind the bar + page (transparent children sit on this).
     // Y2K: NO fill — the liquid-chrome WINDOW sweep shows through (the tabs
     // and their L&F fills paint over it).
-    if (! parvati::isY2kTheme (&themeManager_.getCurrentTheme()))
+    if (! hellcat::isY2kTheme (&themeManager_.getCurrentTheme()))
         g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
@@ -257,7 +257,7 @@ void GroupPager::applySubTabCategoryColours()
 {
     for (int i = 0; i < bar_->getNumTabs(); ++i)
         if (auto* btn = bar_->getTabButton (i))
-            btn->setColour (parvatiTabCategoryColourId, tabCategoryColour_);
+            btn->setColour (hellcatTabCategoryColourId, tabCategoryColour_);
 }
 
 //==============================================================================

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ModMatrixView — the redesigned modulation-matrix panel. It replaces the old
 // paginated (1-4 / 5-8 / 9-12 / 13-14) sub-tab matrix with a single, vertically
@@ -26,14 +26,14 @@
 
 #include "MatrixViewBase.h"
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class ThemeManager;
 
 //==============================================================================
 class ModMatrixView : public MatrixViewBase
 {
 public:
-    ModMatrixView (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
+    ModMatrixView (HellcatAudioProcessor& processor, ThemeManager& themeManager);
 
     // Test hook: the category colour the given row's lamp/slider/tint resolve
     // to for its CURRENT source (the same rowCategoryColour mapping the row

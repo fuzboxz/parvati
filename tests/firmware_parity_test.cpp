@@ -1,7 +1,7 @@
 // Firmware-parity oracle (deterministic tooling, "tool 9"): drives the
 // VENDORED Ambika controller (ambika_reference/controller/{multi,part,
 // resources,voice_allocator}.cc + avrlib/random.cc, compiled on the host via
-// the recording shims in tests/firmware_shim/) and Parvati's own engine
+// the recording shims in tests/firmware_shim/) and Hellcat's own engine
 // through IDENTICAL scripted event sequences, then diffs per-event
 // observables:
 //
@@ -14,8 +14,8 @@
 //   - note-sequence step decode (velocity-0 handling)
 //
 // The firmware side runs SYNCHRONOUSLY (Multi::NoteOn etc. + explicit
-// Multi::Clock() calls kept in lockstep with Parvati's elapsed ticks); the
-// Parvati side runs through the REAL audio path (ParvatiAudioProcessor::
+// Multi::Clock() calls kept in lockstep with Hellcat's elapsed ticks); the
+// Hellcat side runs through the REAL audio path (HellcatAudioProcessor::
 // processBlock at 48 kHz / 120 BPM, where 24-PPQN ticks are exactly 1000
 // samples). Both sides are configured part-for-part through their public
 // configuration APIs — never by poking private engine state.
@@ -35,7 +35,7 @@
 // during authoring; also safe to run headless in CI.
 //
 // Run (from the repo root):
-//   ./build_unified/parvati_unified_tests firmware_parity_test
+//   ./build_unified/hellcat_unified_tests firmware_parity_test
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -62,7 +62,7 @@
 #include "firmware_shim/voicecard_oracle.h"
 
 // ---------------------------------------------------------------------------
-// PARVATI SIDE.
+// HELLCAT SIDE.
 // ---------------------------------------------------------------------------
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
@@ -221,7 +221,7 @@ public:
     // Set of parts that PLAYED a note: a kTrigger reached one of part p's
     // allocated voicecards. (The dispatcher's OnNote fires for every ACCEPTING
     // part — including a mask-0 part with no voices, which accepts+
-    // dispatches but never plays. The Parvati oracle below derives the same
+    // dispatches but never plays. The Hellcat oracle below derives the same
     // set from actually-sounding voices, so the firmware side must be
     // play-based too or the two oracles disagree on unallocated parts.)
     std::set<int> partsThatPlayed() const
@@ -337,12 +337,12 @@ struct MockPlayHead : public juce::AudioPlayHead
 };
 
 //===========================================================================
-// Parvati oracle — the REAL audio path: processBlock drives routing, the
+// Hellcat oracle — the REAL audio path: processBlock drives routing, the
 // arpeggiator and the sustain bookkeeping exactly as in the plugin.
 class PvOracle
 {
 public:
-    PvOracle() : proc_ (std::make_unique<ParvatiAudioProcessor>())
+    PvOracle() : proc_ (std::make_unique<HellcatAudioProcessor>())
     {
         proc_->setPlayHead (&playhead_);
         proc_->prepareToPlay (kRate, kBlock);
@@ -520,7 +520,7 @@ private:
         }
     }
     MockPlayHead playhead_;   // declared BEFORE proc_ (destructs after it): the playhead pointer handed to the processor must never dangle
-    std::unique_ptr<ParvatiAudioProcessor> proc_;
+    std::unique_ptr<HellcatAudioProcessor> proc_;
     int samplesRendered_ = 0;
 };
 
@@ -531,8 +531,8 @@ std::string setStr (const std::set<int>& s)
     return out.empty() ? "none" : out;
 }
 
-// Keep the firmware's explicit clock in lockstep with Parvati's elapsed
-// ticks (the Parvati side renders real audio; the firmware ticks explicitly).
+// Keep the firmware's explicit clock in lockstep with Hellcat's elapsed
+// ticks (the Hellcat side renders real audio; the firmware ticks explicitly).
 void syncClock (FwOracle& fw, PvOracle& pv)
 {
     fw.clockTo (pv.ticks());
@@ -546,7 +546,7 @@ void syncClock (FwOracle& fw, PvOracle& pv)
 // (voices 3..5) — the same 3+3 split the engine's multitimbral test uses.
 // Parts 2..5 are EXPLICITLY disabled (mask 0) on BOTH sides: the firmware
 // factory default puts them on ch 3..6 with live allocations, so an "unrouted"
-// ch3 note would otherwise be accepted by firmware part 2 while Parvati's
+// ch3 note would otherwise be accepted by firmware part 2 while Hellcat's
 // (0-slot, disabled) part 2 rejects it — a setup asymmetry, not a parity
 // divergence. Mask 0 + no voices: neither side can play those parts.
 std::vector<PartCfg> twoPartSplit()
@@ -609,7 +609,7 @@ void scenarioMulticastRouting()
 }
 
 // [3] Wrap-around key zones (lo > hi): the firmware accepts the complement
-// set (the classic hardware split trick); Parvati ports it (W8 item 1).
+// set (the classic hardware split trick); Hellcat ports it (W8 item 1).
 void scenarioWrapZone()
 {
     std::printf ("\n[3] wrap-around key zone (lo=100 hi=20)\n");
@@ -646,7 +646,7 @@ void scenarioSustain()
     checkEquals (std::to_string (fw.releaseEvents (0)), "0",
                  "firmware issued no Release/Kill while the pedal held the note");
     checkEquals (pv.heldNoteStr (0), "60",
-                 "Parvati swallowed the release (note 60 still sounding)");
+                 "Hellcat swallowed the release (note 60 still sounding)");
 
     fw.cc (1, 64, 0); pv.cc (1, 64, 0); syncClock (fw, pv);   // pedal up
     checkEquals (std::to_string (fw.pressedKeys (0)), "0",
@@ -654,7 +654,7 @@ void scenarioSustain()
     checkEquals (std::to_string (fw.releaseEvents (0)), "1",
                  "firmware released the voice on pedal-up");
     check (pv.partSilentAfter (0, 3000),
-           "Parvati released the sustained voice on pedal-up (silent after the release tail)");
+           "Hellcat released the sustained voice on pedal-up (silent after the release tail)");
 }
 
 // [5] All-notes-off (CC123): clears held-key bookkeeping per receiving part
@@ -671,7 +671,7 @@ void scenarioAllNotesOff()
         checkEquals (std::to_string (fw.pressedKeys (0)), std::to_string (pv.heldKeys (0)),
                      "direct-mode held keys cleared on CC123");
         check (pv.partSilentAfter (0, 3000),
-               "Parvati released every part-0 voice on CC123 (silent after the tail)");
+               "Hellcat released every part-0 voice on CC123 (silent after the tail)");
         check (fw.releaseEvents (0) >= 1, "firmware released the part-0 voices on CC123");
     }
     {
@@ -828,9 +828,9 @@ void scenarioArpPhraseRestart()
 }
 
 // [9] Note-sequence velocity-0 decode: the firmware returns velocity 0 for
-// a gated step programmed to 0; Parvati substitutes 100. Observable at the
+// a gated step programmed to 0; Hellcat substitutes 100. Observable at the
 // note-on seams: the firmware's midi dispatcher records the generated note's
-// velocity; Parvati's Sequencer note-on callback (which the engine normally
+// velocity; Hellcat's Sequencer note-on callback (which the engine normally
 // wires to triggerNoteInPart) is replaced by a recorder for this scenario on
 // a DEDICATED oracle — the callback receives exactly the decoded velocity.
 void scenarioVelocityZeroDivergence()
@@ -842,7 +842,7 @@ void scenarioVelocityZeroDivergence()
     cfg[0].arpDiv  = 10;  // 6 ticks per step
 
     // Programme step 0 of sequence 3 (the note-data area): gate on, vel 0.
-    // Firmware bytes: sequence_data offset (32 + 0*2) & 0x3f == 32; Parvati:
+    // Firmware bytes: sequence_data offset (32 + 0*2) & 0x3f == 32; Hellcat:
     // PartData offset 16 + 32 (same layout). Sequence-3 length -> byte 14.
     FwOracle fw; fw.reset(); fw.configure (cfg);
     {
@@ -891,7 +891,7 @@ void scenarioVelocityZeroDivergence()
                  "sequencer generated the programmed note (60)");
     checkDiverges ("velocity-zero-substitution",
                    std::to_string (fwVel), std::to_string (pvVel),
-                   "gated step with velocity byte 0: firmware generates velocity 0, Parvati substitutes 100");
+                   "gated step with velocity byte 0: firmware generates velocity 0, Hellcat substitutes 100");
 }
 
 //===========================================================================
@@ -905,8 +905,8 @@ void scenarioVelocityZeroDivergence()
 //     port fidelity story at the byte level, silence blocks included),
 //   * a mid-render mix_balance tick → the tick block DIFFERS (firmware
 //     latches the crossfade gains once per 40-sample block, voice.cc:441-
-//     442; Parvati glides them across the block — the zipper fix measured
-//     at 0.0597-vs-0.05 by parvati_synth_drag_probe),
+//     442; Hellcat glides them across the block — the zipper fix measured
+//     at 0.0597-vs-0.05 by hellcat_synth_drag_probe),
 //   * after settling (the sub-LSB snap closes the ramp within one extra
 //     block) → BYTE-EQUAL again: the glide converges to the firmware
 //     targets exactly, it does not permanently offset the mix.
@@ -919,7 +919,7 @@ void scenarioMixGainGlideAudio()
 
     // RNG lockstep: both sides run the same 16-bit LFSR (boot seed 0x21,
     // advanced exactly once per block by the MOD_SRC_NOISE source). The
-    // Parvati-side scenarios above rendered 6-voice audio and advanced only
+    // Hellcat-side scenarios above rendered 6-voice audio and advanced only
     // the port's global — re-seed both so the voices tick in lockstep.
     fw_voicecard::SeedRandom (0x21);
     ambika::dsp::random().Seed (0x21);
@@ -939,7 +939,7 @@ void scenarioMixGainGlideAudio()
     fw_voicecard::SetPatchByte (offBalance, 24);   // gain 96 (bal domain 0..63)
     fw_voicecard::Trigger (60 << 7, 100, 0);
 
-    // --- Parvati side: a bare dsp::Voice — no engine, no JUCE in the path ---
+    // --- Hellcat side: a bare dsp::Voice — no engine, no JUCE in the path ---
     ambika::dsp::Voice pv;
     pv.Init();
     pv.set_patch_data (static_cast<uint8_t> (offOsc1Shape), sawId);
@@ -984,13 +984,13 @@ void scenarioMixGainGlideAudio()
     check (anySignal, "voice audible (equality compared real signal, not silence)");
 
     // Phase 2 — balance tick 24 -> 32 (gain 96 -> 128: a 32/255 gain step,
-    // twice the drag probe's 16/255 UI tick): firmware steps, Parvati glides.
+    // twice the drag probe's 16/255 UI tick): firmware steps, Hellcat glides.
     fw_voicecard::SetPatchByte (offBalance, 32);
     pv.set_patch_data (static_cast<uint8_t> (offBalance), 32);
     const std::string fwTick = fwRender();
     const std::string pvTick = pvRender();
     checkDiverges ("mix-gain-glide", fwTick, pvTick,
-                   "balance tick 24->32: firmware latches gains per block, Parvati glides across it");
+                   "balance tick 24->32: firmware latches gains per block, Hellcat glides across it");
 
     // Phase 3 — settle: the sub-LSB snap closes the ramp tail within one
     // block, after which the renders are byte-equal again.
@@ -1109,7 +1109,7 @@ TEST(firmware_parity_test)
 {
     // (--self-test was argv[1] in the standalone binary; the unified runner
     // has no argv, so keep the default full run.)
-    std::printf ("=== Parvati firmware parity oracle ===\n");
+    std::printf ("=== Hellcat firmware parity oracle ===\n");
 
     const char* allowlistPath = "tests/firmware_parity_known_divergences.txt";
     if (! loadAllowlist (allowlistPath, g_divergences))

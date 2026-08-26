@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // SettingsPanel — a compact settings UI hosted in the editor's SidePanel. Lets
 // the user pick the active theme, adjust the global zoom, and toggle tooltips.
 // Each control writes its preference straight into the processor (for
 // persistence) and fires a callback so the editor can apply the change live
 // (zoom via Desktop::setGlobalScaleFactor, tooltips via the ParamControl
-// static flag). Styled entirely through the inherited ParvatiLookAndFeel — no
+// static flag). Styled entirely through the inherited HellcatLookAndFeel — no
 // manual colours. Phase 4a of docs/UI_MODERNIZATION_PLAN.md (gap D13/F21).
 
 #pragma once
@@ -14,7 +14,7 @@
 
 #include <functional>
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class ThemeManager;
 
 //==============================================================================
@@ -41,7 +41,7 @@ public:
                                  Defaulted: the pre-wiring call site (no callback
                                  yet) still compiles; the processor is always
                                  updated regardless. */
-    SettingsPanel (ParvatiAudioProcessor& proc,
+    SettingsPanel (HellcatAudioProcessor& proc,
                    ThemeManager& themeManager,
                    std::function<void (double)> onZoomChanged,
                    std::function<void (bool)>   onTooltipsChanged,
@@ -114,7 +114,7 @@ private:
     // index+1 as its item ID). An unknown code maps to index 0 ("auto").
     int          languageIndexFromCode (const juce::String& code) const;
     juce::String languageCodeFromIndex (int index) const;
-    ParvatiAudioProcessor& proc_;
+    HellcatAudioProcessor& proc_;
     ThemeManager& themeManager_;
 
     std::function<void (double)> onZoomChanged_;

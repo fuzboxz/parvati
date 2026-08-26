@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Otticsak / Parvati.
+// Copyright (c) 2026 Jozsef Otticsak / Hellcat.
 //
 // ModTelemetryTypes — the dependency-light shared contract for the LIVE
 // modulation feedback system (docs/LIVE_MOD_FEEDBACK_DESIGN.md):
@@ -21,7 +21,7 @@
 #include <cstddef>   // size_t without dragging JUCE / DSP headers into this shard
 #include <cstdint>
 
-namespace parvati
+namespace hellcat
 {
 
 //==============================================================================
@@ -190,4 +190,4 @@ inline constexpr void telemetryIdleRow (uint8_t* row, int rowLen,
     }
 }
 
-}  // namespace parvati
+}  // namespace hellcat

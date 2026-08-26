@@ -25,7 +25,7 @@
 //   [5] Layout sanity across every ACTIVE row: X is the rightmost child, lamp
 //       is the leftmost interactive child, both 44pt-wide HIG targets.
 //
-// Run: ./build_unified/parvati_unified_tests mod_matrix_ui_test
+// Run: ./build_unified/hellcat_unified_tests mod_matrix_ui_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -132,7 +132,7 @@ void click (juce::Component* comp)
                                      comp, comp, now, pos, now, 1, false));
 }
 
-int rawParam (ParvatiAudioProcessor& proc, const juce::String& id)
+int rawParam (HellcatAudioProcessor& proc, const juce::String& id)
 {
     if (auto* raw = proc.getApvts().getRawParameterValue (id))
         return juce::roundToInt (raw->load());
@@ -164,7 +164,7 @@ TEST(mod_matrix_ui_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     ThemeManager themeManager;
@@ -180,7 +180,7 @@ TEST(mod_matrix_ui_test)
     // destination knob uses (exercises [2] before the sweeps need a live row).
     std::printf ("[1] rows are not drag sources\n");
     {
-        const bool assigned = parvati::ModMatrixHighlight::instance().requestAssign (
+        const bool assigned = hellcat::ModMatrixHighlight::instance().requestAssign (
             ambika::dsp::MOD_SRC_ENV_1, ambika::dsp::MOD_DST_FILTER_CUTOFF);
         check (assigned, "drop-assignment bus consumes (pill-drop path intact)");
         check (view.isSlotActive (0), "slot 0 active after assign");
@@ -243,7 +243,7 @@ TEST(mod_matrix_ui_test)
     {
         // Re-activate a slot for the mute checks. The X above freed slot 0, so
         // the next free slot IS 0 again (firstFreeSlot scans from 0).
-        const bool assigned = parvati::ModMatrixHighlight::instance().requestAssign (
+        const bool assigned = hellcat::ModMatrixHighlight::instance().requestAssign (
             ambika::dsp::MOD_SRC_LFO_1, ambika::dsp::MOD_DST_MIX_BALANCE);
         check (assigned, "second assign consumed");
         check (view.firstFreeSlot() > 0, "a slot was re-activated (0 no longer free)");
@@ -388,7 +388,7 @@ TEST(mod_matrix_ui_test)
         if (synthRow != nullptr)
             checkIndexFits (synthRow, "synth matrix row 0");
         // A double-digit index too: activate slot 9 (index '10').
-        parvati::ModMatrixHighlight::instance().requestAssign (
+        hellcat::ModMatrixHighlight::instance().requestAssign (
             ambika::dsp::MOD_SRC_LFO_1, ambika::dsp::MOD_DST_FILTER_CUTOFF);
         view.refresh();
         {
@@ -399,17 +399,17 @@ TEST(mod_matrix_ui_test)
     }
 
     // ---- [8] Disable-widget + header-colour parity across synth and FX.
-    // The shared ParvatiModuleLamp means the synth matrix bypass lamp, the FX
+    // The shared HellcatModuleLamp means the synth matrix bypass lamp, the FX
     // matrix lamp AND the FX card power toggle resolve identical ON colours;
     // the FX card title now uses the same token as the synth GroupComponent
     // titles (textPrimary). Pinned per shipped theme.
     std::printf ("\n[8] disable widget + header colour parity\n");
     {
         // The lamps resolve their colours through the INHERITED
-        // ParvatiLookAndFeel's active theme — install one on the hosts so the
+        // HellcatLookAndFeel's active theme — install one on the hosts so the
         // subtree sees it (otherwise both fall back and "equal" would be
         // vacuous). Re-themed per iteration; removed before scope exit.
-        ParvatiLookAndFeel lnf;
+        HellcatLookAndFeel lnf;
         juce::Component lnfHost;   // keeps the card's chain off `host`
         lnfHost.setBounds (0, 0, 400, 400);
         lnfHost.setLookAndFeel (&lnf);
@@ -445,10 +445,10 @@ TEST(mod_matrix_ui_test)
         // The synth-matrix lamp + the FX-card lamp as the shared base type.
         auto* synthLamp = findTitledButton (view.rowForSlotForTest (0),
                                             TRANS ("Mute / bypass this modulation"));
-        auto* synthModuleLamp = dynamic_cast<ParvatiModuleLamp*> (synthLamp);
-        check (synthModuleLamp != nullptr, "synth matrix lamp IS the shared ParvatiModuleLamp");
-        ParvatiModuleLamp* cardLamp = card != nullptr ? card->powerLampForTest() : nullptr;
-        check (cardLamp != nullptr, "FX card power toggle IS the shared ParvatiModuleLamp");
+        auto* synthModuleLamp = dynamic_cast<HellcatModuleLamp*> (synthLamp);
+        check (synthModuleLamp != nullptr, "synth matrix lamp IS the shared HellcatModuleLamp");
+        HellcatModuleLamp* cardLamp = card != nullptr ? card->powerLampForTest() : nullptr;
+        check (cardLamp != nullptr, "FX card power toggle IS the shared HellcatModuleLamp");
 
         const auto names = themeManager.getThemeNames();
         for (size_t ti = 0; ti < names.size(); ++ti)
@@ -494,19 +494,19 @@ TEST(mod_matrix_ui_test)
         // Dot diameter parity for equal bands (pure function of bounds).
         {
             const juce::Rectangle<int> band (0, 0, 44, 44);
-            check (ParvatiModuleLamp::dotDiameterFor (band) >= 28.0f
-                       && ParvatiModuleLamp::dotDiameterFor (band) <= 30.0f,
+            check (HellcatModuleLamp::dotDiameterFor (band) >= 28.0f
+                       && HellcatModuleLamp::dotDiameterFor (band) <= 30.0f,
                    "44x44 band renders a ~28-30pt dot (the 'bigger' request)");
             if (synthModuleLamp != nullptr)
-                check (juce::exactlyEqual (ParvatiModuleLamp::dotDiameterFor (
+                check (juce::exactlyEqual (HellcatModuleLamp::dotDiameterFor (
                            synthModuleLamp->getLocalBounds()),
-                           ParvatiModuleLamp::dotDiameterFor (band))
+                           HellcatModuleLamp::dotDiameterFor (band))
                        || synthModuleLamp->getWidth() < 44,
                        "synth lamp dot == dotDiameterFor(its band)");
             // Border ring: the 2026-08-20 "a tiny bit thicker" pin — one
             // shared constant, drawn by paintButton and asserted here.
-            check (ParvatiModuleLamp::kLampBorderWidth >= 2.0f
-                       && ParvatiModuleLamp::kLampBorderWidth <= 3.0f,
+            check (HellcatModuleLamp::kLampBorderWidth >= 2.0f
+                       && HellcatModuleLamp::kLampBorderWidth <= 3.0f,
                    "lamp border ring stroke is the slightly-thicker value (2-3pt)");
         }
     }

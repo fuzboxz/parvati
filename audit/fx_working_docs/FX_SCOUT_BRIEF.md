@@ -164,7 +164,7 @@ This blob rides inside the host state as base64 property `engine_state` on the A
 
 **FX integration (binary)**: bump version to **2**. In `captureState`, after the routing bytes for each part, append the FX state (FX params + FX matrix slots + topology/order). In `restoreState`, after the version check (`SynthEngine.cpp:291`), branch on version: v1 (legacy) → FX defaults; v2 → read FX bytes. The version==1 strict check at `SynthEngine.cpp:291` must become `<= 2` (or branch). Backward compat: old v1 blobs load with FX init defaults.
 
-### YAML (`.parvati` multi, `ParvatiPreset.cpp:497-548`)
+### YAML (`.parvati` multi, `HellcatPreset.cpp:497-548`)
 
 `serializeParvatiMulti` emits:
 ```
@@ -175,11 +175,11 @@ parts:
     params: { ...all non-option descriptors... }
 options: { vca_curve, filter_card, filter_drive }
 ```
-`applyParvatiMulti` (`ParvatiPreset.cpp:552-640`) writes routing + per-part params (byte/arp/seq) + global options.
+`applyParvatiMulti` (`HellcatPreset.cpp:552-640`) writes routing + per-part params (byte/arp/seq) + global options.
 
-Helpers: `partParamsMap` (`ParvatiPreset.cpp:400-446`) builds the per-part `params:` map (skips `isOption`); `isSerializable` (`ParvatiPreset.cpp:341-345`) only excludes `part_select`.
+Helpers: `partParamsMap` (`HellcatPreset.cpp:400-446`) builds the per-part `params:` map (skips `isOption`); `isSerializable` (`HellcatPreset.cpp:341-345`) only excludes `part_select`.
 
-**FX integration (YAML)**: add a per-part `fx:` block inside each `parts:` entry (after `params:` or alongside routing). Emit FX params + FX matrix slots. On apply, read `fx:` (absent in old files → FX defaults). The YAML parser is a hand-rolled indentation-driven subset (`ParvatiPreset.cpp:21-101`); nested maps under `fx:` are supported by the existing recursive parser. Unknown keys are ignored (`ParvatiPreset.cpp:474`, forward-compat).
+**FX integration (YAML)**: add a per-part `fx:` block inside each `parts:` entry (after `params:` or alongside routing). Emit FX params + FX matrix slots. On apply, read `fx:` (absent in old files → FX defaults). The YAML parser is a hand-rolled indentation-driven subset (`HellcatPreset.cpp:21-101`); nested maps under `fx:` are supported by the existing recursive parser. Unknown keys are ignored (`HellcatPreset.cpp:474`, forward-compat).
 
 ### Ambika `.PRO`/`.MUL` — FX naturally excluded ✓
 
@@ -266,7 +266,7 @@ Because the FX mod-matrix sources are read from synth voices (§3), and voice mo
 - **Source globbing**: `Source/*.cpp/*.cc/*.h` is `GLOB_RECURSE`'d with `CONFIGURE_DEPENDS` (`CMakeLists.txt:~145-150`). **New FX files under `Source/` are auto-picked up** (no manual CMake edit needed for the plugin target).
 - **Debug build dir**: `build/` (default `CMAKE_BUILD_TYPE=Debug`, artefacts in `build/Parvati_artefacts/Debug/`). Develop against Debug only (`CONTRIBUTING.md`).
 - **Test pattern**: each test is its own executable — `add_executable(parvati_<name>_test tests/<name>.test.cpp)` + `target_link_libraries(... PRIVATE Parvati)` + `target_include_directories(... PRIVATE Source)`. Built by default. Run: `./build/parvati_<name>_test`.
-  - **Closest analog for FX serialization**: `tests/parvati_preset_test.cpp` (YAML round-trip + forward-compat; pattern: `setParam`, serialize→apply into a 2nd processor, compare all descriptor raw values). Mirror for an `fx_preset_test`.
+  - **Closest analog for FX serialization**: `tests/hellcat_preset_test.cpp` (YAML round-trip + forward-compat; pattern: `setParam`, serialize→apply into a 2nd processor, compare all descriptor raw values). Mirror for an `fx_preset_test`.
   - **Closest analog for FX host-state**: `tests/host_state_test.cpp` (binary `getStateInformation`/`setStateInformation` round-trip across 6 parts; `renderOnce` helper). Mirror for FX state round-trip.
   - **Concurrency**: `tests/concurrency_test.cpp` + `tests/mt_harness.h` (`parvati_test::runConcurrent`) — spin a real AT while MT mutates. FX param writes must be added to the MT op set here. Run under TSAN (`PARVATI_ENABLE_TSAN=ON`).
 - **CONTRIBUTING notes** (`CONTRIBUTING.md`): develop against Debug; add a test per feature; run ASAN/UBSAN + clang-tidy before non-trivial changes; keep diffs minimal; update `CHANGELOG.md`.

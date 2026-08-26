@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Vendored from the Mutable Instruments Ambika controller firmware:
 // ambika_reference/controller/resources.cc:773-891 (scale tables) and the
@@ -11,7 +11,7 @@
 
 #include <array>
 
-namespace parvati
+namespace hellcat
 {
 namespace
 {
@@ -119,4 +119,4 @@ const char* tuningPresetName (int id)
 }
 
 const int16_t* tuningEdoTable() { return kEdo; }
-}  // namespace parvati
+}  // namespace hellcat

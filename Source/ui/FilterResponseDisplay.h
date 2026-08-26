@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FilterResponseDisplay — a compact LIVE magnitude-vs-frequency response curve
 // for the Filter 1 section (cutoff / resonance / mode). Intended as a decoration
@@ -13,24 +13,29 @@
 // static shape reads as "what is set", the moving one as "what is happening".
 //
 // Decoupled contract: constructed with NORMALIZED (0..1) getters for cutoff,
-// resonance, and the mode choice index (0..3 = LP/BP/HP/Notch). Self-contained:
-// owns a 30 Hz refresh timer with an eps-diff gate. Read-only on the APVTS.
-// Colours are read from the active ParvatiTheme via the component's LookAndFeel
-// every repaint; the trace adopts a category hue (catAudio) via
-// setCategoryColour().
+// resonance, the mode choice index (0..3 = LP/BP/HP/Notch) and the filter-card
+// choice (0..5, normalized). Self-contained: owns a 30 Hz refresh timer with
+// an eps-diff gate. Read-only on the APVTS. Colours are read from the active
+// HellcatTheme via the component's LookAndFeel every repaint; the trace
+// adopts a category hue (catAudio) via setCategoryColour().
 //
 // Magnitude model (local math — the runtime filter in dsp/analog_filter.cpp is
-// NOT touched): a 4-pole RESONANT LADDER prototype (transistor-ladder class)
-// evaluated at
-// ~64 log-spaced frequency points (20 Hz .. 16 kHz). The cutoff->Hz mapping
-// replicates AnalogFilter::cutoffByteToHz (exponential 20..16k) so the curve is
-// visually consistent with the actual filter. The ladder gives a 24 dB/oct
-// skirt AND classic analog resonance behaviour: as the resonance (feedback K)
-// rises, the passband gain DROPS (energy is stolen into the resonance peak near
-// fc) and the peak grows. LP/BP/HP/Notch share the same ladder denominator.
-// Cutoff/resonance are tracked EXACTLY (displayed = live APVTS target each
-// 30 Hz tick) so the preview is accurate under automation; mode is discrete
-// (snaps). fc is marked with a vertical tick.
+// NOT touched): CARD-AWARE. The six cards split into two families, and the
+// drawn resonance law MIRRORS the runtime law of the active card (see
+// Source/dsp/analog_filter.h; keep the two in sync):
+//   * 2-pole family (SVF, Polivoks skeleton): Q = 1/(2*(1-res)). The
+//     Polivoks character layer is not drawn; the skeleton is the honest
+//     static estimate.
+//   * 4-pole cascade ("4P"): two identical 2-pole stages, per-stage
+//     q = 0.5*(1-res)^-0.616 (mirrors kSsm4PeakExp).
+//   * 4-pole feedback family (SMR4 K = 4*r; Ladder K = max(0.4, 4*r);
+//     IR3109 K = 3.4*r, the factory cap): H = num/((1+jw)^4 + K).
+// The 4-pole cards draw lowpass only (the hardware is lowpass); the SVF card
+// draws LP/BP/HP/Notch; the Polivoks card draws LP and BP only (the runtime
+// clamps HP/Notch to LP). The cutoff->Hz mapping replicates
+// AnalogFilter::cutoffByteToHz (exponential 20..16k). Cutoff/resonance are
+// tracked EXACTLY (displayed = live APVTS target each 30 Hz tick) so the
+// preview is accurate under automation; mode and card are discrete (snap).
 
 #pragma once
 
@@ -38,8 +43,8 @@
 
 #include <functional>
 
-#include "ModTelemetryTypes.h"   // parvati::LiveFilterValues (live modulated overlay)
-#include "ParvatiLookAndFeel.h"
+#include "ModTelemetryTypes.h"   // hellcat::LiveFilterValues (live modulated overlay)
+#include "HellcatLookAndFeel.h"
 
 //==============================================================================
 class FilterResponseDisplay : public juce::Component,
@@ -49,11 +54,16 @@ public:
     /** Construct a filter response preview.
         @param getCutoff NORMALIZED 0..1 value of filter1_cutoff.
         @param getReso   NORMALIZED 0..1 value of filter1_resonance.
-        @param getMode   NORMALIZED 0..1 value of filter1_mode (choice 0..3). */
+        @param getMode   NORMALIZED 0..1 value of filter1_mode (choice 0..3).
+        @param getCard   NORMALIZED 0..1 value of the filter_card choice
+                         (0..5 = SMR4 / 4P / SVF / Ladder / Polivoks /
+                         IR3109). Optional: a null getter draws the SMR4
+                         card (index 0). */
     FilterResponseDisplay (juce::String title,
                            std::function<float()> getCutoff,
                            std::function<float()> getReso,
-                           std::function<float()> getMode);
+                           std::function<float()> getMode,
+                           std::function<float()> getCard = {});
 
     ~FilterResponseDisplay() override;
 
@@ -82,7 +92,7 @@ public:
         render over the unchanged opaque base preview. An empty or inactive
         provider (or a near-base state) hides the overlay at zero overhead
         beyond one std::function call per poll tick. */
-    void setLiveValuesProvider (std::function<parvati::LiveFilterValues()> p);
+    void setLiveValuesProvider (std::function<hellcat::LiveFilterValues()> p);
 
     // TEST-ONLY: is the live modulated curve now SHOWN (the painted
     // state, i.e. after the change gate — lets a headless test observe the
@@ -120,20 +130,27 @@ private:
     // 4-pole resonant-ladder |H|^2 for the given mode at frequency f with pole
     // fc and resonance feedback K (0 = none, ->4 = self-oscillation).
     // mode: 0=LP 1=BP 2=HP 3=Notch.
-    static float magnitudeSq (float f, float fc, float K, int mode);
+    static float ladderMagnitudeSq (float f, float fc, float K, int mode);
+
+    // Card-aware |H|^2 at frequency f for card `card` (0..5), pole fc,
+    // clamped resonance reso (0..0.95) and drawn mode (0..3). The laws
+    // mirror Source/dsp/analog_filter.h (see the file header); keep the two
+    // in sync. This file stays independent of the DSP headers.
+    static float magnitudeSq (float f, float fc, int card, float reso, int mode);
 
     juce::String title_;
-    std::function<float()> getCutoff_, getReso_, getMode_;
+    std::function<float()> getCutoff_, getReso_, getMode_, getCard_;
 
     juce::Colour categoryColour_;
     bool hasCategoryColour_ = false;
 
     // DISPLAYED values, tracked EXACTLY to the live APVTS target each 30 Hz tick
     // so the preview is accurate under automation (no smoothing lag); the repaint
-    // gate fires on a change vs the previous tick. Mode is discrete and snaps
-    // (lastM_ is the eps-change gate for it).
+    // gate fires on a change vs the previous tick. Mode and card are discrete
+    // and snap (lastM_ / lastCard_ are their eps-change gates).
     float dispC_ = -1.0f, dispR_ = -1.0f;   // -1 => first tick
     float lastM_ = -1.0f;
+    int   lastCard_ = -1;
 
     // ---- Live modulated overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
     // The provider is pulled in the SAME 30 Hz tick as the base getters; the
@@ -144,7 +161,7 @@ private:
     // liveHoldTicks_ counts down from the hold budget while the bytes sit
     // still, so a settled note hides the overlay but an LFO/env sweep keeps
     // it armed (key tracking — a static patch setting — never trips it).
-    std::function<parvati::LiveFilterValues()> liveValuesProvider_;
+    std::function<hellcat::LiveFilterValues()> liveValuesProvider_;
     bool  dispLiveActive_  = false;
     int   dispLiveCutByte_ = -1;    // -1 => never seen an active provider frame
     int   dispLiveResByte_ = -1;

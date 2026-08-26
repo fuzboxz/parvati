@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Ensemble — BBD-style ensemble chorus. Two parallel delay lines are
 // modulated 90 deg out of phase via the 32-value sine LUT (NO per-sample trig)
@@ -12,12 +12,12 @@
 //   p3 Feedback 0..1 -> -0.9..0.9 (-0.9+p*1.8)
 //   p4 UNUSED (Mix is the chain Dry/Wet — never read here).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1ENSEMBLE_H
-#define PARVATI_DSP_FX_FV1_FV1ENSEMBLE_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1ENSEMBLE_H
+#define HELLCAT_DSP_FX_FV1_FV1ENSEMBLE_H
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // BBD-style stereo ensemble chorus. The whole audio path is 24-bit fixed-point
@@ -67,6 +67,6 @@ private:
     LoopDcKiller fbDcA_ {}, fbDcB_ {};
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1ENSEMBLE_H
+#endif // HELLCAT_DSP_FX_FV1_FV1ENSEMBLE_H

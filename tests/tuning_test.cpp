@@ -7,12 +7,12 @@
 //      (the custom-tuning subsystem was removed 2026-08-19; v7 blobs that
 //      carry a custom mode 33 must load with the custom DROPPED and the
 //      raga byte intact)
-//   6. .parvati preset round-trip (params: part_raga) + legacy tuning_mode
+//   6. .yml preset round-trip (params: part_raga) + legacy tuning_mode
 //      key acceptance (33 -> 12-EDO, 1..32 -> raga byte)
 //   7. standing-bend pickup on newly triggered voices
 //   8. .MUL round-trip of the raga byte (PartData byte 4)
 //
-// Run: ./build_unified/parvati_unified_tests tuning_test
+// Run: ./build_unified/hellcat_unified_tests tuning_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -24,14 +24,14 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>   // ScopedJuceInitialiser_GUI (message thread for the processor's timers)
 
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "test_utils.h"              // shared setParam (host-path helper)
 #include "SynthEngine.h"
 #include "TuningTables.h"
 
-using parvati::preset::applyParvatiMulti;
-using parvati::preset::serializeParvatiMulti;
+using hellcat::preset::applyHellcatMulti;
+using hellcat::preset::serializeHellcatMulti;
 
 namespace
 {
@@ -45,14 +45,14 @@ void check (bool cond, const char* msg)
 
 // Host-prepare a freshly constructed processor (processBlock requires
 // prepareToPlay to size the engine scratch buffers first).
-void prepareProc (ParvatiAudioProcessor& proc)
+void prepareProc (HellcatAudioProcessor& proc)
 {
     proc.prepareToPlay (48000.0, 256);
 }
 
 // Trigger @p note on @p channel for one block, then find the voice it landed
 // on (via the SF-1 displayed-note mirror). Returns nullptr if no active voice.
-AmbikaVoice* playNote (ParvatiAudioProcessor& p, int note, int channel = 1, uint8_t vel = 100)
+AmbikaVoice* playNote (HellcatAudioProcessor& p, int note, int channel = 1, uint8_t vel = 100)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -67,7 +67,7 @@ AmbikaVoice* playNote (ParvatiAudioProcessor& p, int note, int channel = 1, uint
     return nullptr;
 }
 
-void allNotesOff (ParvatiAudioProcessor& p, int note = -1, int channel = 1)
+void allNotesOff (HellcatAudioProcessor& p, int note = -1, int channel = 1)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -92,39 +92,39 @@ void testTables()
 {
     std::printf ("[vendored tables]\n");
 
-    const int16_t* just = parvati::tuningPresetTable (1);
+    const int16_t* just = hellcat::tuningPresetTable (1);
     const int16_t wantJust[12] = { 0, 15, 5, 20, -17, -2, -12, 2, 17, -20, -5, -15 };
     check (just != nullptr && std::memcmp (just, wantJust, sizeof (wantJust)) == 0,
            "preset 1 (just) matches the firmware bytes verbatim");
 
-    check (parvati::tuningPresetTable (0) == nullptr, "id 0 returns nullptr (no preset)");
+    check (hellcat::tuningPresetTable (0) == nullptr, "id 0 returns nullptr (no preset)");
     bool allResolve = true, namesOk = true, rangeOk = true;
-    for (int id = 1; id <= parvati::kNumTuningPresets; ++id)
+    for (int id = 1; id <= hellcat::kNumTuningPresets; ++id)
     {
-        const int16_t* t = parvati::tuningPresetTable (id);
+        const int16_t* t = hellcat::tuningPresetTable (id);
         if (t == nullptr) { allResolve = false; continue; }
-        if (parvati::tuningPresetName (id) == nullptr || parvati::tuningPresetName (id)[0] == '\0')
+        if (hellcat::tuningPresetName (id) == nullptr || hellcat::tuningPresetName (id)[0] == '\0')
             namesOk = false;
         for (int c = 0; c < 12; ++c)
-            if (! (t[c] == parvati::kTuningSilence || (t[c] >= -127 && t[c] <= 127)))
+            if (! (t[c] == hellcat::kTuningSilence || (t[c] >= -127 && t[c] <= 127)))
                 rangeOk = false;
     }
     check (allResolve, "all 32 preset ids resolve to tables");
     check (namesOk, "all 32 preset names are non-empty");
     check (rangeOk, "every table entry is within [-127,127] or the sentinel");
 
-    check (parvati::tuningPresetTable (16) == parvati::tuningPresetTable (13),
+    check (hellcat::tuningPresetTable (16) == hellcat::tuningPresetTable (13),
            "id 16 (bageshree) aliases the kafi array");
-    check (parvati::tuningPresetTable (32) == parvati::tuningPresetTable (12),
+    check (hellcat::tuningPresetTable (32) == hellcat::tuningPresetTable (12),
            "id 32 (rasia) aliases the yaman array");
 
     int silences = 0;
     for (int c = 0; c < 12; ++c)
-        if (parvati::tuningPresetTable (30)[c] == parvati::kTuningSilence)
+        if (hellcat::tuningPresetTable (30)[c] == hellcat::kTuningSilence)
             ++silences;
     check (silences == 7, "preset 30 (kaushik todi) mutes 7 classes (firmware data)");
 
-    const int16_t* edo = parvati::tuningEdoTable();
+    const int16_t* edo = hellcat::tuningEdoTable();
     bool edoZero = true;
     for (int c = 0; c < 12; ++c)
         if (edo[c] != 0) edoZero = false;
@@ -138,7 +138,7 @@ void testHook()
 {
     std::printf ("[startNote hook mapping]\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
 
@@ -153,7 +153,7 @@ void testHook()
     setParam (proc, "part_raga", 1);
     renderBlocks (proc, 2);   // frameDirty_ -> AT push -> voices see the table
     {
-        const int16_t* t = parvati::tuningPresetTable (1);
+        const int16_t* t = hellcat::tuningPresetTable (1);
         bool okc = true;
         for (int n : { 60, 64, 67, 71 })   // C E G B: classes 0, 4, 7, 11
         {
@@ -211,7 +211,7 @@ void testSentinel()
 {
     std::printf ("[sentinel gates]\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
     setParam (proc, "part_raga", 30);   // kaushik todi: 7 muted classes
@@ -221,7 +221,7 @@ void testSentinel()
     for (int n = 60; n <= 72; ++n)
     {
         AmbikaVoice* av = playNote (proc, n);
-        const bool muted = parvati::tuningPresetTable (30)[n % 12] == parvati::kTuningSilence;
+        const bool muted = hellcat::tuningPresetTable (30)[n % 12] == hellcat::kTuningSilence;
         if (muted && av != nullptr) refused = false;        // muted must NOT play
         if (! muted && av == nullptr) accepted = false;     // in-scale must play
         allNotesOff (proc, n);
@@ -240,7 +240,7 @@ void testStaging()
 {
     std::printf ("[staging]\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
 
@@ -256,7 +256,7 @@ void testStaging()
     }
     {
         AmbikaVoice* av = playNote (proc, 60);
-        const int16_t* t = parvati::tuningPresetTable (7);
+        const int16_t* t = hellcat::tuningPresetTable (7);
         check (av != nullptr && av->getLastNote14() == 60 * 128 + t[0],
                "byte-4 preset change applied via frameDirty_ push");
         allNotesOff (proc, 60);
@@ -272,7 +272,7 @@ void testStateBlob()
 {
     std::printf ("[engine state blob]\n");
 
-    ParvatiAudioProcessor a;
+    HellcatAudioProcessor a;
     prepareProc (a);
     renderBlocks (a, 2);
     auto& ea = a.getEngine();
@@ -287,7 +287,7 @@ void testStateBlob()
     check (static_cast<const uint8_t*> (blob.getData())[4] == 8, "blob carries version 8");
 
     {   // Fresh engine restore: presets preserved from partBytes[4].
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         prepareProc (b);
         renderBlocks (b, 2);
         auto& eb = b.getEngine();
@@ -296,14 +296,14 @@ void testStateBlob()
                 && eb.resolvedTuningMode (1) == 0;
         int16_t t2[12] = {}, tWant[12] = {};
         eb.resolveTuningOffsets (2, t2);
-        std::memcpy (tWant, parvati::tuningPresetTable (12), sizeof (tWant));
+        std::memcpy (tWant, hellcat::tuningPresetTable (12), sizeof (tWant));
         okc = okc && std::memcmp (t2, tWant, sizeof (tWant)) == 0;
         check (okc, "restored presets match (5 on part 0, 12 on part 2)");
 
         // The restored state is LIVE: a new note on part 0 uses the preset table.
         renderBlocks (b, 2);
         AmbikaVoice* av = playNote (b, 60);
-        const int16_t* t = parvati::tuningPresetTable (5);
+        const int16_t* t = hellcat::tuningPresetTable (5);
         check (av != nullptr && av->getLastNote14() == 60 * 128 + t[0],
                "restored preset is applied to new notes after the AT push");
         allNotesOff (b, 60);
@@ -347,7 +347,7 @@ void testStateBlob()
             v7.append (&tuneLen, 4);
             v7.append (tune, 25);
         }
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         prepareProc (c);
         renderBlocks (c, 2);
         auto& ec = c.getEngine();
@@ -367,7 +367,7 @@ void testStateBlob()
         // merely flip the version byte (v6 has no tuning blocks, like v8).
         juce::MemoryBlock v6 (blob);
         static_cast<uint8_t*> (v6.getData())[4] = 6;
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         prepareProc (c);
         renderBlocks (c, 2);
         auto& ec = c.getEngine();
@@ -379,7 +379,7 @@ void testStateBlob()
     {   // v9 is rejected (strict version gate -> legacy APVTS fallback upstream).
         juce::MemoryBlock v9 (blob);
         static_cast<uint8_t*> (v9.getData())[4] = 9;
-        ParvatiAudioProcessor d;
+        HellcatAudioProcessor d;
         prepareProc (d);
         auto& ed = d.getEngine();
         check (! ed.restoreState (v9.getData(), v9.getSize()), "future version strictly rejected");
@@ -387,13 +387,13 @@ void testStateBlob()
 }
 
 // ---------------------------------------------------------------------------
-// 6. .parvati preset round-trip + legacy tuning_mode acceptance.
+// 6. .yml preset round-trip + legacy tuning_mode acceptance.
 // ---------------------------------------------------------------------------
-void testParvatiMulti()
+void testHellcatMulti()
 {
-    std::printf (".parvati tuning fields\n");
+    std::printf (".yml tuning fields\n");
 
-    ParvatiAudioProcessor a;
+    HellcatAudioProcessor a;
     prepareProc (a);
     renderBlocks (a, 2);
     auto& ea = a.getEngine();
@@ -401,15 +401,15 @@ void testParvatiMulti()
     ea.getPart (1).partBytes[4] = 12;   // yaman
     renderBlocks (a, 2);
 
-    const juce::String yaml = serializeParvatiMulti (a);
+    const juce::String yaml = serializeHellcatMulti (a);
     check (! yaml.contains ("tuning_mode"), "serializer emits NO tuning_mode keys (raga rides params: part_raga)");
     check (! yaml.contains ("tuning_offsets"), "serializer emits NO tuning_offsets keys");
 
     {
-        ParvatiAudioProcessor b;
+        HellcatAudioProcessor b;
         prepareProc (b);
         renderBlocks (b, 2);
-        check (applyParvatiMulti (b, yaml), "applyParvatiMulti parses the round-trip");
+        check (applyHellcatMulti (b, yaml), "applyHellcatMulti parses the round-trip");
         auto& eb = b.getEngine();
         check (eb.resolvedTuningMode (1) == 12, "round-tripped preset matches (12 on part 1)");
     }
@@ -442,10 +442,10 @@ void testParvatiMulti()
         // Also give part 3's entry a legacy preset mode (rewrite after the fact
         // via a second pass is overkill — part 2's 33 is the critical case; a
         // preset-mode acceptance is covered by the params part_raga path).
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         prepareProc (c);
         renderBlocks (c, 2);
-        check (applyParvatiMulti (c, legacy), "legacy multi WITH tuning_mode:33 + offsets still parses");
+        check (applyHellcatMulti (c, legacy), "legacy multi WITH tuning_mode:33 + offsets still parses");
         auto& ec = c.getEngine();
         check (ec.resolvedTuningMode (2) == 0,
                "legacy custom mode 33 loads as 12-EDO (custom subsystem removed)");
@@ -467,10 +467,10 @@ void testParvatiMulti()
                 out << "    tuning_mode: 5\n";
             out << l << "\n";
         }
-        ParvatiAudioProcessor c;
+        HellcatAudioProcessor c;
         prepareProc (c);
         renderBlocks (c, 2);
-        check (applyParvatiMulti (c, out), "legacy multi WITH tuning_mode:5 still parses");
+        check (applyHellcatMulti (c, out), "legacy multi WITH tuning_mode:5 still parses");
         check (c.getEngine().resolvedTuningMode (3) == 5,
                "legacy preset mode 5 maps to the raga byte");
     }
@@ -485,7 +485,7 @@ void testApvtsRaga()
 {
     std::printf ("part_raga via APVTS\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
     auto& eng = proc.getEngine();
@@ -513,7 +513,7 @@ void testStandingBend()
 {
     std::printf ("[standing bend pickup]\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     prepareProc (proc);
     renderBlocks (proc, 2);
 
@@ -564,7 +564,7 @@ void testMulRagaRoundTrip()
 {
     std::printf ("[.MUL raga byte round-trip]\n");
 
-    ParvatiAudioProcessor a;
+    HellcatAudioProcessor a;
     prepareProc (a);
     renderBlocks (a, 2);
     // Set the raga through the PARAM path: saveMultiFile gathers the CURRENT
@@ -574,12 +574,12 @@ void testMulRagaRoundTrip()
     renderBlocks (a, 2);
 
     const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                              .getChildFile ("parvati_tuning_test")
+                              .getChildFile ("hellcat_tuning_test")
                               .getChildFile ("raga.MUL");
     tmp.getParentDirectory().createDirectory();
     check (a.saveMultiFile (tmp), "saves .MUL with raga byte 7 on part 0");
 
-    ParvatiAudioProcessor b;
+    HellcatAudioProcessor b;
     prepareProc (b);
     renderBlocks (b, 2);
     check (b.loadMultiFile (tmp), "loads the .MUL back");
@@ -589,7 +589,7 @@ void testMulRagaRoundTrip()
     bool applied = false;
     {
         AmbikaVoice* av = playNote (b, 60);
-        const int16_t* t = parvati::tuningPresetTable (7);
+        const int16_t* t = hellcat::tuningPresetTable (7);
         applied = av != nullptr && av->getLastNote14() == 60 * 128 + t[0];
         allNotesOff (b, 60);
     }
@@ -601,13 +601,13 @@ void testMulRagaRoundTrip()
 TEST(tuning_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // the processor runs Timers (deferred-param drain)
-    std::printf ("parvati_tuning_test\n");
+    std::printf ("hellcat_tuning_test\n");
     testTables();
     testHook();
     testSentinel();
     testStaging();
     testStateBlob();
-    testParvatiMulti();
+    testHellcatMulti();
     testApvtsRaga();
     testStandingBend();
     testMulRagaRoundTrip();

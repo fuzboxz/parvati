@@ -13,14 +13,14 @@
 // external-decoration slot), so ONE bordered Global section holds the global
 // knobs, the arrangement summary AND the part-allocation table.
 //
-// Design: /tmp/parvati_patch_design.md ("Phase 2"). Phase 1 output
+// Design: /tmp/hellcat_patch_design.md ("Phase 2"). Phase 1 output
 // (Source/ui/PatchArrangement.h) supplies applyArrangement/inferArrangement.
 // This component drives the engine purely through its EXISTING public setters —
 // it does NOT touch engine internals, file formats, or audio-thread code.
 //
 // Phase 2 deliverable only: the component must compile via the existing
 // GLOB_RECURSE even though nothing instantiates it yet (Phase 3 wires it in).
-// Colours come from the inherited ParvatiLookAndFeel / ParvatiTheme — no
+// Colours come from the inherited HellcatLookAndFeel / HellcatTheme — no
 // hardcoded palette.
 
 #pragma once
@@ -33,7 +33,7 @@
 
 #include "PatchArrangement.h"   // Arrangement (getDisplayedArrangement return type)
 
-class ParvatiAudioProcessor;
+class HellcatAudioProcessor;
 class ThemeManager;
 class ParamPage;
 
@@ -45,12 +45,12 @@ class ParamPage;
 class PatchPage : public juce::Component
 {
 public:
-    PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManager);
+    PatchPage (HellcatAudioProcessor& processor, ThemeManager& themeManager);
     // Destructor defined out-of-line: rows_ holds unique_ptr to the incomplete
     // nested PartRow, so the type must be complete where the dtor runs.
     ~PatchPage() override;
 
-    // Fired when a part name/alias is edited (Parvati extension) so the host
+    // Fired when a part name/alias is edited (Hellcat extension) so the host
     // editor can relabel its Part selector. Optional (a null callback is a
     // no-op — used by headless tests).
     std::function<void()> onPartNamesChanged;
@@ -129,11 +129,11 @@ public:
 
     // Re-apply theme-derived colours and repaint (page fill is read at paint
     // time; the heading accent is explicit). Colours come from the inherited
-    // L&F / the active ParvatiTheme.
+    // L&F / the active HellcatTheme.
     void applyThemeColors();
 
     // Accent-tinted OUTLINED chrome for the two Ambika export buttons (the
-    // parvatiButtonOutlined property is set once in the ctor; this (re)applies
+    // hellcatButtonOutlined property is set once in the ctor; this (re)applies
     // the theme-derived fill/text colours — called from the ctor and
     // applyThemeColors so a theme switch re-skins them).
     void applyExportButtonChrome();
@@ -209,7 +209,7 @@ public:
     void chooseSpread (int part, int value);
 
 private:
-    ParvatiAudioProcessor& proc_;
+    HellcatAudioProcessor& proc_;
     ThemeManager& themeManager_;
 
     // The arrangement selector + the "Voices Y/96" pool-budget readout have
@@ -220,7 +220,7 @@ private:
     // Ambika export buttons (summary row, right edge): "Export .PRO" (current
     // part, byte-faithful) + "Export .MUL" (whole 6-Part setup; the editor's
     // flow opens the MulExportDialog when a voice-slot fallback is needed).
-    // Export ONLY — Load/Save on the top bar are .parvati (2026-08-20).
+    // Export ONLY — Load/Save on the top bar are .yml (2026-08-20).
     juce::TextButton exportProButton_ { TRANS ("Export .PRO") };
     juce::TextButton exportMulButton_ { TRANS ("Export .MUL") };
     ParamPage* hostedParamPage_ = nullptr;   // NON-owned (editor owns it)

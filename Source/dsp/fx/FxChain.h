@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FxChain — the per-part 3-slot FX chain. Owns up to 3 FxProcessor instances
 // (rebuilt when a slot's FxType changes), holds per-slot enabled/dryWet/4-params
@@ -95,7 +95,7 @@ public:
     // Test-only: the INSTALLED slot type (the AT-owned slotType_ cache).
     // Reflects a staged swap only after servicePendingTypeSwaps consumed it
     // (i.e. after one processBlock) — unlike the fxState.slotType atomic, this
-    // is what the DSP actually renders. Proves a .parvati multi load staged
+    // is what the DSP actually renders. Proves a .yml multi load staged
     // its slot types into the chain (SynthEngine::fxChainSlotTypeForTest).
     uint8_t getInstalledSlotTypeForTest (int slot) const noexcept { return slotType_[(size_t) slot]; }
 

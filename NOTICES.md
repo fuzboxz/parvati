@@ -2,22 +2,22 @@
 
 This project includes or depends on the following third-party software.
 
-## Parvati (this project)
+## Hellcat (this project)
 
 Copyright © 2026 Jozsef Ottucsak.
 
 Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0). The
-full text is in [`LICENSE`](LICENSE). Parvati's own code is AGPL-3.0; the
+full text is in [`LICENSE`](LICENSE). Hellcat's own code is AGPL-3.0; the
 combined work (including the GPL-3.0 Ambika-derived DSP and factory banks
 below) is distributed under AGPL-3.0, which is one-way compatible with GPL-3.0.
 
 > Note: AGPL-3.0 adds a network-use clause (§13) on top of GPL-3.0 — if you let
-> users interact with Parvati over a network, you must offer them the
+> users interact with Hellcat over a network, you must offer them the
 > corresponding source.
 
 ## Ambika firmware (Mutable Instruments)
 
-Parvati is a software port of the **Ambika** synthesizer by
+Hellcat is a software port of the **Ambika** synthesizer by
 **Emilie Gillet / Mutable Instruments**.
 
 - Project: <https://github.com/pichenettes/ambika>
@@ -32,15 +32,15 @@ original GPL-3.0 firmware used as the porting reference.
 
 Integrity pin: `tools/check_reference_integrity.sh` checks a SHA-256 manifest
 of every content file in this tree. The manifest lives at
-`tools/reference_integrity.sha256`; the ctest `parvati_check_reference_integrity`
+`tools/reference_integrity.sha256`; the ctest `hellcat_check_reference_integrity`
 runs the check in every configured tree. Re-pinning is deliberate. Run
-`PARVATI_PIN=1 tools/check_reference_integrity.sh` only for an intended
+`HELLCAT_PIN=1 tools/check_reference_integrity.sh` only for an intended
 upstream sync. Re-pinning after an accidental edit destroys the parity oracle.
 
 The controller-side scale ("raga") tuning tables in `Source/TuningTables.cpp`
 are likewise vendored verbatim from the Ambika controller firmware
 (`controller/resources.cc`, GPL-3.0, upstream-derived) — a mechanical
-transcription of the 30 scale tables + the 32-entry dispatch used by Parvati's
+transcription of the 30 scale tables + the 32-entry dispatch used by Hellcat's
 per-part microtonal tuning.
 
 ## Mutable Instruments Eurorack DSP (clouds / rings / warps / stmlib, MIT)
@@ -77,7 +77,7 @@ See [`presets/ATTRIBUTION.md`](presets/ATTRIBUTION.md).
 
 ## JUCE
 
-Parvati is built with the **JUCE 9** framework.
+Hellcat is built with the **JUCE 9** framework.
 
 - Project: <https://github.com/juce-framework/JUCE>
 - License: the JUCE framework modules are **dual-licensed under the
@@ -87,10 +87,10 @@ Parvati is built with the **JUCE 9** framework.
   ISC/BSD/MIT/zlib apply to individual bundled dependencies and the JUCE
   *examples*, not to the framework modules as a whole).
 
-Parvati consumes the JUCE modules under the **AGPLv3** terms: Parvati itself
+Hellcat consumes the JUCE modules under the **AGPLv3** terms: Hellcat itself
 is AGPL-3.0, so the combination is license-compatible, and binary
-distributions of Parvati must continue to satisfy AGPL-3.0's
-corresponding-source obligations (§6/§13). Building or distributing Parvati
+distributions of Hellcat must continue to satisfy AGPL-3.0's
+corresponding-source obligations (§6/§13). Building or distributing Hellcat
 under the commercial JUCE licence instead is a choice for downstream
 redistributors, on their own account.
 
@@ -102,12 +102,12 @@ vendored CLAP SDK and clap-helpers).
 - Project: <https://github.com/free-audio/clap-juce-extensions>
 - License: **MIT** (Copyright 2019–2020 Paul Walker; the bundled CLAP SDK is
   MIT) — compatible with AGPL-3.0. Pinned to a specific upstream commit in
-  `CMakeLists.txt` (see the `PARVATI_CLAP_EXTENSIONS_PATH` / fetch block).
+  `CMakeLists.txt` (see the `HELLCAT_CLAP_EXTENSIONS_PATH` / fetch block).
 
 ## Y2K theme fonts (Michroma / PT Sans, embedded)
 
 The Y2K theme embeds two typefaces under `assets/fonts/` via the
-`parvati_font_assets` binary-data target (module headers and small UI
+`hellcat_font_assets` binary-data target (module headers and small UI
 labels respectively). Both are **SIL Open Font License 1.1** —
 commercial use, bundling and redistribution are permitted; the license
 text ships as `assets/fonts/OFL.txt`.
@@ -135,5 +135,5 @@ reference.
 ## Other libraries
 
 Beyond the JUCE modules (and their bundled dependencies, per JUCE's
-`LICENSE.md`) and the items above, Parvati uses only the C++17 standard
+`LICENSE.md`) and the items above, Hellcat uses only the C++17 standard
 library. No further third-party libraries are linked.

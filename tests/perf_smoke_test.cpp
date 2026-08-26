@@ -12,7 +12,7 @@
 // pegged probe gaps) without the manual `sample` session it took to find.
 //
 // THE PUMP: JUCE 9 has no unguarded synchronous pump — runDispatchLoopUntil
-// is JUCE_MODAL_LOOPS_PERMITTED-gated (compiled OUT of the Parvati lib this
+// is JUCE_MODAL_LOOPS_PERMITTED-gated (compiled OUT of the Hellcat lib this
 // test links), and runDispatchLoop is [NSApp run], which in a console
 // binary does not service the JUCE timer queue (measured: a 30 Hz probe
 // Timer fires 0 times inside it). The JUCE MessageQueue on macOS IS a
@@ -35,7 +35,7 @@
 // being permissive. If a legitimate feature raises the floor, re-measure
 // and update BOTH the constant and this comment (a budget that was never
 // re-derived is a budget nobody trusts). Loaded CI hosts without a code
-// regression can scale every budget through PARVATI_TEST_PERF_BUDGET_MULT
+// regression can scale every budget through HELLCAT_TEST_PERF_BUDGET_MULT
 // (for example 2 doubles them; see budgetMultiplier below).
 //
 // What it cannot see: peer-driven repaint cost (no window = no paint) —
@@ -43,7 +43,7 @@
 // CGEvent drag helper needs Accessibility permission, so it cannot run
 // unattended on CI runners). See CONTRIBUTING.md.
 //
-// Run: ./build_unified/parvati_unified_tests perf_smoke_test
+// Run: ./build_unified/hellcat_unified_tests perf_smoke_test
 
 // Non-Apple hosts cannot run this test: the pump drives the macOS
 // CFRunLoop directly and the CPU budget reads getrusage. The single TEST()
@@ -85,11 +85,11 @@ constexpr double kGapP99BudgetMs      = 55.0;  // canary period ~44 ms + headroo
 constexpr double kGapMaxBudgetMs      = 120.0; // no single stalled second
 
 // Loaded CI hosts can exceed the reference wall-clock budgets without a
-// code regression. PARVATI_TEST_PERF_BUDGET_MULT scales every budget; 2
+// code regression. HELLCAT_TEST_PERF_BUDGET_MULT scales every budget; 2
 // doubles them. Values of zero or less fall back to 1.0.
 double budgetMultiplier()
 {
-    const char* e = std::getenv ("PARVATI_TEST_PERF_BUDGET_MULT");
+    const char* e = std::getenv ("HELLCAT_TEST_PERF_BUDGET_MULT");
     if (e == nullptr || e[0] == '\0')
         return 1.0;
     const double m = std::atof (e);
@@ -123,7 +123,7 @@ double cpuTimeSecs()
 //     generous margin only fails if per-voice cost regresses catastrophically).
 struct WorstCaseRenderer
 {
-    explicit WorstCaseRenderer (ParvatiAudioProcessor& p) : proc (p)
+    explicit WorstCaseRenderer (HellcatAudioProcessor& p) : proc (p)
     {
         // 96-voice worst case: every part at 16 slots (6 x 16 = 96).
         for (int part = 0; part < 6; ++part)
@@ -153,7 +153,7 @@ struct WorstCaseRenderer
         const double audioContent = (double) blocks * 256.0 / 48000.0;
         return cpu / audioContent;   // CPU-seconds per audio-second
     }
-    ParvatiAudioProcessor& proc;
+    HellcatAudioProcessor& proc;
 };
 
 struct CongestionProbe : public juce::Timer
@@ -183,7 +183,7 @@ TEST(perf_smoke_test)
     // the pump window starts after the editor exists. One-shot async setup
     // (combo rebuilds, ...) lands inside the window — acceptable: it is
     // exactly the kind of cost a regression budget should contain anyway.
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     juce::AudioProcessorEditor* editor = proc.createEditor();
     check (editor != nullptr, "editor constructs headlessly");
@@ -288,12 +288,12 @@ TEST(perf_smoke_test)
     // ------------------------------------------------------------------
     std::printf ("\n[F-ios-perf-1] oversampling state-restore clamp\n");
     {
-        ParvatiAudioProcessor saver;
+        HellcatAudioProcessor saver;
         saver.prepareToPlay (48000.0, 256);
         saver.setOversamplingFactor (8);
         juce::MemoryBlock blob;
         saver.getStateInformation (blob);
-        ParvatiAudioProcessor restored;
+        HellcatAudioProcessor restored;
         restored.prepareToPlay (48000.0, 256);
         restored.setStateInformation (blob.getData(), (int) blob.getSize());
 #if JUCE_IOS
@@ -311,7 +311,7 @@ TEST(perf_smoke_test)
     // ------------------------------------------------------------------
     std::printf ("\n[F-ios-perf-2] thermal decision mapping\n");
     {
-        using P = ParvatiAudioProcessor;
+        using P = HellcatAudioProcessor;
         check (P::thermalActionForLevel (P::ThermalLevel::Nominal)  == P::ThermalAction::None,
                "Nominal -> None");
         check (P::thermalActionForLevel (P::ThermalLevel::Fair)     == P::ThermalAction::None,

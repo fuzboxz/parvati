@@ -1,12 +1,12 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxSlotCard.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxSlotCard.h.
 
 #include "FxSlotCard.h"
 #include "FxSlotLabels.h"   // activeParamCount/paramLabel — defined in FxSlotLabels.cpp
 
-#include "ParvatiLookAndFeel.h"
-#include "ParvatiTheme.h"
+#include "HellcatLookAndFeel.h"
+#include "HellcatTheme.h"
 #include "ParamControl.h"       // ParamControl complete type
-#include "PluginProcessor.h"       // ParvatiAudioProcessor::getApvts()
+#include "PluginProcessor.h"       // HellcatAudioProcessor::getApvts()
 #include "ParameterLayout.h"       // PatchParamDescriptor
 #include "dsp/fx/FxTypes.h"        // FxType
 
@@ -15,7 +15,7 @@
 namespace
 {
 //==============================================================================
-// PowerToggle — the Enable/Bypass button. THE SHARED ParvatiModuleLAMP
+// PowerToggle — the Enable/Bypass button. THE SHARED HellcatModuleLAMP
 // (2026-08-20 unification): the FX slot power toggle, the synth mod-matrix
 // bypass lamp and the FX mod-matrix lamp are the SAME widget — accentPrimary
 // fill when enabled (the former accentSecondary fill was the style mismatch
@@ -24,7 +24,7 @@ namespace
 // Its toggle STATE is driven from the fx{N}_enable APVTS Value by FxSlotCard;
 // clicking flips that Value (handled by the card's onClick), so this button
 // does NOT toggle its own state on click.
-class PowerToggle final : public ParvatiModuleLamp {};
+class PowerToggle final : public HellcatModuleLamp {};
 
 // A small themed chevron button ("<" / ">") that steps the FX slot's effect
 // TYPE selection prev/next — a shortcut alongside the algorithm ComboBox. Draws
@@ -40,10 +40,10 @@ public:
 
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
-        const ParvatiTheme* t = parvati::themeFor (*this);
-        const juce::Colour text   = t ? t->textPrimary   : parvati::kFallbackTextPrimary;
+        const HellcatTheme* t = hellcat::themeFor (*this);
+        const juce::Colour text   = t ? t->textPrimary   : hellcat::kFallbackTextPrimary;
         const juce::Colour dim    = t ? t->textDisabled   : text.withAlpha (0.45f);
-        const juce::Colour accent = t ? t->accentPrimary : parvati::parvatiFallbackAccent;
+        const juce::Colour accent = t ? t->accentPrimary : hellcat::hellcatFallbackAccent;
 
         juce::Colour c = dim;
         if (isButtonDown)           c = accent;
@@ -81,7 +81,7 @@ private:
 // item writes setSelectedItemIndex(enumValue) and the tick reads
 // getSelectedItemIndex() (== enum value). The collapsed combo keeps showing
 // the PLAIN effect name (its internal item text). The APVTS choice list (host
-// surface) stays flat — categories are Parvati-UI only.
+// surface) stays flat — categories are Hellcat-UI only.
 class FxTypeCombo : public juce::ComboBox
 {
 public:
@@ -142,7 +142,7 @@ public:
         // reopened after the first selection.
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (this)
-                                .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
+                                .withStandardItemHeight (HellcatLookAndFeel::kPopupRowHeight),
                             juce::ModalCallbackFunction::create (
                                 [safe = juce::Component::SafePointer<FxTypeCombo> { this }] (int)
                                 {
@@ -273,7 +273,7 @@ constexpr float kBypassedAlpha = 0.5f;
 constexpr float kCorner        = 7.0f; // card panel corner radius (synth GroupComponent parity)
 
 // Header-left LAMP geometry (the enable indicator dot beside the "FX N"
-// title): the SHARED ParvatiModuleLamp's dot for the header hit band
+// title): the SHARED HellcatModuleLamp's dot for the header hit band
 // (44 x (kPad + kHeaderH) = 44x22) resolves to jmin(44,22)*0.68 ≈ 15pt
 // (kPad + kHeaderH/2 vertically) and kPad in from the left edge horizontally.
 // The toggle's hit band is the 44pt-wide HEADER band (44 x kPad+kHeaderH) —
@@ -286,11 +286,11 @@ constexpr int   kLampTitleGap = 8;   // lamp -> title gap (2026-08-23: "a tiny b
 // (The knob grid is a FIXED 3-column x 2-row layout in layoutParamGrid(); no
 // column-count adaptation is needed, so the former knobGridCols() helper is gone.)
 // (The fit-to-text combo measurement is the SHARED widestComboTextWidth in
-// ParvatiLookAndFeel.h — the former local maxComboItemWidth copy is gone.)
+// HellcatLookAndFeel.h — the former local maxComboItemWidth copy is gone.)
 } // namespace
 
 //==============================================================================
-FxSlotCard::FxSlotCard (ParvatiAudioProcessor& processor, int slot,
+FxSlotCard::FxSlotCard (HellcatAudioProcessor& processor, int slot,
                         const PatchParamDescriptor* p1Desc, const PatchParamDescriptor* p2Desc,
                         const PatchParamDescriptor* p3Desc, const PatchParamDescriptor* p4Desc,
                         const PatchParamDescriptor* p5Desc,
@@ -704,7 +704,7 @@ void FxSlotCard::resized()
         // (kLampCx/kLampCy are relative to the card's top-left == the band's
         // top-left). powerToggle_ is declared as its juce::Button base in the
         // header (PowerToggle is file-local), so downcast to the concrete
-        // type we constructed (now the SHARED ParvatiModuleLamp subclass).
+        // type we constructed (now the SHARED HellcatModuleLamp subclass).
         if (auto* lamp = static_cast<PowerToggle*> (powerToggle_.get ()))
         {
             lamp->setLampCentreOffset ({ kLampCx, kLampCy });
@@ -771,20 +771,20 @@ void FxSlotCard::resized()
 //==============================================================================
 void FxSlotCard::paint (juce::Graphics& g)
 {
-    const ParvatiTheme* t = parvati::themeFor (*this);
+    const HellcatTheme* t = hellcat::themeFor (*this);
 
 
     // On-chrome text tokens: the Y2K chrome cards are bright metal, so the
     // title and label greys flip near-black there (every other theme keeps
     // the theme token).
-    const juce::Colour title   = parvati::onCardText (t, t ? t->textPrimary : parvati::kFallbackTextPrimary);
+    const juce::Colour title   = hellcat::onCardText (t, t ? t->textPrimary : hellcat::kFallbackTextPrimary);
 
     const auto r = getLocalBounds ().toFloat ();
 
     // ---- Card panel: the shared module-card painter (flat tonal lift on
     //      every theme; liquid chrome on Y2K — same as the synth cards and
     //      the routing bar, so every module card matches). ----
-    parvati::paintChromeCard (g, r, kCorner, t);
+    hellcat::paintChromeCard (g, r, kCorner, t);
 
     // ---- Title "FX N" header: LAMP (top-left, drawn by the PowerToggle
     //      child) + title text following it — the header reads [lamp][FX1]
@@ -793,7 +793,7 @@ void FxSlotCard::paint (juce::Graphics& g)
     // Y2K: module headers render in the Michroma header role (the L&F's
     // headerFont resolves the family; the fallback matches the old look on
     // every other theme).
-    juce::Font font = parvati::headerFontFor (*this, 14.0f);
+    juce::Font font = hellcat::headerFontFor (*this, 14.0f);
     const juce::String name = "FX" + juce::String (slot_ + 1);   // "FX1" (uppercase)
     // kLampTitleGap right of the 15pt lamp sits the title text. (The old
     // accent tick between the lamp and the title went away with the lamp
@@ -820,12 +820,12 @@ juce::Colour FxSlotCard::headerTitleColourForTest() const
 {
     // (getLookAndFeel() returns LookAndFeel& even on a const Component — JUCE
     // semantics — so the cast targets the non-const type.)
-    if (const ParvatiTheme* t = parvati::themeFor (*this))
+    if (const HellcatTheme* t = hellcat::themeFor (*this))
         return t->textPrimary;
-    return parvati::kFallbackTextPrimary;   // paint()'s no-L&F fallback
+    return hellcat::kFallbackTextPrimary;   // paint()'s no-L&F fallback
 }
 
-ParvatiModuleLamp* FxSlotCard::powerLampForTest() const
+HellcatModuleLamp* FxSlotCard::powerLampForTest() const
 {
-    return static_cast<ParvatiModuleLamp*> (powerToggle_.get());
+    return static_cast<HellcatModuleLamp*> (powerToggle_.get());
 }

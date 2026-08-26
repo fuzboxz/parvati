@@ -1,4 +1,4 @@
-// Patch SAVE/LOAD round-trip verification for Parvati.
+// Patch SAVE/LOAD round-trip verification for Hellcat.
 //
 // Proves "presets can be saved and both loaded" end to end:
 //   (A) PatchFile unit round-trips: parse a reference .PRO / .MUL, write it,
@@ -10,7 +10,7 @@
 //       processor -> assert per-part channel/keyrange/voice-allocation match
 //       AND the current part's APVTS raw values match.
 //
-// Run: ./build_unified/parvati_unified_tests roundtrip_test
+// Run: ./build_unified/hellcat_unified_tests roundtrip_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -34,12 +34,12 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-// Reference Ambika factory presets (GPL-3.0). Discovered via PARVATI_SOURCE_DIR
+// Reference Ambika factory presets (GPL-3.0). Discovered via HELLCAT_SOURCE_DIR
 // (defined by the CMake target), so this works in any build tree that has the
 // vendored reference tree present.
 juce::File goldencardDir()
 {
-    return juce::File (PARVATI_SOURCE_DIR)
+    return juce::File (HELLCAT_SOURCE_DIR)
         .getChildFile ("ambika_reference/controller/data/goldencard");
 }
 juce::File refPRO() { return goldencardDir().getChildFile ("PROGRAM/BANK/A/000.PRO"); }
@@ -50,7 +50,7 @@ juce::File refMUL() { return goldencardDir().getChildFile ("MULTI/BANK/A/000.MUL
 // integer-valued so any tolerance < 0.5 is exact in practice).
 bool rawEqual (float a, float b) { return std::fabs (a - b) <= 0.5f; }
 
-int countApvtsMismatches (ParvatiAudioProcessor& a, ParvatiAudioProcessor& b)
+int countApvtsMismatches (HellcatAudioProcessor& a, HellcatAudioProcessor& b)
 {
     int mism = 0;
     for (const auto& d : getPatchParamDescriptors())
@@ -69,7 +69,7 @@ TEST(roundtrip_test)
     juce::ScopedJuceInitialiser_GUI juceInit;   // AudioProcessor needs this once.
 
     const juce::File tmpDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                  .getChildFile ("parvati_roundtrip_test");
+                                  .getChildFile ("hellcat_roundtrip_test");
     tmpDir.createDirectory();
 
     // ---------------------------------------------------------------------
@@ -117,7 +117,7 @@ TEST(roundtrip_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[4] End-to-end .PRO (load -> save -> load into 2nd proc)\n");
     {
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 
@@ -135,7 +135,7 @@ TEST(roundtrip_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[5] End-to-end .MUL (load -> save -> load into 2nd proc)\n");
     {
-        ParvatiAudioProcessor a, b;
+        HellcatAudioProcessor a, b;
         a.prepareToPlay (48000.0, 512);
         b.prepareToPlay (48000.0, 512);
 

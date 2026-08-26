@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1PlateReverb implementation. See the header for the topology and the
 // parameter->physical mappings (which match docs/FX_FV1_DESIGN.md verbatim so
@@ -11,7 +11,7 @@
 
 #include "dsp/fx/fv1/Fv1PlateReverb.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // FV-1 RAM budget: the sum of every fixed-point delay line in this effect must
@@ -152,4 +152,4 @@ void Fv1PlateReverb::processSampleFx (int32_t lin, int32_t /*rin*/, int32_t& lou
     rout = in;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

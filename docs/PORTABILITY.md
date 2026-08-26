@@ -1,4 +1,4 @@
-# Parvati cross-platform notes
+# Hellcat cross-platform notes
 
 Date: 2026-08-23. Source: a portability audit of the build files, the shell
 tools, the C++ tree and the test suite. This file records what the audit
@@ -9,9 +9,9 @@ verified, what this machine can test, and every item left open.
 | Platform | Status | Notes |
 |---|---|---|
 | macOS | Green, tested here. | Full suite passes 124/124 (`tools/run_tests_parallel.sh`). Sanitizer trees and the release flow work. The FX render goldens pin Debug and Release codegen (`tools/run_release_goldens.sh`). |
-| iOS | Configures and builds per the documented Xcode invocation. Not exercised in this pass. | The audit touched no iOS block. `build_ios` regenerates from source on demand. The suite keeps its iOS guards (`parvati_tests.cpp` SDK-level check). |
+| iOS | Configures and builds per the documented Xcode invocation. Not exercised in this pass. | The audit touched no iOS block. `build_ios` regenerates from source on demand. The suite keeps its iOS guards (`hellcat_tests.cpp` SDK-level check). |
 | Linux | Not compiled here. Build-file and test-source blockers fixed at guard level. | `-Wl,-dead_strip`, the narrowing flag spelling and the CoreMIDI tool guard now match Linux conventions. The test binary compiles from guarded sources: the runner falls back to in-process mode, `perf_smoke_test` compiles a skip stub, POSIX headers and calls sit behind guards. A Linux CI build must confirm the result. Headless runners need `xvfb-run` (see Known gaps). |
-| Windows | Not compiled here. Build-file and test-source blockers fixed at guard level. | The test binary takes no Apple-only link flag under MSVC, and the ctest scanners resolve `python.exe` via `find_package(Python3)`. The runner uses `_putenv_s` and in-process execution, `layout_overlap_test` skips demangling, `build_policy_test` skips the exec-bit check, and `parvati_tests.cpp` probes tools with `where`. Per-test fork isolation stays lost on Windows (see Known gaps). JUCE lists Windows prerequisites in `README.md`. |
+| Windows | Not compiled here. Build-file and test-source blockers fixed at guard level. | The test binary takes no Apple-only link flag under MSVC, and the ctest scanners resolve `python.exe` via `find_package(Python3)`. The runner uses `_putenv_s` and in-process execution, `layout_overlap_test` skips demangling, `build_policy_test` skips the exec-bit check, and `hellcat_tests.cpp` probes tools with `where`. Per-test fork isolation stays lost on Windows (see Known gaps). JUCE lists Windows prerequisites in `README.md`. |
 
 ## Known gaps
 
@@ -32,13 +32,13 @@ verified, what this machine can test, and every item left open.
   exists in this pass.
 - `perf_smoke_test` budgets stay machine-tuned. A loaded runner can exceed
   the wall-clock budgets without a code regression.
-  `PARVATI_TEST_PERF_BUDGET_MULT` scales every budget on such hosts; the
+  `HELLCAT_TEST_PERF_BUDGET_MULT` scales every budget on such hosts; the
   file header documents the knob.
 - MSVC gets no dead-code link flag. MSVC drops unreferenced COMDAT functions
   by default; `/OPT:REF` stays untested, so the build omits it.
 - `tools/release/sign_and_notarize.sh` and `tools/profile_ui.sh` stay
   macOS-only by design. Both state the scope in their headers.
-- AU or AUv3 in a `PARVATI_FORMATS` override on a non-Apple host relies on
+- AU or AUv3 in a `HELLCAT_FORMATS` override on a non-Apple host relies on
   the JUCE configure-time `FATAL_ERROR`. `CMakeLists.txt` documents this as
   intended behavior.
 - Vendored stmlib headers use GNU attributes and block an MSVC compile.

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Chorus — the classic single-delay-per-side chorus (the clean sibling of
 // the BBD Ensemble): two EQUAL-RATE SIN LFOs with a fixed 108-degree (0.30
@@ -15,14 +15,14 @@
 //   * Center   (p2): 5..25 ms base delay.
 //   * Feedback (p3): 0..0.5 (light regeneration into both lines).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1CHORUS_H
-#define PARVATI_DSP_FX_FV1_FV1CHORUS_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1CHORUS_H
+#define HELLCAT_DSP_FX_FV1_FV1CHORUS_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Chorus : public Fv1FxProcessor
@@ -44,6 +44,6 @@ private:
     int16_t fb14_ = 0;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1CHORUS_H
+#endif // HELLCAT_DSP_FX_FV1_FV1CHORUS_H

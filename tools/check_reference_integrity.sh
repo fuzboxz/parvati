@@ -18,10 +18,10 @@
 #
 # Usage:
 #   tools/check_reference_integrity.sh              # verify (default)
-#   PARVATI_PIN=1 tools/check_reference_integrity.sh
+#   HELLCAT_PIN=1 tools/check_reference_integrity.sh
 #          # re-pin the manifest from the current tree. The manifest must
 #          # already exist (first-time pinning is deliberate):
-#          #   PARVATI_PIN_FORCE=1 tools/check_reference_integrity.sh
+#          #   HELLCAT_PIN_FORCE=1 tools/check_reference_integrity.sh
 #
 # Re-pin ONLY for an intended upstream sync. Re-pinning after an accidental
 # edit destroys the parity oracle: the edit becomes the new "truth".
@@ -55,7 +55,7 @@ if [ ! -d "$REF" ]; then
 fi
 
 # --- temp files (removed on every exit path) --------------------------------
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/parvati_ref_integrity.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hellcat_ref_integrity.XXXXXX")"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
@@ -87,13 +87,13 @@ done < "$TMP_LIST"
 # ===========================================================================
 # PIN MODE — regenerate the manifest from the current tree.
 # ===========================================================================
-if [ "${PARVATI_PIN:-0}" = "1" ]; then
+if [ "${HELLCAT_PIN:-0}" = "1" ]; then
     if [ ! -f "$MANIFEST" ]; then
-        if [ "${PARVATI_PIN_FORCE:-0}" != "1" ]; then
+        if [ "${HELLCAT_PIN_FORCE:-0}" != "1" ]; then
             echo "check_reference_integrity: pin refused." >&2
             echo "  $MANIFEST does not exist. First-time pinning is a" >&2
             echo "  deliberate act. Create it, then re-run pin mode:" >&2
-            echo "    PARVATI_PIN_FORCE=1 tools/check_reference_integrity.sh" >&2
+            echo "    HELLCAT_PIN_FORCE=1 tools/check_reference_integrity.sh" >&2
             exit 2
         fi
     fi
@@ -105,7 +105,7 @@ if [ "${PARVATI_PIN:-0}" = "1" ]; then
         provenance="$provenance Upstream tree at $upstream."
     fi
     {
-        echo "# Parvati firmware-oracle integrity manifest."
+        echo "# Hellcat firmware-oracle integrity manifest."
         echo "# Pins every content file under ambika_reference/ (upstream"
         echo "# Mutable Instruments Ambika AVR firmware, GPL-3.0; NOTICES.md)."
         echo "# The tree must stay verbatim: firmware_parity_test uses it as"
@@ -113,7 +113,7 @@ if [ "${PARVATI_PIN:-0}" = "1" ]; then
         echo "# (macOS noise)."
         echo "# $provenance"
         echo "# Re-pin ONLY for an intended upstream sync:"
-        echo "#   PARVATI_PIN=1 tools/check_reference_integrity.sh"
+        echo "#   HELLCAT_PIN=1 tools/check_reference_integrity.sh"
         echo "# Re-pinning after an accidental edit destroys the parity oracle."
         cat "$TMP_CURRENT"
     } > "$MANIFEST"
@@ -129,7 +129,7 @@ fi
 if [ ! -f "$MANIFEST" ]; then
     echo "check_reference_integrity: $MANIFEST does not exist." >&2
     echo "  First-time pinning is a deliberate act. Run:" >&2
-    echo "    PARVATI_PIN_FORCE=1 tools/check_reference_integrity.sh" >&2
+    echo "    HELLCAT_PIN_FORCE=1 tools/check_reference_integrity.sh" >&2
     exit 2
 fi
 
@@ -167,5 +167,5 @@ echo "" >&2
 echo "The oracle tree must stay verbatim. Find the cause of every change first." >&2
 echo "An accidental edit means the firmware parity oracle is compromised." >&2
 echo "To re-pin after an INTENDED upstream sync only:" >&2
-echo "  PARVATI_PIN=1 tools/check_reference_integrity.sh" >&2
+echo "  HELLCAT_PIN=1 tools/check_reference_integrity.sh" >&2
 exit 1

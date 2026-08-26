@@ -39,7 +39,7 @@ namespace
 constexpr double kSr  = 44100.0;
 constexpr int    kBuf = 256;
 
-void render (ParvatiAudioProcessor& p, juce::MidiBuffer& midi, std::vector<float>& cap)
+void render (HellcatAudioProcessor& p, juce::MidiBuffer& midi, std::vector<float>& cap)
 {
     juce::AudioBuffer<float> b (2, kBuf);
     b.clear();
@@ -54,7 +54,7 @@ TEST(mono_retrigger_continuity_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (kSr, kBuf);
     proc.syncAllParamsToEngine();
 

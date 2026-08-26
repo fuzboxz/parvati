@@ -1,12 +1,12 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See GeneratorHost.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See GeneratorHost.h.
 
 #include "GeneratorHost.h"
 
-#include "ChromeRule.h"      // parvati::ChromeRule (the mod-bar top rule — one family with the editor chrome rules)
-#include "ModSourceCatalog.h"   // parvati::entryFor (generator vs drag-only)
+#include "ChromeRule.h"      // hellcat::ChromeRule (the mod-bar top rule — one family with the editor chrome rules)
+#include "ModSourceCatalog.h"   // hellcat::entryFor (generator vs drag-only)
 #include "ParamPage.h"        // ParamPage complete type (ParamControl statics via it)
 #include "ThemeManager.h"
-#include "ParvatiLookAndFeel.h"   // parvati::isY2kTheme (Y2K window-chrome transparency)
+#include "HellcatLookAndFeel.h"   // hellcat::isY2kTheme (Y2K window-chrome transparency)
 
 //==============================================================================
 GeneratorHostWorkspace::GeneratorHostWorkspace (ThemeManager& tm)
@@ -24,7 +24,7 @@ GeneratorHostWorkspace::GeneratorHostWorkspace (ThemeManager& tm)
     // cannot live above the seam: the top-row Viewport is added after this
     // rule and would cover it.) Same ChromeRule family as the editor's
     // header/status/keyboard rules. Non-interactive.
-    barRule_ = std::make_unique<parvati::ChromeRule> (true);
+    barRule_ = std::make_unique<hellcat::ChromeRule> (true);
     addAndMakeVisible (*barRule_);
     barRule_->setVisible (false);   // laid out only while the seam is shown
 
@@ -81,7 +81,7 @@ GeneratorHostWorkspace::GeneratorHostWorkspace (ThemeManager& tm)
                 ParamControl::setTapSelectedSource (src);
             return;
         }
-        if (parvati::entryFor (src).isGenerator)
+        if (hellcat::entryFor (src).isGenerator)
             setActiveGenerator (src);
         else if (onDragOnlyPillClicked_)
             onDragOnlyPillClicked_ (src);
@@ -187,7 +187,7 @@ void GeneratorHostWorkspace::paint (juce::Graphics& g)
 {
     // Y2K: NO fill — the editor's liquid-chrome WINDOW sweep shows through
     // (the module cards and trays paint over it).
-    if (! parvati::isY2kTheme (&themeManager_.getCurrentTheme()))
+    if (! hellcat::isY2kTheme (&themeManager_.getCurrentTheme()))
         g.fillAll (themeManager_.getCurrentTheme().backgroundBase);
 }
 
@@ -219,7 +219,7 @@ void GeneratorHostWorkspace::layoutBarSeam (const juce::Rectangle<int>& barRow)
         barRule_->setVisible (modBarVisible_);
         if (modBarVisible_)
             barRule_->setBounds (barRow.getX(), barRow.getY(),
-                                 barRow.getWidth(), 1 + parvati::kRuleShadowH);
+                                 barRow.getWidth(), 1 + hellcat::kRuleShadowH);
     }
 }
 

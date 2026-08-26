@@ -16,7 +16,7 @@
 //   - advance() never spins: ticks <= numSamples
 //   - reset() zeroes the fractional phase
 //
-// Run: ./build_unified/parvati_unified_tests transport_clock_test
+// Run: ./build_unified/hellcat_unified_tests transport_clock_test
 
 #include <cstdlib>
 #include "unified_test_runner.h"
@@ -37,12 +37,12 @@ void check (bool cond, const char* msg)
 
 TEST(transport_clock_test)
 {
-    std::printf ("=== Parvati TransportClock unit (tempo math / clamps / drift) ===\n");
+    std::printf ("=== Hellcat TransportClock unit (tempo math / clamps / drift) ===\n");
 
     // ---- 48k / 120 BPM -> exactly 1000 samples per 24-PPQN tick ----
     std::printf ("\n[1] samplesPerTick = 1000.0 @ 48k/120\n");
     {
-        parvati::TransportClock clock;
+        hellcat::TransportClock clock;
         clock.prepare (48000.0);
         clock.setTempo (120.0);
 
@@ -57,7 +57,7 @@ TEST(transport_clock_test)
     // ---- Drift-free fractional carry: 480 BPM, 3-sample calls, 1e6 samples ----
     std::printf ("\n[2] 1e6 samples @ 480 BPM in 3-sample calls -> exactly 4000 ticks\n");
     {
-        parvati::TransportClock clock;
+        hellcat::TransportClock clock;
         clock.prepare (48000.0);
         clock.setTempo (480.0);   // spt = 48000*60/(480*24) = 250.0
 
@@ -80,7 +80,7 @@ TEST(transport_clock_test)
     // ---- bpm > 999 clamps ----
     std::printf ("\n[3] bpm > 999 clamps to 999\n");
     {
-        parvati::TransportClock clock;
+        hellcat::TransportClock clock;
         clock.prepare (48000.0);
         clock.setTempo (5000.0);   // unclamped would be spt = 24 -> 8 ticks/200
 
@@ -94,7 +94,7 @@ TEST(transport_clock_test)
     // ---- bpm <= 0 keeps the previous rate ----
     std::printf ("\n[4] bpm <= 0 is a no-update (previous rate kept)\n");
     {
-        parvati::TransportClock clock;
+        hellcat::TransportClock clock;
         clock.prepare (48000.0);
         clock.setTempo (120.0);          // spt = 1000
         clock.reset();
@@ -109,7 +109,7 @@ TEST(transport_clock_test)
     // ---- reset() zeroes the fractional phase ----
     std::printf ("\n[5] reset() zeroes the phase\n");
     {
-        parvati::TransportClock clock;
+        hellcat::TransportClock clock;
         clock.prepare (48000.0);
         clock.setTempo (120.0);
 

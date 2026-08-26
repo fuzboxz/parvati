@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Flanger — jet-style flanger: a SHORT modulated delay (0.15..6 ms) with
 // up to 0.92 feedback and a fixed 8 kHz loop damper for stability. The two
@@ -11,14 +11,14 @@
 //   * Manual   (p2): 0.15..6 ms base delay (the comb position).
 //   * Feedback (p3): 0..0.92 (damper keeps the top of the range stable).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1FLANGER_H
-#define PARVATI_DSP_FX_FV1_FV1FLANGER_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1FLANGER_H
+#define HELLCAT_DSP_FX_FV1_FV1FLANGER_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Flanger : public Fv1FxProcessor
@@ -43,6 +43,6 @@ private:
     int16_t fb14_ = 0;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1FLANGER_H
+#endif // HELLCAT_DSP_FX_FV1_FV1FLANGER_H

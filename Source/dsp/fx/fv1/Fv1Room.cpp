@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Room implementation — Schroeder room, decorrelated stereo AP chains.
 
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // 2*2048 + 2*4096 + 4*512 = 14336 words of the 32768 budget.
@@ -103,4 +103,4 @@ void Fv1Room::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = toneLpR_.process (rMix);
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

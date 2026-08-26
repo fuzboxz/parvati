@@ -1,8 +1,8 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See LiveFeedbackHub.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See LiveFeedbackHub.h.
 
 #include "LiveFeedbackHub.h"
 
-namespace parvati
+namespace hellcat
 {
 
 LiveFeedbackHub::LiveFeedbackHub (std::function<bool (ModTelemetrySnapshot&)> fetch)
@@ -111,4 +111,4 @@ void LiveFeedbackHub::timerCallback()
         cached_ = frame;
 }
 
-}  // namespace parvati
+}  // namespace hellcat

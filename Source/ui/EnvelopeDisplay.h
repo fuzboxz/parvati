@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // EnvelopeDisplay — a small live ADSR preview that reacts to a set of
 // Attack/Decay/Sustain/Release value getters. Intended to sit beside a row of
@@ -14,7 +14,7 @@
 // Decoupled contract: it is constructed with four normalized (0..1) value
 // getters and is otherwise self-contained (owns a 30 Hz refresh timer). The
 // editor wires the getters to the APVTS in Phase 4. Colours are read from the
-// active ParvatiTheme via the component's LookAndFeel every repaint, so theme
+// active HellcatTheme via the component's LookAndFeel every repaint, so theme
 // switches are picked up automatically.
 
 #pragma once
@@ -23,8 +23,8 @@
 
 #include <functional>
 
-#include "ModTelemetryTypes.h"   // parvati::LiveEnvStage (live stage overlay)
-#include "ParvatiLookAndFeel.h"
+#include "ModTelemetryTypes.h"   // hellcat::LiveEnvStage (live stage overlay)
+#include "HellcatLookAndFeel.h"
 
 //==============================================================================
 class EnvelopeDisplay : public juce::Component,
@@ -105,7 +105,7 @@ public:
         the key is held. An empty provider, an inactive stage, or previewMode()
         == 1 (LFO waveform) hides the marker at zero overhead beyond one
         std::function call per poll tick. */
-    void setLiveStageProvider (std::function<parvati::LiveEnvStage()> p);
+    void setLiveStageProvider (std::function<hellcat::LiveEnvStage()> p);
 
     // TEST-ONLY: is the live stage marker now SHOWN (the painted state,
     // i.e. after the change gate — lets a headless test observe the marker
@@ -137,7 +137,7 @@ private:
     // Normalized plot x (0..1) of the live stage marker for @p st, computed on
     // the DISPLAYED knob values (call after the disp* fields are updated in the
     // poll tick). Returns -1 when the marker is hidden (inactive / DEAD stage).
-    float markerXForStage (const parvati::LiveEnvStage& st) const;
+    float markerXForStage (const hellcat::LiveEnvStage& st) const;
 
     // juce::Timer — re-read the getters and repaint when the shape changes.
     void timerCallback() override;
@@ -183,7 +183,7 @@ private:
     // fields below are the DISPLAYED (painted) marker state, change-gated
     // exactly like dispA_..dispR_ so a stationary marker costs no repaints
     // (markerVisible_ flip or an x move past the eps gate triggers one).
-    std::function<parvati::LiveEnvStage()> liveStageProvider_;
+    std::function<hellcat::LiveEnvStage()> liveStageProvider_;
     bool  markerVisible_ = false;
     float markerX_ = 0.0f;   // normalized plot x of the marker (see markerXForStage)
     // Eased marker (2026-08-22 smooth-motion fix): the RAW target x comes

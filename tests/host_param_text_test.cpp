@@ -6,7 +6,7 @@
 //       recursive parameter count equals the descriptor-table count.
 //   [2] WITHIN-GROUP ORDER — each group's parameter sequence is the
 //       descriptor-table order restricted to that group's members (hosts that
-//       sort by group keep the stable Parvati ordering inside every unit).
+//       sort by group keep the stable Hellcat ordering inside every unit).
 //   [3] FLATTENED ORDER — the two reorder spans are contained: the prefix
 //       through modif4_op and the suffix from fx1_type onward are IDENTICAL
 //       to the pre-grouping descriptor (index) order; only the 23 env+lfo
@@ -24,7 +24,7 @@
 //   [6] part_select stays non-automatable (regression: the grouping rewrite
 //       must keep .withAutomatable(false)).
 //
-// Run: ./build_unified/parvati_unified_tests host_param_text_test
+// Run: ./build_unified/hellcat_unified_tests host_param_text_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -52,14 +52,14 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-juce::String textFor (ParvatiAudioProcessor& proc, const char* id, int value)
+juce::String textFor (HellcatAudioProcessor& proc, const char* id, int value)
 {
     if (auto* param = proc.getApvts().getParameter (id))
         return param->getText (param->convertTo0to1 (static_cast<float> (value)), 64);
     return "<missing>";
 }
 
-int valueForText (ParvatiAudioProcessor& proc, const char* id, const char* text)
+int valueForText (HellcatAudioProcessor& proc, const char* id, const char* text)
 {
     if (auto* param = proc.getApvts().getParameter (id))
         return juce::roundToInt (param->convertFrom0to1 (param->getValueForText (text)));
@@ -73,7 +73,7 @@ TEST(host_param_text_test)
     const auto& descs = getPatchParamDescriptors();
 
     std::printf ("[1] Group structure (VST3 units)\n");
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
 
     const auto& root = proc.getParameterTree();
     const auto groups = root.getSubgroups (false);

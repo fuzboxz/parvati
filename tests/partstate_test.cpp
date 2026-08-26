@@ -1,4 +1,4 @@
-// Part-state fidelity regression tests for Parvati.
+// Part-state fidelity regression tests for Hellcat.
 //
 // (a) arp/sequencer data-loss regression: previously, edits to a part's arp/seq
 //     (stored in the per-part Arpeggiator/Sequencer OBJECTS) were LOST when
@@ -12,7 +12,7 @@
 //     with the controller init patch (osc1 = Saw), not the silent voicecard
 //     fallback, so Parts 1..5 are audible by default (correct firmware behaviour).
 //
-// Run: ./build_unified/parvati_unified_tests partstate_test
+// Run: ./build_unified/hellcat_unified_tests partstate_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -36,10 +36,10 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-// Reference Ambika factory multi (GPL-3.0), discovered via PARVATI_SOURCE_DIR.
+// Reference Ambika factory multi (GPL-3.0), discovered via HELLCAT_SOURCE_DIR.
 juce::File refMUL()
 {
-    return juce::File (PARVATI_SOURCE_DIR)
+    return juce::File (HELLCAT_SOURCE_DIR)
         .getChildFile ("ambika_reference/controller/data/goldencard/MULTI/BANK/A/000.MUL");
 }
 
@@ -48,7 +48,7 @@ juce::File refMUL()
 // and the engine's current part must all agree. The .MUL load path once
 // forgot to write part_select, leaving the combo showing the previous part
 // while the engine had already moved to Part 0.
-void assertPartSelectInSync (ParvatiAudioProcessor& proc, int expectedPart0Based)
+void assertPartSelectInSync (HellcatAudioProcessor& proc, int expectedPart0Based)
 {
     const int raw = juce::roundToInt (proc.getApvts().getRawParameterValue ("part_select")->load());
     check (raw == expectedPart0Based + 1,
@@ -80,7 +80,7 @@ TEST(partstate_test)
     // ---------------------------------------------------------------------
     std::printf ("[1] arp/seq edits survive a part-switch + .MUL save\n");
     {
-        ParvatiAudioProcessor procA;
+        HellcatAudioProcessor procA;
         procA.prepareToPlay (48000.0, 512);
         check (procA.loadMultiFile (refMUL()), "proc A loads reference .MUL");
 
@@ -106,10 +106,10 @@ TEST(partstate_test)
 
         // Save the full multi from Part 1, then load it into a fresh processor.
         const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                   .getChildFile ("parvati_partstate_test.MUL");
+                                   .getChildFile ("hellcat_partstate_test.MUL");
         check (procA.saveMultiFile (tmp), "proc A saves .MUL from Part 1");
 
-        ParvatiAudioProcessor procB;
+        HellcatAudioProcessor procB;
         procB.prepareToPlay (48000.0, 512);
         check (procB.loadMultiFile (tmp), "proc B loads the saved .MUL");
         assertPartSelectInSync (procB, 0);   // a .MUL load shows Part 0 everywhere
@@ -130,7 +130,7 @@ TEST(partstate_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[2] every part seeds the audible controller init patch\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 512);
 
         // osc1 shape lives at patchBytes[0]; the controller init patch sets it to
@@ -162,7 +162,7 @@ TEST(partstate_test)
     // ---------------------------------------------------------------------
     std::printf ("\n[3] .MUL load resets part_select (combo no longer desynced)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 512);
         setParam (proc, "part_select", 4);   // Part 3 (0-based) before the load
         check (proc.getEngine().getCurrentPart() == 3,

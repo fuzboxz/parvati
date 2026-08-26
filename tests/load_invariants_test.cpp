@@ -23,15 +23,15 @@
 //       (fixed by the loader-side jlimits).
 //
 //   FINDING AT AUTHORING TIME (the tool's first catch, kept as a regression):
-//   the .parvati MULTI YAML path (ParvatiPreset.cpp applyParvatiMulti) staged
+//   the .yml MULTI YAML path (HellcatPreset.cpp applyHellcatMulti) staged
 //   arp_mode / arp_direction / arp_pattern / arp_resolution / seq_length_*
 //   RAW (jlimit 0..255) — only arp_octave was clamped — so a hand-edited
-//     params: { arp_mode: 5 }  in a .parvati multi reproduced the silent-part
+//     params: { arp_mode: 5 }  in a .yml multi reproduced the silent-part
 //   bug through a different loader. The corpus cases below re-prove the
 //   descriptor-range clamps added at that staging site: if they ever regress,
 //   this test fails with the exact category + value.
 //
-// Corpus: hand-written .parvati multi YAML documents (the human-editable
+// Corpus: hand-written .yml multi YAML documents (the human-editable
 // format — the only format whose bytes a user edits directly), one edge per
 // document, on part 0 of an otherwise default 6-part multi. Out-of-range
 // values are EXPECTED TO CLAMP (the format's contract: a present key is the
@@ -47,7 +47,7 @@
 // Determinism: no RNG, no wall clock beyond the watchdog budget; every
 // document is a fixed string.
 //
-// Run: ./build_unified/parvati_unified_tests load_invariants_test
+// Run: ./build_unified/hellcat_unified_tests load_invariants_test
 
 #include <atomic>
 #include "unified_test_runner.h"
@@ -107,7 +107,7 @@ PartSpec defaultPart()
 juce::String emitMultiYaml (const std::array<PartSpec, 6>& parts, const char* docName)
 {
     juce::String y;
-    y << "format: parvati-multi\nversion: 1\nparvati_version: 0.1.0\n";
+    y << "format: hellcat-multi\nversion: 1\nhellcat_version: 0.1.0\n";
     y << "name: \"" << docName << "\"\nauthor: \"\"\nparts:\n";
     for (const auto& p : parts)
     {
@@ -140,7 +140,7 @@ juce::String emitMultiYaml (const std::array<PartSpec, 6>& parts, const char* do
 // hard-exits (a spinning audio thread cannot be reclaimed).
 struct WatchResult { bool completed; bool finite; };
 
-WatchResult renderWatchdog (ParvatiAudioProcessor& proc)
+WatchResult renderWatchdog (HellcatAudioProcessor& proc)
 {
     std::atomic<bool> finite { true };
     auto fut = std::async (std::launch::async, [&proc, &finite]() {
@@ -172,7 +172,7 @@ WatchResult renderWatchdog (ParvatiAudioProcessor& proc)
 // g_failures — the canary uses the same checker to prove it can fail; the
 // corpus wraps it in check()). Every line prints the offending category +
 // value so a regression names its byte immediately.
-int countInvariantViolations (ParvatiAudioProcessor& proc, const char* label)
+int countInvariantViolations (HellcatAudioProcessor& proc, const char* label)
 {
     auto& e = proc.getEngine();
     int v = 0;
@@ -245,7 +245,7 @@ int countInvariantViolations (ParvatiAudioProcessor& proc, const char* label)
 // config must equal the staged snapshot exactly (servicePendingConfig applies
 // pendingConfig verbatim — a drift means the staged bytes never landed, the
 // "loaded config silently ignored" sub-case).
-int countLiveConfigDrift (ParvatiAudioProcessor& proc)
+int countLiveConfigDrift (HellcatAudioProcessor& proc)
 {
     auto& e = proc.getEngine();
     int v = 0;
@@ -270,13 +270,13 @@ struct CaseResult { bool loaded; int violations; bool finite; int drift; };
 CaseResult runCase (const juce::String& yaml, const char* label)
 {
     const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("parvati_load_invariants_case.parvati");
+                       .getChildFile ("hellcat_load_invariants_case.yml");
     f.replaceWithText (yaml);
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     CaseResult r { false, 0, true, 0 };
-    r.loaded = proc.loadParvatiMultiFile (f);
+    r.loaded = proc.loadHellcatMultiFile (f);
     if (! r.loaded)
         return r;   // reported by the caller as a "should load" finding
     r.violations = countInvariantViolations (proc, label);
@@ -291,7 +291,7 @@ CaseResult runCase (const juce::String& yaml, const char* label)
 TEST(load_invariants_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
-    std::printf ("=== Parvati load invariants (edge corpus) ===\n");
+    std::printf ("=== Hellcat load invariants (edge corpus) ===\n");
     auto withPart0 = [] (const PartSpec& p0)
     {
         std::array<PartSpec, 6> parts;
@@ -387,11 +387,11 @@ TEST(load_invariants_test)
         // arp_mode:5 must clamp to 2 — the authoring-time finding. The corpus
         // table already proves the RANGE; this pins the exact clamped value.
         const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                           .getChildFile ("parvati_load_invariants_case.parvati");
+                           .getChildFile ("hellcat_load_invariants_case.yml");
         f.replaceWithText (emitMultiYaml (withPart0 (param (defaultPart(), "arp_mode", "5")), "PostArpMode5"));
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
-        check (proc.loadParvatiMultiFile (f), "post: arp_mode:5 document loads");
+        check (proc.loadHellcatMultiFile (f), "post: arp_mode:5 document loads");
         const int staged = (int) proc.getEngine().getPart (0).readPendingConfig().arpMode;
         check (staged == 2, juce::String ("arp_mode:5 stages as 2 (Sequencer) [got ")
                                 + juce::String (staged) + "] — the authoring-time finding stays fixed");
@@ -400,7 +400,7 @@ TEST(load_invariants_test)
     // ---- CANARY: the checker must detect a hand-broken engine ----
     std::printf ("\n[canary] hand-broken engine must trip the checker (expected FAIL lines)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         auto& e = proc.getEngine();
         // Break through the SAME message-thread seams the loaders use:

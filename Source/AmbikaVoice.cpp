@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See AmbikaVoice.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See AmbikaVoice.h.
 
 #include "AmbikaVoice.h"
 
@@ -74,7 +74,14 @@ void AmbikaVoice::prepare (double hostSampleRate, int /*blockSize*/)
     // The analog filter operates on the internal-rate (or oversampled) signal
     // (matches hardware: the filter is post-DSP, pre-DAW). The filter runs at
     // osFactor_*kInternalSampleRate when OS is on (else at the engine rate).
-    filter_.setTopology (ambika::dsp::FilterTopology::FOUR_POLE_LADDER);
+    // SMR4: the stock Ambika card (filter_card default 0). prepare() STAGES
+    // it through the same topology-dirty path as every runtime change:
+    // fillInternalBlock applies + prepares the filter on the audio thread.
+    // A stage call after prepare (the APVTS sync pushes the same default;
+    // a test may pin another card) simply overwrites the pending value.
+    // The voice then never switches topology needlessly.
+    pendingTopology_.store (ambika::dsp::FilterTopology::FOUR_POLE_OTA, std::memory_order_relaxed);
+    topologyDirty_.store (true, std::memory_order_release);
     filter_.setMode (0);   // LP
     prepareFilterAtOsRate();
     filter_.commit();
@@ -314,7 +321,7 @@ void AmbikaVoice::startNote (int midiNoteNumber, float velocity,
     // (part.cc:640: `Lookup(..., midi_note % 12)` on the unclamped parameter,
     // while only the base pitch uses the clamped n); %12 is octave-shift-
     // invariant, so the two only differ when the 0..127 clamp BITES, and even
-    // then Parvati stays byte-faithful to the firmware. Muted classes never
+    // then Hellcat stays byte-faithful to the firmware. Muted classes never
     // reach here (AcceptNote gate in SynthEngine::noteOn / triggerNoteInPart
     // refuses them upstream).
     const int baseNote = juce::jlimit (0, 127, midiNoteNumber + partOctave_ * 12);

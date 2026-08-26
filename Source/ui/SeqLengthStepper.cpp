@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See SeqLengthStepper.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SeqLengthStepper.h.
 
 #include "ui/SeqLengthStepper.h"
 
-#include "ui/ParvatiLookAndFeel.h"   // ParvatiLookAndFeel::getTheme (number-label colours)
-#include "ui/ParvatiTheme.h"          // ParvatiTheme tokens
+#include "ui/HellcatLookAndFeel.h"   // HellcatLookAndFeel::getTheme (number-label colours)
+#include "ui/HellcatTheme.h"          // HellcatTheme tokens
 
-SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
+SeqLengthStepper::SeqLengthStepper (HellcatAudioProcessor& processor,
                                     const PatchParamDescriptor& descriptor)
     : ParamControl (processor, descriptor)
 {
@@ -37,7 +37,7 @@ SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
     // the largest text on the SEQ page, reading oversized next to the 12pt
     // knob labels and ~12-14pt knob readouts). Bold is retained — the lone
     // numeral is the cell's value readout on the bright tier.
-    numberLabel_->setFont (parvati::dataFontExactFor (*this, 14.0f, juce::Font::bold));
+    numberLabel_->setFont (hellcat::dataFontExactFor (*this, 14.0f, juce::Font::bold));
     numberLabel_->setInterceptsMouseClicks (false, false);   // the CELL is the button
     // VISIBILITY FIX (UI hunt 2026-08-20): the number was INVISIBLE in every
     // theme. resized() gives tapBtn_ the full cell and — being created AFTER
@@ -45,7 +45,7 @@ SeqLengthStepper::SeqLengthStepper (ParvatiAudioProcessor& processor,
     // (TextButton::buttonColourId == backgroundPanel) straight over the
     // number; on Carbon that fill is near-identical to the page fill, so the
     // cell just read as empty. Three independent defences, each pinned by
-    // parvati_seq_stepper_test: (1) the button is added BEFORE the label so
+    // hellcat_seq_stepper_test: (1) the button is added BEFORE the label so
     // it can never overpaint it, (2) the label is always-on-top (it does not
     // intercept mouse clicks, so taps still reach the button beneath), and
     // (3) the button's fill colours are fully transparent so its background
@@ -145,7 +145,7 @@ void SeqLengthStepper::applyNumberLabelStyle()
 {
     if (numberLabel_ == nullptr)
         return;
-    if (const ParvatiTheme* t = parvati::themeFor (*this))
+    if (const HellcatTheme* t = hellcat::themeFor (*this))
         numberLabel_->setColour (juce::Label::textColourId, t->textPrimary);
 }
 
@@ -170,7 +170,7 @@ void SeqLengthStepper::paint (juce::Graphics& g)
 
     // ---- DROPDOWN AFFORDANCE (2026-08-23, see the header) ----
     // The app combo chrome — the same dark rounded field + right ▼ chevron
-    // ParvatiLookAndFeel::drawComboBox draws — painted behind the number so
+    // HellcatLookAndFeel::drawComboBox draws — painted behind the number so
     // the cell reads as a dropdown that opens the 1..16 picker. Drawn HERE
     // (component paint) rather than on the tap button so the three pinned
     // visibility defences stay untouched: the button keeps its fully
@@ -181,7 +181,7 @@ void SeqLengthStepper::paint (juce::Graphics& g)
     if (field.getWidth() < 24 || field.getHeight() < 14)
         return;   // degenerate cell (host squeeze): keep the bare number
 
-    const ParvatiTheme* t = parvati::themeFor (*this);
+    const HellcatTheme* t = hellcat::themeFor (*this);
     const juce::Colour baseFill = (t != nullptr && t->isDark)
                                     ? t->backgroundBase
                                     : juce::Colour (0xff2A2E35);   // light-theme dark-dropdown tone

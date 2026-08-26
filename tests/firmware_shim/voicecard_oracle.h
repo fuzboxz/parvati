@@ -8,7 +8,7 @@
 // headers (LUT_RES_* macros vs constexpr ids) when included together.
 //
 // The .cc is a firmware-only TU (same contract as shims.cc: it must never
-// include Parvati headers — the oracle must not share code with the
+// include Hellcat headers — the oracle must not share code with the
 // implementation under test).
 #pragma once
 

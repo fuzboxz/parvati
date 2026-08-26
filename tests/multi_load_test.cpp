@@ -1,7 +1,7 @@
-// Ambika .MUL (multi) loading verification for Parvati.
+// Ambika .MUL (multi) loading verification for Hellcat.
 // 1. Parses a real factory .MUL (RIFF "MBKS") -> name + MultiData + 6 parts
 //    (Patch[112] + PartData[84] each).
-// 2. Loads it into the full ParvatiAudioProcessor and confirms all 6 Parts get
+// 2. Loads it into the full HellcatAudioProcessor and confirms all 6 Parts get
 //    distinct patches + that Part 0's MIDI channel matches MultiData's
 //    part_mapping_[0].midi_channel.
 
@@ -28,8 +28,8 @@
 // not ranges.
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
-#ifndef PARVATI_SOURCE_DIR
-#define PARVATI_SOURCE_DIR "."
+#ifndef HELLCAT_SOURCE_DIR
+#define HELLCAT_SOURCE_DIR "."
 #endif
 
 namespace
@@ -41,7 +41,7 @@ void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok 
 // allocation / polyphony / patch changes (markAllocationDirty) before the test
 // inspects voiceIndices / partBytes synchronously. (Tests run processBlock on a
 // single thread, so there is no concurrent audio thread here.)
-void renderOnce (ParvatiAudioProcessor& p)
+void renderOnce (HellcatAudioProcessor& p)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -51,7 +51,7 @@ void renderOnce (ParvatiAudioProcessor& p)
 
 juce::File mulFile (const char* idx)
 {
-    return juce::File (PARVATI_SOURCE_DIR)
+    return juce::File (HELLCAT_SOURCE_DIR)
         .getChildFile ("ambika_reference/controller/data/goldencard/MULTI/BANK/A")
         .getChildFile (juce::String (idx) + ".MUL");
 }
@@ -82,9 +82,9 @@ TEST(multi_load_test)
     std::printf ("     PartMapping[0]: channel=%d low=%d high=%d\n", pm0[0], pm0[1], pm0[2]);
 
     // ---- [2] Load the .MUL into the processor ----
-    std::printf ("\n[2] Load .MUL into ParvatiAudioProcessor\n");
+    std::printf ("\n[2] Load .MUL into HellcatAudioProcessor\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
 
         check (proc.loadMultiFile (f), "loadMultiFile(000.MUL) returns true");
@@ -185,7 +185,7 @@ TEST(multi_load_test)
                            totalExpected, totalActual);
             check (allocOk, allocMsg);
             if (sawMultiCard)
-                check (true, "a part claiming >=2 voicecards owns >=2 Parvati voices");
+                check (true, "a part claiming >=2 voicecards owns >=2 Hellcat voices");
             else
                 std::printf ("     (note: 000.MUL has no multi-voicecard part to stress-test)\n");
 
@@ -205,7 +205,7 @@ TEST(multi_load_test)
     // ---- [4] Direct bitmask -> voice-block mapping (deterministic) ----
     std::printf ("\n[4] Direct voice-allocation bitmask mapping\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         auto& engine = proc.getEngine();
         // This block asserts the 1-voice-per-voicecard (voice i == card i) mapping.
@@ -264,11 +264,11 @@ TEST(multi_load_test)
     {
         auto popcount = [] (uint8_t v) { int c = 0; while (v) { c += v & 1; v >>= 1; } return c; };
 
-        // 4a) .parvati multi with a SHORT parts list (human-editable format:
+        // 4a) .yml multi with a SHORT parts list (human-editable format:
         //     only part 0 present, and without a voice_slots key): the parts
         //     the file does not mention must land at INIT, not stay polluted.
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             proc.prepareToPlay (48000.0, 256);
             renderOnce (proc);
             auto& engine = proc.getEngine();
@@ -279,14 +279,14 @@ TEST(multi_load_test)
             renderOnce (proc);
 
             const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                .getChildFile ("parvati_multi_reset_test.parvati");
+                .getChildFile ("hellcat_multi_reset_test.yml");
             tmp.replaceWithText (
-                "format: parvati-multi\n"
+                "format: hellcat-multi\n"
                 "version: 3\n"
                 "name: \"Reset Test\"\n"
                 "parts:\n"
                 "  - channel: 1\n");
-            check (proc.loadParvatiMultiFile (tmp), "short .parvati multi loads");
+            check (proc.loadHellcatMultiFile (tmp), "short .yml multi loads");
             renderOnce (proc);
 
             // Part 0 (mentioned but WITHOUT voice_slots) + Parts 1..5 (not
@@ -301,10 +301,10 @@ TEST(multi_load_test)
         }
 
         // 4b) EXPLICIT slots still win (the bug is stale state, not explicit
-        //     state): a .parvati multi carrying voice_slots restores them over
+        //     state): a .yml multi carrying voice_slots restores them over
         //     the init reset (format round-tripping is preserved).
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             proc.prepareToPlay (48000.0, 256);
             renderOnce (proc);
             auto& engine = proc.getEngine();
@@ -313,15 +313,15 @@ TEST(multi_load_test)
             renderOnce (proc);
 
             const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                .getChildFile ("parvati_multi_explicit_slots_test.parvati");
+                .getChildFile ("hellcat_multi_explicit_slots_test.yml");
             tmp.replaceWithText (
-                "format: parvati-multi\n"
+                "format: hellcat-multi\n"
                 "version: 3\n"
                 "name: \"Explicit Test\"\n"
                 "parts:\n"
                 "  - channel: 1\n"
                 "    voice_slots: 9\n");
-            check (proc.loadParvatiMultiFile (tmp), ".parvati multi with explicit voice_slots loads");
+            check (proc.loadHellcatMultiFile (tmp), ".yml multi with explicit voice_slots loads");
             renderOnce (proc);
             check (engine.getPartVoiceSlots (0) == 9, "explicit voice_slots: 9 wins over the init reset");
             check (engine.getPartVoiceSlots (1) == 0, "unmentioned part 1 still resets to init 0 (not stale 1)");
@@ -332,7 +332,7 @@ TEST(multi_load_test)
         //     factory .MUL from a polluted state lands exactly on the file's
         //     popcount-per-mask, not on the pollution and not on init.
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             proc.prepareToPlay (48000.0, 256);
             renderOnce (proc);
             auto& engine = proc.getEngine();
@@ -380,11 +380,11 @@ TEST(multi_load_test)
             if (cut >= fileSize)
                 continue;
             const juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                       .getChildFile ("parvati_trunc_mul_test.MUL");
+                                       .getChildFile ("hellcat_trunc_mul_test.MUL");
             tmp.deleteFile();
             tmp.appendData (whole.getData(), cut);
 
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             proc.prepareToPlay (48000.0, 256);
             if (proc.loadMultiFile (tmp))
                 allRejected = false;
@@ -396,7 +396,7 @@ TEST(multi_load_test)
         // Control: the UNTRUNCATED file still loads (the guard is not
         // over-strict against the reference shape).
         {
-            ParvatiAudioProcessor proc;
+            HellcatAudioProcessor proc;
             proc.prepareToPlay (48000.0, 256);
             check (proc.loadMultiFile (f), "[6] control: the full .MUL still loads");
         }
@@ -421,7 +421,7 @@ TEST(multi_load_test)
         // Forge two identical engines; A carries HOSTILE bytes (255/200-ish),
         // B carries exactly what the clamps must reduce them to.
         auto forge = [] (bool hostile) {
-            auto proc = std::make_unique<ParvatiAudioProcessor>();
+            auto proc = std::make_unique<HellcatAudioProcessor>();
             proc->prepareToPlay (48000.0, 256);
             proc->syncAllParamsToEngine();
 
@@ -465,10 +465,16 @@ TEST(multi_load_test)
         auto procA = forge (true);   // hostile
         auto procB = forge (false);  // clamped twin
 
+        // Pin the Ladder card on the ENGINE (the forge writes patch bytes
+        // directly; an APVTS sync would overwrite them). The energy gate was
+        // calibrated under this card.
+        procA->getEngine().setFilterTopology (ambika::dsp::FilterTopology::FOUR_POLE_LADDER);
+        procB->getEngine().setFilterTopology (ambika::dsp::FilterTopology::FOUR_POLE_LADDER);
+
         // Identical stimulus: a held two-note chord with portamento glide
         // (exercises Trigger's portamento path) + several render blocks
         // (exercises the mod matrix + LFO + wavetable every block).
-        auto renderStimulus = [] (ParvatiAudioProcessor& p, std::vector<float>& capture) {
+        auto renderStimulus = [] (HellcatAudioProcessor& p, std::vector<float>& capture) {
             for (int blk = 0; blk < 60; ++blk)
             {
                 juce::AudioBuffer<float> buf (2, 256);

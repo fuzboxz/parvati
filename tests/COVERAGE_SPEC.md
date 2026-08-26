@@ -1,8 +1,8 @@
-# Parvati Test Coverage Specification — Intended vs Real Outcome
+# Hellcat Test Coverage Specification — Intended vs Real Outcome
 
 This document is the **authoritative reference** for what every parameter and
 every module *should* do. The consolidated coverage binaries
-(`parvati_synth_param_coverage_test`, `parvati_fx_param_coverage_test`) assert
+(`hellcat_synth_param_coverage_test`, `hellcat_fx_param_coverage_test`) assert
 each row's INTENDED outcome against the REAL outcome. A failure = a drift /
 bug, to be fixed (if easy) or recorded in `COVERAGE_FINDINGS.md` (if a design
 decision / action required).
@@ -10,7 +10,7 @@ decision / action required).
 ## Conventions
 
 - **Byte routing** (patch params): setting APVTS param `id` to value `v` and
-  calling `syncAllParamsToEngine()` MUST write `parvatiValueToPatchByte(d, v)`
+  calling `syncAllParamsToEngine()` MUST write `hellcatValueToPatchByte(d, v)`
   into `engine.getPart(0).patchBytes[d.byteOffset]` (or `partBytes` for
   `isPart`). Signed params reinterpreted as `int8_t`.
 - **Audio effect**: rendering a held note with the param at two different
@@ -143,14 +143,14 @@ the 96-voice pool), so they are covered functionally, not via the byte bridge:
   round-trips the preset (non-matching edits read Custom).
 - **MONO/unison = the count** (MONO + N voices = N-voice unison);
   CHAIN doubles a Part's voice set (up to 32).
-- **Round-trips:** `.parvati` carries `voice_slots` verbatim; `.MUL`/legacy
+- **Round-trips:** `.yml` carries `voice_slots` verbatim; `.MUL`/legacy
   host-state blobs materialize counts from the stored mask's popcount
   (0 -> disabled).
 - **Editor-level load wiring** (`tests/editor_test.cpp` [7b]/[7c]/[7d]):
   the real user entry points — `filesDropped` → `applyPatchFile` → load →
-  Patch-page refresh with NO manual refresh calls — for `.parvati` multis,
+  Patch-page refresh with NO manual refresh calls — for `.yml` multis,
   `.PRO` programs (incl. the stale-custom-tuning clear) and corrupt files
-  (validate-before-mutate), plus the stock `presets/TEMPLATES/*.parvati`
+  (validate-before-mutate), plus the stock `presets/TEMPLATES/*.yml`
   through the real load path and the hidden-page reveal refresh.
 
 ## Sequencer (67 params; controller PartData)
@@ -178,7 +178,7 @@ the 96-voice pool), so they are covered functionally, not via the byte bridge:
 |-------|----------|--------------|
 | `vca_curve` | Linearized/Exponential (0/1) | engine state via setVcaExponential; audio: exp curve changes the VCA shape |
 | `part_select` | 1..6 multitimbral part selector | functional: switch changes which Part bytes are edited |
-| `filter_card` | LM13700/SSM2164/SVF (0..2) | engine state via setFilterTopology; audio: 3 topologies sound different at high reso |
+| `filter_card` | SMR4/4P/SVF/Ladder/Polivoks/IR3109 (0..5) | engine state via setFilterTopology; audio: topologies sound different at high reso; SMR4 is the stock default |
 | `filter_drive` | ladder saturation drive (choice 0..7) | engine state via setFilterDrive; audio: drive scales tanh saturation (high-reso ladder) |
 
 ---
@@ -276,7 +276,7 @@ Any check that fails is either:
 
 - **parvati_loader_fuzz_test** (`tests/loader_fuzz_test.cpp`, built by default):
   loader fuzzer + rollback checker — ~300 deterministic mutated-file cases over
-  the four real save formats (.PRO/.MUL x2/.parvati multi+patch built via the
+  the four real save formats (.PRO/.MUL x2/.yml multi+patch built via the
   real save paths) plus truncated engine-state blobs. Pins two properties: a
   load returning FALSE leaves the processor state BIT-IDENTICAL
   (validate-before-mutate), and a load returning TRUE renders 32 blocks inside
@@ -285,7 +285,7 @@ Any check that fails is either:
   must. Run: ./build_release/parvati_loader_fuzz_test
 - **parvati_shadow_state_test** (`tests/shadow_state_test.cpp`, built by
   default): shadow-state defaults property — loading a DEFAULTS-ONLY
-  .parvati multi (saved through the real path) into an engine polluted on
+  .yml multi (saved through the real path) into an engine polluted on
   every mirrored surface (custom tuning tables, part names, staged FX slot
   types, arp config, voice slots, channel/key zone, PartData bytes 3/4/15)
   must leave it BIT-IDENTICAL to a fresh engine. The canary proves the diff
@@ -304,12 +304,12 @@ Any check that fails is either:
   engine inside its invariant ranges on every mirrored surface (staged arp/seq
   config + the live objects after service, routing with lo<=hi, voice slots,
   resolved tuning, installed FX slot types, sanitized names) and renders 32
-  blocks under a 10 s watchdog. Hand-written .parvati multi corpus with one
+  blocks under a 10 s watchdog. Hand-written .yml multi corpus with one
   edge per case (arp_mode/octave/direction/pattern/resolution, seq lengths,
   channel 0/1/16/17/255, keyzone clamp + inversion swap, slots 0/1/16/17/99,
   spread/poly/raga bytes, tuning_mode 33/34, 40-char + quoted names); canary
   proves the checker detects a hand-broken engine. Caught + fixed a live
-  instance at authoring time (the .parvati YAML path staged arp bytes raw —
+  instance at authoring time (the .yml YAML path staged arp bytes raw —
   arp_mode: 5 = silent part). Run: ./build_release/parvati_load_invariants_test
 - **parvati_check_combo_clear** (`tools/check_combo_clear.py`, ctest, no
   build): static guard for the stale-async-onChange class — every
@@ -338,13 +338,13 @@ Any check that fails is either:
 - **parvati_roundtrip_golden_test** (`tests/roundtrip_golden_test.cpp`, built
   by default): golden byte round-trip property — save -> load (fresh
   processor) -> save is BYTE-IDENTICAL for every format pair (.PRO/.MUL/
-  .parvati patch/.parvati multi) over an adversarial program-name corpus
+  .yml patch/.yml multi) over an adversarial program-name corpus
   (double-quote / backslash / four UTF-8 kinds / >16-byte UTF-8 truncation /
   40 chars / padded / control chars) on a rich seeded state (custom tunings,
   part names, FX slot type, slots+routing, options), and the loaded title
   equals the format-documented normalized form (16-byte chunk: control-strip
-  + code-point-safe truncation + trailing trim; .parvati doc name:
-  control-strip). The .parvati fixed point runs with title == file basename
+  + code-point-safe truncation + trailing trim; .yml doc name:
+  control-strip). The .yml fixed point runs with title == file basename
   (the documented filename-retitling); the adversarial corpus pins the
   un-escaped-name class (a quote/newline name used to save an unloadable
   file). Canary proves the byte comparator flags a 1-flipped-byte file.

@@ -1,10 +1,10 @@
 # tools/release — macOS distribution signing + notarization
 
-`sign_and_notarize.sh` turns a fresh `build/Parvati_artefacts/Release` tree
+`sign_and_notarize.sh` turns a fresh `build/Hellcat_artefacts/Release` tree
 into a Gatekeeper-clean distribution:
 
-1. **Signs** every bundle it finds (`Parvati.vst3`, `Parvati.component`,
-   `Parvati.clap`, `Parvati.app`) with your **Developer ID Application**
+1. **Signs** every bundle it finds (`Hellcat.vst3`, `Hellcat.component`,
+   `Hellcat.clap`, `Hellcat.app`) with your **Developer ID Application**
    certificate, the **hardened runtime**, a secure timestamp, and the
    `disable-library-validation` entitlement from `macos_release.entitlements`
    (required for audio plugins — hosts load plugin binaries into their own
@@ -14,7 +14,7 @@ into a Gatekeeper-clean distribution:
    `codesign --verify --deep --strict`.
 2. **Notarizes** each bundle: `xcrun notarytool submit --wait`, then
    `xcrun stapler staple` + `stapler validate`.
-3. **Packages** a `Parvati-macOS.zip` (via `ditto`, preserving signatures and
+3. **Packages** a `Hellcat-macOS.zip` (via `ditto`, preserving signatures and
    resource forks) containing the four bundles **plus `README.md` and
    `NOTICES.md`** — the AGPL/MIT/GPL notices must accompany the distribution.
    Final `spctl --assess` sanity check on each bundle.
@@ -40,10 +40,10 @@ into a Gatekeeper-clean distribution:
          ASC_AUTH_KEY_PATH=/secure/AuthKey_ABCDE12345.p8
 
   # Option B: store a keychain profile once, then name it
-  xcrun notarytool store-credentials parvati-notary \
+  xcrun notarytool store-credentials hellcat-notary \
         --apple-id you@example.com --team-id ABCD123456 \
         --password <app-specific-password>   # appleid.apple.com → Sign-In & Security
-  export PARVATI_NOTARY_PROFILE=parvati-notary
+  export HELLCAT_NOTARY_PROFILE=hellcat-notary
 
   # Option C: pass the Apple-ID trio directly
   export APPLE_ID=you@example.com APPLE_ID_PASSWORD=xxxx-xxxx-xxxx-xxxx TEAM_ID=ABCD123456
@@ -53,11 +53,11 @@ into a Gatekeeper-clean distribution:
 
 ```bash
 cmake -S . -B build_release -DCMAKE_BUILD_TYPE=Release
-cmake --build build_release --target Parvati_VST3 Parvati_AU Parvati_CLAP Parvati_Standalone -j
+cmake --build build_release --target Hellcat_VST3 Hellcat_AU Hellcat_CLAP Hellcat_Standalone -j
 
 export DEV_ID="Developer ID Application: ..."
 # ...plus one credential set from above...
-tools/release/sign_and_notarize.sh build/Parvati_artefacts/Release dist
+tools/release/sign_and_notarize.sh build/Hellcat_artefacts/Release dist
 ```
 
 `SKIP_NOTARIZE=1` signs/verifies/packages without contacting Apple (useful to
@@ -68,7 +68,7 @@ identities not present in the keychain).
 
 - **iOS / .ipa** — App Store distribution uses a different (Xcode archive /
   `xcrun altool` / Transporter) path and the App-Group/App-ID registration
-  (`group.com.805labs.parvati`); see `audit/release_readiness.md` BLOCKER 2.
+  (`group.com.805labs.hellcat`); see `audit/release_readiness.md` BLOCKER 2.
 - Version stamping — the version comes from `project(VERSION …)` in
   `CMakeLists.txt`; bump it before building release artefacts.
 - The VST3 re-sign in `CMakeLists.txt` (post-build, seals `moduleinfo.json`)

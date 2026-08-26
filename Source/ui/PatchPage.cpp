@@ -1,5 +1,5 @@
 // Phase 2 of the "Patch page" feature: the Patch juce::Component implementation.
-// See PatchPage.h for the design summary and /tmp/parvati_patch_design.md
+// See PatchPage.h for the design summary and /tmp/hellcat_patch_design.md
 // ("Phase 2") for the full spec. Phase 1 (PatchArrangement.{h,cpp}) supplies
 // applyArrangement / inferArrangement; this component drives the engine purely
 // through its EXISTING public setters.
@@ -8,9 +8,9 @@
 
 #include "PatchArrangement.h"
 
-#include "PluginProcessor.h"   // ParvatiAudioProcessor::getEngine()
+#include "PluginProcessor.h"   // HellcatAudioProcessor::getEngine()
 #include "ParamPage.h"        // ParamPage complete type (reflowToWidth/getContentHeight)
-#include "ParvatiLookAndFeel.h" // ParvatiLookAndFeel::getTheme (hosted-page colours)
+#include "HellcatLookAndFeel.h" // HellcatLookAndFeel::getTheme (hosted-page colours)
 #include "ThemeManager.h"       // ThemeManager (complete type)
 #include "TuningTables.h"      // tuningPresetName (Tune combo items)
 #include "ui/NoteName.h"       // midiNoteName (key-zone knob readouts)
@@ -270,14 +270,14 @@ public:
         : owner_ (owner), partIndex_ (partIndex), engine_ (owner.proc_.getEngine())
     {
         // ---- chrome ----
-        partLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
+        partLabel_.setFont (hellcat::dataFontExactFor (*this, 13.0f, juce::Font::bold));
         // Y2K: the table is a DATA SCREEN (matrix-green) — the part name
         // stays LIGHT there (the near-black Label default serves the silver
         // drawer, not this table).
-        if (const auto* t = parvati::themeFor (*this); t != nullptr && t->name == "Y2K")
+        if (const auto* t = hellcat::themeFor (*this); t != nullptr && t->name == "Y2K")
             partLabel_.setColour (juce::Label::textColourId, t->textPrimary);
         partLabel_.setJustificationType (juce::Justification::centredLeft);
-        // Editable part name/alias (Parvati extension): click (desktop) or tap
+        // Editable part name/alias (Hellcat extension): click (desktop) or tap
         // (touch) to rename -- "Kick", "Lead", ... Empty reverts to "Part N".
         partLabel_.setEditable (true, true, false);
         partLabel_.setColour (juce::Label::outlineWhenEditingColourId,
@@ -915,8 +915,8 @@ private:
     {
         tuneCombo_.clear (juce::dontSendNotification);
         tuneCombo_.addItem (TRANS ("12-EDO"), 1);
-        for (int id = 1; id <= parvati::kNumTuningPresets; ++id)
-            tuneCombo_.addItem (juce::String (parvati::tuningPresetName (id)), id + 1);
+        for (int id = 1; id <= hellcat::kNumTuningPresets; ++id)
+            tuneCombo_.addItem (juce::String (hellcat::tuningPresetName (id)), id + 1);
     }
 
     static int tuningModeToComboId (int mode)
@@ -1079,7 +1079,7 @@ public:
     {
         // Y2K: the patch table is a DATA SCREEN (matrix-green fill).
         const auto& t = owner_.themeManager_.getCurrentTheme();
-        g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
+        g.fillAll (hellcat::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
     }
 
 private:
@@ -1108,7 +1108,7 @@ public:
     {
         addAndMakeVisible (header_);
         // Voice / MIDI segmented toggle — the GroupPager idiom (a bare
-        // TabbedButtonBar rendered by the editor-wide ParvatiLookAndFeel's
+        // TabbedButtonBar rendered by the editor-wide HellcatLookAndFeel's
         // drawTabButton), INLINE at the right of the arrangement summary row
         // (no extra vertical budget). Switching tabs swaps the column mask:
         // rows hide/re-layout their cells, the header relabels, and both
@@ -1230,10 +1230,10 @@ public:
     public:
         void paint (juce::Graphics& g) override
         {
-            const ParvatiTheme* t = parvati::themeFor (*this);
+            const HellcatTheme* t = hellcat::themeFor (*this);
             g.setColour (t != nullptr ? t->textSecondary
                                        : juce::Colours::lightgrey.withAlpha (0.85f));
-            g.setFont (parvati::labelFontExactFor (*this, 11.0f, juce::Font::bold));
+            g.setFont (hellcat::labelFontExactFor (*this, 11.0f, juce::Font::bold));
             const bool* mask = midi_ ? kMidiTabMask : kVoiceTabMask;
             // SAME inset band the rows use (kTableContentInset): the caption
             // x-positions are then exactly the cell x-positions (pinned by
@@ -1386,7 +1386,7 @@ public:
 };
 
 //==============================================================================
-PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManager)
+PatchPage::PatchPage (HellcatAudioProcessor& processor, ThemeManager& themeManager)
     : proc_ (processor), themeManager_ (themeManager),
       scrollBody_ (std::make_unique<ScrollBody> (*this)),
       tablePanel_ (std::make_unique<PartTablePanel> (*this))
@@ -1402,7 +1402,7 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     tablePanel_->addAndMakeVisible (arrangementCombo_);
 
     // ---- Ambika export buttons (summary row, right edge). Export ONLY: the
-    // top-bar Load/Save are .parvati (2026-08-20); these are the explicit
+    // top-bar Load/Save are .yml (2026-08-20); these are the explicit
     // hardware-shareable paths (.PRO = current part, byte-faithful;
     // .MUL = whole 6-Part setup, incl. the voice-slot fallback dialog when a
     // Part requests more voices than its voicecards). Desktop gating lives in
@@ -1412,7 +1412,7 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     exportMulButton_.onClick = [this] { clickExportMulForTest(); };
     // PROPER BUTTON CHROME (2026-08-23 user request): the default flat tonal
     // block read as floating text on the table panel. Both buttons carry the
-    // "parvatiButtonOutlined" property (ParvatiLookAndFeel::drawButtonBackground
+    // "hellcatButtonOutlined" property (HellcatLookAndFeel::drawButtonBackground
     // strokes a 1px rounded outline derived from the text colour) plus an
     // accent-tinted fill/text pair re-resolved on every theme change via
     // applyExportButtonChrome().
@@ -1420,9 +1420,9 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
     // a live language switch — the editor calls it after building).
     exportProButton_.setTooltip (
         TRANS ("Export this part as an Ambika .PRO patch ")
-        + TRANS ("(byte-faithful, hardware-shareable; Parvati-only options ")
+        + TRANS ("(byte-faithful, hardware-shareable; Hellcat-only options ")
         + TRANS ("— VCA curve, filter card, arp — are not carried; use Save ")
-        + TRANS ("(.parvati) for the full patch)."));
+        + TRANS ("(.yml) for the full patch)."));
     exportMulButton_.setTooltip (
         TRANS ("Export the whole 6-part setup as an Ambika .MUL multi ")
         + TRANS ("(hardware-shareable; if a part needs more voices than its ")
@@ -1430,8 +1430,8 @@ PatchPage::PatchPage (ParvatiAudioProcessor& processor, ThemeManager& themeManag
         + TRANS ("6 cards)."));
     tablePanel_->addAndMakeVisible (exportProButton_);
     tablePanel_->addAndMakeVisible (exportMulButton_);
-    exportProButton_.getProperties().set ("parvatiButtonOutlined", true);
-    exportMulButton_.getProperties().set ("parvatiButtonOutlined", true);
+    exportProButton_.getProperties().set ("hellcatButtonOutlined", true);
+    exportMulButton_.getProperties().set ("hellcatButtonOutlined", true);
     applyExportButtonChrome();
 
     // Pool-budget readout: how many of the 96 pool voices are allocated
@@ -1471,7 +1471,7 @@ void PatchPage::paint (juce::Graphics& g)
     // Y2K: the patch page is a DATA SCREEN (matrix-green fill) — the light
     // table text reads on it.
     const auto& t = themeManager_.getCurrentTheme();
-    g.fillAll (parvati::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
+    g.fillAll (hellcat::isY2kTheme (&t) ? t.backgroundPanel : t.backgroundBase);
 }
 
 void PatchPage::applyThemeColors()
@@ -1485,7 +1485,7 @@ void PatchPage::applyThemeColors()
         if (row != nullptr)
         {
             const auto& t = themeManager_.getCurrentTheme();
-            row->setPartNameColour (parvati::isY2kTheme (&t) ? t.textPrimary
+            row->setPartNameColour (hellcat::isY2kTheme (&t) ? t.textPrimary
                                                              : juce::Colour {});
         }
     repaint();
@@ -1495,7 +1495,7 @@ void PatchPage::applyExportButtonChrome()
 {
     // Accent-tinted ACTION look for the two Ambika export buttons: a subtle
     // accent wash fill + accent text (the L&F adds the matching outline via
-    // the parvatiButtonOutlined property; hover brightens both). WithAlpha
+    // the hellcatButtonOutlined property; hover brightens both). WithAlpha
     // colours must be RE-SET per theme (they are baked at call time), which
     // is why this lives here and is called from applyThemeColors.
     const auto accent = themeManager_.getCurrentTheme().accentPrimary;
@@ -1520,9 +1520,9 @@ void PatchPage::refreshLanguage()
     exportMulButton_.setButtonText (TRANS ("Export .MUL"));
     exportProButton_.setTooltip (
         TRANS ("Export this part as an Ambika .PRO patch ")
-        + TRANS ("(byte-faithful, hardware-shareable; Parvati-only options ")
+        + TRANS ("(byte-faithful, hardware-shareable; Hellcat-only options ")
         + TRANS ("— VCA curve, filter card, arp — are not carried; use Save ")
-        + TRANS ("(.parvati) for the full patch)."));
+        + TRANS ("(.yml) for the full patch)."));
     exportMulButton_.setTooltip (
         TRANS ("Export the whole 6-part setup as an Ambika .MUL multi ")
         + TRANS ("(hardware-shareable; if a part needs more voices than its ")

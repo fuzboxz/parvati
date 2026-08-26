@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxProcessors.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxProcessors.h.
 
 #include "dsp/fx/FxProcessors.h"
 
@@ -79,7 +79,7 @@ void FxPitchShifter::process (float* L, float* R, int numSamples)
     const float semis = (ratioParam_ - 0.5f) * 24.0f;             // -12..+12 st, 0.5 = unison
     pitch_.set_ratio (std::pow (2.0f, semis / 12.0f));
     pitch_.set_size (sizeParam_);
-    pitch_.set_spread (spreadParam_);   // R-tap offset for stereo width (Parvati add)
+    pitch_.set_spread (spreadParam_);   // R-tap offset for stereo width (Hellcat add)
     const int m = bridge_.hostToInternal (L, R, numSamples);
     pitch_.Process (bridge_.internal(), static_cast<size_t> (m));
     bridge_.internalToHost (L, R, numSamples);
@@ -299,7 +299,7 @@ void FxWSOLAStretch::process (float* L, float* R, int numSamples)
     // kMaxBlockSize=32). Each chunk: capture the dry input into the record
     // buffers (stride 2 = interleaved FloatFrame), then play the wet output over
     // the scratch (reads the recorded past), then run the correlator splice-point
-    // search inline (the firmware does this in a background main loop that Parvati
+    // search inline (the firmware does this in a background main loop that Hellcat
     // FX slots do not have; without it the splice search stalls and WSOLA never
     // advances).
     int off = 0;
@@ -385,7 +385,7 @@ void FxSpectral::process (float* L, float* R, int numSamples)
     // for kMaxBlockSize=32). In-place Process (input==output) is safe: analysis_
     // and synthesis_ are separate internal buffers. Buffer() MUST be called after
     // each chunk to drain the FFT pipeline (the firmware does this in a background
-    // main loop that Parvati FX slots do not have; without it -> silence).
+    // main loop that Hellcat FX slots do not have; without it -> silence).
     int off = 0;
     while (off < m)
     {
@@ -811,24 +811,24 @@ std::unique_ptr<FxProcessor> createFxProcessor (FxType t)
         case FxType::RingModulator:     return std::make_unique<FxRingModulator>();
         case FxType::Resonator:           return std::make_unique<FxResonator>();
         // FV-1 hardware-emulation family (Source/dsp/fx/fv1/).
-        case FxType::ClockedDelay:    return std::make_unique<parvati::fv1::Fv1ClockedDelay>();
-        case FxType::Ensemble:        return std::make_unique<parvati::fv1::Fv1Ensemble>();
-        case FxType::PlateReverb:     return std::make_unique<parvati::fv1::Fv1PlateReverb>();
-        case FxType::VinylCompressor: return std::make_unique<parvati::fv1::Fv1VinylCompressor>();
-        case FxType::Phaser:          return std::make_unique<parvati::fv1::Fv1Phaser>();
+        case FxType::ClockedDelay:    return std::make_unique<hellcat::fv1::Fv1ClockedDelay>();
+        case FxType::Ensemble:        return std::make_unique<hellcat::fv1::Fv1Ensemble>();
+        case FxType::PlateReverb:     return std::make_unique<hellcat::fv1::Fv1PlateReverb>();
+        case FxType::VinylCompressor: return std::make_unique<hellcat::fv1::Fv1VinylCompressor>();
+        case FxType::Phaser:          return std::make_unique<hellcat::fv1::Fv1Phaser>();
         // FV-1 family, second wave (2026-08-17).
-        case FxType::Overdrive:       return std::make_unique<parvati::fv1::Fv1Overdrive>();
-        case FxType::LutDistortion:   return std::make_unique<parvati::fv1::Fv1LutDistortion>();
-        case FxType::Compressor:      return std::make_unique<parvati::fv1::Fv1Compressor>();
-        case FxType::Gate:            return std::make_unique<parvati::fv1::Fv1Gate>();
-        case FxType::Chorus:          return std::make_unique<parvati::fv1::Fv1Chorus>();
-        case FxType::Flanger:         return std::make_unique<parvati::fv1::Fv1Flanger>();
-        case FxType::Echo:            return std::make_unique<parvati::fv1::Fv1Echo>();
-        case FxType::Room:            return std::make_unique<parvati::fv1::Fv1Room>();
-        case FxType::Spring:          return std::make_unique<parvati::fv1::Fv1Spring>();
+        case FxType::Overdrive:       return std::make_unique<hellcat::fv1::Fv1Overdrive>();
+        case FxType::LutDistortion:   return std::make_unique<hellcat::fv1::Fv1LutDistortion>();
+        case FxType::Compressor:      return std::make_unique<hellcat::fv1::Fv1Compressor>();
+        case FxType::Gate:            return std::make_unique<hellcat::fv1::Fv1Gate>();
+        case FxType::Chorus:          return std::make_unique<hellcat::fv1::Fv1Chorus>();
+        case FxType::Flanger:         return std::make_unique<hellcat::fv1::Fv1Flanger>();
+        case FxType::Echo:            return std::make_unique<hellcat::fv1::Fv1Echo>();
+        case FxType::Room:            return std::make_unique<hellcat::fv1::Fv1Room>();
+        case FxType::Spring:          return std::make_unique<hellcat::fv1::Fv1Spring>();
         // Dual-BBD Chorus (2026-08-24): the documented Juno-60/106 chorus
         // configuration ported into the FV-1 family.
-        case FxType::JunoChorus:       return std::make_unique<parvati::fv1::Fv1JunoChorus>();
+        case FxType::JunoChorus:       return std::make_unique<hellcat::fv1::Fv1JunoChorus>();
         case FxType::None:
         case FxType::Count:   break;
     }

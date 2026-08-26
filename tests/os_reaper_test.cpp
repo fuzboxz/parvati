@@ -16,7 +16,7 @@
 // consumeStagedOversampling) of a SUSTAINED note — a held voice is the only
 // deterministic consumer (idle voices install on their next note).
 //
-// Run: ./build_unified/parvati_unified_tests os_reaper_test
+// Run: ./build_unified/hellcat_unified_tests os_reaper_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -42,7 +42,7 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-void renderBlock (ParvatiAudioProcessor& p, int numSamples)
+void renderBlock (HellcatAudioProcessor& p, int numSamples)
 {
     juce::AudioBuffer<float> buf (2, numSamples);
     buf.clear();
@@ -53,7 +53,7 @@ void renderBlock (ParvatiAudioProcessor& p, int numSamples)
 // Sum of debugRetiredOsCount() across every engine voice (the whole-pool
 // view the reaper walks). Only voices that RENDERED a swap ever park, so a
 // single held note keeps this deterministic: exactly one voice contributes.
-int totalRetired (ParvatiAudioProcessor& p)
+int totalRetired (HellcatAudioProcessor& p)
 {
     int n = 0;
     auto& engine = p.getEngine();
@@ -67,9 +67,9 @@ int totalRetired (ParvatiAudioProcessor& p)
 TEST(os_reaper_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
-    std::printf ("=== Parvati retired-OS reaper (park capacity / fallback / reap) ===\n");
+    std::printf ("=== Hellcat retired-OS reaper (park capacity / fallback / reap) ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     // Hold a note for the WHOLE test: sustain 127 keeps the amp envelope (and

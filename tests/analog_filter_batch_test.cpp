@@ -1,4 +1,4 @@
-// AnalogFilter LadderTap equivalence test for Parvati.
+// AnalogFilter LadderTap equivalence test for Hellcat.
 //
 // The 4-pole ladder path used to route every sample through a 1-sample
 // juce::dsp::AudioBlock + ProcessContextReplacing + LadderFilter::process()
@@ -18,7 +18,7 @@
 // 4-pole SSM2164 cascade) for output sanity (finite, non-trivial), since they
 // share processSample's call contract.
 //
-// Run: ./build_unified/parvati_unified_tests analog_filter_batch_test
+// Run: ./build_unified/hellcat_unified_tests analog_filter_batch_test
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -80,7 +80,11 @@ void runLadderEquivalence (const char* label,
     legacy.ladder.prepare (spec);
     legacy.ladder.setMode (juce::dsp::LadderFilterMode::LPF24);
     legacy.ladder.setCutoffFrequencyHz (cutoffHz);
-    legacy.ladder.setResonance (resonance);
+    // The wrapper remaps the knob (ladderResonanceKnob: JUCE's internal
+    // k = 0.4 + 3.6*r offset is inverted, so k = 4*knob above knob 0.1).
+    // The reference MUST apply the same law, or the bit-identity pin would
+    // compare two different filters.
+    legacy.ladder.setResonance (ambika::dsp::AnalogFilter::ladderResonanceKnob (resonance));
     legacy.ladder.setDrive (drive);
 
     uint64_t mismatches = 0;

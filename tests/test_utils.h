@@ -15,7 +15,7 @@
 //   renderBlocks  - cleared-audio block pump with optional MIDI injection
 //
 // Precedent: tests/mt_harness.h (shared test headers compile into every TU
-// of parvati_unified_tests, hence `inline`).
+// of hellcat_unified_tests, hence `inline`).
 //
 // FakePlayHead and renderBlocks replace the per-file copies that eleven
 // tests carried. Semantics stay those of the originals: bpm and playing are
@@ -24,8 +24,8 @@
 // 0 of block @p injectBlock. The default block size is 256; the 512-based
 // timing tests pass their own kBlock.
 
-#ifndef PARVATI_TEST_UTILS_H_
-#define PARVATI_TEST_UTILS_H_
+#ifndef HELLCAT_TEST_UTILS_H_
+#define HELLCAT_TEST_UTILS_H_
 
 #include <cstdlib>   // ::setenv (POSIX branch of setEnvVar)
 
@@ -59,7 +59,7 @@ inline void setEnvVar (const char* key, const char* value)
 
 // Typed: host-style write to an AudioParameterInt; silently no-ops if the id
 // is not an int parameter (mirrors the original per-file copies).
-inline void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
+inline void setInt (HellcatAudioProcessor& proc, const char* id, int value)
 {
     if (auto* param = proc.getApvts().getParameter (id))
         if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (param))
@@ -68,7 +68,7 @@ inline void setInt (ParvatiAudioProcessor& proc, const char* id, int value)
 
 // Typed: host-style write to an AudioParameterChoice; silently no-ops if the
 // id is not a choice parameter (mirrors the original per-file copies).
-inline void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
+inline void setChoice (HellcatAudioProcessor& proc, const char* id, int value)
 {
     if (auto* param = proc.getApvts().getParameter (id))
         if (auto* cp = dynamic_cast<juce::AudioParameterChoice*> (param))
@@ -77,7 +77,7 @@ inline void setChoice (ParvatiAudioProcessor& proc, const char* id, int value)
 
 // Generic: host-style write through the base RangedAudioParameter interface,
 // so it drives ints, choices, floats alike via convertTo0to1.
-inline void setParam (ParvatiAudioProcessor& proc, const char* id, int value)
+inline void setParam (HellcatAudioProcessor& proc, const char* id, int value)
 {
     if (auto* p = proc.getApvts().getParameter (id))
         p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (value)));
@@ -111,7 +111,7 @@ public:
 // buffer is allocated once and cleared before every block (the processBlock
 // result is discarded). @p blockSamples defaults to 256; timing tests that
 // prepared at 512 pass their own block size.
-inline void renderBlocks (ParvatiAudioProcessor& proc, int blocks,
+inline void renderBlocks (HellcatAudioProcessor& proc, int blocks,
                           const juce::MidiMessage* inject = nullptr,
                           int blockSamples = 256, int injectBlock = 0)
 {
@@ -126,4 +126,4 @@ inline void renderBlocks (ParvatiAudioProcessor& proc, int blocks,
     }
 }
 
-#endif  // PARVATI_TEST_UTILS_H_
+#endif  // HELLCAT_TEST_UTILS_H_

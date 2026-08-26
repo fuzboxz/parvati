@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Spring implementation — two dispersive AP-cascade spring loops.
 
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // 2*2048 + 12*64 = 4864 words of the 32768 budget.
@@ -127,4 +127,4 @@ void Fv1Spring::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = outR;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

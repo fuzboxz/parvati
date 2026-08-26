@@ -297,7 +297,7 @@ struct DirectTransform {
 
           v = s2r[j] * c - s2i[j] * s;
           dr[j] = s1r[j] + v;
-          // PARVATI PATCH: `di[-j]` computes di + (size_t)(0-j), which wraps
+          // HELLCAT PATCH: `di[-j]` computes di + (size_t)(0-j), which wraps
           // unsigned (UBSan pointer-overflow); a signed ptrdiff_t offset is the
           // bit-identical intended address.
           di[0 - static_cast<std::ptrdiff_t> (j)] = s1r[j] - v;
@@ -398,7 +398,7 @@ struct DirectTransform {
 
           v = s2r[j] * c - s2i[j] * s;
           dr[j] = s1r[j] + v;
-          // PARVATI PATCH: `di[-j]` computes di + (size_t)(0-j), which wraps
+          // HELLCAT PATCH: `di[-j]` computes di + (size_t)(0-j), which wraps
           // unsigned (UBSan pointer-overflow); a signed ptrdiff_t offset is the
           // bit-identical intended address.
           di[0 - static_cast<std::ptrdiff_t> (j)] = s1r[j] - v;
@@ -484,7 +484,7 @@ struct InverseTransform {
         T* d2i = d1i + n;
         phasor->Start(pass);
         for (size_t j = 1; j < n_2; ++j) {
-          // PARVATI PATCH: same unsigned-wrap fix as di[-j] above.
+          // HELLCAT PATCH: same unsigned-wrap fix as di[-j] above.
           d1r[j] = sr[j] + si[0 - static_cast<std::ptrdiff_t> (j)];
           d1i[j] = si[j] - si[n - j];
           
@@ -586,7 +586,7 @@ struct InverseTransform {
         T* d2i = d1i + n;
         phasor->Start(pass);
         for (size_t j = 1; j < n_2; ++j) {
-          // PARVATI PATCH: same unsigned-wrap fix as di[-j] above.
+          // HELLCAT PATCH: same unsigned-wrap fix as di[-j] above.
           d1r[j] = sr[j] + si[0 - static_cast<std::ptrdiff_t> (j)];
           d1i[j] = si[j] - si[n - j];
           

@@ -66,14 +66,14 @@ optional nits/observations for a future pass — none block shipping this v1 pla
    A "params unchanged since last setParams" short-circuit would avoid it. Micro-optimisation.
 
 7. **`applyParvatiPatch` publishes intermediate (torn) FX frames during load
-   (`Source/ParvatiPreset.cpp:519-527`).** Each `setValueNotifyingHost` fires
+   (`Source/HellcatPreset.cpp:519-527`).** Each `setValueNotifyingHost` fires
    `parameterChanged` → `applyFxParameter` with no `loadingPartIntoApvts_`-style guard, so
    `setFxModSlot` may briefly read stale sibling values mid-loop. The **end state is fully
    consistent** because `applyParvatiPatch` finishes with `syncAllParamsToEngine()`
-   (`ParvatiPreset.cpp:529`) which re-applies every FX param with all siblings present, and the
+   (`HellcatPreset.cpp:529`) which re-applies every FX param with all siblings present, and the
    test `[2]` confirms a 0-mismatch round-trip. At worst a single-block glitch on rapid patch
    load. Contrast with `applyParvatiMulti`, which writes `fxState` directly + sets `fxDirty_`
-   **once** after the loop (`ParvatiPreset.cpp:715`) — the cleaner pattern. Non-blocking.
+   **once** after the loop (`HellcatPreset.cpp:715`) — the cleaner pattern. Non-blocking.
 
 8. **`renderPartFx` evaluates the FX mod matrix every block even when fully bypassed
    (`Source/SynthEngine.cpp:1223-1243`).** When `!anyEnabled()` the chain dry-copies, but the
@@ -133,8 +133,8 @@ optional nits/observations for a future pass — none block shipping this v1 pla
     rejects truncated FX reads (`getNumBytesRemaining() < fxLen`), and the `take()` lambda guards
     `o < fxLen`. No FX bytes leak into the Ambika core (the FX block is appended *after* the
     routing bytes, length-prefixed).
-  - `.parvati` multi: `partRaw` (`ParvatiPreset.cpp:381-419`) + `applyParvatiMulti`
-    (`ParvatiPreset.cpp:662-715`) read/write `fxState` directly and set `fxDirty_` **once** per
+  - `.parvati` multi: `partRaw` (`HellcatPreset.cpp:381-419`) + `applyParvatiMulti`
+    (`HellcatPreset.cpp:662-715`) read/write `fxState` directly and set `fxDirty_` **once** per
     part after the loop (clean, no torn frame). `.parvati` patch applies via APVTS +
     `syncAllParamsToEngine` (end state consistent).
   - **Ambika formats unchanged:** `loadProgramFromBytes` / `saveProgramFile` / `saveMultiFile`

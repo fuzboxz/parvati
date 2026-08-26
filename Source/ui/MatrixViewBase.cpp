@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See MatrixViewBase.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See MatrixViewBase.h.
 
 #include "MatrixViewBase.h"
 
@@ -6,38 +6,38 @@
 #include "IconButton.h"           // IconButton (row delete X)
 #include "ModMatrixHighlight.h"   // hover / slot-select / assign bus
 #include "ModDestMap.h"           // isFxDest / kFxModDstOffset (FX dest domain)
-#include "PluginProcessor.h"      // ParvatiAudioProcessor (complete type)
-#include "ModSourceCatalog.h"   // parvati::clusterForSourceName / clusterAccent
+#include "PluginProcessor.h"      // HellcatAudioProcessor (complete type)
+#include "ModSourceCatalog.h"   // hellcat::clusterForSourceName / clusterAccent
 #include "ThemeManager.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>   // APVTS attachments + AudioParameterChoice
 
 //==============================================================================
-namespace parvati::matrixview
+namespace hellcat::matrixview
 {
-juce::Colour sourceCategoryColour (const ParvatiTheme& t, const juce::String& sourceName)
+juce::Colour sourceCategoryColour (const HellcatTheme& t, const juce::String& sourceName)
 {
     // The name-to-family test lives in the catalogue (one authority); the
     // theme supplies the colour. An unmatched name keeps the transparent
     // no-tint result, exactly as before.
-    const auto cluster = parvati::clusterForSourceName (sourceName);
-    return cluster.has_value() ? parvati::clusterAccent (*cluster, t)
+    const auto cluster = hellcat::clusterForSourceName (sourceName);
+    return cluster.has_value() ? hellcat::clusterAccent (*cluster, t)
                                : juce::Colour {};   // transparent (alpha 0) => no tint
 }
 
-juce::Colour rowCategoryColour (const ParvatiTheme& t, const juce::String& sourceName)
+juce::Colour rowCategoryColour (const HellcatTheme& t, const juce::String& sourceName)
 {
     const juce::Colour cat = sourceCategoryColour (t, sourceName);
     return cat.isTransparent() ? t.accentPrimary : cat;
 }
 
-}  // namespace parvati::matrixview
+}  // namespace hellcat::matrixview
 
 //==============================================================================
 // Local bipolar depth-slider LookAndFeel: a thin track, a fill drawn FROM the
 // CENTRE to the value (row colour right of centre, dimmed left of centre), a
 // centre zero-detent tick and a thumb. Self-contained. It never touches the
-// shared ParvatiLookAndFeel. Both matrix views share one geometry: the 4pt
+// shared HellcatLookAndFeel. Both matrix views share one geometry: the 4pt
 // track and the proportional thumb (unified 2026-08-23; the synth matrix's
 // former 7pt track / fixed 15pt thumb was the drift this replaced).
 class MatrixViewBase::BipolarSliderLNF : public juce::LookAndFeel_V4
@@ -56,11 +56,11 @@ public:
         // The centre tick reads as a zero detent. The thumb is a flat solid
         // circle with no 3D or gradient.
         const juce::Colour trackCol = t.trackEmpty;
-        // Per-row category fill (pushed onto the slider as "parvatiRowFill"
+        // Per-row category fill (pushed onto the slider as "hellcatRowFill"
         // by MatrixRow::applyThemeColors); falls back to the accent when unset.
         const juce::Colour rowFill = [&]
         {
-            const auto* v = slider.getProperties().getVarPointer ("parvatiRowFill");
+            const auto* v = slider.getProperties().getVarPointer ("hellcatRowFill");
             return (v != nullptr && v->isInt()) ? juce::Colour ((uint32_t) (int) *v) : t.accentPrimary;
         }();
         const juce::Colour posFill  = rowFill;
@@ -145,7 +145,7 @@ struct MatrixRow : public juce::Component,
         // the routing is ACTIVE, the inactive grey while MUTED. A click
         // routes through the view's toggleMute (the stash/restore seam).
         // The lamp stays clickable so a muted row can unmute.
-        muteLamp_ = std::make_unique<ParvatiModuleLamp>();
+        muteLamp_ = std::make_unique<HellcatModuleLamp>();
         muteLamp_->setTitle (TRANS ("Mute / bypass this modulation"));
         muteLamp_->setTooltip (TRANS ("Mute / bypass this modulation"));
         muteLamp_->onClick = [this] { owner_.toggleMute (slot_); };
@@ -275,7 +275,7 @@ struct MatrixRow : public juce::Component,
         const int d = owner_.destForSlot (slot_);
         const int offset = owner_.config().destBusOffset;
         const int bus = (offset == 0) ? d : (d < 0 ? -1 : d + offset);
-        parvati::ModMatrixHighlight::instance().setHighlightedDest (bus);
+        hellcat::ModMatrixHighlight::instance().setHighlightedDest (bus);
     }
 
     void mouseExit (const juce::MouseEvent& e) override
@@ -287,7 +287,7 @@ struct MatrixRow : public juce::Component,
         if (! getLocalBounds().contains (rel.position.toInt()))
         {
             setHighlighted (false);
-            parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+            hellcat::ModMatrixHighlight::instance().setHighlightedDest (-1);
         }
     }
 
@@ -324,7 +324,7 @@ struct MatrixRow : public juce::Component,
     void applyThemeColors()
     {
         const auto& t = owner_.themeManager().getCurrentTheme();
-        const juce::Font f = parvati::labelFontFor (*this, 12.0f, juce::Font::plain);
+        const juce::Font f = hellcat::labelFontFor (*this, 12.0f, juce::Font::plain);
         indexLabel_.setFont (f);
         valueLabel_.setFont (f);
         indexLabel_.setColour (juce::Label::textColourId, t.textSecondary);
@@ -334,7 +334,7 @@ struct MatrixRow : public juce::Component,
         // SOURCE combo: a uniformly DARK dropdown tagged with a 4px
         // family-colour STRIP on its far-left edge. The strip colour is this
         // row's routing-source FAMILY. The DEST combo gets NO tag.
-        const juce::Colour famCol = parvati::matrixview::rowCategoryColour (t, owner_.sourceNameForSlot (slot_));
+        const juce::Colour famCol = hellcat::matrixview::rowCategoryColour (t, owner_.sourceNameForSlot (slot_));
         // Lamp ON colour: the row's modulator category colour, or the theme
         // accent when the global setting keeps the lamp neutral.
         if (owner_.lampCategoryColour())
@@ -345,19 +345,19 @@ struct MatrixRow : public juce::Component,
         destCombo_.removeColour (juce::ComboBox::backgroundColourId);
 
         // Per-row depth-slider fill colour: this row's routing-source
-        // CATEGORY colour. BipolarSliderLNF reads "parvatiRowFill" so each
+        // CATEGORY colour. BipolarSliderLNF reads "hellcatRowFill" so each
         // slider matches its own row. The negative side is a dimmed same-hue
         // version, derived in the LNF.
-        depthSlider_.getProperties().set ("parvatiRowFill",
-            (int) parvati::matrixview::rowCategoryColour (t, owner_.sourceNameForSlot (slot_)).getARGB());
+        depthSlider_.getProperties().set ("hellcatRowFill",
+            (int) hellcat::matrixview::rowCategoryColour (t, owner_.sourceNameForSlot (slot_)).getARGB());
 
         repaint();
     }
 
     void paint (juce::Graphics& g) override
     {
-        using parvati::matrixview::rowCategoryColour;
-        using parvati::matrixview::sourceCategoryColour;
+        using hellcat::matrixview::rowCategoryColour;
+        using hellcat::matrixview::sourceCategoryColour;
         const auto& t = owner_.themeManager().getCurrentTheme();
 
         // FULL-ROW CATEGORY TINT: a very low-opacity (0.08) fill of this
@@ -394,7 +394,7 @@ struct MatrixRow : public juce::Component,
 
         // Arrow glyph between the source and dest combos.
         g.setColour (t.textSecondary);
-        g.setFont (parvati::headerFontFor (*this, 13.0f));
+        g.setFont (hellcat::headerFontFor (*this, 13.0f));
         const int arrowX = sourceCombo_.getBounds().getRight() + 4;
         g.drawText (TRANS (">"),
                     juce::Rectangle<int> (arrowX, 0, 10, getHeight()),
@@ -423,7 +423,7 @@ struct MatrixRow : public juce::Component,
         // zeroed (the text is centred anyway) and the width taken from the
         // shared constant.
         indexLabel_.setBorderSize (juce::BorderSize<int> (0));
-        indexLabel_.setBounds (b.removeFromLeft (parvati::matrixview::kMatrixIndexLabelW));
+        indexLabel_.setBounds (b.removeFromLeft (hellcat::matrixview::kMatrixIndexLabelW));
         b.removeFromLeft (4);
 
         // Source + dest combos share the REST with the depth slider. The
@@ -458,7 +458,7 @@ struct MatrixRow : public juce::Component,
     const int slot_;
 
     juce::Label    indexLabel_;
-    std::unique_ptr<ParvatiModuleLamp> muteLamp_;   // mute/bypass lamp
+    std::unique_ptr<HellcatModuleLamp> muteLamp_;   // mute/bypass lamp
     juce::ComboBox sourceCombo_;
     juce::ComboBox destCombo_;
     juce::Slider   depthSlider_;
@@ -470,7 +470,7 @@ struct MatrixRow : public juce::Component,
 };
 
 //==============================================================================
-MatrixViewBase::MatrixViewBase (ParvatiAudioProcessor& processor, ThemeManager& themeManager,
+MatrixViewBase::MatrixViewBase (HellcatAudioProcessor& processor, ThemeManager& themeManager,
                                 MatrixViewConfig config)
     : processor_ (processor), themeManager_ (themeManager), config_ (config)
 {
@@ -480,7 +480,7 @@ MatrixViewBase::MatrixViewBase (ParvatiAudioProcessor& processor, ThemeManager& 
 
     headerLabel_.setText ("0 " + TRANS (config_.usedSuffixKey), juce::dontSendNotification);
     headerLabel_.setJustificationType (juce::Justification::centredLeft);
-    headerLabel_.setFont (parvati::headerFontFor (*this, 13.0f));
+    headerLabel_.setFont (hellcat::headerFontFor (*this, 13.0f));
     addAndMakeVisible (headerLabel_);
 
     addButton_ = std::make_unique<juce::TextButton> (TRANS ("+ Add Modulation"));
@@ -507,9 +507,9 @@ MatrixViewBase::MatrixViewBase (ParvatiAudioProcessor& processor, ThemeManager& 
     // unsubscribed in the dtor. The assign handler is view-specific (each
     // view guards its own dest domain), so the derived ctor registers it.
     juce::Component::SafePointer<MatrixViewBase> safe (this);
-    destHighlightSub_ = parvati::ModMatrixHighlight::instance().onDestHighlighted (
+    destHighlightSub_ = hellcat::ModMatrixHighlight::instance().onDestHighlighted (
         [safe] (int modDst) { if (safe != nullptr) safe->onHighlightDest (modDst); });
-    slotSelectSub_ = parvati::ModMatrixHighlight::instance().onSlotSelected (
+    slotSelectSub_ = hellcat::ModMatrixHighlight::instance().onSlotSelected (
         [safe] (int slot) { if (safe != nullptr) safe->onSelectSlot (slot); });
 }
 
@@ -518,11 +518,11 @@ MatrixViewBase::~MatrixViewBase()
     stopTimer();
 
     if (destHighlightSub_ >= 0)
-        parvati::ModMatrixHighlight::instance().unsubscribe (destHighlightSub_);
+        hellcat::ModMatrixHighlight::instance().unsubscribe (destHighlightSub_);
     if (slotSelectSub_ >= 0)
-        parvati::ModMatrixHighlight::instance().unsubscribe (slotSelectSub_);
+        hellcat::ModMatrixHighlight::instance().unsubscribe (slotSelectSub_);
     if (assignSub_ >= 0)
-        parvati::ModMatrixHighlight::instance().unsubscribe (assignSub_);
+        hellcat::ModMatrixHighlight::instance().unsubscribe (assignSub_);
 
     // Mute is SESSION-ONLY: restore every stashed amount so the persisted
     // APVTS state (host state, presets) never keeps the mute-induced zeros
@@ -636,7 +636,7 @@ void MatrixViewBase::onHighlightDest (int modDst)
     // encodes its dests above the synth range: the guard rejects synth
     // broadcasts, then the offset decodes the raw FX index. -1 clears all.
     const bool active = modDst >= 0
-        && (config_.destBusOffset == 0 || parvati::ModDestMap::isFxDest (modDst));
+        && (config_.destBusOffset == 0 || hellcat::ModDestMap::isFxDest (modDst));
     const int raw = active ? modDst - config_.destBusOffset : -1;
     for (const auto& r : rows_)
         if (r)
@@ -655,7 +655,7 @@ void MatrixViewBase::onSelectSlot (int slotIndex)
 
     if (slotIndex < 0)
         return;
-    if (config_.destBusOffset > 0 && ! parvati::ModDestMap::isFxDest (slotIndex))
+    if (config_.destBusOffset > 0 && ! hellcat::ModDestMap::isFxDest (slotIndex))
         return;
 
     const int s = slotIndex - config_.destBusOffset;
@@ -876,8 +876,8 @@ void MatrixViewBase::paint (juce::Graphics& g)
     // cards. The ROW interiors stay dark data cells (MatrixRow paints its
     // own recessed wells); other themes keep the window tone.
     const auto& t = themeManager_.getCurrentTheme();
-    if (parvati::isY2kTheme (&t))
-        parvati::paintChromeCard (g, getLocalBounds().toFloat(), 7.0f, &t);
+    if (hellcat::isY2kTheme (&t))
+        hellcat::paintChromeCard (g, getLocalBounds().toFloat(), 7.0f, &t);
     else
         g.fillAll (t.backgroundBase);
 }
@@ -912,7 +912,7 @@ void MatrixViewBase::applyThemeColors()
 {
     const auto& t = themeManager_.getCurrentTheme();
     headerLabel_.setColour (juce::Label::textColourId, t.textPrimary);
-    headerLabel_.setFont (parvati::headerFontFor (*this, 13.0f));
+    headerLabel_.setFont (hellcat::headerFontFor (*this, 13.0f));
 
     addButton_->setColour (juce::TextButton::buttonColourId, t.containerFill);
     addButton_->setColour (juce::TextButton::buttonOnColourId, t.accentPrimary);
@@ -922,7 +922,7 @@ void MatrixViewBase::applyThemeColors()
     // Y2K: the scrolled surface is the card BODY tone (flat mid steel) so the
     // gaps between the dark data-cell rows read as the chrome card; every
     // other theme keeps the window tone.
-    content_.bg = parvati::isY2kTheme (&t) ? t.containerFill : t.backgroundBase;
+    content_.bg = hellcat::isY2kTheme (&t) ? t.containerFill : t.backgroundBase;
     content_.setOpaque (true);
     content_.repaint();
     for (int i = 0; i < config_.numSlots; ++i)

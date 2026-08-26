@@ -1,8 +1,8 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FormatHelpers — single source for the small readout formatters that several
 // pages/formatting layers must agree on CHARACTER-FOR-CHARACTER (pinned by
-// host_param_text_test / paramhelp_parity_test / parvati_synth_paramtext_test
+// host_param_text_test / paramhelp_parity_test / hellcat_synth_paramtext_test
 // / fx_param_coverage_test). Previously each site carried its own copy and
 // they were one rounding tweak away from drifting (host text vs knob text).
 //

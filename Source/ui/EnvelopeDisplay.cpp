@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See EnvelopeDisplay.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See EnvelopeDisplay.h.
 
 #include "EnvelopeDisplay.h"
 
 #include <cmath>
 
 #include "VectorTrace.h"
-#include "ParvatiLookAndFeel.h"   // themeFor + the fallback colour constants
+#include "HellcatLookAndFeel.h"   // themeFor + the fallback colour constants
 #include "dsp/resources/resources.h"   // lut_res_env_portamento_increments (time-honest ADSR spans)
 
 //==============================================================================
@@ -136,7 +136,7 @@ float EnvelopeDisplay::fetch (const std::function<float()>& f) const
     return juce::jlimit (0.0f, 1.0f, v);
 }
 
-void EnvelopeDisplay::setLiveStageProvider (std::function<parvati::LiveEnvStage()> p)
+void EnvelopeDisplay::setLiveStageProvider (std::function<hellcat::LiveEnvStage()> p)
 {
     liveStageProvider_ = std::move (p);
     // An un-set provider must immediately hide any shown marker (the state is
@@ -148,7 +148,7 @@ void EnvelopeDisplay::setLiveStageProvider (std::function<parvati::LiveEnvStage(
     }
 }
 
-float EnvelopeDisplay::markerXForStage (const parvati::LiveEnvStage& st) const
+float EnvelopeDisplay::markerXForStage (const hellcat::LiveEnvStage& st) const
 {
     // DEAD (4) / inactive / out-of-range stages hide the marker. The stage
     // indices mirror ambika::dsp::EnvelopeStage (ATTACK=0..DEAD=4).
@@ -271,14 +271,14 @@ void EnvelopeDisplay::timerCallback()
 void EnvelopeDisplay::paint (juce::Graphics& g)
 {
     // Read the active theme from the component's LookAndFeel (null-safe: a few
-    // sensible fallback colours are used if there is no ParvatiLookAndFeel, so
+    // sensible fallback colours are used if there is no HellcatLookAndFeel, so
     // the component also renders correctly in a plain host / test harness).
-    const ParvatiTheme* t = parvati::themeFor (*this);
+    const HellcatTheme* t = hellcat::themeFor (*this);
 
-    const auto panelBg = t ? t->backgroundPanel : parvati::kFallbackPanel;
-    const auto outline = t ? t->outline         : parvati::kFallbackOutline;
-    const auto accent  = t ? t->accentPrimary          : parvati::parvatiFallbackAccent;
-    const auto textDim = t ? t->textSecondary         : parvati::kFallbackTextSecondary;
+    const auto panelBg = t ? t->backgroundPanel : hellcat::kFallbackPanel;
+    const auto outline = t ? t->outline         : hellcat::kFallbackOutline;
+    const auto accent  = t ? t->accentPrimary          : hellcat::hellcatFallbackAccent;
+    const auto textDim = t ? t->textSecondary         : hellcat::kFallbackTextSecondary;
     // The waveform trace + its gradient fill adopt a category hue (cyan ENV /
     // magenta LFO) when set; otherwise the live theme accent. The neutral clean
     // grid backdrop uses the theme divider token so the graph reads on any theme.
@@ -291,7 +291,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     g.setColour (panelBg);
     g.fillRect (bounds);
 
-    parvati::vectorTrace::drawGrid (g, bounds.reduced (0.5f), gridCol, 20.0f);
+    hellcat::vectorTrace::drawGrid (g, bounds.reduced (0.5f), gridCol, 20.0f);
 
     g.setColour (outline);
     g.drawRect (bounds.reduced (0.5f), 1.0f);
@@ -299,15 +299,15 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     // Title (top-left). Y2K: the display is a data screen — its TEXT uses the
     // shared default data face in the LCD green (the trace colour). Other
     // themes keep the caption tier and the dim text token exactly as before.
-    if (const auto* th = parvati::themeFor (*this); th != nullptr && parvati::isY2kTheme (th))
+    if (const auto* th = hellcat::themeFor (*this); th != nullptr && hellcat::isY2kTheme (th))
     {
         g.setColour (th->accentPrimary);
-        g.setFont (parvati::dataFontFor (*this, 13.0f));
+        g.setFont (hellcat::dataFontFor (*this, 13.0f));
     }
     else
     {
         g.setColour (textDim);
-        g.setFont (parvati::labelFontFor (*this, 13.0f, juce::Font::plain));
+        g.setFont (hellcat::labelFontFor (*this, 13.0f, juce::Font::plain));
     }
     g.drawText (title_,
                 bounds.reduced (9.0f, 4.0f).removeFromTop (16),
@@ -369,8 +369,8 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         const bool isSampleAndHold = (shapeIdx == 2);
         const int sampleCount = isSampleAndHold ? (cycles * kBlocksPerCycle)
                                                 : juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
-        parvati::vectorTrace::render (g, plot, sampleCount, lfoLevel,
-                                      trace, parvati::vectorTrace::Mode::bipolar,
+        hellcat::vectorTrace::render (g, plot, sampleCount, lfoLevel,
+                                      trace, hellcat::vectorTrace::Mode::bipolar,
                                       isSampleAndHold, 1.5f, 0.12f);
 
         // Midline reference (1px).
@@ -379,15 +379,15 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
                               plot.getX(), plot.getRight());
 
         // (LFO) tag: same Y2K data-screen treatment as the title.
-        if (const auto* th = parvati::themeFor (*this); th != nullptr && parvati::isY2kTheme (th))
+        if (const auto* th = hellcat::themeFor (*this); th != nullptr && hellcat::isY2kTheme (th))
         {
             g.setColour (th->accentPrimary);
-            g.setFont (parvati::dataFontFor (*this, 11.0f));
+            g.setFont (hellcat::dataFontFor (*this, 11.0f));
         }
         else
         {
             g.setColour (textDim);
-            g.setFont (parvati::labelFontFor (*this, 11.0f, juce::Font::plain));
+            g.setFont (hellcat::labelFontFor (*this, 11.0f, juce::Font::plain));
         }
         g.drawText ("(LFO)",
                     bounds.reduced (9.0f, 4.0f).removeFromTop (16).removeFromRight (50),
@@ -415,8 +415,8 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     // Smooth vector trace + translucent gradient fill (unipolar, filled from the
     // baseline).
     const int sampleCount = juce::jmax (64, juce::roundToInt (plot.getWidth() * 2.0f));
-    parvati::vectorTrace::render (g, plot, sampleCount, envLevel,
-                                  trace, parvati::vectorTrace::Mode::unipolar,
+    hellcat::vectorTrace::render (g, plot, sampleCount, envLevel,
+                                  trace, hellcat::vectorTrace::Mode::unipolar,
                                   false, 1.5f, 0.12f);
 
     // ---- Live stage marker (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
@@ -428,8 +428,8 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     if (markerVisible_)
     {
         const float px = plot.getX() + markerX_ * plot.getWidth();
-        const float py = parvati::vectorTrace::levelToY (plot,
-                               parvati::vectorTrace::Mode::unipolar,
+        const float py = hellcat::vectorTrace::levelToY (plot,
+                               hellcat::vectorTrace::Mode::unipolar,
                                adsrCurveLevel (a, d, s, r, markerX_));
 
         g.setColour (trace.withAlpha (0.28f));

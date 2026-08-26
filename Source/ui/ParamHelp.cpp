@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ParamHelp.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ParamHelp.h.
 
 #include "ParamHelp.h"
 
@@ -157,11 +157,11 @@ std::unordered_map<std::string, std::string> buildHelpMap()
     // ---- Options (3) ----
     m["vca_curve"]   = "VCA response curve: Linearized or Exponential.";
     m["part_select"] = "Selects which Part (1..6) the editor edits.";
-    m["filter_card"] = "Global filter-card topology per Ambika unit: Ladder, Cascade, SVF, SMR4, Polivoks, or IR3109.";
+    m["filter_card"] = "Filter voicecard board: SMR4, 4P, SVF, Ladder, Polivoks or IR3109; SMR4 is the stock Ambika default.";
     m["filter_drive"] = "Clip and rate-limit drive for the Ladder, SMR4, IR3109, and Polivoks cards; higher values clip lower (1.2 = default).";
 
     // ---- Per-part FX (78 = 24 slot + 6 chain/master + 48 fxmod) ----
-    // Parvati-exclusive; no Ambika patch byte. Slot/fxmod entries are loop-
+    // Hellcat-exclusive; no Ambika patch byte. Slot/fxmod entries are loop-
     // generated to mirror the descriptor table (see the buildHelpMap comment).
     for (int s = 1; s <= 3; ++s)
     {
@@ -192,7 +192,7 @@ std::unordered_map<std::string, std::string> buildHelpMap()
 }
 }  // namespace
 
-const std::unordered_map<std::string, std::string>& parvatiParamHelp()
+const std::unordered_map<std::string, std::string>& hellcatParamHelp()
 {
     static const auto map = buildHelpMap();
     return map;
@@ -201,7 +201,7 @@ const std::unordered_map<std::string, std::string>& parvatiParamHelp()
 juce::String getParamHelp (const juce::String& paramID)
 {
     // 1) Curated map hit.
-    const auto& map = parvatiParamHelp();
+    const auto& map = hellcatParamHelp();
     const auto it = map.find (paramID.toStdString());
     if (it != map.end())
         return juce::String (it->second);

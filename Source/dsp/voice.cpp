@@ -469,7 +469,7 @@ void Voice::RenderOscillators() {
     base_pitch += pitch_bend_offset_;
 
     // Live part-parameter retune (tuning / spread edits on sounding voices;
-    // Parvati extension — see voice.h). Same 1/128-semitone scale.
+    // Hellcat extension — see voice.h). Same 1/128-semitone scale.
     base_pitch += live_tune_offset_;
 
     for (uint8_t i = 0; i < kNumOscillators; ++i) {
@@ -584,15 +584,15 @@ void Voice::ProcessBlock() {
     // Mix oscillators. (The glide position per sample i: start + diff*i/N;
     // both bounds hold — pos stays within [min(start,target), max(start,target)]
     // ⊂ [0, 255<<8] — so the >>8 gain is always a valid uint8_t.)
-    #define PARVATI_MIX_GLIDE(field, i) \
+    #define HELLCAT_MIX_GLIDE(field, i) \
         static_cast<uint8_t> (((field##_start + (field##_diff * static_cast<int32_t> (i)) \
                                / static_cast<int32_t> (kAudioBlockSize)) >> 8))
     switch (op) {
         case OP_RING_MOD:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_2_glide = HELLCAT_MIX_GLIDE (balance, i);
                 const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
-                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t wet_glide = HELLCAT_MIX_GLIDE (param, i);
                 const uint8_t dry_gain = static_cast<uint8_t>(~wet_glide);
                 uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
                 uint8_t ring = static_cast<uint8_t>(S8S8MulShift8(
@@ -603,9 +603,9 @@ void Voice::ProcessBlock() {
             break;
         case OP_XOR:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_2_glide = HELLCAT_MIX_GLIDE (balance, i);
                 const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
-                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t wet_glide = HELLCAT_MIX_GLIDE (param, i);
                 const uint8_t dry_gain = static_cast<uint8_t>(~wet_glide);
                 uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
                 uint8_t xord = static_cast<uint8_t>(buffer_[i] ^ osc2_buffer_[i]);
@@ -614,9 +614,9 @@ void Voice::ProcessBlock() {
             break;
         case OP_FOLD:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_2_glide = HELLCAT_MIX_GLIDE (balance, i);
                 const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
-                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t wet_glide = HELLCAT_MIX_GLIDE (param, i);
                 const uint8_t dry_gain = static_cast<uint8_t>(~wet_glide);
                 uint8_t mix = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
                 buffer_[i] = U8Mix(mix, static_cast<uint8_t>(mix + 128), dry_gain, wet_glide);
@@ -624,11 +624,11 @@ void Voice::ProcessBlock() {
             break;
         case OP_BITS:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_2_glide = HELLCAT_MIX_GLIDE (balance, i);
                 const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
                 // Same crush transform as the firmware, derived per sample
                 // from the glided wet CV (the >>5 quantization is unchanged).
-                const uint8_t wet_glide = PARVATI_MIX_GLIDE (param, i);
+                const uint8_t wet_glide = HELLCAT_MIX_GLIDE (param, i);
                 const uint8_t crush_mask = static_cast<uint8_t>(255 - ((1 << (wet_glide >> 5)) - 1));
                 buffer_[i] = static_cast<uint8_t>(U8Mix(
                     buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide) & crush_mask);
@@ -636,13 +636,13 @@ void Voice::ProcessBlock() {
             break;
         default:
             for (uint8_t i = 0; i < kAudioBlockSize; ++i) {
-                const uint8_t osc_2_glide = PARVATI_MIX_GLIDE (balance, i);
+                const uint8_t osc_2_glide = HELLCAT_MIX_GLIDE (balance, i);
                 const uint8_t osc_1_gain = static_cast<uint8_t>(~osc_2_glide);
                 buffer_[i] = U8Mix(buffer_[i], osc2_buffer_[i], osc_1_gain, osc_2_glide);
             }
             break;
     }
-    #undef PARVATI_MIX_GLIDE
+    #undef HELLCAT_MIX_GLIDE
 
     // The block has been rendered on the exact ramp; the glide position now
     // IS the target (converged in one block of change — no residual).

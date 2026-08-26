@@ -112,7 +112,7 @@ inline float SoftClip(float x) {
   }
 }
 
-// PARVATI PATCH: removed ARM inline asm for host (non-STM32) build.
+// HELLCAT PATCH: removed ARM inline asm for host (non-STM32) build.
   inline int32_t Clip16(int32_t x) {
     if (x < -32768) {
       return -32768;
@@ -132,7 +132,7 @@ inline float SoftClip(float x) {
     }
   }
   
-// PARVATI PATCH: removed ARM inline asm for host (non-STM32) build.
+// HELLCAT PATCH: removed ARM inline asm for host (non-STM32) build.
   inline float Sqrt(float x) {
     return sqrtf(x);
   }

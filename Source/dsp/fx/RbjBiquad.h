@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // RbjBiquad — the shared biquad kernel. Both biquad users in the FX tree
 // (FxChain::EqBiquad master EQ and fv1::BiquadLP in the FV-1 rate bridge)
@@ -19,7 +19,7 @@
 
 #include <cmath>
 
-namespace parvati::dsp
+namespace hellcat::dsp
 {
 
 // 2*pi as a full-precision double. Both former literals
@@ -41,4 +41,4 @@ inline float df2tProcessSample (float x, float b0, float b1, float b2,
     return y;
 }
 
-} // namespace parvati::dsp
+} // namespace hellcat::dsp

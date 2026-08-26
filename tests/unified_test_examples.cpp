@@ -1,14 +1,14 @@
 /*
  * Example tests demonstrating the unified test runner pattern.
  *
- * Compiled ONLY when PARVATI_TEST_EXAMPLES=ON (CMake option, default OFF):
+ * Compiled ONLY when HELLCAT_TEST_EXAMPLES=ON (CMake option, default OFF):
  * example_failing_test deliberately fails, which would make every default
  * full-suite run exit non-zero and mask real regressions; the other demos
- * assert nothing about Parvati. They remain here as harness documentation
+ * assert nothing about Hellcat. They remain here as harness documentation
  * and as a self-test of the runner (build with the option to see them).
  */
 
-#ifdef PARVATI_TEST_EXAMPLES
+#ifdef HELLCAT_TEST_EXAMPLES
 
 #include <cmath>
 #include "unified_test_runner.h"
@@ -59,9 +59,9 @@ TEST(example_setup_teardown) {
     return true;
 }
 
-// Example: Test with Parvati-style checks
-TEST(example_parvati_style) {
-    // Simulate some Parvati-style test
+// Example: Test with Hellcat-style checks
+TEST(example_hellcat_style) {
+    // Simulate some Hellcat-style test
     int note = 60;
     int velocity = 100;
     
@@ -100,4 +100,4 @@ TEST(example_isolation_2) {
     return true;
 }
 
-#endif  // PARVATI_TEST_EXAMPLES
+#endif  // HELLCAT_TEST_EXAMPLES

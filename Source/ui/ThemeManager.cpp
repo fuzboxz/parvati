@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 
 #include "ThemeManager.h"
 
@@ -7,12 +7,12 @@ ThemeManager::ThemeManager()
 {
 }
 
-const ParvatiTheme& ThemeManager::getCurrentTheme() const
+const HellcatTheme& ThemeManager::getCurrentTheme() const
 {
     return themes_[static_cast<size_t> (currentIndex_)];
 }
 
-const ParvatiTheme& ThemeManager::getTheme (int index) const
+const HellcatTheme& ThemeManager::getTheme (int index) const
 {
     const auto clamped = juce::jlimit (0, static_cast<int> (themes_.size()) - 1, index);
     return themes_[static_cast<size_t> (clamped)];

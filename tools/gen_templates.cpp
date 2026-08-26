@@ -1,6 +1,6 @@
 // tools/gen_templates.cpp
 //
-// Generates the 5 stock init templates as full-fidelity .parvati multis into
+// Generates the 5 stock init templates as full-fidelity .yml multis into
 // presets/TEMPLATES/. Each template — including Drum Kit (GM) — is produced by
 // applying the corresponding ARRANGEMENT preset (Source/ui/PatchArrangement.cpp
 // — the same table the Patch page's arrangement selector drives) to a FRESH
@@ -8,10 +8,12 @@
 // instead of "Custom". The Drum Kit (GM) file adds the bespoke drum CONTENT
 // (part names + tuned percussive patches) on top of the arrangement's routing
 // (6 parts x 1 mono voice, Omni, single GM note zones).
+// The files carry NO global options (vca_curve / filter_card / filter_drive):
+// a template sets arrangement and patch content only. See stripGlobalOptions.
 // Run from the repo root whenever the arrangement table or the drum kit
 // changes; the output is embedded into the plugin binary at build time.
 //
-//   cmake --build build --target parvati_gen_templates && ./build/parvati_gen_templates
+//   cmake --build build --target hellcat_gen_templates && ./build/hellcat_gen_templates
 
 #include <cstdint>
 #include <cstdio>
@@ -23,7 +25,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "PluginProcessor.h"
 #include "SynthEngine.h"
 #include "dsp/patch.h"
@@ -33,8 +35,8 @@ namespace
 {
 // One processBlock over silence: services the deferred voice-allocation
 // rebuild (applyArrangement marks it dirty) so the serialized state is
-// consistent — serializeParvatiMulti reads engine storage directly.
-void flushDeferredRebuild (ParvatiAudioProcessor& proc)
+// consistent — serializeHellcatMulti reads engine storage directly.
+void flushDeferredRebuild (HellcatAudioProcessor& proc)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -44,9 +46,24 @@ void flushDeferredRebuild (ParvatiAudioProcessor& proc)
 
 // Serialize the processor as a multi and write it to @p out ATOMICALLY
 // (TemporaryFile): either the full new file or none of it.
-bool writeMultiFile (ParvatiAudioProcessor& proc, const juce::File& out)
+//
+// GLOBAL OPTION STRIP: a stock template sets arrangement and patch content
+// ONLY. The global options (vca_curve / filter_card / filter_drive) belong
+// to the user session. The multi loader APPLIES the `options:` block, so a
+// template that carries it overrides the plugin defaults. Example: the old
+// templates carried `filter_card: 0`. Every template load reset the stock
+// SMR4 card to Ladder. The serializer emits the block LAST at column zero,
+// so the filter cuts from the `options:` header to the end. The loader
+// tolerates a missing block (it skips a null DynamicObject).
+juce::String stripGlobalOptions (const juce::String& yaml)
 {
-    const juce::String yaml = parvati::preset::serializeParvatiMulti (proc);
+    const int cut = yaml.indexOf ("\noptions:\n");
+    return cut < 0 ? yaml : yaml.substring (0, cut + 1);
+}
+
+bool writeMultiFile (HellcatAudioProcessor& proc, const juce::File& out)
+{
+    const juce::String yaml = stripGlobalOptions (hellcat::preset::serializeHellcatMulti (proc));
     juce::TemporaryFile tmp (out);
     {
         juce::FileOutputStream os (tmp.getFile());
@@ -87,7 +104,7 @@ struct ArrangementSpec
 
 bool writeArrangementTemplate (const ArrangementSpec& s, const juce::File& outDir)
 {
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);   // seeds the init patch + single-part default + Hardware
 
     SynthEngine& engine = proc.getEngine();
@@ -143,7 +160,7 @@ const DrumSpec kDrums[kNumDrums] = {
 
 bool writeDrumKitTemplate (const juce::File& outDir)
 {
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     SynthEngine& engine = proc.getEngine();
 
@@ -187,7 +204,7 @@ bool writeDrumKitTemplate (const juce::File& outDir)
     proc.setLoadedProgramName ("Drum Kit (GM)");
     flushDeferredRebuild (proc);
 
-    const juce::File out = outDir.getChildFile ("Drum Kit (GM).parvati");
+    const juce::File out = outDir.getChildFile ("Drum Kit (GM).yml");
     if (! writeMultiFile (proc, out))
         return false;
     std::printf ("  wrote %-22s  (arrangement: Drum Kit; 6 GM drums: 36/38/39/42/45/46)\n",
@@ -210,10 +227,10 @@ void verify (bool ok, const juce::String& msg)
 
 int verifyArrangementTemplate (const ArrangementSpec& s, const juce::File& outDir)
 {
-    ParvatiAudioProcessor chk;
+    HellcatAudioProcessor chk;
     chk.prepareToPlay (48000.0, 256);
     const juce::File f = outDir.getChildFile (s.file);
-    const bool loaded = chk.loadParvatiMultiFile (f);
+    const bool loaded = chk.loadHellcatMultiFile (f);
     flushDeferredRebuild (chk);   // service the deferred allocation rebuild
 
     const Arrangement inferred = inferArrangement (chk.getEngine());
@@ -225,19 +242,19 @@ int verifyArrangementTemplate (const ArrangementSpec& s, const juce::File& outDi
 
 int verifyDrumKitTemplate (const juce::File& outDir)
 {
-    ParvatiAudioProcessor chk;
+    HellcatAudioProcessor chk;
     chk.prepareToPlay (48000.0, 256);
-    const juce::File f = outDir.getChildFile ("Drum Kit (GM).parvati");
-    const bool loaded = chk.loadParvatiMultiFile (f);
+    const juce::File f = outDir.getChildFile ("Drum Kit (GM).yml");
+    const bool loaded = chk.loadHellcatMultiFile (f);
     flushDeferredRebuild (chk);
     SynthEngine& engine = chk.getEngine();
-    verify (loaded, "Drum Kit (GM).parvati loads");
+    verify (loaded, "Drum Kit (GM).yml loads");
 
     // THE point of this template: it must re-infer as the built-in Drum Kit
     // arrangement (the Patch page shows "Drum Kit", not "Custom").
     const Arrangement inferred = inferArrangement (engine);
     const bool arrPass = loaded && inferred == Arrangement::DrumKit;
-    verify (arrPass, "Drum Kit (GM).parvati: loads + infers back to 'Drum Kit' (got '"
+    verify (arrPass, "Drum Kit (GM).yml: loads + infers back to 'Drum Kit' (got '"
                         + juce::String (arrangementLabel (inferred)) + "')");
 
     int okCount = arrPass ? 2 : (loaded ? 1 : 0);
@@ -266,7 +283,7 @@ int main()
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     // Output dir = presets/TEMPLATES/ (relative to the repo root — the target is
-    // run as ./build/parvati_gen_templates from the repo root).
+    // run as ./build/hellcat_gen_templates from the repo root).
     const juce::File outDir = juce::File::getCurrentWorkingDirectory().getChildFile ("presets/TEMPLATES");
     if (! outDir.createDirectory())
     {
@@ -275,10 +292,10 @@ int main()
     }
 
     const std::vector<ArrangementSpec> specs = {
-        { "Mono.parvati",         Arrangement::Mono         },
-        { "Poly.parvati",         Arrangement::Poly         },
-        { "Unison.parvati",       Arrangement::Unison       },
-        { "Multitimbral.parvati", Arrangement::Multitimbral },
+        { "Mono.yml",         Arrangement::Mono         },
+        { "Poly.yml",         Arrangement::Poly         },
+        { "Unison.yml",       Arrangement::Unison       },
+        { "Multitimbral.yml", Arrangement::Multitimbral },
     };
 
     std::printf ("Generating %zu arrangement templates + Drum Kit (GM) -> %s\n",
@@ -301,6 +318,29 @@ int main()
     for (const auto& s : specs)
         verified += verifyArrangementTemplate (s, outDir);
     verified += verifyDrumKitTemplate (outDir);
+
+    // Global options must NOT ride a template (see stripGlobalOptions). One
+    // grep over every written file: any of the three option ids present
+    // fails the generator run. This catches a future serializer change that
+    // moves the block or renames the header.
+    {
+        const juce::String optionIds[] = { "filter_card:", "vca_curve:", "filter_drive:" };
+        const juce::Array<juce::File> written = outDir.findChildFiles (
+            juce::File::findFiles, false, "*.yml");
+        int cleanFiles = 0;
+        for (const auto& f : written)
+        {
+            const juce::String text = f.loadFileAsString();
+            bool clean = true;
+            for (const auto& id : optionIds)
+                if (text.contains (id))
+                    clean = false;
+            verify (clean, f.getFileName() + ": carries no global option");
+            if (clean) ++cleanFiles;
+        }
+        if (cleanFiles != written.size())
+            return 2;
+    }
 
     std::printf ("gen_templates verify: %d/%d passed\n", verified, total);
     if (g_verifyFailures > 0 || verified != total)

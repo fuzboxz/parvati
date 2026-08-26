@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
-// IosOpenIn — completes the iOS "Open in Parvati" loop (bug hunt 2026-08-19,
+// IosOpenIn — completes the iOS "Open in Hellcat" loop (bug hunt 2026-08-19,
 // open-in follow-up to F-ios-build-1/F-ios-files-2).
 //
 // Document types + exported UTIs were grafted into the Standalone plist
-// (ios/parvati_filetypes.plist), so iOS offers "Open in Parvati" /
-// "Copy to Parvati" for .parvati/.PRO/.MUL — but JUCE 9's iOS glue
+// (ios/hellcat_filetypes.plist), so iOS offers "Open in Hellcat" /
+// "Copy to Hellcat" for .yml/.PRO/.MUL — but JUCE 9's iOS glue
 // has NO application:openURL:options: implementation (checked: no openURL in
 // juce_Windowing_ios.mm / juce_MessageManager_ios.mm /
 // juce_audio_plugin_client; the only openURL in ~/JUCE SENDS one). Without
@@ -21,7 +21,7 @@
 //     is a clean category-style addition, no swizzling. Desktop gets an
 //     inline no-op so call sites compile everywhere.
 // The handler brackets the URL read with security-scoped resource access
-// (open-in-place delivers a scoped URL; "Copy to Parvati" Inbox copies are
+// (open-in-place delivers a scoped URL; "Copy to Hellcat" Inbox copies are
 // plain sandbox files and the bracket is a harmless no-op there).
 
 #pragma once
@@ -33,7 +33,7 @@
 
 #include "ui/PresetBrowser.h"   // importIntoUserTree (the atomic USER import)
 
-namespace parvati
+namespace hellcat
 {
 //==========================================================================
 // What kind of open-in payload a file is. The extension table is the single
@@ -41,24 +41,24 @@ namespace parvati
 // (.scl/.kbm were removed with the custom-tuning subsystem, 2026-08-19.)
 enum class OpenInKind
 {
-    None,     // not a Parvati document — ignore silently
-    Preset    // .parvati / .PRO / .MUL → import into the USER tree + load
+    None,     // not a Hellcat document — ignore silently
+    Preset    // .yml / .PRO / .MUL → import into the USER tree + load
 };
 
 /** Pure predicate: extension → OpenInKind (case-insensitive, JUCE's
-    hasFileExtension). Table-tested by parvati_ios_openin_test [3]. */
+    hasFileExtension). Table-tested by hellcat_ios_openin_test [3]. */
 inline OpenInKind openInKindForFile (const juce::File& f) noexcept
 {
-    if (f.hasFileExtension (".parvati") || f.hasFileExtension (".pro") || f.hasFileExtension (".mul"))
+    if (f.hasFileExtension (".yml") || f.hasFileExtension (".pro") || f.hasFileExtension (".mul"))
         return OpenInKind::Preset;
     return OpenInKind::None;
 }
 
-/** Route an opened document into Parvati's shared storage (PURE — the
+/** Route an opened document into Hellcat's shared storage (PURE — the
     deterministic core; no iOS APIs).
       @param source       the file iOS handed us (security-scoped bracket is
                           the CALLER's job — see installOpenInHandler)
-      @param userPatchDir the USER preset tree (the app-group Parvati/USER)
+      @param userPatchDir the USER preset tree (the app-group Hellcat/USER)
       @returns the routed destination, or the source ITSELF when it already
                lives inside the destination tree (still deliverable — do not
                duplicate), or an invalid File for non-documents / failures
@@ -103,4 +103,4 @@ inline void installOpenInHandler (const juce::File&, std::function<void (juce::F
 }
 #endif
 
-}  // namespace parvati
+}  // namespace hellcat

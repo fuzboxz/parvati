@@ -1,4 +1,4 @@
-// Reusable multi-thread test harness for Parvati.
+// Reusable multi-thread test harness for Hellcat.
 //
 // A real plugin renders on a realtime AUDIO thread while the host / GUI operate
 // on a MESSAGE thread (parameter automation, patch loads, part switches, host
@@ -19,13 +19,13 @@
 // Run under the sanitizers to surface bugs (tools/run_sanitizers.sh builds
 // the tests-only trees on demand):
 //   ThreadSanitizer  -> message<->audio data races:
-//     ./build_san_tsan/parvati_unified_tests concurrency_test
+//     ./build_san_tsan/hellcat_unified_tests concurrency_test
 //   AddressSanitizer + UBSan -> OOB reads/writes, use-after-free, UB:
-//     ./build_san_asan/parvati_unified_tests concurrency_test
+//     ./build_san_asan/hellcat_unified_tests concurrency_test
 //   Races/bugs are timing-dependent -> run a few times.
 
-#ifndef PARVATI_MT_HARNESS_H_
-#define PARVATI_MT_HARNESS_H_
+#ifndef HELLCAT_MT_HARNESS_H_
+#define HELLCAT_MT_HARNESS_H_
 
 #include <atomic>
 #include <chrono>
@@ -40,7 +40,7 @@
 #include "ParameterLayout.h"
 #include "PluginProcessor.h"
 
-namespace parvati_test
+namespace hellcat_test
 {
 
 struct Outcome
@@ -73,7 +73,7 @@ inline float randomRawValue (const PatchParamDescriptor& d, juce::Random& rng)
 // standalone default has the transport playing, so arp/seq run. If `fireMidi` is
 // set, a third thread injects random MIDI through the processor's
 // MidiMessageCollector (the thread-safe UI->audio path).
-inline Outcome runConcurrent (ParvatiAudioProcessor& proc,
+inline Outcome runConcurrent (HellcatAudioProcessor& proc,
                               const std::function<void()>& messageOp,
                               int audioBlocks,
                               int heldNote = 60,
@@ -168,12 +168,12 @@ inline Outcome runConcurrent (ParvatiAudioProcessor& proc,
 // Set an APVTS parameter by its raw (denormalized) value. Fires parameterChanged
 // synchronously on the CALLING thread -- the same path a host knob / automation
 // uses on the message thread.
-inline void setParamRaw (ParvatiAudioProcessor& proc, const char* id, float value)
+inline void setParamRaw (HellcatAudioProcessor& proc, const char* id, float value)
 {
     if (auto* p = proc.getApvts().getParameter (id))
         p->setValueNotifyingHost (p->convertTo0to1 (value));
 }
 
-}  // namespace parvati_test
+}  // namespace hellcat_test
 
-#endif  // PARVATI_MT_HARNESS_H_
+#endif  // HELLCAT_MT_HARNESS_H_

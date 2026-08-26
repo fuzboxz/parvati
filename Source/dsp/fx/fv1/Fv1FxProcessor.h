@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1FxProcessor — abstract base for the FV-1 hardware-emulation FX family
 // (Clocked Delay / Ensemble / Plate Reverb / Vinyl Compressor / Phaser). It owns
@@ -18,15 +18,15 @@
 // the wet signal). latency() is 0 (no uncompensated processing latency; musical
 // delays are NOT reported).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1FXPROCESSOR_H
-#define PARVATI_DSP_FX_FV1_FV1FXPROCESSOR_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1FXPROCESSOR_H
+#define HELLCAT_DSP_FX_FV1_FV1FXPROCESSOR_H
 
 #include <cstdint>
 
 #include "dsp/fx/FxProcessor.h"
 #include "dsp/fx/fv1/Fv1Engine.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1FxProcessor : public FxProcessor
@@ -79,6 +79,6 @@ private:
     RateBridge bridge_;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1FXPROCESSOR_H
+#endif // HELLCAT_DSP_FX_FV1_FV1FXPROCESSOR_H

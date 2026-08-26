@@ -11,8 +11,8 @@
 #   1. Configures the EXISTING canonical build_release dir (see the build
 #      policy: no new build dirs) as a TESTS-ONLY Release tree
 #      (-DPARVATI_FORMATS= -DPARVATI_BUILD_CLAP=OFF). No plugin bundle is
-#      built there; only parvati_unified_tests.
-#   2. Harvests the observed Release digests (PARVATI_GOLDEN_HARVEST=1:
+#      built there; only hellcat_unified_tests.
+#   2. Harvests the observed Release digests (HELLCAT_GOLDEN_HARVEST=1:
 #      the test prints paste-ready rows, keeps canary/determinism/energy
 #      checks, skips only the golden compare).
 #   3. Verifies: a normal run of fx_render_golden_test must be green once
@@ -42,7 +42,7 @@ JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
 LOGDIR="${TMPDIR:-/tmp}"
 LOGTAG="$$"
 DIR="$SRC/build_release"
-UNIFIED=parvati_unified_tests
+UNIFIED=hellcat_unified_tests
 TEST=fx_render_golden_test
 
 if [ ! -f "$JUCE/CMakeLists.txt" ]; then
@@ -54,25 +54,25 @@ fi
 os_arch_flag=""
 [ "$(uname -s)" = "Darwin" ] && os_arch_flag="-DCMAKE_OSX_ARCHITECTURES=arm64"
 
-echo "=== Parvati Release golden pin ($DIR, tests-only Release) ==="
+echo "=== Hellcat Release golden pin ($DIR, tests-only Release) ==="
 
 echo "--- configuring build_release as tests-only Release ---"
 cmake -S "$SRC" -B "$DIR" -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Release -DJUCE_GLOBAL_PATH="$JUCE" \
     $os_arch_flag \
     -DPARVATI_FORMATS= -DPARVATI_BUILD_CLAP=OFF \
-    > "$LOGDIR/parvati_release_cfg.$LOGTAG.log" 2>&1 \
-    || { tail -20 "$LOGDIR/parvati_release_cfg.$LOGTAG.log"; exit 2; }
+    > "$LOGDIR/hellcat_release_cfg.$LOGTAG.log" 2>&1 \
+    || { tail -20 "$LOGDIR/hellcat_release_cfg.$LOGTAG.log"; exit 2; }
 
 echo "--- building $UNIFIED (Release) ---"
 cmake --build "$DIR" --target "$UNIFIED" -j "$JOBS" \
-    > "$LOGDIR/parvati_release_build.$LOGTAG.log" 2>&1 \
-    || { tail -30 "$LOGDIR/parvati_release_build.$LOGTAG.log"; exit 2; }
+    > "$LOGDIR/hellcat_release_build.$LOGTAG.log" 2>&1 \
+    || { tail -30 "$LOGDIR/hellcat_release_build.$LOGTAG.log"; exit 2; }
 
 # Harvest: paste-ready rows. Determinism, energy and canary still gate.
-harvest_log="$LOGDIR/parvati_release_harvest.$LOGTAG.log"
+harvest_log="$LOGDIR/hellcat_release_harvest.$LOGTAG.log"
 echo "--- harvesting Release digests ($TEST) ---"
-if ! PARVATI_GOLDEN_HARVEST=1 "$DIR/$UNIFIED" "$TEST" > "$harvest_log" 2>&1; then
+if ! HELLCAT_GOLDEN_HARVEST=1 "$DIR/$UNIFIED" "$TEST" > "$harvest_log" 2>&1; then
     echo "Harvest run FAILED — the Release render is not safe to pin:" >&2
     grep -m6 -E "FAIL|broken" "$harvest_log" | sed 's/^/    /' >&2
     exit 4
@@ -83,7 +83,7 @@ if [ "$(grep -c '^HARVEST' "$harvest_log")" -ne 4 ]; then
 fi
 
 # Verify: the pinned table must make a normal run green.
-verify_log="$LOGDIR/parvati_release_verify.$LOGTAG.log"
+verify_log="$LOGDIR/hellcat_release_verify.$LOGTAG.log"
 if "$DIR/$UNIFIED" "$TEST" > "$verify_log" 2>&1; then
     echo "  RELEASE GOLDENS: PINNED AND GREEN"
     grep '^HARVEST' "$harvest_log" | sed 's/^HARVEST /  pinned: /'

@@ -16,8 +16,8 @@
 // The port is complete: every op.h operator is carried, also the ones with
 // no current caller. Unused entries stay for firmware parity and for tests.
 
-#ifndef PARVATI_DSP_FIXED_MATH_H
-#define PARVATI_DSP_FIXED_MATH_H
+#ifndef HELLCAT_DSP_FIXED_MATH_H
+#define HELLCAT_DSP_FIXED_MATH_H
 
 #include <cstdint>
 
@@ -217,4 +217,4 @@ inline uint8_t InterpolateSample(const uint8_t* table, uint16_t phase) {
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_FIXED_MATH_H
+#endif  // HELLCAT_DSP_FIXED_MATH_H

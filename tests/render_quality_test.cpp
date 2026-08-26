@@ -1,4 +1,4 @@
-// Render-quality regression test for Parvati:
+// Render-quality regression test for Hellcat:
 //   [1] Offline auto-max oversampling (setNonRealtime -> 8x filter OS, no
 //       persistence, restore on exit, double-entry guard, prepare-time leak
 //       guard).
@@ -14,7 +14,7 @@
 //   [3e] Tail-cache TEMPO-MOVE invalidation (ClockedDelay halving at 4x BPM;
 //       the <=0.25 BPM jitter gate does not recompute).
 //
-// Run: ./build_unified/parvati_unified_tests render_quality_test
+// Run: ./build_unified/hellcat_unified_tests render_quality_test
 
 #include <array>
 #include <cmath>
@@ -48,7 +48,7 @@ void checkNear (double got, double want, double tol, const char* msg)
     if (! ok) ++g_failures;
 }
 
-void renderBlock (ParvatiAudioProcessor& p, int numSamples)
+void renderBlock (HellcatAudioProcessor& p, int numSamples)
 {
     juce::AudioBuffer<float> buf (2, numSamples);
     buf.clear();
@@ -66,7 +66,7 @@ double blockPeak (const juce::AudioBuffer<float>& b, int start, int len)
 }
 
 // The persisted ui_oversampling inside a saved host state (or -1 when absent).
-int savedOversampling (ParvatiAudioProcessor& p)
+int savedOversampling (HellcatAudioProcessor& p)
 {
     juce::MemoryBlock mb;
     p.getStateInformation (mb);
@@ -101,7 +101,7 @@ TEST(render_quality_test)
     std::printf ("[1] Offline auto-max oversampling\n");
     {
         juce::ScopedJuceInitialiser_GUI juceInit;
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         p.prepareToPlay (48000.0, 256);
         renderBlock (p, 256);   // flush the initial latency report
 
@@ -146,7 +146,7 @@ TEST(render_quality_test)
     std::printf ("\n[2] Oversized-block chunked render\n");
     {
         juce::ScopedJuceInitialiser_GUI juceInit;
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         p.prepareToPlay (48000.0, 256);   // prepared budget: 256
 
         // Host hands a 4x-oversized block with a note-on at sample 0. The old
@@ -184,7 +184,7 @@ TEST(render_quality_test)
         // lives in slice 2 ([512,768)) at rebased position 88; it must begin
         // sounding near ABSOLUTE sample 600, never earlier.
         {
-            ParvatiAudioProcessor q;
+            HellcatAudioProcessor q;
             q.prepareToPlay (48000.0, 256);
             juce::AudioBuffer<float> rebuf (2, 1024);
             rebuf.clear();
@@ -206,7 +206,7 @@ TEST(render_quality_test)
         // Same contract for a note-on at EXACTLY a slice boundary (768 ==
         // start of slice 3): must fire in slice 3, not one slice early.
         {
-            ParvatiAudioProcessor q;
+            HellcatAudioProcessor q;
             q.prepareToPlay (48000.0, 256);
             juce::AudioBuffer<float> bbuf (2, 1024);
             bbuf.clear();
@@ -232,7 +232,7 @@ TEST(render_quality_test)
         // would show as a step at each 256 boundary).
         auto renderSustained = [] (bool oversized)
         {
-            ParvatiAudioProcessor p;
+            HellcatAudioProcessor p;
             p.prepareToPlay (48000.0, 256);
             juce::MidiBuffer note;
             note.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100), 0);   // low sustained note
@@ -286,7 +286,7 @@ TEST(render_quality_test)
         // accumulated block-by-block so the two means cover the SAME window,
         // long enough (64 blocks = 16384 samples ~ 22 note periods) that the
         // partial-period LF ripple averages out and the mean is DC-dominated.
-        ParvatiAudioProcessor pDC;
+        HellcatAudioProcessor pDC;
         pDC.prepareToPlay (48000.0, 256);
         setParam (pDC, "filter1_cutoff", 10);       // sub-audio cutoff -> DC-heavy
         setParam (pDC, "filter_env", 0);             // static cutoff (no env sweep)
@@ -507,7 +507,7 @@ TEST(render_quality_test)
     std::printf ("\n[3d] Processor-level tail cache\n");
     {
         juce::ScopedJuceInitialiser_GUI juceInit;
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         p.prepareToPlay (48000.0, 256);
         checkNear (p.getTailLengthSeconds(), kTailFloorSeconds, 1e-6,
                    "all-None FX -> floor (prepare-time recompute)");
@@ -570,7 +570,7 @@ TEST(render_quality_test)
     std::printf ("\n[3e] Tail-cache tempo-move invalidation (ClockedDelay)\n");
     {
         juce::ScopedJuceInitialiser_GUI juceInit;
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         FakePlayHead playHead;
         playHead.bpm = 120.0;
         p.setPlayHead (&playHead);

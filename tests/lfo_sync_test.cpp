@@ -1,4 +1,4 @@
-// Tempo-synced LFO verification for Parvati (Ambika port).
+// Tempo-synced LFO verification for Hellcat (Ambika port).
 // Drives ambika::dsp::Voice directly, reads MOD_SRC_LFO_1 each block, and
 // confirms that synced rates (env_lfo[i].rate < kNumSyncedLfoRates) lock to the
 // host BPM at the expected frequency derived from midi_clock_tick_per_step[],

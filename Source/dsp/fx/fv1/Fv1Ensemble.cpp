@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Ensemble implementation — BBD-style ensemble chorus. See Fv1Ensemble.h and
 // docs/FX_FV1_DESIGN.md for the verbatim parameter mappings and algorithm.
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // Total delay memory for this effect: two 2048-sample power-of-two rings
@@ -118,4 +118,4 @@ void Fv1Ensemble::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = readB;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

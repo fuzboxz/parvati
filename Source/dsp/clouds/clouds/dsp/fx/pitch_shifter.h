@@ -97,7 +97,7 @@ class PitchShifter {
     c.Interpolate(left, half, 1.0f - tri);
     c.Write(input_output->l, 0.0f);
 
-    // Stereo SPREAD (Parvati add) — wrap/gain-zero invariant.
+    // Stereo SPREAD (Hellcat add) — wrap/gain-zero invariant.
     //
     // A dual-tap pitch shifter reads two windows a half-window apart and
     // crossfades them with a triangle envelope (tri / 1-tri). It is
@@ -107,7 +107,7 @@ class PitchShifter {
     // The original Clouds code satisfies this by construction (both taps
     // derive from the same phase_).
     //
-    // The original Parvati stereo-spread implementation offset the R taps
+    // The original Hellcat stereo-spread implementation offset the R taps
     // by rOff = spread_ * size_ but kept the SHARED tri as the crossfade
     // envelope. The R taps then wrap at phase_ = 1 - rOff/size_ and
     // phase_ = 0.5 - rOff/size_ — points where tri is ~2*rOff/size_, NOT
@@ -157,7 +157,7 @@ class PitchShifter {
   // right channel's read window is offset by up to one full window length.
   // The offset itself is RATE-LIMITED per sample (offR_, like size_) so a
   // spread knob move glides instead of jumping the R read position.
-  // (Parvati add.)
+  // (Hellcat add.)
   inline void set_spread(float spread) {
     spread_ = spread;
   }
@@ -169,8 +169,8 @@ class PitchShifter {
   float ratio_;
   float size_;
   float target_size_;
-  float spread_;   // target normalized R-window offset (0..1) — Parvati add
-  float offR_;     // rate-limited current R-window offset (0..1) — Parvati add
+  float spread_;   // target normalized R-window offset (0..1) — Hellcat add
+  float offR_;     // rate-limited current R-window offset (0..1) — Hellcat add
   
   DISALLOW_COPY_AND_ASSIGN(PitchShifter);
 };

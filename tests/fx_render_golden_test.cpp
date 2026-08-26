@@ -30,7 +30,7 @@
 // different digests. NDEBUG splits the families: the sanitizer trees
 // stay Debug and keep the Debug table.
 // To harvest a table after an APPROVED change, run this test with
-// PARVATI_GOLDEN_HARVEST=1: it prints paste-ready rows and skips only
+// HELLCAT_GOLDEN_HARVEST=1: it prints paste-ready rows and skips only
 // the golden compare (canary, determinism and energy still gate).
 // tools/run_release_goldens.sh does this for Release and then verifies
 // the pasted table. In the default mode a mismatch prints the computed
@@ -38,7 +38,7 @@
 // paste.
 //
 // Unified runner. Run with:
-//   ./build_unified/parvati_unified_tests fx_render_golden_test
+//   ./build_unified/hellcat_unified_tests fx_render_golden_test
 
 #include <cmath>
 #include <cstdint>
@@ -112,8 +112,19 @@ Capture renderScenario (double sr, int fxType)
 {
     const int total = (int) std::llround (3.0 * sr);
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (sr, 256);
+
+    // Pin the Ladder card: the golden digests pin the FX-bridge bytes, not
+    // the synth default card. The scenarios render at resonance 0, where
+    // the Ladder path is byte-identical to the 2026-08-23 harvest.
+    // ENGINE-level pin: the APVTS option path defers through the message
+    // thread (applyOptionParameter is staged), and a headless harness has
+    // no pump between setChoice and the render. The old digests matched
+    // only because the constructor default WAS the Ladder; the SMR4 stock
+    // default (2026-08-26) exposed this. setFilterTopology stages per voice
+    // and applies on the next audio block — deterministic here.
+    proc.getEngine().setFilterTopology (ambika::dsp::FilterTopology::FOUR_POLE_LADDER);
 
     setChoice (proc, "fx1_type", fxType);
     setInt (proc, "fx1_enabled", 1);
@@ -236,10 +247,10 @@ TEST(fx_render_golden_test)
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    // Harvest mode (PARVATI_GOLDEN_HARVEST=1): print paste-ready rows and
+    // Harvest mode (HELLCAT_GOLDEN_HARVEST=1): print paste-ready rows and
     // skip only the golden compare. Canary, determinism and energy checks
     // still gate the run, so a broken render cannot be harvested.
-    const char* const harvestEnv = std::getenv ("PARVATI_GOLDEN_HARVEST");
+    const char* const harvestEnv = std::getenv ("HELLCAT_GOLDEN_HARVEST");
     const bool harvest = harvestEnv != nullptr && *harvestEnv != '\0';
 
     // The canary proves the digest reacts to a one-ulp change. A digest that

@@ -1,4 +1,4 @@
-# Parvati architecture refactor
+# Hellcat architecture refactor
 
 Goal: replace the fragile ad-hoc plumbing with a clean, modern layer. The
 Ambika DSP and the sound stay **byte-identical**. The DSP core

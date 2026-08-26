@@ -21,7 +21,7 @@
 // the SHARED static helper (PresetBrowser::importIntoUserTree) is driven
 // directly, which is the exact code the iOS path calls.
 //
-// Run: ./build_unified/parvati_unified_tests ios_file_flow_test
+// Run: ./build_unified/hellcat_unified_tests ios_file_flow_test
 
 #include <chrono>
 #include "unified_test_runner.h"
@@ -44,10 +44,10 @@ void check (bool cond, const char* msg)
     if (! cond) ++g_failures;
 }
 
-// A minimal but valid .parvati multi document (the format the picker loads and
-// the import copies — the exact text shape used by parvati_preset_test).
-const char* kParvatiMultiText =
-    "format: parvati-multi\n"
+// A minimal but valid .yml multi document (the format the picker loads and
+// the import copies — the exact text shape used by hellcat_preset_test).
+const char* kHellcatMultiText =
+    "format: hellcat-multi\n"
     "version: 1\n"
     "name: \"FlowTest\"\n"
     "parts:\n"
@@ -85,7 +85,7 @@ struct Workspace
     explicit Workspace (const juce::String& tag)
     {
         root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                   .getChildFile ("parvati_iosfileflow_" + tag);
+                   .getChildFile ("hellcat_iosfileflow_" + tag);
         root.deleteRecursively();
         root.createDirectory();
         user         = root.getChildFile ("USER");
@@ -109,10 +109,10 @@ TEST(ios_file_flow_test)
     {
         Workspace ws ("import");
 
-        // A .parvati picked from a provider location OUTSIDE the USER tree.
-        const juce::File picked = ws.root.getChildFile ("OnMyiPad").getChildFile ("Picked.parvati");
+        // A .yml picked from a provider location OUTSIDE the USER tree.
+        const juce::File picked = ws.root.getChildFile ("OnMyiPad").getChildFile ("Picked.yml");
         picked.getParentDirectory().createDirectory();
-        picked.replaceWithText (kParvatiMultiText);
+        picked.replaceWithText (kHellcatMultiText);
 
         // Extension guard: a non-preset file is never imported.
         const juce::File note = ws.root.getChildFile ("OnMyiPad").getChildFile ("readme.txt");
@@ -120,7 +120,7 @@ TEST(ios_file_flow_test)
 
         // (a) The import copies the file into USER, byte-identical.
         const juce::File imported = PresetBrowser::importIntoUserTree (picked, ws.user);
-        check (imported == ws.user.getChildFile ("Picked.parvati"),
+        check (imported == ws.user.getChildFile ("Picked.yml"),
                "[1] destination is USER/<same filename>");
         check (imported.existsAsFile(), "[1] imported file exists");
         check (filesByteEqual (imported, picked), "[1] contents byte-identical to the picked file");
@@ -128,7 +128,7 @@ TEST(ios_file_flow_test)
 
         // (b) Collision: a pre-existing USER file of the same name is
         //     OVERWRITTEN (the user just deliberately picked this file).
-        ws.user.getChildFile ("Picked.parvati").replaceWithText ("stale older copy");
+        ws.user.getChildFile ("Picked.yml").replaceWithText ("stale older copy");
         const juce::File reimported = PresetBrowser::importIntoUserTree (picked, ws.user);
         check (reimported.existsAsFile() && filesByteEqual (reimported, picked),
                "[1] name collision overwrites with the picked content");
@@ -148,14 +148,14 @@ TEST(ios_file_flow_test)
         PresetBrowser browser (ws.templates, ws.user, ws.factory, ws.factoryMulti,
                                [] (const juce::File&) {});
         juce::PopupMenu m1;
-        browser.buildMenu (m1);   // scan 1: sees Picked.parvati
+        browser.buildMenu (m1);   // scan 1: sees Picked.yml
         check (browser.debugScanCount() == 1, "[1] first open scans once");
         check (browser.debugTreeHasLeafLabel ("Picked"),
                "[1] the imported preset is in the browser's USER tree");
 
         // A LATER external pick appears at the next open the same way.
-        const juce::File later = ws.root.getChildFile ("OnMyiPad").getChildFile ("Later.parvati");
-        later.replaceWithText (kParvatiMultiText);
+        const juce::File later = ws.root.getChildFile ("OnMyiPad").getChildFile ("Later.yml");
+        later.replaceWithText (kHellcatMultiText);
         const juce::File laterImported = PresetBrowser::importIntoUserTree (later, ws.user);
         check (laterImported.existsAsFile(), "[1] second import lands");
         ws.user.setLastModificationTime (juce::Time::getCurrentTime()
@@ -174,18 +174,18 @@ TEST(ios_file_flow_test)
         // Decoy: the documented JUCE TemporaryFile shape in the TARGET dir —
         // another process's atomic template write mid-rename. Pre-fix the
         // stale-template sweep deleted it (it is not in the embedded set).
-        const juce::File decoy = ws.templates.getChildFile ("Poly_tempdeadbeef.parvati");
+        const juce::File decoy = ws.templates.getChildFile ("Poly_tempdeadbeef.yml");
         decoy.replaceWithText ("in-flight atomic write");
 
-        parvati::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
         check (decoy.existsAsFile(),
                "[2] the *_temp decoy SURVIVES the stale-template sweep");
 
         // Control: a genuinely stale non-temp template is still removed.
-        const juce::File stale = ws.templates.getChildFile ("Zzz_deffo_stale.parvati");
+        const juce::File stale = ws.templates.getChildFile ("Zzz_deffo_stale.yml");
         stale.replaceWithText ("not embedded");
-        parvati::resetInstallOnceForTest();
-        parvati::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::resetInstallOnceForTest();
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
         check (! stale.existsAsFile(), "[2] control: a stale non-temp template IS removed");
         check (decoy.existsAsFile(), "[2] control: the temp decoy still survives");
     }
@@ -198,15 +198,15 @@ TEST(ios_file_flow_test)
         // First run (no marker): full pass writes the banks + templates and
         // the completion marker. (The once-guard is process-wide — [2] already
         // ran an install on ITS dirs — so arm a fresh pass here.)
-        parvati::resetInstallOnceForTest();
-        parvati::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::resetInstallOnceForTest();
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
         const juce::File marker = ws.factory.getChildFile (".factory-install");
         check (marker.existsAsFile(), "[3] a completed pass writes the marker");
         {
             juce::String txt;
             if (juce::FileInputStream in (marker); in.openedOk())
                 txt = in.readEntireStreamAsString().trim();
-            check (txt == "installed=" + juce::String (parvati::kFactoryInstallVersion),
+            check (txt == "installed=" + juce::String (hellcat::kFactoryInstallVersion),
                    "[3] marker content carries the install version");
         }
 
@@ -215,7 +215,7 @@ TEST(ios_file_flow_test)
         ws.factory.findChildFiles (pros, juce::File::findFiles, true, "*.PRO");
         check (pros.size() > 0, "[3] factory .PRO files installed by the full pass");
         juce::Array<juce::File> pars;
-        ws.templates.findChildFiles (pars, juce::File::findFiles, false, "*.parvati");
+        ws.templates.findChildFiles (pars, juce::File::findFiles, false, "*.yml");
         check (pars.size() > 0, "[3] stock templates installed by the full pass");
         const juce::String someTemplate = pars[0].getFileName();
         const juce::MemoryBlock goodTemplate = [&]
@@ -228,8 +228,8 @@ TEST(ios_file_flow_test)
         // Corrupt the template; second run with a VALID marker takes the FAST
         // path but the TEMPLATES content-sync must still restore it.
         pars[0].replaceWithText ("user-corrupted template content");
-        parvati::resetInstallOnceForTest();
-        parvati::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::resetInstallOnceForTest();
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
         {
             juce::MemoryBlock after;
             pars[0].loadFileAsData (after);
@@ -248,8 +248,8 @@ TEST(ios_file_flow_test)
         {
             pros[0].deleteFile();
             marker.replaceWithText ("installed=garbage");
-            parvati::resetInstallOnceForTest();
-            parvati::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+            hellcat::resetInstallOnceForTest();
+            hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
             check (pros[0].existsAsFile(),
                    "[3] corrupt marker -> full pass re-extracts a deleted bank file");
         }
@@ -270,12 +270,12 @@ TEST(ios_file_flow_test)
             deep = deep.getChildFile ("x" + juce::String (i));
             deep.createDirectory();
         }
-        (void) deep.getChildFile ("TooDeep.parvati").replaceWithText (kParvatiMultiText);
+        (void) deep.getChildFile ("TooDeep.yml").replaceWithText (kHellcatMultiText);
         juce::File shallow = ws.user;
         for (int i = 0; i < 3; ++i)
             shallow = shallow.getChildFile ("s" + juce::String (i));
         shallow.createDirectory();
-        (void) shallow.getChildFile ("Shallow.parvati").replaceWithText (kParvatiMultiText);
+        (void) shallow.getChildFile ("Shallow.yml").replaceWithText (kHellcatMultiText);
 
         {
             PresetBrowser browser (ws.templates, ws.user, ws.factory, ws.factoryMulti,
@@ -299,8 +299,8 @@ TEST(ios_file_flow_test)
         //     sorted entries are considered, the rest are not.
         {
             for (int i = 0; i < 6000; ++i)
-                ws.user.getChildFile ("cap_" + juce::String (i).paddedLeft ('0', 4) + ".parvati")
-                    .replaceWithText (kParvatiMultiText);
+                ws.user.getChildFile ("cap_" + juce::String (i).paddedLeft ('0', 4) + ".yml")
+                    .replaceWithText (kHellcatMultiText);
 
             PresetBrowser browser (ws.templates, ws.user, ws.factory, ws.factoryMulti,
                                    [] (const juce::File&) {});
@@ -327,7 +327,7 @@ TEST(ios_file_flow_test)
             Workspace ws2 ("symlink");
             const juce::File real = ws2.user.getChildFile ("real");
             real.createDirectory();
-            real.getChildFile ("InsideReal.parvati").replaceWithText (kParvatiMultiText);
+            real.getChildFile ("InsideReal.yml").replaceWithText (kHellcatMultiText);
             // File::createSymbolicLink(linkAt, overwrite): the RECEIVER is
             // the target — real.createSymbolicLink(link) creates `link -> real`.
             const juce::File link = ws2.user.getChildFile ("link");
@@ -358,16 +358,16 @@ TEST(ios_file_flow_test)
     std::printf ("\n[5] syncTreeNewestWins: additive newest-wins launch mirror\n");
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                             .getChildFile ("parvati_usersync_test");
+                             .getChildFile ("hellcat_usersync_test");
         tmp.deleteRecursively();
         const auto shared = tmp.getChildFile ("SHARED_USER");   // the App-Group tree
-        const auto docs  = tmp.getChildFile ("Documents/Parvati/USER");
+        const auto docs  = tmp.getChildFile ("Documents/Hellcat/USER");
         shared.createDirectory();
 
         const auto t0 = juce::Time (1780000000000LL);   // arbitrary fixed epoch ms
-        // a.parvati: source OLDER than the dest copy -> must be SKIPPED.
-        shared.getChildFile ("a.parvati").replaceWithText ("old");
-        shared.getChildFile ("a.parvati").setLastModificationTime (t0);
+        // a.yml: source OLDER than the dest copy -> must be SKIPPED.
+        shared.getChildFile ("a.yml").replaceWithText ("old");
+        shared.getChildFile ("a.yml").setLastModificationTime (t0);
         // b.PRO: absent in dest -> copied.
         shared.getChildFile ("b.PRO").replaceWithText ("B");
         shared.getChildFile ("b.PRO").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (1000));
@@ -376,16 +376,16 @@ TEST(ios_file_flow_test)
         shared.getChildFile ("sub/c.MUL").replaceWithText ("C");
         shared.getChildFile ("sub/c.MUL").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (1000));
         // In-flight atomic write of another process -> skipped.
-        shared.getChildFile ("z_tempdead.parvati").replaceWithText ("x");
+        shared.getChildFile ("z_tempdead.yml").replaceWithText ("x");
 
-        // Pre-existing dest a.parvati NEWER than source: newest wins -> kept.
+        // Pre-existing dest a.yml NEWER than source: newest wins -> kept.
         // (Create the FULL dest chain: replaceWithText does NOT create parent
         // directories — a missing USER/ dir would fail the write silently and
         // the sync would then legitimately copy the file.)
         docs.getParentDirectory().createDirectory();
         docs.createDirectory();
-        docs.getChildFile ("a.parvati").replaceWithText ("dest-copy");
-        docs.getChildFile ("a.parvati").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (5000));
+        docs.getChildFile ("a.yml").replaceWithText ("dest-copy");
+        docs.getChildFile ("a.yml").setLastModificationTime (t0 + juce::RelativeTime::milliseconds (5000));
 
         const int copied = PresetBrowser::syncTreeNewestWins (shared, docs);
         char msg[96];
@@ -395,9 +395,9 @@ TEST(ios_file_flow_test)
                "[5] absent file copied with identical bytes");
         check (docs.getChildFile ("sub/c.MUL").loadFileAsString() == "C",
                "[5] nested file copied into the created subdir");
-        check (docs.getChildFile ("a.parvati").loadFileAsString() == "dest-copy",
+        check (docs.getChildFile ("a.yml").loadFileAsString() == "dest-copy",
                "[5] dest-newer file NOT overwritten (newest wins)");
-        check (! docs.getChildFile ("z_tempdead.parvati").existsAsFile(),
+        check (! docs.getChildFile ("z_tempdead.yml").existsAsFile(),
                "[5] in-flight *_temp file skipped");
         check (docs.getChildFile ("b.PRO").getLastModificationTime()
                    == shared.getChildFile ("b.PRO").getLastModificationTime(),

@@ -4,7 +4,7 @@
 #
 #   tools/run_tests_parallel.sh                 # all tests, N lanes (default: P-cores)
 #   tools/run_tests_parallel.sh name1 name2     # subset
-#   PARVATI_TEST_JOBS=4 tools/run_tests_parallel.sh
+#   HELLCAT_TEST_JOBS=4 tools/run_tests_parallel.sh
 #
 # WHY THIS IS SAFE (fork-per-test + one-process-per-lane):
 #   * Tests are self-contained (fresh processor per test, no cross-test state)
@@ -13,7 +13,7 @@
 #     File::tempDirectory, which on macOS resolves to
 #     $TMPDIR/<exe-name>/  (juce_Files_mac.mm:201). Each lane therefore gets a
 #     PRIVATE temp tree via its own TMPDIR, so fixed-name temp files
-#     ("b.PRO", "a.parvati", ...) cannot collide across concurrent tests.
+#     ("b.PRO", "a.yml", ...) cannot collide across concurrent tests.
 #   * No test binds sockets/ports or writes outside tempDirectory.
 #
 # Scheduling is a greedy work queue (xargs -P): known-slow tests
@@ -26,19 +26,19 @@
 #
 set -uo pipefail
 
-BIN=${PARVATI_TESTS_BIN:-build_unified/parvati_unified_tests}
-KEEP_TMP=${PARVATI_TEST_KEEP_TMP:-0}
+BIN=${HELLCAT_TESTS_BIN:-build_unified/hellcat_unified_tests}
+KEEP_TMP=${HELLCAT_TEST_KEEP_TMP:-0}
 
 if [[ ! -x "$BIN" ]]; then
     echo "error: test binary not found/executable: $BIN" >&2
-    echo "       build it: cmake --build build_unified --target parvati_unified_tests -j8" >&2
+    echo "       build it: cmake --build build_unified --target hellcat_unified_tests -j8" >&2
     exit 2
 fi
 
 # Default lane count: performance cores (avoids packing efficiency cores that
 # stretch latency-sensitive GUI/audio tests), fall back to nproc, cap at 8 so a
 # 16 GB machine never runs 12 heavy DSP/GUI tests at once.
-if [[ -z ${PARVATI_TEST_JOBS:-} ]]; then
+if [[ -z ${HELLCAT_TEST_JOBS:-} ]]; then
     if [[ "$(uname -s)" == "Darwin" ]] && sysctl -n hw.perflevel0.logicalcpu >/dev/null 2>&1; then
         JOBS=$(sysctl -n hw.perflevel0.logicalcpu)
     else
@@ -47,10 +47,10 @@ if [[ -z ${PARVATI_TEST_JOBS:-} ]]; then
     ((JOBS > 8)) && JOBS=8
     ((JOBS < 1)) && JOBS=1
 else
-    JOBS=$PARVATI_TEST_JOBS
+    JOBS=$HELLCAT_TEST_JOBS
 fi
 
-RUNROOT=$(mktemp -d "${TMPDIR:-/tmp}/parvati_ptests.XXXXXX")
+RUNROOT=$(mktemp -d "${TMPDIR:-/tmp}/hellcat_ptests.XXXXXX")
 LOGDIR="$RUNROOT/logs"
 mkdir -p "$LOGDIR"
 RESULTS="$RUNROOT/results.tsv"
@@ -72,13 +72,13 @@ else
     # ~9-minute fuzz soak that gates the wall time of the whole suite while
     # rarely being the thing under test. Run it explicitly when the DSP
     # changes:
-    #   ./build_unified/parvati_unified_tests loader_fuzz_test
+    #   ./build_unified/hellcat_unified_tests loader_fuzz_test
     #   tools/run_tests_parallel.sh loader_fuzz_test
     # (Passing it as an explicit arg still works — the exclusion below only
     # applies to the no-args default roster.)
     SKIP=(loader_fuzz_test)
     # Long poles first so the greedy queue starts them immediately.
-    SLOW=(perf_smoke_test lifecycle_test render_quality_test parvati_clouds_fx_test)
+    SLOW=(perf_smoke_test lifecycle_test render_quality_test hellcat_clouds_fx_test)
     TESTS=()
     for s in "${SLOW[@]}"; do
         [[ " ${ALL_TESTS[*]} " == *" $s "* ]] && TESTS+=("$s")
@@ -92,7 +92,7 @@ else
     echo "skipped (run explicitly when the DSP changes): ${SKIP[*]}"
 fi
 
-echo "parvati parallel test runner"
+echo "hellcat parallel test runner"
 echo "  binary : $BIN"
 echo "  tests  : ${#TESTS[@]}"
 echo "  lanes  : $JOBS"

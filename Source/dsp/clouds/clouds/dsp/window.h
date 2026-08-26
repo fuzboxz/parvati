@@ -65,7 +65,7 @@ class Window {
     phase_increment_ = phase_increment;
     phase_ = 0;
     regenerated_ = false;
-    // PARVATI PATCH: Window::Start() did not clear done_, so a window
+    // HELLCAT PATCH: Window::Start() did not clear done_, so a window
     // remained "done" after Init()/completion and OverlapAdd() returned early
     // forever -> WSOLA produced no output. The sibling grain class
     // (clouds/dsp/grain.h Grain::Start) sets `active_ = true` on Start; this is

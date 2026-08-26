@@ -3,20 +3,20 @@
 //
 // This is the consolidated regression net for the SYNTH side (106 patch/part +
 // 67 sequencer + 5 arp + 4 options = 181 params). It would otherwise be ~20
-// separate ~6.5 MB binaries; instead it is one binary that links Parvati once.
+// separate ~6.5 MB binaries; instead it is one binary that links Hellcat once.
 //
 // Strategy:
 //   * PRIMARY net: a generic byte-routing sweep — every byte-routed descriptor
 //     (osc/mix/filter/env/lfo/mod/modifier/part = 106 params) is set to several
 //     distinct values and the routed Patch/Part byte is asserted to equal
-//     parvatiValueToPatchByte(). This catches ANY broken byte routing.
+//     hellcatValueToPatchByte(). This catches ANY broken byte routing.
 //   * SECONDARY net: targeted AUDIO checks for the key audio-meaningful params
 //     (osc shape/range/detune, mixer, filter cutoff/reso/mode, env attack, LFO
 //     rate, mod-matrix VCA routing, part volume/octave) with generous but
 //     meaningful tolerances.
 //   * TERTIARY net: engine-state routing for arp/seq/option params.
 //
-// Run: ./build_unified/parvati_unified_tests synth_param_coverage_test
+// Run: ./build_unified/hellcat_unified_tests synth_param_coverage_test
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -57,7 +57,7 @@ void check (bool cond, const std::string& msg)
 }
 
 // ---- parameter setting: choice/int by descriptor, over the shared helpers ----
-void setByDescriptor (ParvatiAudioProcessor& proc, const PatchParamDescriptor& d, int value)
+void setByDescriptor (HellcatAudioProcessor& proc, const PatchParamDescriptor& d, int value)
 {
     if (d.choices != nullptr)
         setChoice (proc, d.paramID.c_str(), value);
@@ -72,7 +72,7 @@ constexpr int    kBlk  = 512;
 
 // Silences any sounding voices, then renders `blocks` blocks with a NoteOn on
 // block 0 (held). Returns the mono mix (0.5*(L+R)).
-std::vector<float> renderNote (ParvatiAudioProcessor& proc, int midi, int blocks,
+std::vector<float> renderNote (HellcatAudioProcessor& proc, int midi, int blocks,
                                float velocity = 0.8f)
 {
     proc.getEngine().allNotesOff (1, false);   // silence prior notes
@@ -131,6 +131,40 @@ double zcrOf (const std::vector<float>& x)
     return static_cast<double> (zc) / static_cast<double> (x.size() - 1);
 }
 
+// RMS of the content ABOVE cutoffHz (one-pole highpass). A card-robust
+// brightness measure: the ZCR proxy saturates on low-order cards, where the
+// fundamental dominates the crossings at every cutoff (2-pole Q 0.5 keeps
+// the fundamental at -6 dB at fc; a 24 dB/oct card buries it).
+double hfRmsOf (const std::vector<float>& x, double cutoffHz)
+{
+    const double a = std::exp (-2.0 * juce::MathConstants<double>::pi * cutoffHz / kFs);
+    double lp = 0.0, acc = 0.0;
+    size_t n = 0;
+    for (float v : x)
+    {
+        lp = a * lp + (1.0 - a) * static_cast<double> (v);
+        const double hp = static_cast<double> (v) - lp;
+        acc += hp * hp;
+        ++n;
+    }
+    return n != 0 ? std::sqrt (acc / static_cast<double> (n)) : 0.0;
+}
+
+// RMS of the content BELOW cutoffHz (one-pole lowpass output).
+double lfRmsOf (const std::vector<float>& x, double cutoffHz)
+{
+    const double a = std::exp (-2.0 * juce::MathConstants<double>::pi * cutoffHz / kFs);
+    double lp = 0.0, acc = 0.0;
+    size_t n = 0;
+    for (float v : x)
+    {
+        lp = a * lp + (1.0 - a) * static_cast<double> (v);
+        acc += lp * lp;
+        ++n;
+    }
+    return n != 0 ? std::sqrt (acc / static_cast<double> (n)) : 0.0;
+}
+
 // Autocorrelation pitch estimator (host-rate float samples).
 double detectPitchHz (const std::vector<float>& x, double fs,
                       double fMin = 80.0, double fMax = 2000.0)
@@ -175,7 +209,7 @@ bool audioFinite (const std::vector<float>& x)
 
 // ---- generic byte-routing helpers ----
 // Returns the routed byte after setting `value` and syncing the engine.
-uint8_t routedByte (ParvatiAudioProcessor& proc, const PatchParamDescriptor& d, int value)
+uint8_t routedByte (HellcatAudioProcessor& proc, const PatchParamDescriptor& d, int value)
 {
     setByDescriptor (proc, d, value);
     proc.syncAllParamsToEngine();
@@ -211,7 +245,7 @@ bool isByteRouted (const PatchParamDescriptor& d)
 // arbitrary state (e.g. mod10_source maxed to CONST_4 -> VCA, which closes the
 // VCA). Starting each audio test from the audible factory init patch makes the
 // measurements deterministic and meaningful.
-void resetToDefaults (ParvatiAudioProcessor& proc)
+void resetToDefaults (HellcatAudioProcessor& proc)
 {
     for (const auto& d : getPatchParamDescriptors())
         setByDescriptor (proc, d, d.defaultValue);
@@ -222,7 +256,7 @@ void resetToDefaults (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 1. Parameter table sanity
 // =============================================================================
-static void testParamTable (ParvatiAudioProcessor& proc)
+static void testParamTable (HellcatAudioProcessor& proc)
 {
     std::printf ("[1] Parameter table\n");
     const auto& descs = getPatchParamDescriptors();
@@ -249,7 +283,7 @@ static void testParamTable (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 2. Generic byte-routing sweep — the PRIMARY regression net (106 params)
 // =============================================================================
-static void testByteRoutingAll (ParvatiAudioProcessor& proc)
+static void testByteRoutingAll (HellcatAudioProcessor& proc)
 {
     std::printf ("[2] Generic byte-routing sweep (every patch/part param)\n");
     const auto& descs = getPatchParamDescriptors();
@@ -267,8 +301,8 @@ static void testByteRoutingAll (ParvatiAudioProcessor& proc)
         const int vC = pickValue (d, 2);   // high
         const uint8_t byteA = routedByte (proc, d, vA);
         const uint8_t byteC = routedByte (proc, d, vC);
-        const uint8_t wantA = parvatiValueToPatchByte (d, static_cast<float> (vA));
-        const uint8_t wantC = parvatiValueToPatchByte (d, static_cast<float> (vC));
+        const uint8_t wantA = hellcatValueToPatchByte (d, static_cast<float> (vA));
+        const uint8_t wantC = hellcatValueToPatchByte (d, static_cast<float> (vC));
 
         if (byteA != wantA || byteC != wantC)
         {
@@ -287,7 +321,7 @@ static void testByteRoutingAll (ParvatiAudioProcessor& proc)
     }
 
     std::printf ("     params swept: %d\n", tested);
-    check (byteMismatch == 0, "every routed byte equals parvatiValueToPatchByte()");
+    check (byteMismatch == 0, "every routed byte equals hellcatValueToPatchByte()");
     // Dead-param count is informational: a few params legitimately map min==max
     // to the same byte (e.g. a signed 0 vs a value clamping). We report it but
     // do not hard-fail — the targeted audio tests below are the real dead-param
@@ -298,7 +332,7 @@ static void testByteRoutingAll (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 3. Oscillators — audio
 // =============================================================================
-static void testOscillators (ParvatiAudioProcessor& proc)
+static void testOscillators (HellcatAudioProcessor& proc)
 {
     std::printf ("[3] Oscillator audio\n");
     resetToDefaults (proc);
@@ -385,7 +419,7 @@ static void testOscillators (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 4. Mixer — audio
 // =============================================================================
-static void testMixer (ParvatiAudioProcessor& proc)
+static void testMixer (HellcatAudioProcessor& proc)
 {
     std::printf ("[4] Mixer audio\n");
     resetToDefaults (proc);
@@ -496,27 +530,32 @@ static void testMixer (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 5. Filter — audio
 // =============================================================================
-static void testFilter (ParvatiAudioProcessor& proc)
+static void testFilter (HellcatAudioProcessor& proc)
 {
     std::printf ("[5] Filter audio\n");
     resetToDefaults (proc);
     setChoice (proc, "osc1_shape", ambika::dsp::WAVEFORM_SAW);
     setChoice (proc, "osc2_shape", ambika::dsp::WAVEFORM_NONE);
+    // The stock default card is SMR4 (4-pole, lowpass-only). The MODE checks
+    // below need a 2-pole card, so pin the SVF card explicitly.
+    setChoice (proc, "filter_card", 2);
     setChoice (proc, "filter1_mode", ambika::dsp::FILTER_MODE_LP);
     setInt (proc, "filter1_reso", 0);
     setInt (proc, "filter_env", 0);
     setInt (proc, "filter_lfo", 0);
     proc.syncAllParamsToEngine();
 
-    // cutoff low (dark, low ZCR) vs high (bright, high ZCR).
+    // cutoff low (dark) vs high (bright, high HF energy). The HF-band RMS is
+    // card-robust: ZCR saturates on 2-pole cards (the fundamental dominates
+    // the crossings at every cutoff).
     setInt (proc, "filter1_cutoff", 10);
     proc.syncAllParamsToEngine();
-    const double zLo = zcrOf (renderNote (proc, 72, 100));   // higher note => more harmonics to filter
+    const double zLo = hfRmsOf (renderNote (proc, 72, 100), 3000.0);
     setInt (proc, "filter1_cutoff", 127);
     proc.syncAllParamsToEngine();
-    const double zHi = zcrOf (renderNote (proc, 72, 100));
-    std::printf ("     cutoff 10 zcr=%.5f (dark), 127 zcr=%.5f (bright)\n", zLo, zHi);
-    check (zHi > zLo * 1.2, "filter1_cutoff high is brighter than low (ZCR)");
+    const double zHi = hfRmsOf (renderNote (proc, 72, 100), 3000.0);
+    std::printf ("     cutoff 10 hf3k=%.5f (dark), 127 hf3k=%.5f (bright)\n", zLo, zHi);
+    check (zHi > zLo * 1.2, "filter1_cutoff high is brighter than low (HF-band energy)");
 
     // resonance: 0 vs 63 at a mid cutoff adds a peak (changes the waveform).
     setInt (proc, "filter1_cutoff", 90);
@@ -530,18 +569,25 @@ static void testFilter (ParvatiAudioProcessor& proc)
     check (std::fabs (r63 - r0) > 1e-3 || zcrOf (renderNote (proc, 72, 100)) != r0,
            "filter1_reso 63 adds a resonance peak/character");
 
-    // mode: LP vs HP. At a LOW cutoff LP PASSES the fundamental (loud) while
-    // HP REMOVES it (quiet) — a clean directional difference.
-    setInt (proc, "filter1_cutoff", 18);
+    // mode: LP vs HP, by BAND ENERGY (peak comparisons ride the attack
+    // transient; band energy is linear in the spectrum). At a cutoff ABOVE
+    // the note-72 fundamental (param 60 lands the keytracked cutoff near
+    // 1.3 kHz) LP keeps the low band and HP removes it; HP stays the
+    // brighter of the two. Two-sided, so a broken mode map fails on the
+    // side it breaks.
+    setInt (proc, "filter1_cutoff", 60);
     setInt (proc, "filter1_reso", 0);
     setChoice (proc, "filter1_mode", ambika::dsp::FILTER_MODE_LP);
     proc.syncAllParamsToEngine();
-    const double lpPeak = peakOf (renderNote (proc, 72, 100));
+    const auto lpRender = renderNote (proc, 72, 100);
     setChoice (proc, "filter1_mode", ambika::dsp::FILTER_MODE_HP);
     proc.syncAllParamsToEngine();
-    const double hpPeak = peakOf (renderNote (proc, 72, 100));
-    std::printf ("     LP peak=%.4f (fundamental passes), HP peak=%.4f (fundamental cut)\n", lpPeak, hpPeak);
-    check (lpPeak > hpPeak * 1.3, "filter1_mode LP vs HP differ (LP passes, HP cuts the fundamental at low cutoff)");
+    const auto hpRender = renderNote (proc, 72, 100);
+    const double lfLP = lfRmsOf (lpRender, 300.0), lfHP = lfRmsOf (hpRender, 300.0);
+    const double hfLP = hfRmsOf (lpRender, 3000.0), hfHP = hfRmsOf (hpRender, 3000.0);
+    std::printf ("     LF(300) LP=%.5f HP=%.5f   HF(3k) LP=%.5f HP=%.5f\n", lfLP, lfHP, hfLP, hfHP);
+    check (lfLP > lfHP * 1.3, "filter1_mode LP passes the low band, HP removes it");
+    check (hfHP > hfLP * 1.5, "filter1_mode HP is the brighter mode above the cutoff");
 
     // filter_env: env->cutoff. amount 0 vs 63 changes the attack-time cutoff
     // sweep (the note's opening brightness). Use env1 (default env1->PARAM) is
@@ -561,10 +607,11 @@ static void testFilter (ParvatiAudioProcessor& proc)
     setInt (proc, "mod1_amount", 63);
     proc.syncAllParamsToEngine();
     const auto fe63 = renderNote (proc, 72, 100);
-    // Compare early-window ZCR (the env opens the filter early then decays).
-    const double e0  = zcrOf (std::vector<float> (fe0.begin(),  fe0.begin()  + 4096));
-    const double e63 = zcrOf (std::vector<float> (fe63.begin(), fe63.begin() + 4096));
-    std::printf ("     filter_env(amt0) early zcr=%.5f, (amt63) early zcr=%.5f\n", e0, e63);
+    // Compare early-window HF-band energy (the env opens the filter early,
+    // then decays). ZCR saturates on 2-pole cards (see the cutoff check).
+    const double e0  = hfRmsOf (std::vector<float> (fe0.begin(),  fe0.begin()  + 4096), 3000.0);
+    const double e63 = hfRmsOf (std::vector<float> (fe63.begin(), fe63.begin() + 4096), 3000.0);
+    std::printf ("     filter_env(amt0) early hf3k=%.5f, (amt63) early hf3k=%.5f\n", e0, e63);
     check (e63 > e0, "filter_env amount opens the cutoff on the attack (brighter early)");
 
     // restore mod1 to a clean state for later tests.
@@ -574,7 +621,7 @@ static void testFilter (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 6. Envelopes — audio (env3 -> VCA by default init patch)
 // =============================================================================
-static void testEnvelopes (ParvatiAudioProcessor& proc)
+static void testEnvelopes (HellcatAudioProcessor& proc)
 {
     std::printf ("[6] Envelope audio\n");
     resetToDefaults (proc);
@@ -632,7 +679,7 @@ static void testEnvelopes (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 7. LFOs (env-lfs + voice lfo) — audio (route lfo->cutoff, vary rate)
 // =============================================================================
-static void testLfos (ParvatiAudioProcessor& proc)
+static void testLfos (HellcatAudioProcessor& proc)
 {
     std::printf ("[7] LFO audio (route LFO->cutoff, vary rate)\n");
     resetToDefaults (proc);
@@ -704,7 +751,7 @@ static void testLfos (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 8. Modulation matrix — functional VCA routing
 // =============================================================================
-static void testModMatrix (ParvatiAudioProcessor& proc)
+static void testModMatrix (HellcatAudioProcessor& proc)
 {
     std::printf ("[8] Modulation matrix functional routing\n");
     resetToDefaults (proc);
@@ -767,7 +814,7 @@ static void testModMatrix (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 9. Part params — audio (volume/octave) + byte routing already in sweep
 // =============================================================================
-static void testPartParams (ParvatiAudioProcessor& proc)
+static void testPartParams (HellcatAudioProcessor& proc)
 {
     std::printf ("[9] Part param audio\n");
     resetToDefaults (proc);
@@ -816,7 +863,7 @@ static void testPartParams (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 10. Sequencer — routing + functional note fire
 // =============================================================================
-static void testSequencer (ParvatiAudioProcessor& proc)
+static void testSequencer (HellcatAudioProcessor& proc)
 {
     std::printf ("[10] Sequencer routing + functional\n");
     resetToDefaults (proc);
@@ -885,7 +932,7 @@ static void testSequencer (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 11. Arp — functional
 // =============================================================================
-static void testArp (ParvatiAudioProcessor& proc)
+static void testArp (HellcatAudioProcessor& proc)
 {
     std::printf ("[11] Arp functional\n");
     resetToDefaults (proc);
@@ -965,7 +1012,7 @@ static void testArp (ParvatiAudioProcessor& proc)
 // =============================================================================
 // 12. Options — vca_curve / filter_card / filter_drive / part_select
 // =============================================================================
-static void testOptions (ParvatiAudioProcessor& proc)
+static void testOptions (HellcatAudioProcessor& proc)
 {
     std::printf ("[12] Options\n");
     resetToDefaults (proc);
@@ -997,31 +1044,48 @@ static void testOptions (ParvatiAudioProcessor& proc)
     proc.syncAllParamsToEngine();
     double topoPeaks[6];
     bool topoFinite = true;
+    std::vector<float> topoRenders[6];
     for (int t = 0; t < 6; ++t)
     {
         setChoice (proc, "filter_card", t);
         proc.syncAllParamsToEngine();
-        const auto x = renderNote (proc, 72, 100);
-        topoPeaks[t] = peakOf (x);
-        if (! audioFinite (x)) topoFinite = false;
+        topoRenders[t] = renderNote (proc, 72, 100);
+        topoPeaks[t] = peakOf (topoRenders[t]);
+        if (! audioFinite (topoRenders[t])) topoFinite = false;
     }
-    std::printf ("     filter_card peaks: ladder=%.4f ssm2164=%.4f svf=%.4f ota=%.4f polivoks=%.4f ir3109=%.4f\n",
+    std::printf ("     filter_card peaks: smr4=%.4f ssm2164=%.4f svf=%.4f ladder=%.4f polivoks=%.4f ir3109=%.4f\n",
                  topoPeaks[0], topoPeaks[1], topoPeaks[2], topoPeaks[3], topoPeaks[4], topoPeaks[5]);
     check (topoFinite, "all 6 filter_card topologies render finite");
+    // Distinctness is pinned by WAVEFORM, not by peak level: the 2026-08-26
+    // resonance-law harmonization levels the cards on purpose, so peak levels
+    // may coincide by chance (ladder vs Polivoks measured 0.2156 vs 0.2147,
+    // inside the old 1e-3 peak window). Two different filter structures
+    // still render different waveforms.
+    auto waveDiff = [&topoRenders] (int a, int b)
+    {
+        const size_t n = std::min (topoRenders[a].size(), topoRenders[b].size());
+        double s = 0.0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const double d = double (topoRenders[a][i]) - double (topoRenders[b][i]);
+            s += d * d;
+        }
+        return std::sqrt (s / double (n));
+    };
     // At least two of the topologies should produce measurably different
     // output at high resonance (they are genuinely different filter designs).
-    const bool differ01 = std::fabs (topoPeaks[0] - topoPeaks[1]) > 1e-3;
-    const bool differ02 = std::fabs (topoPeaks[0] - topoPeaks[2]) > 1e-3;
-    const bool differ12 = std::fabs (topoPeaks[1] - topoPeaks[2]) > 1e-3;
-    const bool differ03 = std::fabs (topoPeaks[0] - topoPeaks[3]) > 1e-3;
-    const bool differ04 = std::fabs (topoPeaks[0] - topoPeaks[4]) > 1e-3;
+    const bool differ01 = waveDiff (0, 1) > 1e-3;
+    const bool differ02 = waveDiff (0, 2) > 1e-3;
+    const bool differ12 = waveDiff (1, 2) > 1e-3;
+    const bool differ03 = waveDiff (0, 3) > 1e-3;
+    const bool differ04 = waveDiff (0, 4) > 1e-3;
     check (differ01 || differ02 || differ12 || differ03 || differ04, "filter_card topologies produce different audio");
     check (differ03, "OTA card (index 3) sounds different from the Ladder card");
     check (differ04, "Polivoks card (index 4) sounds different from the Ladder card");
 
     // filter_drive: index 0 (1.0) vs index 7 (12.0) on the Ladder card with a
     // hot input -> saturation differs. Use a high note + high reso to push level.
-    setChoice (proc, "filter_card", 0);   // ladder (drive affects ladder only)
+    setChoice (proc, "filter_card", 3);   // Ladder (drive affects ladder only)
     setInt (proc, "filter1_reso", 55);
     setInt (proc, "filter1_cutoff", 110);
     setChoice (proc, "filter_drive", 0);  // 1.0
@@ -1065,9 +1129,9 @@ TEST(synth_param_coverage_test)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    std::printf ("=== Parvati SYNTH parameter coverage ===\n");
+    std::printf ("=== Hellcat SYNTH parameter coverage ===\n");
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     FakePlayHead playHead;
     proc.setPlayHead (&playHead);
     proc.prepareToPlay (kFs, kBlk);

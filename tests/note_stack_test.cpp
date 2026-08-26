@@ -17,7 +17,7 @@
 // when default-init desynced the pool from the sorted array — hence the
 // fresh-construction checks at the top.
 //
-// Run: ./build_unified/parvati_unified_tests note_stack_test
+// Run: ./build_unified/hellcat_unified_tests note_stack_test
 
 #include <cstdint>
 #include "unified_test_runner.h"
@@ -38,12 +38,12 @@ void check (bool cond, const char* msg)
 
 TEST(note_stack_test)
 {
-    std::printf ("=== Parvati NoteStack unit (ordering / saturation / dedup) ===\n");
+    std::printf ("=== Hellcat NoteStack unit (ordering / saturation / dedup) ===\n");
 
     // ---- Fresh construction is usable without init() (the ctor clears) ----
     std::printf ("\n[1] default construction is clear\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         check (stack.size() == 0, "fresh stack is empty");
         check (! stack.contains (60), "fresh stack contains nothing");
 
@@ -59,7 +59,7 @@ TEST(note_stack_test)
     // ---- Orderings with a 3-note chord ----
     std::printf ("\n[2] sorted (pitch) + played (insertion) orderings\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         stack.noteOn (60, 100);   // played 1st
         stack.noteOn (67, 80);    // played 2nd
         stack.noteOn (64, 90);    // played 3rd (most recent)
@@ -87,7 +87,7 @@ TEST(note_stack_test)
     // ---- noteOff removes from BOTH orderings ----
     std::printf ("\n[3] noteOff keeps both orderings consistent\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         stack.noteOn (60, 100);
         stack.noteOn (64, 90);
         stack.noteOn (67, 80);
@@ -105,7 +105,7 @@ TEST(note_stack_test)
     // ---- Re-noteOn dedup: no duplicate, moves to most-recent ----
     std::printf ("\n[4] re-noteOn dedups (no size inflation)\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         stack.noteOn (60, 100);
         stack.noteOn (64, 90);
         stack.noteOn (67, 80);
@@ -122,7 +122,7 @@ TEST(note_stack_test)
     // ---- Saturation: capacity 12 evicts the least-recently-played ----
     std::printf ("\n[5] saturation evicts least-recently-played at capacity\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         for (int n = 40; n <= 51; ++n)   // 12 distinct notes; 40 = oldest
             stack.noteOn (static_cast<uint8_t> (n), 100);
         check (stack.size() == 12, "12 noteOn -> size 12 (at capacity)");
@@ -147,7 +147,7 @@ TEST(note_stack_test)
     // ---- clear() fully resets ----
     std::printf ("\n[6] clear() resets everything\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         stack.noteOn (60, 100);
         stack.noteOn (64, 90);
         stack.clear();
@@ -161,7 +161,7 @@ TEST(note_stack_test)
     // ---- init() is an alias of clear() (firmware entry point) ----
     std::printf ("\n[7] init() == clear()\n");
     {
-        parvati::NoteStack<12> stack;
+        hellcat::NoteStack<12> stack;
         stack.noteOn (60, 100);
         stack.init();
         check (stack.size() == 0, "init -> size 0");

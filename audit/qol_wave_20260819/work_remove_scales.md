@@ -8,7 +8,7 @@
 ## Changed files (this lane only)
 - **SynthEngine.h/.cpp** — removed `Part::customTuning`/`customTuningActive`/`tuningDirty_`, `setPartTuningCustom`/`clearPartTuningCustom`, the custom branches of `resolvedTuningMode`/`resolveTuningOffsets`, and the `tuningDirty_` AT service loop. `resolvedTuningMode` is now simply `partBytes[4]`. Kept: TuningTables, raga resolution, the 32767 sentinel + `isNoteAcceptedByPartTuning`, `pushTuningToVoices` (byte-4 edits ride `frameDirty_`).
 - **PluginProcessor.cpp** — removed the `part_raga=0` custom-flag clear, the .PRO/.MUL/.parvati loader backstop clears, and the open-in `.scl/.kbm` comment/branch. `tuning_mode`/`tuning_offsets` stay in the `.parvati` part-recognition key list so legacy files still parse as valid.
-- **ParvatiPreset.cpp** — serializer no longer emits `tuning_mode`/`tuning_offsets` (raga rides `params: part_raga`). Loader accepts legacy keys: 1..32 → raga byte; 0/33 → 12-EDO. Dropped the `TuningTables.h` include.
+- **HellcatPreset.cpp** — serializer no longer emits `tuning_mode`/`tuning_offsets` (raga rides `params: part_raga`). Loader accepts legacy keys: 1..32 → raga byte; 0/33 → 12-EDO. Dropped the `TuningTables.h` include.
 - **PatchPage.h/.cpp** — removed "Custom…" (id 34), `openTuningEditor`, `tuningEditorApplied`, TuningEditor include; kept `chooseTuningMode`/`getDisplayedTuningMode`/`syncTuningDisplay` (raga-only, ids 1..33).
 - **PluginEditor.cpp** — dropped the `customTuning` flags array + dialog arg; removed the `<array>` include.
 - **MulExportDialog.h/.cpp** — removed `customTuningParts` ctor/launch param, member, and the D14 warning block (+ 2 translation lines, Translations.cpp; TuningEditor comment refs reworded).
@@ -25,7 +25,7 @@
 
 ## Tests updated
 - `tuning_test.cpp` — rewritten raga-only; NEW v7-blob backcompat case (synthesizes a real v7 layout with mode-33 tail; asserts restore succeeds, presets intact, custom dropped to zeros) + v6/v9 views; legacy `tuning_mode:33`→12-EDO and `:5`→raga-5 `.parvati` acceptance; serializer emits NO tuning keys.
-- `parvati_preset_test.cpp` [6][7] — raga-is-whole-state + no-keys-emitted round-trip.
+- `hellcat_preset_test.cpp` [6][7] — raga-is-whole-state + no-keys-emitted round-trip.
 - `ios_openin_test.cpp` — [2] now asserts `.scl/.kbm` route INVALID, no Tuning dir created, nothing in USER; kind table rows → None.
 - `shadow_state_test.cpp` / `loader_fuzz_test.cpp` / `roundtrip_golden_test.cpp` — custom pollution replaced with raga-byte pollution; fuzz `tuningMode999` mutator retargeted to an injected legacy key.
 - `editor_test.cpp` — TuningEditor sections removed; preset/12-EDO combo paths kept.

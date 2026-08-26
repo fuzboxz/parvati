@@ -1,21 +1,21 @@
 // tools/screen_shots.cpp
 //
-// Renders the Parvati editor to PNGs for the integrated (Serum-style) layout:
+// Renders the Hellcat editor to PNGs for the integrated (Serum-style) layout:
 // a SYNTH overview (the 3-row SynthWorkspace: top OSC|MIX|FILTER direct pages,
 // the full-width CentralModBar, and the bottom active-editor host + ModMatrixView),
 // one in-context shot per generator (each generator pill clicked via the
 // catalogue so its editor is surfaced in the live workspace), one standalone
-// shot per generated ParamPage (via ParvatiEditor::allGeneratedPages()), and the
+// shot per generated ParamPage (via HellcatEditor::allGeneratedPages()), and the
 // GLOBAL overlay (header button) — exactly as a user sees the plugin.
 //
-// How: instantiate the real ParvatiAudioProcessor + editor (so the
-// ParvatiLookAndFeel — system sans-serif font, colours, layout — is byte-for-byte
+// How: instantiate the real HellcatAudioProcessor + editor (so the
+// HellcatLookAndFeel — system sans-serif font, colours, layout — is byte-for-byte
 // the shipped appearance), surface each page, and paint it offscreen via
 // paintEntireComponent at 2x for AI-readable crispness. No display or
 // screen-recording permission required; fully deterministic.
 //
-// Build:   cmake --build build --target parvati_screen_shots
-// Run:     ./build/parvati_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
+// Build:   cmake --build build --target hellcat_screen_shots
+// Run:     ./build/hellcat_screen_shots [outputDir] [scale]   (defaults: ./screens, 2)
 //
 // CANONICAL (builds the tool from latest source, then runs it — never stale):
 //   cmake --build build --target screens
@@ -29,7 +29,7 @@
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
-#include "ui/ModSourceCatalog.h"   // parvati::kAllSources (generator pill set)
+#include "ui/ModSourceCatalog.h"   // hellcat::kAllSources (generator pill set)
 #include "ui/SynthWorkspace.h"     // complete type for findFirst<SynthWorkspace>
 #include "ui/FxWorkspace.h"        // complete type for findFirst<FxWorkspace>
 
@@ -156,7 +156,7 @@ int main (int argc, char** argv)
     const float scale      = argc > 2 ? std::max (1.0f, (float) std::atof (argv[2])) : 2.0f;
     outDir.createDirectory();
 
-    ParvatiAudioProcessor processor;
+    HellcatAudioProcessor processor;
     processor.prepareToPlay (48000.0, 256);
 
     auto* ed = processor.createEditor();
@@ -166,15 +166,15 @@ int main (int argc, char** argv)
         return 1;
     }
 
-    // Optional theme override: PARVATI_SHOT_THEME="Y2K" renders every shot
+    // Optional theme override: HELLCAT_SHOT_THEME="Y2K" renders every shot
     // in that theme through the REAL selection path (the Settings combo's
     // seam — selectThemeForTest), so a theme can be reviewed headlessly.
     // Unset (or unknown name) keeps the DEFAULT theme: the canonical
     // 40-screen byte-identity baseline is untouched.
-    if (const char* themeName = std::getenv ("PARVATI_SHOT_THEME"); themeName != nullptr)
-        if (auto* editor = dynamic_cast<ParvatiEditor*> (ed); editor != nullptr)
+    if (const char* themeName = std::getenv ("HELLCAT_SHOT_THEME"); themeName != nullptr)
+        if (auto* editor = dynamic_cast<HellcatEditor*> (ed); editor != nullptr)
             if (! editor->switchThemeSynchronousForTest (juce::String { themeName }))
-                std::printf ("WARN: unknown PARVATI_SHOT_THEME '%s' (using the default)\n", themeName);
+                std::printf ("WARN: unknown HELLCAT_SHOT_THEME '%s' (using the default)\n", themeName);
 
     auto* workspace = findFirst<SynthWorkspace> (ed);
 
@@ -217,12 +217,12 @@ int main (int argc, char** argv)
     //    click path) — the generator's page is reparented into the active-editor
     //    host in the live 3-row layout, then the whole editor is captured exactly
     //    as a user sees that generator selected. The catalogue drives the same
-    //    generator pages ParvatiEditor::allGeneratedPages() owns; one generator
+    //    generator pages HellcatEditor::allGeneratedPages() owns; one generator
     //    page can back several pills (Env1/2/3, LFO1..4), so a per-pill capture
     //    shows each group subset, and the bar-only NOTE sentinel is included.
     if (workspace != nullptr)
     {
-        for (const auto& src : parvati::kAllSources)
+        for (const auto& src : hellcat::kAllSources)
         {
             if (! src.isGenerator)
                 continue;
@@ -231,13 +231,13 @@ int main (int argc, char** argv)
         }
     }
 
-    // 2b) FX workspace (Parvati-exclusive). Switch the top-level page selector to
+    // 2b) FX workspace (Hellcat-exclusive). Switch the top-level page selector to
     //     the FX tab and capture the 3-row FX layout (3 slot panels | CentralModBar
     //     | shared generator editor + FxMatrixView), exactly as a user sees it.
     //     The modulator editor is SHARED with SYNTH, so each generator pill is
     //     also captured in the FX context. A populated variant (FX1 = Reverb,
     //     enabled, + an FX-matrix routing) shows the FX + matrix in action.
-    auto* editor = dynamic_cast<ParvatiEditor*> (ed);
+    auto* editor = dynamic_cast<HellcatEditor*> (ed);
     if (editor != nullptr)
     {
         editor->setFxMode (true);
@@ -248,7 +248,7 @@ int main (int argc, char** argv)
 
         // Each generator surfaced in the FX workspace (shared modulator editor).
         if (fxs != nullptr)
-            for (const auto& src : parvati::kAllSources)
+            for (const auto& src : hellcat::kAllSources)
             {
                 if (! src.isGenerator)
                     continue;

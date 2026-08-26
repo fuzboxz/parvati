@@ -1,7 +1,7 @@
-// Verifies the crafted Parvati.settings round-trip: load it exactly like the
+// Verifies the crafted Hellcat.settings round-trip: load it exactly like the
 // standalone (juce::PropertiesFile), pull filterState, push it through
 // setStateInformation, and print what the engine's FX state ends up as.
-// Build: parvati_settings_roundtrip (EXCLUDE_FROM_ALL). Run: ./p s <settingsFile>
+// Build: hellcat_settings_roundtrip (EXCLUDE_FROM_ALL). Run: ./p s <settingsFile>
 
 #include <cstdio>
 
@@ -15,11 +15,11 @@
 
 int main (int argc, char** argv)
 {
-    if (argc < 2) { std::printf ("usage: %s <Parvati.settings>\n", argv[0]); return 2; }
+    if (argc < 2) { std::printf ("usage: %s <Hellcat.settings>\n", argv[0]); return 2; }
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     juce::PropertiesFile::Options opts;
-    opts.applicationName     = "Parvati";
+    opts.applicationName     = "Hellcat";
     opts.filenameSuffix      = ".settings";
     opts.osxLibrarySubFolder = "Application Support";
     opts.folderName          = "";
@@ -34,7 +34,7 @@ int main (int argc, char** argv)
     const bool ok = data.fromBase64Encoding (b64);
     std::printf ("fromBase64Encoding: %d, %d bytes\n", (int) ok, (int) data.getSize());
 
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     if (data.getSize() > 0)
         proc.setStateInformation (data.getData(), (int) data.getSize());

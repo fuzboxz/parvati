@@ -4,7 +4,7 @@ Lane: iOS hunt 2026-08-19 remediation. KEY `uipref-race`.
 Files owned: Source/PluginProcessor.h, Source/PluginProcessor.cpp (UI-pref
 family only), tests/concurrency_test.cpp (one new section). No other files
 touched (sibling agents concurrently own PluginEditor.cpp / PresetBrowser.h /
-FactoryPresetInstaller.* / CMakeLists.txt / parvati_tests.cpp — left alone).
+FactoryPresetInstaller.* / CMakeLists.txt / hellcat_tests.cpp — left alone).
 
 ## The bug (verified against the working tree at b889205 + current)
 

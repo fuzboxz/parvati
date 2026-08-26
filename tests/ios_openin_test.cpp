@@ -1,13 +1,13 @@
 // iOS open-in routing regressions (bug hunt 2026-08-19, key: open-in).
 //
 // Completes the open-in loop's DETERMINISTIC half. Document types/UTIs are
-// declared (ios/parvati_filetypes.plist) so iOS offers "Open in Parvati" for
-// .parvati/.PRO/.MUL, and Source/ui/IosOpenIn.{h,mm} route the
-// handed file into Parvati's shared storage. The Obj-C++ delegate shim
+// declared (ios/hellcat_filetypes.plist) so iOS offers "Open in Hellcat" for
+// .yml/.PRO/.MUL, and Source/ui/IosOpenIn.{h,mm} route the
+// handed file into Hellcat's shared storage. The Obj-C++ delegate shim
 // (application:openURL:options: added to JUCE's JuceAppStartupDelegate) is
-// proven by the iOS-simulator Parvati_Standalone build; THIS test drives the
+// proven by the iOS-simulator Hellcat_Standalone build; THIS test drives the
 // pure core compiled for desktop:
-//   [1] routeOpenedFile presets: outside .parvati/.PRO/.MUL → USER tree
+//   [1] routeOpenedFile presets: outside .yml/.PRO/.MUL → USER tree
 //       (exists, bytes identical, no *_temp leftovers, collision overwrite);
 //       an already-inside file returns ITSELF without duplicating; a .txt
 //       returns invalid and imports nothing.
@@ -18,7 +18,7 @@
 //   [4] Idempotence/route failures: a nonexistent preset file routes nowhere
 //       (invalid File), a hostile extension never touches the trees.
 //
-// Run: ./build_unified/parvati_unified_tests ios_openin_test
+// Run: ./build_unified/hellcat_unified_tests ios_openin_test
 
 #include <cstdio>
 #include "unified_test_runner.h"
@@ -63,10 +63,10 @@ TEST(ios_openin_test)
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                         .getChildFile ("parvati_ios_openin_test");
+                         .getChildFile ("hellcat_ios_openin_test");
     tmp.deleteRecursively();
     const auto groupRoot = tmp.getChildFile ("group");   // stands in for the app-group root
-    const auto userDir   = groupRoot.getChildFile ("Parvati").getChildFile ("USER");
+    const auto userDir   = groupRoot.getChildFile ("Hellcat").getChildFile ("USER");
     const auto inbox     = tmp.getChildFile ("Inbox");  // stands in for iOS's copy-in location
     check (userDir.createDirectory(), "test setup: USER tree created");
     check (inbox.createDirectory(),   "test setup: Inbox stand-in created");
@@ -74,25 +74,25 @@ TEST(ios_openin_test)
     // ------------------------------------------------------------------
     std::printf ("[1] routeOpenedFile presets -> USER tree\n");
     {
-        const auto srcParvati = inbox.getChildFile ("SentPatch.parvati");
-        check (srcParvati.replaceWithText (
-                   "format: parvati-multi\nversion: 1\nname: \"Sent\"\nparts:\n"
-                   "  - name: \"A\"\n    voice_slots: 4\n"), "setup: .parvati written");
+        const auto srcHellcat = inbox.getChildFile ("SentPatch.yml");
+        check (srcHellcat.replaceWithText (
+                   "format: hellcat-multi\nversion: 1\nname: \"Sent\"\nparts:\n"
+                   "  - name: \"A\"\n    voice_slots: 4\n"), "setup: .yml written");
         const auto srcPro = inbox.getChildFile ("Sent.PRO");
         check (srcPro.replaceWithText ("pro-bytes-here"), "setup: .PRO written");
         const auto srcMul = inbox.getChildFile ("Sent.MUL");
         check (srcMul.replaceWithText ("mul-bytes-here"), "setup: .MUL written");
 
-        const auto r1 = parvati::routeOpenedFile (srcParvati, userDir);
-        check (r1 == userDir.getChildFile ("SentPatch.parvati") && r1.existsAsFile(),
-               "[1] .parvati routed into USER/<name>");
-        check (filesByteEqual (r1, srcParvati), "[1] routed .parvati bytes identical");
+        const auto r1 = hellcat::routeOpenedFile (srcHellcat, userDir);
+        check (r1 == userDir.getChildFile ("SentPatch.yml") && r1.existsAsFile(),
+               "[1] .yml routed into USER/<name>");
+        check (filesByteEqual (r1, srcHellcat), "[1] routed .yml bytes identical");
 
-        const auto r2 = parvati::routeOpenedFile (srcPro, userDir);
+        const auto r2 = hellcat::routeOpenedFile (srcPro, userDir);
         check (r2 == userDir.getChildFile ("Sent.PRO") && r2.existsAsFile()
                    && filesByteEqual (r2, srcPro),
                "[1] .PRO routed + identical");
-        const auto r3 = parvati::routeOpenedFile (srcMul, userDir);
+        const auto r3 = hellcat::routeOpenedFile (srcMul, userDir);
         check (r3 == userDir.getChildFile ("Sent.MUL") && r3.existsAsFile()
                    && filesByteEqual (r3, srcMul),
                "[1] .MUL routed + identical");
@@ -100,22 +100,22 @@ TEST(ios_openin_test)
 
         // Collision overwrite: the user re-sends an updated patch with the
         // same name — the route replaces the stale copy atomically.
-        check (srcParvati.replaceWithText (
-                   "format: parvati-multi\nversion: 1\nname: \"Sent2\"\nparts:\n"
-                   "  - name: \"A\"\n    voice_slots: 4\n"), "setup: updated .parvati");
-        const auto r1b = parvati::routeOpenedFile (srcParvati, userDir);
-        check (r1b.existsAsFile() && filesByteEqual (r1b, srcParvati),
+        check (srcHellcat.replaceWithText (
+                   "format: hellcat-multi\nversion: 1\nname: \"Sent2\"\nparts:\n"
+                   "  - name: \"A\"\n    voice_slots: 4\n"), "setup: updated .yml");
+        const auto r1b = hellcat::routeOpenedFile (srcHellcat, userDir);
+        check (r1b.existsAsFile() && filesByteEqual (r1b, srcHellcat),
                "[1] same-name re-route OVERWRITES with the new bytes");
 
         // Already-inside: deliver itself, do not duplicate.
-        const auto rInside = parvati::routeOpenedFile (r1b, userDir);
+        const auto rInside = hellcat::routeOpenedFile (r1b, userDir);
         check (rInside == r1b, "[1] already-inside preset returns ITSELF");
         check (countTempFragments (userDir) == 0, "[1] inside-route duplicated nothing");
 
         // Non-document: invalid, imports nothing.
         const auto srcTxt = inbox.getChildFile ("readme.txt");
         check (srcTxt.replaceWithText ("not a patch"), "setup: .txt written");
-        const auto rTxt = parvati::routeOpenedFile (srcTxt, userDir);
+        const auto rTxt = hellcat::routeOpenedFile (srcTxt, userDir);
         check (! rTxt.existsAsFile(), "[1] .txt routes to an INVALID File");
         check (! userDir.getChildFile ("readme.txt").existsAsFile(),
                "[1] .txt imported NOTHING into USER");
@@ -131,14 +131,14 @@ TEST(ios_openin_test)
         check (srcKbm.replaceWithText ("! map19.kbm\n 12\n 0\n 127\n 60\n 60\n 261.6255653\n 0\n"),
                "setup: .kbm written");
 
-        const auto tuningDir = groupRoot.getChildFile ("Parvati").getChildFile ("Tuning");
-        const auto rs = parvati::routeOpenedFile (srcScl, userDir);
+        const auto tuningDir = groupRoot.getChildFile ("Hellcat").getChildFile ("Tuning");
+        const auto rs = hellcat::routeOpenedFile (srcScl, userDir);
         check (rs == juce::File() && ! rs.existsAsFile(),
                "[2] .scl routes to an INVALID File (no parking)");
-        const auto rk = parvati::routeOpenedFile (srcKbm, userDir);
+        const auto rk = hellcat::routeOpenedFile (srcKbm, userDir);
         check (rk == juce::File() && ! rk.existsAsFile(),
                "[2] .kbm routes to an INVALID File (no parking)");
-        check (! tuningDir.exists(), "[2] no Parvati/Tuning directory is created");
+        check (! tuningDir.exists(), "[2] no Hellcat/Tuning directory is created");
 
         // Nothing landed inside USER either (menu stays clean).
         juce::Array<juce::File> leaves;
@@ -153,10 +153,10 @@ TEST(ios_openin_test)
     // ------------------------------------------------------------------
     std::printf ("[3] openInKindForFile extension table\n");
     {
-        using K = parvati::OpenInKind;
+        using K = hellcat::OpenInKind;
         struct Row { const char* name; K kind; };
         const Row rows[] = {
-            { "x.parvati", K::Preset }, { "x.PRO", K::Preset },
+            { "x.yml", K::Preset }, { "x.PRO", K::Preset },
             { "x.Pro", K::Preset },     { "x.pro", K::Preset },
             { "x.MUL", K::Preset },     { "x.mul", K::Preset },
             { "x.scl", K::None },       { "x.SCL", K::None },
@@ -169,21 +169,21 @@ TEST(ios_openin_test)
             const juce::File f = tmp.getChildFile (r.name);
             char msg[96];
             (void) std::snprintf (msg, sizeof (msg), "[3] %s -> kind %d", r.name, (int) r.kind);
-            check (parvati::openInKindForFile (f) == r.kind, msg);
+            check (hellcat::openInKindForFile (f) == r.kind, msg);
         }
     }
 
     // ------------------------------------------------------------------
     std::printf ("[4] route failures are inert\n");
     {
-        const auto ghost = inbox.getChildFile ("ghost.parvati");   // never written
+        const auto ghost = inbox.getChildFile ("ghost.yml");   // never written
         check (! ghost.existsAsFile(), "setup: ghost really absent");
-        const auto rGhost = parvati::routeOpenedFile (ghost, userDir);
+        const auto rGhost = hellcat::routeOpenedFile (ghost, userDir);
         check (! rGhost.existsAsFile(), "[4] nonexistent preset routes INVALID");
-        check (! userDir.getChildFile ("ghost.parvati").existsAsFile(),
+        check (! userDir.getChildFile ("ghost.yml").existsAsFile(),
                "[4] nothing materialized in USER");
         // Empty user dir (the no-app-group fallback shape): everything inert.
-        const auto rNoDir = parvati::routeOpenedFile (inbox.getChildFile ("Sent.PRO"), {});
+        const auto rNoDir = hellcat::routeOpenedFile (inbox.getChildFile ("Sent.PRO"), {});
         check (! rNoDir.existsAsFile(), "[4] empty userPatchDir routes INVALID");
     }
 

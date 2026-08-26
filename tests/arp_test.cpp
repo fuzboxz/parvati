@@ -2,7 +2,7 @@
 // multiple distinct note pitches over time when the transport is playing and
 // keys are held, and that note-offs occur between steps.
 //
-// Run: ./build_unified/parvati_unified_tests arp_test
+// Run: ./build_unified/hellcat_unified_tests arp_test
 
 #include <algorithm>
 #include "unified_test_runner.h"
@@ -35,7 +35,7 @@ void check (bool cond, const char* msg)
 
 // Render `blocks` with no MIDI (lets deferred config/mode engages service on
 // the audio thread + release tails decay).
-void renderIdleBlocks (ParvatiAudioProcessor& p, int blocks)
+void renderIdleBlocks (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -54,7 +54,7 @@ TEST(arp_test)
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
 
-    ParvatiAudioProcessor processor;
+    HellcatAudioProcessor processor;
 
     // Provide a fake play head at 120 BPM, playing.
     FakePlayHead playHead (120.0, true);
@@ -155,7 +155,7 @@ TEST(arp_test)
     // arp.noteOff unconditionally and the direct voice sustained forever).
     std::printf ("\n[arp_test] stuck-note regression: enable arp while a note sounds\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.setPlayHead (&playHead);
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
@@ -208,7 +208,7 @@ TEST(arp_test)
     // every chord voice stranded until CC123 / voice-steal.
     std::printf ("\n[arp_test] chord-direction release regression (F-eng-2)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.setPlayHead (&playHead);
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
@@ -283,7 +283,7 @@ TEST(arp_test)
     // octave-wrap loop never terminated with range 0 — an audio-thread hang).
     std::printf ("\n[arp_test] raw PartData arp bytes are clamped at staging\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (48000.0, 256);
         proc.syncAllParamsToEngine();
         auto& e = proc.getEngine();

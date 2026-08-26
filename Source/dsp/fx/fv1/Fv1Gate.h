@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Gate — classic noise/expander gate with a hard-BYPASS corner: at
 // Threshold=0 the gate is fully OPEN (transparent pass-through — the knob
@@ -13,14 +13,14 @@
 //   * Hold    (p2): 0..150 ms.
 //   * Release (p3): 5..500 ms (log).
 
-#ifndef PARVATI_DSP_FX_FV1_FV1GATE_H
-#define PARVATI_DSP_FX_FV1_FV1GATE_H
+#ifndef HELLCAT_DSP_FX_FV1_FV1GATE_H
+#define HELLCAT_DSP_FX_FV1_FV1GATE_H
 
 #include <cstdint>
 
 #include "dsp/fx/fv1/Fv1FxProcessor.h"
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 class Fv1Gate : public Fv1FxProcessor
@@ -44,6 +44,6 @@ private:
     bool  open_     = true;
 };
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1
 
-#endif // PARVATI_DSP_FX_FV1_FV1GATE_H
+#endif // HELLCAT_DSP_FX_FV1_FV1GATE_H

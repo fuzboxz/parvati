@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // MulExportDialog — the .MUL hardware-export fallback dialog. Shown when a
 // multi uses the per-part voice-slot extension beyond what the 6 hardware
@@ -7,10 +7,10 @@
 // chained Ambikas", ...), with a live description line, a one-line outcome
 // summary, and a per-part preview. The dialog is pure UI: the mapping itself
 // lives in Source/MulExport.h/.cpp (unit-tested there), and the actual file
-// writing in ParvatiAudioProcessor::saveMultiFile.
+// writing in HellcatAudioProcessor::saveMultiFile.
 
-#ifndef PARVATI_MUL_EXPORT_DIALOG_H_
-#define PARVATI_MUL_EXPORT_DIALOG_H_
+#ifndef HELLCAT_MUL_EXPORT_DIALOG_H_
+#define HELLCAT_MUL_EXPORT_DIALOG_H_
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "MulExport.h"
-#include "ParvatiLookAndFeel.h"   // F-ui-2: the dialog's OWNED theme copy
+#include "HellcatLookAndFeel.h"   // F-ui-2: the dialog's OWNED theme copy
 
 class MulExportDialog : public juce::Component
 {
@@ -30,7 +30,7 @@ public:
 
     // @p partNames: display names per part ("Kick", "Lead", ...) used in the
     // preview lines; entries may be empty ("Part N" fallback).
-    MulExportDialog (const parvati::mul_export::Setup& setup,
+    MulExportDialog (const hellcat::mul_export::Setup& setup,
                      const std::vector<juce::String>& partNames,
                      DoneCallback onDone);
 
@@ -41,7 +41,7 @@ public:
     // Show modally (desktop: a DialogWindow; headless tests instantiate the
     // component directly). Callback fires exactly once.
     static void launch (juce::Component* parent,
-                        const parvati::mul_export::Setup& setup,
+                        const hellcat::mul_export::Setup& setup,
                         const std::vector<juce::String>& partNames,
                         DoneCallback onDone);
 
@@ -58,18 +58,18 @@ public:
 
 private:
 
-    parvati::mul_export::Setup setup_;
-    parvati::mul_export::PreviewContext ctx_;
+    hellcat::mul_export::Setup setup_;
+    hellcat::mul_export::PreviewContext ctx_;
     DoneCallback onDone_;
 
     // F-ui-2 (bug hunt 2026-08-18): the DialogWindow is its OWN desktop window
     // and can OUTLIVE the launching editor (host closes the plugin window
     // while the export dialog is open) — borrowing the editor's LookAndFeel
     // painted through freed memory. The dialog therefore OWNS a
-    // ParvatiLookAndFeel copied from the parent's active theme (the owned-L&F
+    // HellcatLookAndFeel copied from the parent's active theme (the owned-L&F
     // pattern; the builtin theme structs are function-local statics in
-    // ParvatiTheme.cpp, so the copy stays valid after the editor dies).
-    std::unique_ptr<ParvatiLookAndFeel> ownedLnf_;   // null => default look (tests/null parent)
+    // HellcatTheme.cpp, so the copy stays valid after the editor dies).
+    std::unique_ptr<HellcatLookAndFeel> ownedLnf_;   // null => default look (tests/null parent)
     bool fired_ = false;
 
     juce::Label heading_;
@@ -85,4 +85,4 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MulExportDialog)
 };
 
-#endif  // PARVATI_MUL_EXPORT_DIALOG_H_
+#endif  // HELLCAT_MUL_EXPORT_DIALOG_H_

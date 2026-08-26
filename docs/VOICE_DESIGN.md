@@ -2,7 +2,7 @@
 
 This article is a detailed technical description of the **digital voice** at the
 center of the [Mutable Instruments **Ambika**](https://github.com/pichenettes/ambika)
-hybrid polysynth. It also describes how [**Parvati**](../README.md) implements
+hybrid polysynth. It also describes how [**Hellcat**](../README.md) implements
 this voice again in software. The article starts with some history and shows a
 block diagram early. It then builds up the design one component at a time. Each
 choice comes with an explanation of the *why*.
@@ -15,7 +15,7 @@ microcontroller, and how much do you deliberately keep in the analog domain?*
 The answer is the "hybrid voice". This is the central idea of this article.
 
 > The DSP described here lives, byte-for-byte, under [`Source/dsp/`](../Source/dsp).
-> Parvati keeps it **integer and bit-exact** with the original Ambika firmware
+> Hellcat keeps it **integer and bit-exact** with the original Ambika firmware
 > (in [`ambika_reference/voicecard/`](../ambika_reference), not part of the
 > tracked source). Real constant and function names are given inline, so you
 > can follow them in the code.
@@ -57,8 +57,8 @@ a microcontroller to *replace* the analog oscillator completely and to *drive*
 an analog filter. The microcontroller is the voice. The analog filter and VCA
 give the character.
 
-> **Why Parvati implements this again.** The Ambika firmware is GPL-3.0, and
-> Parvati is a faithful port. This article exists for the same reason that the
+> **Why Hellcat implements this again.** The Ambika firmware is GPL-3.0, and
+> Hellcat is a faithful port. This article exists for the same reason that the
 > integer DSP stays bit-exact instead of a float "cleanup": every quirk (the
 > 8-bit centring, the ÷256 mixers, the 24-bit phase, the control-rate block
 > size) is part of the *sound*. A change in the math changes the synth.
@@ -131,7 +131,7 @@ voice. The rest of this article describes the inside of that "digital" box.
 
 ## The internal sample rate, and why it is 39216 Hz
 
-Everything digital in an Ambika voice runs at one fixed sample rate. Parvati
+Everything digital in an Ambika voice runs at one fixed sample rate. Hellcat
 names it `kInternalSampleRate`, and the value is deliberate:
 
 ```cpp
@@ -153,7 +153,7 @@ That carrier *is* the audio sample rate. The analog filter/VCA are low-pass,
 so they remove the PWM carrier and leave the audio. The pitch increment table
 — `lut_res_oscillator_increments` — was generated for exactly this rate. A
 check of a known note in the table (MIDI 116 ≈ 6645 Hz) gives ~39218 Hz and
-confirms it. (Later, Parvati resamples this fixed-rate signal up or down to
+confirms it. (Later, Hellcat resamples this fixed-rate signal up or down to
 the sample rate that the host DAW uses. See the end of this article.)
 
 ### Why integer, fixed-point math?
@@ -165,7 +165,7 @@ The audio path is **8-bit, centred on 128**:
 * a sample of `128` is silence (the virtual ground / PWM 50% point);
 * `0` and `255` are full negative / full positive swing.
 
-Parvati does **not** "modernize" this into floats. It keeps the integer math
+Hellcat does **not** "modernize" this into floats. It keeps the integer math
 identical, in [`Source/dsp/fixed_math.h`](../Source/dsp/fixed_math.h), because
 the quirks *are* the sound. These helpers matter throughout:
 
@@ -200,7 +200,7 @@ This is the digital copy of the analog world that the Juno article describes,
 where a control voltage charges a capacitor. Here the "control voltage" is an
 8-bit value that stays constant for ~1 ms. It also causes Ambika's slightly
 *stepped* modulation character. LFOs and envelopes quantize to ~1 ms; this is
-audible and intentional. Parvati's `ProcessBlock()` honours this exactly:
+audible and intentional. Hellcat's `ProcessBlock()` honours this exactly:
 `LoadSources → ProcessModulationMatrix → UpdateDestinations` run once, then
 `RenderOscillators` fills the 40-sample block.
 
@@ -526,13 +526,13 @@ Two more modulation sources complete the system:
 * **The step sequencer** (`MOD_SRC_SEQ_1/2`) — two modulation sequences plus
   a note sequence, advanced by the transport, usable as modulation sources.
   (The arpeggiator and sequencer are controller-side features in Ambika;
-  Parvati ports them too, but they feed the same matrix.)
+  Hellcat ports them too, but they feed the same matrix.)
 
 Finally, a small but important optimization: if the computed `vca()` value
 falls below 2 (essentially silent), `ProcessBlock` takes a shortcut. It
 writes a block of silence (`128`) and does not render the oscillators at all
 (`voice.cpp`, the `if (vca() < 2)` early-out). A silent voice costs almost no
-CPU. This is how 16 voices can run on modest CPU. (Parvati also frees the
+CPU. This is how 16 voices can run on modest CPU. (Hellcat also frees the
 voice once all three envelopes reach DEAD — `envelopesDead()`. A patch with
 no ENV→VCA routing therefore still releases cleanly.)
 
@@ -543,7 +543,7 @@ no ENV→VCA routing therefore still releases cleanly.)
 We have now followed the signal all the way to the 8-bit output centred on
 128, plus a small set of computed control values (cutoff, resonance, mode,
 VCA gain). Here the design crosses from the digital microcontroller into the
-**analog voicecard hardware**. This is the one place where Parvati *cannot*
+**analog voicecard hardware**. This is the one place where Hellcat *cannot*
 be a bit-exact port, because the firmware contains **no filter code at
 all**.
 
@@ -552,18 +552,18 @@ all**.
 > 2-bit filter mode and sends them to a DAC + parallel port.*
 > — [`Source/dsp/analog_filter.h`](../Source/dsp/analog_filter.h)
 
-So the firmware's job ends at computing those integers. Parvati is a plugin
+So the firmware's job ends at computing those integers. Hellcat is a plugin
 with no analog hardware, so it must **emulate** the filter and VCA in
 software. It does so with new code (not a port) in `analog_filter.{h,cpp}`.
 The code models the three real voicecard filter boards that Ambika shipped:
 
-| Voicecard board | Filter | Parvati model |
+| Voicecard board | Filter | Hellcat model |
 |-----------------|--------|---------------|
-| SMR4 (LM13700 OTA) | 4-pole low-pass OTA cascade | Parvati models it with the Ladder card: `juce::dsp::LadderFilter`, 24 dB/oct, tanh saturation, self-oscillating (an approximation — the OTA cascade is not natively modeled) — plus a dedicated SMR4 card: custom OTA-cascade model (this repo), per-stage `gm*tanh(error/2Vt)` |
+| SMR4 (LM13700 OTA) | 4-pole low-pass OTA cascade | Hellcat models it with the Ladder card: `juce::dsp::LadderFilter`, 24 dB/oct, tanh saturation, self-oscillating (an approximation — the OTA cascade is not natively modeled) — plus a dedicated SMR4 card: custom OTA-cascade model (this repo), per-stage `gm*tanh(error/2Vt)` |
 | 4-pole SSM2164 | 4-pole cascade | a custom 4-stage one-pole cascade with feedback — "politer" than the ladder |
 | 2-pole SVF (SSM2164) | state-variable filter | `juce::dsp::StateVariableTPTFilter` — the only one that honours LP **/BP/HP/Notch** |
-| Polivoks-form SVF (Parvati extension, not an Ambika board) | 2-pole dirty SVF, LP/BP | custom ZDF model (this repo): asymmetric hard-shoulder rails (even harmonics), diode-style resonance limiting, Q-dependent damping sag, input-offset drift, asymmetric rate-limited outputs, supply clamp. Filter Drive scales the clip points and rate limits. Onset exactly at resonance 1.0. Growls at low cutoff and high resonance. |
-| IR3109 (Juno-60/106 class; Parvati extension, not an Ambika board) | 4-pole OTA cascade | custom model (this repo): the SAME structure as the SMR4 card, a calibrated sibling. Higher stage knee (0.10 — cleaner until driven), milder resonance-feedback clip, and the resonance factor capped at 3.4 BELOW the exact 4.0 onset: this card never self-oscillates (the factory-capped Juno character). The Juno sound also owes much to its BBD chorus, which a filter card cannot carry. |
+| Polivoks-form SVF (Hellcat extension, not an Ambika board) | 2-pole dirty SVF, LP/BP | custom ZDF model (this repo): asymmetric hard-shoulder rails (even harmonics), diode-style resonance limiting, Q-dependent damping sag, input-offset drift, asymmetric rate-limited outputs, supply clamp. Filter Drive scales the clip points and rate limits. Onset exactly at resonance 1.0. Growls at low cutoff and high resonance. |
+| IR3109 (Juno-60/106 class; Hellcat extension, not an Ambika board) | 4-pole OTA cascade | custom model (this repo): the SAME structure as the SMR4 card, a calibrated sibling. Higher stage knee (0.10 — cleaner until driven), milder resonance-feedback clip, and the resonance factor capped at 3.4 BELOW the exact 4.0 onset: this card never self-oscillates (the factory-capped Juno character). The Juno sound also owes much to its BBD chorus, which a filter card cannot carry. |
 
 Some engineering details matter for the *character*:
 
@@ -573,7 +573,7 @@ Some engineering details matter for the *character*:
   below self-oscillation** (`kMaxResonance = 0.95f`) for stability. The
   bounds are `kMinHz = 20` / `kMaxHz = 16000`.
 * The 4-pole boards are **low-pass only** (hardware-accurate); only the SVF
-  honours the BP/HP/Notch modes. Parvati enforces this.
+  honours the BP/HP/Notch modes. Hellcat enforces this.
 * The **VCA** is applied after the filter, just like the hardware. It has two
   response curves (`AmbikaVoice.cpp`), which mirror the firmware's log/lin
   jumper: a *linearized* mode (`gain = vca/255`) and an *exponential* ~60 dB
@@ -596,16 +596,16 @@ before rate conversion.
 
 ---
 
-## How Parvati implements it
+## How Hellcat implements it
 
-Two points tie this back to Parvati specifically:
+Two points tie this back to Hellcat specifically:
 
 **1. The digital voice is a bit-exact port.** Everything in
 [`Source/dsp/`](../Source/dsp) — the phase accumulators, the ÷256 mixers, the
 24-bit carries, the envelope's `>>8` peak of 254, the control-rate block of
 40 — matches the firmware integer-for-integer. The main structural change:
 the firmware's globals (one voicecard = one voice, everything `static`)
-become **per-instance members**, so Parvati can run 16 polyphonic voices. The
+become **per-instance members**, so Hellcat can run 16 polyphonic voices. The
 DSP math is otherwise untouched. The `Patch` struct is kept at exactly 112
 bytes. The original `.PRO`/`.MUL` patch files therefore load and save
 byte-for-byte.
@@ -632,7 +632,7 @@ stays as a feature rather than something that the code smooths away.
   `common/patch.h`. (GPL-3.0; Emilie Gillet.)
 * **Shruthi-1** — Ambika's single-voice predecessor, the clearest explanation
   of the hybrid-voice idea: <https://pichenettes.github.io/mutable-instruments-elements/shruthi-1/>.
-* **Parvati sources** —
+* **Hellcat sources** —
   [`Source/dsp/oscillator.{h,cpp}`](../Source/dsp/oscillator.h) (the oscillator),
   [`Source/dsp/voice.{h,cpp}`](../Source/dsp/voice.h) (the per-block render +
   modulation matrix), [`Source/dsp/patch.h`](../Source/dsp/patch.h) (the
@@ -640,13 +640,13 @@ stays as a feature rather than something that the code smooths away.
   (the ADSR+DEAD envelope), [`Source/dsp/analog_filter.{h,cpp}`](../Source/dsp/analog_filter.h)
   (the modeled filter), and [`Source/AmbikaVoice.cpp`](../Source/AmbikaVoice.cpp)
   (the 8-bit → filter → VCA → resample path).
-* **Parvati port spec** — [`docs/DSP_PORT_SPEC.md`](DSP_PORT_SPEC.md) for the
+* **Hellcat port spec** — [`docs/DSP_PORT_SPEC.md`](DSP_PORT_SPEC.md) for the
   full firmware→JUCE mapping and the filter-card topology notes.
 
 ---
 
-*Parvati is a derivative work of the GPL-3.0 Ambika firmware and is licensed
+*Hellcat is a derivative work of the GPL-3.0 Ambika firmware and is licensed
 under the GNU GPL v3.0. See [`LICENSE`](../LICENSE) and
 [`NOTICES.md`](../NOTICES.md). The digital voice architecture described here
 is the design of Emilie Gillet / Mutable Instruments. This article explains
-that design as realized in Parvati's code.*
+that design as realized in Hellcat's code.*

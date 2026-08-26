@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ParamPage — one page (tab) of ParamControl cells generated from the
 // descriptor table, partitioned into bordered group panels that reflow to
@@ -25,7 +25,7 @@ class ThemeManager;
 class ParamPage : public juce::Component
 {
 public:
-    ParamPage (ParvatiAudioProcessor& processor,
+    ParamPage (HellcatAudioProcessor& processor,
                ThemeManager& themeManager,
                const std::vector<const PatchParamDescriptor*>& descriptors,
                int columns, int cellWidth, int cellHeight);
@@ -113,7 +113,7 @@ public:
     juce::Component* getGroupDecorationForTest (const juce::String& groupName) const;
     juce::Component* getGroupInlinePreviewForTest (const juce::String& groupName) const;
 
-    // Headless layout check (called by parvati_editor_coverage_check): every group
+    // Headless layout check (called by hellcat_editor_coverage_check): every group
     // panel has positive size, no two panels overlap, every (active) control
     // sits inside its group, and at least one non-dense row fills the page width.
     // Returns true when the flexible-width grid is well-formed.

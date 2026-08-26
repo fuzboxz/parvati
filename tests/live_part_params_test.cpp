@@ -1,6 +1,6 @@
 // Live Patch-page part parameters: tuning, spread, volume, portamento.
 //
-// Pins the Parvati extension that Patch-page part edits reach SOUNDING
+// Pins the Hellcat extension that Patch-page part edits reach SOUNDING
 // notes: part_tuning and part_spread retune sounding voices through a
 // block-rate glide in dsp::Voice; part_volume was already live (the VCA
 // byte re-reads every block); part_portamento is read at the NEXT trigger
@@ -14,7 +14,7 @@
 //     reaches the audio path within one service block; frequency follows a
 //     tuning edit; spread beats appear; volume ramps without a step.
 //
-// Run: ./build_unified/parvati_unified_tests live_part_params_test
+// Run: ./build_unified/hellcat_unified_tests live_part_params_test
 
 #include <cmath>
 #include <cstdio>
@@ -62,7 +62,7 @@ void configureDeterministicVoice (ambika::dsp::Voice& v)
 struct RenderAccum
 {
     juce::AudioBuffer<float> buf { 2, 256 };
-    void run (ParvatiAudioProcessor& proc, int blocks)
+    void run (HellcatAudioProcessor& proc, int blocks)
     {
         for (int b = 0; b < blocks; ++b)
         {
@@ -73,7 +73,7 @@ struct RenderAccum
     }
     // Renders @p blocks; returns the mono (channel 0) samples of the LAST
     // window of @p keep blocks concatenated.
-    std::vector<float> capture (ParvatiAudioProcessor& proc, int blocks, int keep)
+    std::vector<float> capture (HellcatAudioProcessor& proc, int blocks, int keep)
     {
         std::vector<float> out;
         out.reserve (static_cast<size_t> (keep) * 256);
@@ -138,14 +138,14 @@ double frameRmsCv (const std::vector<float>& s)
 // This helper zeroes the vibrato slot and silences osc2, leaving ONE clean
 // bandlimited saw (correct absolute pitch; one zero crossing per cycle).
 // mod11 (ENV_3 -> VCA 63) stays: the note needs it to sound.
-void makeDeterministicPatch (ParvatiAudioProcessor& proc)
+void makeDeterministicPatch (HellcatAudioProcessor& proc)
 {
     setChoice (proc, "osc2_shape", 0);    // None (single-oscillator patch)
     setInt (proc, "mod14_amount", 0);     // kill LFO_4 -> OSC coarse (the vibrato)
 }
 
 // The first ACTIVE AmbikaVoice owned by @p part (or null).
-AmbikaVoice* firstActiveVoice (ParvatiAudioProcessor& proc, int part)
+AmbikaVoice* firstActiveVoice (HellcatAudioProcessor& proc, int part)
 {
     auto& e = proc.getEngine();
     for (int i = 0; i < kNumVoices; ++i)
@@ -259,7 +259,7 @@ TEST(live_part_params_test)
     // ======================================================================
     std::printf ("[3] processor: a part_tuning edit retunes the sounding note (audible)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (44100.0, 256);
         makeDeterministicPatch (proc);
         RenderAccum ra;
@@ -290,7 +290,7 @@ TEST(live_part_params_test)
     // ======================================================================
     std::printf ("[4] processor: a part_spread edit re-drifts a MONO unison (beats appear)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (44100.0, 256);
         makeDeterministicPatch (proc);
         setChoice (proc, "part_polyphony", 0);                       // MONO: all voices, ordinal drift
@@ -328,7 +328,7 @@ TEST(live_part_params_test)
     // ======================================================================
     std::printf ("[5] processor: part_volume ramps the sounding note without a step\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (44100.0, 256);
         makeDeterministicPatch (proc);
         RenderAccum ra;
@@ -367,7 +367,7 @@ TEST(live_part_params_test)
     // ======================================================================
     std::printf ("[6] processor: part_octave applies at the NEXT trigger (by design)\n");
     {
-        ParvatiAudioProcessor proc;
+        HellcatAudioProcessor proc;
         proc.prepareToPlay (44100.0, 256);
         makeDeterministicPatch (proc);
         RenderAccum ra;

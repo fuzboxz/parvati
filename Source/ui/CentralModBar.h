@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // CentralModBar — a self-contained, single-row strip of micro-pills, one per
 // MOD_SRC_* modulation source, grouped into the 7 ModSourceCatalog clusters
@@ -23,14 +23,14 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "ModSourceCatalog.h"   // parvati::Cluster (per-segment family colour in paintSegments)
-#include "ModTelemetryTypes.h"  // parvati::ModTelemetrySnapshot (live history-strip telemetry)
+#include "ModSourceCatalog.h"   // hellcat::Cluster (per-segment family colour in paintSegments)
+#include "ModTelemetryTypes.h"  // hellcat::ModTelemetrySnapshot (live history-strip telemetry)
 
 #include <functional>
 #include <memory>
 #include <vector>
 
-#include "ParvatiTheme.h"
+#include "HellcatTheme.h"
 #include "ThemeManager.h"
 
 //==============================================================================
@@ -79,7 +79,7 @@ public:
     // data returns) and pushes each source's recent history into its pill as
     // the bottom-strip sparkline. Repaints are per-pill and bounded to the
     // strip rect only; signature-identical frames cost nothing.
-    void setTelemetryProvider (std::function<bool (parvati::ModTelemetrySnapshot&)> fetch);
+    void setTelemetryProvider (std::function<bool (hellcat::ModTelemetrySnapshot&)> fetch);
 
     /** Animation cadence for the strips (Hz). Valid rates clamp to 5..60; 0
         DISABLES the poll entirely. Takes effect immediately (restarts the
@@ -139,7 +139,7 @@ public:
 
     //==========================================================================
     // Public accessors used by the file-local pill component.
-    const ParvatiTheme& theme() const;
+    const HellcatTheme& theme() const;
     juce::Font          pillFont() const;   // font used to draw + measure pills
 
     //==========================================================================
@@ -219,14 +219,14 @@ private:
     // computeLayout/preferredWidth are const.
     mutable juce::Array<juce::Rectangle<int>> segmentRects_;
     mutable juce::Array<juce::String>         segmentLabels_;
-    mutable juce::Array<parvati::Cluster>     segmentClusters_;   // per-segment cluster (the tab's family colour)
+    mutable juce::Array<hellcat::Cluster>     segmentClusters_;   // per-segment cluster (the tab's family colour)
 
     // ---- live telemetry state (docs/LIVE_MOD_FEEDBACK_DESIGN.md) ----
     // The fetcher the editor binds (typically engine.readUiTelemetry through
     // the LiveFeedbackHub). The frame is consumed INSIDE timerCallback only
     // (the per-pill caches hold what is actually drawn), so no member copy is
     // retained — a ~4 KB per-tick store nobody read was removed (review nit).
-    std::function<bool (parvati::ModTelemetrySnapshot&)> telemetryFetch_;
+    std::function<bool (hellcat::ModTelemetrySnapshot&)> telemetryFetch_;
     int telemetryRateHz_     = 30;   // 5..60, 0 = disabled — the FETCH rate
     int telemetryGeneration_ = 0;    // TEST-ONLY (see telemetryGeneration())
     int tickCounter_         = 0;   // fetch decimation vs the display rate

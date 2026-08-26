@@ -1,7 +1,7 @@
 // Polyphony mode test — verifies the 5 firmware modes (Mono/Poly/Unison2x/
 // Cyclic/Chain) drive the engine's voice allocator faithfully.
 //
-// Harness: a ParvatiAudioProcessor; part 0 is given a known voice set via
+// Harness: a HellcatAudioProcessor; part 0 is given a known voice set via
 // setPartVoiceAllocation; notes are played on MIDI channel 1 (part 0's default
 // channel) and the active voices are inspected on the engine.
 
@@ -26,7 +26,7 @@ namespace
 int g_failures = 0;
 void check (bool cond, const char* msg) { std::printf ("  %s: %s\n", cond ? "ok  " : "FAIL", msg); if (! cond) ++g_failures; }
 
-void renderIdle (ParvatiAudioProcessor& p, int blocks)
+void renderIdle (HellcatAudioProcessor& p, int blocks)
 {
     for (int i = 0; i < blocks; ++i)
     {
@@ -37,7 +37,7 @@ void renderIdle (ParvatiAudioProcessor& p, int blocks)
     }
 }
 
-void noteEvent (ParvatiAudioProcessor& p, const juce::MidiMessage& m)
+void noteEvent (HellcatAudioProcessor& p, const juce::MidiMessage& m)
 {
     juce::AudioBuffer<float> buf (2, 256);
     buf.clear();
@@ -49,7 +49,7 @@ void noteEvent (ParvatiAudioProcessor& p, const juce::MidiMessage& m)
 // Render `blocks` audio blocks (no MIDI) and return the mono sum of samples.
 // The SAW/SQUARE path (init patch) has no routed noise/random, so output is
 // deterministic for a given patch + trigger — enabling a clean A/B diff.
-std::vector<float> renderMono (ParvatiAudioProcessor& p, int blocks)
+std::vector<float> renderMono (HellcatAudioProcessor& p, int blocks)
 {
     std::vector<float> out;
     for (int i = 0; i < blocks; ++i)
@@ -98,7 +98,7 @@ int activeVoices (SynthEngine& e, int part, std::set<int>& pitches)
 // Set part 0's polyphony mode (1-based choice index) and apply it.
 // The mode engage is DEFERRED to the audio thread (markAllocationDirty), so we
 // process one idle block to service it before the caller inspects state.
-void setMode (ParvatiAudioProcessor& p, int modeIndex)
+void setMode (HellcatAudioProcessor& p, int modeIndex)
 {
     p.getApvts().getParameterAsValue ("part_polyphony") = static_cast<float> (modeIndex);
     p.syncAllParamsToEngine();
@@ -111,7 +111,7 @@ TEST(polyphony_test)
     juce::MessageManager::getInstance();
     juce::ScopedJuceInitialiser_GUI guiInit;
 
-    ParvatiAudioProcessor processor;
+    HellcatAudioProcessor processor;
     processor.prepareToPlay (48000.0, 256);
     processor.syncAllParamsToEngine();
 
@@ -136,7 +136,7 @@ TEST(polyphony_test)
     // ---- (a) part_polyphony routes + default is Poly (1) ----
     std::printf ("[a] part_polyphony routing + default\n");
     {
-        ParvatiAudioProcessor fresh;
+        HellcatAudioProcessor fresh;
         fresh.prepareToPlay (48000.0, 256);
         const float def = fresh.getApvts().getRawParameterValue ("part_polyphony")->load();
         std::printf ("     default part_polyphony = %.0f (expect 1 Poly)\n", def);
@@ -317,7 +317,7 @@ TEST(polyphony_test)
     // voice once ALL three envelopes reach DEAD.
     std::printf ("\n[h] released voice frees with no ENV->VCA routing (envelopesDead)\n");
     {
-        ParvatiAudioProcessor p;
+        HellcatAudioProcessor p;
         p.prepareToPlay (48000.0, 256);
         p.syncAllParamsToEngine();
         SynthEngine& e = p.getEngine();

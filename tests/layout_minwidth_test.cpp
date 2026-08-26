@@ -1,6 +1,6 @@
 // Min-width header layout sweep (deterministic tooling, tool 11).
 //
-// The bug class: ParvatiEditor::resized() packs the header from FIXED budgets
+// The bug class: HellcatEditor::resized() packs the header from FIXED budgets
 // (right cluster ~486pt of icon buttons + Load/Save, logo block, then the left
 // cluster preset/Patch/Part/Synth/FX), and juce::Rectangle::removeFromLeft/
 // Right CLIP to the remaining width. Below the budget the left-cluster controls
@@ -41,7 +41,7 @@
 // and the historical 38-of-50 squeeze, and must PASS a compliant layout — a
 // checker that cannot fail cannot gate anything.
 //
-// Run: ./build_unified/parvati_unified_tests layout_minwidth_test
+// Run: ./build_unified/hellcat_unified_tests layout_minwidth_test
 
 #include <cxxabi.h>
 #include "unified_test_runner.h"
@@ -171,7 +171,7 @@ struct HeaderChild
 // Collect the header interactive set: effectively-visible Button/ComboBox
 // descendants up to depth 2 (editor -> child -> grandchild), intersecting the
 // header strip, not parked fully offscreen (the closed Settings drawer).
-std::vector<HeaderChild> collectHeaderChildren (ParvatiEditor& editor)
+std::vector<HeaderChild> collectHeaderChildren (HellcatEditor& editor)
 {
     std::vector<HeaderChild> out;
     const auto editorBounds = editor.getLocalBounds();
@@ -208,21 +208,21 @@ std::vector<HeaderChild> collectHeaderChildren (ParvatiEditor& editor)
 // Locate the four reference controls for the [2] natural-width check.
 // presetBrowser_ by type, partCombo_ as the lone direct ComboBox in the band,
 // the buttons by their unique texts.
-juce::Component* findPresetBrowser (ParvatiEditor& e)
+juce::Component* findPresetBrowser (HellcatEditor& e)
 {
     for (auto* c : e.getChildren())
         if (auto* pb = dynamic_cast<PresetBrowser*> (c); pb != nullptr && isEffectivelyVisible (pb))
             return pb;
     return nullptr;
 }
-juce::Component* findPartCombo (ParvatiEditor& e)
+juce::Component* findPartCombo (HellcatEditor& e)
 {
     for (auto* c : e.getChildren())
         if (dynamic_cast<juce::ComboBox*> (c) != nullptr && isEffectivelyVisible (c))
             return c;
     return nullptr;
 }
-juce::Component* findTextButton (ParvatiEditor& e, const char* text)
+juce::Component* findTextButton (HellcatEditor& e, const char* text)
 {
     for (auto* c : e.getChildren())
         if (auto* b = dynamic_cast<juce::TextButton*> (c))
@@ -273,7 +273,7 @@ bool isAllowlistedContentButton (const juce::String& name, int /*w*/, int /*h*/)
     return false;
 }
 
-void sweepContentButtons (ParvatiEditor& editor, int w)
+void sweepContentButtons (HellcatEditor& editor, int w)
 {
     std::vector<ContentButton> buttons;
     collectContentButtons (&editor, juce::Point<int> (0, 0), buttons);
@@ -304,7 +304,7 @@ void sweepContentButtons (ParvatiEditor& editor, int w)
 //==============================================================================
 // Locate a direct-child Button by NAME (the W9 seam: the Path-drawn
 // IconButtons carry no text, so the header ctor names the primary-set ones).
-juce::Component* findNamedButton (ParvatiEditor& e, const char* name)
+juce::Component* findNamedButton (HellcatEditor& e, const char* name)
 {
     for (auto* c : e.getChildren())
         if (dynamic_cast<juce::Button*> (c) != nullptr && c->getName() == name)
@@ -313,7 +313,7 @@ juce::Component* findNamedButton (ParvatiEditor& e, const char* name)
 }
 
 //==============================================================================
-void sweepWidth (ParvatiEditor& editor, int w)
+void sweepWidth (HellcatEditor& editor, int w)
 {
     std::printf ("\n=== %dx600 ===\n", w);
     editor.setSize (w, 600);
@@ -498,15 +498,15 @@ TEST(layout_minwidth_test)
     // at ANY pane size. iOS-vs-desktop is not distinguishable headlessly;
     // these widths assert the PURE layout contract (see [4]).
     // ------------------------------------------------------------------
-    ParvatiAudioProcessor proc;
+    HellcatAudioProcessor proc;
     proc.prepareToPlay (48000.0, 256);
 
     auto* editorRaw = proc.createEditor();
     check (editorRaw != nullptr, "editor constructs");
     if (editorRaw == nullptr)
         return false;
-    auto* editor = dynamic_cast<ParvatiEditor*> (editorRaw);
-    check (editor != nullptr, "editor is a ParvatiEditor");
+    auto* editor = dynamic_cast<HellcatEditor*> (editorRaw);
+    check (editor != nullptr, "editor is a HellcatEditor");
     if (editor == nullptr)
     {
         delete editorRaw;

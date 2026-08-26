@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See FxSlotLabels.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxSlotLabels.h.
 //
 // Definitions of the per-FX-type active-parameter count + semantic short labels.
 // These are at GLOBAL scope (not an anonymous namespace) so they have external

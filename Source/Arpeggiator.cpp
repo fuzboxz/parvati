@@ -1,8 +1,8 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See Arpeggiator.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See Arpeggiator.h.
 
 #include "Arpeggiator.h"
 
-namespace parvati
+namespace hellcat
 {
 
 void Arpeggiator::setDirection (uint8_t dir)
@@ -183,4 +183,4 @@ void Arpeggiator::allNotesOff()
     previousNote_ = 0xff;
 }
 
-}  // namespace parvati
+}  // namespace hellcat

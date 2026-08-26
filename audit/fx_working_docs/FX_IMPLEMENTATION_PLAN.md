@@ -191,10 +191,10 @@ void setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount);
 ---
 
 ### Phase 3 — Serialization (`.parvati` carries FX; `.PRO`/`.MUL` drops it; binary v2)
-**Key simplification (verified):** because FX state is APVTS params with `isFx`, the **`.parvati` YAML round-trip is nearly free** — `partParamsMap` (`ParvatiPreset.cpp:400`) already serializes every `isSerializable && !isOption` descriptor from per-part engine storage. FX descriptors are `isFx` (not `isOption`), so they are included automatically once `partRaw` knows how to read them. No separate `fx:` block needed (deliberate simplification of the design's `fx:` block — same data, flat in `params:`).
+**Key simplification (verified):** because FX state is APVTS params with `isFx`, the **`.parvati` YAML round-trip is nearly free** — `partParamsMap` (`HellcatPreset.cpp:400`) already serializes every `isSerializable && !isOption` descriptor from per-part engine storage. FX descriptors are `isFx` (not `isOption`), so they are included automatically once `partRaw` knows how to read them. No separate `fx:` block needed (deliberate simplification of the design's `fx:` block — same data, flat in `params:`).
 
 **Files to EDIT:**
-- `Source/ParvatiPreset.cpp`:
+- `Source/HellcatPreset.cpp`:
   - **`partRaw`** (`:359`): add an `isFx` branch reading `part.fxState.*` (slot type/enabled/drywet/param/topo/order/fxmod source/dest/amount) by `paramID`. Mirror the `isArp`/`isSequencer` dispatch style.
   - `currentParamsMap` (`:389`) uses `currentRaw` (reads APVTS directly) — FX params are in APVTS, so single-part `.parvati` patches carry FX automatically. ✓
   - **`applyParvatiMulti`** (`:552`): the per-part `params:` loop dispatches by `isArp`/`isSequencer`/else-byte. Add an `isFx` branch that writes `part.fxState.*.store(...)` + sets `part.fxState.fxDirty_` (once per part, after the loop — mirror `stagedArpSeq`/`configDirty_` pattern at `:642`).
@@ -246,7 +246,7 @@ void setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount);
 
 ### Phase 5 — Tests + CHANGELOG
 **Files to CREATE:**
-- `tests/fx_preset_test.cpp` — mirror `tests/parvati_preset_test.cpp`: set fx* params on part 0 + part 3, `serializeParvatiMulti` → apply into a 2nd processor → assert all fx*/fxmod* raw values match across parts; assert a `.parvati` patch round-trips the current part's FX. Assert `.PRO`/`.MUL` save/load leaves fxState at defaults (FX dropped).
+- `tests/fx_preset_test.cpp` — mirror `tests/hellcat_preset_test.cpp`: set fx* params on part 0 + part 3, `serializeParvatiMulti` → apply into a 2nd processor → assert all fx*/fxmod* raw values match across parts; assert a `.parvati` patch round-trips the current part's FX. Assert `.PRO`/`.MUL` save/load leaves fxState at defaults (FX dropped).
 - **CMakeLists.txt** (`:~395`, mirror the `parvati_preset_test` target):
   ```cmake
   add_executable(parvati_fx_preset_test tests/fx_preset_test.cpp)
@@ -275,7 +275,7 @@ void setFxModSlot     (int slot, uint8_t src, uint8_t dest, int8_t amount);
 | `Source/ParameterLayout.h` | add `isFx` flag |
 | `Source/ParameterLayout.cpp` | FX descriptors (71 params) + `makeFxDests` |
 | `Source/PluginProcessor.h/.cpp` | `applyFxParameter`; `parameterChanged`/`applyParameterToEngine`/`loadPartIntoApvts` branches; `processBlock` FX render + main-bus source swap; `.PRO`/`.MUL` `||d.isFx` skips |
-| `Source/ParvatiPreset.cpp` | `partRaw` isFx branch; `applyParvatiMulti` isFx branch |
+| `Source/HellcatPreset.cpp` | `partRaw` isFx branch; `applyParvatiMulti` isFx branch |
 | `Source/ui/FxMatrixView.h/.cpp` | NEW — clone of ModMatrixView (16 slots, fxmod prefix, FX dests) |
 | `Source/ui/FxWorkspace.h/.cpp` | NEW — clone of SynthWorkspace (3 slot panels, shared bar+editor) |
 | `Source/PluginEditor.h/.cpp` | `[Synth]/[FX]` toggle; `Section::Fx/FxMatrix`; FxWorkspace/FxMatrixView wiring; shared generator editor; header layout |

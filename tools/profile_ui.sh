@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# profile_ui.sh — reproducible local UI performance gate for Parvati (macOS).
+# profile_ui.sh — reproducible local UI performance gate for Hellcat (macOS).
 #
 # Measures the Release standalone under three budgets and fails loudly when
 # any is exceeded, so a repaint/timer regression cannot land unnoticed again
@@ -37,8 +37,8 @@ active_max_pct="${PROFILE_ACTIVE_MAX:-40}" # % of one core, mean, while dragging
 max_asserts="${PROFILE_MAX_ASSERTS:-0}"    # jassert lines in the window
 
 build_dir="${1:-build_release}"
-app="$build_dir/Parvati_artefacts/Release/Standalone/Parvati.app"
-binary="$app/Contents/MacOS/Parvati"
+app="$build_dir/Hellcat_artefacts/Release/Standalone/Hellcat.app"
+binary="$app/Contents/MacOS/Hellcat"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Fail fast with the exact configure line: build_release is a release-workflow
@@ -52,7 +52,7 @@ if [ ! -f "$prof_cache" ]; then
     exit 2
 fi
 helper_src="$repo_root/tools/ui_drag_helper.swift"
-helper_bin="${TMPDIR:-/tmp}/parvati_ui_drag_helper"
+helper_bin="${TMPDIR:-/tmp}/hellcat_ui_drag_helper"
 
 # ---------------------------------------------------------------- helpers ---
 app_pid=""
@@ -83,8 +83,8 @@ mean_cpu() { # $1=pid $2=sample_count
 }
 
 # ------------------------------------------------------------- build check ---
-if ! cmake --build "$repo_root/$build_dir" --target Parvati_Standalone -j8 1>&2; then
-    echo "profile_ui.sh: failed to build Parvati_Standalone in $build_dir" >&2
+if ! cmake --build "$repo_root/$build_dir" --target Hellcat_Standalone -j8 1>&2; then
+    echo "profile_ui.sh: failed to build Hellcat_Standalone in $build_dir" >&2
     exit 1
 fi
 cd "$repo_root" || exit 1
@@ -96,7 +96,7 @@ if [ ! -x "$helper_bin" ] || [ "$helper_src" -nt "$helper_bin" ]; then
 fi
 
 # --------------------------------------------------------------- launch ------
-log="$(mktemp -t parvati_profile_log)"
+log="$(mktemp -t hellcat_profile_log)"
 "$binary" > "$log" 2>&1 &
 app_pid=$!
 sleep 8   # steady state: window up, first paint + patch serialization done
@@ -111,7 +111,7 @@ fi
 # AppleScript lists are comma-separated; turn them into spaces so read's
 # word-splitting yields the four numbers (a bare tr -d ' ' would leave
 # "74,33,1282,662" in wx and empty the rest, dragging at y=0).
-read -r wx wy ww wh < <(osascript -e 'tell application "System Events" to get {position, size} of window 1 of process "Parvati"' 2>/dev/null | tr -d ' ' | tr ',' ' ')
+read -r wx wy ww wh < <(osascript -e 'tell application "System Events" to get {position, size} of window 1 of process "Hellcat"' 2>/dev/null | tr -d ' ' | tr ',' ' ')
 if [ -z "${wx:-}" ]; then wx=0; wy=0; ww=1280; wh=700; fi
 drag_cx=$(( wx + ww / 2 ))
 drag_cy=$(( wy + wh / 3 ))

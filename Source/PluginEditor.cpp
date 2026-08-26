@@ -1,7 +1,7 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See PluginEditor.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See PluginEditor.h.
 
 #include "PluginEditor.h"
-#include "ParvatiPreset.h"
+#include "HellcatPreset.h"
 #include "ui/EnvelopeDisplay.h"
 #include "ui/FilterResponseDisplay.h"
 #include "ui/OscPreviewDisplay.h"
@@ -14,29 +14,29 @@
 #include "ui/FxMatrixView.h"
 #include "ui/WheelsComponent.h"
 #include "ui/Translations.h"
-#include "ui/ChromeRule.h"      // parvati::ChromeRule (the shared separator-rule family)
-#include "ui/LiveFeedbackHub.h"   // parvati::LiveFeedbackHub (live mod-feedback pump)
-#include "ui/ModTelemetryTypes.h" // parvati::ModTelemetrySnapshot / LiveEnvStage / LiveFilterValues
+#include "ui/ChromeRule.h"      // hellcat::ChromeRule (the shared separator-rule family)
+#include "ui/LiveFeedbackHub.h"   // hellcat::LiveFeedbackHub (live mod-feedback pump)
+#include "ui/ModTelemetryTypes.h" // hellcat::ModTelemetrySnapshot / LiveEnvStage / LiveFilterValues
 #include "dsp/patch.h"            // ambika::dsp::MOD_SRC_* (generator-tab drag payloads)
 
 #include <algorithm>   // std::any_of (file-drag extension check)
 
-// Version string from CMake (Parvati target compile def). Fallback for any
+// Version string from CMake (Hellcat target compile def). Fallback for any
 // translation unit that does not get the define.
-#ifndef PARVATI_VERSION
-#define PARVATI_VERSION "0.0.0"
+#ifndef HELLCAT_VERSION
+#define HELLCAT_VERSION "0.0.0"
 #endif
 
-// parvati_logo.svg is embedded via a dedicated juce_add_binary_data target
-// (NAMESPACE ParvatiLogo, see CMakeLists.txt). We resolve its bytes through
+// hellcat_logo.svg is embedded via a dedicated juce_add_binary_data target
+// (NAMESPACE HellcatLogo, see CMakeLists.txt). We resolve its bytes through
 // getNamedResource() rather than #include "BinaryData.h": the project already
-// links a second binary-data target (parvati_factory_presets, namespace
+// links a second binary-data target (hellcat_factory_presets, namespace
 // FactoryPresets) whose generated header shares the filename "BinaryData.h",
 // so an #include here would be ambiguous across the two JuceLibraryCode include
 // dirs. getNamedResource() is emitted in the generated BinaryData.cpp (external
-// linkage); "parvati_logo_svg" is the resource name derived from the filename
-// parvati_logo.svg.
-namespace ParvatiLogo {
+// linkage); "hellcat_logo_svg" is the resource name derived from the filename
+// hellcat_logo.svg.
+namespace HellcatLogo {
     const char* getNamedResource (const char* resourceNameUTF8, int& dataSizeInBytes);
 }
 
@@ -49,19 +49,19 @@ namespace
 // the JUCE timers run for the timer-driven sections) and then pumps the run
 // loop. With components on the desktop the old getNumComponents() > 0 gate is
 // true, so every export/load seam popped a native picker on the developer's
-// screen mid-test. The test binaries set PARVATI_HEADLESS=1 in their main()
+// screen mid-test. The test binaries set HELLCAT_HEADLESS=1 in their main()
 // (and a developer can export it for any manual run); every gate below then
 // behaves exactly like the console case: the seam fires, no picker launches.
 bool nativeDialogsSuppressed()
 {
-    return juce::SystemStats::getEnvironmentVariable ("PARVATI_HEADLESS", {}) == "1";
+    return juce::SystemStats::getEnvironmentVariable ("HELLCAT_HEADLESS", {}) == "1";
 }
 }  // namespace
 
-// ---- Header logo: [brand icon] + white "Parvati" wordmark -----------------
-// The embedded parvati_logo.svg is true vector art (outlined <path>/<g>, no
+// ---- Header logo: [brand icon] + white "Hellcat" wordmark -----------------
+// The embedded hellcat_logo.svg is true vector art (outlined <path>/<g>, no
 // raster); it is parsed once into logoDrawable_ via JUCE's SVG renderer and
-// drawn as-is (brand colours, NOT theme-tinted). The "Parvati" wordmark is
+// drawn as-is (brand colours, NOT theme-tinted). The "Hellcat" wordmark is
 // painted in the theme `text` token (theme-aware near-white; dark on a light theme)
 // so it re-colours on theme switch. The logo block width is measured in
 // resized() with the SAME font paint() uses so the logo/version/centre/right
@@ -91,7 +91,7 @@ static float trackedTextWidth (const juce::Font& font, const juce::String& text,
 // family) so each re-resolves its typeface through the active L&F after a
 // font-mode switch (juce::Label caches its font, so a plain repaint would NOT
 // pick up the new family).
-void refreshFontsIn (juce::Component* c, const ParvatiLookAndFeel& lnf)
+void refreshFontsIn (juce::Component* c, const HellcatLookAndFeel& lnf)
 {
     if (c == nullptr)
         return;
@@ -104,9 +104,9 @@ void refreshFontsIn (juce::Component* c, const ParvatiLookAndFeel& lnf)
         refreshFontsIn (child, lnf);
 }
 
-// F-ios-lc-3 (bug hunt 2026-08-19): count of LIVE ParvatiEditor instances in
+// F-ios-lc-3 (bug hunt 2026-08-19): count of LIVE HellcatEditor instances in
 // THIS process. AUv3 extension processes host MULTIPLE plugin instances (AUM
-// can hold several Parvati AUs; JUCE's AUv3 wrapper creates/destroys one
+// can hold several Hellcat AUs; JUCE's AUv3 wrapper creates/destroys one
 // editor per instance — juce_audio_plugin_client_AUv3.mm createEditorAndMakeActive
 // / removeEditor), so teardown side-effects that touch PROCESS-GLOBAL state
 // (screensaver policy, the ParamControl tap-assign statics) must be
@@ -116,7 +116,7 @@ void refreshFontsIn (juce::Component* c, const ParvatiLookAndFeel& lnf)
 static int sLiveEditorCount = 0;
 
 //==============================================================================
-ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
+HellcatEditor::HellcatEditor (HellcatAudioProcessor& p)
     : juce::AudioProcessorEditor (&p), processorRef_ (p)
 {
     // F-ios-lc-3: count this editor FIRST so every process-global side-effect
@@ -182,7 +182,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // Spr columns (the completing absorption — the hosted page renders
         // ONLY the Global options now). The APVTS PARAMETERS stay fully valid
         // (created by the untouched descriptor table in
-        // createParvatiParameterLayout — host automation, state, .parvati);
+        // createHellcatParameterLayout — host automation, state, .yml);
         // only the page KNOB is not generated, so there is exactly ONE editor
         // surface per setting (the table).
         if (d.paramID == "part_octave" || d.paramID == "part_legato"
@@ -190,7 +190,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             || d.paramID == "part_polyphony" || d.paramID == "part_volume"
             || d.paramID == "part_tuning" || d.paramID == "part_spread")
             continue;
-        // FX params (fx* / fxmod*) are per-part Parvati-exclusive params routed
+        // FX params (fx* / fxmod*) are per-part Hellcat-exclusive params routed
         // via applyFxParameter; they are NEVER bucketed into the synth pages.
         // The FX-slot pages are generated separately below, and the FX mod matrix
         // is the editor-owned FxMatrixView (no ParamPage at all).
@@ -203,7 +203,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // Created early so the page-build loop can reparent each page into it.
     synthWorkspace_ = std::make_unique<SynthWorkspace> (themeManager_);
 
-    const ParvatiTheme& theme = themeManager_.getCurrentTheme();
+    const HellcatTheme& theme = themeManager_.getCurrentTheme();
 
     // ---- Top patch bar: factory patch list + Load .PRO... + name ----
     // (No "Patch:" caption: the preset dropdown follows the brand block
@@ -223,12 +223,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     loadButton_.onClick = [this] { openLoadDialog(); };
     addAndMakeVisible (loadButton_);
 
-    // Save: DIRECT .parvati save (2026-08-20 — no format menu). The Ambika
+    // Save: DIRECT .yml save (2026-08-20 — no format menu). The Ambika
     // .PRO/.MUL exports moved to dedicated buttons on the Patch page
     // (openSaveDialog / openSaveMultiDialog are now export-only paths);
-    // drag-drop import of .PRO/.MUL/.parvati is unchanged (filesDropped).
+    // drag-drop import of .PRO/.MUL/.yml is unchanged (filesDropped).
     saveButton_.setButtonText (TRANS ("Save"));
-    saveButton_.onClick = [this] { handleSavePresetShortcut(); };   // desktop-gated direct .parvati
+    saveButton_.onClick = [this] { handleSavePresetShortcut(); };   // desktop-gated direct .yml
     addAndMakeVisible (saveButton_);
 
     // Phase 4c: Undo / Redo are Path-drawn IconButtons (curved arrows) — no
@@ -239,7 +239,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // undoSafe/redoSafe (not the raw UndoManager): they sweep the part-switch
     // boundary first — a recorded action replayed after a part switch would
     // write the OLD part's values into the CURRENT part (cross-part
-    // corruption; see ParvatiAudioProcessor::undoSafe).
+    // corruption; see HellcatAudioProcessor::undoSafe).
     undoButton_.onClick = [this] { processorRef_.undoSafe(); };
     // Test seam: the Path-drawn IconButtons carry no text — name them so the
     // layout sweep can locate the primary-set members by name.
@@ -268,7 +268,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // async menu is still open (host closes the plugin window mid-menu) —
         // the menu outlives onClick's stack frame, so a raw `this` would
         // dangle when the item action finally runs.
-        juce::Component::SafePointer<ParvatiEditor> safe (this);
+        juce::Component::SafePointer<HellcatEditor> safe (this);
         // ---- W9 folded header actions (AUv3 compact panes): the popup grows
         // the sections whose header controls are now folded away (the
         // SAME breakpoints resized() uses, re-evaluated at click time so a
@@ -307,7 +307,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         }
         m.showMenuAsync (juce::PopupMenu::Options()
                              .withTargetComponent (&zoomOverflowButton_)
-                             .withStandardItemHeight (ParvatiLookAndFeel::kPopupRowHeight),
+                             .withStandardItemHeight (HellcatLookAndFeel::kPopupRowHeight),
                          nullptr);
     };
     addAndMakeVisible (zoomOverflowButton_);
@@ -413,16 +413,16 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 disp->setLiveStageProvider ([this, i]
                 {
                     return liveHub_ != nullptr ? liveHub_->envStage (i)
-                                               : parvati::LiveEnvStage{};
+                                               : hellcat::LiveEnvStage{};
                 });
                 // Register for the status tick's poll re-assert (the raw
                 // pointer follows the graphCategoryBindings_ lifetime rule).
                 liveEnvDisplays_.push_back (disp.get());
                 // Cyan trace from the Envelopes category token (re-resolved live
                 // on theme change via the binding registered below).
-                disp->setCategoryColour (parvati::indicatorFor (theme, theme.catEnv));
+                disp->setCategoryColour (hellcat::indicatorFor (theme, theme.catEnv));
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
-                           &ParvatiTheme::catEnv);
+                           &HellcatTheme::catEnv);
                 page->setGroupDecoration (envLabels[i], std::move (disp));
             }
         }
@@ -447,9 +447,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 // first-frame waveform while the mod pill (always-on bar timer)
                 // tracks every change — the reported "LFO stuck on S&H" bug.
                 liveEnvDisplays_.push_back (disp.get());
-                disp->setCategoryColour (parvati::indicatorFor (theme, theme.catLfo));
+                disp->setCategoryColour (hellcat::indicatorFor (theme, theme.catLfo));
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
-                           &ParvatiTheme::catLfo);
+                           &HellcatTheme::catLfo);
                 page->setGroupDecoration ("LFO " + juce::String (i + 1), std::move (disp));
             }
             // Voice LFO (MOD_SRC_LFO_4).
@@ -459,11 +459,11 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 std::function<float()> {}, std::function<float()> {},
                 [norm] { return norm ("voice_lfo_shape"); });
             vdisp->setPreviewMode (1);
-            vdisp->setCategoryColour (parvati::indicatorFor (theme, theme.catLfo));
+            vdisp->setCategoryColour (hellcat::indicatorFor (theme, theme.catLfo));
             // Same status-tick poll re-assert as the LFO displays above.
             liveEnvDisplays_.push_back (vdisp.get());
             bindGraph ([gp = vdisp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
-                       &ParvatiTheme::catLfo);
+                       &HellcatTheme::catLfo);
             page->setGroupDecoration ("Voice LFO", std::move (vdisp));
         }
         else if (pg.s == Section::Oscillators)
@@ -481,9 +481,9 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                     labels[i] + " Wave",
                     [norm, o] { return norm (o + "_shape"); },
                     [norm, o] { return norm (o + "_param"); });
-                disp->setCategoryColour (parvati::indicatorFor (theme, theme.catAudio));
+                disp->setCategoryColour (hellcat::indicatorFor (theme, theme.catAudio));
                 bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
-                           &ParvatiTheme::catAudio);
+                           &HellcatTheme::catAudio);
                 // Live modulation overlay (2026-08-23 parity pass — same
                 // contract as the filter display): while a voice sounds and
                 // the EFFECTIVE osc parameter byte is MOVING (env/LFO/matrix/
@@ -494,7 +494,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 disp->setLiveValuesProvider ([this, i]
                 {
                     return liveHub_ != nullptr ? liveHub_->liveOsc (i)
-                                               : parvati::LiveOscValues{};
+                                               : hellcat::LiveOscValues{};
                 });
                 // Register for the status tick's poll re-assert (same starve
                 // class as the env/LFO displays: a page built while not on
@@ -515,7 +515,8 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 "Filter Response",
                 [norm] { return norm ("filter1_cutoff"); },
                 [norm] { return norm ("filter1_reso"); },
-                [norm] { return norm ("filter1_mode"); });
+                [norm] { return norm ("filter1_mode"); },
+                [norm] { return norm ("filter_card"); });
             // Live modulation overlay (docs/LIVE_MOD_FEEDBACK_DESIGN.md): when
             // the cutoff/resonance is ACTIVELY being modulated (env-2 sweep,
             // LFO, matrix, wheel...), the display draws the live EFFECTIVE
@@ -525,14 +526,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
             disp->setLiveValuesProvider ([this]
             {
                 return liveHub_ != nullptr ? liveHub_->liveFilter()
-                                           : parvati::LiveFilterValues{};
+                                           : hellcat::LiveFilterValues{};
             });
             // Register for the status tick's poll re-assert (same lifetime
             // rule as liveEnvDisplays_ / graphCategoryBindings_).
             liveFilterDisplay_ = disp.get();
-            disp->setCategoryColour (parvati::indicatorFor (theme, theme.catAudio));
+            disp->setCategoryColour (hellcat::indicatorFor (theme, theme.catAudio));
             bindGraph ([gp = disp.get()] (const juce::Colour& c) { gp->setCategoryColour (c); },
-                       &ParvatiTheme::catAudio);
+                       &HellcatTheme::catAudio);
             page->setGroupDecoration ("Filter", std::move (disp));
             page->setGroupDecorationHeight ("Filter", 42);
         }
@@ -648,7 +649,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // them on a mode toggle). Group names match the ParamPage groupForId()
     // keys (checked in groupForId). VLFO == per-voice LFO (MOD_SRC_LFO_4,
     // checked in voice.cpp). ARP shows ALL its groups (EMPTY array). The Note
-    // Sequencer pill is the bar-only sentinel (parvati::kNoteSeqSentinel ==
+    // Sequencer pill is the bar-only sentinel (hellcat::kNoteSeqSentinel ==
     // -1, NOT a real MOD_SRC_*): it reveals its "Note Pitch" group from the
     // Sequencer page (Option A: only the note pitch + gate control; velocity
     // stays in the full Sequencer TAB), and is click-only (the bar skips its
@@ -676,7 +677,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         // host — the ~290px non-viewport band cannot fit both 16-step groups,
         // so stacking them clipped velocity ~75%. Velocity stays reachable in
         // the full Sequencer TAB (its knob is unchanged). One group => no clip.
-        { parvati::kNoteSeqSentinel, seqPage, juce::StringArray{ "Note Pitch" } },
+        { hellcat::kNoteSeqSentinel, seqPage, juce::StringArray{ "Note Pitch" } },
         { MOD_SRC_OP_1, modifierPage, juce::StringArray{ "Modifier 1" } },
         { MOD_SRC_OP_2, modifierPage, juce::StringArray{ "Modifier 2" } },
         { MOD_SRC_OP_3, modifierPage, juce::StringArray{ "Modifier 3" } },
@@ -724,13 +725,13 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // overlays, whose providers were bound during page construction ABOVE and
     // null-check liveHub_ at CALL time) reads the cache — so the engine's lock
     // is taken once per tick no matter how many components animate.
-    liveHub_ = std::make_unique<parvati::LiveFeedbackHub> (
-        [this] (parvati::ModTelemetrySnapshot& s)
+    liveHub_ = std::make_unique<hellcat::LiveFeedbackHub> (
+        [this] (hellcat::ModTelemetrySnapshot& s)
         { return processorRef_.getEngine().readUiTelemetry (s); });
     // Bind the SAME cached-snapshot provider to BOTH workspace bars (each bar
     // owns its own poll timer — both stop while unparented, so only the VISIBLE
     // seam animates).
-    const auto barTelemetryProvider = [this] (parvati::ModTelemetrySnapshot& s)
+    const auto barTelemetryProvider = [this] (hellcat::ModTelemetrySnapshot& s)
     { return liveHub_ != nullptr ? liveHub_->snapshot (s) : false; };
     if (auto* bar = synthWorkspace_->modBar())
         bar->setTelemetryProvider (barTelemetryProvider);
@@ -831,7 +832,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
         const bool on = kbdToggleButton_.getToggleState();
         // Musical typing while tweaking (2026-08-21): hand focus to the strip
         // when it appears. Control tweaks mid-performance no longer need a
-        // tree-wide focus pass — ParvatiEditor::keyPressed forwards unhandled
+        // tree-wide focus pass — HellcatEditor::keyPressed forwards unhandled
         // plain keys to the KeyboardView, so the QWERTY keys keep playing
         // whatever holds the focus.
         if (on && keyboardView_ != nullptr)
@@ -887,7 +888,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     };
     addAndMakeVisible (modAssignButton_);
 
-    // ---- Header: brand icon + white "Parvati" wordmark (painted, left) ----
+    // ---- Header: brand icon + white "Hellcat" wordmark (painted, left) ----
     // (The version subtitle is painted inside the brand block — see paint().
     // The former versionLabel_ child was built hidden and never shown, so it
     // is gone.)
@@ -996,7 +997,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
 
     // ---- Bottom status strip: compact active-voice count + tooltip bar ----
     statusCountLabel_.setJustificationType (juce::Justification::centred);
-    statusCountLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
+    statusCountLabel_.setFont (hellcat::dataFontExactFor (*this, 13.0f, juce::Font::bold));
     statusCountLabel_.setColour (juce::Label::textColourId, theme.accentPrimary);
     statusCountLabel_.setText (
         juce::String (currentPartActiveVoiceCount()) + "/" + juce::String (
@@ -1004,27 +1005,27 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
                 .getPart (processorRef_.getEngine().getCurrentPart()).voiceCount_.load()),
                                juce::dontSendNotification);
     addAndMakeVisible (statusCountLabel_);
-    // Realtime audio-load readout (see ParvatiAudioProcessor::
+    // Realtime audio-load readout (see HellcatAudioProcessor::
     // getAudioLoadCurrent). Shows "CPU 42%" in green, amber above 70%, red
     // above 90% (the CURRENT block only — peak/overrun diagnostics are gone
     // from the readout per request). Updated at 30 Hz in timerCallback().
     // Pure read of the processor's atomic (message thread). Fixed tooltip —
     // no interaction on the label.
     statusLoadLabel_.setJustificationType (juce::Justification::centred);
-    statusLoadLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f, juce::Font::bold));
+    statusLoadLabel_.setFont (hellcat::dataFontExactFor (*this, 12.0f, juce::Font::bold));
     // Y2K: the strip sits on the chrome WINDOW — dark text (the grey tier
     // read as grey-on-silver). The count keeps the LCD-green accent.
     statusLoadLabel_.setColour (juce::Label::textColourId,
-                                parvati::isY2kTheme (&theme) ? juce::Colour (0xff141C30)
+                                hellcat::isY2kTheme (&theme) ? juce::Colour (0xff141C30)
                                                              : theme.textSecondary);
     statusLoadLabel_.setText ("CPU 0%", juce::dontSendNotification);
     statusLoadLabel_.setTooltip (TRANS ("Audio-thread realtime load (current block; "
                                        "near 100% = dropouts/crackle)."));
     addAndMakeVisible (statusLoadLabel_);
     statusTooltipLabel_.setJustificationType (juce::Justification::centredLeft);
-    statusTooltipLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
+    statusTooltipLabel_.setFont (hellcat::labelFontExactFor (*this, 12.0f));
     statusTooltipLabel_.setColour (juce::Label::textColourId,
-                                   parvati::isY2kTheme (&theme) ? juce::Colour (0xff141C30)
+                                   hellcat::isY2kTheme (&theme) ? juce::Colour (0xff141C30)
                                                                 : theme.textSecondary);
     addAndMakeVisible (statusTooltipLabel_);
 
@@ -1127,12 +1128,12 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     //      5px below the header (end-to-end) and 5px above the status strip
     //      (~95% width, centred). Positioned in resized() from the bands. See
     //      ChromeRule for why these are components. ----
-    headerRule_ = std::make_unique<parvati::ChromeRule> (true, true, true);  // line AT the band bottom; dark CAST shadow starts UNDER the border, fading into the content
-    statusRule_ = std::make_unique<parvati::ChromeRule> (false);  // shadow falls above
+    headerRule_ = std::make_unique<hellcat::ChromeRule> (true, true, true);  // line AT the band bottom; dark CAST shadow starts UNDER the border, fading into the content
+    statusRule_ = std::make_unique<hellcat::ChromeRule> (false);  // shadow falls above
     // Keyboard-overlay top rule: the keyboard strip is chrome raised over the
     // content it covers, so the 1px rule sits at its TOP edge with the depth
     // falloff above it (the footer idiom). Shown/hidden with the strip.
-    keyboardRule_ = std::make_unique<parvati::ChromeRule> (false);
+    keyboardRule_ = std::make_unique<hellcat::ChromeRule> (false);
     addAndMakeVisible (*headerRule_);
     addAndMakeVisible (*statusRule_);
 
@@ -1180,7 +1181,7 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // (same gate as the zoom default above): desktop screensaver policy is not
     // ours to change.
     // F-ios-lc-3: REFERENCE-COUNTED — an AUv3 extension process hosts MULTIPLE
-    // Parvati instances (AUM), each with its own editor. Only the 0 -> 1
+    // Hellcat instances (AUM), each with its own editor. Only the 0 -> 1
     // transition disables the screensaver so closing editor A cannot re-enable
     // sleep while editor B is still open (T14's protection voided per-close).
     if (sLiveEditorCount == 1)
@@ -1198,9 +1199,14 @@ ParvatiEditor::ParvatiEditor (ParvatiAudioProcessor& p)
     // + parented, so every control resolves its category colour from the active
     // theme on the very first paint.
     applyAllColoursFromTheme();
+
+    // Prime the top-level key listener (attaches to `this` while unparented;
+    // parentHierarchyChanged re-attaches to the real window later — the
+    // standalone musical-typing no-focus path, see the KeyListener below).
+    refreshTopLevelKeyListener();
 }
 
-ParvatiEditor::~ParvatiEditor()
+HellcatEditor::~HellcatEditor()
 {
     // F-ui-3 (bug hunt 2026-08-18): close any OPEN popup menu deterministically.
     // Open menus (combo dropdowns, the zoom overflow popup, FX type pickers)
@@ -1208,6 +1214,13 @@ ParvatiEditor::~ParvatiEditor()
     // would dismiss them only up to ~50 ms AFTER the target died, leaving a
     // window where an OS-driven paint reads freed memory.
     juce::PopupMenu::dismissAllActiveMenus();
+
+    // Detach the top-level musical-typing listener FIRST: the standalone
+    // window outlives this editor, and a stale listener would fire into a
+    // half-dead object during teardown.
+    if (topLevelKeyListenerHost_ != nullptr)
+        topLevelKeyListenerHost_->removeKeyListener (this);
+    topLevelKeyListenerHost_ = nullptr;
 
     stopTimer();
     // Release EVERY note the on-screen/computer keyboard still holds BEFORE
@@ -1262,9 +1275,9 @@ ParvatiEditor::~ParvatiEditor()
     --sLiveEditorCount;
 }
 
-int ParvatiEditor::liveEditorCountForTest() noexcept { return sLiveEditorCount; }
+int HellcatEditor::liveEditorCountForTest() noexcept { return sLiveEditorCount; }
 
-void ParvatiEditor::dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details)
+void HellcatEditor::dragOperationStarted (const juce::DragAndDropTarget::SourceDetails& details)
 {
     // Only a modulation-source drag (payload "parvatiModSrc:<enum>") triggers
     // the drop-zone affordance; any other (defensive — none exist today) leaves
@@ -1274,7 +1287,7 @@ void ParvatiEditor::dragOperationStarted (const juce::DragAndDropTarget::SourceD
         ParamControl::setModDragActive (true);
 }
 
-void ParvatiEditor::dragOperationEnded (const juce::DragAndDropTarget::SourceDetails&)
+void HellcatEditor::dragOperationEnded (const juce::DragAndDropTarget::SourceDetails&)
 {
     // Unconditional restore: dragOperationEnded fires from the DragImageComponent
     // destructor on BOTH a successful drop and a cancel, so the affordance state
@@ -1282,7 +1295,7 @@ void ParvatiEditor::dragOperationEnded (const juce::DragAndDropTarget::SourceDet
     ParamControl::setModDragActive (false);
 }
 
-void ParvatiEditor::pollPatchPageMirror()
+void HellcatEditor::pollPatchPageMirror()
 {
     // Visible-Patch-page mirror under out-of-band engine writes (host
     // automation of part_polyphony / part_raga, MIDI NRPN, host undo): those
@@ -1302,10 +1315,10 @@ void ParvatiEditor::pollPatchPageMirror()
 }
 
 // Relabel the top-bar Part selector with the current part names/aliases
-// (Parvati extension): "3 · Snare" when named, "Part 3" otherwise. Cheap
+// (Hellcat extension): "3 · Snare" when named, "Part 3" otherwise. Cheap
 // (6 string compares); called on name edits + from the poll timer so loads
 // (multi/template/DAW state) also refresh the labels.
-void ParvatiEditor::refreshPartComboNames()
+void HellcatEditor::refreshPartComboNames()
 {
     bool anyChanged = false;
     for (int i = 1; i <= SynthEngine::getNumParts(); ++i)
@@ -1338,7 +1351,7 @@ void ParvatiEditor::refreshPartComboNames()
     }
 }
 
-int ParvatiEditor::currentPartActiveVoiceCount() const
+int HellcatEditor::currentPartActiveVoiceCount() const
 {
     auto& engine = processorRef_.getEngine();
     const int curPart = engine.getCurrentPart();
@@ -1350,7 +1363,7 @@ int ParvatiEditor::currentPartActiveVoiceCount() const
     return active;
 }
 
-ParvatiEditor::ThermalStatusAction ParvatiEditor::thermalStatusForTransition (int oldHint,
+HellcatEditor::ThermalStatusAction HellcatEditor::thermalStatusForTransition (int oldHint,
                                                                               int newHint) noexcept
 {
     // F-ios-perf-2 label surfacing (2026-08-19 follow-up) — the PURE policy
@@ -1377,7 +1390,7 @@ ParvatiEditor::ThermalStatusAction ParvatiEditor::thermalStatusForTransition (in
 static int sLastThermalHint = 0;
 #endif
 
-void ParvatiEditor::timerCallback()
+void HellcatEditor::timerCallback()
 {
     tickSettingsScrollbar();
     const bool popupOpen = tickTooltipPopupGuard();
@@ -1422,6 +1435,10 @@ void ParvatiEditor::timerCallback()
     // is nothing to re-sync on a part switch here. External state changes (a
     // .MUL load) are covered by the forced refresh in applyPatchFile.
 
+    // Release held musical-typing notes if the window lost key focus (the
+    // no-focus path gets no key-up / focusLost — see the method comment).
+    tickMusicalTypingFocusGuard();
+
     tickKeyboardLatching();
     tickAdaptiveRate (activeVoices, popupOpen, transientStatus);
 }
@@ -1434,7 +1451,7 @@ void ParvatiEditor::timerCallback()
 // scrolling no longer depends on the bar (allowVerticalScrollingWithout
 // scrollbar), but the affordance must not flicker: re-assert the intended
 // state every tick while the drawer shows (idempotent; dirt cheap).
-void ParvatiEditor::tickSettingsScrollbar()
+void HellcatEditor::tickSettingsScrollbar()
 {
     if (settingsPanelHost_ != nullptr && settingsPanelHost_->isPanelShowing()
         && settingsScroll_ != nullptr && settingsPanel_ != nullptr
@@ -1445,7 +1462,7 @@ void ParvatiEditor::tickSettingsScrollbar()
 
 // ---- Tooltip bleed-through fix (~30 Hz) ----
 // ROOT CAUSE: the editor's TooltipWindow is parented to the editor (so it
-// inherits the ParvatiLookAndFeel and scales with the editor / DAW), but a
+// inherits the HellcatLookAndFeel and scales with the editor / DAW), but a
 // popup menu (a ComboBox drop-down OR a right-click context menu) lives in
 // its OWN top-level window with a different ComponentPeer. The base
 // juce::TooltipWindow::timerCallback only processes components that share
@@ -1459,7 +1476,7 @@ void ParvatiEditor::tickSettingsScrollbar()
 // tooltips via the desktop TooltipWindow created in
 // ParamControl::showContextMenu; ComboBox drop-down items simply show
 // nothing. No-op when no popup is open.
-bool ParvatiEditor::tickTooltipPopupGuard()
+bool HellcatEditor::tickTooltipPopupGuard()
 {
     const bool popupOpen = juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
     if (popupOpen && tooltipWindow_ != nullptr)
@@ -1472,7 +1489,7 @@ bool ParvatiEditor::tickTooltipPopupGuard()
 // costs nothing and covers a provider/rate arriving after construction;
 // the display polls re-evaluate their own visibility gates (their per-tick
 // work is change-gated, so a started-but-hidden display is cheap).
-void ParvatiEditor::tickTelemetryReasserts()
+void HellcatEditor::tickTelemetryReasserts()
 {
     if (synthWorkspace_ != nullptr)
         if (auto* b = synthWorkspace_->modBar())
@@ -1493,7 +1510,7 @@ void ParvatiEditor::tickTelemetryReasserts()
 // (cheap), so a delta vs the last tick means the mouse moved. A mouse
 // parked OUTSIDE the window also reports a constant position — no false
 // activity.
-void ParvatiEditor::tickMouseActivity()
+void HellcatEditor::tickMouseActivity()
 {
     if (const auto mousePos = getMouseXYRelative(); mousePos != lastMousePos_)
     {
@@ -1504,13 +1521,13 @@ void ParvatiEditor::tickMouseActivity()
 
 // Empty on non-iOS builds: the processor hint sampler and the state
 // behind sLastThermalHint compile only for iOS.
-void ParvatiEditor::tickThermalHint()
+void HellcatEditor::tickThermalHint()
 {
 #if JUCE_IOS
     // ---- Thermal-hint surfacing (F-ios-perf-2, 2026-08-19 follow-up) ----
     // One RELAXED atomic read per 30 Hz tick (the processor's iOS-only ~1 Hz
     // sampler writes it); ONLY a level TRANSITION arms the transient status
-    // (pure matrix: ParvatiEditor::thermalStatusForTransition), never every
+    // (pure matrix: HellcatEditor::thermalStatusForTransition), never every
     // tick — an idle thermal state costs the status strip nothing. Placed
     // BEFORE the single drain below so an escalation is visible THIS tick.
     {
@@ -1552,7 +1569,7 @@ void ParvatiEditor::tickThermalHint()
 // optimistic `true` default means a DAW session (tempo present in every
 // block) never sees it — the flip only fires once a block has ACTUALLY
 // rendered without a host tempo.
-void ParvatiEditor::tickHostTempoHint()
+void HellcatEditor::tickHostTempoHint()
 {
     static bool sLastHostTempoPresent = true;
     const bool hostNow = processorRef_.isHostTempoPresent();
@@ -1568,7 +1585,7 @@ void ParvatiEditor::tickHostTempoHint()
 // Single per-tick drain of the tap-to-assign transient status. The
 // dispatcher calls it exactly once; a second call would double-drain
 // the frame budget.
-juce::String ParvatiEditor::drainTransientStatus()
+juce::String HellcatEditor::drainTransientStatus()
 {
     return ParamControl::tickTransientStatus();
 }
@@ -1577,7 +1594,7 @@ juce::String ParvatiEditor::drainTransientStatus()
 // tooltip bar (hover help, transient priority, keyboard idle readout)
 // and the undo/redo button mirror. Returns the active-voice count for
 // tickAdaptiveRate.
-int ParvatiEditor::tickStatusStrip (const juce::String& transientStatus, bool popupOpen)
+int HellcatEditor::tickStatusStrip (const juce::String& transientStatus, bool popupOpen)
 {
     // Voice count for the status strip AND the adaptive-rate activity signal.
     int activeVoices = 0;
@@ -1632,10 +1649,10 @@ int ParvatiEditor::tickStatusStrip (const juce::String& transientStatus, bool po
                 lastLoadTextUpdate_ = juce::Time::getCurrentTime();
             }
             // Colour by headroom (the CURRENT percentage drives the colour).
-            auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel());
-            const ParvatiTheme* th = lnf ? lnf->getTheme() : nullptr;
+            auto* lnf = dynamic_cast<HellcatLookAndFeel*> (&getLookAndFeel());
+            const HellcatTheme* th = lnf ? lnf->getTheme() : nullptr;
             const juce::Colour ok     = th ? th->textSecondary : juce::Colour (0xff9a9aa8);
-            const juce::Colour warn   = th ? th->accentPrimary  : parvati::parvatiFallbackAccent;
+            const juce::Colour warn   = th ? th->accentPrimary  : hellcat::hellcatFallbackAccent;
             const juce::Colour danger = juce::Colour (0xffe0584a);
             const juce::Colour c = cur >= 0.90 ? danger : cur >= 0.70 ? warn : ok;
             // setColour marks the label dirty even when the colour is unchanged
@@ -1704,7 +1721,7 @@ int ParvatiEditor::tickStatusStrip (const juce::String& transientStatus, bool po
 // ---- Keyboard latching: mirror sounding notes across all voices ----
 // The count stays GLOBAL across all parts. tickAdaptiveRate runs after
 // this stage every tick, so this method performs no early exit.
-void ParvatiEditor::tickKeyboardLatching()
+void HellcatEditor::tickKeyboardLatching()
 {
     if (keyboardView_ != nullptr)
     {
@@ -1771,15 +1788,21 @@ void ParvatiEditor::tickKeyboardLatching()
 // sound, and a transient status drains at full rate while visible. The rate
 // is recomputed at the END of the tick so this tick's own work (voice
 // counts, latch state, drained status) already feeds the decision.
-void ParvatiEditor::tickAdaptiveRate (int activeVoices, bool popupOpen,
+void HellcatEditor::tickAdaptiveRate (int activeVoices, bool popupOpen,
                                       const juce::String& transientStatus)
 {
     {
         const bool mouseRecentlyMoved = juce::Time::getCurrentTime() - lastMouseActivity_
                                         < juce::RelativeTime::seconds (3.0);
-        const bool keyboardBusy = keyboardView_ != nullptr
-                               && keyboardView_->isVisible()
-                               && ! latchedNotes_.isEmpty();
+        // Held computer-key notes keep the poll fast EVEN with the strip
+        // hidden (the 2026-08-26 no-focus path): the focus guard above must
+        // observe a window deactivation within one 30 Hz tick.
+        const bool typingBusy = keyboardView_ != nullptr
+                             && keyboardView_->holdingComputerNotes();
+        const bool keyboardBusy = (keyboardView_ != nullptr
+                                && keyboardView_->isVisible()
+                                && ! latchedNotes_.isEmpty())
+                               || typingBusy;
         const bool busy = activeVoices > 0
                        || transientStatus.isNotEmpty()
                        || popupOpen
@@ -1794,7 +1817,7 @@ void ParvatiEditor::tickAdaptiveRate (int activeVoices, bool popupOpen,
     }
 }
 
-void ParvatiEditor::reparentGeneratorTo (bool toFx)
+void HellcatEditor::reparentGeneratorTo (bool toFx)
 {
     // The generator ParamPages are SHARED (editor-owned, registered into BOTH
     // workspaces). Only the VISIBLE workspace may host the active page: release
@@ -1815,21 +1838,21 @@ void ParvatiEditor::reparentGeneratorTo (bool toFx)
     }
 }
 
-void ParvatiEditor::setFxMode (bool fx)
+void HellcatEditor::setFxMode (bool fx)
 {
     // Public entry for the screen-shot tool / tests: select SYNTH (false) or FX
     // (true) via the unified page selector.
     showTopPage (fx ? 1 : 0);
 }
 
-void ParvatiEditor::setCurrentTopPage (int pageIndex)
+void HellcatEditor::setCurrentTopPage (int pageIndex)
 {
     // Public 3-way entry for the layout / screenshot tools: 0=Synth, 1=FX,
     // 2=Patch — the same path the header page buttons take.
     showTopPage (juce::jlimit (0, 2, pageIndex));
 }
 
-void ParvatiEditor::showTopPage (int idx)
+void HellcatEditor::showTopPage (int idx)
 {
     // idx: 0=Synth 1=FX 2=Patch — three PEER top-level pages. Patch is a FULL
     // page (pageSelector_ is hidden while it is active so it is the sole
@@ -1883,7 +1906,7 @@ void ParvatiEditor::showTopPage (int idx)
     globalButton_.setToggleState    (idx == 2, juce::dontSendNotification);
 }
 
-void ParvatiEditor::applyAllColoursFromTheme()
+void HellcatEditor::applyAllColoursFromTheme()
 {
     // Force every descendant to re-run lookAndFeelChanged(): ComboBox only
     // re-syncs its internal label's text colour (ComboBox::textColourId) in
@@ -1892,7 +1915,7 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // keep near-white label text after switching to a light theme.
     // This also re-applies the per-widget fonts (combo/button/tab/popup) and
     // (crucially) makes each ParamControl::lookAndFeelChanged() re-push its
-    // category arc / mod tint once the editor's ParvatiLookAndFeel is attached.
+    // category arc / mod tint once the editor's HellcatLookAndFeel is attached.
     sendLookAndFeelChange();
 
     // The TabbedComponent's PER-TAB content backgrounds are component-level
@@ -1912,21 +1935,21 @@ void ParvatiEditor::applyAllColoursFromTheme()
     // their fonts).
     {
         const auto& t = themeManager_.getCurrentTheme();
-        statusCountLabel_.setFont (parvati::dataFontExactFor (*this, 13.0f, juce::Font::bold));
+        statusCountLabel_.setFont (hellcat::dataFontExactFor (*this, 13.0f, juce::Font::bold));
         statusCountLabel_.setColour (juce::Label::textColourId, t.accentPrimary);
-        statusLoadLabel_.setFont (parvati::dataFontExactFor (*this, 12.0f, juce::Font::bold));
+        statusLoadLabel_.setFont (hellcat::dataFontExactFor (*this, 12.0f, juce::Font::bold));
         statusLoadLabel_.setColour (juce::Label::textColourId,
-                                    parvati::isY2kTheme (&t) ? juce::Colour (0xff141C30)
+                                    hellcat::isY2kTheme (&t) ? juce::Colour (0xff141C30)
                                                              : t.textSecondary);
-        statusTooltipLabel_.setFont (parvati::labelFontExactFor (*this, 12.0f));
+        statusTooltipLabel_.setFont (hellcat::labelFontExactFor (*this, 12.0f));
         statusTooltipLabel_.setColour (juce::Label::textColourId,
-                                       parvati::isY2kTheme (&t) ? juce::Colour (0xff141C30)
+                                       hellcat::isY2kTheme (&t) ? juce::Colour (0xff141C30)
                                                                 : t.textSecondary);
     }
     // (2026-08-22) The settings-drawer scrollbar override is REMOVED: it
     // muted the thumb to backgroundInput — which read as an unthemed gray
     // bar (the reported "give the scrollbar a theme-appropriate color").
-    // The ParvatiLookAndFeel already themes ScrollBar correctly for every
+    // The HellcatLookAndFeel already themes ScrollBar correctly for every
     // theme (accent thumb, base track, hover brighten, rounded — see
     // drawScrollbar) and re-setColour's on every theme switch, so the drawer
     // scrollbar now simply inherits it.
@@ -1962,7 +1985,7 @@ void ParvatiEditor::applyAllColoursFromTheme()
     repaint();
 }
 
-void ParvatiEditor::applyHeaderButtonChrome()
+void HellcatEditor::applyHeaderButtonChrome()
 {
     // [20] Clickable affordance for the top bar (user feedback: "introduce
     // some color to the unselected items to signal that they are clickable").
@@ -1974,7 +1997,7 @@ void ParvatiEditor::applyHeaderButtonChrome()
     //   - text:   textPrimary (the bright value tier).
     // Toggled-on keeps the L&F's buttonOnColourId (solid accent fill + dark
     // text) so SELECTED stays clearly stronger than the wash; hover/press
-    // derive automatically in ParvatiLookAndFeel::drawButtonBackground
+    // derive automatically in HellcatLookAndFeel::drawButtonBackground
     // (brighter on hover, darker on press). Component-level setColour wins
     // over the L&F defaults by design; this helper re-resolves from the
     // ACTIVE theme on every switch (called from applyAllColoursFromTheme).
@@ -1983,7 +2006,7 @@ void ParvatiEditor::applyHeaderButtonChrome()
     // (the card body tone) with near-black text on the bright metal, and
     // the LCD-green ACTIVE state handled by drawButtonBackground's on-fill
     // (buttonOnColourId = accent). The former teal veil washed out.
-    const bool y2k = parvati::isY2kTheme (&t);
+    const bool y2k = hellcat::isY2kTheme (&t);
     const auto wash = y2k ? t.containerFill
                           : t.accentSecondary.withAlpha ((juce::uint8) 0x2A);   // 42/255 ~= 16%
     // The steel fill keeps the WHITE text tier (7.3:1 on #565656).
@@ -2011,7 +2034,7 @@ void ParvatiEditor::applyHeaderButtonChrome()
         }
 }
 
-void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+void HellcatEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     // A new theme was selected: install it on the L&F, then re-apply every
     // theme-derived colour across the whole tree (shared helper, also used at
@@ -2020,7 +2043,7 @@ void ParvatiEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     applyAllColoursFromTheme();
 }
 
-void ParvatiEditor::reapplyGraphCategoryColours()
+void HellcatEditor::reapplyGraphCategoryColours()
 {
     // Re-resolve each graph preview's category token from the current theme and
     // re-push it (a snapshot Colour would otherwise freeze on the old theme).
@@ -2028,16 +2051,16 @@ void ParvatiEditor::reapplyGraphCategoryColours()
     // envelope / LFO / filter previews read as one instrument family.
     const auto& theme = themeManager_.getCurrentTheme();
     for (auto& binding : graphCategoryBindings_)
-        binding.first (parvati::indicatorFor (theme, theme.*binding.second));
+        binding.first (hellcat::indicatorFor (theme, theme.*binding.second));
 }
 
-void ParvatiEditor::setZoom (double zoom)
+void HellcatEditor::setZoom (double zoom)
 {
     zoom_ = juce::jlimit (0.75, 2.0, zoom);
     juce::Desktop::getInstance().setGlobalScaleFactor (static_cast<float> (zoom_));
 }
 
-void ParvatiEditor::applyZoom (double zoom)
+void HellcatEditor::applyZoom (double zoom)
 {
     // Shared by the Cmd/Ctrl +/-/0 shortcuts and the on-screen zoom buttons so
     // both use one clamping + persist + Settings-mirror path.
@@ -2047,7 +2070,7 @@ void ParvatiEditor::applyZoom (double zoom)
         settingsPanel_->setZoomValue (zoom_);     // mirror into the slider (no re-fire)
 }
 
-void ParvatiEditor::applyLiveFeedbackRefreshRate (int hz)
+void HellcatEditor::applyLiveFeedbackRefreshRate (int hz)
 {
     // Live mod-feedback cadence (docs/LIVE_MOD_FEEDBACK_DESIGN.md): the ONE
     // hub poll + both mod-bar strip timers follow the persisted pref
@@ -2067,7 +2090,7 @@ void ParvatiEditor::applyLiveFeedbackRefreshRate (int hz)
             bar->setTelemetryRateHz (hz);
 }
 
-std::vector<ParamPage*> ParvatiEditor::allGeneratedPages() const
+std::vector<ParamPage*> HellcatEditor::allGeneratedPages() const
 {
     std::vector<ParamPage*> out;
     out.reserve (generatedPages_.size());
@@ -2076,7 +2099,7 @@ std::vector<ParamPage*> ParvatiEditor::allGeneratedPages() const
     return out;
 }
 
-bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
+bool HellcatEditor::keyPressed (const juce::KeyPress& key)
 {
     const int code = key.getKeyCode();
     const bool cmdOrCtrl = key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown();
@@ -2100,19 +2123,21 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
         return false;
     }
 
-    // ---- Musical typing while tweaking (2026-08-21 user report): the
-    // KeyboardView handles QWERTY notes only while IT holds focus, but a
-    // clicked knob/combo/button GRABS focus mid-performance and a focused
-    // sibling never sees the keys. Unhandled plain keys bubble up the parent
-    // chain to HERE, so forward them to the strip instead of mutating
-    // wantsKeyboardFocus tree-wide (the previous approach left the focus
-    // traversal empty). Guards: the strip must be on screen and the focused
-    // component must not be a text entry (a TextEditor consumes keys itself
-    // and never reaches this handler; the check is extra safety).
+    // ---- Musical typing while tweaking (2026-08-21 user report) and with
+    // the strip hidden (2026-08-26 user request): the KeyboardView handles
+    // QWERTY notes only while IT holds focus, but a clicked knob/combo/button
+    // GRABS focus mid-performance — and with the [KBD] strip hidden no view
+    // can hold the typing focus at all. Unhandled plain keys bubble up the
+    // parent chain to HERE, so forward them to the strip. The strip's own
+    // visibility no longer gates the forward: the KeyboardView itself refuses
+    // every key in hosts (playback is standalone-only), so plugin behaviour is
+    // unchanged, while the standalone plays with the strip hidden. Guards: the
+    // focused component must not be a text entry (a TextEditor consumes keys
+    // itself and never reaches this handler; the check is extra safety).
     // KeyboardView::keyPressed re-checks the modifier/computer-keyboard rules
     // itself and returns false for anything it does not own (including
     // Cmd/Ctrl combos), so this forward can never consume a shortcut.
-    if (! cmdOrCtrl && keyboardView_ != nullptr && keyboardView_->isShowing())
+    if (! cmdOrCtrl && keyboardView_ != nullptr)
     {
         const bool typing = dynamic_cast<juce::TextEditor*> (
             juce::Component::getCurrentlyFocusedComponent()) != nullptr;
@@ -2143,7 +2168,7 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     }
 
     // ---- File shortcuts: Cmd/Ctrl+O = Load picker; Cmd/Ctrl+S = Save
-    // PARVATI format. Choice for S: the .parvati save is the FULL-FIDELITY
+    // HELLCAT format. Choice for S: the .yml save is the FULL-FIDELITY
     // format (vca_curve / filter_card / arp/seq all round-trip; .PRO drops
     // them) — the lossless default. The Ambika .PRO / .MUL saves stay
     // reachable from the Save button's own menu.
@@ -2183,20 +2208,106 @@ bool ParvatiEditor::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
-bool ParvatiEditor::keyStateChanged (bool isKeyDown)
+bool HellcatEditor::keyStateChanged (bool isKeyDown)
 {
     // Musical-typing release path (see keyPressed's forward): while a knob /
-    // combo holds the focus, key events bubble here — forward the state
-    // change so the strip releases a computer-key note the moment its key
-    // comes up (KeyboardView::keyStateChanged is a no-op walk when no
-    // computer-key notes are held). Returning its result keeps the normal
-    // propagation semantics for anything above the editor.
-    if (keyboardView_ != nullptr && keyboardView_->isShowing())
+    // combo holds the focus, or the strip is hidden, key events bubble here —
+    // forward the state change so the strip releases a computer-key note the
+    // moment its key comes up (KeyboardView::keyStateChanged is a no-op walk
+    // when no computer-key notes are held, and refuses everything in hosts).
+    // Returning its result keeps the normal propagation semantics for
+    // anything above the editor.
+    if (keyboardView_ != nullptr)
         return keyboardView_->keyStateChanged (isKeyDown);
     return false;
 }
 
-bool ParvatiEditor::handleStepPresetShortcut (int direction)
+//==============================================================================
+// Standalone musical typing without the on-screen strip (2026-08-26 request).
+// JUCE hands a key to the FOCUSED component first, then walks the parent
+// chain. When no component holds the focus — the plain state of a fresh
+// standalone window, or a click on the editor background — the walk starts at
+// the top-level window and never reaches this editor. The KeyListener below
+// closes that gap: it runs for the top-level step of the walk. It also serves
+// the focused-control walk as a late catch-all. The KeyboardView gates every
+// note itself (playback is standalone-only, bare keys only), so hosts keep
+// their keys and modifier combos always pass through.
+void HellcatEditor::parentHierarchyChanged()
+{
+    refreshTopLevelKeyListener();
+}
+
+void HellcatEditor::refreshTopLevelKeyListener()
+{
+    // Keep the listener on the CURRENT top-level: the editor can be re-parented
+    // (standalone window content, host wrappers, the test desktop). Idempotent
+    // while the top-level stays the same.
+    auto* top = getTopLevelComponent();
+    if (top == topLevelKeyListenerHost_.getComponent())
+        return;
+    if (topLevelKeyListenerHost_ != nullptr)
+        topLevelKeyListenerHost_->removeKeyListener (this);
+    topLevelKeyListenerHost_ = top;
+    if (top != nullptr)
+        top->addKeyListener (this);
+}
+
+bool HellcatEditor::keyPressed (const juce::KeyPress& key, juce::Component* origin)
+{
+    juce::ignoreUnused (origin);
+    if (keyboardView_ == nullptr)
+        return false;
+    // Never play notes behind a modal dialog: its own window owns the keys.
+    if (isCurrentlyBlockedByAnotherModalComponent())
+        return false;
+    // A focused text field consumes its own keys; keep them out of the engine.
+    if (dynamic_cast<juce::TextEditor*> (
+            juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+        return false;
+
+    // Musical typing first. The KeyboardView refuses every key in hosts
+    // (playback is standalone-only) and every modifier combo, so this forward
+    // can never swallow a shortcut.
+    if (keyboardView_->keyPressed (key))
+        return true;
+
+    // When no child of this editor holds the focus, the editor's own
+    // keyPressed never runs (the walk holds the top-level only). Run it here
+    // so zoom, preset and part shortcuts work in that plain state too. When a
+    // child DOES hold the focus, the editor step follows right after this
+    // listener in the same walk — skip to avoid a duplicate call.
+    if (! hasKeyboardFocus (true))
+        return keyPressed (key);   // the Component overload
+    return false;
+}
+
+bool HellcatEditor::keyStateChanged (bool isKeyDown, juce::Component* origin)
+{
+    juce::ignoreUnused (origin);
+    // Release side of the no-focus path: let the strip drop notes whose keys
+    // came up. A no-op walk when no computer key holds a note, and a refusal
+    // in hosts. No modal guard here — a release must always pass through.
+    if (keyboardView_ != nullptr)
+        return keyboardView_->keyStateChanged (isKeyDown);
+    return false;
+}
+
+void HellcatEditor::tickMusicalTypingFocusGuard()
+{
+    // The no-focus path bypasses KeyboardView::focusLost. When the window
+    // resigns key focus while a key is physically held, macOS sends no key-up,
+    // so the release walk cannot run and the note would sustain forever.
+    // Poll the peer while typing holds notes and release them on focus loss
+    // (sounding voices keep the timer at 30 Hz, so the delay stays ~33 ms).
+    if (keyboardView_ == nullptr || ! keyboardView_->holdingComputerNotes())
+        return;
+    auto* top = getTopLevelComponent();
+    auto* peer = top != nullptr ? top->getPeer() : nullptr;
+    if (peer == nullptr || ! peer->isFocused())
+        keyboardView_->releaseComputerNotes();
+}
+
+bool HellcatEditor::handleStepPresetShortcut (int direction)
 {
     // No browser (this cannot happen — it is editor-owned) => not consumed.
     if (presetBrowser_ == nullptr)
@@ -2211,27 +2322,27 @@ bool ParvatiEditor::handleStepPresetShortcut (int direction)
     return true;
 }
 
-bool ParvatiEditor::handleLoadPresetShortcut()
+bool HellcatEditor::handleLoadPresetShortcut()
 {
     // Desktop-gated: a native file picker needs a window-server session. The
     // headless tests assert the SEAM fired via this true — no picker opens.
-    // PARVATI_HEADLESS=1 suppresses the picker even when the test harness has
+    // HELLCAT_HEADLESS=1 suppresses the picker even when the test harness has
     // components on the desktop (see nativeDialogsSuppressed above).
     if (! nativeDialogsSuppressed() && juce::Desktop::getInstance().getNumComponents() > 0)
         openLoadDialog();
     return true;
 }
 
-bool ParvatiEditor::handleSavePresetShortcut()
+bool HellcatEditor::handleSavePresetShortcut()
 {
-    // Parvati format (see keyPressed's choice note). Desktop-gated as above
-    // (incl. the PARVATI_HEADLESS suppression for the GUI test binaries).
+    // Hellcat format (see keyPressed's choice note). Desktop-gated as above
+    // (incl. the HELLCAT_HEADLESS suppression for the GUI test binaries).
     if (! nativeDialogsSuppressed() && juce::Desktop::getInstance().getNumComponents() > 0)
-        openSaveParvatiDialog();
+        openSaveHellcatDialog();
     return true;
 }
 
-bool ParvatiEditor::handlePartSelectShortcut (int part0Based)
+bool HellcatEditor::handlePartSelectShortcut (int part0Based)
 {
     if (part0Based < 0 || part0Based >= 6)
         return false;
@@ -2242,7 +2353,7 @@ bool ParvatiEditor::handlePartSelectShortcut (int part0Based)
     return true;
 }
 
-void ParvatiEditor::applyChromeTranslations()
+void HellcatEditor::applyChromeTranslations()
 {
     // Re-translate every editor-chrome string through the active LocalisedStrings
     // so a live language switch updates immediately. The top-level page-selector
@@ -2283,17 +2394,17 @@ void ParvatiEditor::applyChromeTranslations()
     repaint();
 }
 
-void ParvatiEditor::loadLogoIcon()
+void HellcatEditor::loadLogoIcon()
 {
     if (logoDrawable_ != nullptr)
         return;
 
     int svgBytes = 0;
-    const char* const svgData = ParvatiLogo::getNamedResource ("parvati_logo_svg", svgBytes);
+    const char* const svgData = HellcatLogo::getNamedResource ("hellcat_logo_svg", svgBytes);
     if (svgData == nullptr || svgBytes <= 0)
         return;
 
-    // parvati_logo.svg is now TRUE vector art (outlined <path>/<g>, no raster),
+    // hellcat_logo.svg is now TRUE vector art (outlined <path>/<g>, no raster),
     // so parse it with JUCE's SVG renderer and cache the resulting Drawable.
     // No PNG/base64/<image> decode anywhere. (JUCE 9 exposes the string-based
     // parser createFromSVGString; the older createFromSVG(XmlElement) is gone.)
@@ -2301,7 +2412,7 @@ void ParvatiEditor::loadLogoIcon()
         juce::String (svgData, (size_t) svgBytes));
 }
 
-void ParvatiEditor::paint (juce::Graphics& g)
+void HellcatEditor::paint (juce::Graphics& g)
 {
     const auto& theme = themeManager_.getCurrentTheme();
     // The whole UI (header included) is one flat windowBackground — no tinted
@@ -2311,9 +2422,9 @@ void ParvatiEditor::paint (juce::Graphics& g)
     // header band and the BOTTOM status band take the module-card fill (the
     // same steel as the cards), each spanning the full editor width and height
     // so the card color covers the whole band edge to edge.
-    if (parvati::isY2kTheme (&theme))
+    if (hellcat::isY2kTheme (&theme))
     {
-        parvati::paintChromeWindow (g, getLocalBounds().toFloat(), &theme);
+        hellcat::paintChromeWindow (g, getLocalBounds().toFloat(), &theme);
         const juce::Colour steel = theme.containerFill;
         // The bands extend THROUGH their separator-rule lines so the card
         // color reaches each line fully — no base-colour gap before the
@@ -2323,7 +2434,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
         const int headerBottom = headerBand_.isEmpty() ? kHeaderH : headerBand_.getBottom();
         g.setColour (steel);
         g.fillRect (0.0f, 0.0f, (float) getWidth(), (float) (headerBottom + 1));
-        const int statusPad = kChromeRuleGap + parvati::kRuleShadowH + 1;
+        const int statusPad = kChromeRuleGap + hellcat::kRuleShadowH + 1;
         const int statusTop = statusBand_.isEmpty() ? getHeight() - kVoiceStripH
                                                     : statusBand_.getY();
         g.fillRect (0.0f, (float) (statusTop - statusPad),
@@ -2332,13 +2443,13 @@ void ParvatiEditor::paint (juce::Graphics& g)
     else
         g.fillAll (theme.backgroundBase);
 
-    // Header logo cluster: [brand icon] [gap] [white "Parvati" text], painted
+    // Header logo cluster: [brand icon] [gap] [white "Hellcat" text], painted
     // into the reserved left logo block (the version label sits inline to its
     // right). The icon is a fixed brand asset drawn as-is (own colours); the
-    // "Parvati" text uses the theme `text` token so it re-colours each paint().
+    // "Hellcat" text uses the theme `text` token so it re-colours each paint().
     if (! logoArea_.isEmpty())
     {
-        // Two-line brand (2026-08-23 revision 3): "PARVATI" — ALL CAPS, PLAIN,
+        // Two-line brand (2026-08-23 revision 3): "HELLCAT" — ALL CAPS, PLAIN,
         // 17pt, LETTER-SPACED — centred over the SUBTITLE TEXT's own span
         // (not the whole block: the block carries breathing slack that would
         // offset the optical centre), above "by 805Labs \xc2\xb7 v<ver>"
@@ -2346,7 +2457,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
         // tracking + smaller plain weight is the "lighter font" read.
         auto block = logoArea_;
         const juce::Font subFont = lnf_.appFont (10.0f, juce::Font::plain);
-        const juce::String subText (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION));
+        const juce::String subText (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" HELLCAT_VERSION));
         {
             juce::GlyphArrangement gs;
             gs.addLineOfText (subFont, subText, 0.0f, 0.0f);
@@ -2388,7 +2499,7 @@ void ParvatiEditor::paint (juce::Graphics& g)
     }
 }
 
-void ParvatiEditor::resized()
+void HellcatEditor::resized()
 {
     auto area = getLocalBounds();
 
@@ -2572,13 +2683,13 @@ void ParvatiEditor::resized()
     undoButton_.setVisible (true);   // primary: never folds
     undoButton_.setBounds (slimCell (bar.removeFromRight (44)));          // undo
     bar.removeFromRight (4);   // separates the history/view icons from the file group
-    saveButton_.setBounds (slimCell (bar.removeFromRight (52)));          // Save (direct .parvati; .PRO/.MUL export lives on the Patch page)
+    saveButton_.setBounds (slimCell (bar.removeFromRight (52)));          // Save (direct .yml; .PRO/.MUL export lives on the Patch page)
     bar.removeFromRight (6);
     loadButton_.setBounds (slimCell (bar.removeFromRight (48)));          // Load
 
 
-    // Left: brand icon + white "Parvati" wordmark (painted) + version label
-    // inline to its right. Layout: [~14px edge] "Parvati" [6px] [icon] [6px] [version]
+    // Left: brand icon + white "Hellcat" wordmark (painted) + version label
+    // inline to its right. Layout: [~14px edge] "Hellcat" [6px] [icon] [6px] [version]
     // (equal 6px gaps; text width measured with the SAME font paint() uses).
     {
         bar.removeFromLeft (8);   // extra left edge whitespace (6 from bar.reduced + 8 = ~14px)
@@ -2598,7 +2709,7 @@ void ParvatiEditor::resized()
         const juce::Font subFont = lnf_.appFont (10.0f, juce::Font::plain);
         juce::GlyphArrangement gaSub;
         gaSub.addLineOfText (subFont,
-                             juce::String (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" PARVATI_VERSION)),
+                             juce::String (juce::CharPointer_UTF8 ("by 805Labs \xc2\xb7 v" HELLCAT_VERSION)),
                              0.0f, 0.0f);
         const int subW = juce::roundToInt (gaSub.getBoundingBox (0, gaSub.getNumGlyphs(), true).getWidth());
         const int brandW = juce::jmax (textW, subW);
@@ -2764,7 +2875,7 @@ void ParvatiEditor::resized()
 // the PresetBrowser and the AUv3 extension (Standalone + AUv3 keep one tree);
 // the Documents copy is a plain export. Only saves that land INSIDE the USER
 // area are mirrored — a picker navigated elsewhere is an explicit export
-// already — and the USER/ sub-path is preserved (Documents/Parvati/USER/...)
+// already — and the USER/ sub-path is preserved (Documents/Hellcat/USER/...)
 // so bank folders survive. A failed copy is non-fatal (the save itself
 // already succeeded) and the next successful save re-mirrors; stale mirrors
 // are intentionally never deleted (silently removing user-visible files
@@ -2774,15 +2885,15 @@ void ParvatiEditor::resized()
 // harmless there; the Standalone app's own saves are the visible ones.
 static void mirrorUserSaveToDocumentsIOS (const juce::File& saved)
 {
-    const auto userDir = ParvatiAudioProcessor::getUserPatchDir();
+    const auto userDir = HellcatAudioProcessor::getUserPatchDir();
     if (! saved.isAChildOf (userDir))
         return;
     const auto dest = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                          .getChildFile ("Parvati/USER")
+                          .getChildFile ("Hellcat/USER")
                           .getChildFile (saved.getRelativePathFrom (userDir));
     // F-ios-files-5 (iOS hunt 2026-08-19): ATOMIC copy. copyFileTo streamed
     // straight onto the Files-visible destination, so an iOS suspension
-    // mid-copy could leave a TORN .parvati/.PRO/.MUL in Documents that the
+    // mid-copy could leave a TORN .yml/.PRO/.MUL in Documents that the
     // user could open. The TemporaryFile + rename pattern (the house idiom,
     // PatchFile.cpp / FactoryPresetInstaller.cpp) makes the visible file
     // appear only complete: an interrupted copy leaves the PREVIOUS mirror
@@ -2795,17 +2906,17 @@ static void mirrorUserSaveToDocumentsIOS (const juce::File& saved)
 }
 #endif
 
-void ParvatiEditor::openLoadDialog()
+void HellcatEditor::openLoadDialog()
 {
-    // .parvati-first (2026-08-20): the Load button/shortcut default to the
+    // .yml-first (2026-08-20): the Load button/shortcut default to the
     // native format; Ambika .PRO/.MUL remain importable via drag-drop and
     // the PresetBrowser (both route through applyPatchFile — a separate
     // seam from this picker). Starts nowhere in particular (empty start
     // file): on iOS the document picker opens at its browse root, from
-    // which the mirrored Documents/Parvati/USER saves are reachable (On My
-    // iPad > Parvati); on desktop the browser starts at the OS default.
-    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Load Parvati Patch (.parvati)"),
-                                                       juce::File(), "*.parvati");
+    // which the mirrored Documents/Hellcat/USER saves are reachable (On My
+    // iPad > Hellcat); on desktop the browser starts at the OS default.
+    fileChooser_ = std::make_unique<juce::FileChooser> (TRANS ("Load Hellcat Patch (.yml)"),
+                                                       juce::File(), "*.yml");
     const auto flags = juce::FileBrowserComponent::openMode
                      | juce::FileBrowserComponent::canSelectFiles;
     fileChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc) {
@@ -2829,7 +2940,7 @@ void showFileOpFailure (const juce::String& title, const juce::String& path)
     // headless test/editor-coverage binaries (console, no desktop windows)
     // would block forever inside the OS alert once the message loop is
     // pumped — silently hanging the run. Skip when no desktop windows exist
-    // OR the PARVATI_HEADLESS override is set (the GUI test binaries: their
+    // OR the HELLCAT_HEADLESS override is set (the GUI test binaries: their
     // editor IS on the desktop, but no human is present to dismiss a native
     // alert — the same hazard the file-picker gates solve). Tests never rely
     // on the dialog; they assert the return codes.
@@ -2841,16 +2952,16 @@ void showFileOpFailure (const juce::String& title, const juce::String& path)
 }
 }  // namespace
 
-// Shared tail for the three save pickers (.PRO / .parvati / .MUL). See the
+// Shared tail for the three save pickers (.PRO / .yml / .MUL). See the
 // header declaration; each dialog below keeps ONLY its saver lambda (and the
 // .MUL fallback branch) — the default name, USER/ dir, default file, save-mode
 // flags, extension forcing and the fileChooser_ teardown live here once.
-void ParvatiEditor::launchSavePicker (const char* titleKey, const char* ext,
+void HellcatEditor::launchSavePicker (const char* titleKey, const char* ext,
                                       const std::function<void (const juce::File&)>& saver)
 {
     auto defaultName = processorRef_.getLoadedProgramName();
     if (defaultName.isEmpty())
-        defaultName = "Parvati";
+        defaultName = "Hellcat";
     const juce::File defaultDir = processorRef_.getUserPatchDir();
     defaultDir.createDirectory();   // make sure USER/ exists
     const juce::File defaultFile (defaultDir.getChildFile (defaultName + ext));
@@ -2866,7 +2977,7 @@ void ParvatiEditor::launchSavePicker (const char* titleKey, const char* ext,
     });
 }
 
-void ParvatiEditor::openSaveDialog()
+void HellcatEditor::openSaveDialog()
 {
     // EXPORT PATH (.PRO — Patch-page button only, 2026-08-20): save the
     // CURRENT part as an Ambika .PRO (byte-faithful; shareable with Ambika
@@ -2880,20 +2991,20 @@ void ParvatiEditor::openSaveDialog()
     });
 }
 
-void ParvatiEditor::openSaveParvatiDialog()
+void HellcatEditor::openSaveHellcatDialog()
 {
-    // Save a full-fidelity Parvati-native patch (.parvati, YAML) that carries
+    // Save a full-fidelity Hellcat-native patch (.yml, YAML) that carries
     // EVERYTHING — including vca_curve / filter_card / arp, which the Ambika
     // .PRO byte format drops. Defaults to the user's preset area.
-    launchSavePicker ("Save Parvati Patch (.parvati)", ".parvati", [this] (const juce::File& f) {
-        if (processorRef_.saveParvatiPatchFile (f))
+    launchSavePicker ("Save Hellcat Patch (.yml)", ".yml", [this] (const juce::File& f) {
+        if (processorRef_.saveHellcatPatchFile (f))
             afterMultiSaved (f);
         else
             showFileOpFailure (TRANS ("Could not save file:"), f.getFullPathName());
     });
 }
 
-void ParvatiEditor::openSaveMultiDialog()
+void HellcatEditor::openSaveMultiDialog()
 {
     // Save the whole 6-Part multitimbral setup as an Ambika .MUL (byte-faithful;
     // shareable with Ambika hardware). When a Part requests more voices than
@@ -2902,7 +3013,7 @@ void ParvatiEditor::openSaveMultiDialog()
     // mapping the voices onto the 6 hardware cards (MulExport solver).
     launchSavePicker ("Save Ambika Multi (.MUL)", ".MUL", [this] (const juce::File& f) {
         const auto setup = processorRef_.getMulExportSetup();
-        if (! parvati::mul_export::needsFallback (setup))
+        if (! hellcat::mul_export::needsFallback (setup))
         {
             if (processorRef_.saveMultiFile (f))
                 afterMultiSaved (f);
@@ -2919,7 +3030,7 @@ void ParvatiEditor::openSaveMultiDialog()
         // (launchAsync), so its DoneCallback can fire after the host has torn
         // the editor down — a raw `this` would dangle (use-after-free on
         // processorRef_/afterMultiSaved).
-        juce::Component::SafePointer<ParvatiEditor> safe (this);
+        juce::Component::SafePointer<HellcatEditor> safe (this);
         MulExportDialog::launch (this, setup, names, [safe, f] (int strategy)
         {
             if (safe == nullptr) return;
@@ -2931,7 +3042,7 @@ void ParvatiEditor::openSaveMultiDialog()
     });
 }
 
-void ParvatiEditor::afterMultiSaved (const juce::File& f)
+void HellcatEditor::afterMultiSaved (const juce::File& f)
 {
     juce::ignoreUnused (f);   // iOS-only use below; silences -Wunused-parameter on desktop
 #if JUCE_IOS
@@ -2944,7 +3055,7 @@ void ParvatiEditor::afterMultiSaved (const juce::File& f)
     }
 }
 
-int ParvatiEditor::currentPartMidiChannel()
+int HellcatEditor::currentPartMidiChannel()
 {
     // Omni (0) -> 1: the editor's virtual keyboard, wheels and pressure
     // callbacks inject on a concrete channel, and channel 1 always reaches
@@ -2953,23 +3064,23 @@ int ParvatiEditor::currentPartMidiChannel()
     if (ch == 0) ch = 1;
     return ch;
 }
-void ParvatiEditor::applyPatchFile (const juce::File& f)
+void HellcatEditor::applyPatchFile (const juce::File& f)
 {
     // .MUL -> multitimbral multi (all 6 Parts); .PRO -> single program;
-    // .parvati -> Parvati-native YAML (patch or multi, sniffed by format:).
+    // .yml -> Hellcat-native YAML (patch or multi, sniffed by format:).
     // Both kinds refresh the Patch page on success (see the tail).
     bool ok = false;
 
-    if (f.hasFileExtension (".parvati"))
+    if (f.hasFileExtension (".yml"))
     {
         juce::String text;
         if (juce::FileInputStream in (f); in.openedOk())
             text = in.readEntireStreamAsString();
-        const juce::String fmt = parvati::preset::detectParvatiFormat (text);
-        if (fmt == parvati::preset::kFormatMulti)
-            ok = processorRef_.loadParvatiMultiFile (f);
+        const juce::String fmt = hellcat::preset::detectHellcatFormat (text);
+        if (fmt == hellcat::preset::kFormatMulti)
+            ok = processorRef_.loadHellcatMultiFile (f);
         else
-            ok = processorRef_.loadParvatiPatchFile (f);
+            ok = processorRef_.loadHellcatPatchFile (f);
     }
     else
     {
@@ -3012,7 +3123,7 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
         }
         // EVERY successful load refreshes the Patch page, not just multis. A
         // multi rewrites every part's channel / key zone / voice allocation /
-        // polyphony, and a SINGLE-patch load (.PRO / .parvati patch) rewrites
+        // polyphony, and a SINGLE-patch load (.PRO / .yml patch) rewrites
         // the current part's PartData bytes — poly (byte 15), raga preset
         // (byte 4), spread (byte 3) — which the page's Poly / Tune combos
         // mirror. refresh() is a cheap guarded engine re-read (no onChange
@@ -3036,20 +3147,20 @@ void ParvatiEditor::applyPatchFile (const juce::File& f)
     }
 }
 
-bool ParvatiEditor::isInterestedInFileDrag (const juce::StringArray& files)
+bool HellcatEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
     return std::any_of (files.begin(), files.end(), [] (const juce::String& fn) {
         return fn.endsWithIgnoreCase (".pro") || fn.endsWithIgnoreCase (".mul")
-               || fn.endsWithIgnoreCase (".parvati");
+               || fn.endsWithIgnoreCase (".yml");
     });
 }
 
-void ParvatiEditor::filesDropped (const juce::StringArray& files, int, int)
+void HellcatEditor::filesDropped (const juce::StringArray& files, int, int)
 {
     for (const auto& fn : files)
     {
         juce::File f (fn);
-        if (f.hasFileExtension (".pro") || f.hasFileExtension (".mul") || f.hasFileExtension (".parvati"))
+        if (f.hasFileExtension (".pro") || f.hasFileExtension (".mul") || f.hasFileExtension (".yml"))
         {
             applyPatchFile (f);
             break;

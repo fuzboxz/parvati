@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // FxProcessors — the per-slot FX effects: six ports of the Mutable Instruments
 // Clouds DSP — Diffuser / Pitch Shifter / Reverb (the dsp/fx chain) and
@@ -167,7 +167,7 @@ private:
 // correlation-maximizing points. Records stereo dry into a ~4 s AudioBuffer
 // (like the looper) and plays overlapping windows from the recorded past.
 // REQUIRES a per-chunk "background tick": the firmware runs the correlator
-// splice-point search in its background main loop, but Parvati FX slots have no
+// splice-point search in its background main loop, but Hellcat FX slots have no
 // such thread, so after each Play we run it inline (LoadCorrelator +
 // EvaluateSomeCandidates); without it the search stalls and WSOLA never
 // advances. Signal path: Pitch -> Position -> Size -> Freeze -> Tone.
@@ -213,7 +213,7 @@ private:
 // the live signal in place through an FFT pipeline (analysis/synthesis are
 // separate internal buffers, so in-place Process is safe). REQUIRES a per-chunk
 // "background tick": the firmware drains the STFT pipeline in its background
-// main loop, but Parvati FX slots have no such thread, so after each Process we
+// main loop, but Hellcat FX slots have no such thread, so after each Process we
 // call Buffer() inline; without it the FFT frames never drain -> silence.
 // freeze/gate are off and spectral quantization/phase-randomization are zero
 // (Blur = spectral.refresh_rate). param0 = Pitch (+/-24 st, 0.5 = unison),

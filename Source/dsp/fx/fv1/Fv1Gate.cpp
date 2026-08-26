@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1Gate implementation — peak-keyed expander with a knob-disabling corner.
 
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 static_assert (0 <= kMaxMemorySamples, "Fv1Gate within the FV-1 RAM budget");
@@ -66,4 +66,4 @@ void Fv1Gate::processSampleFx (int32_t lin, int32_t /*rin*/,
     rout = out;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

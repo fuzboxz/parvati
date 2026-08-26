@@ -10,7 +10,7 @@
 // noise stream cannot be perturbed by controller-side scenarios (it is
 // re-seeded explicitly for lockstep by fw_voicecard::SeedRandom).
 //
-// Firmware-only TU (same contract as shims.cc: never include Parvati headers
+// Firmware-only TU (same contract as shims.cc: never include Hellcat headers
 // here). The include paths resolve firmware headers through the shim first
 // (tests/firmware_shim precedes ambika_reference in the target's include
 // dirs).

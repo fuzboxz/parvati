@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // ModSourceCatalog — the single source of truth for the 31 MOD_SRC_* modulation
 // sources (ambika::dsp::ModulationSource, see dsp/patch.h). The CentralModBar
@@ -11,7 +11,7 @@
 // are intentionally left untouched; a later phase may refactor them to read here.
 //
 // This file is header-only data + thin accessors: no JUCE app state, no
-// allocations after the first call. clusterAccent() takes a ParvatiTheme so it
+// allocations after the first call. clusterAccent() takes a HellcatTheme so it
 // re-resolves on a theme switch.
 
 #pragma once
@@ -21,10 +21,10 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>   // juce::Colour
 
-#include "ParvatiTheme.h"
+#include "HellcatTheme.h"
 #include "dsp/patch.h"                          // ambika::dsp::MOD_SRC_* / MOD_SRC_LAST
 
-namespace parvati
+namespace hellcat
 {
 
 //==============================================================================
@@ -152,10 +152,10 @@ const SourceEntry& entryFor (int modSrcEnum);
 std::optional<Cluster> clusterForSourceName (const juce::String& name);
 
 // The accent colour for a cluster, resolved from the active theme.
-juce::Colour clusterAccent (Cluster c, const ParvatiTheme& theme);
+juce::Colour clusterAccent (Cluster c, const HellcatTheme& theme);
 
 // The 7 clusters in display order (a stable reference into a function-local
 // static, safe to hold for the call).
 const std::array<Cluster, 7>& clustersInOrder();
 
-}  // namespace parvati
+}  // namespace hellcat

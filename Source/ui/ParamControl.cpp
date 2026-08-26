@@ -1,12 +1,12 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.  See ui/ParamControl.h.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ui/ParamControl.h.
 
 #include "ParamControl.h"
 
-#include "ModMatrixHighlight.h"   // parvati::ModMatrixHighlight (dest-highlight bus)
-#include "ModSourceCatalog.h"     // parvati::entryFor (tap-assign status text)
+#include "ModMatrixHighlight.h"   // hellcat::ModMatrixHighlight (dest-highlight bus)
+#include "ModSourceCatalog.h"     // hellcat::entryFor (tap-assign status text)
 #include "ParamHelp.h"            // getParamHelp (per-parameter tooltip text)
-#include "ParvatiLookAndFeel.h"   // widestComboTextWidth + ParvatiLookAndFeel::getTheme
-#include "ParvatiTheme.h"         // ParvatiTheme category tokens
+#include "HellcatLookAndFeel.h"   // widestComboTextWidth + HellcatLookAndFeel::getTheme
+#include "HellcatTheme.h"         // HellcatTheme category tokens
 
 #include <algorithm>   // std::remove (instance registry teardown)
 
@@ -65,7 +65,7 @@ Section sectionForId (const juce::String& id)
 // "audio" brand accent; Envelopes/LFOs/Sequencer/Arp get their own hue. This is the
 // ONLY place a Section resolves to a category token, so every arc / graph / tint
 // shares one consistent mapping and a theme switch re-resolves automatically.
-juce::Colour categoryColourForSection (const ParvatiTheme& theme, Section s)
+juce::Colour categoryColourForSection (const HellcatTheme& theme, Section s)
 {
     // Y2K: ONE accent — the LCD green carries every knob arc (the category
     // rainbow vibrated on the chrome world). Other themes keep the
@@ -238,7 +238,7 @@ private:
 }  // namespace
 
 //==============================================================================
-ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDescriptor& d)
+ParamControl::ParamControl (HellcatAudioProcessor& processor, const PatchParamDescriptor& d)
     : desc_ (d), processor_ (processor), paramIDStr_ (d.paramID)
 {
     // Viewport safety net (T4): a TOUCH drag that starts on a control cell must
@@ -258,7 +258,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     label_->setJustificationType (juce::Justification::centred);
     applyThemeFonts();
     // Label / combo / slider colours all come from the editor-wide
-    // ParvatiLookAndFeel (inherited through the component tree).
+    // HellcatLookAndFeel (inherited through the component tree).
     addAndMakeVisible (*label_);
 
     if (d.choices != nullptr)
@@ -349,6 +349,31 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     paramControlRegistry().push_back (this);
     applyTooltipState();
 
+    // Accessibility (2026-08-26 pass). The cell is a TITLED GROUP; the real
+    // controls are the child juce::Slider / juce::ComboBox, whose built-in
+    // JUCE handlers expose the slider value interface and the combo menu —
+    // but a nameless widget announces nothing. Names derive from the same
+    // descriptor label the UI renders (never a duplicate string); the
+    // description is the same ParamHelp text the tooltip shows.
+    const juce::String a11yName = ! desc_.label.empty() ? juce::String (desc_.label)
+                                                       : paramIDStr_;
+    juce::Component::setTitle (a11yName);
+    setDescription (helpText_);
+    // Child widgets: the accessibility TITLE resolves from Component::getTitle
+    // (see AccessibilityHandler::getTitle), so setTitle is the one that counts.
+    // The slider's getHelp() additionally reads its tooltip — set by
+    // applyTooltipState() — so the ParamHelp text serves both roles.
+    if (slider_ != nullptr)
+    {
+        slider_->setTitle (a11yName);
+        slider_->setDescription (helpText_);
+    }
+    if (comboBox_ != nullptr)
+    {
+        comboBox_->setTitle (a11yName);
+        comboBox_->setDescription (helpText_);
+    }
+
     // Sequencer steps subscribe to their sibling length param so they dim/enable
     // live as the length changes. Seeded once here from the current value.
     lengthParamID_ = siblingLengthParamFor (paramIDStr_);
@@ -363,15 +388,15 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     // A destination knob listens to all 14 mod{1..14}_amount params so ANY matrix
     // edit refreshes the outer aggregate-depth ring drawn by the LookAndFeel.
     // Seeded once here from the current APVTS values.
-    modDest_ = parvati::ModDestMap::destForParamID (paramIDStr_);
+    modDest_ = hellcat::ModDestMap::destForParamID (paramIDStr_);
     isModDestKnob_ = (modDest_ >= 0 && slider_ != nullptr);
     if (isModDestKnob_)
     {
         // A source change recolours an arc, a dest change adds/removes an arc,
         // and an amount change resizes one, so listen to ALL of this knob's
         // domain's matrix params (14 synth mod slots, or 16 FX fxmod slots).
-        const bool        fx       = parvati::ModDestMap::isFxDest (modDest_);
-        const int         numSlots = fx ? parvati::ModDestMap::kFxNumSlots : 14;
+        const bool        fx       = hellcat::ModDestMap::isFxDest (modDest_);
+        const int         numSlots = fx ? hellcat::ModDestMap::kFxNumSlots : 14;
         const juce::String prefix  = fx ? "fxmod" : "mod";
         for (int slot = 1; slot <= numSlots; ++slot)
         {
@@ -388,7 +413,7 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
         // unsubscribed in the dtor, so a stale broadcast after teardown is a
         // safe no-op (see the multi-editor caveat in ModMatrixHighlight.h).
         juce::Component::SafePointer<ParamControl> safe (this);
-        modHighlightSub_ = parvati::ModMatrixHighlight::instance().onDestHighlighted (
+        modHighlightSub_ = hellcat::ModMatrixHighlight::instance().onDestHighlighted (
             [safe] (int modDst) { if (safe != nullptr) safe->applyModHighlight (modDst); });
 
         // Register this cell as a MouseListener on the label too so the hover
@@ -399,6 +424,16 @@ ParamControl::ParamControl (ParvatiAudioProcessor& processor, const PatchParamDe
     }
 }
 
+std::unique_ptr<juce::AccessibilityHandler> ParamControl::createAccessibilityHandler()
+{
+    // Role `group`: a titled cell. The name (descriptor label, set in the
+    // ctor) and the description (the ParamHelp text) are announced from the
+    // component title/description. The child Slider/ComboBox keep their own
+    // built-in handlers (value interface / menu), so nothing is duplicated.
+    return std::make_unique<juce::AccessibilityHandler> (*this,
+            juce::AccessibilityRole::group);
+}
+
 ParamControl::~ParamControl()
 {
     if (lengthParamID_.isNotEmpty())
@@ -407,8 +442,8 @@ ParamControl::~ParamControl()
         processor_.getApvts().removeParameterListener (paramIDStr_, this);
     if (isModDestKnob_)
     {
-        const bool        fx       = parvati::ModDestMap::isFxDest (modDest_);
-        const int         numSlots = fx ? parvati::ModDestMap::kFxNumSlots : 14;
+        const bool        fx       = hellcat::ModDestMap::isFxDest (modDest_);
+        const int         numSlots = fx ? hellcat::ModDestMap::kFxNumSlots : 14;
         const juce::String prefix  = fx ? "fxmod" : "mod";
         for (int slot = 1; slot <= numSlots; ++slot)
         {
@@ -420,7 +455,7 @@ ParamControl::~ParamControl()
         if (label_ != nullptr)
             label_->removeMouseListener (this);
         if (modHighlightSub_ >= 0)
-            parvati::ModMatrixHighlight::instance().unsubscribe (modHighlightSub_);
+            hellcat::ModMatrixHighlight::instance().unsubscribe (modHighlightSub_);
     }
     auto& r = paramControlRegistry();
     r.erase (std::remove (r.begin(), r.end(), this), r.end());
@@ -599,7 +634,7 @@ void ParamControl::setTapAssignActive (bool active)
     // visual feedback as a desktop drag, with zero LookAndFeel changes.
     tapAssignActive_ = active;
     tapSelectedSource_ = -1;   // clear any pending source on entry/exit
-    parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+    hellcat::ModMatrixHighlight::instance().setHighlightedDest (-1);
     setModDragActive (active);
     if (active)
         postTransientStatus (TRANS ("Tap a mod source, then a knob"), 90);   // entry hint (~3s)
@@ -617,7 +652,7 @@ void ParamControl::setTapSelectedSource (int sourceEnum) noexcept
     // spells out BOTH halves of the gesture and lasts ~5s (150 frames @30 Hz),
     // long enough to be noticed mid-flow.
     if (sourceEnum >= 0)
-        postTransientStatus (TRANS ("MOD assign armed: ") + parvati::entryFor (sourceEnum).fullName
+        postTransientStatus (TRANS ("MOD assign armed: ") + hellcat::entryFor (sourceEnum).fullName
                                  + TRANS (" — tap a destination knob ([MOD] to exit)"),
                              150);
 }
@@ -649,7 +684,7 @@ void ParamControl::applyThemeFonts()
     // proof demanded byte-identical non-Y2K rendering).
     if (label_ == nullptr)
         return;
-    const auto* theme = parvati::themeFor (*this);
+    const auto* theme = hellcat::themeFor (*this);
     const bool seqLengthBold = desc_.isSequencer
                                && juce::String (desc_.paramID).startsWith ("seq_length_");
 
@@ -661,11 +696,11 @@ void ParamControl::applyThemeFonts()
     // card (unreadable). Light themes = dark text, dark themes = light text.
     if (theme != nullptr)
         label_->setColour (juce::Label::textColourId,
-                           parvati::onCardText (theme, theme->textSecondary));
+                           hellcat::onCardText (theme, theme->textSecondary));
 
     if (theme != nullptr && theme->name == "Y2K")
     {
-        if (auto* lnf = dynamic_cast<ParvatiLookAndFeel*> (&getLookAndFeel()))
+        if (auto* lnf = dynamic_cast<HellcatLookAndFeel*> (&getLookAndFeel()))
         {
             // COMBO-MODE captions belong to the dropdown (they are its
             // readout header, not a standalone label): render them in the
@@ -693,7 +728,7 @@ void ParamControl::applyCategoryArcColour()
         return;
     // Resolve the category hue from the CURRENT theme via the component's L&F
     // (zero hardcoded hues; every value comes from a theme token).
-    if (const auto* theme = parvati::themeFor (*this))
+    if (const auto* theme = hellcat::themeFor (*this))
         {
             slider_->setColour (juce::Slider::rotarySliderFillColourId,
                                 categoryColourForSection (*theme, sectionForId (paramIDStr_)));
@@ -724,7 +759,7 @@ void ParamControl::applyModSourceTint()
         sourceName = (*desc_.choices) [idx];
     }
 
-    if (const auto* theme = parvati::themeFor (*this))
+    if (const auto* theme = hellcat::themeFor (*this))
         {
             // The category colour is resolved by the shared helper. Neutral
             // sources (Op/Const/Velocity/etc) resolve to `accent`; only the
@@ -746,17 +781,17 @@ void ParamControl::applyModSourceTint()
 }
 
 juce::Colour ParamControl::categoryColourForSourceName (const juce::String& name,
-                                                        const ParvatiTheme& theme)
+                                                        const HellcatTheme& theme)
 {
     // One consistent source-name -> category-colour mapping (shared by the
     // mod-source combo tint and the per-source modulation ring). The
     // name-to-family test lives in the catalogue; this tint carries only the
     // Env / LFO / SeqArp families, and every other source name resolves to
     // the neutral `accent` (unchanged policy).
-    const auto cluster = parvati::clusterForSourceName (name);
-    if (cluster == parvati::Cluster::Env || cluster == parvati::Cluster::Lfo
-        || cluster == parvati::Cluster::SeqArp)
-        return parvati::clusterAccent (*cluster, theme);
+    const auto cluster = hellcat::clusterForSourceName (name);
+    if (cluster == hellcat::Cluster::Env || cluster == hellcat::Cluster::Lfo
+        || cluster == hellcat::Cluster::SeqArp)
+        return hellcat::clusterAccent (*cluster, theme);
     return theme.accentPrimary;   // Op/Const/Velocity/etc => neutral
 }
 
@@ -779,7 +814,7 @@ void ParamControl::refreshModRing()
     // uses). If the theme is not yet reachable (pre-reparent construction) defer
     // — the per-source props get pushed on reparent (parentHierarchyChanged /
     // lookAndFeelChanged) as today, so clear them here to avoid a stale render.
-    const ParvatiTheme* theme = parvati::themeFor (*this);
+    const HellcatTheme* theme = hellcat::themeFor (*this);
 
     auto clearAll = [&]
     {
@@ -808,7 +843,7 @@ void ParamControl::refreshModRing()
     // Arp=purple; Velocity/Op/Const/etc = neutral). Zero-amount slots are
     // skipped; the list is capped at kMaxModRings.
     auto& apvts = processor_.getApvts();
-    const auto slots = parvati::ModDestMap::slotsForDest (apvts, modDest_);
+    const auto slots = hellcat::ModDestMap::slotsForDest (apvts, modDest_);
 
     clearAll();
     int n = 0;
@@ -817,7 +852,7 @@ void ParamControl::refreshModRing()
         if (n >= kMaxModRings)
             break;
 
-        const auto slotPrefix = (parvati::ModDestMap::isFxDest (modDest_) ? "fxmod" : "mod")
+        const auto slotPrefix = (hellcat::ModDestMap::isFxDest (modDest_) ? "fxmod" : "mod")
                                 + juce::String (slot + 1);
 
         int amount = 0;
@@ -933,7 +968,7 @@ juce::String ParamControl::getTooltip()
 
 void ParamControl::lookAndFeelChanged()
 {
-    // The ParvatiLookAndFeel (and its theme) is not attached during construction
+    // The HellcatLookAndFeel (and its theme) is not attached during construction
     // (the control is reparented into the editor tree afterwards), so the
     // category arc / mod-source tint are applied once the L&F is reachable.
     // This also re-applies on a theme switch (sendLookAndFeelChange), making the
@@ -946,7 +981,7 @@ void ParamControl::lookAndFeelChanged()
 void ParamControl::parentHierarchyChanged()
 {
     // On the initial reparent into the editor tree getLookAndFeel() finally
-    // resolves to the editor's ParvatiLookAndFeel (lookAndFeelChanged does NOT
+    // resolves to the editor's HellcatLookAndFeel (lookAndFeelChanged does NOT
     // fire for inherited L&F, only for an explicit setLookAndFeel), so this is
     // where the category arc / mod tint first take effect. Idempotent.
     applyCategoryArcColour();
@@ -1007,7 +1042,7 @@ void ParamControl::resized()
 void ParamControl::mouseEnter (const juce::MouseEvent&)
 {
     if (isModDestKnob_)
-        parvati::ModMatrixHighlight::instance().setHighlightedDest (modDest_);
+        hellcat::ModMatrixHighlight::instance().setHighlightedDest (modDest_);
 }
 
 void ParamControl::mouseExit (const juce::MouseEvent& e)
@@ -1019,7 +1054,7 @@ void ParamControl::mouseExit (const juce::MouseEvent& e)
     // has genuinely left the cell bounds (avoids a flicker / premature clear).
     const auto rel = e.getEventRelativeTo (this);
     if (! getLocalBounds().contains (rel.position.toInt()))
-        parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+        hellcat::ModMatrixHighlight::instance().setHighlightedDest (-1);
 }
 
 void ParamControl::mouseDoubleClick (const juce::MouseEvent&)
@@ -1029,26 +1064,26 @@ void ParamControl::mouseDoubleClick (const juce::MouseEvent&)
     auto& apvts = processor_.getApvts();
     // Only jump when the modulation ring is active (aggregate depth != 0): an
     // unmodulated knob has no matrix row to scroll to.
-    if (parvati::ModDestMap::aggregateAmount (apvts, modDest_) == 0)
+    if (hellcat::ModDestMap::aggregateAmount (apvts, modDest_) == 0)
         return;
     // Jump to the first ACTIVE slot targeting this dest (its row is visible in
     // the matrix). slotsForDest lists every routed slot; pick the first whose
     // amount is non-zero so the scroll lands on a shown row.
-    const auto slots = parvati::ModDestMap::slotsForDest (apvts, modDest_);
+    const auto slots = hellcat::ModDestMap::slotsForDest (apvts, modDest_);
     // Domain-aware: an FX knob's slots are fxmod indices (0..15), read from the
     // "fxmod{N}_amount" param and encoded on the slot-select bus as slot +
     // kFxModDstOffset so only the FX matrix reacts; a synth knob's slots are mod
     // indices (0..13), read from "mod{N}_amount" and sent raw (synth-only). The
     // synth onSelectSlot guard (>= 14) rejects the FX-encoded 19..34 and vice-versa.
-    const bool fx = parvati::ModDestMap::isFxDest (modDest_);
+    const bool fx = hellcat::ModDestMap::isFxDest (modDest_);
     const juce::String prefix = fx ? "fxmod" : "mod";
     for (int s : slots)
     {
         if (auto* raw = apvts.getRawParameterValue (prefix + juce::String (s + 1) + "_amount"))
             if (juce::roundToInt (raw->load()) != 0)
             {
-                parvati::ModMatrixHighlight::instance().selectSlot (
-                    fx ? s + parvati::ModDestMap::kFxModDstOffset : s);
+                hellcat::ModMatrixHighlight::instance().selectSlot (
+                    fx ? s + hellcat::ModDestMap::kFxModDstOffset : s);
                 return;
             }
     }
@@ -1070,7 +1105,7 @@ bool ParamControl::isInterestedInDragSource (const juce::DragAndDropTarget::Sour
 void ParamControl::itemDragEnter (const juce::DragAndDropTarget::SourceDetails&)
 {
     if (isModDestKnob_)
-        parvati::ModMatrixHighlight::instance().setHighlightedDest (modDest_);   // glow the ring
+        hellcat::ModMatrixHighlight::instance().setHighlightedDest (modDest_);   // glow the ring
     else
         setDropLocked (true);   // non-target: show the "cannot drop here" padlock
 }
@@ -1078,7 +1113,7 @@ void ParamControl::itemDragEnter (const juce::DragAndDropTarget::SourceDetails&)
 void ParamControl::itemDragExit (const juce::DragAndDropTarget::SourceDetails&)
 {
     if (isModDestKnob_)
-        parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+        hellcat::ModMatrixHighlight::instance().setHighlightedDest (-1);
     else
         setDropLocked (false);
 }
@@ -1092,7 +1127,7 @@ void ParamControl::itemDropped (const juce::DragAndDropTarget::SourceDetails& dr
     }
 
     // Clear the drop glow whether or not the assignment succeeds.
-    parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+    hellcat::ModMatrixHighlight::instance().setHighlightedDest (-1);
 
     // Parse "parvatiModSrc:<enum>" -> the MOD_SRC_* source enum to assign.
     const juce::String desc = dragSourceDetails.description.toString();
@@ -1108,7 +1143,7 @@ void ParamControl::itemDropped (const juce::DragAndDropTarget::SourceDetails& dr
     // undoable). The knob's mod{1..14}_amount / fxmod{1..16}_amount listeners
     // (STEP 2) then refresh the ring on their own, so no manual repaint is needed
     // here. A full matrix is a silent no-op.
-    parvati::ModMatrixHighlight::instance().requestAssign (sourceEnum, modDest_);
+    hellcat::ModMatrixHighlight::instance().requestAssign (sourceEnum, modDest_);
 }
 
 //==========================================================================
@@ -1206,8 +1241,8 @@ void ParamControl::mouseUp (const juce::MouseEvent& e)
             postTransientStatus (TRANS ("Tap a mod source first"), 60);   // no source armed -> hint, not a silent no-op
             return;
         }
-        const bool ok = parvati::ModMatrixHighlight::instance().requestAssign (tapSelectedSource_, modDest_);
-        parvati::ModMatrixHighlight::instance().setHighlightedDest (-1);
+        const bool ok = hellcat::ModMatrixHighlight::instance().requestAssign (tapSelectedSource_, modDest_);
+        hellcat::ModMatrixHighlight::instance().setHighlightedDest (-1);
         postTransientStatus (ok ? TRANS ("Assigned") : TRANS ("Mod Matrix full"), ok ? 45 : 90);
         tapSelectedSource_ = -1;   // consumed; stay in mode for another routing
     }

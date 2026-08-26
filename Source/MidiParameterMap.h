@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // MidiParameterMap — hardware-parity MIDI CC/NRPN → APVTS parameter control.
 //
@@ -11,7 +11,7 @@
 //   CC/NRPN address is a FLAT BYTE INDEX into the combined
 //   [Patch (112 bytes)][PartData] space. Part::SetValue(address) writes
 //   patch_[address] (address<112) or part_[address-112] (address>=112).
-//   Parvati's structs are byte-identical to firmware, so every decoded
+//   Hellcat's structs are byte-identical to firmware, so every decoded
 //   address lands on a PatchParamDescriptor byteOffset.
 //
 //   - NRPN: address == NRPN LSB (| MSB flag). Value = the DIRECT parameter
@@ -33,7 +33,7 @@
 // Field order matches firmware: level, offset, unit, min, max, num_instances,
 // stride, indexed_by, midi_cc. (The firmware Parameter has no separate `id`
 // field — its 2nd member IS `offset` = the PRM_* byte address.) Name resource
-// ids are dropped (unused in Parvati). `offset` is the byte address in the
+// ids are dropped (unused in Hellcat). `offset` is the byte address in the
 // combined [Patch][PartData] space (e.g. PRM_PART_VOLUME == 112).
 struct FirmwareParameter
 {

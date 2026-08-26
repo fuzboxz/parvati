@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1LutDistortion implementation — 16 weird distortion wavetables + shared
 // clock jitter + Tone. Fixed-point audio path; float only in the ctor (table
@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // RAM budget: two 64-sample jitter rings = 128 words. Everything else is LUT.
@@ -311,4 +311,4 @@ void Fv1LutDistortion::processSampleFx (int32_t lin, int32_t rin,
     rout = y;
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

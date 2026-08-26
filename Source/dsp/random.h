@@ -9,8 +9,8 @@
 //                                                                   vowel glottal noise)
 // A single global instance is shared across the whole synth; call random().
 
-#ifndef PARVATI_DSP_RANDOM_H
-#define PARVATI_DSP_RANDOM_H
+#ifndef HELLCAT_DSP_RANDOM_H
+#define HELLCAT_DSP_RANDOM_H
 
 #include <cstdint>
 
@@ -45,4 +45,4 @@ Random& random();
 
 }  // namespace ambika::dsp
 
-#endif  // PARVATI_DSP_RANDOM_H
+#endif  // HELLCAT_DSP_RANDOM_H

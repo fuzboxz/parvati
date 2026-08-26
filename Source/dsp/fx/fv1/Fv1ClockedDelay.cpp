@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Fv1ClockedDelay implementation. See the header for the full signal-flow doc.
 // JUCE-FREE: only the FV-1/framework headers + <cmath> are included.
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace parvati::fv1
+namespace hellcat::fv1
 {
 
 // Total delay RAM: exactly one DelayLine<32768> (== kMaxMemorySamples == the full
@@ -186,4 +186,4 @@ void Fv1ClockedDelay::processSampleFx (int32_t lin, int32_t rin,
     }
 }
 
-} // namespace parvati::fv1
+} // namespace hellcat::fv1

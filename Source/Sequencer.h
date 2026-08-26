@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Parvati.
+// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
 //
 // Sequencer — a faithful port of Ambika's controller-side step sequencer
 // (controller/part.cc Part::ClockSequencer). It shares the arpeggiator's
@@ -9,7 +9,7 @@
 //      which writes them into every voice's modulation_sources_[MOD_SRC_SEQ_1/2].
 //      These run whenever the clock advances and sequence_length[i] > 0,
 //      independent of arp mode (firmware ClockSequencer runs every prescaled
-//      tick — Parvati gates seq.clockTick on the arp's prescaled step).
+//      tick — Hellcat gates seq.clockTick on the arp's prescaled step).
 //
 //  (B) The NOTE sequence (ArpSequencerMode == NOTE): when sequence_length[2] > 0
 //      and a key is held, generates notes from sequence_data bytes 32..63
@@ -25,13 +25,13 @@
 // gate, and the velocity byte carries velocity (bits 0-6) + legato (bit 7).
 // Both bytes are exposed as APVTS params (seqnote_step / seqnote_vel, 0..255).
 
-#ifndef PARVATI_SEQUENCER_H_
-#define PARVATI_SEQUENCER_H_
+#ifndef HELLCAT_SEQUENCER_H_
+#define HELLCAT_SEQUENCER_H_
 
 #include <cstdint>
 #include <functional>
 
-namespace parvati
+namespace hellcat
 {
 
 class Sequencer
@@ -156,6 +156,6 @@ private:
     int     midiChannel_ = 1;
 };
 
-}  // namespace parvati
+}  // namespace hellcat
 
-#endif  // PARVATI_SEQUENCER_H_
+#endif  // HELLCAT_SEQUENCER_H_
