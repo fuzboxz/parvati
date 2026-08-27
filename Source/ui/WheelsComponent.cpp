@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See WheelsComponent.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See WheelsComponent.h.
 
 #include "WheelsComponent.h"
 

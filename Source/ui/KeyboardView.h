@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // KeyboardView — a virtual keyboard that (a) reflects notes now sounding
 // in the engine (driven by the editor's timer via latchNoteOn/Off) and (b) lets

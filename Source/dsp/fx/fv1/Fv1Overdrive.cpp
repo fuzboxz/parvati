@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Overdrive implementation — Drive/Bias into an asymmetric soft-clip
 // wavetable, Tone LP, Level trim. Pure 24-bit fixed-point audio path; only the

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ParameterLayout.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ParameterLayout.h.
 
 #include "ParameterLayout.h"
 

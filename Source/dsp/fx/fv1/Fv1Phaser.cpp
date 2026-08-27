@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Phaser — 6-stage digital phaser implementation.
 // See Fv1Phaser.h for the parameter mapping + algorithm description.

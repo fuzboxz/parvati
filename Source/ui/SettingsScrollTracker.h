@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SettingsScrollTracker — sizes the SettingsPanel inside the settings
 // drawer's Viewport. Extracted from PluginEditor.h unchanged (the editor

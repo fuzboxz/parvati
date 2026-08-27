@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ParamPage — one page (tab) of ParamControl cells generated from the
 // descriptor table, partitioned into bordered group panels that reflow to

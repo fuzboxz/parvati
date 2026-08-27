@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ThemeManager — owns the built-in (and future user) themes plus the
 // selected one, and broadcasts a change notification whenever the selection

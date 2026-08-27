@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Chorus implementation — two detuned SIN-LFO delay voices, panned L/R.
 

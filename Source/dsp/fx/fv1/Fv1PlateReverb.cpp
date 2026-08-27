@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1PlateReverb implementation. See the header for the topology and the
 // parameter->physical mappings (which match docs/FX_FV1_DESIGN.md verbatim so

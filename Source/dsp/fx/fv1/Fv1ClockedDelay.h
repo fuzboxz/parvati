@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1ClockedDelay — DAW-synced "Clocked Delay" from the FV-1 hardware-emulation
 // family. Mono-in, stereo-out (the chain duplicates the mono source to L==R and

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxRoutingBar — the slim ROUTING column (column 0 of the FX page's 4-column
 // top row: [ ROUTING | FX1 | FX2 | FX3 ]). It holds the chain-level routing

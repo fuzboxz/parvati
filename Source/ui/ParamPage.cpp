@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ui/ParamPage.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ui/ParamPage.h.
 
 #include "ParamPage.h"
 

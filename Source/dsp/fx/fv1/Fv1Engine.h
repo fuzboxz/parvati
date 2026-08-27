@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Engine — the shared Spin FV-1 hardware-emulation framework for the
 // Clocked Delay / Ensemble / Plate Reverb / Vinyl Compressor / Phaser FX family.

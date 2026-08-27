@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // IosOpenIn.mm — the iOS half of the open-in loop (see IosOpenIn.h). iOS only;
 // added to the build via an explicit target_sources line (mirroring

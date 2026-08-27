@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // workspace_padding_test — pins batch-3 part C (2026-08-20):
 //   [1] SynthWorkspace's top-row padding == FxWorkspace's (FX-page parity for

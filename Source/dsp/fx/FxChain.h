@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxChain — the per-part 3-slot FX chain. Owns up to 3 FxProcessor instances
 // (rebuilt when a slot's FxType changes), holds per-slot enabled/dryWet/4-params

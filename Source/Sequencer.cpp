@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See Sequencer.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See Sequencer.h.
 
 #include "Sequencer.h"
 

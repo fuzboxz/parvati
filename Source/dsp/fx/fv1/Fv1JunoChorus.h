@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1JunoChorus — the Dual-BBD Chorus. This effect ports the documented
 // Roland Juno-60/106 chorus configuration into the FV-1 family. See the

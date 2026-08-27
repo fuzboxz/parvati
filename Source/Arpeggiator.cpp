@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See Arpeggiator.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See Arpeggiator.h.
 
 #include "Arpeggiator.h"
 

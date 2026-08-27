@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See Translations.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See Translations.h.
 
 #include "Translations.h"
 
@@ -196,8 +196,12 @@ const juce::String& frenchChromeStrings()
         "\"Next FX topology\" = \"Topologie FX suivante\"\n"
         // ---- preset browser (submenus + name placeholder) ----
         "\"Ambika Factory\" = \"Usine Ambika\"\n"
+        "\"Hellcat Factory\" = \"Usine Hellcat\"\n"
         "\"User\" = \"Utilisateur\"\n"
         "\"(select a patch)\" = \"(sélectionner un patch)\"\n"
+        // step chevrons beside the name button (tooltip AND icon title)
+        "\"Previous patch\" = \"Patch précédent\"\n"
+        "\"Next patch\" = \"Patch suivant\"\n"
         // ---- mod matrix rows / tap-to-assign status strip ----
         "\"+ Add Modulation\" = \"+ Ajouter une modulation\"\n"
         "\"Assign the next free slot\" = \"Assigne le prochain emplacement libre\"\n"
@@ -445,8 +449,12 @@ const juce::String& germanChromeStrings()
         "\"Next FX topology\" = \"Nächste FX-Topologie\"\n"
         // ---- preset browser (submenus + name placeholder) ----
         "\"Ambika Factory\" = \"Ambika-Werk\"\n"
+        "\"Hellcat Factory\" = \"Hellcat-Werk\"\n"
         "\"User\" = \"Benutzer\"\n"
         "\"(select a patch)\" = \"(Patch auswählen)\"\n"
+        // step chevrons beside the name button (tooltip AND icon title)
+        "\"Previous patch\" = \"Vorheriger Patch\"\n"
+        "\"Next patch\" = \"Nächster Patch\"\n"
         // ---- mod matrix rows / tap-to-assign status strip ----
         "\"+ Add Modulation\" = \"+ Modulation hinzufügen\"\n"
         "\"Assign the next free slot\" = \"Weist den nächsten freien Platz zu\"\n"

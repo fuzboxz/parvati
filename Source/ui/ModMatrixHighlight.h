@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ModMatrixHighlight — a tiny editor-scoped highlight BUS that links the Mod
 // Matrix rows (ModMatrixView) and the destination knobs (ParamControl), which

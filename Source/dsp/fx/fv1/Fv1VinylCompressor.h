@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1VinylCompressor — Lo-Fi Vinyl Compressor, part of the FV-1 hardware-
 // emulation FX family. Tuned after the Roland SP-303/SP-404 "Vinyl Sim" COMP

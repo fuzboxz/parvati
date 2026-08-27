@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // OscPreviewDisplay — a compact LIVE vector preview of the selected oscillator
 // shape, intended to sit INLINE beside the Shape dropdown in each OSC panel so

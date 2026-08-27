@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ModMatrixView — the redesigned modulation-matrix panel. It replaces the old
 // paginated (1-4 / 5-8 / 9-12 / 13-14) sub-tab matrix with a single, vertically

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SettingsPanel.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See SettingsPanel.h.
 
 #include "SettingsPanel.h"
 

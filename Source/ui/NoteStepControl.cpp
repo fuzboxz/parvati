@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See NoteStepControl.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See NoteStepControl.h.
 
 #include "ui/NoteStepControl.h"
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Flanger implementation — short modulated delay, 180-deg stereo phases,
 // damped feedback up to 0.92.

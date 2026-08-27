@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See EnvelopeDisplay.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See EnvelopeDisplay.h.
 
 #include "EnvelopeDisplay.h"
 

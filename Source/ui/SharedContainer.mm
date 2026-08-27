@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SharedContainer.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See SharedContainer.h.
 //
 // iOS-only Obj-C++ resolver for the App-Group container. Compiled ONLY on iOS
 // (added to the Hellcat target under `if(HELLCAT_IOS)` in CMakeLists.txt). On

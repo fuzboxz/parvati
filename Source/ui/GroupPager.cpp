@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See GroupPager.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See GroupPager.h.
 
 #include "GroupPager.h"
 

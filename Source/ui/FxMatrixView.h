@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxMatrixView — the per-part FX modulation-matrix panel. The FX twin of
 // ModMatrixView: the shared list/row machinery lives in MatrixViewBase; this

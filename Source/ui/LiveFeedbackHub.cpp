@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See LiveFeedbackHub.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See LiveFeedbackHub.h.
 
 #include "LiveFeedbackHub.h"
 

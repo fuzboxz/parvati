@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HostRateBridge — bridges Hellcat's host-rate de-interleaved (L[], R[]) audio
 // to/from the vendored Clouds engines' FIXED 32 kHz interleaved (FloatFrame[])

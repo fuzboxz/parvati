@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // NoteName — the canonical MIDI-note-number -> name formatter ("C4" convention:
 // MIDI 60 == C4, i.e. octave = note/12 - 1). Header-only; depends only on

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SynthParamLabels.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See SynthParamLabels.h.
 //
 // Meaningful-unit value readout for the SYNTH-section knob params. Mirrors the
 // FX formatter (ui/FxSlotLabels.cpp::paramValueText) for the synth side. The
@@ -108,15 +108,19 @@ juce::String paramValueTextSynth (const juce::String& id, double value)
         if (id == "mix_balance")
         {
             // Range 0..63, centre 32 (init). Per-side denominator by EACH side's
-            // own max distance (L spans 0..31 -> max dist 32; R spans 33..63 ->
-            // max dist 31) so both rails read 100: L0->"L100", R63->"R100". The
-            // "%" is elided — the bounds are strictly 100L..100R, so the unit is
-            // implied and the 4-char "R100" fits the dial arc.
+            // own max distance (side 1 spans 0..31 -> max dist 32; side 2 spans
+            // 33..63 -> max dist 31) so both rails read 100: 0->"1:100",
+            // 63->"2:100". The prefix is the DOMINANT OSCILLATOR index — the
+            // knob crossfades oscillator 1 vs oscillator 2, it does not pan
+            // (a patch has no stereo position; the old "L"/"R" prefix read
+            // like one). The "%" is elided — the bounds are strictly
+            // 1:100..2:100, so the unit is implied and the 5-char "2:100"
+            // fits the dial arc (same budget as "250ms").
             if (std::abs (iv - 32) <= 1) return "Ctr";
             const int dist  = std::abs (iv - 32);
             const int denom = (iv < 32) ? 32 : 31;
             const int p = juce::roundToInt (juce::jlimit (0.0, 100.0, dist / (double) denom * 100.0));
-            return (iv < 32 ? "L" : "R") + juce::String (p);
+            return (iv < 32 ? "1:" : "2:") + juce::String (p);
         }
         if (id == "mix_crush")   // sample-rate decimator, not bit-depth -> %
             return iv == 0 ? "Off" : pct (value, 31.0);   // display fallback; check

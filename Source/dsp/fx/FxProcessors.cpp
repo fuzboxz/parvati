@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxProcessors.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See FxProcessors.h.
 
 #include "dsp/fx/FxProcessors.h"
 

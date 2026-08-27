@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxWorkspace — the content of the top-level FX tab. A rigid, void-free 3-row
 // integrated panel that mirrors SynthWorkspace's skeleton, hosting EDITOR-OWNED

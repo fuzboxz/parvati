@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1PlateReverb — FV-1 hardware-emulation "Sparse Digital Plate Reverb"
 // (Schroeder/Moorer topology): predelay -> four parallel lowpass-comb filters ->

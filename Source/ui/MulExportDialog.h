@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // MulExportDialog — the .MUL hardware-export fallback dialog. Shown when a
 // multi uses the per-part voice-slot extension beyond what the 6 hardware

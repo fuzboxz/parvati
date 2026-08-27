@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ChromeRule — the 1px full-width separator rules delimiting the chrome bands
 // (below the header / above the status strip / above the on-screen keyboard /

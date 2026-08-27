@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ParamHelp — paramID -> curated help/tooltip text for every Hellcat APVTS
 // parameter.

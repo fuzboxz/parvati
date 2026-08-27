@@ -73,7 +73,8 @@ TEST(ipad_hig_sizing_test)
     check (ModMatrixView::kAddButtonH == 44, "mod-matrix Add button == 44");
     check (FxMatrixView::kAddButtonH  == 44, "FX-matrix Add button == 44");
     check (HellcatLookAndFeel::kPopupRowHeight == 44, "default popup-menu row == 44");
-    check (CentralModBar::kNavHitW            == 44, "mod-bar nav scroller hit band == 44 (F-ios-touch-1)");
+    check (CentralModBar::kNavHitW == 44,
+           "mod-bar nav scroller tile width == 44 (F-ios-touch-1; height == kPillH)");
     check (SeqLengthStepper::kPopupRowHeight  == 44, "seq-length picker row == 44 (F-ios-touch-2)");
     check (WheelsComponent::kOctBtnSize == 44, "wheels octave-switch button == 44");
 

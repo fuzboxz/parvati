@@ -2,7 +2,7 @@
 
 **Status:** Spec for implementation subagents (Phases 2–4).
 **Reference source (read-only):** `ambika_reference/` (the original Ambika firmware; not tracked — see `.gitignore`)
-**Target project:** the Hellcat project root (JUCE project "Hellcat", Jozsef Ottucsak), JUCE at `~/JUCE`.
+**Target project:** the Hellcat project root (JUCE project "Hellcat", 805Labs Kft.), JUCE at `~/JUCE`.
 
 All `file:line` citations are relative to `ambika_reference/`.
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Ensemble implementation — BBD-style ensemble chorus. See Fv1Ensemble.h and
 // docs/FX_FV1_DESIGN.md for the verbatim parameter mappings and algorithm.

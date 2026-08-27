@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // RbjBiquad — the shared biquad kernel. Both biquad users in the FX tree
 // (FxChain::EqBiquad master EQ and fv1::BiquadLP in the FV-1 rate bridge)

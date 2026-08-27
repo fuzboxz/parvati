@@ -1,0 +1,267 @@
+# Hellcat patch — human-editable. Unknown keys are ignored on load.
+format: hellcat-patch
+version: 1
+hellcat_version: 0.1.0
+name: "Lead - Buzzsaw"
+author: "Cursor to XYZ"
+voice_slots: 1            # 1-voice polyphony
+params:
+  osc1_shape: 18            # Dirty PWM
+  osc1_param: 48
+  osc1_range: 0
+  osc1_detune: 0
+  osc2_shape: 1            # Saw
+  osc2_param: 32
+  osc2_range: 0
+  osc2_detune: 4
+  mix_balance: 32
+  mix_op: 0            # Sum
+  mix_param: 31
+  mix_sub_shape: 0            # Sub Square 1
+  mix_sub: 0
+  mix_noise: 0
+  mix_fuzz: 0
+  mix_crush: 0
+  filter1_cutoff: 94
+  filter1_reso: 12
+  filter1_mode: 0            # LP
+  filter_env: 20
+  filter_lfo: 0
+  env1_attack: 0
+  env1_decay: 40
+  env1_sustain: 20
+  env1_release: 60
+  env1_lfo_shape: 0            # Triangle
+  env1_lfo_rate: 39
+  env1_lfo_sync: 0            # Free
+  env2_attack: 0
+  env2_decay: 40
+  env2_sustain: 0
+  env2_release: 40
+  env2_lfo_shape: 0            # Triangle
+  env2_lfo_rate: 47
+  env2_lfo_sync: 0            # Free
+  env3_attack: 0
+  env3_decay: 40
+  env3_sustain: 104
+  env3_release: 42
+  env3_lfo_shape: 0            # Triangle
+  env3_lfo_rate: 63
+  env3_lfo_sync: 0            # Free
+  voice_lfo_shape: 0            # Triangle
+  voice_lfo_rate: 87
+  mod1_source: 0            # Env 1
+  mod1_dest: 0            # Osc Param 1
+  mod1_amount: 0
+  mod2_source: 0            # Env 1
+  mod2_dest: 1            # Osc Param 2
+  mod2_amount: 0
+  mod3_source: 3            # LFO 1
+  mod3_dest: 2            # Osc 1
+  mod3_amount: 0
+  mod4_source: 3            # LFO 1
+  mod4_dest: 3            # Osc 2
+  mod4_amount: 0
+  mod5_source: 4            # LFO 2
+  mod5_dest: 0            # Osc Param 1
+  mod5_amount: 0
+  mod6_source: 4            # LFO 2
+  mod6_dest: 1            # Osc Param 2
+  mod6_amount: 0
+  mod7_source: 5            # LFO 3
+  mod7_dest: 6            # Mix Balance
+  mod7_amount: 0
+  mod8_source: 6            # Voice LFO
+  mod8_dest: 12            # Filter Cutoff
+  mod8_amount: 0
+  mod9_source: 11            # Seq 1
+  mod9_dest: 12            # Filter Cutoff
+  mod9_amount: 0
+  mod10_source: 12            # Seq 2
+  mod10_dest: 6            # Mix Balance
+  mod10_amount: 0
+  mod11_source: 2            # Env 3
+  mod11_dest: 18            # VCA
+  mod11_amount: 63
+  mod12_source: 14            # Velocity
+  mod12_dest: 18            # VCA
+  mod12_amount: 16
+  mod13_source: 16            # Pitch Bend
+  mod13_dest: 4            # Osc 1+2 Coarse
+  mod13_amount: 32
+  mod14_source: 6            # Voice LFO
+  mod14_dest: 4            # Osc 1+2 Coarse
+  mod14_amount: 16
+  modif1_in1: 3            # LFO 1
+  modif1_in2: 4            # LFO 2
+  modif1_op: 0            # None
+  modif2_in1: 4            # LFO 2
+  modif2_in2: 5            # LFO 3
+  modif2_op: 0            # None
+  modif3_in1: 5            # LFO 3
+  modif3_in2: 11            # Seq 1
+  modif3_op: 0            # None
+  modif4_in1: 11            # Seq 1
+  modif4_in2: 12            # Seq 2
+  modif4_op: 0            # None
+  part_volume: 70
+  part_octave: 0
+  part_tuning: 0
+  part_spread: 0
+  part_raga: 0            # Off
+  part_legato: 0            # Off
+  part_portamento: 0
+  part_polyphony: 0            # Mono
+  seq_length_1: 16
+  seq_length_2: 16
+  seq_length_3: 16
+  seq1_step0: 0
+  seq1_step1: 0
+  seq1_step2: 0
+  seq1_step3: 0
+  seq1_step4: 0
+  seq1_step5: 0
+  seq1_step6: 0
+  seq1_step7: 0
+  seq1_step8: 0
+  seq1_step9: 0
+  seq1_step10: 0
+  seq1_step11: 0
+  seq1_step12: 0
+  seq1_step13: 0
+  seq1_step14: 0
+  seq1_step15: 0
+  seq2_step0: 0
+  seq2_step1: 0
+  seq2_step2: 0
+  seq2_step3: 0
+  seq2_step4: 0
+  seq2_step5: 0
+  seq2_step6: 0
+  seq2_step7: 0
+  seq2_step8: 0
+  seq2_step9: 0
+  seq2_step10: 0
+  seq2_step11: 0
+  seq2_step12: 0
+  seq2_step13: 0
+  seq2_step14: 0
+  seq2_step15: 0
+  seqnote_step0: 0
+  seqnote_step1: 0
+  seqnote_step2: 0
+  seqnote_step3: 0
+  seqnote_step4: 0
+  seqnote_step5: 0
+  seqnote_step6: 0
+  seqnote_step7: 0
+  seqnote_step8: 0
+  seqnote_step9: 0
+  seqnote_step10: 0
+  seqnote_step11: 0
+  seqnote_step12: 0
+  seqnote_step13: 0
+  seqnote_step14: 0
+  seqnote_step15: 0
+  seqnote_vel0: 0
+  seqnote_vel1: 0
+  seqnote_vel2: 0
+  seqnote_vel3: 0
+  seqnote_vel4: 0
+  seqnote_vel5: 0
+  seqnote_vel6: 0
+  seqnote_vel7: 0
+  seqnote_vel8: 0
+  seqnote_vel9: 0
+  seqnote_vel10: 0
+  seqnote_vel11: 0
+  seqnote_vel12: 0
+  seqnote_vel13: 0
+  seqnote_vel14: 0
+  seqnote_vel15: 0
+  arp_mode: 0            # Off
+  arp_direction: 0            # Up
+  arp_octave: 1
+  arp_pattern: 0            # Pattern 0
+  arp_resolution: 10            # 1/16
+  vca_curve: 0            # Linearized
+  filter_card: 0            # SMR4 (4-pole)
+  filter_drive: 1            # 1.2
+  fx1_type: 20            # Chorus
+  fx1_enabled: 1
+  fx1_drywet: 40
+  fx1_param1: 26
+  fx1_param2: 40
+  fx1_param3: 44
+  fx1_param4: 12
+  fx1_param5: 0
+  fx2_type: 23            # Room
+  fx2_enabled: 1
+  fx2_drywet: 26
+  fx2_param1: 52
+  fx2_param2: 48
+  fx2_param3: 50
+  fx2_param4: 56
+  fx2_param5: 0
+  fx3_type: 0            # None
+  fx3_enabled: 0
+  fx3_drywet: 0
+  fx3_param1: 0
+  fx3_param2: 0
+  fx3_param3: 0
+  fx3_param4: 0
+  fx3_param5: 0
+  fx_topo: 0            # FX1 -> FX2 -> FX3
+  fx_order: 0
+  fx_mix: 127
+  fx_eq_low: 0
+  fx_eq_mid: 64
+  fx_eq_high: 64
+  fxmod1_source: 0            # Env 1
+  fxmod1_dest: 0            # FX1 Dry/Wet
+  fxmod1_amount: 0
+  fxmod2_source: 0            # Env 1
+  fxmod2_dest: 0            # FX1 Dry/Wet
+  fxmod2_amount: 0
+  fxmod3_source: 0            # Env 1
+  fxmod3_dest: 0            # FX1 Dry/Wet
+  fxmod3_amount: 0
+  fxmod4_source: 0            # Env 1
+  fxmod4_dest: 0            # FX1 Dry/Wet
+  fxmod4_amount: 0
+  fxmod5_source: 0            # Env 1
+  fxmod5_dest: 0            # FX1 Dry/Wet
+  fxmod5_amount: 0
+  fxmod6_source: 0            # Env 1
+  fxmod6_dest: 0            # FX1 Dry/Wet
+  fxmod6_amount: 0
+  fxmod7_source: 0            # Env 1
+  fxmod7_dest: 0            # FX1 Dry/Wet
+  fxmod7_amount: 0
+  fxmod8_source: 0            # Env 1
+  fxmod8_dest: 0            # FX1 Dry/Wet
+  fxmod8_amount: 0
+  fxmod9_source: 0            # Env 1
+  fxmod9_dest: 0            # FX1 Dry/Wet
+  fxmod9_amount: 0
+  fxmod10_source: 0            # Env 1
+  fxmod10_dest: 0            # FX1 Dry/Wet
+  fxmod10_amount: 0
+  fxmod11_source: 0            # Env 1
+  fxmod11_dest: 0            # FX1 Dry/Wet
+  fxmod11_amount: 0
+  fxmod12_source: 0            # Env 1
+  fxmod12_dest: 0            # FX1 Dry/Wet
+  fxmod12_amount: 0
+  fxmod13_source: 0            # Env 1
+  fxmod13_dest: 0            # FX1 Dry/Wet
+  fxmod13_amount: 0
+  fxmod14_source: 0            # Env 1
+  fxmod14_dest: 0            # FX1 Dry/Wet
+  fxmod14_amount: 0
+  fxmod15_source: 0            # Env 1
+  fxmod15_dest: 0            # FX1 Dry/Wet
+  fxmod15_amount: 0
+  fxmod16_source: 0            # Env 1
+  fxmod16_dest: 0            # FX1 Dry/Wet
+  fxmod16_amount: 0

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ModSourceCatalog — the single source of truth for the 31 MOD_SRC_* modulation
 // sources (ambika::dsp::ModulationSource, see dsp/patch.h). The CentralModBar

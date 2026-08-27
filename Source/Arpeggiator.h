@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Arpeggiator — a faithful port of Ambika's controller-side arpeggiator
 // (controller/part.cc ClockArpeggiator / StepArpeggio / StartArpeggio).

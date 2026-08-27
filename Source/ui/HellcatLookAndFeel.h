@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HellcatLookAndFeel — a juce::LookAndFeel_V4 subclass that restyles every
 // stock component from the active HellcatTheme. setTheme() stores the theme

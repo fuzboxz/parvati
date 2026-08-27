@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Spring — a dispersive-network spring reverb: each spring is a feedback
 // loop of [long delay -> cascade of SIX short allpasses -> damping LP], with a

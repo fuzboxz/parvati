@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // GeneratorHostWorkspace — the shared skeleton of the SYNTH and FX tabs.
 // Both workspaces mirror each other line for line:

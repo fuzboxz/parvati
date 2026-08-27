@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Gate — classic noise/expander gate with a hard-BYPASS corner: at
 // Threshold=0 the gate is fully OPEN (transparent pass-through — the knob

@@ -989,6 +989,7 @@ TEST(editor_test)
         check (templatesDir.getChildFile ("tpl").replaceWithText ("x"), "test setup: template written");
 
         PresetBrowser browser (templatesDir, userDir, factoryDir, multiDir,
+                               templatesDir.getParentDirectory().getChildFile ("NO_HFACTORY"),
                                [] (const juce::File&) {});
         juce::PopupMenu m;
         browser.buildMenu (m);
@@ -1048,6 +1049,7 @@ TEST(editor_test)
         {
             const auto lateUser = tmp.getChildFile ("LATE_USER");   // absent so far
             PresetBrowser lateBrowser (templatesDir, lateUser, factoryDir, multiDir,
+                                       templatesDir.getParentDirectory().getChildFile ("NO_HFACTORY"),
                                        [] (const juce::File&) {});
             juce::PopupMenu l1;
             lateBrowser.buildMenu (l1);
@@ -1096,7 +1098,8 @@ TEST(editor_test)
 
         juce::Array<juce::File> steppedFiles;   // every file onSelect delivers
         PresetBrowser stepper (tplDir18, userDir18, tmp18.getChildFile ("AFACTORY"),
-                               multiDir18, [&steppedFiles] (const juce::File& f) { steppedFiles.add (f); });
+                               multiDir18, tmp18.getChildFile ("HFACTORY"),
+                               [&steppedFiles] (const juce::File& f) { steppedFiles.add (f); });
         const juce::File first = stepper.selectNext();   // not-anchored -> FIRST leaf
         check (first.getFileName() == "a1.PRO", "step(next) unanchored starts at Factory A leaf 0");
         const juce::File second = stepper.selectNext();
@@ -1124,8 +1127,93 @@ TEST(editor_test)
         PresetBrowser empty (mkDir18 (tmp18.getChildFile ("E_TPL")),
                              mkDir18 (tmp18.getChildFile ("E_USER")),
                              mkDir18 (tmp18.getChildFile ("E_FACTORY")),
-                             mkDir18 (tmp18.getChildFile ("E_MULTI")), [] (const juce::File&) {});
+                             mkDir18 (tmp18.getChildFile ("E_MULTI")),
+                             mkDir18 (tmp18.getChildFile ("E_HFACTORY")), [] (const juce::File&) {});
         check (! empty.selectNext().existsAsFile(), "empty tree: step returns an invalid File");
+
+        // ---- (a3) The quick-step chevron buttons ("<" prev / ">" next).
+        // The buttons drive selectPrev/selectNext exactly as the keyboard
+        // does; the test locates them among the browser's children by their
+        // icon title and clicks them via the normal Button path.
+        // Child-order pin: CHILD 0 stays the name TextButton (the editor's
+        // Y2K re-colour pass locates it there), the chevrons come after.
+        {
+            juce::Button* prevBtn = nullptr;
+            juce::Button* nextBtn = nullptr;
+            int textButtons = 0;
+            for (int i = 0; i < stepper.getNumChildComponents(); ++i)
+                if (auto* b = dynamic_cast<juce::Button*> (stepper.getChildComponent (i)))
+                {
+                    if (b->getTitle() == "Previous patch") prevBtn = b;
+                    else if (b->getTitle() == "Next patch") nextBtn = b;
+                    if (dynamic_cast<juce::TextButton*> (b) != nullptr)
+                        ++textButtons;
+                }
+            check (stepper.getChildComponent (0) != nullptr
+                       && dynamic_cast<juce::TextButton*> (stepper.getChildComponent (0)) != nullptr,
+                   "chevrons: child 0 is still the name TextButton");
+            check (prevBtn != nullptr && nextBtn != nullptr,
+                   "chevrons present: a Previous-patch and a Next-patch button");
+            check (textButtons == 1,
+                   "exactly ONE TextButton child (the chevrons are IconButtons)");
+            if (prevBtn != nullptr && nextBtn != nullptr)
+            {
+                // Geometry pins (touch targets + whitespace ring): at the
+                // natural 156pt width each chevron is a full-height (44pt)
+                // 30pt-wide column, inset 2pt from its edge and separated
+                // from the name button by a 4pt gap; squeezed to the editor's
+                // elastic 60pt floor the columns keep their 16pt floor and
+                // the name indicator keeps positive width.
+                auto* nameBtn = stepper.getChildComponent (0);
+                stepper.setSize (156, 44);
+                check (prevBtn->getWidth() == 30 && prevBtn->getHeight() == 44
+                           && prevBtn->getX() == 2,
+                       "prev chevron: 30x44 hit target, 2pt off the edge");
+                check (nextBtn->getWidth() == 30 && nextBtn->getRight() == 154,
+                       "next chevron: 30x44 hit target, 2pt off the edge");
+                check (nameBtn->getX() >= prevBtn->getRight() + 4
+                           && nameBtn->getRight() <= nextBtn->getX() - 4,
+                       "4pt whitespace gaps separate the tiles from the name button");
+                stepper.setSize (60, 44);
+                check (prevBtn->getWidth() == 16 && nextBtn->getWidth() == 16,
+                       "chevrons keep their 16pt floor width at the 60pt elastic floor");
+                check (nameBtn->getWidth() > 0,
+                       "name indicator keeps positive width beside the floor-width chevrons");
+
+                steppedFiles.clear();
+                // triggerClick posts to the message queue (juce_Button.cpp:
+                // postCommandMessage), so each click needs a run-loop pump
+                // before the onSelect seam fires (the house headless idiom;
+                // Apple-only like every pump site in this file).
+                auto pumpForSteps = [&steppedFiles] (int minCount)
+                {
+                #if defined (__APPLE__)
+                    for (int i = 0; i < 50 && steppedFiles.size() < minCount; ++i)
+                        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.020, false);
+                #else
+                    juce::ignoreUnused (minCount);
+                #endif
+                };
+                // The anchor from above points at m1.MUL: one backward step,
+                // then two forward steps across the SAME seam the keyboard uses.
+                prevBtn->triggerClick();
+                pumpForSteps (1);
+                check (steppedFiles.size() == 1
+                           && steppedFiles[0].getFileName() == "a2.PRO",
+                       "prev-chevron click steps BACK from the anchor");
+                nextBtn->triggerClick();
+                pumpForSteps (2);
+                nextBtn->triggerClick();
+                pumpForSteps (3);
+                check (steppedFiles.size() == 3
+                           && steppedFiles[1].getFileName() == "m1.MUL"
+                           && steppedFiles[2].getFileName() == "u1.yml",
+                       "next-chevron clicks step FORWARD through the order");
+                check (nextBtn->getTooltip().isNotEmpty()
+                           && prevBtn->getTooltip().isNotEmpty(),
+                       "chevrons carry tooltips (the screen-reader title too)");
+            }
+        }
         tmp18.deleteRecursively();
 
         // ---- (a2) Multi-bank factory interleave + nested USER directories.
@@ -1159,6 +1247,7 @@ TEST(editor_test)
         check (tpl18b.getChildFile ("t1.yml").replaceWithText ("x"), "setup: template");
         {
             PresetBrowser multi (tpl18b, user18b, fact18b, multi18b,
+                                 tpl18b.getParentDirectory().getChildFile ("NO_HFACTORY2"),
                                  [] (const juce::File&) {});
             const char* const expectedOrder[] = {
                 "a.PRO", "b.PRO", "f.PRO", "s.PRO",   // factory banks A B F S
@@ -1182,6 +1271,36 @@ TEST(editor_test)
                    "step wraps from Templates back to bank A");
         }
         tmp18b.deleteRecursively();
+
+        // ---- (a3) The Hellcat factory bank steps FIRST (menu-order parity).
+        // With an HFACTORY root present, its .yml leaves come before the
+        // Ambika banks — the menu shows "Hellcat Factory" first, so the
+        // flattened step order must too (scanInto subs layout 0..7).
+        const auto tmp18c = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                .getChildFile ("hellcat_preset_step_hfactory");
+        tmp18c.deleteRecursively();
+        {
+            const auto hc18 = mkDir18 (tmp18c.getChildFile ("HFACTORY"));
+            const auto fa18 = mkDir18 (tmp18c.getChildFile ("AFACTORY"));
+            const auto ba18 = mkDir18 (fa18.getChildFile ("A"));
+            check (hc18.getChildFile ("01 Alpha.yml").replaceWithText ("x"), "setup: hfactory 01");
+            check (hc18.getChildFile ("02 Beta.yml").replaceWithText ("x"), "setup: hfactory 02");
+            check (ba18.getChildFile ("a.PRO").replaceWithText ("x"), "setup: bank A");
+            PresetBrowser hc (mkDir18 (tmp18c.getChildFile ("TPL")),
+                              mkDir18 (tmp18c.getChildFile ("USER")), fa18,
+                              mkDir18 (tmp18c.getChildFile ("AFACTORY_MULTI")), hc18,
+                              [] (const juce::File&) {});
+            check (hc.selectNext().getFileName() == "01 Alpha.yml",
+                   "hfactory: step starts at the Hellcat bank leaf 0");
+            check (hc.selectNext().getFileName() == "02 Beta.yml",
+                   "hfactory: step advances inside the bank");
+            check (hc.selectNext().getFileName() == "a.PRO",
+                   "hfactory: Ambika bank A follows the Hellcat bank");
+            // The cached tree carries the Hellcat leaves (label = filename).
+            check (hc.debugTreeHasLeafLabel ("01 Alpha") && hc.debugTreeHasLeafLabel ("02 Beta"),
+                   "hfactory: the cached tree carries the Hellcat leaves");
+        }
+        tmp18c.deleteRecursively();
 
         // ---- (b) Editor-level shortcuts through the REAL keyPressed path.
         auto* parEd18 = dynamic_cast<HellcatEditor*> (editor);

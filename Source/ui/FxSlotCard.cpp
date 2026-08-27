@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxSlotCard.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See FxSlotCard.h.
 
 #include "FxSlotCard.h"
 #include "FxSlotHelp.h"     // fxParamHelp — module help for the active params

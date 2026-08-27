@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // TransportClock — converts the host transport tempo (BPM from
 // juce::AudioPlayHead) into a stream of 24-PPQN clock ticks, sample-accurate.

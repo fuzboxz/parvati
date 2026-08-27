@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SynthPart — the per-part data model of SynthEngine, in a dependency-light
 // shard: PolyAllocator, AtomicByteArray, PartFxState and Part, plus the

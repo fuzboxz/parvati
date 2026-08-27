@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // MatrixViewBase — the shared implementation of the two modulation-matrix
 // panels (ModMatrixView and FxMatrixView). One view serves the synth matrix

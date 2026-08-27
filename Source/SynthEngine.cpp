@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SynthEngine.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See SynthEngine.h.
 
 #include <array>
 #include <cstring>   // memcpy (blob -> Patch view for sanitization)

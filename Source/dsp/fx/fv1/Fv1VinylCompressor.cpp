@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1VinylCompressor implementation. See the header for the signal path and
 // parameter mapping. The entire audio-path multiply/add is 24-bit fixed-point

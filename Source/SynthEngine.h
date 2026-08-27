@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SynthEngine — a juce::Synthesiser that owns a fixed pool of AmbikaVoice
 // instances (kNumVoices = kNumParts * kMaxVoicesPerPart). The pool is divided

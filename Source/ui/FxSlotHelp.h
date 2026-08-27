@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxSlotHelp — one curated help sentence for every ACTIVE generic param of
 // every FX type. The definitions live in FxSlotHelp.cpp. FxSlotCard installs

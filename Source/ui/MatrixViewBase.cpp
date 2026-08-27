@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See MatrixViewBase.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See MatrixViewBase.h.
 
 #include "MatrixViewBase.h"
 

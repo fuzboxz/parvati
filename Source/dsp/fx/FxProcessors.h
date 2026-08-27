@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxProcessors — the per-slot FX effects: six ports of the Mutable Instruments
 // Clouds DSP — Diffuser / Pitch Shifter / Reverb (the dsp/fx chain) and

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Overdrive — FV-1-style classic tube overdrive: Drive pre-gain into a
 // 1024-entry asymmetric 12AX7-ish soft-clip wavetable (the FV-1 "external

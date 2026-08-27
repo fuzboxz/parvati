@@ -573,13 +573,13 @@ if(HELLCAT_IOS)
 endif()
 
 # ------------------------------------------------------------------------------
-# Factory presets (Ambika "goldencard" GPL-3.0 banks), organized under presets/
-# as AFACTORY/<bank>/ (A/B/F/S) + AFACTORY_MULTI/. The "A" roots hold the stock
-# Ambika banks; a future Hellcat bank set gets its own roots (H*). EMBEDDED into
-# the plugin binary via juce_add_binary_data, then extracted to the user
-# app-data dir on first run (hellcat::ensureFactoryPresetsInstalled, see
-# Source/ui/FactoryPresetInstaller.h) so they show up in the Patch combo out of
-# the box.
+# Factory presets, organized under presets/ as AFACTORY/<bank>/ (A/B/F/S) +
+# AFACTORY_MULTI/ (the GPL-3.0 Ambika "goldencard" banks) + TEMPLATES/ (stock
+# .yml multis) + HFACTORY/ (the 64 ORIGINAL Hellcat .yml patches — no Ambika
+# data). EMBEDDED into the plugin binary via juce_add_binary_data, then
+# extracted to the user app-data dirs on first run
+# (hellcat::ensureFactoryPresetsInstalled, see Source/ui/FactoryPresetInstaller.h)
+# so they show up in the Patch combo out of the box.
 #
 # The four program banks share filenames (each has 000.PRO, 001.PRO ...), so they
 # cannot be embedded by their raw names. Stage them into a build dir with
@@ -592,6 +592,7 @@ file(MAKE_DIRECTORY "${_parvati_preset_stage}")
 file(GLOB _cfgdep_pro CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY/*/*.PRO")
 file(GLOB _cfgdep_mul CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY_MULTI/*.MUL")
 file(GLOB _cfgdep_tpl CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/TEMPLATES/*.yml")
+file(GLOB _cfgdep_hct CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/presets/HFACTORY/*.yml")
 set(_staged_sources "")
 foreach(_bank A B F S)
     file(GLOB _files "${CMAKE_CURRENT_SOURCE_DIR}/presets/AFACTORY/${_bank}/*.PRO")
@@ -614,6 +615,16 @@ file(GLOB _tplfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/TEMPLATES/*.yml")
 foreach(_f ${_tplfiles})
     get_filename_component(_n "${_f}" NAME)
     set(_out "${_parvati_preset_stage}/TEMPLATE__${_n}")
+    configure_file("${_f}" "${_out}" COPYONLY)
+    list(APPEND _staged_sources "${_out}")
+endforeach()
+# Hellcat ORIGINAL factory bank (64 single-part .yml patches) — staged as
+# HFACTORY__<file>. The installer extracts these to their own app-data root
+# (HFACTORY/), separate from the GPL Ambika AFACTORY/ banks.
+file(GLOB _hctfiles "${CMAKE_CURRENT_SOURCE_DIR}/presets/HFACTORY/*.yml")
+foreach(_f ${_hctfiles})
+    get_filename_component(_n "${_f}" NAME)
+    set(_out "${_parvati_preset_stage}/HFACTORY__${_n}")
     configure_file("${_f}" "${_out}" COPYONLY)
     list(APPEND _staged_sources "${_out}")
 endforeach()
@@ -899,6 +910,9 @@ add_executable(hellcat_unified_tests
     # tracked but never compiled/registered; now part of the unified target)
     tests/hellcat_retrig_probe.cpp
 # Unified test sources (keep alphabetical-ish; new_test.sh appends here)
+    tests/modbar_strip_theme_test.cpp
+    tests/preset_name_restore_test.cpp
+    tests/factory_bank_test.cpp
     tests/fx_slot_tooltip_test.cpp
     tests/a11y_smoke_test.cpp
     tests/filter_loudness_test.cpp
@@ -1137,6 +1151,13 @@ endif()
 # then embedded into the plugin binary. Run from the repo root:
 #   cmake --build build_unified --target hellcat_gen_templates && ./build_unified/hellcat_gen_templates
 hellcat_add_tool(hellcat_gen_templates tools/gen_templates.cpp)
+
+# ------------------------------------------------------------------------------
+# NOTE: the ORIGINAL Hellcat factory bank (presets/HFACTORY/*.yml) is
+# authored DIRECTLY as human-editable .yml patch files — there is no generator
+# tool. The bank is guarded by tests/factory_bank_test.cpp (load, byte-exact
+# round-trip, FX + spectral category rules). See presets/ATTRIBUTION.md for the
+# authoring workflow.
 
 # ------------------------------------------------------------------------------
 # User-manual PDF generator (dev tool, always out of the default build). Builds

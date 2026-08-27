@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FormatHelpers — single source for the small readout formatters that several
 // pages/formatting layers must agree on CHARACTER-FOR-CHARACTER (pinned by

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1LutDistortion — the "super digital" wavetable distortion: Drive into ONE
 // OF SIXTEEN 1024-entry weird-distortion wavetables (the FV-1 external-EEPROM

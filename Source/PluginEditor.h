@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HellcatEditor — the full Ambika GUI. An integrated (Serum-style dense)
 // editor whose controls are generated entirely from the PatchParamDescriptor
@@ -156,6 +156,10 @@ public:
     // Relabel the top-bar Part selector with the current part names/aliases
     // (Hellcat extension). Called on name edits + from the poll timer.
     void refreshPartComboNames();
+
+    // Patch-browser label poll (change-only): out-of-band name changes (a host
+    // setStateInformation restore) reach the button within one tick.
+    void refreshPatchBrowserName();
 
     // Select which of the three peer top-level pages is shown (0=Synth, 1=FX,
     // 2=Patch) — exactly what the header page buttons do. Public for test/tool
@@ -476,6 +480,9 @@ private:
     // rewritten now; a language switch changes the placeholder text, so it
     // still updates through the same compare (W7, lane-A finding 6).
     std::array<juce::String, 6> partComboLabelCache_;
+    // Display-string cache for refreshPatchBrowserName (same change-only
+    // pattern: one string compare per tick, setCurrentName only on a change).
+    juce::String patchBrowserNameCache_;
     // Synth<->FX mode toggle (a view-mode selector, like the Patch overlay —
     // NOT an APVTS param). Inserted between partCombo_ and the Patch button in
     // the header cluster: Part [Part 1] [Synth] [FX] [Patch].

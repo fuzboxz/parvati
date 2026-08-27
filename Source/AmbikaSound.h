@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Trivial SynthesiserSound: every AmbikaVoice can play any note on any channel.
 // (Multi-timbral part/channel filtering is deferred — out of scope for the

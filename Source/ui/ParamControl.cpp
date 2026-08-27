@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ui/ParamControl.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ui/ParamControl.h.
 
 #include "ParamControl.h"
 

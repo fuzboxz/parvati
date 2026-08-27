@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Chorus — the classic single-delay-per-side chorus (the clean sibling of
 // the BBD Ensemble): two EQUAL-RATE SIN LFOs with a fixed 108-degree (0.30

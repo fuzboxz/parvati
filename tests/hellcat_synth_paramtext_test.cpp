@@ -59,8 +59,8 @@ static void testMixer()
 {
     std::printf ("(mixer)\n");
     checkEqual (T ("mix_balance", 32.0), "Ctr",  "mix_balance 32 (centre)");
-    checkEqual (T ("mix_balance", 0.0),  "L100", "mix_balance 0 (full L, % elided)");
-    checkEqual (T ("mix_balance", 63.0), "R100", "mix_balance 63 (full R, symmetric, % elided)");
+    checkEqual (T ("mix_balance", 0.0),  "1:100", "mix_balance 0 (oscillator 1 rail, % elided)");
+    checkEqual (T ("mix_balance", 63.0), "2:100", "mix_balance 63 (oscillator 2 rail, symmetric, % elided)");
     checkEqual (T ("mix_crush", 0.0),    "Off",    "mix_crush 0");
     checkEqual (T ("mix_fuzz", 63.0),    "100%",   "mix_fuzz 63");
 }

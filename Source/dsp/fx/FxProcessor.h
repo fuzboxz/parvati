@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxProcessor — abstract base for one per-part FX-slot effect instance. The
 // concrete effects live in FxProcessors.h/.cpp. Each effect renders

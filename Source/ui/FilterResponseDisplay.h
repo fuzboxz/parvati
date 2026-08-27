@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FilterResponseDisplay — a compact LIVE magnitude-vs-frequency response curve
 // for the Filter 1 section (cutoff / resonance / mode). Intended as a decoration

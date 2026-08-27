@@ -1,11 +1,12 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // PresetBrowser — a button showing the current patch name that opens a
 // HIERARCHICAL juce::PopupMenu, replacing the flat patch ComboBox. Categories:
-//   Templates ▸ (.yml templates)
-//   User ▸ (recursively scanned nested folders; .PRO/.MUL/.yml)
+//   Hellcat Factory ▸ (.yml patches — the ORIGINAL 64-preset bank)
 //   Ambika Factory ▸ A / B / F / S ▸ (.PRO patches per bank)
 //   Multi ▸ (factory .MUL multis)
+//   User ▸ (recursively scanned nested folders; .PRO/.MUL/.yml)
+//   Templates ▸ (.yml templates)
 // The menu tree is rebuilt from a disk CACHE (W10, lane-A finding 5): the
 // scan + the per-.PRO name parse run at most once per GENERATION — the editor
 // bumps the generation via invalidate() after every successful save, and the
@@ -25,13 +26,16 @@
 #include <map>
 #include <vector>
 
+#include "IconButton.h"
+
 class PresetBrowser : public juce::Component
 {
 public:
     using OnSelect = std::function<void (const juce::File&)>;
 
     PresetBrowser (juce::File templatesDir, juce::File userDir,
-                   juce::File factoryDir, juce::File factoryMultiDir, OnSelect onSelect);
+                   juce::File factoryDir, juce::File factoryMultiDir,
+                   juce::File hellcatFactoryDir, OnSelect onSelect);
 
     /** Update the button label to the loaded program name (empty => placeholder). */
     void setCurrentName (const juce::String& name);
@@ -57,10 +61,11 @@ public:
         then starts from the list ends — see selectNext). */
     void setCurrentFile (const juce::File& f) { currentFile_ = f; }
 
-    /** Step to the next preset in the flattened menu order (Factory A/B/F/S,
-        Multi, User recursive, Templates), selecting it via the SAME onSelect_
-        callback a menu pick fires. WRAPS at the end (back to the first leaf);
-        when the current file is not in the list, the FIRST leaf is selected.
+    /** Step to the next preset in the flattened menu order (Hellcat Factory,
+        Ambika Factory A/B/F/S, Multi, User recursive, Templates), selecting it
+        via the SAME onSelect_ callback a menu pick fires. WRAPS at the end
+        (back to the first leaf); when the current file is not in the list, the
+        FIRST leaf is selected.
         @returns the newly selected file, or an invalid File when the tree has
         no leaves at all. */
     juce::File selectNext();
@@ -159,8 +164,9 @@ private:
     static constexpr int kScanMaxDepth          = 8;     // folders below this stay unscanned
     static constexpr int kScanMaxEntriesPerDir  = 512;   // sorted entries beyond this stay unscanned
 
-    // subs layout produced by scanInto (parallel to kBanks + the fixed tail):
-    //   0..3 = factory banks A/B/F/S, 4 = factory multi, 5 = user, 6 = templates.
+    // subs layout produced by scanInto (parallel to the fixed menu order):
+    //   0 = Hellcat factory, 1..4 = Ambika factory banks A/B/F/S,
+    //   5 = factory multi, 6 = user, 7 = templates.
     void scanInto (MenuNode& root);
 
     void recordDir (const juce::File& dir);
@@ -203,7 +209,8 @@ private:
     // ---- flattened stepping ----
     // The step order mirrors the MENU order exactly: for each node, submenus
     // first (recursively), then leaves — the same traversal menuFromNode
-    // uses, over subs[0..6] (Factory banks A/B/F/S, Multi, User, Templates).
+    // uses, over subs[0..7] (Hellcat Factory, Ambika Factory banks A/B/F/S,
+    // Multi, User, Templates).
     static void flattenLeaves (const MenuNode& node, std::vector<Leaf>& out);
 
     juce::File stepSelection (int dir);
@@ -211,7 +218,16 @@ private:
     juce::String patchLabel (const juce::File& f, bool parseName);
 
     juce::TextButton nameBtn_;
-    juce::File templatesDir_, userDir_, factoryDir_, factoryMultiDir_;
+    // Quick-step chevrons flanking the name button ("<" prev, ">" next): one
+    // click loads the adjacent preset in the flattened menu order, without
+    // opening the dropdown. The handlers call selectPrev/selectNext, so they
+    // drive the EXACT seam the Cmd+[ / Cmd+] shortcuts drive (cached scan,
+    // wrap at the ends, the editor's onSelect load path). Declared AFTER
+    // nameBtn_, and added as children AFTER it too: the name button stays
+    // CHILD 0, which the editor's Y2K re-colour pass locates by position.
+    IconButton prevBtn_ { IconButton::Icon::ChevronLeft };
+    IconButton nextBtn_ { IconButton::Icon::ChevronRight };
+    juce::File templatesDir_, userDir_, factoryDir_, factoryMultiDir_, hellcatFactoryDir_;
     OnSelect onSelect_;
     // The file the editor last loaded (stepping's anchor). Only ever set via
     // selectLeaf (a menu pick / a step) or setCurrentFile (an out-of-menu

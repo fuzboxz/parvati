@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // AmbikaVoice — bridges ONE Ambika integer voice (ambika::dsp::Voice) into a
 // juce::SynthesiserVoice, running the digital engine at the fixed internal

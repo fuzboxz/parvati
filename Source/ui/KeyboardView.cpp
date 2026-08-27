@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See KeyboardView.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See KeyboardView.h.
 
 #include "KeyboardView.h"
 

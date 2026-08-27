@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // EnvelopeDisplay — a small live ADSR preview that reacts to a set of
 // Attack/Decay/Sustain/Release value getters. Intended to sit beside a row of

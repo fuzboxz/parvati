@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Echo — stereo ping-pong digital echo: input -> L delay -> R delay ->
 // cross-feedback, tone-damped. The two 16384-sample rings consume the FV-1's

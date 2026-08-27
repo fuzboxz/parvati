@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ModSourceCatalog.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ModSourceCatalog.h.
 
 #include "ModSourceCatalog.h"
 

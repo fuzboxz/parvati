@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Compressor — the standard clean feed-forward peak compressor
 // (the non-vinyl sibling of the Vinyl Compressor: no wow, no noise, no

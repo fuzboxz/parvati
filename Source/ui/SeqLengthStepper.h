@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SeqLengthStepper — a ParamControl subclass for the sequencer LENGTH params
 // (seq_length_{1,2,3}, a normal 1..16 Int). A 1..16 knob is an awkward control

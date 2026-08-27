@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1JunoChorus implementation — the Dual-BBD Chorus. This file holds the
 // documented source configuration table and the FV-1 realization of it.

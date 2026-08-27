@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ParamControl — one descriptor-driven control cell (a rotary Slider or a
 // ComboBox plus a label) bound to one APVTS parameter. Extracted unchanged

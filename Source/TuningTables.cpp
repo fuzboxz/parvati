@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Vendored from the Mutable Instruments Ambika controller firmware:
 // ambika_reference/controller/resources.cc:773-891 (scale tables) and the

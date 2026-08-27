@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See HellcatPreset.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See HellcatPreset.h.
 
 #include "HellcatPreset.h"
 
@@ -555,7 +555,7 @@ juce::String emitParams (const juce::DynamicObject& obj, const char* indent = " 
 // ===========================================================================
 // Patch (single, current part)
 // ===========================================================================
-juce::String serializeHellcatPatch (HellcatAudioProcessor& proc)
+juce::String serializeHellcatPatch (HellcatAudioProcessor& proc, const juce::String& author)
 {
     juce::String out;
     out << "# Hellcat patch — human-editable. Unknown keys are ignored on load.\n";
@@ -564,7 +564,12 @@ juce::String serializeHellcatPatch (HellcatAudioProcessor& proc)
     out << "hellcat_version: " << kHellcatVersion << "\n";
     out << "name: \"" << escapeQuotedValue (proc.getLoadedProgramName().isNotEmpty() ? proc.getLoadedProgramName()
                                                                                     : juce::String ("Hellcat")) << "\"\n";
-    out << "author: \"\"\n";
+    out << "author: \"" << escapeQuotedValue (author) << "\"\n";
+    // Hellcat extension: the patch's polyphony (voice count) request. A single
+    // patch does not carry its own part, so this is the CURRENT part's slot
+    // count (1..kMaxVoicesPerPart). Absent on older files (backward-compat).
+    out << "voice_slots: " << (int) proc.getEngine().getPartVoiceSlots (
+        proc.getEngine().getCurrentPart()) << "\n";
     out << "params:\n";
     out << emitParams (*currentParamsMap (proc));
     return out;
@@ -596,6 +601,15 @@ bool applyHellcatPatch (HellcatAudioProcessor& proc, const juce::String& yaml)
     }
 
     proc.syncAllParamsToEngine();
+    // Hellcat extension: the patch's polyphony (voice count) request. Optional
+    // top-level `voice_slots:` (1..kMaxVoicesPerPart); absent means "leave the
+    // part's voice count unchanged" so older patches still load (backward-
+    // compatible). A single patch owns its current part, so apply to it.
+    if (tree.hasProperty ("voice_slots"))
+    {
+        const int slots = juce::jlimit (1, kMaxVoicesPerPart, (int) tree["voice_slots"]);
+        proc.getEngine().setPartVoiceSlots (proc.getEngine().getCurrentPart(), slots);
+    }
     return true;
 }
 

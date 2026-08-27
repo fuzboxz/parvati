@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SharedContainer.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See SharedContainer.h.
 
 #include "SharedContainer.h"
 

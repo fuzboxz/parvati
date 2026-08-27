@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See SynthWorkspace.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See SynthWorkspace.h.
 
 #include "SynthWorkspace.h"
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxTypes — Hellcat-exclusive per-part FX enums and constants. Included by
 // SynthEngine.h (so engine/Preset/ParameterLayout code sees it) AND by the FX

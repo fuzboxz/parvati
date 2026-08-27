@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1ClockedDelay implementation. See the header for the full signal-flow doc.
 // JUCE-FREE: only the FV-1/framework headers + <cmath> are included.

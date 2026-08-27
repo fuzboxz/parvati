@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // FxSlotCard — one Serum/Pigments-style modular FX-slot card for the FX page's
 // upper region (FX1 / FX2 / FX3). It is a SELF-CONTAINED juce::Component that

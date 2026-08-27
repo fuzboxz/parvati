@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // VectorTrace — the single modern vector recipe shared by the three
 // data-visualization canvases (EnvelopeDisplay, OscPreviewDisplay,

@@ -4,7 +4,7 @@ This project includes or depends on the following third-party software.
 
 ## Hellcat (this project)
 
-Copyright © 2026 Jozsef Ottucsak.
+Copyright © 2026 805Labs Kft.
 
 Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0). The
 full text is in [`LICENSE`](LICENSE). Hellcat's own code is AGPL-3.0; the

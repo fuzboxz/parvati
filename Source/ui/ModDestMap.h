@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // ModDestMap — a pure-data bridge between the APVTS modulation-matrix
 // parameters and the synth's visible knobs. It maps a ModulationDestination

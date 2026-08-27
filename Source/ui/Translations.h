@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Chrome (UI chrome) translations for the Hellcat editor. Only the editor
 // chrome — top-bar buttons, settings labels, tab names, page headings — is

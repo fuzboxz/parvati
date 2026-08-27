@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HellcatPreset — a Hellcat-native, human-editable YAML preset format that
 // COEXISTS with the Ambika .PRO/.MUL byte format. The Ambika format has no slot
@@ -43,8 +43,11 @@ juce::String emitHellcatYaml (const juce::var& tree);
 // isArp / isOption (vca_curve, filter_card) / isSequencer — plus a header
 // (format/version/hellcat_version/name/author). `part_select` is excluded: it
 // is the "which part am I editing" selector, not a sound setting. Choice params
-// emit a ` # <choice label>` comment for readability.
-juce::String serializeHellcatPatch (HellcatAudioProcessor& proc);
+// emit a ` # <choice label>` comment for readability. @p author (optional)
+// rides the header's author field — the factory bank generator passes
+// "Hellcat"; the plain save path keeps the empty default.
+juce::String serializeHellcatPatch (HellcatAudioProcessor& proc,
+                                    const juce::String& author = {});
 
 // Parses @p yaml and applies every recognized paramID in `params:` to the APVTS
 // (clamped to the descriptor range; unknown keys ignored for forward-compat),

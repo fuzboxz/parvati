@@ -4,6 +4,22 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Added
+- **Quick-step buttons beside the patch selector (2026-08-27).** The top
+  bar's patch indicator now carries "<" and ">" chevron buttons at its two
+  edges. One click loads the previous or next preset in the flattened menu
+  order, without opening the dropdown; stepping wraps at the ends and uses
+  the same load path as the Cmd+[ / Cmd+] shortcuts. The glyphs are
+  Path-drawn IconButtons, so they render on every font stack.
+  `editor_test.cpp` [18] pins the seams.
+- **The mod-bar `<` / `>` scrollers match the pill row (2026-08-27).** The
+  nav tiles are now narrow rounded rectangles (44pt wide at the full 56pt
+  pill height — compact-pill width in the pill band) instead of inset
+  circles, sit an 8px pad off the bar's ends, and the patch-selector step
+  buttons reuse the same recessed-tile chrome inside a whitespace ring (end
+  pad + gaps to the name indicator). The HIG pin stays 44 wide by design
+  (`ipad_hig_sizing_test`); the F-ios-touch-1 floor is met exactly.
+
 ### Fixed
 - **The mod-pill strips woke from the idle-flat freeze (2026-08-27).** At
   launch (and after returning from a window switch / minimize) a resting
@@ -17,6 +33,19 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
   modbar_strip_wake_from_full_flat_test pins it (58 px frozen vs 196 px live).
 
 ### Added
+- **The Hellcat factory presets use higher polyphony, bass dirt and the FX
+  mod matrix (2026-08-27).** Each `presets/HFACTORY/*.yml` patch now carries
+  a `voice_slots:` field (applied on load) so the bank takes advantage of
+  Hellcat's 16-voice-per-part engine: bass and flat leads use one mono
+  voice, keys and pads max out at 16 voices, unison leads use an 8-voice
+  mono unison stack, and the FX presets use 8. A few bass presets gain an
+  Overdrive slot with a relatively dry master FX (fx_mix at ~half, dark
+  tone) so the 32 kHz FV-1 dirt adds grit without taking over; harder note
+  velocity drives the dirt in and out via the FX mod matrix. Across the
+  bank the FX mod matrix now routes LFOs to FX params (evolving space) and
+  velocity to FX wet/dry (interactive feel). `tests/factory_bank_test.cpp`
+  guards the voice counts, the bass dirt rule (Overdrive/LUT only, dry
+  master, no reverb on bass) and the FX-mod coverage.
 - **The mod-pill strips show their rest line immediately after a wipe
   (2026-08-27).** A preset load or part switch resets the telemetry epoch;
   the strips used to sit EMPTY for the ~3.1 s the history ring needs to

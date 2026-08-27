@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // GroupPager — a reusable sub-tab strip that paginates ONE editor-owned
 // ParamPage by its named groups. Each sub-tab calls page->setVisibleGroups

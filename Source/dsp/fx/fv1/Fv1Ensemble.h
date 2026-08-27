@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Ensemble — BBD-style ensemble chorus. Two parallel delay lines are
 // modulated 90 deg out of phase via the 32-value sine LUT (NO per-sample trig)

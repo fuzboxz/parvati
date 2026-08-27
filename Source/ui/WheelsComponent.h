@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // WheelsComponent — Pitch + Mod wheels drawn to the LEFT of the virtual
 // keyboard. Two vertical sliders: the pitch wheel is bipolar and springs back

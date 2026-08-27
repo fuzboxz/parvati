@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ModMatrixView.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ModMatrixView.h.
 
 #include "ModMatrixView.h"
 

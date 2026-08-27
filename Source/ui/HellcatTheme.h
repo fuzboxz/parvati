@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HellcatTheme — a self-contained colour-palette struct plus the 5 built-in
 // themes (Carbon, Midnight, Immutable, Swedish Red, Y2K). The palette is a clean

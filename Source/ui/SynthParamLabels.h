@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SynthParamLabels — meaningful-unit value readout for the SYNTH-section knob
 // params (OSC/MIX/FILTER/ENV/LFO/MOD/SEQ/ARP/GLOBAL). The FX section has its

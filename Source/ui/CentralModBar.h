@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // CentralModBar — a self-contained, single-row strip of micro-pills, one per
 // MOD_SRC_* modulation source, grouped into the 7 ModSourceCatalog clusters
@@ -51,7 +51,7 @@ public:
     static constexpr int kBarHeight = 86;   // 8px sep clearance + label tab (14) + gap 4 + 56pt pills + 4px bottom inset (2026-08-21)
     static constexpr int kPillH     = 56;   // compact pills (was 72 — still >= 44pt HIG touch target)
     static constexpr int kPillGap   = 8;    // minimum pill spacing
-    static constexpr int kNavHitW   = 44;   // < > nav hit-band width (F-ios-touch-1: the ONLY pill-band scrollers — HIG floor; the visible chevron glyph stays visually small inside it)
+    static constexpr int kNavHitW   = 44;   // < > nav TILE width (F-ios-touch-1 floor kept); compact-pill narrowness beside the row — full kPillH HEIGHT makes it a same-band sibling, not a wide square
 
     explicit CentralModBar (ThemeManager& themeManager);
     ~CentralModBar() override;

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxMatrixView.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See FxMatrixView.h.
 
 #include "FxMatrixView.h"
 #include "FxSlotLabels.h"          // activeParamCount / paramLabel (dynamic FX-dest labels)

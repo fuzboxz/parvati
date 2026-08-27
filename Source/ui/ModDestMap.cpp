@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ModDestMap.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ModDestMap.h.
 
 #include "ui/ModDestMap.h"
 

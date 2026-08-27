@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Room — the canonical Schroeder room: four parallel lowpass-damped combs
 // -> sum -> TWO series-allpass chains with slightly different lengths per

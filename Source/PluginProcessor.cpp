@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See PluginProcessor.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See PluginProcessor.h.
 
 #include <algorithm>
 #include <array>
@@ -209,11 +209,14 @@ HellcatAudioProcessor::HellcatAudioProcessor()
         },
         [this] (const char* id) -> float { if (auto v = apvts.getRawParameterValue (id)) return v->load(); return 0.0f; });
 
-    // Extract the embedded GPL-3.0 factory presets into the user app-data dirs
-    // on first run (process-once) so the Patch combo is populated without
-    // user setup. This also makes sure the USER save area exists. Non-fatal:
-    // a failure just leaves the combo empty.
-    hellcat::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(), getTemplatesDir(), getUserPatchDir());
+    // Extract the embedded factory presets into the user app-data dirs on
+    // first run (process-once) so the Patch combo is populated without user
+    // setup: the GPL-3.0 Ambika banks (AFACTORY/A..S + AFACTORY_MULTI) plus the
+    // ORIGINAL Hellcat patch bank (HFACTORY). This also makes sure the USER
+    // save area exists. Non-fatal: a failure just leaves the combo empty.
+    hellcat::ensureFactoryPresetsInstalled (getFactoryPatchDir(), getFactoryMultiDir(),
+                                            getTemplatesDir(), getHellcatFactoryDir(),
+                                            getUserPatchDir());
 
     // Start the deferred-parameter drain (60 Hz, message thread). Processor
     // construction happens on the message thread in every host (and in the
@@ -1173,8 +1176,8 @@ bool HellcatAudioProcessor::loadProgramFile (const juce::File& file)
     if (! loadProgramFromBytes (prog.patch.data(), partPtr))
         return false;
 
-    loadedProgramName_ = prog.name.isNotEmpty() ? prog.name
-                                                 : file.getFileNameWithoutExtension();
+    setLoadedProgramName (prog.name.isNotEmpty() ? prog.name
+                                                 : file.getFileNameWithoutExtension());
     return true;
 }
 
@@ -1215,7 +1218,7 @@ bool HellcatAudioProcessor::saveProgramFile (const juce::File& file)
     // isOption carry no patch or part byte) and the same patch/part routing,
     // and stores each one's current APVTS value as its faithful byte.
     AmbikaProgram prog;
-    prog.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Hellcat";
+    prog.name = getLoadedProgramName().isNotEmpty() ? getLoadedProgramName() : "Hellcat";
     // prog.patch / prog.part are zero-initialised (the bytes no parameter maps
     // to — e.g. PartData's MIDI channel / key zone / voice allocation, which live
     // in the .MUL MultiData, not the .PRO — stay 0, exactly as on load).
@@ -1231,8 +1234,8 @@ juce::File HellcatAudioProcessor::getFactoryPatchDir()
     // Per-user app-data location (user-writable on macOS, unlike
     // ~/Library/Audio/Presets which is often root-owned). The Ambika factory
     // banks are extracted here as subfolders: <appdata>/Hellcat/AFACTORY/{A,B,F,S}/.
-    // The "A" prefix holds the stock Ambika banks; a later Hellcat bank set
-    // gets its own root (H*), separate from this one.
+    // The "A" prefix holds the stock Ambika banks; the ORIGINAL Hellcat bank
+    // installs under its own HFACTORY/ root (see getHellcatFactoryDir).
     return hellcat::getSharedContainerRoot()
         .getChildFile ("Hellcat/AFACTORY");
 }
@@ -1341,8 +1344,8 @@ bool HellcatAudioProcessor::loadMultiFile (const juce::File& file)
     // a multi-load; pushing the (Part-0-only) APVTS back would clobber the
     // just-loaded bytes with stale values.
 
-    loadedProgramName_ = multi.name.isNotEmpty() ? multi.name
-                                                 : file.getFileNameWithoutExtension();
+    setLoadedProgramName (multi.name.isNotEmpty() ? multi.name
+                                                 : file.getFileNameWithoutExtension());
 
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): a whole-multi
     // load swaps every part's patch — wipe the telemetry history and re-point
@@ -1369,6 +1372,17 @@ juce::File HellcatAudioProcessor::getTemplatesDir()
         .getChildFile ("Hellcat/TEMPLATES");
 }
 
+juce::File HellcatAudioProcessor::getHellcatFactoryDir()
+{
+    // The ORIGINAL Hellcat factory patches (64 single-part .yml patches,
+    // bass/keys/leads/pads/fx — authored directly under presets/HFACTORY/.
+    // Installed write-if-missing on first run, like the Ambika banks, but
+    // under its own root: no GPL Ambika data lives here.
+    // <appdata>/Hellcat/HFACTORY/.
+    return hellcat::getSharedContainerRoot()
+        .getChildFile ("Hellcat/HFACTORY");
+}
+
 juce::File HellcatAudioProcessor::getUserPatchDir()
 {
     // User-writable area for the user's own saved patches/multis. Created on
@@ -1385,7 +1399,7 @@ bool HellcatAudioProcessor::saveMultiFile (const juce::File& file, int strategyI
     // engine storage, and MultiData.part_mapping_ is rebuilt from the engine's
     // per-part channel / keyrange / voice-allocation.
     AmbikaMulti multi;
-    multi.name = loadedProgramName_.isNotEmpty() ? loadedProgramName_ : "Hellcat";
+    multi.name = getLoadedProgramName().isNotEmpty() ? getLoadedProgramName() : "Hellcat";
 
     for (int i = 0; i < SynthEngine::getNumParts(); ++i)
     {
@@ -1577,7 +1591,7 @@ bool HellcatAudioProcessor::loadHellcatPatchFile (const juce::File& file)
         return false;
     // Derive a display name from the file (the in-document name is applied via
     // the loaded-program title separately by the editor).
-    loadedProgramName_ = file.getFileNameWithoutExtension();
+    setLoadedProgramName (file.getFileNameWithoutExtension());
 
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): a patch-file load
     // swaps the whole edited patch — wipe the telemetry history + re-point at
@@ -1663,7 +1677,7 @@ bool HellcatAudioProcessor::loadHellcatMultiFile (const juce::File& file)
     resetVoiceSlotsToInit();
     if (! hellcat::preset::applyHellcatMulti (*this, text))
         return false;
-    loadedProgramName_ = file.getFileNameWithoutExtension();
+    setLoadedProgramName (file.getFileNameWithoutExtension());
 
     // Live mod-feedback (docs/LIVE_MOD_FEEDBACK_DESIGN.md): whole-multi load —
     // wipe the telemetry history + re-point at the restored current part
@@ -1723,7 +1737,7 @@ void HellcatAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // runs on whatever thread the host calls getStateInformation (AUv3
     // autosaves are NOT message-thread), while the setters run on the message
     // thread. juce::String is refcounted — a torn copy is a UAF class.
-    juce::String theme, language;
+    juce::String theme, language, name;
     double zoom; bool tooltips, smoothing, modLampCat; int oversampling, refreshHz, fontMode, manualBpm;
     {
         const std::lock_guard<std::mutex> l (uiPrefsLock_);
@@ -1737,6 +1751,7 @@ void HellcatAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         fontMode     = uiFontMode_;
         language     = uiLanguage_;
         manualBpm    = manualTempoBpm_.load (std::memory_order_relaxed);
+        name         = loadedProgramName_;
     }
     tree.setProperty ("ui_theme", theme, nullptr);
     tree.setProperty ("ui_zoom", zoom, nullptr);
@@ -1748,6 +1763,7 @@ void HellcatAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tree.setProperty ("ui_font_mode", fontMode, nullptr);
     tree.setProperty ("ui_language", language, nullptr);
     tree.setProperty ("manual_bpm", manualBpm, nullptr);   // arp-clock manual tempo (setManualTempoBpm clamps)
+    tree.setProperty ("loaded_program_name", name, nullptr);   // last loaded preset (GUI title + browser label)
     // Full 6-Part multitimbral engine state (all parts' patch/part bytes, arp/seq
     // config, routing, voice allocation/mode). Base64 so it rides inside the XML
     // state tree; absent on pre-persistence states (backward compatible).
@@ -1808,6 +1824,11 @@ void HellcatAudioProcessor::setStateInformation (const void* data, int sizeInByt
             // Arp-clock manual tempo: absent in pre-2026-08 states -> the 120
             // default (= the old hard-coded no-host-tempo behaviour).
             const int rManualBpm     = static_cast<int> (tree.getProperty ("manual_bpm", 120));
+            // Last loaded preset name: absent in pre-persistence states -> KEEP
+            // the current name (whatever the load path already set). A legacy
+            // state must not reset the title to "Init".
+            const bool hasLoadedName = tree.hasProperty ("loaded_program_name");
+            juce::String rLoadedName = tree.getProperty ("loaded_program_name", juce::String()).toString();
             {
                 const std::lock_guard<std::mutex> l (uiPrefsLock_);
                 uiThemeName_   = std::move (rTheme);
@@ -1822,6 +1843,10 @@ void HellcatAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 // setManualTempoBpm's clamp range, applied inline (same lock):
                 // restored state is never trusted raw.
                 manualTempoBpm_.store (juce::jlimit (40, 300, rManualBpm), std::memory_order_relaxed);
+                // Apply the preset name only when the state carried it (see
+                // hasLoadedName above): a legacy state keeps the current name.
+                if (hasLoadedName)
+                    loadedProgramName_ = std::move (rLoadedName);
             }
 
             // JUCE 9 dispatch reality (verified against the vendored checkout):

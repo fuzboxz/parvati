@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // IosOpenIn — completes the iOS "Open in Hellcat" loop (bug hunt 2026-08-19,
 // open-in follow-up to F-ios-build-1/F-ios-files-2).

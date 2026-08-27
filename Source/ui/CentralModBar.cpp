@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See CentralModBar.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See CentralModBar.h.
 //
 // Layout geometry (px):
 //   kBarHeight = 78, pill height 56 -> top/bottom inset (single UI, all platforms).
@@ -98,12 +98,14 @@ namespace
     }
 
     // Quiet nav scrollers: the `<` / `>` buttons are CHROME, not pills — no
-    // accent bands, no underline. Each is a CIRCULAR RECESSED WELL (the
-    // theme's input fill + a thin outline rim) with a crisp stroked chevron
-    // glyph — an arrow key, not a text caption. The glyph stays dim
-    // (textSecondary) at rest, lifts to textPrimary on hover and the theme
-    // accent on press; the well brightens on hover and darkens on press.
-    // Disabled dims to 40%. (Was a bare text glyph, invisible at rest.)
+    // accent bands, no underline. Each is a ROUNDED-RECTANGLE RECESSED TILE
+    // (the theme's input fill + a thin outline rim, radius 5 = the mod pills'
+    // corner radius) with a crisp stroked chevron glyph — an arrow key, not a
+    // text caption. The glyph stays dim (textSecondary) at rest, lifts to
+    // textPrimary on hover and the theme accent on press; the tile brightens
+    // on hover and darkens on press. Disabled dims to 40%. (Was a bare text
+    // glyph, invisible at rest; was an ELLIPTICAL well until the tile became
+    // rectangular to read as a pill-row sibling.)
     class NavButtonLnf : public HellcatLookAndFeel
     {
     public:
@@ -122,10 +124,13 @@ namespace
 
             const float alpha = b.isEnabled() ? 1.0f : 0.40f;
             const auto area = b.getLocalBounds().toFloat();
-            const float d = juce::jmin (area.getWidth(), area.getHeight()) - 8.0f;
-            if (d <= 8.0f)
+            if (area.getWidth() <= 9.0f || area.getHeight() <= 9.0f)
                 return;
-            const auto well = area.withSizeKeepingCentre (d, d);
+            // A rounded RECTANGLE (not a circle): nearly full bounds — 1px
+            // inset on each side — so the narrow 44x56 tile reads as one
+            // solid cell, and the pill row's 5px corner radius keeps it in
+            // the same control family as the flanked pills.
+            const auto well = area.reduced (1.0f);
 
             // The well: the recessed input fill, quiet at rest. Hover lifts
             // it one notch; press sinks it darker.
@@ -133,11 +138,11 @@ namespace
             if (isButtonDown)          fill = fill.darker (0.20f);
             else if (isMouseOverButton) fill = fill.brighter (0.18f);
             g.setColour (fill.withMultipliedAlpha (alpha));
-            g.fillEllipse (well);
+            g.fillRoundedRectangle (well, 5.0f);
 
             // A thin rim reads as a moulded edge on every bar surface.
             g.setColour (t->outline.withMultipliedAlpha (0.60f * alpha));
-            g.drawEllipse (well.reduced (0.5f), 1.0f);
+            g.drawRoundedRectangle (well.reduced (0.5f), 5.0f, 1.0f);
         }
 
         void drawButtonText (juce::Graphics& g, juce::TextButton& b,
@@ -1213,16 +1218,19 @@ void CentralModBar::resized()
     if (viewport_ != nullptr && pillContent_ != nullptr)
     {
         const auto b = getLocalBounds();
-        // Nav hit bands (F-ios-touch-1): 44x44 HIG floor, vertically CENTRED ON
-        // THE PILL BAND (the pill strip: kSegVPad + kLabelTabH + kLabelTabGap ..
-        // + kPillH). The 44pt band sits beside 56pt pills; the centred chevron
-        // glyph keeps the old quiet visual weight.
-        const int pillBandY = kSegVPad + kLabelTabH + kLabelTabGap;
-        const int navH = juce::jmin (kNavW, kPillH);
-        const int navY = pillBandY + (kPillH - navH) / 2;
-        if (navPrev_ != nullptr) navPrev_->setBounds (b.getX(), navY, kNavW, navH);
-        if (navNext_ != nullptr) navNext_->setBounds (b.getRight() - kNavW, navY, kNavW, navH);
-        viewport_->setBounds (b.withTrimmedLeft (kNavW + kNavGap).withTrimmedRight (kNavW + kNavGap));
+        // Nav tiles (F-ios-touch-1): 44pt wide — compact-pill narrowness — at
+        // FULL pill height. They are CENTRED ON THE FULL BAR HEIGHT (not on
+        // the pill band): the label-tab zone exists only ABOVE the pills, so
+        // band-following left the nav columns with dead space above and a
+        // pinched strip below — full-bar centreing evens that out. An EDGE
+        // PAD (8px) keeps the tiles off the screen ends; the viewport spans
+        // the remaining centre span (edge pad = kPillHPad's feel).
+        constexpr int kNavEdgePad = 8;
+        const int navY = juce::jmax (0, (kBarHeight - kPillH) / 2);
+        if (navPrev_ != nullptr) navPrev_->setBounds (b.getX() + kNavEdgePad, navY, kNavHitW, kPillH);
+        if (navNext_ != nullptr) navNext_->setBounds (b.getRight() - kNavEdgePad - kNavHitW, navY, kNavHitW, kPillH);
+        viewport_->setBounds (b.withTrimmedLeft (kNavEdgePad + kNavW + kNavGap)
+                                 .withTrimmedRight (kNavEdgePad + kNavW + kNavGap));
         const int contentW = computeLayout (false);   // full no-clip width
         pillContent_->setSize (contentW, kBarHeight);
         computeLayout (true);                         // position pills + segment rects

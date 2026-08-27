@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FactoryPresetInstaller.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See FactoryPresetInstaller.h.
 
 #include "FactoryPresetInstaller.h"
 
@@ -88,6 +88,7 @@ bool installMarkerMatches (const juce::File& factoryDir)
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                                    const juce::File& factoryMultiDir,
                                    const juce::File& templatesDir,
+                                   const juce::File& hellcatFactoryDir,
                                    const juce::File& userDir)
 {
     // Process-once: run the directory scan / extraction at most once. After the
@@ -102,6 +103,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // Always supply a USER area for the user's own saved presets.
         userDir.createDirectory();
         templatesDir.createDirectory();
+        hellcatFactoryDir.createDirectory();
 
         // F-ios-perf-5 (iOS hunt 2026-08-19): install-marker FAST PATH. A tree
         // whose marker matches kFactoryInstallVersion has already seen a
@@ -163,6 +165,7 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
         // per-file existence check, so an installed tree costs one stat per
         // resource and an interrupted first run self-heals on the next launch.
         std::set<juce::String> embeddedTemplates;
+        std::set<juce::String> embeddedHellcatPatches;   // HFACTORY sweep (renames)
 
         for (int i = 0; i < FactoryPresets::namedResourceListSize; ++i)
         {
@@ -212,6 +215,21 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                     && writeIfMissing (factoryMultiDir.getChildFile (fname), data, size))
                     ++written;
             }
+            else if (token == "HFACTORY")
+            {
+                // The ORIGINAL Hellcat .yml patch bank: its own app-data root.
+                // Unlike the frozen Ambika banks, this is LIVING content
+                // (presets get edited/renamed/removed), and the root is
+                // factory-owned (user saves go to USER/) — so it uses the
+                // TEMPLATES policy: content-SYNC every run (overwrite only
+                // when missing or different — propagates edits to installed
+                // trees even without a version bump) + the stale sweep below
+                // (removes a local .yml no longer embedded; a rename leaves
+                // no old-name twin in the browser).
+                embeddedHellcatPatches.insert (fname);
+                if (overwriteIfChanged (hellcatFactoryDir.getChildFile (fname), data, size))
+                    ++written;
+            }
             else   // bank token (A/B/F/S)
             {
                 // Bank content: skipped on the marker fast path (see above).
@@ -242,6 +260,21 @@ int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
             if (f.getFileName().contains ("_temp"))
                 continue;   // another process's in-flight atomic write
             if (embeddedTemplates.find (f.getFileName()) == embeddedTemplates.end())
+                f.deleteFile();
+        }
+
+        // HFACTORY stale sweep: same policy as TEMPLATES (the root is
+        // factory-owned), and it runs on the FAST PATH too — otherwise a
+        // renamed preset leaves its old-name twin in the browser forever
+        // (write-if-missing cannot remove). The *_temp skip mirrors the
+        // template sweep (another process's in-flight write).
+        juce::Array<juce::File> localPatches;
+        hellcatFactoryDir.findChildFiles (localPatches, juce::File::findFiles, false, "*.yml");
+        for (const auto& f : localPatches)
+        {
+            if (f.getFileName().contains ("_temp"))
+                continue;   // another process's in-flight atomic write
+            if (embeddedHellcatPatches.find (f.getFileName()) == embeddedHellcatPatches.end())
                 f.deleteFile();
         }
 

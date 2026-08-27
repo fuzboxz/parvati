@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SettingsPanel — a compact settings UI hosted in the editor's SidePanel. Lets
 // the user pick the active theme, adjust the global zoom, and toggle tooltips.

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // PresetBrowser implementation. See PresetBrowser.h for the class contract
 // and the design comments (the bodies moved here unchanged from the header).
@@ -9,14 +9,34 @@
 
 //==============================================================================
 PresetBrowser::PresetBrowser (juce::File templatesDir, juce::File userDir,
-                              juce::File factoryDir, juce::File factoryMultiDir, OnSelect onSelect)
+                              juce::File factoryDir, juce::File factoryMultiDir,
+                              juce::File hellcatFactoryDir, OnSelect onSelect)
     : templatesDir_ (std::move (templatesDir)), userDir_ (std::move (userDir)),
       factoryDir_ (std::move (factoryDir)), factoryMultiDir_ (std::move (factoryMultiDir)),
+      hellcatFactoryDir_ (std::move (hellcatFactoryDir)),
       onSelect_ (std::move (onSelect))
 {
     nameBtn_.setButtonText ("(select a patch)");
     nameBtn_.onClick = [this] { showMenu(); };
     addAndMakeVisible (nameBtn_);
+
+    // Quick-step chevrons ("<" / ">" — see the member note in the header):
+    // one click loads the adjacent preset with no dropdown. The handlers call
+    // selectPrev/selectNext, so cache invalidation, end wrapping and the
+    // onSelect load path stay identical to the Cmd+[ / Cmd+] shortcut path.
+    // An empty preset tree is safe: stepSelection returns an invalid File
+    // without firing onSelect, so the click is simply a no-op.
+    prevBtn_.onClick = [this] { selectPrev(); };
+    nextBtn_.onClick = [this] { selectNext(); };
+    prevBtn_.setTooltip (TRANS ("Previous patch"));   // same key as the icon title (one entry per language)
+    nextBtn_.setTooltip (TRANS ("Next patch"));
+    // Same recessed-tile family as the mod-bar pill-row scrollers (radius-5
+    // rounded rectangle in the theme's input fill): the steps read as real
+    // BUTTONS beside the name button, not bare glyphs.
+    prevBtn_.setTileVisible (true);
+    nextBtn_.setTileVisible (true);
+    addAndMakeVisible (prevBtn_);   // AFTER nameBtn_: child 0 stays the name button
+    addAndMakeVisible (nextBtn_);
 }
 
 void PresetBrowser::setCurrentName (const juce::String& name)
@@ -30,7 +50,27 @@ juce::File PresetBrowser::selectNext() { return stepSelection (+1); }
 
 juce::File PresetBrowser::selectPrev() { return stepSelection (-1); }
 
-void PresetBrowser::resized() { nameBtn_.setBounds (getLocalBounds()); }
+void PresetBrowser::resized()
+{
+    // Layout [<] name [>] WITH A WHITESPACE RING (less cluttered): an end pad
+    // keeps each tile off the component edge, and a gap separates the tiles
+    // from the name indicator, so three distinct pieces read instead of one
+    // glued block. The column width adapts to the browser width (the editor
+    // elastically squeezes this component down to a 60pt floor); 26pt at the
+    // natural width keeps every chevron an easy hit target inside the
+    // full-height bar cell.
+    constexpr int kEndPad  = 2;   // breathing room at the two ends
+    constexpr int kNameGap = 4;   // whitespace between tile and name button
+    auto area = getLocalBounds();
+    area.removeFromLeft (kEndPad);
+    area.removeFromRight (kEndPad);
+    const int chevW = juce::jlimit (16, 30, (getWidth() - 12) / 4);
+    prevBtn_.setBounds (area.removeFromLeft (chevW));
+    nextBtn_.setBounds (area.removeFromRight (chevW));
+    area.removeFromLeft (kNameGap);
+    area.removeFromRight (kNameGap);
+    nameBtn_.setBounds (area);
+}
 
 bool PresetBrowser::debugTreeHasLeafLabel (const juce::String& label) const
 {
@@ -104,19 +144,20 @@ void PresetBrowser::buildMenu (juce::PopupMenu& menu)
 {
     if (! cacheValid_ || watchedDirsChanged())
         scanInto (cachedTree_);
-    menu = juce::PopupMenu();   // order: Ambika Factory (banks + Multi), User, Templates
+    menu = juce::PopupMenu();   // order: Hellcat Factory, Ambika Factory (banks + Multi), User, Templates
+    addSubIfAny (menu, TRANS ("Hellcat Factory"), menuFromNode (cachedTree_.subs[0]));
     juce::PopupMenu factorySub;
     static const char* const kBanks[] = { "A", "B", "F", "S" };   // actual Ambika bank dirs
     for (size_t b = 0; b < sizeof (kBanks) / sizeof (kBanks[0]); ++b)
-        if (cachedTree_.subs.size() > b && cachedTree_.subs[b].leaves.size() > 0)
-            factorySub.addSubMenu (kBanks[b], menuFromNode (cachedTree_.subs[b]));
+        if (cachedTree_.subs.size() > b + 1 && cachedTree_.subs[b + 1].leaves.size() > 0)
+            factorySub.addSubMenu (kBanks[b], menuFromNode (cachedTree_.subs[b + 1]));
     // Factory multis (.MUL) nest at the bottom of Factory.
-    addSubIfAny (factorySub, TRANS ("Multi"), menuFromNode (cachedTree_.subs[4]));
+    addSubIfAny (factorySub, TRANS ("Multi"), menuFromNode (cachedTree_.subs[5]));
     if (factorySub.getNumItems() > 0)
         menu.addSubMenu (TRANS ("Ambika Factory"), factorySub);
 
-    addSubIfAny (menu, TRANS ("User"), menuFromNode (cachedTree_.subs[5]));
-    addSubIfAny (menu, TRANS ("Templates"), menuFromNode (cachedTree_.subs[6]));
+    addSubIfAny (menu, TRANS ("User"), menuFromNode (cachedTree_.subs[6]));
+    addSubIfAny (menu, TRANS ("Templates"), menuFromNode (cachedTree_.subs[7]));
 }
 
 void PresetBrowser::showMenu()
@@ -131,13 +172,20 @@ void PresetBrowser::scanInto (MenuNode& root)
 {
     root = MenuNode();
     dirMtimes_.clear();
-    // F-w10-4: the four ROOTS are always recorded (present or not) so an
+    // F-w10-4: the five ROOTS are always recorded (present or not) so an
     // externally created root invalidates the cache. Nested dirs absent
     // at scan time are covered by their recorded parent's mtime.
     recordRoot (factoryDir_);
     recordRoot (factoryMultiDir_);
     recordRoot (userDir_);
     recordRoot (templatesDir_);
+    recordRoot (hellcatFactoryDir_);
+    // The ORIGINAL Hellcat bank: single-part .yml patches under their own
+    // root, scanned FIRST so the flattened step order matches the menu order
+    // (Hellcat Factory, Ambika Factory, Multi, User, Templates). No .PRO
+    // name parse — the FILENAME is the patch label (the loader derives the
+    // program name the same way).
+    scanFlatInto (root.subs.emplace_back(), hellcatFactoryDir_, "*.yml", false);
     static const char* const kBanks[] = { "A", "B", "F", "S" };
     for (const char* bank : kBanks)
         scanFlatInto (root.subs.emplace_back(), factoryDir_.getChildFile (bank), "*.PRO", true).title = bank;

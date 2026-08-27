@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Factory preset installer. The GPL-3.0 Ambika "goldencard" factory banks are
 // EMBEDDED into the plugin binary at build time (CMake juce_add_binary_data,
@@ -19,25 +19,28 @@
 namespace hellcat
 {
 // Extract every embedded factory preset into @p factoryDir (*.PRO, organized as
-// AFACTORY/<bank>/), @p factoryMultiDir (*.MUL, AFACTORY_MULTI/), and @p templatesDir
-// (full-fidelity *.yml multis, TEMPLATES/), and make sure @p userDir (USER/)
-// exists for user saves. The "A" roots hold the stock Ambika banks; a later
-// Hellcat bank set installs under its own root. Factory banks are written only if missing; the stock
-// TEMPLATES set is SYNCED every run (writes new/changed templates and removes a
-// local *.yml no longer in the embedded set) so renames/removals propagate
-// to an already-installed tree. Returns the number of files (re)written.
+// AFACTORY/<bank>/), @p factoryMultiDir (*.MUL, AFACTORY_MULTI/), @p templatesDir
+// (full-fidelity *.yml multis, TEMPLATES/), @p hellcatFactoryDir (the ORIGINAL
+// Hellcat *.yml patches, HFACTORY/), and make sure @p userDir (USER/) exists
+// for user saves. The "A" roots hold the stock Ambika banks; the Hellcat bank
+// installs under its own HFACTORY/ root. Factory banks are written only if
+// missing; the stock TEMPLATES set is SYNCED every run (writes new/changed
+// templates and removes a local *.yml no longer in the embedded set) so
+// renames/removals propagate to an already-installed tree.
+// Returns the number of files (re)written.
 int ensureFactoryPresetsInstalled (const juce::File& factoryDir,
                                    const juce::File& factoryMultiDir,
                                    const juce::File& templatesDir,
+                                   const juce::File& hellcatFactoryDir,
                                    const juce::File& userDir);
 
 // Bump when the EMBEDDED factory content changes (new/renamed .PRO/.MUL, edited
-// templates). A bump invalidates the on-disk install marker so every already-
-// installed tree re-runs the full (self-healing) extraction pass on next launch;
-// an unchanged version takes the marker fast path (F-ios-perf-5: one marker stat
-// instead of ~365 per-resource stats at every process start, which was
-// measurable inside iOS AUv3 instantiate).
-constexpr int kFactoryInstallVersion = 2;   // v2: .parvati -> .yml template rename
+// templates, HFACTORY bank content). A bump invalidates the on-disk install
+// marker so every already-installed tree re-runs the full (self-healing)
+// extraction pass on next launch; an unchanged version takes the marker fast
+// path (F-ios-perf-5: one marker stat instead of ~430 per-resource stats at
+// every process start, which was measurable inside iOS AUv3 instantiate).
+constexpr int kFactoryInstallVersion = 5;   // v5: bank re-level (mixer balance centered)
 
 // Test-only: forget the process-once install guard so a single test binary can
 // exercise BOTH the first-run (full pass) and the later-run (marker fast

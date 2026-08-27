@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HellcatTheme — the 8 built-in themes. The factories initialise HellcatTheme
 // POSITIONALLY in field order (see HellcatTheme.h), so a missed / extra / mis-

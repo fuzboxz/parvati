@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // HellcatAudioProcessor — the plugin's AudioProcessor. Owns the SynthEngine
 // (a kNumVoices = 96 AmbikaVoice pool — 6 parts x 16 max slots) and an
@@ -354,11 +354,16 @@ public:
     // Stock init templates (Mono / Poly / Unison / Multitimbral) — full-fidelity
     // .yml multis. <appdata>/Hellcat/TEMPLATES/.
     static juce::File getTemplatesDir();
-    // The name of the last loaded program (for the GUI title).
-    juce::String getLoadedProgramName() const { return loadedProgramName_; }
-    // Set the loaded-program name (used by the template generator so each stock
-    // template's .yml `name:` field matches its label).
-    void setLoadedProgramName (const juce::String& n) { loadedProgramName_ = n; }
+    // The ORIGINAL Hellcat factory patches (64 single-part .yml patches,
+    // authored directly under presets/HFACTORY/). <appdata>/Hellcat/HFACTORY/.
+    static juce::File getHellcatFactoryDir();
+    // The name of the last loaded program (for the GUI title). Rides
+    // uiPrefsLock_ like the UI-pref strings: the editor reads it on the
+    // message thread while setStateInformation (host thread) restores it.
+    juce::String getLoadedProgramName() const { const std::lock_guard<std::mutex> l (uiPrefsLock_); return loadedProgramName_; }
+    // Set the loaded-program name (loads, the template generator, state
+    // restore). Message-thread callers and setStateInformation share the lock.
+    void setLoadedProgramName (const juce::String& n) { const std::lock_guard<std::mutex> l (uiPrefsLock_); loadedProgramName_ = n; }
 
     // Re-read a Part's engine storage into the APVTS (engine→APVTS display
     // refresh). Public so the .yml/.MUL multi-load epilogue can refresh the
@@ -484,7 +489,7 @@ private:
     juce::UndoManager undoManager_ { kUndoMaxUnits, kUndoMinTransactions };   // constructed before apvts (member order)
     bool undoInvalidatedByPartSwitch_ = false;   // set by onPartSelect; swept by undoSafe/redoSafe
     juce::AudioProcessorValueTreeState apvts;
-    juce::String loadedProgramName_ { "Init" };
+    juce::String loadedProgramName_ { "Init" };   // guarded by uiPrefsLock_ (see the accessors)
     // NOTE: there is no mirrored current-part member — engine_.getCurrentPart()
     // is the single source of truth. Every write goes through
     // engine_.setCurrentPart (message thread).

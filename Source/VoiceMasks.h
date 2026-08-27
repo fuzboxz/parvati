@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // VoiceMasks — shared helpers over the 8-bit voicecard bitmasks (pure,
 // dependency-free). The slots model derives a Part's voice count as

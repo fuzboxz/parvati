@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See ParamHelp.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See ParamHelp.h.
 
 #include "ParamHelp.h"
 

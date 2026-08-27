@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // IconButton — a small square button that draws its glyph with juce::Path (no
 // font/unicode dependency), so Undo/Redo/Settings render correctly on every OS
@@ -18,22 +18,25 @@
 class IconButton : public juce::Button
 {
 public:
-    enum class Icon { Undo, Redo, Gear, Close };
+    enum class Icon { Undo, Redo, Gear, Close, ChevronLeft, ChevronRight };
 
     // Accessible name for each glyph (screen readers see only this — the icon
     // itself is pure Path drawing). "Undo"/"Redo"/"Settings" are existing
     // chrome translation keys (Translations.cpp), so the fallback chain is
     // localized at no extra cost; English elsewhere. "Delete modulation" names the
     // mod-matrix row X (the Close glyph's introducing consumer — a reuse can
-    // override the title with setTitle()).
+    // override the title with setTitle()). "Previous patch"/"Next patch" are the
+    // preset-browser step buttons' shared key (title AND tooltip).
     static juce::String iconTitle (Icon icon)
     {
         switch (icon)
         {
-            case Icon::Undo:  return TRANS ("Undo");
-            case Icon::Redo:  return TRANS ("Redo");
-            case Icon::Gear:  return TRANS ("Settings");
-            case Icon::Close: return TRANS ("Delete modulation");
+            case Icon::Undo:         return TRANS ("Undo");
+            case Icon::Redo:         return TRANS ("Redo");
+            case Icon::Gear:         return TRANS ("Settings");
+            case Icon::Close:        return TRANS ("Delete modulation");
+            case Icon::ChevronLeft:  return TRANS ("Previous patch");
+            case Icon::ChevronRight: return TRANS ("Next patch");
         }
         return {};
     }
@@ -49,6 +52,14 @@ public:
 
     void setIcon (Icon icon) { icon_ = icon; setTitle (iconTitle (icon)); repaint(); }
 
+    // Optional RECESSED-TILE chrome behind the glyph (the mod-bar pill/nav
+    // family look): a 5px-radius rounded rectangle in the theme's
+    // backgroundInput with a thin outline rim; hover brightens, press darkens,
+    // disabled dims to 40%. Off by default — the header Undo/Redo/Gear icons
+    // stay bare glyphs; the patch-selector step chevrons turn it on so they
+    // read as buttons, not stray marks.
+    void setTileVisible (bool on) { tile_ = on; repaint(); }
+
     // Visual compactness for a large hit target: the glyph is drawn inside the
     // bounds reduced by @p inset px (default 4 — the historical look of the
     // header Undo/Redo/Gear icons). The mod-matrix row delete X uses a larger
@@ -62,6 +73,24 @@ public:
         const juce::Colour text   = t ? t->textPrimary   : hellcat::kFallbackTextPrimary;
         const juce::Colour accent = t ? t->accentPrimary : hellcat::hellcatFallbackAccent;
 
+        if (tile_)
+        {
+            const auto cell = getLocalBounds().toFloat();
+            if (cell.getWidth() > 9.0f && cell.getHeight() > 9.0f)
+            {
+                const float alpha = isEnabled() ? 1.0f : 0.40f;
+                const auto well = cell.reduced (1.0f);
+                juce::Colour fill = t ? t->backgroundInput : hellcat::kFallbackPanel;
+                if (isButtonDown)           fill = fill.darker (0.20f);
+                else if (isMouseOverButton) fill = fill.brighter (0.18f);
+                g.setColour (fill.withMultipliedAlpha (alpha));
+                g.fillRoundedRectangle (well, 5.0f);
+                g.setColour ((t ? t->outline : hellcat::kFallbackOutline)
+                                 .withMultipliedAlpha (0.60f * alpha));
+                g.drawRoundedRectangle (well.reduced (0.5f), 5.0f, 1.0f);
+            }
+        }
+
         juce::Colour c = text;
         if (! isEnabled())            c = text.withAlpha (0.30f);
         else if (getToggleState() || isButtonDown)  c = accent;   // e.g. Settings "on" or pressed
@@ -71,10 +100,31 @@ public:
         const auto r = getLocalBounds().toFloat().reduced (glyphInset_);
         if (icon_ == Icon::Gear)       drawGear (g, r);
         else if (icon_ == Icon::Close) drawClose (g, r);
+        else if (icon_ == Icon::ChevronLeft)  drawChevron (g, r, false);
+        else if (icon_ == Icon::ChevronRight) drawChevron (g, r, true);
         else                           drawCurvedArrow (g, r, icon_ == Icon::Redo);
     }
 
 private:
+    // A single angular stroke ("<" or ">") with rounded caps. Pure Path
+    // drawing, themed like the other glyphs. The wedge grows from BOTH cell
+    // axes but each half-dimension caps against the other, so the glyph stays
+    // proportionate in a square header cell and fills a short wide cell (the
+    // preset browser's flanking columns) boldly enough for touch use.
+    static void drawChevron (juce::Graphics& g, juce::Rectangle<float> r, bool pointRight)
+    {
+        const auto c = r.getCentre();
+        const float dir = pointRight ? 1.0f : -1.0f;
+        const float halfH = juce::jmin (r.getHeight() * 0.26f, r.getWidth() * 0.55f);
+        const float halfW = juce::jmin (r.getWidth() * 0.34f, halfH * 0.72f);
+        juce::Path p;
+        p.startNewSubPath (c.x - dir * halfW, c.y - halfH);
+        p.lineTo (c.x + dir * halfW, c.y);
+        p.lineTo (c.x - dir * halfW, c.y + halfH);
+        g.strokePath (p, juce::PathStrokeType (2.8f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    }
+
     // A compact "X": two rounded-cap strokes corner to corner. Pure Path
     // drawing (no font dependency), themed like the other glyphs. Stroke
     // bolded 2.0 -> 2.6 (2026-08-3 vector-boldness pass).
@@ -166,4 +216,5 @@ private:
 
     Icon icon_;
     float glyphInset_ = 4.0f;
+    bool tile_ = false;
 };

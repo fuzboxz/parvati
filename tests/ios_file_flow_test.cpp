@@ -83,7 +83,7 @@ int countTempFragments (const juce::File& dir)
 // Fresh temp workspace with the four roots the PresetBrowser wants.
 struct Workspace
 {
-    juce::File root, user, factory, factoryMulti, templates;
+    juce::File root, user, factory, factoryMulti, hellcatFactory, templates;
 
     explicit Workspace (const juce::String& tag)
     {
@@ -91,10 +91,11 @@ struct Workspace
                    .getChildFile ("hellcat_iosfileflow_" + tag);
         root.deleteRecursively();
         root.createDirectory();
-        user         = root.getChildFile ("USER");
-        factory      = root.getChildFile ("AFACTORY");
-        factoryMulti = root.getChildFile ("AFACTORY_MULTI");
-        templates    = root.getChildFile ("TEMPLATES");
+        user           = root.getChildFile ("USER");
+        factory        = root.getChildFile ("AFACTORY");
+        factoryMulti   = root.getChildFile ("AFACTORY_MULTI");
+        hellcatFactory = root.getChildFile ("HFACTORY");
+        templates      = root.getChildFile ("TEMPLATES");
         user.createDirectory();
         templates.createDirectory();
     }
@@ -149,6 +150,7 @@ TEST(ios_file_flow_test)
         //     RESCANS (the USER mtime moved) and the new leaf is present —
         //     the exact observable the iOS editor's invalidate() produces.
         PresetBrowser browser (ws.templates, ws.user, ws.factory, ws.factoryMulti,
+                               ws.hellcatFactory,
                                [] (const juce::File&) {});
         juce::PopupMenu m1;
         browser.buildMenu (m1);   // scan 1: sees Picked.yml
@@ -180,7 +182,8 @@ TEST(ios_file_flow_test)
         const juce::File decoy = ws.templates.getChildFile ("Poly_tempdeadbeef.yml");
         decoy.replaceWithText ("in-flight atomic write");
 
-        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                            ws.hellcatFactory, ws.user);
         check (decoy.existsAsFile(),
                "[2] the *_temp decoy SURVIVES the stale-template sweep");
 
@@ -188,7 +191,8 @@ TEST(ios_file_flow_test)
         const juce::File stale = ws.templates.getChildFile ("Zzz_deffo_stale.yml");
         stale.replaceWithText ("not embedded");
         hellcat::resetInstallOnceForTest();
-        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                            ws.hellcatFactory, ws.user);
         check (! stale.existsAsFile(), "[2] control: a stale non-temp template IS removed");
         check (decoy.existsAsFile(), "[2] control: the temp decoy still survives");
     }
@@ -202,7 +206,8 @@ TEST(ios_file_flow_test)
         // the completion marker. (The once-guard is process-wide — [2] already
         // ran an install on ITS dirs — so arm a fresh pass here.)
         hellcat::resetInstallOnceForTest();
-        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                            ws.hellcatFactory, ws.user);
         const juce::File marker = ws.factory.getChildFile (".factory-install");
         check (marker.existsAsFile(), "[3] a completed pass writes the marker");
         {
@@ -217,6 +222,27 @@ TEST(ios_file_flow_test)
         juce::Array<juce::File> pros;
         ws.factory.findChildFiles (pros, juce::File::findFiles, true, "*.PRO");
         check (pros.size() > 0, "[3] factory .PRO files installed by the full pass");
+        // The ORIGINAL Hellcat bank lands under its own HFACTORY root (64 .yml
+        // patches — the full embedded set, not just a non-empty check, pins
+        // the HFACTORY__ staging token routing end to end).
+        juce::Array<juce::File> hyml;
+        ws.hellcatFactory.findChildFiles (hyml, juce::File::findFiles, false, "*.yml");
+        check (hyml.size() == 64,
+               "[3] the 64 HFACTORY .yml patches install under their own root");
+        // v4: a renamed/removed preset's OLD file is swept from the installed
+        // tree (write-if-missing alone would leave the twin forever). Seed a
+        // stale old-name file, arm a fresh pass, and check both directions.
+        const juce::File staleHct = ws.hellcatFactory.getChildFile ("99 Old Name.yml");
+        (void) staleHct.replaceWithText ("stale");
+        hellcat::resetInstallOnceForTest();
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                                ws.hellcatFactory, ws.user);
+        check (! staleHct.existsAsFile(),
+               "[3] a stale HFACTORY .yml is removed by the sweep");
+        juce::Array<juce::File> hyml2;
+        ws.hellcatFactory.findChildFiles (hyml2, juce::File::findFiles, false, "*.yml");
+        check (hyml2.size() == 64,
+               "[3] the sweep leaves exactly the 64 embedded patches");
         juce::Array<juce::File> pars;
         ws.templates.findChildFiles (pars, juce::File::findFiles, false, "*.yml");
         check (pars.size() > 0, "[3] stock templates installed by the full pass");
@@ -232,7 +258,8 @@ TEST(ios_file_flow_test)
         // path but the TEMPLATES content-sync must still restore it.
         pars[0].replaceWithText ("user-corrupted template content");
         hellcat::resetInstallOnceForTest();
-        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                            ws.hellcatFactory, ws.user);
         {
             juce::MemoryBlock after;
             pars[0].loadFileAsData (after);
@@ -252,7 +279,8 @@ TEST(ios_file_flow_test)
             pros[0].deleteFile();
             marker.replaceWithText ("installed=garbage");
             hellcat::resetInstallOnceForTest();
-            hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+            hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                            ws.hellcatFactory, ws.user);
             check (pros[0].existsAsFile(),
                    "[3] corrupt marker -> full pass re-extracts a deleted bank file");
         }
@@ -274,7 +302,8 @@ TEST(ios_file_flow_test)
         }
 
         hellcat::resetInstallOnceForTest();
-        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates, ws.user);
+        hellcat::ensureFactoryPresetsInstalled (ws.factory, ws.factoryMulti, ws.templates,
+                                            ws.hellcatFactory, ws.user);
 
         for (const char* const legacyName :
              { "Factory", "FactoryMulti", "FACTORY", "FACTORY_MULTI" })
@@ -303,6 +332,7 @@ TEST(ios_file_flow_test)
             hellcat::resetInstallOnceForTest();
             hellcat::ensureFactoryPresetsInstalled (factory2, multi2,
                                                     root2.getChildFile ("TEMPLATES"),
+                                                    root2.getChildFile ("HFACTORY"),
                                                     root2.getChildFile ("USER"));
             check (factory2.isDirectory(),
                    "[3b] a live root named like a legacy root survives");
@@ -339,6 +369,7 @@ TEST(ios_file_flow_test)
 
         {
             PresetBrowser browser (ws.templates, ws.user, ws.factory, ws.factoryMulti,
+                                   ws.hellcatFactory,
                                    [] (const juce::File&) {});
             const auto t0 = std::chrono::steady_clock::now();
             juce::PopupMenu m;
@@ -363,6 +394,7 @@ TEST(ios_file_flow_test)
                     .replaceWithText (kHellcatMultiText);
 
             PresetBrowser browser (ws.templates, ws.user, ws.factory, ws.factoryMulti,
+                                   ws.hellcatFactory,
                                    [] (const juce::File&) {});
             const auto t0 = std::chrono::steady_clock::now();
             juce::PopupMenu m;
@@ -395,6 +427,7 @@ TEST(ios_file_flow_test)
             const bool linked = real.createSymbolicLink (link, true);
 
             PresetBrowser browser (ws2.templates, ws2.user, ws2.factory, ws2.factoryMulti,
+                                   ws2.hellcatFactory,
                                    [] (const juce::File&) {});
             juce::PopupMenu m;
             browser.buildMenu (m);

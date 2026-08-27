@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See PluginEditor.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See PluginEditor.h.
 
 #include "PluginEditor.h"
 #include "HellcatPreset.h"
@@ -209,11 +209,13 @@ HellcatEditor::HellcatEditor (HellcatAudioProcessor& p)
     // (No "Patch:" caption: the preset dropdown follows the brand block
     // directly; see resized().)
 
-    // Cascading patch menu (Templates / User / Factory banks / Multi). The
-    // browser scans the dirs live on each open, so there is no pre-populate.
+    // Cascading patch menu (Hellcat Factory / Ambika Factory / Multi / User /
+    // Templates). The browser scans the dirs live on each open, so there is no
+    // pre-populate.
     presetBrowser_ = std::make_unique<PresetBrowser> (
         processorRef_.getTemplatesDir(), processorRef_.getUserPatchDir(),
         processorRef_.getFactoryPatchDir(), processorRef_.getFactoryMultiDir(),
+        processorRef_.getHellcatFactoryDir(),
         [this] (const juce::File& f) { applyPatchFile (f); });
     presetBrowser_->setCurrentName (processorRef_.getLoadedProgramName());
     addAndMakeVisible (*presetBrowser_);
@@ -1351,6 +1353,20 @@ void HellcatEditor::refreshPartComboNames()
     }
 }
 
+void HellcatEditor::refreshPatchBrowserName()
+{
+    // Change-only poll (one string compare): the name changes on file loads
+    // (which set the label directly) and on a host setStateInformation
+    // restore, which has no editor hook. An empty name keeps the placeholder.
+    if (presetBrowser_ == nullptr)
+        return;
+    const juce::String n = processorRef_.getLoadedProgramName();
+    if (n == patchBrowserNameCache_)
+        return;
+    patchBrowserNameCache_ = n;
+    presetBrowser_->setCurrentName (n);
+}
+
 int HellcatEditor::currentPartActiveVoiceCount() const
 {
     auto& engine = processorRef_.getEngine();
@@ -1398,6 +1414,11 @@ void HellcatEditor::timerCallback()
     // Part-name labels follow engine state (edits made on the Patch page fire
     // onPartNamesChanged directly; this also catches file loads + DAW restores).
     refreshPartComboNames();
+
+    // Patch-browser label follows the processor's loaded-program name (file
+    // loads set it directly; this poll also catches a host state restore,
+    // which has no editor hook). Change-only: one compare per tick.
+    refreshPatchBrowserName();
 
     // Visible-Patch-page mirror: out-of-band engine writes (host automation /
     // NRPN / undo) have no editor hook, so while the Patch page is shown the
@@ -2023,9 +2044,11 @@ void HellcatEditor::applyHeaderButtonChrome()
             b->setColour (juce::TextButton::textColourOnId,
                           juce::Colour (0xff101418));
     }
-    // The patch indicator: PresetBrowser's name button (its only child
-    // TextButton) gets the same treatment + the brighter text tier (user
-    // feedback: the patch indicator must match the other header contrast).
+    // The patch indicator: PresetBrowser's name button gets the same
+    // treatment + the brighter text tier (user feedback: the patch indicator
+    // must match the other header contrast). Located as CHILD 0 by contract:
+    // the browser adds the "<"/">" step chevrons after it, and those are
+    // IconButtons (Path-painted, L&F-themable) that need no wash here.
     if (presetBrowser_ != nullptr)
         if (auto* pb = dynamic_cast<juce::TextButton*> (presetBrowser_->getChildComponent (0)))
         {
@@ -2752,13 +2775,24 @@ void HellcatEditor::resized()
         auto cluster = bar;   // left-aligned: follows the logo block directly
         if (presetBrowser_ != nullptr)
         {
-            // Elastic preset width: at/above the floor this clamps to the
-            // natural 156 (identical to the old layout); below it the preset
-            // absorbs the squeeze FIRST (a 60pt floor) so the placed primary
-            // neighbours keep their designed widths as long as possible.
-            const int availForPreset = cluster.getWidth()
-                                           - (foldHistoryBand ? 0 : (globalW + gapW));
-            const int presetW = juce::jlimit (60, 156, availForPreset);
+            // Elastic preset width, computed against EVERYTHING placed to its
+            // right in this cluster (Patch-page toggle, Part combo, [Synth]/
+            // [FX] — whichever are not folded): below the floor the preset
+            // absorbs the squeeze FIRST (a 60pt floor); above it the width
+            // GROWS past the old natural 156 up to a 208 cap. That growth
+            // feeds the name indicator (the patch-name/dropdown surface,
+            // squeezed to ~84pt when the step tiles moved in) out of the
+            // previously EMPTY span before the right-edge toolbar. At the
+            // 1024 minimum frame the budget lands exactly on 156 again (the
+            // layout min-width contract), reserving the follower widths plus
+            // their gaps verbatim.
+            int followers = 0;
+            if (! foldHistoryBand)
+                followers += gapW + globalW;
+            if (! foldPartCluster)
+                followers += gapW + partComboW + gapW + modeW + gapW + modeW;
+            const int presetW = juce::jlimit (60, 208,
+                                              cluster.getWidth() - followers);
             presetBrowser_->setBounds (cluster.removeFromLeft (presetW));
             cluster.removeFromLeft (gapW);
         }

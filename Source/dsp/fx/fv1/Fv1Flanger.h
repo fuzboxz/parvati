@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1Flanger — jet-style flanger: a SHORT modulated delay (0.15..6 ms) with
 // up to 0.92 feedback and a fixed 8 kHz loop damper for stability. The two

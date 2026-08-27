@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // LinearResamplerCore — the shared linear host<->internal resampler of the
 // two FX rate bridges. HostRateBridge (32 kHz, interleaved frames) and

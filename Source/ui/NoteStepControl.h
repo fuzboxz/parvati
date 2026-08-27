@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // NoteStepControl — a ParamControl subclass for the note-sequencer step byte
 // (seqnote_step{0..15}). The underlying APVTS param is a single 0..255 byte

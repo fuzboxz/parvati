@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // Fv1FxProcessor — abstract base for the FV-1 hardware-emulation FX family
 // (Clocked Delay / Ensemble / Plate Reverb / Vinyl Compressor / Phaser). It owns

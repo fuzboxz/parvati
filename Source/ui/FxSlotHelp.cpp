@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See FxSlotHelp.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See FxSlotHelp.h.
 //
 // Definitions of the per-FX-type module help. One sentence per ACTIVE
 // generic param. The ranges mirror paramValueText (FxSlotLabels.cpp) and the

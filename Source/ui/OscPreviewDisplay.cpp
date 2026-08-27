@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.  See OscPreviewDisplay.h.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.  See OscPreviewDisplay.h.
 
 #include "OscPreviewDisplay.h"
 

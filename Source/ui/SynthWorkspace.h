@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Jozsef Ottucsak / Hellcat.
+// Copyright (c) 2026 805Labs Kft. / Hellcat.
 //
 // SynthWorkspace — the content of the top-level SYNTH tab. A rigid, void-free
 // 3-row integrated panel that hosts the EXISTING, editor-owned ParamPages
