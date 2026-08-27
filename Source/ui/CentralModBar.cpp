@@ -503,12 +503,33 @@ struct CentralModBar::ModPill : public juce::Component,
         // re-arms flatness only when the window settles flat again).
         if (stripFlat_ && stripRawCount_ > 0)
         {
+            // How many NEW samples entered the window since the last update?
+            // The window GROWS (ring not yet full: count advances each append)
+            // or SLIDES (full: count is PINNED at kWindow, so delta reads 0
+            // even though the newest bytes are fresh).
             int delta = count - stripRawCount_;
             if (delta < 0)
                 delta += kWindow;   // the linearized window slid (ring wrapped)
             if (delta == 0)
-                return false;   // identical frame (same count, head unchanged upstream)
-            if (delta > 0 && delta < 32)
+            {
+                if (stripRawCount_ < kWindow)
+                    return false;   // small window, no new appends: identical
+                // RING FULL + SLIDING (the launch/stale-home bug, 2026-08-27):
+                // historyCount stays pinned at kWindow, so delta can no longer
+                // signal new data. The NEWEST byte is always the freshest
+                // append — if a flat-at-rest strip's newest byte has left the
+                // flat level, the source just started modulating and we MUST
+                // wake up. Without this, a resting LFO/ENV strip froze on its
+                // rest line from launch (or after each release) and never
+                // showed a note until a preset switch wiped the cache and
+                // re-armed the recompute.
+                const float newestV = (float) samples[(size_t) kWindow - 1]
+                                      * (1.0f / 255.0f);
+                if (std::fabs (newestV - stripFlatLevel_) <= kEps)
+                    return false;   // still flat: nothing new to draw
+                // newest byte broke flatness -> fall through to the recompute
+            }
+            else if (delta > 0 && delta < 32)
             {
                 bool clean = true;
                 for (int i = count - delta; i < count; ++i)
@@ -645,7 +666,25 @@ struct CentralModBar::ModPill : public juce::Component,
         if (cluster_ == hellcat::Cluster::Const)
             return;   // Const pills carry no history
         if (stripCount_ <= 0)
-            return;   // no history yet (e.g. after a reset): the band stays empty
+        {
+            // POST-WIPE REST LINE (2026-08-27 user request): a valid frame
+            // with no history yet (the wipe window after a preset load /
+            // part switch) draws the pill's REST LEVEL — the honest
+            // "current state before anything moved" — instead of sitting
+            // empty for the ~3.1 s the ring needs to refill. Bipolar sources
+            // rest at neutral (128 = 50%, e.g. a centered Pitch Bend);
+            // unipolar ones rest at the floor — the same levels the engine's
+            // idle-row policy would append once history flows (mirrors the
+            // 2026-08-23 "unwritten past = current state" note below).
+            constexpr float kStrokeW0 = 1.4f;
+            constexpr float kInset0    = kStrokeW0 * 0.5f + 0.6f;
+            const float y0 = stripBipolar_
+                ? sr.getCentreY()
+                : sr.getBottom() - kInset0;
+            g.setColour (accent_.withAlpha (0.85f));
+            g.drawLine (sr.getX() + kInset0, y0, sr.getRight() - kInset0, y0, kStrokeW0);
+            return;
+        }
 
         // Keep the stroke inside the band (see the 2026-08-21 jitter note:
         // the tick's repaint dirty region is exactly stripRect(); inset the

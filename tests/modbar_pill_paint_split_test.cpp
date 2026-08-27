@@ -204,6 +204,89 @@ TEST(modbar_pill_paint_split_test)
         }
     }
 
+    // ---- [2b] POST-WIPE REST LINE: a valid frame with an EMPTY history ----
+    // draws the REST LEVEL immediately (bipolar = mid, unipolar = floor),
+    // not an empty band (2026-08-27 user request: no 3.1 s blank window
+    // after a preset load / part switch).
+    std::printf ("\n[2b] post-wipe rest line (empty history => rest level)\n");
+    {
+        ThemeManager themeMgrR;
+        CentralModBar barR (themeMgrR);
+        // WIDE bar: every pill (incl. the drag-only Perf cluster on the
+        // right) sits inside the viewport with no scrolling — a 900px bar
+        // clips them and the pixel probe would count an off-viewport rect.
+        barR.setBounds (0, 0, 2600, CentralModBar::kBarHeight);
+        barR.setVisible (true);
+
+        // A VALID frame with NO history (count == 0, current sources live).
+        const auto emptyFetch = [] (hellcat::ModTelemetrySnapshot& s)
+        {
+            s = {};
+            s.epoch = 3;
+            s.part  = 0;
+            s.historyCount = 0;
+            s.sources[(size_t) ambika::dsp::MOD_SRC_LFO_1]      = 0;     // unipolar rest
+            s.sources[(size_t) ambika::dsp::MOD_SRC_PITCH_BEND]  = 128;   // bipolar rest
+            return true;
+        };
+        barR.setTelemetryProvider (emptyFetch);
+        barR.setTelemetryRateHz (60);
+        // Drive one fetch through the bar's OWN timer seam: reassert starts
+        // the timer; a synchronous run of the message loop is not available,
+        // so call the shared tick via the public reassert + a real timer
+        // callback is unnecessary — the bar exposes the tick through its
+        // test timer seam below. Simplest deterministic driver: run the
+        // 60 Hz fallback Timer's callback once via the public twin.
+        barR.reassertTelemetryTimer();
+        barR.runTelemetryTickForTest();
+
+        // Render + measure: BOTH the LFO 1 (floor) and Pitch Bend (mid)
+        // strips must carry visible line pixels.
+        juce::Image img (juce::Image::ARGB, barR.getWidth(), barR.getHeight(), true);
+        {
+            juce::Graphics g (img);
+            barR.paintEntireComponent (g, false);
+        }
+        auto visiblePx = [&] (int idx) -> int
+        {
+            auto* strip = barR.pillStripChildForTest (idx);
+            if (strip == nullptr) return -1;
+            juce::Point<int> chain {};
+            for (auto* c = strip; c != nullptr && c != &barR; c = c->getParentComponent())
+                chain += c->getPosition();
+            const auto rect = strip->getBounds().withPosition (chain);
+            int n = 0;
+            for (int y = rect.getY(); y < rect.getBottom(); ++y)
+                for (int x = rect.getX(); x < rect.getRight(); ++x)
+                {
+                    const auto p = img.getPixelAt (x, y);
+                    if (p.getSaturation() > 0.25f && p.getPerceivedBrightness() > 0.15f)
+                        ++n;
+                }
+            return n;
+        };
+        int lfo1 = -1, bend = -1;
+        for (int i = 0; i < 512; ++i)
+        {
+            auto* c = barR.pillComponentForTest (i);
+            if (c == nullptr) break;
+            if (auto* tc = dynamic_cast<juce::SettableTooltipClient*> (c))
+            {
+                if (tc->getTooltip() == "LFO 1") lfo1 = i;
+                if (tc->getTooltip() == "Pitch Bend") bend = i;
+            }
+        }
+        check(lfo1 >= 0 && bend >= 0, "LFO 1 + Pitch Bend pills resolvable");
+        if (lfo1 >= 0 && bend >= 0)
+        {
+            char m[128];
+            std::snprintf (m, sizeof (m), "LFO 1 rest line paints (floor, %d px)", visiblePx (lfo1));
+            check(visiblePx (lfo1) >= 30, m);
+            std::snprintf (m, sizeof (m), "Pitch Bend rest line paints (mid, %d px)", visiblePx (bend));
+            check(visiblePx (bend) >= 30, m);
+        }
+    }
+
     // ---- [3] THE CPU CONTRACT: strip dirty rects never re-raster the label ----
     // MECHANISM-FAITHFUL DISPATCH (2026-08-23 review settlement): a real
     // peer's paint callback walks the WHOLE hierarchy CLIPPED to the dirty

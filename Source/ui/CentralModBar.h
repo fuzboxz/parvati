@@ -137,6 +137,11 @@ public:
         gate itself decides start vs stop from the live isShowing() state. */
     void reassertTelemetryTimer() { updateTelemetryTimer(); }
 
+    /** TEST-ONLY: run ONE telemetry tick synchronously (the shared seam the
+        vsync + timer drivers route into). Lets a headless test land a fetch
+        without pumping the message loop. */
+    void runTelemetryTickForTest() { telemetryTick(); }
+
     //==========================================================================
     // Public accessors used by the file-local pill component.
     const HellcatTheme& theme() const;

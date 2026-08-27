@@ -4,7 +4,126 @@ All notable changes to Parvati. Dates are approximate (local dev chronology).
 
 ## [Unreleased]
 
+### Fixed
+- **The mod-pill strips woke from the idle-flat freeze (2026-08-27).** At
+  launch (and after returning from a window switch / minimize) a resting
+  LFO/ENV strip could stay frozen on its rest line and never show a note —
+  until a preset switch wiped its cache. Cause: the strip FLAT-SKIP fast
+  path counted new data as `historyCount - cachedCount`, but once the ring
+  is FULL `historyCount` stays pinned at its maximum, so the delta read 0
+  every tick and the strip never recomputed. A flat-at-rest strip therefore
+  never noticed the source starting to modulate. The fast path now wakes up
+  when the newly-appended (newest) byte leaves the flat level.
+  modbar_strip_wake_from_full_flat_test pins it (58 px frozen vs 196 px live).
+
+### Added
+- **The mod-pill strips show their rest line immediately after a wipe
+  (2026-08-27).** A preset load or part switch resets the telemetry epoch;
+  the strips used to sit EMPTY for the ~3.1 s the history ring needs to
+  refill. They now draw their REST LEVEL at once: bipolar sources rest at
+  neutral (a centered Pitch Bend shows a mid line), unipolar ones rest at
+  the floor (zero). The level matches what the engine appends once history
+  flows, so the line continues seamlessly into the live trace. The same rest
+  line paints at APP LAUNCH — the strips start with no history, so the first
+  render (incl. a state-restored patch) already shows every pill's rest
+  level. modbar_pill_paint_split_test pins it for both polarities and
+  modbar_strip_theme_test pins the launch state.
+- **The mod-pill live strips are pinned in every theme (2026-08-27).**
+  Two regression tests guard the pill sparklines: one renders an isolated
+  CentralModBar with a moving telemetry frame in every built-in theme and
+  counts the strip pixels; the other drives the full editor with live audio
+  through the real theme-switch seam. Both also assert the pump delivered
+  timer callbacks, so the checks can never pass vacuously. The finding: no
+  theme disables the strips — Y2K included (its one LCD-green accent paints
+  the sparkline at full strength). The strips DO wipe for a short window on
+  every preset load and part switch (the telemetry epoch reset) and refill
+  as the engine renders; that hide is by design.
+- **The loaded preset name survives a session restore (2026-08-27).** The
+  processor state now carries the loaded program name (root property
+  `loaded_program_name`). A host or standalone session reload restores it, so
+  the patch browser shows the last loaded preset instead of "Init". States
+  saved by older builds carry no such property; those keep the name the load
+  path already set. The name is guarded like the UI preferences (the editor
+  reads it on the message thread while a host restore writes it), and the
+  editor's existing 30 Hz poll now also mirrors it to the browser button
+  (change-only: one string compare per tick).
+- **The factory bank is authored as plain .yml files (2026-08-27).** The 64
+  Hellcat presets under presets/HFACTORY/ are the canonical bank — plain,
+  hand-editable patch files with choice-label comments. The generator tool was
+  removed; tests/factory_bank_test.cpp stays as the guard (load, byte-exact
+  round-trip, amp routing, polyphony layout, FX + space coverage, spectral
+  bands). Edits to a file propagate to installed trees through the launch-time
+  content sync.
+- **64 original Hellcat factory presets (2026-08-27).** A new factory bank of
+  64 single-part presets, written for Hellcat and covering six categories:
+  bass (01-12), polyphonic keys (13-26), flat mono leads (27-38), unison
+  leads (39-48), pads (49-58) and fx sounds (59-64). Every preset is named
+  "Category - Cryptic" (Bass - FMee, Lead - Buzzsaw, Pad - Emberdrift); the
+  number prefix keeps the browser order. The bank ships in the Hellcat-native
+  .yml patch format, so every preset carries the full sound including the
+  filter card, the VCA curve and the per-part FX slots; the FX-carrying
+  presets run clearly audible wet levels. The presets install to their own
+  HFACTORY/ app-data root on first run and show in the preset browser under a
+  new "Hellcat Factory" submenu, ahead of the Ambika Factory banks. The
+  browser's prev/next stepping walks the new bank first. tests/factory_bank_test.cpp guards the bank in the suite. The mixer
+  balance is a per-preset voicing choice (which oscillator dominates); the
+  readout names the oscillator, so the bias is visible, not hidden.
+  The installer content-syncs the HFACTORY root every launch (edits to a
+  preset propagate to installed trees) and sweeps a local .yml that is no
+  longer embedded (preset renames leave no old-name twin in the browser).
+- **FX on every non-bass factory preset (2026-08-27).** Every preset from
+  slot 13 (keys, leads, unison, pads, fx) carries at least one enabled FX
+  slot fitted to its theme, many two (chorus + plate, echo + room, phaser +
+  echo, flanger + delay). Bass (01-12) stays dry to keep the low end clean.
+  Wet levels stay moderate: delays 22-45 percent, reverbs 22-42 percent,
+  choruses/phasers/flangers 30-68 percent. The generator and
+  tests/factory_bank_test.cpp enforces the coverage.
+- **Subtle space on every non-bass preset (2026-08-27).** Thirteen presets
+  that carried only modulation or none now run a subtle decay tail, each
+  fitted to its character: a dark CVerb hall on Velour and Stratus, a
+  slapback Echo on Funkjaw and a longer Echo on Wallwave, a Spring on
+  Drawbarz, Wideangle and Robovox, a tempo ClockedDelay on Driftwood, a
+  Plate on Vibratone, Softwave and Glacier (the high-pass glass patch), a
+  longer Room on Sawstorm and Hazetrain. Wet levels stay subtle (20-36
+  percent). Every preset outside bass now decays into a space; bass stays
+  fully dry. tests/factory_bank_test.cpp pins the rule: every non-bass
+  preset must carry at least one enabled reverb or delay slot.
+- **Band-pass and high-pass presets in the factory bank (2026-08-27).**
+  Eight presets now use the non-lowpass filter modes, each on the 2-pole SVF
+  card (the 4-pole cards are lowpass-only — a mode set on them is ignored,
+  so a mode preset must pair with the SVF): band-pass on Hollowpin (a hollow
+  lead), Rezonic (a formant acid lead), Pulseforge (a narrow pulse stack),
+  Hazetrain and Ionwind (resonant band pads); high-pass on Glacier (glass
+  keys) and Glassfield (a shimmer pad); high-pass on Airrush (a whoosh
+  without rumble — the first preset with real energy above 8 kHz). Bass
+  keeps the lowpass everywhere. The spectrum category bounds still hold.
+- **Spectral placement of the factory bank (2026-08-27).** Every preset
+  was measured with an FFT band analysis (seven log bands, 20 Hz..16 kHz,
+  rendered at the category register) and re-voiced: the whole non-bass bank
+  had been written with cutoffs far darker than intended (the cutoff knob
+  maps exponentially, so a knob of 50 is about 200 Hz). Cutoffs now sit per
+  category: keys around 1-2 kHz, leads brighter, pads open with a high-shelf
+  on the glassy ones. Bass keeps its low end (sub+bass energy 86-100
+  percent), keys/leads/unison stay out of the sub-fundamental mud (under
+  35 percent below 150 Hz at C4), pads carry mids. Two measurement findings
+  fixed along the way: a preset-level render must use a fresh processor (a
+  kill-retriggered poly voice measures a spurious sub-octave), and the init
+  patch pairs osc 2 an octave down — a spec that changes osc 2's shape must
+  also set its range. tests/factory_bank_test.cpp pins the category bounds. Every preset from
+  slot 13 (keys, leads, unison, pads, fx) now carries at least one enabled
+  FX slot fitted to its theme, many two (chorus + plate, echo + room,
+  phaser + echo, flanger + delay). Bass (01-12) stays dry to keep the low
+  end clean. Wet levels stay moderate: delays 22-45 percent, reverbs
+  22-42 percent, choruses/phasers/flangers 30-68 percent. The generator
+  and tests/factory_bank_test.cpp both enforce the coverage.
+
 ### Changed
+- **Mixer balance readout names the oscillator (2026-08-27).** The Balance
+  knob (oscillator 1 vs oscillator 2 crossfade) read "L50"/"R100" — that
+  reads like a stereo pan, but a patch has no pan; the knob biases which
+  oscillator dominates. The dial and the host parameter text now read
+  "1:50"/"2:100" (the dominant oscillator index, percent elided); the centre
+  keeps "Ctr". No stored value changes.
 - **Preset category "Factory" renamed to "Ambika Factory" (2026-08-26).**
   The preset browser menu now labels the factory bank submenu "Ambika
   Factory". This marks the stock Ambika banks as factory content. The
